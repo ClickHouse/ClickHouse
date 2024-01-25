@@ -20,7 +20,7 @@ template <template <typename> class Data>
 class AggregateFunctionCombinatorArgMinMax final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return Data<SingleValueDataGeneric>::name(); }
+    String getName() const override { return Data<SingleValueDataGeneric<>>::name(); }
 
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
@@ -66,7 +66,7 @@ public:
         if (which.idx == TypeIndex::String)
             return std::make_shared<AggregateFunctionArgMinMax<Data<SingleValueDataString>>>(nested_function, arguments, params);
 
-        return std::make_shared<AggregateFunctionArgMinMax<Data<SingleValueDataGeneric>>>(nested_function, arguments, params);
+        return std::make_shared<AggregateFunctionArgMinMax<Data<SingleValueDataGeneric<>>>>(nested_function, arguments, params);
     }
 };
 

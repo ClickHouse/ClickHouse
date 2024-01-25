@@ -25,9 +25,9 @@ namespace DB
         /// fields
 
         static std::string name();
-        static ColumnsDescription getColumnsDescription();
-        /// TODO: Remove this method, we can return aliases directly from getColumnsDescription().
+        static NamesAndTypesList getNamesAndTypes();
         static NamesAndAliases getNamesAndAliases();
+        static const char * getCustomColumnList();
         void appendToBlock(MutableColumns & columns) const;
     };
     */
@@ -51,7 +51,6 @@ class FilesystemReadPrefetchesLog;
 class AsynchronousInsertLog;
 class BackupLog;
 class S3QueueLog;
-class BlobStorageLog;
 
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
@@ -90,8 +89,6 @@ struct SystemLogs
     std::shared_ptr<AsynchronousInsertLog> asynchronous_insert_log;
     /// Backup and restore events
     std::shared_ptr<BackupLog> backup_log;
-    /// Log blob storage operations
-    std::shared_ptr<BlobStorageLog> blob_storage_log;
 
     std::vector<ISystemLog *> logs;
 };

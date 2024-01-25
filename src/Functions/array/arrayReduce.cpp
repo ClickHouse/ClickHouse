@@ -100,10 +100,8 @@ DataTypePtr FunctionArrayReduce::getReturnTypeImpl(const ColumnsWithTypeAndName 
         getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
                                                    aggregate_function_name, params_row, "function " + getName(), getContext());
 
-        auto action = NullsAction::EMPTY;
         AggregateFunctionProperties properties;
-        aggregate_function
-            = AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, params_row, properties);
+        aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row, properties);
     }
 
     return aggregate_function->getResultType();
@@ -184,19 +182,10 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
         that->addBatchArray(0, input_rows_count, places.data(), 0, aggregate_arguments, offsets->data(), arena.get());
     }
 
-    if (agg_func.isState())
-    {
-        for (size_t i = 0; i < input_rows_count; ++i)
-            /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
-            /// correctly if result contains AggregateFunction's states
-            agg_func.insertMergeResultInto(places[i], res_col, arena.get());
-    }
-    else
-    {
-        for (size_t i = 0; i < input_rows_count; ++i)
-            agg_func.insertResultInto(places[i], res_col, arena.get());
-    }
-
+    for (size_t i = 0; i < input_rows_count; ++i)
+        /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
+        /// correctly if result contains AggregateFunction's states
+        agg_func.insertMergeResultInto(places[i], res_col, arena.get());
     return result_holder;
 }
 

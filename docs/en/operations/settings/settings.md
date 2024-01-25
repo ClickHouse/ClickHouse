@@ -460,12 +460,6 @@ Possible values:
 
 Default value: 1048576.
 
-## http_make_head_request {#http-make-head-request}
-
-The `http_make_head_request` setting allows the execution of a `HEAD` request while reading data from HTTP to retrieve information about the file to be read, such as its size. Since it's enabled by default, it may be desirable to disable this setting in cases where the server does not support `HEAD` requests.
-
-Default value: `true`.
-
 ## table_function_remote_max_addresses {#table_function_remote_max_addresses}
 
 Sets the maximum number of addresses generated from patterns for the [remote](../../sql-reference/table-functions/remote.md) function.
@@ -737,13 +731,11 @@ Default value: LZ4.
 
 ## max_block_size {#setting-max_block_size}
 
-In ClickHouse, data is processed by blocks, which are sets of column parts. The internal processing cycles for a single block are efficient but there are noticeable costs when processing each block.
+In ClickHouse, data is processed by blocks (sets of column parts). The internal processing cycles for a single block are efficient enough, but there are noticeable expenditures on each block. The `max_block_size` setting is a recommendation for what size of the block (in a count of rows) to load from tables. The block size shouldn’t be too small, so that the expenditures on each block are still noticeable, but not too large so that the query with LIMIT that is completed after the first block is processed quickly. The goal is to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
 
-The `max_block_size` setting indicates the recommended maximum number of rows to include in a single block when loading data from tables. Blocks the size of `max_block_size` are not always loaded from the table: if ClickHouse determines that less data needs to be retrieved, a smaller block is processed.
+Default value: 65,536.
 
-The block size should not be too small to avoid noticeable costs when processing each block. It should also not be too large to ensure that queries with a LIMIT clause execute quickly after processing the first block. When setting `max_block_size`, the goal should be to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
-
-Default value: `65,409`
+Blocks the size of `max_block_size` are not always loaded from the table. If it is obvious that less data needs to be retrieved, a smaller block is processed.
 
 ## preferred_block_size_bytes {#preferred-block-size-bytes}
 
@@ -1584,15 +1576,9 @@ Default value: `default`.
 
 ## allow_experimental_parallel_reading_from_replicas
 
-Enables or disables sending SELECT queries to all replicas of a table (up to `max_parallel_replicas`). Reading is parallelized and coordinated dynamically. It will work for any kind of MergeTree table.
+If true, ClickHouse will send a SELECT query to all replicas of a table (up to `max_parallel_replicas`) . It will work for any kind of MergeTree table.
 
-Possible values:
-
-- 0 - Disabled.
-- 1 - Enabled, silently disabled in case of failure.
-- 2 - Enabled, throws an exception in case of failure.
-
-Default value: `0`.
+Default value: `false`.
 
 ## compile_expressions {#compile-expressions}
 
@@ -1671,17 +1657,16 @@ Possible values:
 
 Default value: `1`.
 
-## query_cache_nondeterministic_function_handling {#query-cache-nondeterministic-function-handling}
+## query_cache_store_results_of_queries_with_nondeterministic_functions {#query-cache-store-results-of-queries-with-nondeterministic-functions}
 
-Controls how the [query cache](../query-cache.md) handles `SELECT` queries with non-deterministic functions like `rand()` or `now()`.
+If turned on, then results of `SELECT` queries with non-deterministic functions (e.g. `rand()`, `now()`) can be cached in the [query cache](../query-cache.md).
 
 Possible values:
 
-- `'throw'` - Throw an exception and don't cache the query result.
-- `'save'` - Cache the query result.
-- `'ignore'` - Don't cache the query result and don't throw an exception.
+- 0 - Disabled
+- 1 - Enabled
 
-Default value: `throw`.
+Default value: `0`.
 
 ## query_cache_min_query_runs {#query-cache-min-query-runs}
 
@@ -1716,7 +1701,7 @@ Default value: `1`
 
 ## query_cache_squash_partial_results {#query-cache-squash-partial-results}
 
-Squash partial result blocks to blocks of size [max_block_size](#setting-max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query-cache-compress-entries)).
+Squash partial result blocks to blocks of size [max_block_size](#setting-max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
 
 Possible values:
 
@@ -2486,7 +2471,7 @@ See also:
 - [load_balancing](#load_balancing-round_robin)
 - [Table engine Distributed](../../engines/table-engines/special/distributed.md)
 - [distributed_replica_error_cap](#distributed_replica_error_cap)
-- [distributed_replica_error_half_life](#distributed_replica_error_half_life)
+- [distributed_replica_error_half_life](#settings-distributed_replica_error_half_life)
 
 ## distributed_background_insert_sleep_time_ms {#distributed_background_insert_sleep_time_ms}
 
@@ -2659,7 +2644,7 @@ Default value: 0.
 
 ## input_format_parallel_parsing {#input-format-parallel-parsing}
 
-Enables or disables order-preserving parallel parsing of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
+Enables or disables order-preserving parallel parsing of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TKSV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
 
 Possible values:
 
@@ -2670,7 +2655,7 @@ Default value: `1`.
 
 ## output_format_parallel_formatting {#output-format-parallel-formatting}
 
-Enables or disables parallel formatting of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
+Enables or disables parallel formatting of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TKSV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
 
 Possible values:
 
@@ -2727,10 +2712,6 @@ Default value: `0`.
 
 - [Distributed Table Engine](../../engines/table-engines/special/distributed.md/#distributed)
 - [Managing Distributed Tables](../../sql-reference/statements/system.md/#query-language-system-distributed)
-
-## insert_distributed_sync {#insert_distributed_sync}
-
-Alias for [`distributed_foreground_insert`](#distributed_foreground_insert).
 
 ## insert_shard_id {#insert_shard_id}
 
@@ -3329,11 +3310,22 @@ Possible values:
 
 Default value: `0`.
 
+## use_mysql_types_in_show_columns {#use_mysql_types_in_show_columns}
+
+Show the names of MySQL data types corresponding to ClickHouse data types in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
+
+Possible values:
+
+- 0 - Show names of native ClickHouse data types.
+- 1 - Show names of MySQL data types corresponding to ClickHouse data types.
+
+Default value: `0`.
+
 ## mysql_map_string_to_text_in_show_columns {#mysql_map_string_to_text_in_show_columns}
 
 When enabled, [String](../../sql-reference/data-types/string.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
 
-Has an effect only when the connection is made through the MySQL wire protocol.
+Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
 
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
@@ -3344,7 +3336,7 @@ Default value: `0`.
 
 When enabled, [FixedString](../../sql-reference/data-types/fixedstring.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
 
-Has an effect only when the connection is made through the MySQL wire protocol.
+Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
 
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
@@ -3847,8 +3839,6 @@ Possible values:
 - `none` — Is similar to throw, but distributed DDL query returns no result set.
 - `null_status_on_timeout` — Returns `NULL` as execution status in some rows of result set instead of throwing `TIMEOUT_EXCEEDED` if query is not finished on the corresponding hosts.
 - `never_throw` — Do not throw `TIMEOUT_EXCEEDED` and do not rethrow exceptions if query has failed on some hosts.
-- `null_status_on_timeout_only_active` — similar to `null_status_on_timeout`, but doesn't wait for inactive replicas of the `Replicated` database
-- `throw_only_active` — similar to `throw`, but doesn't wait for inactive replicas of the `Replicated` database
 
 Default value: `throw`.
 
@@ -3964,17 +3954,6 @@ Possible values:
 
 Default value: `''`.
 
-## preferred_optimize_projection_name {#preferred_optimize_projection_name}
-
-If it is set to a non-empty string, ClickHouse will try to apply specified projection in query.
-
-
-Possible values:
-
-- string: name of preferred projection
-
-Default value: `''`.
-
 ## alter_sync {#alter-sync}
 
 Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
@@ -3986,10 +3965,6 @@ Possible values:
 - 2 — Wait for everyone.
 
 Default value: `1`.
-
-:::note
-`alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
-:::
 
 ## replication_wait_for_inactive_replica_timeout {#replication-wait-for-inactive-replica-timeout}
 
@@ -4164,41 +4139,6 @@ Result:
 │  20 │  20 │   10  │
 │  10 │  20 │   30  │
 └─────┴─────┴───────┘
-```
-
-## enable_order_by_all {#enable-order-by-all}
-
-Enables or disables sorting by `ALL` columns, i.e. [ORDER BY](../../sql-reference/statements/select/order-by.md)
-
-Possible values:
-
-- 0 — Disable ORDER BY ALL.
-- 1 — Enable ORDER BY ALL.
-
-Default value: `1`.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE TAB(C1 Int, C2 Int, ALL Int) ENGINE=Memory();
-
-INSERT INTO TAB VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
-
-SELECT * FROM TAB ORDER BY ALL; -- returns an error that ALL is ambiguous
-
-SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all;
-```
-
-Result:
-
-```text
-┌─C1─┬─C2─┬─ALL─┐
-│ 20 │ 20 │  10 │
-│ 30 │ 10 │  20 │
-│ 10 │ 20 │  30 │
-└────┴────┴─────┘
 ```
 
 ## splitby_max_substrings_includes_remaining_string {#splitby_max_substrings_includes_remaining_string}
@@ -4398,8 +4338,6 @@ Default value: `1GiB`.
 
 ## Schema Inference settings
 
-See [schema inference](../../interfaces/schema-inference.md#schema-inference-modes) documentation for more details.
-
 ### schema_inference_use_cache_for_file {schema_inference_use_cache_for_file}
 
 Enable schemas cache for schema inference in `file` table function.
@@ -4440,13 +4378,6 @@ Possible values:
 - 2 - auto
 
 Default value: 2.
-
-### schema_inference_mode {schema_inference_mode}
-
-The mode of schema inference. Possible values: `default` and `union`.
-See [schema inference modes](../../interfaces/schema-inference.md#schema-inference-modes) section for more details.
-
-Default value: `default`.
 
 ## compatibility {#compatibility}
 
@@ -4717,7 +4648,7 @@ Possible values:
 
 Default value: `false`.
 
-## rename_files_after_processing {#rename_files_after_processing}
+## rename_files_after_processing
 
 - **Type:** String
 
@@ -4772,45 +4703,6 @@ Allows you to select the max window log of ZSTD (it will not be used for MergeTr
 Type: Int64
 
 Default: 0
-
-## enable_deflate_qpl_codec {#enable_deflate_qpl_codec}
-
-If turned on, the DEFLATE_QPL codec may be used to compress columns.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-
-Type: Bool
-
-## enable_zstd_qat_codec {#enable_zstd_qat_codec}
-
-If turned on, the ZSTD_QAT codec may be used to compress columns.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-
-Type: Bool
-
-## output_format_compression_level
-
-Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`.
-
-Possible values: from `1` to `22`
-
-Default: `3`
-
-
-## output_format_compression_zstd_window_log
-
-Can be used when the output compression method is `zstd`. If greater than `0`, this setting explicitly sets compression window size (power of `2`) and enables a long-range mode for zstd compression. This can help to achieve a better compression ratio.
-
-Possible values: non-negative numbers. Note that if the value is too small or too big, `zstdlib` will throw an exception. Typical values are from `20` (window size = `1MB`) to `30` (window size = `1GB`).
-
-Default: `0`
 
 ## rewrite_count_distinct_if_with_count_distinct_implementation
 
@@ -4898,254 +4790,9 @@ a	Tuple(
 )
 ```
 
-## allow_experimental_statistic {#allow_experimental_statistic}
-
-Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md#column-statistics).
-
-## allow_statistic_optimize {#allow_statistic_optimize}
-
-Allows using statistic to optimize the order of [prewhere conditions](../../sql-reference/statements/select/prewhere.md).
-
 ## analyze_index_with_space_filling_curves
 
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
-
-## query_plan_enable_optimizations {#query_plan_enable_optimizations}
-
-Toggles query optimization at the query plan level.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable all optimizations at the query plan level
-- 1 - Enable optimizations at the query plan level (but individual optimizations may still be disabled via their individual settings)
-
-Default value: `1`.
-
-## query_plan_max_optimizations_to_apply
-
-Limits the total number of optimizations applied to query plan, see setting [query_plan_enable_optimizations](#query_plan_enable_optimizations).
-Useful to avoid long optimization times for complex queries.
-If the actual number of optimizations exceeds this setting, an exception is thrown.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md).
-
-Default value: '10000'
-
-## query_plan_lift_up_array_join
-
-Toggles a query-plan-level optimization which moves ARRAY JOINs up in the execution plan.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-
-Default value: `1`.
-
-## query_plan_push_down_limit
-
-Toggles a query-plan-level optimization which moves LIMITs down in the execution plan.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-
-Default value: `1`.
-
-## query_plan_split_filter
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Toggles a query-plan-level optimization which splits filters into expressions.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-
-Default value: `1`.
-
-## query_plan_merge_expressions
-
-Toggles a query-plan-level optimization which merges consecutive filters.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-
-Default value: `1`.
-
-## query_plan_filter_push_down
-
-Toggles a query-plan-level optimization which moves filters down in the execution plan.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-
-Default value: `1`.
-
-## query_plan_execute_functions_after_sorting
-
-Toggles a query-plan-level optimization which moves expressions after sorting steps.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-
-Default value: `1`.
-
-## query_plan_reuse_storage_ordering_for_window_functions
-
-Toggles a query-plan-level optimization which uses storage sorting when sorting for window functions.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-
-Default value: `1`.
-
-## query_plan_lift_up_union
-
-Toggles a query-plan-level optimization which moves larger subtrees of the query plan into union to enable further optimizations.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-
-Default value: `1`.
-
-## query_plan_distinct_in_order
-
-Toggles the distinct in-order optimization query-plan-level optimization.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-
-Default value: `1`.
-
-## query_plan_read_in_order
-
-Toggles the read in-order optimization query-plan-level optimization.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-
-Default value: `1`.
-
-## query_plan_aggregation_in_order
-
-Toggles the aggregation in-order query-plan-level optimization.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-
-Default value: `0`.
-
-## query_plan_remove_redundant_sorting
-
-Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-
-Default value: `1`.
-
-## query_plan_remove_redundant_distinct
-
-Toggles a query-plan-level optimization which removes redundant DISTINCT steps.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-
-Default value: `1`.
 
 ## dictionary_use_async_executor {#dictionary_use_async_executor}
 
@@ -5161,49 +4808,3 @@ LIFETIME(MIN 0 MAX 3600)
 LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
 SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 ```
-
-## storage_metadata_write_full_object_key {#storage_metadata_write_full_object_key}
-
-When set to `true` the metadata files are written with `VERSION_FULL_OBJECT_KEY` format version. With that format full object storage key names are written to the metadata files.
-When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section. 
-
-Default value: `false`.
-
-## s3_use_adaptive_timeouts {#s3_use_adaptive_timeouts}
-
-When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
-When set to `false` than all attempts are made with identical timeouts.
-
-Default value: `true`.
-
-## max_partition_size_to_drop
-
-Restriction on dropping partitions in query time.
-
-Default value: 50 GB.
-The value 0 means that you can drop partitions without any restrictions.
-
-:::note
-This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-partition-size-to-drop)
-:::
-
-## max_table_size_to_drop
-
-Restriction on deleting tables in query time.
-
-Default value: 50 GB.
-The value 0 means that you can delete all tables without any restrictions.
-
-:::note
-This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop)
-:::
-
-## iceberg_engine_ignore_schema_evolution {#iceberg_engine_ignore_schema_evolution}
-
-Allow to ignore schema evolution in Iceberg table engine and read all data using schema specified by the user on table creation or latest schema parsed from metadata on table creation.
-
-:::note
-Enabling this setting can lead to incorrect result as in case of evolved schema all data files will be read using the same schema.
-:::
-
-Default value: 'false'.

@@ -7,7 +7,6 @@
 #include <base/scope_guard.h>
 
 #include <Common/logger_useful.h>
-#include <Common/formatReadable.h>
 
 namespace DB
 {
@@ -19,7 +18,7 @@ namespace ErrorCodes
 }
 
 WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_)
-    : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(file_segment_->getPath()))
+    : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(file_segment_->getPathInLocalCache()))
     , file_segment(file_segment_)
 {
 }
@@ -27,7 +26,7 @@ WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_)
 WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegmentsHolderPtr segment_holder_)
     : WriteBufferFromFileDecorator(
         segment_holder_->size() == 1
-        ? std::make_unique<WriteBufferFromFile>(segment_holder_->front().getPath())
+        ? std::make_unique<WriteBufferFromFile>(segment_holder_->front().getPathInLocalCache())
         : throw Exception(ErrorCodes::LOGICAL_ERROR, "WriteBufferToFileSegment can be created only from single segment"))
     , file_segment(&segment_holder_->front())
     , segment_holder(std::move(segment_holder_))
@@ -84,7 +83,7 @@ void WriteBufferToFileSegment::nextImpl()
 std::unique_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
 {
     finalize();
-    return std::make_unique<ReadBufferFromFile>(file_segment->getPath());
+    return std::make_unique<ReadBufferFromFile>(file_segment->getPathInLocalCache());
 }
 
 WriteBufferToFileSegment::~WriteBufferToFileSegment()

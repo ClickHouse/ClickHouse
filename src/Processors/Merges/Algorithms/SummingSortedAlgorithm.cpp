@@ -55,8 +55,7 @@ struct SummingSortedAlgorithm::AggregateDescription
     void init(const char * function_name, const DataTypes & argument_types)
     {
         AggregateFunctionProperties properties;
-        auto action = NullsAction::EMPTY;
-        init(AggregateFunctionFactory::instance().get(function_name, action, argument_types, {}, properties));
+        init(AggregateFunctionFactory::instance().get(function_name, argument_types, {}, properties));
     }
 
     void init(AggregateFunctionPtr function_, bool is_simple_agg_func_type_ = false)
@@ -737,9 +736,9 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
 
         {
             detail::RowRef current_key;
-            setRowRef(current_key, current);
+            current_key.set(current);
 
-            key_differs = last_key.empty() || rowsHaveDifferentSortColumns(last_key, current_key);
+            key_differs = last_key.empty() || !last_key.hasEqualSortColumnsWith(current_key);
 
             last_key = current_key;
             last_chunk_sort_columns.clear();

@@ -207,7 +207,7 @@ Functions `multiSearchFirstIndexCaseInsensitive`, `multiSearchFirstIndexUTF8` an
 multiSearchFirstIndex(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, needle<sub>n</sub>\])
 ```
 
-## multiSearchAny {#multisearchany}
+## multiSearchAny
 
 Returns 1, if at least one string needle<sub>i</sub> matches the string `haystack` and 0 otherwise.
 
@@ -219,7 +219,7 @@ Functions `multiSearchAnyCaseInsensitive`, `multiSearchAnyUTF8` and `multiSearch
 multiSearchAny(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, needle<sub>n</sub>\])
 ```
 
-## match {#match}
+## match
 
 Returns whether string `haystack` matches the regular expression `pattern` in [re2 regular syntax](https://github.com/google/re2/wiki/Syntax).
 
@@ -414,7 +414,7 @@ Result:
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## like {#like}
+## like
 
 Returns whether string `haystack` matches the LIKE expression `pattern`.
 
@@ -445,7 +445,7 @@ like(haystack, pattern)
 
 Alias: `haystack LIKE pattern` (operator)
 
-## notLike {#notlike}
+## notLike
 
 Like `like` but negates the result.
 
@@ -681,3 +681,79 @@ Like [hasSubsequence](#hasSubsequence) but assumes `haystack` and `needle` are U
 ## hasSubsequenceCaseInsensitiveUTF8
 
 Like [hasSubsequenceUTF8](#hasSubsequenceUTF8) but searches case-insensitively.
+
+## byteHammingDistance
+
+Calculates the [hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) between two byte strings.
+
+**Syntax**
+
+```sql
+byteHammingDistance(string2, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT byteHammingDistance('abc', 'ab') ;
+```
+
+Result:
+
+``` text
+┌─byteHammingDistance('abc', 'ab')─┐
+│                                1 │
+└──────────────────────────────────┘
+```
+
+- Alias: mismatches
+
+## jaccardIndex
+
+Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.
+
+**Syntax**
+
+```sql
+byteJaccardIndex(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT jaccardIndex('clickhouse', 'mouse');
+```
+
+Result:
+
+``` text
+┌─jaccardIndex('clickhouse', 'mouse')─┐
+│                                     0.4 │
+└─────────────────────────────────────────┘
+```
+
+## editDistance
+
+Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two byte strings.
+
+**Syntax**
+
+```sql
+editDistance(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT editDistance('clickhouse', 'mouse');
+```
+
+Result:
+
+``` text
+┌─editDistance('clickhouse', 'mouse')─┐
+│                                       6 │
+└─────────────────────────────────────────┘
+```
+
+- Alias: levenshteinDistance

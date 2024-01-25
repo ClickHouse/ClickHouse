@@ -33,8 +33,7 @@ namespace CurrentMetrics
 
 namespace DB
 {
-class ZooKeeperLog;
-class ZooKeeperWithFaultInjection;
+    class ZooKeeperLog;
 
 namespace ErrorCodes
 {
@@ -136,16 +135,6 @@ struct MultiReadResponses
             responses);
     }
 
-    /// If Keeper/ZooKeeper doesn't support MultiRead feature we will dispatch
-    /// asynchronously all the read requests separately
-    /// Sometimes it's important to process all requests instantly
-    /// e.g. we want to trigger exceptions while we are in the ZK client retry loop
-    void waitForResponses()
-    {
-        if (auto * responses_with_futures = std::get_if<ResponsesWithFutures>(&responses))
-            responses_with_futures->waitForResponses();
-    }
-
 private:
     using RegularResponses = std::vector<Coordination::ResponsePtr>;
     using FutureResponses = std::vector<std::future<ResponseType>>;
@@ -169,15 +158,6 @@ private:
             return *cached_responses[index];
         }
 
-        void waitForResponses()
-        {
-            for (size_t i = 0; i < size(); ++i)
-            {
-                if (!cached_responses[i].has_value())
-                    cached_responses[i] = future_responses[i].get();
-            }
-        }
-
         size_t size() const { return future_responses.size(); }
     };
 
@@ -195,9 +175,6 @@ private:
 /// Methods with names not starting at try- raise KeeperException on any error.
 class ZooKeeper
 {
-    /// ZooKeeperWithFaultInjection wants access to `impl` pointer to reimplement some async functions with faults
-    friend class DB::ZooKeeperWithFaultInjection;
-
 public:
 
     using Ptr = std::shared_ptr<ZooKeeper>;
@@ -289,8 +266,6 @@ public:
     {
         return exists(paths.begin(), paths.end());
     }
-
-    bool anyExists(const std::vector<std::string> & paths);
 
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
     std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
@@ -428,9 +403,8 @@ public:
     /// Performs several operations in a transaction.
     /// Throws on every error.
     Coordination::Responses multi(const Coordination::Requests & requests);
-    /// Throws only if some operation has returned an "unexpected" error - an error that would cause
-    /// the corresponding try- method to throw.
-    /// On exception, `responses` may or may not be populated.
+    /// Throws only if some operation has returned an "unexpected" error
+    /// - an error that would cause the corresponding try- method to throw.
     Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses);
     /// Throws nothing (even session expired errors)
     Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses);
@@ -474,7 +448,7 @@ public:
     /// If the node exists and its value is equal to fast_delete_if_equal_value it will remove it
     /// If the node exists and its value is different, it will wait for it to disappear. It will throw a LOGICAL_ERROR if the node doesn't
     /// disappear automatically after 3x session_timeout.
-    void deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value);
+    void handleEphemeralNodeExistence(const std::string & path, const std::string & fast_delete_if_equal_value);
 
     Coordination::ReconfigResponse reconfig(
         const std::string & joining,
@@ -574,10 +548,7 @@ public:
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
-
     bool hasReachedDeadline() const { return impl->hasReachedDeadline(); }
-
-    uint64_t getSessionTimeoutMS() const { return args.session_timeout_ms; }
 
     void setServerCompletelyStarted();
 
@@ -649,6 +620,8 @@ private:
     std::unique_ptr<Coordination::IKeeper> impl;
 
     ZooKeeperArgs args;
+
+    std::mutex mutex;
 
     Poco::Logger * log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;

@@ -13,7 +13,6 @@
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
-#include <Common/re2.h>
 #include <IO/HTTPCommon.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -28,6 +27,14 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 #include <boost/algorithm/string.hpp>
 
 static const int SUCCESS_RESPONSE_MIN = 200;
@@ -92,7 +99,6 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
         unsigned int s3_retry_attempts_,
         bool enable_s3_requests_logging_,
         bool for_disk_s3_,
-        bool s3_use_adaptive_timeouts_,
         const ThrottlerPtr & get_request_throttler_,
         const ThrottlerPtr & put_request_throttler_,
         std::function<void(const DB::ProxyConfiguration &)> error_report_)
@@ -105,7 +111,6 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     , for_disk_s3(for_disk_s3_)
     , get_request_throttler(get_request_throttler_)
     , put_request_throttler(put_request_throttler_)
-    , s3_use_adaptive_timeouts(s3_use_adaptive_timeouts_)
     , error_report(error_report_)
 {
 }
@@ -140,25 +145,18 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
     }
 }
 
-ConnectionTimeouts getTimeoutsFromConfiguration(const PocoHTTPClientConfiguration & client_configuration)
-{
-    return ConnectionTimeouts()
-        .withConnectionTimeout(Poco::Timespan(client_configuration.connectTimeoutMs * 1000))
-        .withSendTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
-        .withReceiveTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
-        .withTcpKeepAliveTimeout(Poco::Timespan(
-            client_configuration.enableTcpKeepAlive ? client_configuration.tcpKeepAliveIntervalMs * 1000 : 0))
-        .withHttpKeepAliveTimeout(Poco::Timespan(
-            client_configuration.http_keep_alive_timeout_ms * 1000)); /// flag indicating whether keep-alive is enabled is set to each session upon creation
-}
 
 PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_configuration)
     : per_request_configuration(client_configuration.per_request_configuration)
     , error_report(client_configuration.error_report)
-    , timeouts(getTimeoutsFromConfiguration(client_configuration))
+    , timeouts(ConnectionTimeouts(
+          Poco::Timespan(client_configuration.connectTimeoutMs * 1000), /// connection timeout.
+          Poco::Timespan(client_configuration.requestTimeoutMs * 1000), /// send timeout.
+          Poco::Timespan(client_configuration.requestTimeoutMs * 1000), /// receive timeout.
+          Poco::Timespan(client_configuration.enableTcpKeepAlive ? client_configuration.tcpKeepAliveIntervalMs * 1000 : 0),
+          Poco::Timespan(client_configuration.http_keep_alive_timeout_ms * 1000))) /// flag indicating whether keep-alive is enabled is set to each session upon creation
     , remote_host_filter(client_configuration.remote_host_filter)
     , s3_max_redirects(client_configuration.s3_max_redirects)
-    , s3_use_adaptive_timeouts(client_configuration.s3_use_adaptive_timeouts)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
     , for_disk_s3(client_configuration.for_disk_s3)
     , get_request_throttler(client_configuration.get_request_throttler)
@@ -270,38 +268,6 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
         ProfileEvents::increment(disk_s3_events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
 }
 
-String extractAttemptFromInfo(const Aws::String & request_info)
-{
-    static auto key = Aws::String("attempt=");
-
-    auto key_begin = request_info.find(key, 0);
-    if (key_begin == Aws::String::npos)
-        return "1";
-
-    auto val_begin = key_begin + key.size();
-    auto val_end = request_info.find(';', val_begin);
-    if (val_end == Aws::String::npos)
-        val_end = request_info.size();
-
-    return request_info.substr(val_begin, val_end-val_begin);
-}
-
-String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const String & key)
-{
-    auto it = map.find(key);
-    if (it == map.end())
-        return {};
-    return it->second;
-}
-
-ConnectionTimeouts PocoHTTPClient::getTimeouts(const String & method, bool first_attempt, bool first_byte) const
-{
-    if (!s3_use_adaptive_timeouts)
-        return timeouts;
-
-    return timeouts.getAdaptiveTimeouts(method, first_attempt, first_byte);
-}
-
 void PocoHTTPClient::makeRequestInternal(
     Aws::Http::HttpRequest & request,
     std::shared_ptr<PocoHTTPResponse> & response,
@@ -316,29 +282,10 @@ void PocoHTTPClient::makeRequestInternal(
         makeRequestInternalImpl<false>(request, request_configuration, response, readLimiter, writeLimiter);
 }
 
-String getMethod(const Aws::Http::HttpRequest & request)
-{
-    switch (request.GetMethod())
-    {
-        case Aws::Http::HttpMethod::HTTP_GET:
-            return Poco::Net::HTTPRequest::HTTP_GET;
-        case Aws::Http::HttpMethod::HTTP_POST:
-            return Poco::Net::HTTPRequest::HTTP_POST;
-        case Aws::Http::HttpMethod::HTTP_DELETE:
-            return Poco::Net::HTTPRequest::HTTP_DELETE;
-        case Aws::Http::HttpMethod::HTTP_PUT:
-            return Poco::Net::HTTPRequest::HTTP_PUT;
-        case Aws::Http::HttpMethod::HTTP_HEAD:
-            return Poco::Net::HTTPRequest::HTTP_HEAD;
-        case Aws::Http::HttpMethod::HTTP_PATCH:
-            return Poco::Net::HTTPRequest::HTTP_PATCH;
-    }
-}
-
 template <bool pooled>
 void PocoHTTPClient::makeRequestInternalImpl(
     Aws::Http::HttpRequest & request,
-    const DB::ProxyConfiguration & proxy_configuration,
+    const DB::ProxyConfiguration & request_configuration,
     std::shared_ptr<PocoHTTPResponse> & response,
     Aws::Utils::RateLimits::RateLimiterInterface *,
     Aws::Utils::RateLimits::RateLimiterInterface *) const
@@ -348,14 +295,9 @@ void PocoHTTPClient::makeRequestInternalImpl(
     Poco::Logger * log = &Poco::Logger::get("AWSClient");
 
     auto uri = request.GetUri().GetURIString();
-    auto method = getMethod(request);
-
-    auto sdk_attempt = extractAttemptFromInfo(getOrEmpty(request.GetHeaders(), Aws::Http::SDK_REQUEST_HEADER));
-    auto ch_attempt = extractAttemptFromInfo(getOrEmpty(request.GetHeaders(), "clickhouse-request"));
-    bool first_attempt = ch_attempt == "1" && sdk_attempt == "1";
 
     if (enable_s3_requests_logging)
-        LOG_TEST(log, "Make request to: {}, aws sdk attempt: {}, clickhouse attempt: {}", uri, sdk_attempt, ch_attempt);
+        LOG_TEST(log, "Make request to: {}", uri);
 
     switch (request.GetMethod())
     {
@@ -398,37 +340,34 @@ void PocoHTTPClient::makeRequestInternalImpl(
             Poco::URI target_uri(uri);
             SessionPtr session;
 
-            if (!proxy_configuration.host.empty())
+            if (!request_configuration.host.empty())
             {
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Due to reverse proxy host name ({}) won't be resolved on ClickHouse side", uri);
+
                 /// Reverse proxy can replace host header with resolved ip address instead of host name.
                 /// This can lead to request signature difference on S3 side.
                 if constexpr (pooled)
                     session = makePooledHTTPSession(
-                        target_uri,
-                        getTimeouts(method, first_attempt, /*first_byte*/ true),
-                        http_connection_pool_size,
-                        wait_on_pool_size_limit,
-                        proxy_configuration);
+                        target_uri, timeouts, http_connection_pool_size, wait_on_pool_size_limit);
                 else
-                    session = makeHTTPSession(
-                            target_uri,
-                            getTimeouts(method, first_attempt, /*first_byte*/ true),
-                            proxy_configuration);
+                    session = makeHTTPSession(target_uri, timeouts);
+                bool use_tunnel = request_configuration.protocol == DB::ProxyConfiguration::Protocol::HTTP && target_uri.getScheme() == "https";
+
+                session->setProxy(
+                    request_configuration.host,
+                    request_configuration.port,
+                    DB::ProxyConfiguration::protocolToString(request_configuration.protocol),
+                    use_tunnel
+                );
             }
             else
             {
                 if constexpr (pooled)
                     session = makePooledHTTPSession(
-                        target_uri,
-                        getTimeouts(method, first_attempt, /*first_byte*/ true),
-                        http_connection_pool_size,
-                        wait_on_pool_size_limit);
+                        target_uri, timeouts, http_connection_pool_size, wait_on_pool_size_limit);
                 else
-                    session = makeHTTPSession(
-                            target_uri,
-                            getTimeouts(method, first_attempt, /*first_byte*/ true));
+                    session = makeHTTPSession(target_uri, timeouts);
             }
 
             /// In case of error this address will be written to logs
@@ -462,23 +401,34 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 path_and_query = "/";
 
             poco_request.setURI(path_and_query);
-            poco_request.setMethod(method);
+
+            switch (request.GetMethod())
+            {
+                case Aws::Http::HttpMethod::HTTP_GET:
+                    poco_request.setMethod(Poco::Net::HTTPRequest::HTTP_GET);
+                    break;
+                case Aws::Http::HttpMethod::HTTP_POST:
+                    poco_request.setMethod(Poco::Net::HTTPRequest::HTTP_POST);
+                    break;
+                case Aws::Http::HttpMethod::HTTP_DELETE:
+                    poco_request.setMethod(Poco::Net::HTTPRequest::HTTP_DELETE);
+                    break;
+                case Aws::Http::HttpMethod::HTTP_PUT:
+                    poco_request.setMethod(Poco::Net::HTTPRequest::HTTP_PUT);
+                    break;
+                case Aws::Http::HttpMethod::HTTP_HEAD:
+                    poco_request.setMethod(Poco::Net::HTTPRequest::HTTP_HEAD);
+                    break;
+                case Aws::Http::HttpMethod::HTTP_PATCH:
+                    poco_request.setMethod(Poco::Net::HTTPRequest::HTTP_PATCH);
+                    break;
+            }
 
             /// Headers coming from SDK are lower-cased.
             for (const auto & [header_name, header_value] : request.GetHeaders())
                 poco_request.set(header_name, header_value);
             for (const auto & [header_name, header_value] : extra_headers)
-            {
-                // AWS S3 canonical headers must include `Host`, `Content-Type` and any `x-amz-*`.
-                // These headers will be signed. Custom S3 headers specified in ClickHouse storage conf are added in `extra_headers`.
-                // At this point in the stack trace, request has already been signed and any `x-amz-*` extra headers was already added
-                // to the canonical headers list. Therefore, we should not add them again to the request.
-                // https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
-                if (!header_name.starts_with("x-amz-"))
-                {
-                    poco_request.set(boost::algorithm::to_lower_copy(header_name), header_value);
-                }
-            }
+                poco_request.set(boost::algorithm::to_lower_copy(header_name), header_value);
 
             Poco::Net::HTTPResponse poco_response;
 
@@ -497,13 +447,10 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 request.GetContentBody()->clear();
                 request.GetContentBody()->seekg(0);
 
-                setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
                 auto size = Poco::StreamCopier::copyStream(*request.GetContentBody(), request_body_stream);
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Written {} bytes to request body", size);
             }
-
-            setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
 
             if (enable_s3_requests_logging)
                 LOG_TEST(log, "Receiving response...");
@@ -560,7 +507,6 @@ void PocoHTTPClient::makeRequestInternalImpl(
             /// Request is successful but for some special requests we can have actual error message in body
             if (status_code >= SUCCESS_RESPONSE_MIN && status_code <= SUCCESS_RESPONSE_MAX && checkRequestCanReturn2xxAndErrorInBody(request))
             {
-                /// reading the full response
                 std::string response_string((std::istreambuf_iterator<char>(response_body_stream)),
                                std::istreambuf_iterator<char>());
 
@@ -574,7 +520,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
                     addMetric(request, S3MetricType::Errors);
                     if (error_report)
-                        error_report(proxy_configuration);
+                        error_report(request_configuration);
+
                 }
 
                 /// Set response from string
@@ -591,10 +538,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 {
                     addMetric(request, S3MetricType::Errors);
                     if (status_code >= 500 && error_report)
-                        error_report(proxy_configuration);
+                        error_report(request_configuration);
                 }
-
-                /// expose stream, after that client reads data from that stream without built-in retries
                 response->SetResponseBody(response_body_stream, session);
             }
 

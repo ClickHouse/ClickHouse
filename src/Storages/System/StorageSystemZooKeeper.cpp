@@ -198,8 +198,23 @@ StorageSystemZooKeeper::StorageSystemZooKeeper(const StorageID & table_id_)
         : IStorage(table_id_)
 {
         StorageInMemoryMetadata storage_metadata;
-        storage_metadata.setColumns(getColumnsDescription());
+        ColumnsDescription desc;
+        auto columns = getNamesAndTypes();
+        for (const auto & col : columns)
+        {
+            ColumnDescription col_desc(col.name, col.type);
+            /// We only allow column `name`, `path`, `value` to insert.
+            if (col.name != "name" && col.name != "path" && col.name != "value")
+                col_desc.default_desc.kind = ColumnDefaultKind::Materialized;
+            desc.add(col_desc);
+        }
+        storage_metadata.setColumns(desc);
         setInMemoryMetadata(storage_metadata);
+}
+
+bool StorageSystemZooKeeper::mayBenefitFromIndexForIn(const ASTPtr & node, ContextPtr, const StorageMetadataPtr &) const
+{
+    return node->as<ASTIdentifier>() && node->getColumnName() == "path";
 }
 
 void StorageSystemZooKeeper::read(
@@ -228,37 +243,24 @@ SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMeta
     return std::make_shared<ZooKeeperSink>(write_header, context);
 }
 
-ColumnsDescription StorageSystemZooKeeper::getColumnsDescription()
+NamesAndTypesList StorageSystemZooKeeper::getNamesAndTypes()
 {
-    auto description = ColumnsDescription
-    {
-        {"name",           std::make_shared<DataTypeString>(), "The name of the node."},
-        {"value",          std::make_shared<DataTypeString>(), "Node value."},
-        {"czxid",          std::make_shared<DataTypeInt64>(), "ID of the transaction that created the node."},
-        {"mzxid",          std::make_shared<DataTypeInt64>(), "ID of the transaction that last changed the node."},
-        {"ctime",          std::make_shared<DataTypeDateTime>(), "Time of node creation."},
-        {"mtime",          std::make_shared<DataTypeDateTime>(), "Time of the last modification of the node."},
-        {"version",        std::make_shared<DataTypeInt32>(), "Node version: the number of times the node was changed."},
-        {"cversion",       std::make_shared<DataTypeInt32>(), "Number of added or removed descendants."},
-        {"aversion",       std::make_shared<DataTypeInt32>(), "Number of changes to the ACL."},
-        {"ephemeralOwner", std::make_shared<DataTypeInt64>(), "For ephemeral nodes, the ID of the session that owns this node."},
-        {"dataLength",     std::make_shared<DataTypeInt32>(), "Size of the value."},
-        {"numChildren",    std::make_shared<DataTypeInt32>(), "Number of descendants."},
-        {"pzxid",          std::make_shared<DataTypeInt64>(), "ID of the transaction that last deleted or added descendants."},
-        {"path",           std::make_shared<DataTypeString>(), "The path to the node."},
+    return {
+        { "name",           std::make_shared<DataTypeString>() },
+        { "value",          std::make_shared<DataTypeString>() },
+        { "czxid",          std::make_shared<DataTypeInt64>() },
+        { "mzxid",          std::make_shared<DataTypeInt64>() },
+        { "ctime",          std::make_shared<DataTypeDateTime>() },
+        { "mtime",          std::make_shared<DataTypeDateTime>() },
+        { "version",        std::make_shared<DataTypeInt32>() },
+        { "cversion",       std::make_shared<DataTypeInt32>() },
+        { "aversion",       std::make_shared<DataTypeInt32>() },
+        { "ephemeralOwner", std::make_shared<DataTypeInt64>() },
+        { "dataLength",     std::make_shared<DataTypeInt32>() },
+        { "numChildren",    std::make_shared<DataTypeInt32>() },
+        { "pzxid",          std::make_shared<DataTypeInt64>() },
+        { "path",           std::make_shared<DataTypeString>() },
     };
-
-    for (auto & name : description.getAllRegisteredNames())
-    {
-        description.modify(name, [&](ColumnDescription & column)
-        {
-            /// We only allow column `name`, `path`, `value` to insert.
-            if (column.name != "name" && column.name != "path" && column.name != "value")
-                column.default_desc.kind = ColumnDefaultKind::Materialized;
-        });
-    }
-
-    return description;
 }
 
 static String pathCorrected(const String & path)

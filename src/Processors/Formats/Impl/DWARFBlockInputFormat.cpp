@@ -28,7 +28,6 @@ namespace CurrentMetrics
 {
     extern const Metric DWARFReaderThreads;
     extern const Metric DWARFReaderThreadsActive;
-    extern const Metric DWARFReaderThreadsScheduled;
 }
 
 namespace DB
@@ -239,7 +238,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
 
     LOG_DEBUG(&Poco::Logger::get("DWARF"), "{} units, reading in {} threads", units_queue.size(), num_threads);
 
-    pool.emplace(CurrentMetrics::DWARFReaderThreads, CurrentMetrics::DWARFReaderThreadsActive, CurrentMetrics::DWARFReaderThreadsScheduled, num_threads);
+    pool.emplace(CurrentMetrics::DWARFReaderThreads, CurrentMetrics::DWARFReaderThreadsActive, num_threads);
     for (size_t i = 0; i < num_threads; ++i)
         pool->scheduleOrThrowOnError(
             [this, thread_group = CurrentThread::getGroup()]()
@@ -308,41 +307,6 @@ static inline void throwIfError(llvm::Error & e, const char * what)
     throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Failed to parse {}: {}", what, llvm::toString(std::move(e)));
 }
 
-llvm::DWARFFormValue DWARFBlockInputFormat::parseAttribute(
-    const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
-    const UnitState & unit) const
-{
-    auto val = llvm::DWARFFormValue::createFromSValue(
-        attr.Form, attr.isImplicitConst() ? attr.getImplicitConstValue() : 0);
-    if (!val.extractValue(*extractor, offset, unit.dwarf_unit->getFormParams(), unit.dwarf_unit))
-        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
-            "Failed to parse attribute {} of form {} at offset {}",
-                llvm::dwarf::AttributeString(attr.Attr), attr.Form, *offset);
-    return val;
-}
-
-void DWARFBlockInputFormat::skipAttribute(
-    const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
-    const UnitState & unit) const
-{
-    if (!llvm::DWARFFormValue::skipValue(
-        attr.Form, *extractor, offset, unit.dwarf_unit->getFormParams()))
-            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
-                "Failed to skip attribute {} of form {} at offset {}",
-                llvm::dwarf::AttributeString(attr.Attr), attr.Form, *offset);
-}
-
-uint64_t DWARFBlockInputFormat::parseAddress(llvm::dwarf::Attribute attr, const llvm::DWARFFormValue & val, const UnitState & unit)
-{
-    if (val.getForm() == llvm::dwarf::DW_FORM_addr)
-        return val.getRawUValue();
-    if (val.getForm() == llvm::dwarf::DW_FORM_addrx ||
-        (val.getForm() >= llvm::dwarf::DW_FORM_addrx1 &&
-         val.getForm() <= llvm::dwarf::DW_FORM_addrx4))
-        return fetchFromDebugAddr(unit.debug_addr_base, val.getRawUValue());
-    throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Form {} for {} is not supported", llvm::dwarf::FormEncodingString(val.getForm()), llvm::dwarf::AttributeString(attr));
-}
-
 Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
 {
     const auto & header = getPort().getHeader();
@@ -350,6 +314,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
     std::array<bool, COL_COUNT> need{};
     for (const std::string & name : header.getNames())
         need[column_name_to_idx.at(name)] = true;
+    auto form_params = unit.dwarf_unit->getFormParams();
 
     /// For parallel arrays, we nominate one of them to be responsible for populating the offsets vector.
     need[COL_ATTR_NAME] = need[COL_ATTR_NAME] || need[COL_ATTR_FORM] || need[COL_ATTR_INT] || need[COL_ATTR_STR];
@@ -424,34 +389,6 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
             if (need[COL_TAG])
                 col_tag->insertValue(tag);
 
-            if (tag == llvm::dwarf::DW_TAG_compile_unit)
-            {
-                /// Pre-parse DW_AT_addr_base and DW_AT_rnglists_base because other attributes may
-                /// rely on them. (Why couldn't DWARF just promise that these attributes must appear
-                /// before any attributes that depend on them?)
-                uint64_t offset = unit.offset;
-                std::optional<llvm::DWARFFormValue> low_pc;
-                for (auto attr : abbrev->attributes())
-                {
-                    if (attr.Attr == llvm::dwarf::DW_AT_addr_base ||
-                        attr.Attr == llvm::dwarf::DW_AT_rnglists_base)
-                    {
-                        auto val = parseAttribute(attr, &offset, unit);
-                        if (attr.Attr == llvm::dwarf::DW_AT_addr_base)
-                            unit.debug_addr_base = val.getRawUValue();
-                        else
-                            unit.rnglists_base = val.getRawUValue();
-                    }
-                    else if (attr.Attr == llvm::dwarf::DW_AT_low_pc)
-                        low_pc = parseAttribute(attr, &offset, unit);
-                    else
-                        skipAttribute(attr, &offset, unit);
-                }
-                /// May use addr_base.
-                if (low_pc.has_value())
-                    unit.base_address = parseAddress(llvm::dwarf::DW_AT_low_pc, *low_pc, unit);
-            }
-
             bool need_name = need[COL_NAME];
             bool need_linkage_name = need[COL_LINKAGE_NAME];
             bool need_decl_file = need[COL_DECL_FILE];
@@ -472,7 +409,11 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
 
             for (auto attr : abbrev->attributes())
             {
-                auto val = parseAttribute(attr, &unit.offset, unit);
+                auto val = llvm::DWARFFormValue::createFromSValue(attr.Form, attr.isImplicitConst() ? attr.getImplicitConstValue() : 0);
+                /// This is relatively slow, maybe we should reimplement it.
+                if (!val.extractValue(*extractor, &unit.offset, form_params, unit.dwarf_unit))
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Failed to parse attribute {} of form {} at offset {}",
+                        llvm::dwarf::AttributeString(attr.Attr), attr.Form, unit.offset);
 
                 if (need[COL_ATTR_NAME])
                     col_attr_name->insertValue(attr.Attr);
@@ -509,6 +450,13 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
 
                         if (attr.Attr == llvm::dwarf::DW_AT_decl_line && std::exchange(need_decl_line, false))
                             col_decl_line->insertValue(static_cast<UInt32>(val.getRawUValue()));
+
+                        /// Starting offset of this unit's data in .debug_addr section.
+                        if (attr.Attr == llvm::dwarf::DW_AT_addr_base)
+                            unit.addr_base = val.getRawUValue();
+                        /// Same for .debug_rnglists section.
+                        if (attr.Attr == llvm::dwarf::DW_AT_rnglists_base)
+                            unit.rnglists_base = val.getRawUValue();
 
                         if (attr.Attr == llvm::dwarf::DW_AT_high_pc)
                         {
@@ -566,7 +514,16 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
 
                         if (need_ranges && (attr.Attr == llvm::dwarf::DW_AT_low_pc || attr.Attr == llvm::dwarf::DW_AT_high_pc))
                         {
-                            UInt64 addr = parseAddress(attr.Attr, val, unit);
+                            UInt64 addr;
+                            if (val.getForm() == llvm::dwarf::DW_FORM_addr)
+                                addr = val.getRawUValue();
+                            else if (val.getForm() == llvm::dwarf::DW_FORM_addrx ||
+                                (val.getForm() >= llvm::dwarf::DW_FORM_addrx1 &&
+                                 val.getForm() <= llvm::dwarf::DW_FORM_addrx4))
+                                addr = fetchFromDebugAddr(unit.addr_base, val.getRawUValue());
+                            else
+                                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Form {} for {} is not supported", llvm::dwarf::FormEncodingString(val.getForm()), llvm::dwarf::AttributeString(attr.Attr));
+
                             if (attr.Attr == llvm::dwarf::DW_AT_low_pc)
                                 low_pc = addr;
                             else
@@ -660,7 +617,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
             if (need_ranges)
             {
                 if (ranges.has_value())
-                    parseRanges(*ranges, ranges_rnglistx, unit, col_ranges_start, col_ranges_end);
+                    parseRanges(*ranges, ranges_rnglistx, low_pc, unit, col_ranges_start, col_ranges_end);
                 else if (low_pc.has_value())
                 {
                     UInt64 high;
@@ -782,7 +739,7 @@ void DWARFBlockInputFormat::parseFilenameTable(UnitState & unit, uint64_t offset
     auto error = prologue.parse(*debug_line_extractor, &offset, /*RecoverableErrorHandler*/ [&](auto e)
         {
             if (++seen_debug_line_warnings < 10)
-                LOG_INFO(&Poco::Logger::get("DWARF"), "Parsing error: {}", llvm::toString(std::move(e)));
+                LOG_INFO(&Poco::Logger::get("DWARF"), "{}", llvm::toString(std::move(e)));
         }, *dwarf_context, unit.dwarf_unit);
 
     if (error)
@@ -825,12 +782,12 @@ uint64_t DWARFBlockInputFormat::fetchFromDebugAddr(uint64_t addr_base, uint64_t 
 }
 
 void DWARFBlockInputFormat::parseRanges(
-    uint64_t offset, bool form_rnglistx, const UnitState & unit, const ColumnVector<UInt64>::MutablePtr & col_ranges_start,
+    uint64_t offset, bool form_rnglistx, std::optional<uint64_t> low_pc, const UnitState & unit, const ColumnVector<UInt64>::MutablePtr & col_ranges_start,
     const ColumnVector<UInt64>::MutablePtr & col_ranges_end) const
 {
     llvm::Optional<llvm::object::SectionedAddress> base_addr;
-    if (unit.base_address != UINT64_MAX)
-        base_addr = llvm::object::SectionedAddress{.Address = unit.base_address};
+    if (low_pc.has_value())
+        base_addr = llvm::object::SectionedAddress{.Address = *low_pc};
 
     llvm::DWARFAddressRangesVector ranges;
 
@@ -875,7 +832,7 @@ void DWARFBlockInputFormat::parseRanges(
 
         auto lookup_addr = [&](uint32_t idx) -> llvm::Optional<llvm::object::SectionedAddress>
             {
-                uint64_t addr = fetchFromDebugAddr(unit.debug_addr_base, idx);
+                uint64_t addr = fetchFromDebugAddr(unit.addr_base, idx);
                 return llvm::object::SectionedAddress{.Address = addr};
             };
         ranges = list.getAbsoluteRanges(base_addr, /*AddressByteSize*/ 8, lookup_addr);
@@ -888,7 +845,7 @@ void DWARFBlockInputFormat::parseRanges(
     }
 }
 
-Chunk DWARFBlockInputFormat::read()
+Chunk DWARFBlockInputFormat::generate()
 {
     initializeIfNeeded();
 

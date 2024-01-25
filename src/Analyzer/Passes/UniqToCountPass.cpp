@@ -1,4 +1,4 @@
-#include <Analyzer/Passes/UniqToCountPass.h>
+#include "UniqToCountPass.h"
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -176,7 +176,7 @@ public:
         if (match_subquery_with_distinct() || match_subquery_with_group_by())
         {
             AggregateFunctionProperties properties;
-            auto aggregate_function = AggregateFunctionFactory::instance().get("count", NullsAction::EMPTY, {}, {}, properties);
+            auto aggregate_function = AggregateFunctionFactory::instance().get("count", {}, {}, properties);
 
             function_node->getArguments().getNodes().clear();
             function_node->resolveAsAggregateFunction(std::move(aggregate_function));

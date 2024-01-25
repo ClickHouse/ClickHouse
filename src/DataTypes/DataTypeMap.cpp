@@ -85,7 +85,10 @@ std::string DataTypeMap::doGetName() const
 std::string DataTypeMap::doGetPrettyName(size_t indent) const
 {
     WriteBufferFromOwnString s;
-    s << "Map(" << key_type->getPrettyName(indent) << ", " << value_type->getPrettyName(indent) << ')';
+    s << "Map(\n"
+      << fourSpaceIndent(indent + 1) << key_type->getPrettyName(indent + 1) << ",\n"
+      << fourSpaceIndent(indent + 1) << value_type->getPrettyName(indent + 1) << '\n'
+      << fourSpaceIndent(indent) << ')';
     return s.str();
 }
 

@@ -4,9 +4,9 @@
 #include <Disks/DiskFactory.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
+#include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromEncryptedFile.h>
-#include <IO/ReadBufferFromEmptyFile.h>
 #include <boost/algorithm/hex.hpp>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -324,13 +324,7 @@ ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
 }
 
 
-void DiskEncrypted::copyDirectoryContent(
-    const String & from_dir,
-    const std::shared_ptr<IDisk> & to_disk,
-    const String & to_dir,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook)
+void DiskEncrypted::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
     /// Check if we can copy the file without deciphering.
     if (isSameDiskType(*this, *to_disk))
@@ -346,14 +340,14 @@ void DiskEncrypted::copyDirectoryContent(
                 auto wrapped_from_path = wrappedPath(from_dir);
                 auto to_delegate = to_disk_enc->delegate;
                 auto wrapped_to_path = to_disk_enc->wrappedPath(to_dir);
-                delegate->copyDirectoryContent(wrapped_from_path, to_delegate, wrapped_to_path, read_settings, write_settings, cancellation_hook);
+                delegate->copyDirectoryContent(wrapped_from_path, to_delegate, wrapped_to_path, read_settings, write_settings);
                 return;
             }
         }
     }
 
     /// Copy the file through buffers with deciphering.
-    IDisk::copyDirectoryContent(from_dir, to_disk, to_dir, read_settings, write_settings, cancellation_hook);
+    IDisk::copyDirectoryContent(from_dir, to_disk, to_dir, read_settings, write_settings);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
@@ -374,7 +368,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     {
         /// File is empty, that's a normal case, see DiskEncrypted::truncateFile().
         /// There is no header so we just return `ReadBufferFromString("")`.
-        return std::make_unique<ReadBufferFromEmptyFile>(wrapped_path);
+        return std::make_unique<ReadBufferFromFileDecorator>(std::make_unique<ReadBufferFromString>(std::string_view{}), wrapped_path);
     }
     auto encryption_settings = current_settings.get();
     FileEncryption::Header header = readHeader(*buffer);
@@ -455,8 +449,7 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         ContextPtr context,
-        const DisksMap & map,
-        bool, bool) -> DiskPtr
+        const DisksMap & map) -> DiskPtr
     {
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
         DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);

@@ -14,7 +14,7 @@ ClickHouse предоставляет собственный клиент ком
 $ clickhouse-client
 ClickHouse client version 20.13.1.5273 (official build).
 Connecting to localhost:9000 as user default.
-Connected to ClickHouse server version 20.13.1.
+Connected to ClickHouse server version 20.13.1 revision 54442.
 
 :)
 ```

@@ -4,7 +4,6 @@
 #include <Common/Macros.h>
 #include <Common/ThreadPool.h>
 #include <Common/callOnce.h>
-#include <Disks/IO/IOUringReader.h>
 
 #include <Core/ServerSettings.h>
 
@@ -26,7 +25,6 @@ namespace CurrentMetrics
     extern const Metric BackgroundSchedulePoolSize;
     extern const Metric IOWriterThreads;
     extern const Metric IOWriterThreadsActive;
-    extern const Metric IOWriterThreadsScheduled;
 }
 
 namespace DB
@@ -35,7 +33,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 struct ContextSharedPart : boost::noncopyable
@@ -63,11 +60,6 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_local_fs_reader;
     mutable std::unique_ptr<IAsynchronousReader> synchronous_local_fs_reader;
-
-#if USE_LIBURING
-    mutable OnceFlag io_uring_reader_initialized;
-    mutable std::unique_ptr<IOUringReader> io_uring_reader;
-#endif
 
     mutable OnceFlag threadpool_writer_initialized;
     mutable std::unique_ptr<ThreadPool> threadpool_writer;
@@ -232,28 +224,12 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
     }
 }
 
-#if USE_LIBURING
-IOUringReader & Context::getIOURingReader() const
-{
-    callOnce(shared->io_uring_reader_initialized, [&] {
-        shared->io_uring_reader = std::make_unique<IOUringReader>(512);
-    });
-
-    return *shared->io_uring_reader;
-}
-#endif
-
 std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
 {
     return nullptr;
 }
 
 std::shared_ptr<FilesystemReadPrefetchesLog> Context::getFilesystemReadPrefetchesLog() const
-{
-    return nullptr;
-}
-
-std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
 {
     return nullptr;
 }
@@ -286,7 +262,7 @@ ThreadPool & Context::getThreadPoolWriter() const
         auto queue_size = config.getUInt(".threadpool_writer_queue_size", 1000000);
 
         shared->threadpool_writer = std::make_unique<ThreadPool>(
-            CurrentMetrics::IOWriterThreads, CurrentMetrics::IOWriterThreadsActive, CurrentMetrics::IOWriterThreadsScheduled, pool_size, pool_size, queue_size);
+            CurrentMetrics::IOWriterThreads, CurrentMetrics::IOWriterThreadsActive, pool_size, pool_size, queue_size);
     });
 
     return *shared->threadpool_writer;
@@ -375,11 +351,6 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
         return;
 
     shared->keeper_dispatcher->updateConfiguration(getConfigRef(), getMacros());
-}
-
-std::shared_ptr<zkutil::ZooKeeper> Context::getZooKeeper() const
-{
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot connect to ZooKeeper from Keeper");
 }
 
 }

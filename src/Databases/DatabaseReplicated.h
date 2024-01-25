@@ -68,9 +68,11 @@ public:
 
     void drop(ContextPtr /*context*/) override;
 
-    void beforeLoadingMetadata(ContextMutablePtr context_, LoadingStrictnessLevel mode) override;
+    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
 
-    LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
+    void beforeLoadingMetadata(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
+
+    void startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode) override;
 
     void shutdown() override;
 
@@ -79,7 +81,7 @@ public:
 
     bool shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const override;
 
-    static void dropReplica(DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica, bool throw_if_noop);
+    static void dropReplica(DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica);
 
     std::vector<UInt8> tryGetAreReplicasActive(const ClusterPtr & cluster_) const;
 
@@ -104,11 +106,7 @@ private:
     void checkQueryValid(const ASTPtr & query, ContextPtr query_context) const;
 
     void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr);
-
     std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr);
-
-    std::map<String, String> getConsistentMetadataSnapshotImpl(const ZooKeeperPtr & zookeeper, const FilterByNameFunction & filter_by_table_name,
-                                                               size_t max_retries, UInt32 & max_log_ptr) const;
 
     ASTPtr parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query);
     String readMetadataFile(const String & table_name) const;
@@ -125,8 +123,6 @@ private:
 
     UInt64 getMetadataHash(const String & table_name) const;
     bool checkDigestValid(const ContextPtr & local_context, bool debug_check = true) const TSA_REQUIRES(metadata_mutex);
-
-    void waitDatabaseStarted(bool no_throw) const override;
 
     String zookeeper_path;
     String shard_name;
@@ -154,8 +150,6 @@ private:
     UInt64 tables_metadata_digest TSA_GUARDED_BY(metadata_mutex);
 
     mutable ClusterPtr cluster;
-
-    LoadTaskPtr startup_replicated_database_task;
 };
 
 }

@@ -11,7 +11,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
-#include <Common/formatReadable.h>
 
 #include <atomic>
 #include <future>
@@ -40,56 +39,6 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
 }
 
-namespace
-{
-
-bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request)
-{
-    if (request->getOpNum() == Coordination::OpNum::Create
-        || request->getOpNum() == Coordination::OpNum::CreateIfNotExists
-        || request->getOpNum() == Coordination::OpNum::Set)
-    {
-        return true;
-    }
-    else if (request->getOpNum() == Coordination::OpNum::Multi)
-    {
-        Coordination::ZooKeeperMultiRequest & multi_req = dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*request);
-        Int64 memory_delta = 0;
-        for (const auto & sub_req : multi_req.requests)
-        {
-            auto sub_zk_request = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_req);
-            switch (sub_zk_request->getOpNum())
-            {
-                case Coordination::OpNum::Create:
-                case Coordination::OpNum::CreateIfNotExists:
-                {
-                    Coordination::ZooKeeperCreateRequest & create_req = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
-                    memory_delta += create_req.bytesSize();
-                    break;
-                }
-                case Coordination::OpNum::Set:
-                {
-                    Coordination::ZooKeeperSetRequest & set_req = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*sub_zk_request);
-                    memory_delta += set_req.bytesSize();
-                    break;
-                }
-                case Coordination::OpNum::Remove:
-                {
-                    Coordination::ZooKeeperRemoveRequest & remove_req = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*sub_zk_request);
-                    memory_delta -= remove_req.bytesSize();
-                    break;
-                }
-                default:
-                    break;
-            }
-        }
-        return memory_delta > 0;
-    }
-
-    return false;
-}
-
-}
 
 KeeperDispatcher::KeeperDispatcher()
     : responses_queue(std::numeric_limits<size_t>::max())
@@ -106,8 +55,6 @@ void KeeperDispatcher::requestThread()
     /// Requests from previous iteration. We store them to be able
     /// to send errors to the client.
     KeeperStorage::RequestsForSessions prev_batch;
-
-    const auto & shutdown_called = keeper_context->isShutdownCalled();
 
     while (!shutdown_called)
     {
@@ -131,14 +78,6 @@ void KeeperDispatcher::requestThread()
                 CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequets);
                 if (shutdown_called)
                     break;
-
-                Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
-                if (configuration_and_settings->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
-                {
-                    LOG_WARNING(log, "Processing requests refused because of max_memory_usage_soft_limit {}, the total used memory is {}, request type is {}", ReadableSize(mem_soft_limit), ReadableSize(total_memory_tracker.get()), request.request->getOpNum());
-                    addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
-                    continue;
-                }
 
                 KeeperStorage::RequestsForSessions current_batch;
                 size_t current_batch_bytes_size = 0;
@@ -253,9 +192,6 @@ void KeeperDispatcher::requestThread()
                         /// we will wake up this thread on each commit so we need to run it in loop until the last request of batch is committed
                         while (true)
                         {
-                            if (shutdown_called)
-                                return;
-
                             auto current_last_committed_idx = our_last_committed_log_idx.load(std::memory_order_relaxed);
                             if (current_last_committed_idx >= log_idx)
                                 break;
@@ -288,7 +224,6 @@ void KeeperDispatcher::requestThread()
 void KeeperDispatcher::responseThread()
 {
     setThreadName("KeeperRspT");
-    const auto & shutdown_called = keeper_context->isShutdownCalled();
     while (!shutdown_called)
     {
         KeeperStorage::ResponseForSession response_for_session;
@@ -315,7 +250,6 @@ void KeeperDispatcher::responseThread()
 void KeeperDispatcher::snapshotThread()
 {
     setThreadName("KeeperSnpT");
-    const auto & shutdown_called = keeper_context->isShutdownCalled();
     while (!shutdown_called)
     {
         CreateSnapshotTask task;
@@ -393,7 +327,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     request_info.session_id = session_id;
 
-    if (keeper_context->isShutdownCalled())
+    if (shutdown_called)
         return false;
 
     /// Put close requests without timeouts
@@ -414,17 +348,17 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
 
-    keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
     configuration_and_settings = KeeperConfigurationAndSettings::loadFromConfig(config, standalone_keeper);
-
-    keeper_context->initialize(config, this);
-
     requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings->max_request_queue_size);
+
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
     snapshot_s3.startup(config, macros);
+
+    keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
+    keeper_context->initialize(config, this);
 
     server = std::make_unique<KeeperServer>(
         configuration_and_settings,
@@ -499,13 +433,10 @@ void KeeperDispatcher::shutdown()
     try
     {
         {
-            if (!keeper_context || !keeper_context->setShutdownCalled())
+            if (shutdown_called.exchange(true))
                 return;
 
             LOG_DEBUG(log, "Shutting down storage dispatcher");
-
-            our_last_committed_log_idx = std::numeric_limits<uint64_t>::max();
-            our_last_committed_log_idx.notify_all();
 
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();
@@ -633,7 +564,6 @@ void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCall
 
 void KeeperDispatcher::sessionCleanerTask()
 {
-    const auto & shutdown_called = keeper_context->isShutdownCalled();
     while (true)
     {
         if (shutdown_called)
@@ -684,7 +614,7 @@ void KeeperDispatcher::sessionCleanerTask()
 void KeeperDispatcher::finishSession(int64_t session_id)
 {
     /// shutdown() method will cleanup sessions if needed
-    if (keeper_context->isShutdownCalled())
+    if (shutdown_called)
         return;
 
     {
@@ -795,7 +725,6 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
 
 void KeeperDispatcher::clusterUpdateWithReconfigDisabledThread()
 {
-    const auto & shutdown_called = keeper_context->isShutdownCalled();
     while (!shutdown_called)
     {
         try
@@ -848,34 +777,26 @@ void KeeperDispatcher::clusterUpdateWithReconfigDisabledThread()
 
 void KeeperDispatcher::clusterUpdateThread()
 {
-    using enum KeeperServer::ConfigUpdateState;
-    bool last_command_was_leader_change = false;
-    const auto & shutdown_called = keeper_context->isShutdownCalled();
     while (!shutdown_called)
     {
         ClusterUpdateAction action;
         if (!cluster_update_queue.pop(action))
             return;
 
-        if (const auto res = server->applyConfigUpdate(action, last_command_was_leader_change); res == Accepted)
+        if (server->applyConfigUpdate(action))
             LOG_DEBUG(log, "Processing config update {}: accepted", action);
-        else
+        else // TODO (myrrc) sleep a random amount? sleep less?
         {
-            last_command_was_leader_change = res == WaitBeforeChangingLeader;
-
             (void)cluster_update_queue.pushFront(action);
             LOG_DEBUG(log, "Processing config update {}: declined, backoff", action);
-
-            std::this_thread::sleep_for(last_command_was_leader_change
-                ? configuration_and_settings->coordination_settings->sleep_before_leader_change_ms
-                : 50ms);
+            std::this_thread::sleep_for(50ms);
         }
     }
 }
 
 void KeeperDispatcher::pushClusterUpdates(ClusterUpdateActions && actions)
 {
-    if (keeper_context->isShutdownCalled()) return;
+    if (shutdown_called) return;
     for (auto && action : actions)
     {
         if (!cluster_update_queue.push(std::move(action)))
@@ -917,8 +838,6 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
 
     snapshot_s3.updateS3Configuration(config, macros);
-
-    keeper_context->updateKeeperMemorySoftLimit(config);
 }
 
 void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)

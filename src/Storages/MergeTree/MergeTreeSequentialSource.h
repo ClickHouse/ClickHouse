@@ -8,22 +8,13 @@
 namespace DB
 {
 
-enum MergeTreeSequentialSourceType
-{
-    Mutation,
-    Merge,
-};
-
 /// Create stream for reading single part from MergeTree.
 /// If the part has lightweight delete mask then the deleted rows are filtered out.
 Pipe createMergeTreeSequentialSource(
-    MergeTreeSequentialSourceType type,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
     MergeTreeData::DataPartPtr data_part,
     Names columns_to_read,
-    std::optional<MarkRanges> mark_ranges,
-    bool apply_deleted_mask,
     bool read_with_direct_io,
     bool take_column_types_from_storage,
     bool quiet,
@@ -31,8 +22,7 @@ Pipe createMergeTreeSequentialSource(
 
 class QueryPlan;
 
-void createReadFromPartStep(
-    MergeTreeSequentialSourceType type,
+void createMergeTreeSequentialSource(
     QueryPlan & plan,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,

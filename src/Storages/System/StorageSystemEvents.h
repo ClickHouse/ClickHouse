@@ -15,7 +15,9 @@ class StorageSystemEvents final : public IStorageSystemOneBlock<StorageSystemEve
 public:
     std::string getName() const override { return "SystemEvents"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
+
+    static NamesAndAliases getNamesAndAliases();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

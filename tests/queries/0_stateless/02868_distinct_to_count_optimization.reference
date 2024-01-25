@@ -15,14 +15,14 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    QUERY id: 3, alias: __table1, is_subquery: 1, is_distinct: 1
+    QUERY id: 3, is_subquery: 1, is_distinct: 1
       PROJECTION COLUMNS
         a UInt8
       PROJECTION
         LIST id: 4, nodes: 1
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
       JOIN TREE
-        TABLE id: 6, alias: __table2, table_name: default.test_rewrite_uniq_to_count
+        TABLE id: 6, table_name: default.test_rewrite_uniq_to_count
   SETTINGS allow_experimental_analyzer=1
 2. test distinct with subquery alias
 3
@@ -41,14 +41,14 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    QUERY id: 3, alias: __table1, is_subquery: 1, is_distinct: 1
+    QUERY id: 3, alias: t, is_subquery: 1, is_distinct: 1
       PROJECTION COLUMNS
         a UInt8
       PROJECTION
         LIST id: 4, nodes: 1
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
       JOIN TREE
-        TABLE id: 6, alias: __table2, table_name: default.test_rewrite_uniq_to_count
+        TABLE id: 6, table_name: default.test_rewrite_uniq_to_count
   SETTINGS allow_experimental_analyzer=1
 3. test distinct with compound column name
 3
@@ -67,14 +67,14 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    QUERY id: 3, alias: __table1, is_subquery: 1, is_distinct: 1
+    QUERY id: 3, alias: t, is_subquery: 1, is_distinct: 1
       PROJECTION COLUMNS
         a UInt8
       PROJECTION
         LIST id: 4, nodes: 1
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
       JOIN TREE
-        TABLE id: 6, alias: __table2, table_name: default.test_rewrite_uniq_to_count
+        TABLE id: 6, table_name: default.test_rewrite_uniq_to_count
   SETTINGS allow_experimental_analyzer=1
 4. test distinct with select expression alias
 3
@@ -93,14 +93,14 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    QUERY id: 3, alias: __table1, is_subquery: 1, is_distinct: 1
+    QUERY id: 3, alias: t, is_subquery: 1, is_distinct: 1
       PROJECTION COLUMNS
         alias_of_a UInt8
       PROJECTION
         LIST id: 4, nodes: 1
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
       JOIN TREE
-        TABLE id: 6, alias: __table2, table_name: default.test_rewrite_uniq_to_count
+        TABLE id: 6, table_name: default.test_rewrite_uniq_to_count
   SETTINGS allow_experimental_analyzer=1
 5. test simple group by
 3
@@ -122,16 +122,21 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    QUERY id: 3, alias: __table1, is_subquery: 1
+    QUERY id: 3, is_subquery: 1
       PROJECTION COLUMNS
         a UInt8
+        sum(b) UInt64
       PROJECTION
-        LIST id: 4, nodes: 1
+        LIST id: 4, nodes: 2
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
+          FUNCTION id: 7, function_name: sum, function_type: aggregate, result_type: UInt64
+            ARGUMENTS
+              LIST id: 8, nodes: 1
+                COLUMN id: 9, column_name: b, result_type: UInt8, source_id: 6
       JOIN TREE
-        TABLE id: 6, alias: __table2, table_name: default.test_rewrite_uniq_to_count
+        TABLE id: 6, table_name: default.test_rewrite_uniq_to_count
       GROUP BY
-        LIST id: 7, nodes: 1
+        LIST id: 10, nodes: 1
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
   SETTINGS allow_experimental_analyzer=1
 6. test group by with subquery alias
@@ -154,16 +159,21 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    QUERY id: 3, alias: __table1, is_subquery: 1
+    QUERY id: 3, alias: t, is_subquery: 1
       PROJECTION COLUMNS
         a UInt8
+        sum(b) UInt64
       PROJECTION
-        LIST id: 4, nodes: 1
+        LIST id: 4, nodes: 2
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
+          FUNCTION id: 7, function_name: sum, function_type: aggregate, result_type: UInt64
+            ARGUMENTS
+              LIST id: 8, nodes: 1
+                COLUMN id: 9, column_name: b, result_type: UInt8, source_id: 6
       JOIN TREE
-        TABLE id: 6, alias: __table2, table_name: default.test_rewrite_uniq_to_count
+        TABLE id: 6, table_name: default.test_rewrite_uniq_to_count
       GROUP BY
-        LIST id: 7, nodes: 1
+        LIST id: 10, nodes: 1
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
   SETTINGS allow_experimental_analyzer=1
 7. test group by with compound column name
@@ -186,16 +196,21 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    QUERY id: 3, alias: __table1, is_subquery: 1
+    QUERY id: 3, alias: t, is_subquery: 1
       PROJECTION COLUMNS
         alias_of_a UInt8
+        sum(b) UInt64
       PROJECTION
-        LIST id: 4, nodes: 1
+        LIST id: 4, nodes: 2
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
+          FUNCTION id: 7, function_name: sum, function_type: aggregate, result_type: UInt64
+            ARGUMENTS
+              LIST id: 8, nodes: 1
+                COLUMN id: 9, column_name: b, result_type: UInt8, source_id: 6
       JOIN TREE
-        TABLE id: 6, alias: __table2, table_name: default.test_rewrite_uniq_to_count
+        TABLE id: 6, table_name: default.test_rewrite_uniq_to_count
       GROUP BY
-        LIST id: 7, nodes: 1
+        LIST id: 10, nodes: 1
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
   SETTINGS allow_experimental_analyzer=1
 8. test group by with select expression alias
@@ -218,15 +233,20 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    QUERY id: 3, alias: __table1, is_subquery: 1
+    QUERY id: 3, alias: t, is_subquery: 1
       PROJECTION COLUMNS
         alias_of_a UInt8
+        sum(b) UInt64
       PROJECTION
-        LIST id: 4, nodes: 1
+        LIST id: 4, nodes: 2
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
+          FUNCTION id: 7, function_name: sum, function_type: aggregate, result_type: UInt64
+            ARGUMENTS
+              LIST id: 8, nodes: 1
+                COLUMN id: 9, column_name: b, result_type: UInt8, source_id: 6
       JOIN TREE
-        TABLE id: 6, alias: __table2, table_name: default.test_rewrite_uniq_to_count
+        TABLE id: 6, table_name: default.test_rewrite_uniq_to_count
       GROUP BY
-        LIST id: 7, nodes: 1
+        LIST id: 10, nodes: 1
           COLUMN id: 5, column_name: a, result_type: UInt8, source_id: 6
   SETTINGS allow_experimental_analyzer=1

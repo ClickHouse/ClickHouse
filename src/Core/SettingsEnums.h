@@ -70,16 +70,6 @@ enum class DistributedProductMode
 
 DECLARE_SETTING_ENUM(DistributedProductMode)
 
-/// How the query cache handles queries with non-deterministic functions, e.g. now()
-enum class QueryCacheNondeterministicFunctionHandling
-{
-    Throw,
-    Save,
-    Ignore
-};
-
-DECLARE_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling)
-
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, FormatSettings::DateTimeInputFormat)
 
@@ -133,8 +123,6 @@ enum class DefaultTableEngine
     ReplacingMergeTree,
     ReplicatedMergeTree,
     ReplicatedReplacingMergeTree,
-    SharedMergeTree,
-    SharedReplacingMergeTree,
     Memory,
 };
 
@@ -173,8 +161,6 @@ enum class DistributedDDLOutputMode
     THROW,
     NULL_STATUS_ON_TIMEOUT,
     NEVER_THROW,
-    THROW_ONLY_ACTIVE,
-    NULL_STATUS_ON_TIMEOUT_ONLY_ACTIVE,
 };
 
 DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
@@ -255,14 +241,6 @@ enum class S3QueueAction
 DECLARE_SETTING_ENUM(S3QueueAction)
 
 DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
-
-enum class SchemaInferenceMode
-{
-    DEFAULT,
-    UNION,
-};
-
-DECLARE_SETTING_ENUM(SchemaInferenceMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
 

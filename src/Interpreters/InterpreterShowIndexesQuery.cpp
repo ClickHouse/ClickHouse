@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowIndexesQuery.h>
 
 #include <Common/quoteString.h>
@@ -105,13 +104,5 @@ BlockIO InterpreterShowIndexesQuery::execute()
     return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
-void registerInterpreterShowIndexesQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterShowIndexesQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterShowIndexesQuery", create_fn);
-}
 
 }

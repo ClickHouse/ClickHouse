@@ -67,8 +67,7 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     // This resize is needed for cases such as `over ()` when we don't have a
     // sort node, and the input might have multiple streams. The sort node would
     // have resized it.
-    if (window_description.full_sort_description.empty())
-        pipeline.resize(1);
+    pipeline.resize(1);
 
     pipeline.addSimpleTransform(
         [&](const Block & /*header*/)

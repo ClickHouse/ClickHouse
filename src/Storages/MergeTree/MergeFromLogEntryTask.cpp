@@ -43,8 +43,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
         fmt::join(entry.source_parts, ", "), entry.new_part_name);
 
-    StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
-    int32_t metadata_version = metadata_snapshot->getMetadataVersion();
     const auto storage_settings_ptr = storage.getSettings();
 
     if (storage_settings_ptr->always_fetch_merged_part)
@@ -131,18 +129,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             };
         }
 
-        int32_t part_metadata_version = source_part_or_covering->getMetadataVersion();
-        if (part_metadata_version > metadata_version)
-        {
-            LOG_DEBUG(log, "Source part metadata version {} is newer then the table metadata version {}. ALTER_METADATA is still in progress.",
-                part_metadata_version, metadata_version);
-            return PrepareResult{
-                .prepared_successfully = false,
-                .need_to_check_missing_part_in_fetch = false,
-                .part_log_writer = {}
-            };
-        }
-
         parts.push_back(source_part_or_covering);
     }
 
@@ -190,6 +176,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     /// It will live until the whole task is being destroyed
     table_lock_holder = storage.lockForShare(RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
 
+    StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
+
     auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_format);
     if (future_merged_part->name != entry.new_part_name)
     {
@@ -220,7 +208,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     {
         if (auto disk = reserved_space->getDisk(); disk->supportZeroCopyReplication())
         {
-            if (storage.findReplicaHavingCoveringPart(entry.new_part_name, true))
+            String dummy;
+            if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, true, dummy).empty())
             {
                 LOG_DEBUG(log, "Merge of part {} finished by some other replica, will fetch merged part", entry.new_part_name);
                 /// We found covering part, no checks for missing part.
@@ -270,7 +259,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
                     .part_log_writer = {}
                 };
             }
-            else if (storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false))
+            else if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false, dummy).empty())
             {
                 /// Why this if still needed? We can check for part in zookeeper, don't find it and sleep for any amount of time. During this sleep part will be actually committed from other replica
                 /// and exclusive zero copy lock will be released. We will take the lock and execute merge one more time, while it was possible just to download the part from other replica.
@@ -368,13 +357,6 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
 
             ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
-            Strings files_with_size;
-            for (const auto & file : part->getFilesChecksums())
-            {
-                files_with_size.push_back(fmt::format("{}: {} ({})",
-                    file.first, file.second.file_size, getHexUIntLowercase(file.second.file_hash)));
-            }
-
             LOG_ERROR(log,
                 "{}. Data after merge is not byte-identical to data on another replicas. There could be several reasons:"
                 " 1. Using newer version of compression library after server update."
@@ -386,10 +368,8 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
                 " 7. Manual modification of source data after server startup."
                 " 8. Manual modification of checksums stored in ZooKeeper."
                 " 9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas."
-                " We will download merged part from replica to force byte-identical result."
-                " List of files in local parts:\n{}",
-                getCurrentExceptionMessage(false),
-                fmt::join(files_with_size, "\n"));
+                " We will download merged part from replica to force byte-identical result.",
+                getCurrentExceptionMessage(false));
 
             write_part_log(ExecutionStatus::fromCurrentException("", true));
 

@@ -1004,7 +1004,7 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
     }
 }
 
-/// This optimization is obsolete and will be removed.
+/// This optimisation is obsolete and will be removed.
 /// optimizeReadInOrder covers it.
 size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/)
 {
@@ -1080,7 +1080,10 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
     UInt64 limit = (select_query->hasFiltration() || select_query->groupBy()) ? 0 : InterpreterSelectQuery::getLimitForSorting(*select_query, context);
 
-    auto order_info = order_optimizer->getInputOrder(read_from_merge_tree->getStorageMetadata(), context, limit);
+    auto order_info = order_optimizer->getInputOrder(
+            query_info.projection ? query_info.projection->desc->metadata : read_from_merge_tree->getStorageMetadata(),
+            context,
+            limit);
 
     if (order_info)
     {

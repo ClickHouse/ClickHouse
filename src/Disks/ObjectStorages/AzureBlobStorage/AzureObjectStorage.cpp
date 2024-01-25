@@ -14,12 +14,11 @@
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
-
 namespace CurrentMetrics
 {
     extern const Metric ObjectStorageAzureThreads;
     extern const Metric ObjectStorageAzureThreadsActive;
-    extern const Metric ObjectStorageAzureThreadsScheduled;
+
 }
 
 namespace DB
@@ -46,7 +45,6 @@ public:
         : IObjectStorageIteratorAsync(
             CurrentMetrics::ObjectStorageAzureThreads,
             CurrentMetrics::ObjectStorageAzureThreadsActive,
-            CurrentMetrics::ObjectStorageAzureThreadsScheduled,
             "ListObjectAzure")
         , client(client_)
     {
@@ -98,11 +96,15 @@ AzureObjectStorage::AzureObjectStorage(
     , settings(std::move(settings_))
     , log(&Poco::Logger::get("AzureObjectStorage"))
 {
+    data_source_description.type = DataSourceType::AzureBlobStorage;
+    data_source_description.description = client.get()->GetUrl();
+    data_source_description.is_cached = false;
+    data_source_description.is_encrypted = false;
 }
 
-ObjectStorageKey AzureObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
+std::string AzureObjectStorage::generateBlobNameForPath(const std::string & /* path */)
 {
-    return ObjectStorageKey::createAsRelative(getRandomASCIIString(32));
+    return getRandomASCIIString(32);
 }
 
 bool AzureObjectStorage::exists(const StoredObject & object) const
@@ -318,7 +320,18 @@ void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     auto client_ptr = client.get();
     for (const auto & object : objects)
     {
-        removeObjectIfExists(object);
+        try
+        {
+            auto delete_info = client_ptr->DeleteBlob(object.remote_path);
+        }
+        catch (const Azure::Storage::StorageException & e)
+        {
+            /// If object doesn't exist...
+            if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+                return;
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            throw;
+        }
     }
 
 }

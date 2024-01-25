@@ -12,7 +12,7 @@ class StorageSystemSettingsProfileElements final : public IStorageSystemOneBlock
 {
 public:
     std::string getName() const override { return "SystemSettingsProfileElements"; }
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

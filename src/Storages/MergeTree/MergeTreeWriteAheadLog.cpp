@@ -198,7 +198,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
                 part,
                 metadata_snapshot,
                 block.getNamesAndTypesList(),
-                {}, {},
+                {},
                 CompressionCodecFactory::instance().get("NONE", {}),
                 NO_TRANSACTION_PTR);
 

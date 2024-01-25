@@ -102,35 +102,18 @@ def rabbitmq_setup_teardown():
 # Tests
 
 
-@pytest.mark.parametrize(
-    "secure",
-    [
-        pytest.param(0),
-        pytest.param(1),
-    ],
-)
-def test_rabbitmq_select(rabbitmq_cluster, secure):
-    if secure and instance.is_built_with_thread_sanitizer():
-        pytest.skip(
-            "Data races: see https://github.com/ClickHouse/ClickHouse/issues/56866"
-        )
-
-    port = cluster.rabbitmq_port
-    if secure:
-        port = cluster.rabbitmq_secure_port
-
+def test_rabbitmq_select(rabbitmq_cluster):
     instance.query(
         """
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = '{}:{}',
+            SETTINGS rabbitmq_host_port = '{}:5672',
                      rabbitmq_exchange_name = 'select',
                      rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'JSONEachRow',
-                     rabbitmq_row_delimiter = '\\n',
-                     rabbitmq_secure = {};
+                     rabbitmq_row_delimiter = '\\n';
         """.format(
-            rabbitmq_cluster.rabbitmq_host, port, secure
+            rabbitmq_cluster.rabbitmq_host
         )
     )
 
@@ -3156,7 +3139,7 @@ def test_block_based_formats_1(rabbitmq_cluster):
     )
 
     instance.query(
-        "INSERT INTO test.rabbitmq SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0, output_format_pretty_color=1;"
+        "INSERT INTO test.rabbitmq SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0;"
     )
     insert_messages = []
 
@@ -3459,18 +3442,18 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
                      rabbitmq_row_delimiter = '\\n',
                      rabbitmq_handle_error_mode = 'stream';
 
-
+        
         CREATE TABLE test.errors (error Nullable(String), broken_message Nullable(String))
              ENGINE = MergeTree()
              ORDER BY tuple();
 
         CREATE MATERIALIZED VIEW test.errors_view TO test.errors AS
                 SELECT _error as error, _raw_message as broken_message FROM test.rabbit where not isNull(_error);
-
+                
         CREATE TABLE test.data (key UInt64, value UInt64)
              ENGINE = MergeTree()
              ORDER BY key;
-
+        
         CREATE MATERIALIZED VIEW test.view TO test.data AS
                 SELECT key, value FROM test.rabbit;
         """.format(

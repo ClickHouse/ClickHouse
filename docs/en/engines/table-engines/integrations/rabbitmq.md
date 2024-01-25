@@ -65,7 +65,7 @@ Optional parameters:
 - `rabbitmq_deadletter_exchange` - Specify name for a [dead letter exchange](https://www.rabbitmq.com/dlx.html). You can create another table with this exchange name and collect messages in cases when they are republished to dead letter exchange. By default dead letter exchange is not specified.
 - `rabbitmq_persistent` - If set to 1 (true), in insert query delivery mode will be set to 2 (marks messages as 'persistent'). Default: `0`.
 - `rabbitmq_skip_broken_messages` – RabbitMQ message parser tolerance to schema-incompatible messages per block. If `rabbitmq_skip_broken_messages = N` then the engine skips *N* RabbitMQ messages that cannot be parsed (a message equals a row of data). Default: `0`.
-- `rabbitmq_max_block_size` - Number of row collected before flushing data from RabbitMQ. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
+- `rabbitmq_max_block_size` - Number of row collected before flushing data from RabbitMQ. Default: [max_insert_block_size](../../../operations/settings/settings.md#setting-max_insert_block_size).
 - `rabbitmq_flush_interval_ms` - Timeout for flushing data from RabbitMQ. Default: [stream_flush_interval_ms](../../../operations/settings/settings.md#stream-flush-interval-ms).
 - `rabbitmq_queue_settings_list` - allows to set RabbitMQ settings when creating a queue. Available settings: `x-max-length`, `x-max-length-bytes`, `x-message-ttl`, `x-expires`, `x-priority`, `x-max-priority`, `x-overflow`, `x-dead-letter-exchange`, `x-queue-type`. The `durable` setting is enabled automatically for the queue.
 - `rabbitmq_address` - Address for connection. Use ether this setting or `rabbitmq_host_port`.
@@ -184,19 +184,19 @@ Example:
 
 ## Virtual Columns {#virtual-columns}
 
-- `_exchange_name` - RabbitMQ exchange name. Data type: `String`.
-- `_channel_id` - ChannelID, on which consumer, who received the message, was declared. Data type: `String`.
-- `_delivery_tag` - DeliveryTag of the received message. Scoped per channel. Data type: `UInt64`.
-- `_redelivered` - `redelivered` flag of the message. Data type: `UInt8`.
-- `_message_id` - messageID of the received message; non-empty if was set, when message was published. Data type: `String`.
-- `_timestamp` - timestamp of the received message; non-empty if was set, when message was published. Data type: `UInt64`.
+- `_exchange_name` - RabbitMQ exchange name.
+- `_channel_id` - ChannelID, on which consumer, who received the message, was declared.
+- `_delivery_tag` - DeliveryTag of the received message. Scoped per channel.
+- `_redelivered` - `redelivered` flag of the message.
+- `_message_id` - messageID of the received message; non-empty if was set, when message was published.
+- `_timestamp` - timestamp of the received message; non-empty if was set, when message was published.
 
 Additional virtual columns when `kafka_handle_error_mode='stream'`:
 
-- `_raw_message` - Raw message that couldn't be parsed successfully. Data type: `Nullable(String)`.
-- `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.
+- `_raw_message` - Raw message that couldn't be parsed successfully.
+- `_error` - Exception message happened during failed parsing.
 
-Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always `NULL` when message was parsed successfully.
+Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always empty when message was parsed successfully.
 
 ## Data formats support {#data-formats-support}
 

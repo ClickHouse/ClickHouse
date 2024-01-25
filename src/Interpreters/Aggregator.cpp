@@ -11,9 +11,11 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSparse.h>
 #include <Formats/NativeWriter.h>
+#include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Aggregator.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
@@ -21,6 +23,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Core/ProtocolDefines.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Common/Stopwatch.h>
@@ -34,12 +37,12 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/JSONBuilder.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/scope_guard_safe.h>
 
 #include <Parsers/ASTSelectQuery.h>
 
 #include <Interpreters/AggregationUtils.h>
-
 
 namespace ProfileEvents
 {
@@ -60,7 +63,6 @@ namespace CurrentMetrics
     extern const Metric TemporaryFilesForAggregation;
     extern const Metric AggregatorThreads;
     extern const Metric AggregatorThreadsActive;
-    extern const Metric AggregatorThreadsScheduled;
 }
 
 namespace DB
@@ -162,11 +164,11 @@ public:
             return 0;
 
         SipHash hash;
-        hash.update(select.tables()->getTreeHash(/*ignore_aliases=*/ true));
+        hash.update(select.tables()->getTreeHash());
         if (const auto where = select.where())
-            hash.update(where->getTreeHash(/*ignore_aliases=*/ true));
+            hash.update(where->getTreeHash());
         if (const auto group_by = select.groupBy())
-            hash.update(group_by->getTreeHash(/*ignore_aliases=*/ true));
+            hash.update(group_by->getTreeHash());
         return hash.get64();
     }
 
@@ -976,12 +978,12 @@ void Aggregator::executeOnBlockSmall(
             initDataVariantsWithSizeHint(result, method_chosen, params);
         else
             result.init(method_chosen);
-
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
     }
 
     executeImpl(result, row_begin, row_end, key_columns, aggregate_instructions);
+
     CurrentMemoryTracker::check();
 }
 
@@ -1014,9 +1016,7 @@ void Aggregator::mergeOnBlockSmall(
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
         mergeStreamsImpl(result.aggregates_pool, *result.NAME, result.NAME->data, \
-                         result.without_key, \
-                         result.consecutive_keys_cache_stats, \
-                         /* no_more_keys= */ false, \
+                         result.without_key, /* no_more_keys= */ false, \
                          row_begin, row_end, \
                          aggregate_columns_data, key_columns, result.aggregates_pool);
 
@@ -1040,14 +1040,17 @@ void Aggregator::executeImpl(
 {
     #define M(NAME, IS_TWO_LEVEL) \
         else if (result.type == AggregatedDataVariants::Type::NAME) \
-            executeImpl(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, \
-                        result.consecutive_keys_cache_stats, no_more_keys, all_keys_are_const, overflow_row);
+            executeImpl(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
 
     if (false) {} // NOLINT
     APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
 }
 
+/** It's interesting - if you remove `noinline`, then gcc for some reason will inline this function, and the performance decreases (~ 10%).
+  * (Probably because after the inline of this function, more internal functions no longer be inlined.)
+  * Inline does not make sense, since the inner loop is entirely inside this function.
+  */
 template <typename Method>
 void NO_INLINE Aggregator::executeImpl(
     Method & method,
@@ -1056,44 +1059,12 @@ void NO_INLINE Aggregator::executeImpl(
     size_t row_end,
     ColumnRawPtrs & key_columns,
     AggregateFunctionInstruction * aggregate_instructions,
-    LastElementCacheStats & consecutive_keys_cache_stats,
     bool no_more_keys,
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
-    UInt64 total_rows = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
-    double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / total_rows : 1.0;
-    bool use_cache = cache_hit_rate >= params.min_hit_rate_to_use_consecutive_keys_optimization;
+    typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
 
-    if (use_cache)
-    {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
-        executeImpl(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
-        consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
-    }
-    else
-    {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
-        executeImpl(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
-    }
-}
-
-/** It's interesting - if you remove `noinline`, then gcc for some reason will inline this function, and the performance decreases (~ 10%).
-  * (Probably because after the inline of this function, more internal functions no longer be inlined.)
-  * Inline does not make sense, since the inner loop is entirely inside this function.
-  */
-template <typename Method, typename State>
-void NO_INLINE Aggregator::executeImpl(
-    Method & method,
-    State & state,
-    Arena * aggregates_pool,
-    size_t row_begin,
-    size_t row_end,
-    AggregateFunctionInstruction * aggregate_instructions,
-    bool no_more_keys,
-    bool all_keys_are_const,
-    AggregateDataPtr overflow_row) const
-{
     if (!no_more_keys)
     {
         /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
@@ -1127,10 +1098,10 @@ void NO_INLINE Aggregator::executeImpl(
     }
 }
 
-template <bool no_more_keys, bool use_compiled_functions, bool prefetch, typename Method, typename State>
+template <bool no_more_keys, bool use_compiled_functions, bool prefetch, typename Method>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
-    State & state,
+    typename Method::State & state,
     Arena * aggregates_pool,
     size_t row_begin,
     size_t row_end,
@@ -1150,15 +1121,14 @@ void NO_INLINE Aggregator::executeImplBatch(
         if constexpr (no_more_keys)
             return;
 
-        /// This pointer is unused, but the logic will compare it for nullptr to check if the cell is set.
-        AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
+        /// For all rows.
+        AggregateDataPtr place = aggregates_pool->alloc(0);
         if (all_keys_are_const)
         {
             state.emplaceKey(method.data, 0, *aggregates_pool).setMapped(place);
         }
         else
         {
-            /// For all rows.
             for (size_t i = row_begin; i < row_end; ++i)
             {
                 if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
@@ -1222,23 +1192,21 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// - and plus this will require other changes in the interface.
     std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[all_keys_are_const ? 1 : row_end]);
 
-    size_t key_start, key_end;
+    /// For all rows.
+    size_t start, end;
     /// If all keys are const, key columns contain only 1 row.
     if  (all_keys_are_const)
     {
-        key_start = 0;
-        key_end = 1;
+        start = 0;
+        end = 1;
     }
     else
     {
-        key_start = row_begin;
-        key_end = row_end;
+        start = row_begin;
+        end = row_end;
     }
 
-    state.resetCache();
-
-    /// For all rows.
-    for (size_t i = key_start; i < key_end; ++i)
+    for (size_t i = start; i < end; ++i)
     {
         AggregateDataPtr aggregate_data = nullptr;
 
@@ -1246,7 +1214,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         {
             if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
             {
-                if (i == key_start + prefetching.iterationsToMeasure())
+                if (i == row_begin + prefetching.iterationsToMeasure())
                     prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
 
                 if (i + prefetch_look_ahead < row_end)
@@ -1338,10 +1306,10 @@ void NO_INLINE Aggregator::executeImplBatch(
                 columns_data.emplace_back(getColumnData(inst->batch_arguments[argument_index]));
         }
 
-        if (all_keys_are_const || (!no_more_keys && state.hasOnlyOneValueSinceLastReset()))
+        if (all_keys_are_const)
         {
             auto add_into_aggregate_states_function_single_place = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function_single_place;
-            add_into_aggregate_states_function_single_place(row_begin, row_end, columns_data.data(), places[key_start]);
+            add_into_aggregate_states_function_single_place(row_begin, row_end, columns_data.data(), places[0]);
         }
         else
         {
@@ -1362,10 +1330,24 @@ void NO_INLINE Aggregator::executeImplBatch(
 
         AggregateFunctionInstruction * inst = aggregate_instructions + i;
 
-        if (all_keys_are_const || (!no_more_keys && state.hasOnlyOneValueSinceLastReset()))
-            addBatchSinglePlace(row_begin, row_end, inst, places[key_start] + inst->state_offset, aggregates_pool);
+        if (all_keys_are_const)
+        {
+            if (inst->offsets)
+                inst->batch_that->addBatchSinglePlace(inst->offsets[static_cast<ssize_t>(row_begin) - 1], inst->offsets[row_end - 1], places[0] + inst->state_offset, inst->batch_arguments, aggregates_pool);
+            else if (inst->has_sparse_arguments)
+                inst->batch_that->addBatchSparseSinglePlace(row_begin, row_end, places[0] + inst->state_offset, inst->batch_arguments, aggregates_pool);
+            else
+                inst->batch_that->addBatchSinglePlace(row_begin, row_end, places[0] + inst->state_offset, inst->batch_arguments, aggregates_pool);
+        }
         else
-            addBatch(row_begin, row_end, inst, places.get(), aggregates_pool);
+        {
+            if (inst->offsets)
+                inst->batch_that->addBatchArray(row_begin, row_end, places.get(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
+            else if (inst->has_sparse_arguments)
+                inst->batch_that->addBatchSparse(row_begin, row_end, places.get(), inst->state_offset, inst->batch_arguments, aggregates_pool);
+            else
+                inst->batch_that->addBatch(row_begin, row_end, places.get(), inst->state_offset, inst->batch_arguments, aggregates_pool);
+        }
     }
 }
 
@@ -1429,61 +1411,26 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
                 continue;
 #endif
 
-        addBatchSinglePlace(row_begin, row_end, inst, res + inst->state_offset, arena);
+        if (inst->offsets)
+            inst->batch_that->addBatchSinglePlace(
+                inst->offsets[static_cast<ssize_t>(row_begin) - 1],
+                inst->offsets[row_end - 1],
+                res + inst->state_offset,
+                inst->batch_arguments,
+                arena);
+        else if (inst->has_sparse_arguments)
+            inst->batch_that->addBatchSparseSinglePlace(
+                row_begin, row_end,
+                res + inst->state_offset,
+                inst->batch_arguments,
+                arena);
+        else
+            inst->batch_that->addBatchSinglePlace(
+                row_begin, row_end,
+                res + inst->state_offset,
+                inst->batch_arguments,
+                arena);
     }
-}
-
-void Aggregator::addBatch(
-    size_t row_begin, size_t row_end,
-    AggregateFunctionInstruction * inst,
-    AggregateDataPtr * places,
-    Arena * arena)
-{
-    if (inst->offsets)
-        inst->batch_that->addBatchArray(
-            row_begin, row_end, places,
-            inst->state_offset,
-            inst->batch_arguments,
-            inst->offsets,
-            arena);
-    else if (inst->has_sparse_arguments)
-        inst->batch_that->addBatchSparse(
-            row_begin, row_end, places,
-            inst->state_offset,
-            inst->batch_arguments,
-            arena);
-    else
-        inst->batch_that->addBatch(
-            row_begin, row_end, places,
-            inst->state_offset,
-            inst->batch_arguments,
-            arena);
-}
-
-
-void Aggregator::addBatchSinglePlace(
-    size_t row_begin, size_t row_end,
-    AggregateFunctionInstruction * inst,
-    AggregateDataPtr place,
-    Arena * arena)
-{
-    if (inst->offsets)
-        inst->batch_that->addBatchSinglePlace(
-            inst->offsets[static_cast<ssize_t>(row_begin) - 1],
-            inst->offsets[row_end - 1],
-            place,
-            inst->batch_arguments,
-            arena);
-    else if (inst->has_sparse_arguments)
-        inst->batch_that->addBatchSparseSinglePlace(
-            row_begin, row_end, place,
-            inst->batch_arguments,
-            arena);
-    else
-        inst->batch_that->addBatchSinglePlace(
-            row_begin, row_end, place,
-            inst->batch_arguments,
-            arena);
 }
 
 
@@ -1500,15 +1447,18 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKey(
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
     {
         if (inst->offsets)
-            inst->batch_that->addBatchSinglePlace(
+            inst->batch_that->addBatchSinglePlaceFromInterval(
                 inst->offsets[static_cast<ssize_t>(row_begin) - 1],
                 inst->offsets[row_end - 1],
                 res + inst->state_offset,
+                inst->batch_arguments, data_variants.aggregates_pool);
+        else
+            inst->batch_that->addBatchSinglePlaceFromInterval(
+                row_begin,
+                row_end,
+                res + inst->state_offset,
                 inst->batch_arguments,
                 data_variants.aggregates_pool);
-        else
-            inst->batch_that->addBatchSinglePlace(
-                row_begin, row_end, res + inst->state_offset, inst->batch_arguments, data_variants.aggregates_pool);
     }
 }
 
@@ -1797,8 +1747,8 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
         rows,
         ReadableSize(uncompressed_size),
         ReadableSize(compressed_size),
-        rows ? static_cast<double>(uncompressed_size) / rows : 0.0,
-        rows ? static_cast<double>(compressed_size) / rows : 0.0,
+        static_cast<double>(uncompressed_size) / rows,
+        static_cast<double>(compressed_size) / rows,
         static_cast<double>(uncompressed_size) / compressed_size,
         static_cast<double>(rows) / elapsed_seconds,
         ReadableSize(static_cast<double>(uncompressed_size) / elapsed_seconds),
@@ -2517,7 +2467,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
     std::unique_ptr<ThreadPool> thread_pool;
     if (max_threads > 1 && data_variants.sizeWithoutOverflowRow() > 100000  /// TODO Make a custom threshold.
         && data_variants.isTwoLevel())                      /// TODO Use the shared thread pool with the `merge` function.
-        thread_pool = std::make_unique<ThreadPool>(CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, CurrentMetrics::AggregatorThreadsScheduled, max_threads);
+        thread_pool = std::make_unique<ThreadPool>(CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, max_threads);
 
     if (data_variants.without_key)
         blocks.emplace_back(prepareBlockAndFillWithoutKey(
@@ -2707,7 +2657,7 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
 void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
     ManyAggregatedDataVariants & non_empty_data) const
 {
-    ThreadPool thread_pool{CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, CurrentMetrics::AggregatorThreadsScheduled, params.max_threads};
+    ThreadPool thread_pool{CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, params.max_threads};
 
     AggregatedDataVariantsPtr & res = non_empty_data[0];
 
@@ -2921,17 +2871,20 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedData
     return non_empty_data;
 }
 
-template <bool no_more_keys, typename State, typename Table>
+template <bool no_more_keys, typename Method, typename Table>
 void NO_INLINE Aggregator::mergeStreamsImplCase(
     Arena * aggregates_pool,
-    State & state,
+    Method & method [[maybe_unused]],
     Table & data,
     AggregateDataPtr overflow_row,
     size_t row_begin,
     size_t row_end,
     const AggregateColumnsConstData & aggregate_columns_data,
+    const ColumnRawPtrs & key_columns,
     Arena * arena_for_keys) const
 {
+    typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+
     std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[row_end]);
 
     if (!arena_for_keys)
@@ -2941,7 +2894,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     {
         AggregateDataPtr aggregate_data = nullptr;
 
-        if constexpr (!no_more_keys)
+        if (!no_more_keys)
         {
             auto emplace_result = state.emplaceKey(data, i, *arena_for_keys); // NOLINT
             if (emplace_result.isInserted())
@@ -2987,7 +2940,6 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     Method & method,
     Table & data,
     AggregateDataPtr overflow_row,
-    LastElementCacheStats & consecutive_keys_cache_stats,
     bool no_more_keys,
     Arena * arena_for_keys) const
 {
@@ -2995,17 +2947,15 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     const ColumnRawPtrs & key_columns = params.makeRawKeyColumns(block);
 
     mergeStreamsImpl<Method, Table>(
-        aggregates_pool, method, data, overflow_row, consecutive_keys_cache_stats,
-        no_more_keys, 0, block.rows(), aggregate_columns_data, key_columns, arena_for_keys);
+        aggregates_pool, method, data, overflow_row, no_more_keys, 0, block.rows(), aggregate_columns_data, key_columns, arena_for_keys);
 }
 
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeStreamsImpl(
     Arena * aggregates_pool,
-    Method & method [[maybe_unused]],
+    Method & method,
     Table & data,
     AggregateDataPtr overflow_row,
-    LastElementCacheStats & consecutive_keys_cache_stats,
     bool no_more_keys,
     size_t row_begin,
     size_t row_end,
@@ -3013,30 +2963,12 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     const ColumnRawPtrs & key_columns,
     Arena * arena_for_keys) const
 {
-    UInt64 total_rows = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
-    double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / total_rows : 1.0;
-    bool use_cache = cache_hit_rate >= params.min_hit_rate_to_use_consecutive_keys_optimization;
-
-    if (use_cache)
-    {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
-
-        if (!no_more_keys)
-            mergeStreamsImplCase<false>(aggregates_pool, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
-        else
-            mergeStreamsImplCase<true>(aggregates_pool, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
-
-        consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
-    }
+    if (!no_more_keys)
+        mergeStreamsImplCase<false>(
+            aggregates_pool, method, data, overflow_row, row_begin, row_end, aggregate_columns_data, key_columns, arena_for_keys);
     else
-    {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
-
-        if (!no_more_keys)
-            mergeStreamsImplCase<false>(aggregates_pool, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
-        else
-            mergeStreamsImplCase<true>(aggregates_pool, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
-    }
+        mergeStreamsImplCase<true>(
+            aggregates_pool, method, data, overflow_row, row_begin, row_end, aggregate_columns_data, key_columns, arena_for_keys);
 }
 
 
@@ -3054,8 +2986,6 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
     size_t row_end,
     const AggregateColumnsConstData & aggregate_columns_data) const
 {
-    using namespace CurrentMetrics;
-
     AggregatedDataWithoutKey & res = result.without_key;
     if (!res)
     {
@@ -3064,26 +2994,11 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
         res = place;
     }
 
-    ThreadPool thread_pool{AggregatorThreads, AggregatorThreadsActive, AggregatorThreadsScheduled, params.max_threads};
-
     for (size_t row = row_begin; row < row_end; ++row)
     {
         /// Adding Values
         for (size_t i = 0; i < params.aggregates_size; ++i)
-        {
-            if (aggregate_functions[i]->isParallelizeMergePrepareNeeded())
-            {
-                std::vector<AggregateDataPtr> data_vec{res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row]};
-                aggregate_functions[i]->parallelizeMergePrepare(data_vec, thread_pool);
-            }
-
-            if (aggregate_functions[i]->isAbleToParallelizeMerge())
-                aggregate_functions[i]->merge(
-                    res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row], thread_pool, result.aggregates_pool);
-            else
-                aggregate_functions[i]->merge(
-                    res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row], result.aggregates_pool);
-        }
+            aggregate_functions[i]->merge(res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row], result.aggregates_pool);
     }
 }
 
@@ -3113,7 +3028,7 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
         mergeBlockWithoutKeyStreamsImpl(std::move(block), result);
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
-        mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, result.consecutive_keys_cache_stats, no_more_keys);
+        mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, no_more_keys);
 
     APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
@@ -3216,11 +3131,9 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
             for (Block & block : bucket_to_blocks[bucket])
             {
-                /// Copy to avoid race.
-                auto consecutive_keys_cache_stats_copy = result.consecutive_keys_cache_stats;
             #define M(NAME) \
                 else if (result.type == AggregatedDataVariants::Type::NAME) \
-                    mergeStreamsImpl(std::move(block), aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, consecutive_keys_cache_stats_copy, false);
+                    mergeStreamsImpl(std::move(block), aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, false);
 
                 if (false) {} // NOLINT
                     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -3232,7 +3145,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         std::unique_ptr<ThreadPool> thread_pool;
         if (max_threads > 1 && total_input_rows > 100000)    /// TODO Make a custom threshold.
-            thread_pool = std::make_unique<ThreadPool>(CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, CurrentMetrics::AggregatorThreadsScheduled, max_threads);
+            thread_pool = std::make_unique<ThreadPool>(CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, max_threads);
 
         for (const auto & bucket_blocks : bucket_to_blocks)
         {
@@ -3275,7 +3188,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         #define M(NAME, IS_TWO_LEVEL) \
             else if (result.type == AggregatedDataVariants::Type::NAME) \
-                mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, result.consecutive_keys_cache_stats, no_more_keys);
+                mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, no_more_keys);
 
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
@@ -3353,7 +3266,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
-        mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, nullptr, result.consecutive_keys_cache_stats, false, arena_for_keys.get());
+        mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, nullptr, false, arena_for_keys.get());
 
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M

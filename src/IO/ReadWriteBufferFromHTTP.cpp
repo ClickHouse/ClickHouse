@@ -4,8 +4,8 @@
 
 namespace ProfileEvents
 {
-    extern const Event ReadBufferSeekCancelConnection;
-    extern const Event ReadWriteBufferFromHTTPPreservedSessions;
+extern const Event ReadBufferSeekCancelConnection;
+extern const Event ReadWriteBufferFromHTTPPreservedSessions;
 }
 
 namespace DB
@@ -213,7 +213,7 @@ void ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::getHeadResponse(Poco::Net
         }
         catch (const Poco::Exception & e)
         {
-            if (i == settings.http_max_tries - 1 || e.code() == ErrorCodes::TOO_MANY_REDIRECTS || !isRetriableError(response.getStatus()))
+            if (i == settings.http_max_tries - 1 || !isRetriableError(response.getStatus()))
                 throw;
 
             LOG_ERROR(log, "Failed to make HTTP_HEAD request to {}. Error: {}", uri.toString(), e.displayText());
@@ -251,7 +251,7 @@ ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::ReadWriteBufferFromHTTPBase(
     bool use_external_buffer_,
     bool http_skip_not_found_url_,
     std::optional<HTTPFileInfo> file_info_,
-    ProxyConfiguration proxy_config_)
+    Poco::Net::HTTPClientSession::ProxyConfig proxy_config_)
     : SeekableReadBuffer(nullptr, 0)
     , uri {uri_}
     , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
@@ -514,7 +514,7 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::nextImpl()
                 }
                 else if (initialization_error == InitializeError::RETRYABLE_ERROR)
                 {
-                    LOG_TRACE(
+                    LOG_ERROR(
                         log,
                         "HTTP request to `{}` failed at try {}/{} with bytes read: {}/{}. "
                         "(Current backoff wait is {}/{} ms)",
@@ -541,8 +541,8 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::nextImpl()
         }
         catch (const Poco::Exception & e)
         {
-            /// Too many open files or redirects - non-retryable.
-            if (e.code() == POCO_EMFILE || e.code() == ErrorCodes::TOO_MANY_REDIRECTS)
+            /// Too many open files - non-retryable.
+            if (e.code() == POCO_EMFILE)
                 throw;
 
             /** Retry request unconditionally if nothing has been read yet.
@@ -808,11 +808,6 @@ std::optional<time_t> ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::tryGetLa
 template <typename UpdatableSessionPtr>
 HTTPFileInfo ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::getFileInfo()
 {
-    /// May be disabled in case the user knows in advance that the server doesn't support HEAD requests.
-    /// Allows to avoid making unnecessary requests in such cases.
-    if (!settings.http_make_head_request)
-        return HTTPFileInfo{};
-
     Poco::Net::HTTPResponse response;
     try
     {
@@ -869,7 +864,7 @@ HTTPFileInfo ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::parseFileInfo(con
 
 }
 
-SessionFactory::SessionFactory(const ConnectionTimeouts & timeouts_, ProxyConfiguration proxy_config_)
+SessionFactory::SessionFactory(const ConnectionTimeouts & timeouts_, Poco::Net::HTTPClientSession::ProxyConfig proxy_config_)
     : timeouts(timeouts_), proxy_config(proxy_config_) {}
 
 SessionFactory::SessionType SessionFactory::buildNewSession(const Poco::URI & uri)
@@ -892,7 +887,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     bool use_external_buffer_,
     bool skip_not_found_url_,
     std::optional<HTTPFileInfo> file_info_,
-    ProxyConfiguration proxy_config_)
+    Poco::Net::HTTPClientSession::ProxyConfig proxy_config_)
     : Parent(
         std::make_shared<SessionType>(uri_, max_redirects, std::make_shared<SessionFactory>(timeouts, proxy_config_)),
         uri_,
@@ -925,12 +920,13 @@ PooledReadWriteBufferFromHTTP::PooledReadWriteBufferFromHTTP(
     Poco::URI uri_,
     const std::string & method_,
     OutStreamCallback out_stream_callback_,
+    const ConnectionTimeouts & timeouts_,
     const Poco::Net::HTTPBasicCredentials & credentials_,
     size_t buffer_size_,
     const UInt64 max_redirects,
-    PooledSessionFactoryPtr session_factory)
+    size_t max_connections_per_endpoint)
     : Parent(
-        std::make_shared<SessionType>(uri_, max_redirects, session_factory),
+        std::make_shared<SessionType>(uri_, max_redirects, std::make_shared<PooledSessionFactory>(timeouts_, max_connections_per_endpoint)),
         uri_,
         credentials_,
         method_,

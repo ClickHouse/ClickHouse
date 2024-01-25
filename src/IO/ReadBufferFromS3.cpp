@@ -6,7 +6,7 @@
 
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromS3.h>
-#include <Common/Scheduler/ResourceGuard.h>
+#include <IO/ResourceGuard.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Requests.h>
 
@@ -167,9 +167,9 @@ bool ReadBufferFromS3::nextImpl()
     }
 
     size_t sleep_time_with_backoff_milliseconds = 100;
-    for (size_t attempt = 1; !next_result; ++attempt)
+    for (size_t attempt = 0; !next_result; ++attempt)
     {
-        bool last_attempt = attempt >= request_settings.max_single_read_retries;
+        bool last_attempt = attempt + 1 >= request_settings.max_single_read_retries;
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3Microseconds);
 
@@ -177,7 +177,7 @@ bool ReadBufferFromS3::nextImpl()
         {
             if (!impl)
             {
-                impl = initialize(attempt);
+                impl = initialize();
 
                 if (use_external_buffer)
                 {
@@ -196,7 +196,7 @@ bool ReadBufferFromS3::nextImpl()
             next_result = impl->next();
             break;
         }
-        catch (Poco::Exception & e)
+        catch (Exception & e)
         {
             if (!processException(e, getPosition(), attempt) || last_attempt)
                 throw;
@@ -232,9 +232,9 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
 {
     size_t initial_n = n;
     size_t sleep_time_with_backoff_milliseconds = 100;
-    for (size_t attempt = 1; n > 0; ++attempt)
+    for (size_t attempt = 0; n > 0; ++attempt)
     {
-        bool last_attempt = attempt >= request_settings.max_single_read_retries;
+        bool last_attempt = attempt + 1 >= request_settings.max_single_read_retries;
         size_t bytes_copied = 0;
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3Microseconds);
@@ -266,7 +266,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
 
         try
         {
-            result = sendRequest(attempt, range_begin, range_begin + n - 1);
+            result = sendRequest(range_begin, range_begin + n - 1);
             std::istream & istr = result->GetBody();
 
             copyFromIStreamWithProgressCallback(istr, to, n, progress_callback, &bytes_copied);
@@ -304,8 +304,8 @@ bool ReadBufferFromS3::processException(Poco::Exception & e, size_t read_offset,
     LOG_DEBUG(
         log,
         "Caught exception while reading S3 object. Bucket: {}, Key: {}, Version: {}, Offset: {}, "
-        "Attempt: {}/{}, Message: {}",
-        bucket, key, version_id.empty() ? "Latest" : version_id, read_offset, attempt, request_settings.max_single_read_retries, e.message());
+        "Attempt: {}, Message: {}",
+        bucket, key, version_id.empty() ? "Latest" : version_id, read_offset, attempt, e.message());
 
 
     if (auto * s3_exception = dynamic_cast<S3Exception *>(&e))
@@ -463,7 +463,7 @@ ReadBufferFromS3::~ReadBufferFromS3()
     }
 }
 
-std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize(size_t attempt)
+std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
     resetSessionIfNeeded(readAllRangeSuccessfully(), read_result);
     read_all_range_successfully = false;
@@ -475,21 +475,19 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize(size_t attempt)
     if (read_until_position && offset >= read_until_position)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
 
-    read_result = sendRequest(attempt, offset, read_until_position ? std::make_optional(read_until_position - 1) : std::nullopt);
+    read_result = sendRequest(offset, read_until_position ? std::make_optional(read_until_position - 1) : std::nullopt);
 
     size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_buffer_size;
     return std::make_unique<ReadBufferFromIStream>(read_result->GetBody(), buffer_size);
 }
 
-Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const
+Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t range_begin, std::optional<size_t> range_end_incl) const
 {
     S3::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
     if (!version_id.empty())
         req.SetVersionId(version_id);
-
-    req.SetAdditionalCustomHeaderValue("clickhouse-request", fmt::format("attempt={}", attempt));
 
     if (range_end_incl)
     {
@@ -515,9 +513,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     // We do not know in advance how many bytes we are going to consume, to avoid blocking estimated it from below
     constexpr ResourceCost estimated_cost = 1;
     ResourceGuard rlock(read_settings.resource_link, estimated_cost);
-
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
-
     rlock.unlock();
 
     if (outcome.IsSuccess())

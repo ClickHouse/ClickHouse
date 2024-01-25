@@ -10,7 +10,7 @@ A set of queries that allow changing the table structure.
 Syntax:
 
 ``` sql
-ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
 ```
 
 In the query, specify a list of one or more comma-separated actions.
@@ -23,11 +23,10 @@ The following actions are supported:
 - [RENAME COLUMN](#rename-column) — Renames an existing column.
 - [CLEAR COLUMN](#clear-column) — Resets column values.
 - [COMMENT COLUMN](#comment-column) — Adds a text comment to the column.
-- [MODIFY COLUMN](#modify-column) — Changes column’s type, default expression, TTL, and column settings.
+- [MODIFY COLUMN](#modify-column) — Changes column’s type, default expression and TTL.
 - [MODIFY COLUMN REMOVE](#modify-column-remove) — Removes one of the column properties.
-- [MODIFY COLUMN MODIFY SETTING](#modify-column-modify-setting) - Changes column settings.
-- [MODIFY COLUMN RESET SETTING](#modify-column-reset-setting) - Reset column settings.
 - [MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
+
 These actions are described in detail below.
 
 ## ADD COLUMN
@@ -76,7 +75,7 @@ Deletes the column with the name `name`. If the `IF EXISTS` clause is specified,
 
 Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
 
-:::tip
+:::tip    
 You can’t delete a column if it is referenced by [materialized view](/docs/en/sql-reference/statements/create/view.md/#materialized). Otherwise, it returns an error.
 :::
 
@@ -209,7 +208,7 @@ The `ALTER` query for changing columns is replicated. The instructions are saved
 
 ## MODIFY COLUMN REMOVE
 
-Removes one of the column properties: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`, `SETTING`.
+Removes one of the column properties: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`.
 
 Syntax:
 
@@ -228,43 +227,6 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 **See Also**
 
 - [REMOVE TTL](ttl.md).
-
-
-## MODIFY COLUMN MODIFY SETTING
-
-Modify a column setting.
-
-Syntax:
-
-```sql
-ALTER TABLE table_name MODIFY COLUMN MODIFY SETTING name=value,...;
-```
-
-**Example**
-
-Modify column's `max_compress_block_size` to `1MB`:
-
-```sql
-ALTER TABLE table_name MODIFY COLUMN MODIFY SETTING max_compress_block_size = 1048576;
-```
-
-## MODIFY COLUMN RESET SETTING
-
-Reset a column setting, also removes the setting declaration in the column expression of the table's CREATE query.
-
-Syntax:
-
-```sql
-ALTER TABLE table_name MODIFY COLUMN RESET SETTING name,...;
-```
-
-**Example**
-
-Remove column setting `max_compress_block_size` to `1MB`:
-
-```sql
-ALTER TABLE table_name MODIFY COLUMN REMOVE SETTING max_compress_block_size;
-```
 
 ## MATERIALIZE COLUMN
 

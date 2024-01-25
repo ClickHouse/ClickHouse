@@ -91,7 +91,6 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sinks/EmptySink.h>
@@ -135,7 +134,6 @@ namespace CurrentMetrics
 {
     extern const Metric StorageDistributedThreads;
     extern const Metric StorageDistributedThreadsActive;
-    extern const Metric StorageDistributedThreadsScheduled;
 }
 
 namespace DB
@@ -429,10 +427,15 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     size_t nodes = getClusterQueriedNodes(settings, cluster);
 
-    query_info.cluster = cluster;
-
-    if (!local_context->canUseParallelReplicasCustomKey(*cluster))
+    if (query_info.use_custom_key)
     {
+        LOG_INFO(log, "Single shard cluster used with custom_key, transforming replicas into virtual shards");
+        query_info.cluster = cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
+    }
+    else
+    {
+        query_info.cluster = cluster;
+
         if (nodes > 1 && settings.optimize_skip_unused_shards)
         {
             /// Always calculate optimized cluster here, to avoid conditions during read()
@@ -528,6 +531,9 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
         default_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     const auto & query_node = query_info.query_tree->as<const QueryNode &>();
+
+    // std::cerr << query_node.dumpTree() << std::endl;
+    // std::cerr << query_info.table_expression->dumpTree() << std::endl;
 
     auto expr_contains_sharding_key = [&](const ListNode & exprs) -> bool
     {
@@ -875,42 +881,36 @@ void StorageDistributed::read(
             storage_snapshot,
             processed_stage);
 
-    const auto & settings = local_context->getSettingsRef();
+    auto settings = local_context->getSettingsRef();
 
     ClusterProxy::AdditionalShardFilterGenerator additional_shard_filter_generator;
-    if (local_context->canUseParallelReplicasCustomKey(*query_info.getCluster()))
+    if (query_info.use_custom_key)
     {
         if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *local_context))
         {
+            if (query_info.getCluster()->getShardCount() == 1)
+            {
+                // we are reading from single shard with multiple replicas but didn't transform replicas
+                // into virtual shards with custom_key set
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Replicas weren't transformed into virtual shards");
+            }
+
             additional_shard_filter_generator =
-                [my_custom_key_ast = std::move(custom_key_ast),
-                 column_description = this->getInMemoryMetadataPtr()->columns,
-                 custom_key_type = settings.parallel_replicas_custom_key_filter_type.value,
-                 context = local_context,
-                 replica_count = query_info.getCluster()->getShardsInfo().front().per_replica_pools.size()](uint64_t replica_num) -> ASTPtr
+                [&, my_custom_key_ast = std::move(custom_key_ast), shard_count = query_info.cluster->getShardCount()](uint64_t shard_num) -> ASTPtr
             {
                 return getCustomKeyFilterForParallelReplica(
-                    replica_count, replica_num - 1, my_custom_key_ast, custom_key_type, column_description, context);
+                    shard_count, shard_num - 1, my_custom_key_ast, settings.parallel_replicas_custom_key_filter_type, *this, local_context);
             };
         }
     }
 
     ClusterProxy::executeQuery(
-        query_plan,
-        header,
-        processed_stage,
-        main_table,
-        remote_table_function_ptr,
-        select_stream_factory,
-        log,
-        modified_query_ast,
-        local_context,
-        query_info,
-        sharding_key_expr,
-        sharding_key_column_name,
-        query_info.cluster,
-        distributed_settings,
-        additional_shard_filter_generator);
+        query_plan, header, processed_stage,
+        main_table, remote_table_function_ptr,
+        select_stream_factory, log, modified_query_ast,
+        local_context, query_info,
+        sharding_key_expr, sharding_key_column_name,
+        query_info.cluster, additional_shard_filter_generator);
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
@@ -1038,7 +1038,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         else
         {
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
-            auto connections = shard_info.pool->getMany(timeouts, settings, PoolMode::GET_ONE);
+            auto connections = shard_info.pool->getMany(timeouts, &settings, PoolMode::GET_ONE);
             if (connections.empty() || connections.front().isNull())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection for shard {}",
                     shard_info.shard_num);
@@ -1056,67 +1056,15 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     return pipeline;
 }
 
-static ActionsDAGPtr getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
-{
-    QueryPlan plan;
-    SelectQueryOptions options;
-    options.only_analyze = true;
-    if (context->getSettingsRef().allow_experimental_analyzer)
-    {
-        InterpreterSelectQueryAnalyzer interpreter(ast, context, options);
-        plan = std::move(interpreter).extractQueryPlan();
-    }
-    else
-    {
-        InterpreterSelectWithUnionQuery interpreter(ast, context, options);
-        interpreter.buildQueryPlan(plan);
-    }
-
-    plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
-
-    std::stack<QueryPlan::Node *> nodes;
-    nodes.push(plan.getRootNode());
-
-    SourceStepWithFilter * source = nullptr;
-
-    while (!nodes.empty())
-    {
-        const auto * node = nodes.top();
-        nodes.pop();
-
-        if (auto * with_filter = dynamic_cast<SourceStepWithFilter *>(node->step.get()))
-        {
-            if (source)
-            {
-                WriteBufferFromOwnString buf;
-                plan.explainPlan(buf, {});
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Found multiple source steps for query\n{}\nPlan\n{}",
-                    queryToString(ast), buf.str());
-            }
-
-            source = with_filter;
-        }
-    }
-
-    if (!source)
-        return nullptr;
-
-    return ActionsDAG::buildFilterActionsDAG(source->getFilterNodes().nodes, {}, context);
-}
-
 
 std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
-
-    auto filter = getFilterFromQuery(query.select, local_context);
-    const ActionsDAG::Node * predicate = nullptr;
-    if (filter)
-        predicate = filter->getOutputs().at(0);
-
+    auto & select = query.select->as<ASTSelectWithUnionQuery &>();
     /// Select query is needed for pruining on virtual columns
-    auto extension = src_storage_cluster.getTaskIteratorExtension(predicate, local_context);
+    auto extension = src_storage_cluster.getTaskIteratorExtension(
+        select.list_of_selects->children.at(0)->as<ASTSelectQuery>()->clone(),
+        local_context);
 
     auto dst_cluster = getCluster();
 
@@ -1140,20 +1088,22 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
 
-    const auto & current_settings = query_context->getSettingsRef();
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
-
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
-    for (const auto & replicas : getCluster()->getShardsInfo())
+    for (const auto & replicas : getCluster()->getShardsAddresses())
     {
-        /// Skip unavailable hosts if necessary
-        auto try_results = replicas.pool->getMany(timeouts, current_settings, PoolMode::GET_MANY, /*async_callback*/ {}, /*skip_unavailable_endpoints*/ true);
-
         /// There will be only one replica, because we consider each replica as a shard
-        for (const auto & try_result : try_results)
+        for (const auto & node : replicas)
         {
+            auto connection = std::make_shared<Connection>(
+                node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
+                node.user, node.password, ssh::SSHKey(), node.quota_key, node.cluster, node.cluster_secret,
+                "ParallelInsertSelectInititiator",
+                node.compression,
+                node.secure
+            );
+
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                std::vector<IConnectionPool::Entry>{try_result},
+                connection,
                 new_query_str,
                 Block{},
                 query_context,
@@ -1267,7 +1217,7 @@ void StorageDistributed::initializeFromDisk()
     const auto & disks = data_volume->getDisks();
 
     /// Make initialization for large number of disks parallel.
-    ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, disks.size());
+    ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, disks.size());
 
     for (const DiskPtr & disk : disks)
     {
@@ -1298,7 +1248,7 @@ void StorageDistributed::initializeFromDisk()
 }
 
 
-void StorageDistributed::shutdown(bool)
+void StorageDistributed::shutdown()
 {
     async_insert_blocker.cancelForever();
 
@@ -1319,7 +1269,7 @@ void StorageDistributed::drop()
     // And second time shutdown() should be fast, since none of
     // DirectoryMonitor should not do anything, because ActionBlocker is
     // canceled (in shutdown()).
-    shutdown(true);
+    shutdown();
 
     // Distributed table without sharding_key does not allows INSERTs
     if (relative_data_path.empty())
@@ -1338,6 +1288,8 @@ void StorageDistributed::drop()
 
         disk->removeRecursive(relative_data_path);
     }
+
+    LOG_DEBUG(log, "Removed");
 }
 
 Strings StorageDistributed::getDataPaths() const
@@ -1364,6 +1316,8 @@ void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, Co
         it->second.directory_queue->shutdownAndDropAllData();
         it = cluster_nodes_data.erase(it);
     }
+
+    LOG_DEBUG(log, "Removed");
 }
 
 StoragePolicyPtr StorageDistributed::getStoragePolicy() const
@@ -1414,13 +1368,9 @@ DistributedAsyncInsertDirectoryQueue & StorageDistributed::getDirectoryQueue(con
 
     std::lock_guard lock(cluster_nodes_mutex);
     auto & node_data = cluster_nodes_data[key];
-    /// If the node changes, you need to recreate the DistributedAsyncInsertDirectoryQueue
-    if (!node_data.directory_queue
-        || (node_data.clusters_version < getContext()->getClustersVersion() && node_data.addresses != parseAddresses(name)))
+    if (!node_data.directory_queue)
     {
-        node_data.addresses = parseAddresses(name);
-        node_data.clusters_version = getContext()->getClustersVersion();
-        node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(node_data.addresses, *this);
+        node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(name, *this);
         node_data.directory_queue = std::make_unique<DistributedAsyncInsertDirectoryQueue>(
             *this, disk, relative_data_path + name,
             node_data.connection_pool,
@@ -1438,53 +1388,6 @@ std::vector<DistributedAsyncInsertDirectoryQueue::Status> StorageDistributed::ge
     for (const auto & node : cluster_nodes_data)
         statuses.push_back(node.second.directory_queue->getStatus());
     return statuses;
-}
-
-Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) const
-{
-    Cluster::Addresses addresses;
-
-    const auto & cluster = getCluster();
-    const auto & shards_info = cluster->getShardsInfo();
-    const auto & shards_addresses = cluster->getShardsAddresses();
-
-    for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
-    {
-        const std::string & dirname = boost::copy_range<std::string>(*it);
-        Cluster::Address address = Cluster::Address::fromFullString(dirname);
-
-        /// Check new format shard{shard_index}_replica{replica_index}
-        /// (shard_index and replica_index starts from 1).
-        if (address.shard_index)
-        {
-            if (address.shard_index > shards_info.size())
-            {
-                LOG_ERROR(log, "No shard with shard_index={} ({})", address.shard_index, name);
-                continue;
-            }
-
-            const auto & replicas_addresses = shards_addresses[address.shard_index - 1];
-            size_t replicas = replicas_addresses.size();
-
-            if (dirname.ends_with("_all_replicas"))
-            {
-                for (const auto & replica_address : replicas_addresses)
-                    addresses.push_back(replica_address);
-                continue;
-            }
-
-            if (address.replica_index > replicas)
-            {
-                LOG_ERROR(log, "No shard with replica_index={} ({})", address.replica_index, name);
-                continue;
-            }
-
-            addresses.push_back(replicas_addresses[address.replica_index - 1]);
-        }
-        else
-            addresses.push_back(address);
-    }
-    return addresses;
 }
 
 std::optional<UInt64> StorageDistributed::totalBytes(const Settings &) const
@@ -1972,19 +1875,4 @@ void registerStorageDistributed(StorageFactory & factory)
     });
 }
 
-bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)
-{
-    if (!data_volume)
-        return true;
-
-    for (auto & disk : data_volume->getDisks())
-    {
-        if (new_added_disks.contains(disk->getName()))
-        {
-            initializeDirectoryQueuesForDisk(disk);
-        }
-    }
-
-    return true;
-}
 }

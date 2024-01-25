@@ -7,8 +7,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
-#include <Interpreters/ProcessList.h>
-
 #include <base/hex.h>
 
 
@@ -91,8 +89,6 @@ String BackupFileInfo::describe() const
     result += fmt::format("data_file_name: {};\n", data_file_name);
     result += fmt::format("data_file_index: {};\n", data_file_index);
     result += fmt::format("encrypted_by_disk: {};\n", encrypted_by_disk);
-    if (!reference_target.empty())
-        result += fmt::format("reference_target: {};\n", reference_target);
     return result;
 }
 
@@ -108,14 +104,6 @@ BackupFileInfo buildFileInfoForBackupEntry(
 
     BackupFileInfo info;
     info.file_name = adjusted_path;
-
-    /// If it's a "reference" just set the target to a concrete file
-    if (backup_entry->isReference())
-    {
-        info.reference_target = removeLeadingSlash(backup_entry->getReferenceTarget());
-        return info;
-    }
-
     info.size = backup_entry->getSize();
     info.encrypted_by_disk = backup_entry->isEncryptedByDisk();
 
@@ -205,7 +193,7 @@ BackupFileInfo buildFileInfoForBackupEntry(
     return info;
 }
 
-BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
+BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool)
 {
     BackupFileInfos infos;
     infos.resize(backup_entries.size());
@@ -227,13 +215,14 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
             ++num_active_jobs;
         }
 
-        auto job = [&mutex, &num_active_jobs, &event, &exception, &infos, &backup_entries, &read_settings, &base_backup, &thread_group, &process_list_element, i, log]()
+        auto job = [&mutex, &num_active_jobs, &event, &exception, &infos, &backup_entries, &read_settings, &base_backup, &thread_group, i, log](bool async)
         {
             SCOPE_EXIT_SAFE({
                 std::lock_guard lock{mutex};
                 if (!--num_active_jobs)
                     event.notify_all();
-                CurrentThread::detachFromGroupIfNotDetached();
+                if (async)
+                    CurrentThread::detachFromGroupIfNotDetached();
             });
 
             try
@@ -241,19 +230,17 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
                 const auto & name = backup_entries[i].first;
                 const auto & entry = backup_entries[i].second;
 
-                if (thread_group)
+                if (async && thread_group)
                     CurrentThread::attachToGroup(thread_group);
 
-                setThreadName("BackupWorker");
+                if (async)
+                    setThreadName("BackupWorker");
 
                 {
                     std::lock_guard lock{mutex};
                     if (exception)
                         return;
                 }
-
-                if (process_list_element)
-                    process_list_element->checkTimeLimit();
 
                 infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
             }
@@ -265,7 +252,8 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
             }
         };
 
-        thread_pool.scheduleOrThrowOnError(job);
+        if (!thread_pool.trySchedule([job] { job(true); }))
+            job(false);
     }
 
     {

@@ -56,13 +56,8 @@ struct ProtocolServerMetrics
   */
 class AsynchronousMetrics
 {
-protected:
-    using Duration = std::chrono::seconds;
-    using TimePoint = std::chrono::system_clock::time_point;
-
 public:
     using ProtocolServerMetricsFunc = std::function<std::vector<ProtocolServerMetrics>()>;
-
     AsynchronousMetrics(
         int update_period_seconds,
         const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
@@ -74,66 +69,62 @@ public:
 
     void stop();
 
-    void update(TimePoint update_time, bool force_update = false);
-
     /// Returns copy of all values.
     AsynchronousMetricValues getValues() const;
 
 protected:
+    using Duration = std::chrono::seconds;
+    using TimePoint = std::chrono::system_clock::time_point;
+
     const Duration update_period;
+
+    /// Some values are incremental and we have to calculate the difference.
+    /// On first run we will only collect the values to subtract later.
+    bool first_run = true;
+    TimePoint previous_update_time;
 
     Poco::Logger * log;
 private:
-    virtual void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) = 0;
+    virtual void updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time) = 0;
     virtual void logImpl(AsynchronousMetricValues &) {}
 
     ProtocolServerMetricsFunc protocol_server_metrics_func;
 
-    std::unique_ptr<ThreadFromGlobalPool> thread;
-
-    mutable std::mutex thread_mutex;
+    mutable std::mutex mutex;
     std::condition_variable wait_cond;
-    bool quit TSA_GUARDED_BY(thread_mutex) = false;
-
-    mutable std::mutex data_mutex;
-
-    /// Some values are incremental and we have to calculate the difference.
-    /// On first run we will only collect the values to subtract later.
-    bool first_run TSA_GUARDED_BY(data_mutex) = true;
-    TimePoint previous_update_time TSA_GUARDED_BY(data_mutex);
-
-    AsynchronousMetricValues values TSA_GUARDED_BY(data_mutex);
+    bool quit {false};
+    AsynchronousMetricValues values;
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
-    MemoryStatisticsOS memory_stat TSA_GUARDED_BY(data_mutex);
+    MemoryStatisticsOS memory_stat;
 #endif
 
 #if defined(OS_LINUX)
-    std::optional<ReadBufferFromFilePRead> meminfo TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> loadavg TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> proc_stat TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> cpuinfo TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> file_nr TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> uptime TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> net_dev TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> meminfo;
+    std::optional<ReadBufferFromFilePRead> loadavg;
+    std::optional<ReadBufferFromFilePRead> proc_stat;
+    std::optional<ReadBufferFromFilePRead> cpuinfo;
+    std::optional<ReadBufferFromFilePRead> file_nr;
+    std::optional<ReadBufferFromFilePRead> uptime;
+    std::optional<ReadBufferFromFilePRead> net_dev;
 
-    std::optional<ReadBufferFromFilePRead> cgroupmem_limit_in_bytes TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> cgroupmem_usage_in_bytes TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_period TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_quota TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> cgroupcpu_max TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> cgroupmem_limit_in_bytes;
+    std::optional<ReadBufferFromFilePRead> cgroupmem_usage_in_bytes;
+    std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_period;
+    std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_quota;
+    std::optional<ReadBufferFromFilePRead> cgroupcpu_max;
 
-    std::vector<std::unique_ptr<ReadBufferFromFilePRead>> thermal TSA_GUARDED_BY(data_mutex);
+    std::vector<std::unique_ptr<ReadBufferFromFilePRead>> thermal;
 
     std::unordered_map<String /* device name */,
         std::unordered_map<String /* label name */,
-            std::unique_ptr<ReadBufferFromFilePRead>>> hwmon_devices TSA_GUARDED_BY(data_mutex);
+            std::unique_ptr<ReadBufferFromFilePRead>>> hwmon_devices;
 
     std::vector<std::pair<
         std::unique_ptr<ReadBufferFromFilePRead> /* correctable errors */,
-        std::unique_ptr<ReadBufferFromFilePRead> /* uncorrectable errors */>> edac TSA_GUARDED_BY(data_mutex);
+        std::unique_ptr<ReadBufferFromFilePRead> /* uncorrectable errors */>> edac;
 
-    std::unordered_map<String /* device name */, std::unique_ptr<ReadBufferFromFilePRead>> block_devs TSA_GUARDED_BY(data_mutex);
+    std::unordered_map<String /* device name */, std::unique_ptr<ReadBufferFromFilePRead>> block_devs;
 
     /// TODO: socket statistics.
 
@@ -163,9 +154,9 @@ private:
         ProcStatValuesOther operator-(const ProcStatValuesOther & other) const;
     };
 
-    ProcStatValuesCPU proc_stat_values_all_cpus TSA_GUARDED_BY(data_mutex) {};
-    ProcStatValuesOther proc_stat_values_other TSA_GUARDED_BY(data_mutex) {};
-    std::vector<ProcStatValuesCPU> proc_stat_values_per_cpu TSA_GUARDED_BY(data_mutex);
+    ProcStatValuesCPU proc_stat_values_all_cpus{};
+    ProcStatValuesOther proc_stat_values_other{};
+    std::vector<ProcStatValuesCPU> proc_stat_values_per_cpu;
 
     /// https://www.kernel.org/doc/Documentation/block/stat.txt
     struct BlockDeviceStatValues
@@ -190,7 +181,7 @@ private:
         BlockDeviceStatValues operator-(const BlockDeviceStatValues & other) const;
     };
 
-    std::unordered_map<String /* device name */, BlockDeviceStatValues> block_device_stats TSA_GUARDED_BY(data_mutex);
+    std::unordered_map<String /* device name */, BlockDeviceStatValues> block_device_stats;
 
     struct NetworkInterfaceStatValues
     {
@@ -206,9 +197,9 @@ private:
         NetworkInterfaceStatValues operator-(const NetworkInterfaceStatValues & other) const;
     };
 
-    std::unordered_map<String /* device name */, NetworkInterfaceStatValues> network_interface_stats TSA_GUARDED_BY(data_mutex);
+    std::unordered_map<String /* device name */, NetworkInterfaceStatValues> network_interface_stats;
 
-    Stopwatch block_devices_rescan_delay TSA_GUARDED_BY(data_mutex);
+    Stopwatch block_devices_rescan_delay;
 
     void openSensors();
     void openBlockDevices();
@@ -216,7 +207,10 @@ private:
     void openEDAC();
 #endif
 
+    std::unique_ptr<ThreadFromGlobalPool> thread;
+
     void run();
+    void update(TimePoint update_time);
 };
 
 }

@@ -14,9 +14,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 
-#include <Functions/indexHint.h>
 #include <Functions/IFunction.h>
-#include <Functions/IFunctionAdaptors.h>
 
 #include <Storages/KeyDescription.h>
 
@@ -316,7 +314,7 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
 
     if (ast_node && prepared_sets)
     {
-        auto key = ast_node->getTreeHash(/*ignore_aliases=*/ true);
+        auto key = ast_node->getTreeHash();
         const auto & sets = prepared_sets->getSetsFromTuple();
         auto it = sets.find(key);
         if (it != sets.end() && !it->second.empty())
@@ -340,9 +338,9 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(const DataTypes & data_types)
     if (prepared_sets && ast_node)
     {
         if (ast_node->as<ASTSubquery>() || ast_node->as<ASTTableIdentifier>())
-            return prepared_sets->findSubquery(ast_node->getTreeHash(/*ignore_aliases=*/ true));
+            return prepared_sets->findSubquery(ast_node->getTreeHash());
 
-        return prepared_sets->findTuple(ast_node->getTreeHash(/*ignore_aliases=*/ true), data_types);
+        return prepared_sets->findTuple(ast_node->getTreeHash(), data_types);
     }
     else if (dag_node)
     {
@@ -392,15 +390,6 @@ size_t RPNBuilderFunctionTreeNode::getArgumentsSize() const
     }
     else
     {
-        // indexHint arguments are stored inside of `FunctionIndexHint` class,
-        // because they are used only for index analysis.
-        if (dag_node->function_base->getName() == "indexHint")
-        {
-            const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(dag_node->function_base.get());
-            const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get());
-            return index_hint->getActions()->getOutputs().size();
-        }
-
         return dag_node->children.size();
     }
 }
@@ -420,15 +409,6 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
     }
     else
     {
-        // indexHint arguments are stored inside of `FunctionIndexHint` class,
-        // because they are used only for index analysis.
-        if (dag_node->function_base->getName() == "indexHint")
-        {
-            const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(dag_node->function_base.get());
-            const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get());
-            return RPNBuilderTreeNode(index_hint->getActions()->getOutputs()[index], tree_context);
-        }
-
         return RPNBuilderTreeNode(dag_node->children[index], tree_context);
     }
 }
