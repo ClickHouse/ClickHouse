@@ -40,6 +40,7 @@ def test_atomic_delete_with_stopped_zookeeper(start_cluster):
 
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(node1)
+        time.sleep(1)
         error = node1.query_and_get_error(
             "DROP TABLE zktest.atomic_drop_table"
         )  # Table won't drop

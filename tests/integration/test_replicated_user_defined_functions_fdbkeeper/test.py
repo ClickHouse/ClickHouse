@@ -39,6 +39,7 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def replace_fdbkeeper_cluster(new_fdb_cluster):
     logging.debug(f"Use new fdb cluster: {new_fdb_cluster}")
     for node in [node1, node2]:

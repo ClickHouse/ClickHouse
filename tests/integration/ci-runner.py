@@ -873,7 +873,9 @@ class ClickhouseIntegrationTestsRunner:
                     all_filtered_by_hash_tests += tests_in_group
             all_tests = all_filtered_by_hash_tests
 
-        if os.path.isfile(os.path.join(repo_path, "tests/config/config.d/fdbkeeper.xml")):
+        if os.path.isfile(
+            os.path.join(repo_path, "tests/config/config.d/fdbkeeper.xml")
+        ):
             fdbkeeper_skip_tests = self._get_fdbkeeper_tests_skip_list(repo_path)
             all_tests = list(
                 filter(

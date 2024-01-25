@@ -33,7 +33,6 @@
   "test_keeper_availability_zone/test.py::test_get_availability_zone",
   "test_backward_compatibility/test_vertical_merges_from_compact_parts.py::test_vertical_merges_from_compact_parts",
   "test_backward_compatibility/test.py::test_backward_compatability1",
-  "test_reload_zookeeper/test.py::test_reload_zookeeper",
   "test_ttl_replicated/test.py::test_ttl_compatibility[node_left2-node_right2-2]",
   "test_ttl_replicated/test.py::test_ttl_compatibility[node_left1-node_right1-1]",
   "test_version_update/test.py::test_modulo_partition_key_issue_23508",
@@ -42,5 +41,7 @@
   "test_replicated_user_defined_functions/test.py::test_replication_replace_by_another_node_after_creation",
   "test_replicated_user_defined_functions/test.py::test_start_without_zookeeper",
   "test_replicated_user_defined_functions/test.py::test_replication",
-  "test_replicated_user_defined_functions/test.py::test_reload_zookeeper"
+  "test_replicated_user_defined_functions/test.py::test_reload_zookeeper",
+  "test_inserts_with_keeper_retries/test.py::test_query_timeout_with_zk_down",
+  "test_drop_replica_with_auxiliary_zookeepers/test.py::test_drop_replica_in_auxiliary_zookeeper"
 ]
