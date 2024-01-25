@@ -339,30 +339,31 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
     if (!size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing zero size is not allowed");
 
+    {
+        auto lock = lockFileSegment();
+        assertIsDownloaderUnlocked("write", lock);
+        assertNotDetachedUnlocked(lock);
+    }
+
     const auto file_segment_path = getPath();
 
     {
-        auto lock = lockFileSegment();
-
-        assertIsDownloaderUnlocked("write", lock);
-        assertNotDetachedUnlocked(lock);
-
         if (download_state != State::DOWNLOADING)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected DOWNLOADING state, got {}", stateToString(download_state));
 
-        size_t first_non_downloaded_offset = getCurrentWriteOffset();
+        const size_t first_non_downloaded_offset = getCurrentWriteOffset();
         if (offset != first_non_downloaded_offset)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to write {} bytes to offset: {}, but current write offset is {}",
                 size, offset, first_non_downloaded_offset);
 
-        size_t current_downloaded_size = getDownloadedSize();
+        const size_t current_downloaded_size = getDownloadedSize();
         chassert(reserved_size >= current_downloaded_size);
-        size_t free_reserved_size = reserved_size - current_downloaded_size;
 
+        const size_t free_reserved_size = reserved_size - current_downloaded_size;
         if (free_reserved_size < size)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -371,20 +372,24 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
         if (!is_unbound && current_downloaded_size == range().size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
 
-        if (!cache_writer)
-        {
-            if (current_downloaded_size > 0)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Cache writer was finalized (downloaded size: {}, state: {})",
-                    current_downloaded_size, stateToString(download_state));
-
-            cache_writer = std::make_unique<WriteBufferFromFile>(file_segment_path);
-        }
+        if (!cache_writer && current_downloaded_size > 0)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cache writer was finalized (downloaded size: {}, state: {})",
+                current_downloaded_size, stateToString(download_state));
     }
 
     try
     {
+        if (!cache_writer)
+            cache_writer = std::make_unique<WriteBufferFromFile>(file_segment_path);
+
+#ifdef ABORT_ON_LOGICAL_ERROR
+        /// This mutex is only needed to have a valid assertion in assertCacheCorrectness(),
+        /// which is only executed in debug/sanitizer builds (under ABORT_ON_LOGICAL_ERROR).
+        std::lock_guard lock(write_mutex);
+#endif
+
         cache_writer->write(from, size);
         cache_writer->next();
 
@@ -393,21 +398,30 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
     }
     catch (ErrnoException & e)
     {
-        auto lock = lockFileSegment();
-        e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lock)));
+        const int code = e.getErrno();
+        const bool is_no_space_left_error = code == /* No space left on device */28 || code == /* Quota exceeded */122;
 
-        int code = e.getErrno();
-        if (code == /* No space left on device */28 || code == /* Quota exceeded */122)
+        auto lock = lockFileSegment();
+
+        e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lock)));
+        setDownloadFailedUnlocked(lock);
+
+        if (downloaded_size == 0 && fs::exists(file_segment_path))
+        {
+            fs::remove(file_segment_path);
+        }
+        else if (is_no_space_left_error)
         {
             const auto file_size = fs::file_size(file_segment_path);
+
             chassert(downloaded_size <= file_size);
             chassert(reserved_size >= file_size);
             chassert(file_size <= range().size());
+
             if (downloaded_size != file_size)
                 downloaded_size = file_size;
         }
 
-        setDownloadFailedUnlocked(lock);
         throw;
 
     }
@@ -781,20 +795,41 @@ bool FileSegment::assertCorrectness() const
     return assertCorrectnessUnlocked(lockFileSegment());
 }
 
-bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const
+bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock) const
 {
-    auto check_iterator = [this](const Priority::IteratorPtr & it)
+    auto throw_logical = [&](const std::string & error)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{}. File segment info: {}", error, getInfoForLogUnlocked(lock));
+    };
+
+    auto check_iterator = [&](const Priority::IteratorPtr & it)
     {
         UNUSED(this);
         if (!it)
             return;
 
         const auto & entry = it->getEntry();
-        UNUSED(entry);
-        chassert(entry->size == reserved_size);
+        if (download_state != State::DOWNLOADING && entry->size != reserved_size)
+            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->size, reserved_size));
+
         chassert(entry->key == key());
         chassert(entry->offset == offset());
     };
+
+    const auto file_path = getPath();
+    if (segment_kind != FileSegmentKind::Temporary)
+    {
+        std::lock_guard lk(write_mutex);
+        if (downloaded_size == 0)
+        {
+            if (download_state != State::DOWNLOADING && fs::exists(file_path))
+                throw_logical("Expected file " + file_path + " not to exist");
+        }
+        else if (!fs::exists(file_path))
+        {
+            throw_logical("Expected file " + file_path + " to exist");
+        }
+    }
 
     if (download_state == State::DOWNLOADED)
     {

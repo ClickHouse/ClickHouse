@@ -234,6 +234,8 @@ void CachedOnDiskWriteBufferFromFile::nextImpl()
     }
     catch (...)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
         /// If something was already written to cache, remove it.
         cache_writer.reset();
         cache->removeKeyIfExists(key, user.user_id);
