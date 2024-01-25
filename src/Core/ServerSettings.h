@@ -76,6 +76,9 @@ namespace DB
     M(Double, index_mark_cache_size_ratio, DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO, "The size of the protected queue in the secondary index mark cache relative to the cache's total size.", 0) \
     M(UInt64, mmap_cache_size, DEFAULT_MMAP_CACHE_MAX_SIZE, "A cache for mmapped files.", 0) \
     \
+    M(UInt64, compiled_expression_cache_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE, "Sets the cache size (in bytes) for compiled expressions.", 0) \
+    M(UInt64, compiled_expression_cache_elements_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES, "Sets the cache size (in elements) for compiled expressions.", 0) \
+    \
     M(Bool, disable_internal_dns_cache, false, "Disable internal DNS caching at all.", 0) \
     M(Int32, dns_cache_update_period, 15, "Internal DNS cache update period in seconds.", 0) \
     M(UInt32, dns_max_consecutive_failures, 10, "Max DNS resolve failures of a hostname before dropping the hostname from ClickHouse DNS cache.", 0) \
@@ -114,6 +117,14 @@ namespace DB
     M(Bool, validate_tcp_client_information, false, "Validate client_information in the query packet over the native TCP protocol.", 0) \
     M(Bool, storage_metadata_write_full_object_key, false, "Write disk metadata files with VERSION_FULL_OBJECT_KEY format", 0) \
     M(UInt64, max_materialized_views_count_for_table, 0, "A limit on the number of materialized views attached to a table.", 0) \
+    \
+    M(String, replica_group_name, "", "Replica group name for database Replicated.", 0) \
+    \
+    M(UInt32, default_session_timeout, 60, "Default http session timeout, in seconds.", 0) \
+    M(UInt32, max_session_timeout, 3600, "Maximum http session timeout, in seconds.", 0) \
+    M(Bool, auth_use_forwarded_address, false, "Allows ClickHouse to use proxied IP as a connection IP.", 0) \
+    M(Bool, enable_http_stacktrace, true, "", 0) \
+    M(Bool, enable_http_close_session, true, "Close HTTP session after each request.", 0) \
 
     /// If you add a setting which can be updated at runtime, please update 'changeable_settings' map in StorageSystemServerSettings.cpp
 

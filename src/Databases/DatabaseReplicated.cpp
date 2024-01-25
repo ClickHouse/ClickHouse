@@ -13,6 +13,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/PoolId.h>
+#include <Core/ServerSettings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseReplicatedWorker.h>
@@ -119,7 +120,7 @@ DatabaseReplicated::DatabaseReplicated(
     if (!db_settings.collection_name.value.empty())
         fillClusterAuthInfo(db_settings.collection_name.value, context_->getConfigRef());
 
-    replica_group_name = context_->getConfigRef().getString("replica_group_name", "");
+    replica_group_name = context_->getServerSettings().replica_group_name;
 }
 
 String DatabaseReplicated::getFullReplicaName(const String & shard, const String & replica)

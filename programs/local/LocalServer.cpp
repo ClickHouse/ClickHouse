@@ -659,14 +659,15 @@ void LocalServer::processConfig()
     /// Limit on total number of concurrently executing queries.
     /// There is no need for concurrent queries, override max_concurrent_queries.
     global_context->getProcessList().setMaxSize(0);
-
+    const auto & settings = global_context->getServerSettings();
+    
     const size_t physical_server_memory = getMemoryAmount();
-    const double cache_size_to_ram_max_ratio = config().getDouble("cache_size_to_ram_max_ratio", 0.5);
+    const double cache_size_to_ram_max_ratio = settings.cache_size_to_ram_max_ratio;
     const size_t max_cache_size = static_cast<size_t>(physical_server_memory * cache_size_to_ram_max_ratio);
 
-    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", DEFAULT_UNCOMPRESSED_CACHE_POLICY);
-    size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE);
-    double uncompressed_cache_size_ratio = config().getDouble("uncompressed_cache_size_ratio", DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO);
+    String uncompressed_cache_policy = settings.uncompressed_cache_policy;
+    size_t uncompressed_cache_size = settings.uncompressed_cache_size;
+    double uncompressed_cache_size_ratio = settings.uncompressed_cache_size_ratio;
     if (uncompressed_cache_size > max_cache_size)
     {
         uncompressed_cache_size = max_cache_size;
@@ -674,9 +675,9 @@ void LocalServer::processConfig()
     }
     global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
 
-    String mark_cache_policy = config().getString("mark_cache_policy", DEFAULT_MARK_CACHE_POLICY);
-    size_t mark_cache_size = config().getUInt64("mark_cache_size", DEFAULT_MARK_CACHE_MAX_SIZE);
-    double mark_cache_size_ratio = config().getDouble("mark_cache_size_ratio", DEFAULT_MARK_CACHE_SIZE_RATIO);
+    String mark_cache_policy = settings.mark_cache_policy;
+    size_t mark_cache_size = settings.mark_cache_size;
+    double mark_cache_size_ratio = settings.mark_cache_size_ratio;
     if (!mark_cache_size)
         LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
     if (mark_cache_size > max_cache_size)
@@ -686,9 +687,9 @@ void LocalServer::processConfig()
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
-    String index_uncompressed_cache_policy = config().getString("index_uncompressed_cache_policy", DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY);
-    size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE);
-    double index_uncompressed_cache_size_ratio = config().getDouble("index_uncompressed_cache_size_ratio", DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO);
+    String index_uncompressed_cache_policy = settings.index_uncompressed_cache_policy;
+    size_t index_uncompressed_cache_size = settings.index_uncompressed_cache_size;
+    double index_uncompressed_cache_size_ratio = settings.index_uncompressed_cache_size_ratio;
     if (index_uncompressed_cache_size > max_cache_size)
     {
         index_uncompressed_cache_size = max_cache_size;
@@ -696,9 +697,9 @@ void LocalServer::processConfig()
     }
     global_context->setIndexUncompressedCache(index_uncompressed_cache_policy, index_uncompressed_cache_size, index_uncompressed_cache_size_ratio);
 
-    String index_mark_cache_policy = config().getString("index_mark_cache_policy", DEFAULT_INDEX_MARK_CACHE_POLICY);
-    size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", DEFAULT_INDEX_MARK_CACHE_MAX_SIZE);
-    double index_mark_cache_size_ratio = config().getDouble("index_mark_cache_size_ratio", DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO);
+    String index_mark_cache_policy = settings.index_mark_cache_policy;
+    size_t index_mark_cache_size = settings.index_mark_cache_size;
+    double index_mark_cache_size_ratio = settings.index_mark_cache_size_ratio;
     if (index_mark_cache_size > max_cache_size)
     {
         index_mark_cache_size = max_cache_size;
@@ -706,7 +707,7 @@ void LocalServer::processConfig()
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
-    size_t mmap_cache_size = config().getUInt64("mmap_cache_size", DEFAULT_MMAP_CACHE_MAX_SIZE);
+    size_t mmap_cache_size = settings.mmap_cache_size;
     if (mmap_cache_size > max_cache_size)
     {
         mmap_cache_size = max_cache_size;
@@ -718,8 +719,8 @@ void LocalServer::processConfig()
     global_context->setQueryCache(0, 0, 0, 0);
 
 #if USE_EMBEDDED_COMPILER
-    size_t compiled_expression_cache_max_size_in_bytes = config().getUInt64("compiled_expression_cache_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE);
-    size_t compiled_expression_cache_max_elements = config().getUInt64("compiled_expression_cache_elements_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES);
+    size_t compiled_expression_cache_max_size_in_bytes = settings.compiled_expression_cache_size;
+    size_t compiled_expression_cache_max_elements = settings.compiled_expression_cache_elements_size;
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 

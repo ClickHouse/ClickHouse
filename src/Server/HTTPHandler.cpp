@@ -266,14 +266,14 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
 
 
 static std::chrono::steady_clock::duration parseSessionTimeout(
-    const Poco::Util::AbstractConfiguration & config,
+    const ServerSettings & settings,
     const HTMLForm & params)
 {
-    unsigned session_timeout = config.getInt("default_session_timeout", 60);
+    unsigned session_timeout = settings.default_session_timeout;
 
     if (params.has("session_timeout"))
     {
-        unsigned max_session_timeout = config.getUInt("max_session_timeout", 3600);
+        unsigned max_session_timeout = settings.max_session_timeout;
         std::string session_timeout_str = params.get("session_timeout");
 
         ReadBufferFromString buf(session_timeout_str);
@@ -505,7 +505,7 @@ bool HTTPHandler::authenticateUser(
     String forwarded_address = session->getClientInfo().getLastForwardedFor();
     try
     {
-        if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
+        if (!forwarded_address.empty() && server.context()->getServerSettings().auth_use_forwarded_address)
             session->authenticate(*request_credentials, Poco::Net::SocketAddress(forwarded_address, request.clientAddress().port()));
         else
             session->authenticate(*request_credentials, request.clientAddress());
@@ -565,12 +565,11 @@ void HTTPHandler::processQuery(
     String session_id;
     std::chrono::steady_clock::duration session_timeout;
     bool session_is_set = params.has("session_id");
-    const auto & config = server.config();
 
     if (session_is_set)
     {
         session_id = params.get("session_id");
-        session_timeout = parseSessionTimeout(config, params);
+        session_timeout = parseSessionTimeout(server.context()->getServerSettings(), params);
         std::string session_check = params.get("session_check", "");
         session->makeSessionContext(session_id, session_timeout, session_check == "1");
     }
@@ -827,7 +826,7 @@ void HTTPHandler::processQuery(
     /// Add CORS header if 'add_http_cors_header' setting is turned on send * in Access-Control-Allow-Origin
     /// Note that whether the header is added is determined by the settings, and we can only get the user settings after authentication.
     /// Once the authentication fails, the header can't be added.
-    if (settings.add_http_cors_header && !request.get("Origin", "").empty() && !config.has("http_options_response"))
+    if (settings.add_http_cors_header && !request.get("Origin", "").empty() && !server.config().has("http_options_response"))
         used_output.out_holder->addHeaderCORS(true);
 
     auto append_callback = [my_context = context] (ProgressCallback callback)
@@ -1073,10 +1072,10 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         HTMLForm params(default_settings, request);
 
-        if (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true))
+        if (params.getParsed<bool>("stacktrace", false) && server.context()->getServerSettings().enable_http_stacktrace)
             with_stacktrace = true;
 
-        if (params.getParsed<bool>("close_session", false) && server.config().getBool("enable_http_close_session", true))
+        if (params.getParsed<bool>("close_session", false) && server.context()->getServerSettings().enable_http_close_session)
             close_session = true;
 
         if (close_session)
