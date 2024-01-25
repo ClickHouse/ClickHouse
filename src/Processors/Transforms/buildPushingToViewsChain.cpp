@@ -244,7 +244,32 @@ Chain buildPushingToViewsChain(
 
         // Do not deduplicate insertions into MV if the main insertion is Ok
         if (disable_deduplication_for_children)
+        {
             insert_context->setSetting("insert_deduplicate", Field{false});
+        }
+        else if (insert_settings.update_insert_deduplication_token_in_dependent_materialized_views)
+        {
+            /** Update deduplication token passed to dependent MV with current table id. So it is possible to properly handle
+              * deduplication in complex INSERT flows.
+              *
+              * Example:
+              *
+              * landing -┬--> mv_1_1 ---> ds_1_1 ---> mv_2_1 --┬-> ds_2_1 ---> mv_3_1 ---> ds_3_1
+              *          |                                     |
+              *          └--> mv_1_2 ---> ds_1_2 ---> mv_2_2 --┘
+              *
+              * Here we want to avoid deduplication for two different blocks generated from `mv_2_1` and `mv_2_2` that will
+              * be inserted into `ds_2_1`.
+              */
+            auto insert_deduplication_token = insert_settings.insert_deduplication_token.toString();
+
+            if (table_id.hasUUID())
+                insert_deduplication_token += "_" + toString(table_id.uuid);
+            else
+                insert_deduplication_token += "_" + table_id.getFullNameNotQuoted();
+
+            insert_context->setSetting("insert_deduplication_token", insert_deduplication_token);
+        }
 
         // Processing of blocks for MVs is done block by block, and there will
         // be no parallel reading after (plus it is not a costless operation)
