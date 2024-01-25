@@ -609,7 +609,7 @@ namespace
 [[noreturn]] void onStorageInconsistency()
 {
     LOG_ERROR(
-        &Poco::Logger::get("KeeperStorage"),
+        getLogger("KeeperStorage"),
         "Inconsistency found between uncommitted and committed data. Keeper will terminate to avoid undefined behaviour.");
     std::terminate();
 }
@@ -887,7 +887,7 @@ void handleSystemNodeModification(const KeeperContext & keeper_context, std::str
             "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true.",
             error_msg);
 
-    LOG_ERROR(&Poco::Logger::get("KeeperStorage"), fmt::runtime(error_msg));
+    LOG_ERROR(getLogger("KeeperStorage"), fmt::runtime(error_msg));
 }
 
 }
@@ -2381,7 +2381,7 @@ void KeeperStorage::rollbackRequest(int64_t rollback_zxid, bool allow_missing)
     }
     catch (...)
     {
-        LOG_FATAL(&Poco::Logger::get("KeeperStorage"), "Failed to rollback log. Terminating to avoid inconsistencies");
+        LOG_FATAL(getLogger("KeeperStorage"), "Failed to rollback log. Terminating to avoid inconsistencies");
         std::terminate();
     }
 }

@@ -129,7 +129,7 @@ private:
     FileCachePtr cache;
     FileCacheSettings cache_settings;
     std::string cache_config_name;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

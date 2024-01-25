@@ -74,7 +74,7 @@ void WriteBufferToFileSegment::nextImpl()
     }
     catch (...)
     {
-        LOG_WARNING(&Poco::Logger::get("WriteBufferToFileSegment"), "Failed to write to the underlying buffer ({})", file_segment->getInfoForLog());
+        LOG_WARNING(getLogger("WriteBufferToFileSegment"), "Failed to write to the underlying buffer ({})", file_segment->getInfoForLog());
         throw;
     }
 

@@ -660,7 +660,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
 }
 
 ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
-    Poco::Logger * logger,
+    LoggerPtr logger,
     ContextPtr local_context,
     const String & metadata_file_path,
     bool throw_on_error /*= true*/,

@@ -221,7 +221,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
 
 void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType action_type, bool start,
                                                        const String & database_name, const DatabasePtr & database,
-                                                       const ContextPtr & local_context, Poco::Logger * log)
+                                                       const ContextPtr & local_context, LoggerPtr log)
 {
     auto manager = local_context->getActionLocksManager();
     auto access = local_context->getAccess();
@@ -251,7 +251,7 @@ void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType ac
 
 
 InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
-        : WithMutableContext(context_), query_ptr(query_ptr_->clone()), log(&Poco::Logger::get("InterpreterSystemQuery"))
+        : WithMutableContext(context_), query_ptr(query_ptr_->clone()), log(getLogger("InterpreterSystemQuery"))
 {
 }
 

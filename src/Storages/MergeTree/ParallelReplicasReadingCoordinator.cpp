@@ -245,7 +245,7 @@ private:
     };
     std::vector<ReplicaStatus> replica_status;
 
-    Poco::Logger * log = &Poco::Logger::get("DefaultCoordinator");
+    LoggerPtr log = getLogger("DefaultCoordinator");
 
     /// Workflow of a segment:
     /// 0. `all_parts_to_read` contains all the parts and thus all the segments initially present there (virtually)
@@ -835,7 +835,7 @@ public:
     Parts all_parts_to_read;
     size_t total_rows_to_read = 0;
 
-    Poco::Logger * log = &Poco::Logger::get(fmt::format("{}{}", magic_enum::enum_name(mode), "Coordinator"));
+    LoggerPtr log = getLogger(fmt::format("{}{}", magic_enum::enum_name(mode), "Coordinator"));
 };
 
 template <CoordinationMode mode>

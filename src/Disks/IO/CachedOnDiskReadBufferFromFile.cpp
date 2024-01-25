@@ -60,9 +60,9 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     std::shared_ptr<FilesystemCacheLog> cache_log_)
     : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
 #ifdef ABORT_ON_LOGICAL_ERROR
-    , log(&Poco::Logger::get(fmt::format("CachedOnDiskReadBufferFromFile({})", cache_key_)))
+    , log(getLogger(fmt::format("CachedOnDiskReadBufferFromFile({})", cache_key_)))
 #else
-    , log(&Poco::Logger::get("CachedOnDiskReadBufferFromFile"))
+    , log(getLogger("CachedOnDiskReadBufferFromFile"))
 #endif
     , cache_key(cache_key_)
     , source_file_path(source_file_path_)

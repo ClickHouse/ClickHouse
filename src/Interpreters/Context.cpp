@@ -198,7 +198,7 @@ namespace ErrorCodes
   */
 struct ContextSharedPart : boost::noncopyable
 {
-    Poco::Logger * log = &Poco::Logger::get("Context");
+    LoggerPtr log = getLogger("Context");
 
     /// For access of most of shared objects.
     mutable ContextSharedMutex mutex;
@@ -1011,7 +1011,7 @@ void Context::setFilesystemCacheUser(const String & user)
     shared->filesystem_cache_user = user;
 }
 
-static void setupTmpPath(Poco::Logger * log, const std::string & path)
+static void setupTmpPath(LoggerPtr log, const std::string & path)
 try
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
@@ -4292,7 +4292,7 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
     setCurrentProfile(shared->system_profile_name);
 
-    applySettingsQuirks(settings, &Poco::Logger::get("SettingsQuirks"));
+    applySettingsQuirks(settings, getLogger("SettingsQuirks"));
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
     buffer_context = Context::createCopy(shared_from_this());

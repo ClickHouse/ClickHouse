@@ -223,7 +223,7 @@ struct TemporaryFileStream::InputReader
         , in_compressed_buf(in_file_buf)
         , in_reader(in_compressed_buf, header_, DBMS_TCP_PROTOCOL_VERSION)
     {
-        LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Reading {} from {}", header_.dumpStructure(), path);
+        LOG_TEST(getLogger("TemporaryFileStream"), "Reading {} from {}", header_.dumpStructure(), path);
     }
 
     explicit InputReader(const String & path, size_t size = 0)
@@ -231,7 +231,7 @@ struct TemporaryFileStream::InputReader
         , in_compressed_buf(in_file_buf)
         , in_reader(in_compressed_buf, DBMS_TCP_PROTOCOL_VERSION)
     {
-        LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Reading from {}", path);
+        LOG_TEST(getLogger("TemporaryFileStream"), "Reading from {}", path);
     }
 
     Block read()
@@ -250,7 +250,7 @@ TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const 
     , file(std::move(file_))
     , out_writer(std::make_unique<OutputWriter>(std::make_unique<WriteBufferFromFile>(file->getAbsolutePath()), header))
 {
-    LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Writing to temporary file {}", file->getAbsolutePath());
+    LOG_TEST(getLogger("TemporaryFileStream"), "Writing to temporary file {}", file->getAbsolutePath());
 }
 
 TemporaryFileStream::TemporaryFileStream(FileSegmentsHolderPtr segments_, const Block & header_, TemporaryDataOnDisk * parent_)
@@ -262,7 +262,7 @@ TemporaryFileStream::TemporaryFileStream(FileSegmentsHolderPtr segments_, const 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryFileStream can be created only from single segment");
     auto out_buf = std::make_unique<WriteBufferToFileSegment>(&segment_holder->front());
 
-    LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Writing to temporary file {}", out_buf->getFileName());
+    LOG_TEST(getLogger("TemporaryFileStream"), "Writing to temporary file {}", out_buf->getFileName());
     out_writer = std::make_unique<OutputWriter>(std::move(out_buf), header);
 }
 
