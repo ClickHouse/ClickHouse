@@ -1131,7 +1131,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
                 ColumnUInt8::MutablePtr null_map = copyNullMap(datetime_arg.column);
 
                 if (!null_map && arguments.size() > 1)
-                    null_map = copyNullMap(arguments[1].column);
+                    null_map = copyNullMap(arguments[1].column->convertToFullColumnIfConst());
 
                 if (null_map)
                 {
