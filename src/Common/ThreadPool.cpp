@@ -193,61 +193,97 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     };
 
     {
-        std::unique_lock lock(mutex);
+        auto thread_it = threads.end();
+        bool thread_added = false;
 
-        auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || shutdown; };
-
-        if (wait_microseconds && *wait_microseconds)  /// Check for optional. Condition is true if the optional is set and the value is zero.
         {
-            if (!job_finished.wait_for(lock, std::chrono::microseconds(*wait_microseconds), pred))
-                return on_error(fmt::format("no free thread (timeout={})", *wait_microseconds));
+            std::unique_lock lock(mutex);
+
+            auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || shutdown; };
+
+            if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set and the value is non zero.
+            {
+                if (!job_finished.wait_for(lock, std::chrono::microseconds(*wait_microseconds), pred))
+                    return on_error(fmt::format("no free thread (timeout={})", *wait_microseconds));
+            }
+            else
+                job_finished.wait(lock, pred);
+
+            if (shutdown)
+                return on_error("shutdown");
+
+
+            /// We must not allocate any memory after we emplaced a job in a queue.
+            /// Because if an exception would be thrown, we won't notify a thread about job occurrence.
+
+            /// Check if there are enough threads to process job.
+            if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
+            {
+                try
+                {
+                    threads.emplace_front();
+                }
+                catch (...)
+                {
+                    /// Most likely this is a std::bad_alloc exception
+                    return on_error("cannot allocate thread slot");
+                }
+                thread_it = threads.begin();
+                thread_added = true;
+
+            }
         }
-        else
-            job_finished.wait(lock, pred);
 
-        if (shutdown)
-            return on_error("shutdown");
-
-        /// We must not allocate any memory after we emplaced a job in a queue.
-        /// Because if an exception would be thrown, we won't notify a thread about job occurrence.
-
-        /// Check if there are enough threads to process job.
-        if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
+        try
         {
-            try
+            if (thread_added)
             {
-                threads.emplace_front();
-            }
-            catch (...)
-            {
-                /// Most likely this is a std::bad_alloc exception
-                return on_error("cannot allocate thread slot");
-            }
+                auto new_thread = Thread([thread_it, this] { worker(thread_it); });
 
-            try
-            {
-                threads.front() = Thread([this, it = threads.begin()] { worker(it); });
+                {
+                    std::unique_lock lock(mutex);
+                    if (!shutdown)
+                    {
+                        *thread_it = std::move(new_thread);
+                    }
+                }
+
+                // using namespace std::chrono_literals;
+                // if constexpr (std::is_same_v<Thread, std::thread>)
+                // {
+                //     std::this_thread::sleep_for(10ms);
+                // }
+
                 ProfileEvents::increment(
                     std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions
-                );
+                                         );
+            }
 
-            }
-            catch (...)
-            {
-                threads.pop_front();
-                return on_error("cannot allocate thread");
-            }
+
+        }
+        catch (...)
+        {
+            std::unique_lock lock(mutex);
+            // mutex ??
+            threads.erase(thread_it);
+            return on_error("cannot allocate thread");
         }
 
-        jobs.emplace(std::move(job),
-                     priority,
-                     metric_scheduled_jobs,
-                     /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
-                     propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
-                     /// capture_frame_pointers
-                     DB::Exception::enable_job_stack_trace);
+        {
+            std::unique_lock lock(mutex);
+            if (!shutdown)
+            {
+                jobs.emplace(std::move(job),
+                    priority,
+                    metric_scheduled_jobs,
+                    /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
+                    propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
+                    /// capture_frame_pointers
+                    DB::Exception::enable_job_stack_trace);
 
-        ++scheduled_jobs;
+                ++scheduled_jobs;
+            }
+        }
     }
 
     /// Wake up a free thread to run the new job.
