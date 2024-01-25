@@ -1545,7 +1545,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     executeLimitBy(query_plan);
                 }
 
-                if (query.limitLength())
+                if (query.limitLength() && !query.limitBy())
                     executePreLimit(query_plan, true);
             }
         };
