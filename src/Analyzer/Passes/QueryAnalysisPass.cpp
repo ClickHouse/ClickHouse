@@ -7487,7 +7487,7 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
 {
     auto & union_node_typed = union_node->as<UnionNode &>();
 
-    if(union_node_typed.isCTE())
+    if (union_node_typed.isCTE())
         cte_in_resolve_process.insert(union_node_typed.getCTEName());
 
     auto & queries_nodes = union_node_typed.getQueries().getNodes();
@@ -7514,7 +7514,7 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
         }
     }
 
-    if(union_node_typed.isCTE())
+    if (union_node_typed.isCTE())
         cte_in_resolve_process.erase(union_node_typed.getCTEName());
 }
 
