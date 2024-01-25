@@ -276,7 +276,177 @@ Result:
 1231	Alex	33	[18446744073709551615]
 ```
 
-## emptyArrayInt8, emptyArrayInt16, emptyArrayInt32, emptyArrayInt64
+## emptyArrayInt8
+
+Accepts zero arguments and returns an empty Int8 array.
+
+**Syntax**
+
+```sql
+emptyArrayInt8()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE users (uid Int16, name String, age Int16, contacts Array(Int8)) ENGINE=Memory;
+
+INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayInt8());
+SELECT * FROM users;
+
+ALTER TABLE users UPDATE contacts = arrayPushBack(contacts, 127) WHERE uid = 1231;
+SELECT * FROM users;
+```
+
+Result:
+
+```response
+1234	Alex	33	[]
+1234	Alex	33	[127]
+```
+
+## emptyArrayInt16
+
+Accepts zero arguments and returns an empty Int16 array.
+
+**Syntax**
+
+```sql
+emptyArrayInt16()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE users (uid Int16, name String, age Int16, contacts Array(Int16)) ENGINE=Memory;
+
+INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayInt16());
+SELECT * FROM users;
+
+ALTER TABLE users UPDATE contacts = arrayPushBack(contacts, 32767) WHERE uid = 1231;
+SELECT * FROM users;
+```
+
+Result:
+
+```response
+1231	Alex    33	[]
+1231	Alex    33	[32767]
+```
+
+## emptyArrayInt32
+
+Accepts zero arguments and returns an empty Int32 array.
+
+**Syntax**
+
+```sql
+emptyArrayInt32()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE users (uid Int16, name String, age Int16, contacts Array(Int32)) ENGINE=Memory;
+
+INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayInt32());
+SELECT * FROM users;
+
+ALTER TABLE users UPDATE contacts = arrayPushBack(contacts, 2147483647) WHERE uid = 1231;
+SELECT * FROM users;
+```
+
+Result:
+
+```response
+1231	Alex	33	[]
+1231	Alex	33	[2147483647]
+```
+
+## emptyArrayInt64
+
+Accepts zero arguments and returns an empty Int64 array.
+
+**Syntax**
+
+```sql
+emptyArrayInt64()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE users (uid Int16, name String, age Int16, contacts Array(Int64)) ENGINE=Memory;
+
+INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayInt64());
+SELECT * FROM users;
+
+ALTER TABLE users UPDATE contacts = arrayPushBack(contacts, 9223372036854775807) WHERE uid = 1231;
+SELECT * FROM users;
+```
+
+Result:
+
+```response
+1231	Alex	33	[]
+1231	Alex	33	[9223372036854775807]
+```
 
 ## emptyArrayFloat32, emptyArrayFloat64
 
