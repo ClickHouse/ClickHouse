@@ -5078,3 +5078,13 @@ When set to `true` than for all s3 requests first two attempts are made with low
 When set to `false` than all attempts are made with identical timeouts.
 
 Default value: `true`.
+
+## iceberg_engine_ignore_schema_evolution {#iceberg_engine_ignore_schema_evolution}
+
+Allow to ignore schema evolution in Iceberg table engine and read all data using schema specified by the user on table creation or latest schema parsed from metadata on table creation.
+
+:::note
+Enabling this setting can lead to incorrect result as in case of evolved schema all data files will be read using the same schema.
+:::
+
+Default value: 'false'.
