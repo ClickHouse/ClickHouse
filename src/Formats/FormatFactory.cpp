@@ -396,7 +396,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
         {
             parallel_read = false;
             LOG_TRACE(
-                &Poco::Logger::get("FormatFactory"),
+                getLogger("FormatFactory"),
                 "Failed to setup ParallelReadBuffer because of an exception:\n{}.\n"
                 "Falling back to the single-threaded buffer",
                 e.displayText());
@@ -406,7 +406,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
     if (parallel_read)
     {
         LOG_TRACE(
-            &Poco::Logger::get("FormatFactory"),
+            getLogger("FormatFactory"),
             "Using ParallelReadBuffer with {} workers with chunks of {} bytes",
             max_download_threads,
             settings.max_download_buffer_size);

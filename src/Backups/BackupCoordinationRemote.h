@@ -102,7 +102,7 @@ private:
     const size_t current_host_index;
     const bool plain_backup;
     const bool is_internal;
-    Poco::Logger * const log;
+    LoggerPtr const log;
 
     /// The order of these two fields matters, because stage_sync holds a reference to with_retries object
     mutable WithRetries with_retries;

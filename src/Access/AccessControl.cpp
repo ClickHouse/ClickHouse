@@ -47,7 +47,7 @@ namespace
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_path,
         const std::string & users_config_path,
-        Poco::Logger * log)
+        LoggerPtr log)
     {
         if (config.getBool("skip_check_for_incorrect_settings", false))
             return;
