@@ -22,10 +22,10 @@ echo -e "\n"
 
 # Test that if both format_schema_rows_template setting and format_template_row are provided, error is thrown 
 echo -ne 'Question: ${question:Quoted}, Answer: ${answer:Quoted}, Number of Likes: ${likes:Raw}, Date: ${date:Raw}' > "$CURDIR"/00937_template_output_format_row.tmp
-$CLICKHOUSE_CLIENT --query="SELECT * FROM template GROUP BY question, answer, likes, date WITH TOTALS ORDER BY date LIMIT 3 FORMAT Template SETTINGS \
+$CLICKHOUSE_CLIENT --multiline --multiquery --query "SELECT * FROM template GROUP BY question, answer, likes, date WITH TOTALS ORDER BY date LIMIT 3 FORMAT Template SETTINGS \
 format_template_row = '$CURDIR/00937_template_output_format_row.tmp', \
 format_schema_rows_template = 'Question: \${question:Quoted}, Answer: \${answer:Quoted}, Number of Likes: \${likes:Raw}, Date: \${date:Raw}', \
-format_template_rows_between_delimiter = ';\n'; --{ serverError 474 }"
+format_template_rows_between_delimiter = ';\n'; --{clientError 474}"
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE template";
 rm "$CURDIR"/00937_template_output_format_row.tmp
