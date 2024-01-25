@@ -44,7 +44,6 @@ public:
             KeyMetadataPtr key_metadata,
             size_t offset,
             size_t size,
-            const FileCacheUserInfo & user,
             const CacheGuard::Lock &);
 
         void remove(
@@ -58,21 +57,6 @@ public:
         LRUFileCachePriority priority;
         const bool recache_on_query_limit_exceeded;
     };
-
-    struct QueryContextHolder : private boost::noncopyable
-    {
-        QueryContextHolder(const String & query_id_, FileCache * cache_, FileCacheQueryLimit * query_limit_, QueryContextPtr context_);
-
-        QueryContextHolder() = default;
-
-        ~QueryContextHolder();
-
-        String query_id;
-        FileCache * cache;
-        FileCacheQueryLimit * query_limit;
-        QueryContextPtr context;
-    };
-    using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
 
 private:
     using QueryContextMap = std::unordered_map<String, QueryContextPtr>;

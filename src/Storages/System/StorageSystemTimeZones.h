@@ -20,6 +20,6 @@ public:
 public:
     std::string getName() const override { return "SystemTimeZones"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 };
 }

@@ -10,7 +10,6 @@
 #include <Poco/Logger.h>
 #include <Poco/NullChannel.h>
 #include <Poco/SimpleFileChannel.h>
-#include <Databases/registerDatabases.h>
 #include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesOverlay.h>
@@ -20,7 +19,6 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-#include <Interpreters/registerInterpreters.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/scope_guard_safe.h>
 #include <Interpreters/Session.h>
@@ -290,11 +288,6 @@ void LocalServer::cleanup()
     {
         connection.reset();
 
-        /// Suggestions are loaded async in a separate thread and it can use global context.
-        /// We should reset it before resetting global_context.
-        if (suggest)
-            suggest.reset();
-
         if (global_context)
         {
             global_context->shutdown();
@@ -492,12 +485,10 @@ try
         Poco::ErrorHandler::set(&error_handler);
     }
 
-    registerInterpreters();
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
-    registerDatabases();
     registerStorages();
     registerDictionaries();
     registerDisks(/* global_skip_access_check= */ true);
@@ -735,7 +726,12 @@ void LocalServer::processConfig()
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
-    std::string default_database = config().getString("default_database", "default");
+    /** Init dummy default DB
+      * NOTE: We force using isolated default database to avoid conflicts with default database from server environment
+      * Otherwise, metadata of temporary File(format, EXPLICIT_PATH) tables will pollute metadata/ directory;
+      *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
+      */
+    std::string default_database = config().getString("default_database", "_local");
     DatabaseCatalog::instance().attachDatabase(default_database, createClickHouseLocalDatabaseOverlay(default_database, global_context));
     global_context->setCurrentDatabase(default_database);
 
@@ -748,7 +744,7 @@ void LocalServer::processConfig()
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
         auto startup_system_tasks = loadMetadataSystem(global_context);
-        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
+        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
         waitLoad(TablesLoaderForegroundPoolId, startup_system_tasks);
@@ -767,7 +763,7 @@ void LocalServer::processConfig()
     }
     else if (!config().has("no-system-tables"))
     {
-        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
+        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }

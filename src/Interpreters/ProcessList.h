@@ -118,11 +118,6 @@ protected:
     /// Be careful using it. For example, queries field of ProcessListForUser could be modified concurrently.
     const ProcessListForUser * getUserProcessList() const { return user_process_list; }
 
-    /// Sets an entry in the ProcessList associated with this QueryStatus.
-    /// Be careful using it (this function contains no synchronization).
-    /// A weak pointer is used here because it's a ProcessListEntry which owns this QueryStatus, and not vice versa.
-    void setProcessListEntry(std::weak_ptr<ProcessListEntry> process_list_entry_);
-
     mutable std::mutex executors_mutex;
 
     struct ExecutorHolder
@@ -152,8 +147,6 @@ protected:
     QueryStreamsStatus query_streams_status{NotInitialized};
 
     ProcessListForUser * user_process_list = nullptr;
-
-    std::weak_ptr<ProcessListEntry> process_list_entry;
 
     OvercommitTracker * global_overcommit_tracker = nullptr;
 
@@ -225,9 +218,6 @@ public:
     CancellationCode cancelQuery(bool kill);
 
     bool isKilled() const { return is_killed; }
-
-    /// Returns an entry in the ProcessList associated with this QueryStatus. The function can return nullptr.
-    std::shared_ptr<ProcessListEntry> getProcessListEntry() const;
 
     bool isAllDataSent() const { return is_all_data_sent; }
     void setAllDataSent() { is_all_data_sent = true; }
@@ -460,7 +450,6 @@ public:
 
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill = false);
-    CancellationCode sendCancelToQuery(QueryStatusPtr elem, bool kill = false);
 
     void killAllQueries();
 };

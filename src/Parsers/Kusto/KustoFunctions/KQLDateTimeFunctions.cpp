@@ -1,4 +1,5 @@
 #include <format>
+#include <regex>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/IParserBase.h>

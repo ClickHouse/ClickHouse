@@ -281,15 +281,7 @@ public:
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
-                try
-                {
-                    std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr); }).detach();
-                }
-                catch (...)
-                {
-                    /// Likely cannot allocate thread
-                    onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr);
-                }
+                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr); }).detach();
             }
         }
     }

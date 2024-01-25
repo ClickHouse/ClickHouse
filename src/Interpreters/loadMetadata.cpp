@@ -257,10 +257,10 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     }
     else
     {
-        // NOTE: some tables can still be started up in the "loading" phase if they are required by dependencies during loading of other tables
         LOG_INFO(log, "Start synchronous loading of databases");
+
+        // Note that wait implicitly calls schedule
         waitLoad(TablesLoaderForegroundPoolId, load_tasks); // First prioritize, schedule and wait all the load table tasks
-        LOG_INFO(log, "Start synchronous startup of databases");
         waitLoad(TablesLoaderForegroundPoolId, startup_tasks); // Only then prioritize, schedule and wait all the startup tasks
         return {};
     }

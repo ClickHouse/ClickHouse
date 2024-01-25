@@ -326,7 +326,7 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
     }
 }
 
-QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join)
+QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node)
 {
     QueryTreeNodes result;
 
@@ -357,8 +357,6 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, 
             {
                 auto & array_join_node = node_to_process->as<ArrayJoinNode &>();
                 nodes_to_process.push_front(array_join_node.getTableExpression());
-                if (add_array_join)
-                    result.push_back(std::move(node_to_process));
                 break;
             }
             case QueryTreeNodeType::JOIN:

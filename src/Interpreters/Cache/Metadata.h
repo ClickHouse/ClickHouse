@@ -15,9 +15,7 @@ class CleanupQueue;
 using CleanupQueuePtr = std::shared_ptr<CleanupQueue>;
 class DownloadQueue;
 using DownloadQueuePtr = std::shared_ptr<DownloadQueue>;
-
 using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
-class CacheMetadata;
 
 
 struct FileSegmentMetadata : private boost::noncopyable
@@ -45,18 +43,17 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
                      private boost::noncopyable,
                      public std::enable_shared_from_this<KeyMetadata>
 {
-    friend class CacheMetadata;
     friend struct LockedKey;
-
     using Key = FileCacheKey;
     using iterator = iterator;
-    using UserInfo = FileCacheUserInfo;
-    using UserID = UserInfo::UserID;
 
     KeyMetadata(
         const Key & key_,
-        const UserInfo & user_id_,
-        const CacheMetadata * cache_metadata_,
+        const std::string & key_path_,
+        CleanupQueuePtr cleanup_queue_,
+        DownloadQueuePtr download_queue_,
+        Poco::Logger * log_,
+        std::shared_mutex & key_prefix_directory_mutex_,
         bool created_base_directory_ = false);
 
     enum class KeyState
@@ -67,21 +64,18 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     };
 
     const Key key;
-    const UserInfo user;
+    const std::string key_path;
 
     LockedKeyPtr lock();
 
+    /// Return nullptr if key has non-ACTIVE state.
     LockedKeyPtr tryLock();
+
+    LockedKeyPtr lockNoStateCheck();
 
     bool createBaseDirectory();
 
-    std::string getPath() const;
-
     std::string getFileSegmentPath(const FileSegment & file_segment) const;
-
-    bool checkAccess(const UserID & user_id_) const;
-
-    void assertAccess(const UserID & user_id_) const;
 
     /// This method is used for loadMetadata() on server startup,
     /// where we know there is no concurrency on Key and we do not want therefore taking a KeyGuard::Lock,
@@ -91,52 +85,41 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     size_t sizeUnlocked() const { return size(); }
 
 private:
-    const CacheMetadata * cache_metadata;
-
     KeyState key_state = KeyState::ACTIVE;
     KeyGuard guard;
-
+    const CleanupQueuePtr cleanup_queue;
+    const DownloadQueuePtr download_queue;
+    std::shared_mutex & key_prefix_directory_mutex;
     std::atomic<bool> created_base_directory = false;
-
-    LockedKeyPtr lockNoStateCheck();
-    Poco::Logger * logger() const;
-    bool addToDownloadQueue(FileSegmentPtr file_segment);
-    void addToCleanupQueue();
+    Poco::Logger * log;
 };
 
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
 
 
-class CacheMetadata : private boost::noncopyable
+struct CacheMetadata
 {
-    friend struct KeyMetadata;
 public:
     using Key = FileCacheKey;
     using IterateFunc = std::function<void(LockedKey &)>;
-    using UserInfo = FileCacheUserInfo;
-    using UserID = UserInfo::UserID;
 
-    explicit CacheMetadata(
-        const std::string & path_,
-        size_t background_download_queue_size_limit_,
-        size_t background_download_threads_,
-        bool write_cache_per_user_directory_);
+    explicit CacheMetadata(const std::string & path_, size_t background_download_queue_size_limit_, size_t background_download_threads_);
 
     void startup();
 
-    bool isEmpty() const;
-
     const String & getBaseDirectory() const { return path; }
 
-    String getKeyPath(const Key & key, const UserInfo & user) const;
-
-    String getFileSegmentPath(
+    String getPathForFileSegment(
         const Key & key,
         size_t offset,
-        FileSegmentKind segment_kind,
-        const UserInfo & user) const;
+        FileSegmentKind segment_kind) const;
 
-    void iterate(IterateFunc && func, const UserID & user_id);
+    String getPathForKey(const Key & key) const;
+    static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind);
+
+    void iterate(IterateFunc && func);
+
+    bool isEmpty() const;
 
     enum class KeyNotFoundPolicy
     {
@@ -149,17 +132,15 @@ public:
     KeyMetadataPtr getKeyMetadata(
         const Key & key,
         KeyNotFoundPolicy key_not_found_policy,
-        const UserInfo & user,
         bool is_initial_load = false);
 
     LockedKeyPtr lockKeyMetadata(
         const Key & key,
         KeyNotFoundPolicy key_not_found_policy,
-        const UserInfo & user,
         bool is_initial_load = false);
 
-    void removeKey(const Key & key, bool if_exists, bool if_releasable, const UserID & user_id);
-    void removeAllKeys(bool if_releasable, const UserID & user_id);
+    void removeKey(const Key & key, bool if_exists, bool if_releasable);
+    void removeAllKeys(bool if_releasable);
 
     void shutdown();
 
@@ -170,15 +151,12 @@ public:
     bool isBackgroundDownloadEnabled();
 
 private:
-    static constexpr size_t buckets_num = 1024;
-
-    const std::string path;
+    const std::string path; /// Cache base path
     const CleanupQueuePtr cleanup_queue;
     const DownloadQueuePtr download_queue;
-    const bool write_cache_per_user_directory;
 
+    std::shared_mutex key_prefix_directory_mutex;
     Poco::Logger * log;
-    mutable std::shared_mutex key_prefix_directory_mutex;
 
     struct MetadataBucket : public std::unordered_map<FileCacheKey, KeyMetadataPtr>
     {
@@ -187,6 +165,7 @@ private:
         mutable CacheMetadataGuard guard;
     };
 
+    static constexpr size_t buckets_num = 1024;
     std::vector<MetadataBucket> metadata_buckets{buckets_num};
 
     struct DownloadThread
@@ -194,15 +173,13 @@ private:
         std::unique_ptr<ThreadFromGlobalPool> thread;
         bool stop_flag{false};
     };
-
-    std::atomic<size_t> download_threads_num;
     std::vector<std::shared_ptr<DownloadThread>> download_threads;
+    std::atomic<size_t> download_threads_num;
+
     std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
 
-    static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind);
-
     MetadataBucket & getMetadataBucket(const Key & key);
-    void downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory) const;
+    void downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory);
     MetadataBucket::iterator removeEmptyKey(
         MetadataBucket & bucket,
         MetadataBucket::iterator it,

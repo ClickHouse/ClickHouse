@@ -5,25 +5,28 @@ import csv
 import logging
 import os
 import subprocess
+import sys
 from pathlib import Path
-from typing import Tuple
+from typing import List, Tuple
+
+from github import Github
 
 from build_download_helper import download_all_deb_packages
-from commit_status_helper import override_status
+from commit_status_helper import (
+    RerunHelper,
+    get_commit,
+    override_status,
+    post_commit_status,
+)
 from docker_images_helper import DockerImage, pull_image, get_docker_image
 from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
-from report import (
-    OK,
-    FAIL,
-    ERROR,
-    SUCCESS,
-    JobReport,
-    TestResults,
-    TestResult,
-    read_test_results,
-)
+from get_robot_token import get_best_robot_token
+from pr_info import PRInfo
+from report import OK, FAIL, ERROR, SUCCESS, TestResults, TestResult, read_test_results
+from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from upload_result_helper import upload_results
 
 
 NO_CHANGES_MSG = "Nothing to run"
@@ -101,6 +104,15 @@ def main():
         kill_timeout > 0
     ), "kill timeout must be provided as an input arg or in KILL_TIMEOUT env"
 
+    pr_info = PRInfo()
+    gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
+
+    rerun_helper = RerunHelper(commit, check_name)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
+
     docker_image = pull_image(get_docker_image(IMAGE_NAME))
 
     repo_tests_path = repo_path / "tests"
@@ -138,6 +150,8 @@ def main():
 
     logging.info("Files in result folder %s", os.listdir(result_path))
 
+    s3_helper = S3Helper()
+
     status = None
     description = None
 
@@ -172,19 +186,29 @@ def main():
         )
     )
 
+    report_url = upload_results(
+        s3_helper,
+        pr_info.number,
+        pr_info.sha,
+        test_results,
+        additional_logs,
+        check_name,
+    )
+
+    print(
+        f"::notice:: {check_name}"
+        f", Result: '{status}'"
+        f", Description: '{description}'"
+        f", Report url: '{report_url}'"
+    )
+
     # Until it pass all tests, do not block CI, report "success"
     assert description is not None
     # FIXME: force SUCCESS until all cases are fixed
     status = SUCCESS
-
-    JobReport(
-        description=description,
-        test_results=test_results,
-        status=status,
-        start_time=stopwatch.start_time_str,
-        duration=stopwatch.duration_seconds,
-        additional_files=additional_logs,
-    ).dump()
+    post_commit_status(
+        commit, status, report_url, description, check_name, pr_info, dump_to_file=True
+    )
 
 
 if __name__ == "__main__":

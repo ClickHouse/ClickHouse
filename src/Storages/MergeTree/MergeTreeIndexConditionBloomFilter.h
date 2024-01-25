@@ -44,7 +44,7 @@ public:
         std::vector<std::pair<size_t, ColumnPtr>> predicate;
     };
 
-    MergeTreeIndexConditionBloomFilter(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_, const Block & header_, size_t hash_functions_);
+    MergeTreeIndexConditionBloomFilter(const SelectQueryInfo & info_, ContextPtr context_, const Block & header_, size_t hash_functions_);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -58,6 +58,7 @@ public:
 
 private:
     const Block & header;
+    const SelectQueryInfo & query_info;
     const size_t hash_functions;
     std::vector<RPNElement> rpn;
 
