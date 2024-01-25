@@ -3,7 +3,6 @@
 #include "Core/BackgroundSchedulePool.h"
 #include "VFSLogItem.h"
 #include "VFSSettings.h"
-#include "base/types.h"
 
 namespace DB
 {
@@ -14,6 +13,7 @@ class ObjectStorageVFSGCThread
 public:
     ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool);
     inline void stop() { task->deactivate(); }
+    using Logpointer = size_t;
 
 private:
     DiskObjectStorageVFS & storage;
@@ -22,13 +22,13 @@ private:
     std::shared_ptr<const VFSSettings> settings;
 
     void run();
-    bool skipRun(size_t batch_size, size_t start_logpointer, size_t end_logpointer) const;
+    bool skipRun(size_t batch_size, Logpointer start, Logpointer end) const;
     void tryWriteSnapshotForZero() const;
-    void reconcileLogWithSnapshot(size_t start_logpointer);
-    void updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer) const;
-    VFSLogItem getBatch(size_t start_logpointer, size_t end_logpointer) const;
-    void removeBatch(size_t start_logpointer, size_t end_logpointer) const;
-    String getNode(size_t id) const;
-    StoredObject getSnapshotObject(size_t logpointer) const;
+    void updateSnapshotWithLogEntries(Logpointer start, Logpointer end) const;
+    Logpointer reconcileLogWithSnapshot(Logpointer start, Logpointer end, Exception && e) const;
+    VFSLogItem getBatch(Logpointer start, Logpointer end) const;
+    void removeBatch(Logpointer start, Logpointer end) const;
+    String getNode(Logpointer ptr) const;
+    StoredObject getSnapshotObject(Logpointer ptr) const;
 };
 }

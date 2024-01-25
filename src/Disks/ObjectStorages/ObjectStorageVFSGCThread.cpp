@@ -5,10 +5,6 @@
 #include "IO/Lz4DeflatingWriteBuffer.h"
 #include "IO/Lz4InflatingReadBuffer.h"
 #include "IO/ReadHelpers.h"
-#include "IO/S3Common.h"
-#if USE_AZURE_BLOB_STORAGE
-#    include <azure/storage/common/storage_exception.hpp>
-#endif
 
 namespace ProfileEvents
 {
@@ -52,6 +48,8 @@ ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storag
     task->activateAndSchedule();
 }
 
+using Logpointer = ObjectStorageVFSGCThread::Logpointer;
+
 const int EPHEMERAL = zkutil::CreateMode::Ephemeral;
 void ObjectStorageVFSGCThread::run()
 {
@@ -91,70 +89,30 @@ void ObjectStorageVFSGCThread::run()
     // We can catch this case by checking (end_logpointer - start_logpointer) != log_items_batch.size()
     // In that case we should find the overflow point and process only the part before overflow
     // (so next GC could capture the range with increasing logpointers).
-    // We also must use a signed type for logpointers.
+    // We also must use a signed type for logpointers (and carefully check overflows)
     const auto [start_str, end_str] = std::ranges::minmax(std::move(log_items_batch));
-    const size_t start_logpointer = parseFromString<size_t>(start_str.substr(4)); // log- is a prefix
-    const size_t end_logpointer_parsed = parseFromString<size_t>(end_str.substr(4));
-    const size_t end_logpointer = std::min(end_logpointer_parsed, start_logpointer + settings->batch_max_size);
+    const Logpointer start = parseFromString<Logpointer>(start_str.substr(4)); // log- is a prefix
+    const Logpointer end_parsed = parseFromString<Logpointer>(end_str.substr(4));
+    const Logpointer end = std::min(end_parsed, start + settings->batch_max_size);
 
-    if ((skip_run = skipRun(batch_size, start_logpointer, end_logpointer)))
+    if ((skip_run = skipRun(batch_size, start, end)))
         return;
-    if (start_logpointer == 0)
+    if (start == 0)
         tryWriteSnapshotForZero();
 
-    LOG_DEBUG(log, "Processing range [{};{}]", start_logpointer, end_logpointer);
-    updateSnapshotWithLogEntries(start_logpointer, end_logpointer);
-    removeBatch(start_logpointer, end_logpointer);
-    LOG_DEBUG(log, "Removed lock for [{};{}]", start_logpointer, end_logpointer);
+    LOG_DEBUG(log, "Processing range [{};{}]", start, end);
+    updateSnapshotWithLogEntries(start, end);
+    removeBatch(start, end);
+    LOG_DEBUG(log, "Removed lock for [{};{}]", start, end);
     successful_run = true;
 }
 
-constexpr std::string_view SNAPSHOTS_PATH = "/snapshots";
-void ObjectStorageVFSGCThread::reconcileLogWithSnapshot(size_t start_logpointer)
-{
-    LOG_WARNING(log, "Local start logpointer ({}) > batch start logpointer ({})", last_start_logpointer, start_logpointer);
-
-    // If batch start logpointer > 0:
-    // - Zookeeper was lost
-    // - Some other replica was also lost and restarted with last_start_logpointer = 0
-    // - This replica won garbage collection and wrote new snapshot
-    // - Now you have multiple snapshots in folder
-    // TODO myrrc I don't see how we could reconcile local state in this case
-    chassert(start_logpointer == 0);
-
-    const String snapshots_folder = storage.getMetadataObject(SNAPSHOTS_PATH).remote_path;
-    RelativePathsWithMetadata snapshots;
-    if (storage.object_storage->listObjects(snapshots_folder, snapshots, 1); snapshots.empty())
-    {
-        LOG_ERROR(log, "Did not find any snapshots in {}, previous state is gone", snapshots_folder);
-        last_start_logpointer = start_logpointer;
-        return;
-    }
-
-    const std::string_view snapshot_name = snapshots[0].relative_path;
-    const size_t snapshot_logpointer = parseFromString<size_t>(snapshot_name);
-
-    // TODO myrrc If this is wrong, everything is too broken to continue
-    chassert(snapshot_logpointer + 1 >= last_start_logpointer);
-
-    const StoredObject snapshot_object{fs::path(snapshots_folder) / snapshot_name};
-    const StoredObject new_snapshot_object{fs::path(snapshots_folder) / "0"};
-    LOG_INFO(log, "Found snapshot {}, renaming to {}", snapshot_object, new_snapshot_object);
-
-    // If we fail copying object, we don't update last_start_logpointer and try again on next run
-    storage.object_storage->copyObject(snapshot_object, new_snapshot_object, {}, {});
-    last_start_logpointer = start_logpointer;
-
-    // TODO myrrc If we fail removing old snapshot, we'll have garbage in snapshots folder
-    storage.object_storage->removeObject(snapshot_object);
-}
-
-bool ObjectStorageVFSGCThread::skipRun(size_t batch_size, size_t start_logpointer, size_t end_logpointer) const
+bool ObjectStorageVFSGCThread::skipRun(size_t batch_size, Logpointer start, Logpointer end) const
 {
     // We have snapshot with name "0" either if 1. No items have been processed (needed for migrations),
     // 2. We processed a batch of single item with logpointer 0.
     // Skip as otherwise we'd read from 0 and write to 0 at same time which would lead to file corruption.
-    if (start_logpointer == 0 && end_logpointer == 0)
+    if (start == 0 && end == 0)
         return true;
 
     const size_t min_size = settings->batch_min_size;
@@ -169,7 +127,7 @@ bool ObjectStorageVFSGCThread::skipRun(size_t batch_size, size_t start_logpointe
     }
 
     Coordination::Stat stat;
-    storage.zookeeper()->exists(getNode(start_logpointer), &stat);
+    storage.zookeeper()->exists(getNode(start), &stat);
 
     using ms = std::chrono::milliseconds;
     using clock = std::chrono::system_clock;
@@ -192,61 +150,40 @@ void ObjectStorageVFSGCThread::tryWriteSnapshotForZero() const
     Lz4DeflatingWriteBuffer{std::move(buf), settings->snapshot_lz4_compression_level}.finalize();
 }
 
-void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer) const
+void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(Logpointer start, Logpointer end) const
 {
     IObjectStorage & object_storage = *storage.object_storage;
+    const size_t start_regarding_zero = start == 0 ? 0 : (start - 1);
+    StoredObject old_snapshot;
+    std::optional<Lz4InflatingReadBuffer> old_snapshot_buf;
 
-    const size_t start_logpointer_regarding_zero = start_logpointer == 0 ? 0 : (start_logpointer - 1);
-    StoredObject old_snapshot = getSnapshotObject(start_logpointer_regarding_zero);
-    auto old_snapshot_uncompressed_buf = object_storage.readObject(old_snapshot);
-    Lz4InflatingReadBuffer old_snapshot_buf{std::move(old_snapshot_uncompressed_buf)};
-
-    auto next_snapshot_exists = [&] { return object_storage.exists(getSnapshotObject(end_logpointer)); };
-    auto log_already_processed = [&]
+    auto populate_old_snapshot = [&](Logpointer target_start)
     {
-        LOG_INFO(
-            log,
-            "Snapshot for {} doesn't exist but found snapshot for {}, discarding this batch",
-            start_logpointer_regarding_zero,
-            end_logpointer);
+        old_snapshot = getSnapshotObject(target_start);
+        auto uncompressed_buf = object_storage.readObject(old_snapshot);
+        old_snapshot_buf.emplace(std::move(uncompressed_buf));
     };
 
     try
     {
-        old_snapshot_buf.eof(); // throws if file not found
+        populate_old_snapshot(start_regarding_zero);
+        old_snapshot_buf->eof(); // throws if file not found
     }
-    // TODO myrrc this works only for s3 and azure
-#if USE_AWS_S3
-    catch (const S3Exception & e)
+    catch (Exception & e)
     {
-        if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY && next_snapshot_exists())
-            return log_already_processed();
-        throw;
-    }
-#endif
-#if USE_AZURE_BLOB_STORAGE
-    catch (const Azure::Storage::StorageException & e)
-    {
-        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound && next_snapshot_exists())
-            return log_already_processed();
-        throw;
-    }
-#endif
-    catch (...)
-    {
-        throw;
+        populate_old_snapshot(reconcileLogWithSnapshot(start_regarding_zero, end, std::move(e)));
     }
 
-    const StoredObject new_snapshot = getSnapshotObject(end_logpointer);
-    auto new_snapshot_uncompressed_buf = object_storage.writeObject(new_snapshot, WriteMode::Rewrite);
+    const StoredObject new_snapshot = getSnapshotObject(end);
+    auto uncompressed_buf = object_storage.writeObject(new_snapshot, WriteMode::Rewrite);
     // TODO myrrc research zstd dictionary builder or zstd for compression
-    Lz4DeflatingWriteBuffer new_snapshot_buf{std::move(new_snapshot_uncompressed_buf), settings->snapshot_lz4_compression_level};
+    Lz4DeflatingWriteBuffer new_snapshot_buf{std::move(uncompressed_buf), settings->snapshot_lz4_compression_level};
 
-    auto [obsolete, invalid] = getBatch(start_logpointer, end_logpointer).mergeWithSnapshot(old_snapshot_buf, new_snapshot_buf, log);
+    auto [obsolete, invalid] = getBatch(start, end).mergeWithSnapshot(*old_snapshot_buf, new_snapshot_buf, log);
     obsolete.emplace_back(std::move(old_snapshot));
 
-    ProfileEvents::increment(ProfileEvents::VFSGcCumulativeLogItemsRead, end_logpointer - start_logpointer);
-    ProfileEvents::increment(ProfileEvents::VFSGcCumulativeSnapshotBytesRead, old_snapshot_buf.count());
+    ProfileEvents::increment(ProfileEvents::VFSGcCumulativeLogItemsRead, end - start);
+    ProfileEvents::increment(ProfileEvents::VFSGcCumulativeSnapshotBytesRead, old_snapshot_buf->count());
 
     if (!invalid.empty()) // TODO myrrc remove after testing
     {
@@ -259,6 +196,54 @@ void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpoin
     new_snapshot_buf.finalize();
     object_storage.removeObjects(obsolete);
 }
+
+constexpr std::string_view SNAPSHOTS_PATH = "/snapshots";
+Logpointer ObjectStorageVFSGCThread::reconcileLogWithSnapshot(Logpointer start, Logpointer end, Exception && e) const
+{
+    LOG_WARNING(log, "Snapshot for {} not found", start);
+
+    const String snapshots_folder = storage.getMetadataObject(SNAPSHOTS_PATH).remote_path;
+    RelativePathsWithMetadata snapshots;
+    if (storage.object_storage->listObjects(snapshots_folder, snapshots, 5); snapshots.empty())
+    {
+        LOG_ERROR(log, "Did not find any snapshots in {}", snapshots_folder);
+        throw std::move(e);
+    }
+
+    if (std::ranges::any_of(snapshots, [end](const auto & target) { return target.relative_path == toString(end); }))
+    {
+        LOG_INFO(log, "Found snapshot for {}, discarding this batch (leftover from previous GC run)", end);
+        return end;
+    }
+
+    LOG_WARNING(log, "Local start logpointer ({}) > batch start logpointer ({})", last_start_logpointer, start_logpointer);
+
+    // If batch start logpointer > 0:
+    // - Zookeeper was lost
+    // - Some other replica was also lost and restarted with last_start_logpointer = 0
+    // - This replica won garbage collection and wrote new snapshot
+    // - Now you have multiple snapshots in folder
+    // TODO myrrc I don't see how we could reconcile local state in this case
+    chassert(start == 0);
+
+    const std::string_view snapshot_name = snapshots[0].relative_path;
+    const size_t snapshot_logpointer = parseFromString<size_t>(snapshot_name);
+
+    // TODO myrrc If this is wrong, everything is too broken to continue
+    chassert(snapshot_logpointer + 1 >= start);
+
+    const StoredObject snapshot_object{fs::path(snapshots_folder) / snapshot_name};
+    const StoredObject new_snapshot_object{fs::path(snapshots_folder) / "0"};
+    LOG_INFO(log, "Found snapshot {}, renaming to {}", snapshot_object, new_snapshot_object);
+
+    // If we fail copying object, we don't update last_start_logpointer and try again on next run
+    storage.object_storage->copyObject(snapshot_object, new_snapshot_object, {}, {});
+    start = start;
+
+    // TODO myrrc If we fail removing old snapshot, we'll have garbage in snapshots folder
+    storage.object_storage->removeObject(snapshot_object);
+}
+
 
 VFSLogItem ObjectStorageVFSGCThread::getBatch(size_t start_logpointer, size_t end_logpointer) const
 {
@@ -291,15 +276,15 @@ void ObjectStorageVFSGCThread::removeBatch(size_t start_logpointer, size_t end_l
     storage.zookeeper()->multi(requests);
 }
 
-String ObjectStorageVFSGCThread::getNode(size_t id) const
+String ObjectStorageVFSGCThread::getNode(Logpointer ptr) const
 {
     // Zookeeper's sequential node is 10 digits with padding zeros
-    return fmt::format("{}{:010}", storage.traits.log_item, id);
+    return fmt::format("{}{:010}", storage.traits.log_item, ptr);
 }
 
-StoredObject ObjectStorageVFSGCThread::getSnapshotObject(size_t logpointer) const
+StoredObject ObjectStorageVFSGCThread::getSnapshotObject(Logpointer ptr) const
 {
     // We need a separate folder to quickly get snapshot with unknown logpointer on reconciliation
-    return storage.getMetadataObject(fmt::format("{}/{}", SNAPSHOTS_PATH, logpointer));
+    return storage.getMetadataObject(fmt::format("{}/{}", SNAPSHOTS_PATH, ptr));
 }
 }
