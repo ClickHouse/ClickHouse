@@ -27,6 +27,7 @@ def cluster():
     finally:
         cluster.shutdown()
 
+
 def create_table(node, table, replica, data_prefix="", aggressive_merge=True):
     if data_prefix == "":
         data_prefix = table
@@ -34,11 +35,11 @@ def create_table(node, table, replica, data_prefix="", aggressive_merge=True):
     if aggressive_merge:
         vertical_merge_algorithm_min_rows_to_activate = 1
         vertical_merge_algorithm_min_columns_to_activate = 1
-        max_parts_to_merge_at_once=3
+        max_parts_to_merge_at_once = 3
     else:
         vertical_merge_algorithm_min_rows_to_activate = 100000
         vertical_merge_algorithm_min_columns_to_activate = 100
-        max_parts_to_merge_at_once=3
+        max_parts_to_merge_at_once = 3
 
     node.query(
         f"""
