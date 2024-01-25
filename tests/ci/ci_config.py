@@ -1134,7 +1134,7 @@ CHECK_DESCRIPTIONS = [
         "Look at the report to see which tests fail, then reproduce the failure "
         'locally as described <a href="https://clickhouse.com/docs/en/development/'
         'tests#functional-test-locally">here</a>',
-        lambda x: x == "Fast test",
+        lambda x: x == "Fast tests",
     ),
     CheckDescription(
         "Flaky tests",
