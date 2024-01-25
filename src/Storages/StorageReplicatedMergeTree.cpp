@@ -3619,10 +3619,18 @@ bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEnt
     }
 
     auto replicated_fetches_pool_size = getContext()->getFetchesExecutor()->getMaxTasksCount();
+    auto replicated_fetches_pool_threads= getContext()->getFetchesExecutor()->getMaxThreads();
+    size_t reserved_for_priority = static_cast<size_t>(getContext()->getServerSettings().reserve_fetch_queue_slot_for_sync_replica_ratio * replicated_fetches_pool_size);
     size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundFetchesPoolTask].load(std::memory_order_relaxed);
-    if (busy_threads_in_pool >= replicated_fetches_pool_size)
+
+    /// We only allow priority slots in queue, not priority threads, so number of priority slots cannot exceeds number of waiting queue slots
+    reserved_for_priority = std::min(reserved_for_priority, replicated_fetches_pool_size - replicated_fetches_pool_threads);
+    /// If the entry has living priority tag, we could use priority slots
+    auto fetches_pool_size_limit = entry.priority_tag.expired() ? replicated_fetches_pool_size - reserved_for_priority : replicated_fetches_pool_size;
+
+    if (busy_threads_in_pool >= fetches_pool_size_limit)
     {
-        disable_reason = fmt::format("Not executing fetch of part {} because {} fetches already executing, max {}.", entry.new_part_name, busy_threads_in_pool, replicated_fetches_pool_size);
+        disable_reason = fmt::format("Not executing fetch of part {} because {} fetches already executing, max {}.", entry.new_part_name, busy_threads_in_pool, fetches_pool_size_limit);
         return false;
     }
 
@@ -8564,6 +8572,7 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
     background_operations_assignee.trigger();
 
     std::unordered_set<String> wait_for_ids;
+    LogEntryPriorityTags wait_for_priority_tags;
     std::atomic_bool was_interrupted = false;
 
     Poco::Event target_entry_event;
@@ -8591,7 +8600,7 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
         if (wait_for_ids.empty())
             target_entry_event.set();
     };
-    const auto handler = queue.addSubscriber(std::move(callback), wait_for_ids, sync_mode);
+    const auto handler = queue.addSubscriber(std::move(callback), wait_for_ids, wait_for_priority_tags, sync_mode);
 
     if (!target_entry_event.tryWait(max_wait_milliseconds))
         return false;

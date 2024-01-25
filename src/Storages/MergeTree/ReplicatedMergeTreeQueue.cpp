@@ -8,7 +8,8 @@
 #include <IO/WriteHelpers.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/CurrentMetrics.h>
-#include "Storages/MutationCommands.h"
+#include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
+#include <Storages/MutationCommands.h>
 #include <Parsers/formatAST.h>
 #include <base/sort.h>
 
@@ -2622,7 +2623,7 @@ String ReplicatedMergeTreeMergePredicate::getCoveringVirtualPart(const String & 
 
 ReplicatedMergeTreeQueue::SubscriberHandler
 ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback,
-                                        std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode)
+                                        std::unordered_set<String> & out_entry_names, LogEntryPriorityTags & out_entry_priority_tags, SyncReplicaMode sync_mode)
 {
     std::lock_guard<std::mutex> lock(state_mutex);
     std::lock_guard lock_subscribers(subscribers_mutex);
@@ -2644,7 +2645,11 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
         {
             if (!lightweight_entries_only
                 || std::find(lightweight_entries.begin(), lightweight_entries.end(), entry->type) != lightweight_entries.end())
-                out_entry_names.insert(entry->znode_name);
+                {
+                    out_entry_priority_tags.emplace_back(std::make_shared<LogEntryPriorityTag>());
+                    entry->priority_tag = out_entry_priority_tags.back();
+                    out_entry_names.insert(entry->znode_name);
+                }
         }
         LOG_TEST(log, "Waiting for {} entries to be processed: {}", out_entry_names.size(), fmt::join(out_entry_names, ", "));
     }

@@ -182,12 +182,16 @@ struct ReplicatedMergeTreeLogEntryData
     }
 };
 
+struct LogEntryPriorityTag{};
+using LogEntryPriorityTags = std::vector<std::shared_ptr<LogEntryPriorityTag>>;
 
 struct ReplicatedMergeTreeLogEntry : public ReplicatedMergeTreeLogEntryData, std::enable_shared_from_this<ReplicatedMergeTreeLogEntry>
 {
     using Ptr = std::shared_ptr<ReplicatedMergeTreeLogEntry>;
 
     std::condition_variable execution_complete; /// Awake when currently_executing becomes false.
+
+    std::weak_ptr<LogEntryPriorityTag> priority_tag; /// It can be set by StorageReplicatedMergeTree::waitForProcessingQueue
 
     static Ptr parse(const String & s, const Coordination::Stat & stat, MergeTreeDataFormatVersion format_version);
 };
