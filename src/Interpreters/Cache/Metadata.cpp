@@ -769,7 +769,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(KeyMetadata::iterator it,
 {
     auto file_segment = it->second->file_segment;
 
-    LOG_DEBUG(
+    LOG_TEST(
         key_metadata->log, "Remove from cache. Key: {}, offset: {}, size: {}",
         getKey(), file_segment->offset(), file_segment->reserved_size);
 
