@@ -411,7 +411,7 @@ private:
     bool generate_chunk_from_metadata{false};
     UInt64 current_file_remained_rows = 0;
 
-    Poco::Logger * log = &Poco::Logger::get("StorageHive");
+    LoggerPtr log = getLogger("StorageHive");
 };
 
 
@@ -780,7 +780,7 @@ public:
         HDFSFSPtr fs_,
         HiveMetastoreClient::HiveTableMetadataPtr hive_table_metadata_,
         Block sample_block_,
-        Poco::Logger * log_,
+        LoggerPtr log_,
         ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
@@ -805,7 +805,7 @@ private:
     HDFSFSPtr fs;
     HiveMetastoreClient::HiveTableMetadataPtr hive_table_metadata;
     Block sample_block;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     ContextPtr context;
     size_t max_block_size;

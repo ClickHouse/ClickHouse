@@ -91,7 +91,7 @@ void IIRowSchemaReader::setContext(const ContextPtr & context)
     }
     else
     {
-        LOG_WARNING(&Poco::Logger::get("IIRowSchemaReader"), "Couldn't parse schema inference hints: {}. This setting will be ignored", hints_parsing_error);
+        LOG_WARNING(getLogger("IIRowSchemaReader"), "Couldn't parse schema inference hints: {}. This setting will be ignored", hints_parsing_error);
     }
 }
 

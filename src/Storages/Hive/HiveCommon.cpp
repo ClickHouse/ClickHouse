@@ -25,7 +25,7 @@ static const int hive_metastore_client_recv_timeout_ms = 10000;
 static const int hive_metastore_client_send_timeout_ms = 10000;
 
 ThriftHiveMetastoreClientPool::ThriftHiveMetastoreClientPool(ThriftHiveMetastoreClientBuilder builder_)
-    : PoolBase<Object>(max_hive_metastore_client_connections, &Poco::Logger::get("ThriftHiveMetastoreClientPool")), builder(builder_)
+    : PoolBase<Object>(max_hive_metastore_client_connections, getLogger("ThriftHiveMetastoreClientPool")), builder(builder_)
 {
 }
 

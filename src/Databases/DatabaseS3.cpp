@@ -49,7 +49,7 @@ DatabaseS3::DatabaseS3(const String & name_, const Configuration& config_, Conte
     : IDatabase(name_)
     , WithContext(context_->getGlobalContext())
     , config(config_)
-    , log(&Poco::Logger::get("DatabaseS3(" + name_ + ")"))
+    , log(getLogger("DatabaseS3(" + name_ + ")"))
 {
 }
 

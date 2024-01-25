@@ -47,7 +47,7 @@ private:
     std::string remote_database_name;
     std::string remote_table_name;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::string getReadMethod() const override;
 

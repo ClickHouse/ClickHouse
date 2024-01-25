@@ -19,7 +19,7 @@ public:
     IStorageCluster(
         const String & cluster_name_,
         const StorageID & table_id_,
-        Poco::Logger * log_);
+        LoggerPtr log_);
 
     void read(
         QueryPlan & query_plan,
@@ -44,7 +44,7 @@ protected:
     virtual void updateQueryToSendIfNeeded(ASTPtr & /*query*/, const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) {}
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
     String cluster_name;
 };
 

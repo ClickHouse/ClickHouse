@@ -37,7 +37,7 @@ StorageAzureBlobCluster::StorageAzureBlobCluster(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const ContextPtr & context)
-    : IStorageCluster(cluster_name_, table_id_, &Poco::Logger::get("StorageAzureBlobCluster (" + table_id_.table_name + ")"))
+    : IStorageCluster(cluster_name_, table_id_, getLogger("StorageAzureBlobCluster (" + table_id_.table_name + ")"))
     , configuration{configuration_}
     , object_storage(std::move(object_storage_))
 {

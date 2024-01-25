@@ -39,7 +39,7 @@ StorageS3Cluster::StorageS3Cluster(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const ContextPtr & context)
-    : IStorageCluster(cluster_name_, table_id_, &Poco::Logger::get("StorageS3Cluster (" + table_id_.table_name + ")"))
+    : IStorageCluster(cluster_name_, table_id_, getLogger("StorageS3Cluster (" + table_id_.table_name + ")"))
     , s3_configuration{configuration_}
 {
     context->getGlobalContext()->getRemoteHostFilter().checkURL(configuration_.url.uri);

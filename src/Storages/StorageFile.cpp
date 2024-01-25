@@ -1204,7 +1204,7 @@ void StorageFileSource::beforeDestroy()
             catch (const std::exception & e)
             {
                 // Cannot throw exception from destructor, will write only error
-                LOG_ERROR(&Poco::Logger::get("~StorageFileSource"), "Failed to rename file {}: {}", file_path_ref, e.what());
+                LOG_ERROR(getLogger("~StorageFileSource"), "Failed to rename file {}: {}", file_path_ref, e.what());
                 continue;
             }
         }

@@ -116,7 +116,7 @@ private:
     bool is_path_with_globs;
     NamesAndTypesList virtual_columns;
 
-    Poco::Logger * log = &Poco::Logger::get("StorageHDFS");
+    LoggerPtr log = getLogger("StorageHDFS");
 };
 
 class PullingPipelineExecutor;
