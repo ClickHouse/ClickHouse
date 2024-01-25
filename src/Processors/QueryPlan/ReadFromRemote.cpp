@@ -278,6 +278,11 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
             GetPriorityForLoadBalancing::Func priority_func
                 = priority_func_factory->getPriorityFunc(LoadBalancing::ROUND_ROBIN, 0, shard.shard_info.pool->getPoolSize());
 
+            LOG_DEBUG(
+                &Poco::Logger::get(__PRETTY_FUNCTION__),
+                "Priority function address: {}",
+                reinterpret_cast<UInt64>(priority_func.target<Priority (*)(size_t)>()));
+
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 shard.shard_info.pool,
                 query_string,

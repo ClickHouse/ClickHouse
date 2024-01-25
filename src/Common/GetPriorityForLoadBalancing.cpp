@@ -1,5 +1,6 @@
 #include <Common/GetPriorityForLoadBalancing.h>
 #include <Common/Priority.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -36,6 +37,12 @@ GetPriorityForLoadBalancing::getPriorityFunc(LoadBalancing load_balance, size_t 
         case LoadBalancing::ROUND_ROBIN:
             auto local_last_used = last_used % pool_size;
             ++last_used;
+            LOG_DEBUG(
+                &Poco::Logger::get(__PRETTY_FUNCTION__),
+                "local_last_used={} last_used={} pool_size={}",
+                local_last_used,
+                last_used,
+                pool_size);
 
             // Example: pool_size = 5
             // | local_last_used | i=0 | i=1 | i=2 | i=3 | i=4 |
