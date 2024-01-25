@@ -21,7 +21,6 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <Core/ServerSettings.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -39,7 +38,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
-    extern const int TOO_MANY_MATERIALIZED_VIEWS;
 }
 
 namespace ActionLocks
@@ -89,16 +87,6 @@ StorageMaterializedView::StorageMaterializedView(
                         "either ENGINE or an existing table in a TO clause");
 
     auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), query.refresh_strategy != nullptr, local_context);
-    if (select.select_table_id)
-    {
-        auto select_table_dependent_views = DatabaseCatalog::instance().getDependentViews(select.select_table_id);
-
-        auto max_materialized_views_count_for_table = getContext()->getServerSettings().max_materialized_views_count_for_table;
-        if (max_materialized_views_count_for_table && select_table_dependent_views.size() >= max_materialized_views_count_for_table)
-            throw Exception(ErrorCodes::TOO_MANY_MATERIALIZED_VIEWS,
-                            "Too many materialized views, maximum: {}", max_materialized_views_count_for_table);
-    }
-
     storage_metadata.setSelectQuery(select);
     if (!comment.empty())
         storage_metadata.setComment(comment);
@@ -161,6 +149,10 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
     const StorageSnapshotPtr &,
     SelectQueryInfo & query_info) const
 {
+    /// TODO: Find a way to support projections for StorageMaterializedView. Why do we use different
+    /// metadata for materialized view and target table? If they are the same, we can get rid of all
+    /// converting and use it just like a normal view.
+    query_info.ignore_projections = true;
     const auto & target_metadata = getTargetTable()->getInMemoryMetadataPtr();
     return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getStorageSnapshot(target_metadata, local_context), query_info);
 }

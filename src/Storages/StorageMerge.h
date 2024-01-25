@@ -12,9 +12,6 @@ namespace DB
 
 struct QueryPlanResourceHolder;
 
-struct RowPolicyFilter;
-using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
-
 /** A table that represents the union of an arbitrary number of other tables.
   * All tables must have the same structure.
   */
@@ -81,42 +78,34 @@ public:
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
-    using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
-    DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
-
 private:
+    std::optional<OptimizedRegularExpression> source_database_regexp;
+    std::optional<OptimizedRegularExpression> source_table_regexp;
+    std::optional<DBToTableSetMap> source_databases_and_tables;
+
+    String source_database_name_or_regexp;
+    bool database_is_regexp = false;
+
     /// (Database, Table, Lock, TableName)
     using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
+    using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
 
-    struct DatabaseNameOrRegexp
-    {
-        String source_database_name_or_regexp;
-        bool database_is_regexp = false;
-
-        std::optional<OptimizedRegularExpression> source_database_regexp;
-        std::optional<OptimizedRegularExpression> source_table_regexp;
-        std::optional<DBToTableSetMap> source_databases_and_tables;
-
-        DatabaseNameOrRegexp(
-            const String & source_database_name_or_regexp_,
-            bool database_is_regexp_,
-            std::optional<OptimizedRegularExpression> source_database_regexp_,
-            std::optional<OptimizedRegularExpression> source_table_regexp_,
-            std::optional<DBToTableSetMap> source_databases_and_tables_);
-
-        DatabaseTablesIteratorPtr getDatabaseIterator(const String & database_name, ContextPtr context) const;
-
-        DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
-    };
-
-    DatabaseNameOrRegexp database_name_or_regexp;
+    StorageMerge::StorageListWithLocks getSelectedTables(
+        ContextPtr query_context,
+        const ASTPtr & query = nullptr,
+        bool filter_by_database_virtual_column = false,
+        bool filter_by_table_virtual_column = false) const;
 
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
 
     template <typename F>
     void forEachTable(F && func) const;
+
+    DatabaseTablesIteratorPtr getDatabaseIterator(const String & database_name, ContextPtr context) const;
+
+    DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
 
     NamesAndTypesList getVirtuals() const override;
     ColumnSizeByName getColumnSizes() const override;
@@ -143,7 +132,10 @@ public:
 
     ReadFromMerge(
         Block common_header_,
-        Names all_column_names_,
+        StorageListWithLocks selected_tables_,
+        Names column_names_,
+        bool has_database_virtual_column_,
+        bool has_table_virtual_column_,
         size_t max_block_size,
         size_t num_streams,
         StoragePtr storage,
@@ -154,7 +146,7 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    const StorageListWithLocks & getSelectedTables();
+    const StorageListWithLocks & getSelectedTables() const { return selected_tables; }
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_);
@@ -167,12 +159,15 @@ private:
     const Block common_header;
 
     StorageListWithLocks selected_tables;
-    Names all_column_names;
     Names column_names;
     bool has_database_virtual_column;
     bool has_table_virtual_column;
     StoragePtr storage_merge;
     StorageSnapshotPtr merge_storage_snapshot;
+
+    /// Store read plan for each child table.
+    /// It's needed to guarantee lifetime for child steps to be the same as for this step (mainly for EXPLAIN PIPELINE).
+    std::vector<QueryPlan> child_plans;
 
     SelectQueryInfo query_info;
     ContextMutablePtr context;
@@ -189,52 +184,14 @@ private:
 
     using Aliases = std::vector<AliasData>;
 
-    /// An object of this helper class is created
-    ///  when processing a Merge table data source (subordinary table)
-    ///  that has row policies
-    ///  to guarantee that these row policies are applied
-    class RowPolicyData
-    {
-    public:
-        RowPolicyData(RowPolicyFilterPtr, std::shared_ptr<DB::IStorage>, ContextPtr);
-
-        /// Add to data stream columns that are needed only for row policies
-        ///  SELECT x from T  if  T has row policy  y=42
-        ///  required y in data pipeline
-        void extendNames(Names &) const;
-
-        /// Use storage facilities to filter data
-        ///  optimization
-        ///  does not guarantee accuracy, but reduces number of rows
-        void addStorageFilter(SourceStepWithFilter *) const;
-
-        /// Create explicit filter transform to exclude
-        /// rows that are not conform to row level policy
-        void addFilterTransform(QueryPipelineBuilder &) const;
-
-    private:
-        std::string filter_column_name; // complex filter, may contain logic operations
-        ActionsDAGPtr actions_dag;
-        ExpressionActionsPtr filter_actions;
-        StorageMetadataPtr storage_metadata_snapshot;
-    };
-
+    class RowPolicyData;
     using RowPolicyDataOpt = std::optional<RowPolicyData>;
 
-    struct ChildPlan
-    {
-        QueryPlan plan;
-        Aliases table_aliases;
-        RowPolicyDataOpt row_policy_data_opt;
-    };
+    std::vector<Aliases> table_aliases;
 
-    /// Store read plan for each child table.
-    /// It's needed to guarantee lifetime for child steps to be the same as for this step (mainly for EXPLAIN PIPELINE).
-    std::optional<std::vector<ChildPlan>> child_plans;
+    std::vector<RowPolicyDataOpt> table_row_policy_data_opts;
 
-    std::vector<ChildPlan> createChildrenPlans(SelectQueryInfo & query_info_) const;
-
-    void filterTablesAndCreateChildrenPlans();
+    void createChildPlans();
 
     void applyFilters(const QueryPlan & plan) const;
 
@@ -247,7 +204,7 @@ private:
         Names && real_column_names,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextMutablePtr modified_context,
-        size_t streams_num) const;
+        size_t streams_num);
 
     QueryPipelineBuilderPtr createSources(
         QueryPlan & plan,
@@ -274,11 +231,6 @@ private:
         ContextPtr context,
         QueryPipelineBuilder & builder,
         QueryProcessingStage::Enum processed_stage);
-
-    StorageMerge::StorageListWithLocks getSelectedTables(
-        ContextPtr query_context,
-        bool filter_by_database_virtual_column,
-        bool filter_by_table_virtual_column) const;
 };
 
 }

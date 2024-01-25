@@ -608,7 +608,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 
-        storage_settings->loadFromQuery(*args.storage_def, context, args.attach);
+        storage_settings->loadFromQuery(*args.storage_def, context);
 
         // updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)

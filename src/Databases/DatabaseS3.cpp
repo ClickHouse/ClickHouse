@@ -2,7 +2,6 @@
 
 #if USE_AWS_S3
 
-#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseS3.h>
 
 #include <Interpreters/Context.h>
@@ -308,24 +307,6 @@ DatabaseTablesIteratorPtr DatabaseS3::getTablesIterator(ContextPtr, const Filter
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
-void registerDatabaseS3(DatabaseFactory & factory)
-{
-    auto create_fn = [](const DatabaseFactory::Arguments & args)
-    {
-        auto * engine_define = args.create_query.storage;
-        const ASTFunction * engine = engine_define->engine;
-
-        DatabaseS3::Configuration config;
-
-        if (engine->arguments && !engine->arguments->children.empty())
-        {
-            ASTs & engine_args = engine->arguments->children;
-            config = DatabaseS3::parseArguments(engine_args, args.context);
-        }
-
-        return std::make_shared<DatabaseS3>(args.database_name, config, args.context);
-    };
-    factory.registerDatabase("S3", create_fn);
 }
-}
+
 #endif

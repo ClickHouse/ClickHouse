@@ -57,31 +57,6 @@ def test_drop_wrong_database_name(start):
     node.query("DROP DATABASE test;")
 
 
-def test_database_engine_name(start):
-    # test with a valid database engine
-    node.query(
-        """
-        CREATE DATABASE test_atomic ENGINE = Atomic;
-        CREATE TABLE test_atomic.table_test_atomic (i Int64) ENGINE = MergeTree() ORDER BY i;
-        INSERT INTO test_atomic.table_test_atomic SELECT 1;
-        """
-    )
-    assert 1 == int(node.query("SELECT * FROM test_atomic.table_test_atomic".strip()))
-    # test with a invalid database engine
-    with pytest.raises(
-        QueryRuntimeException,
-        match="DB::Exception: Unknown database engine Atomic123. Maybe you meant: \\['Atomic'\\].",
-    ):
-        node.query("CREATE DATABASE test_atomic123 ENGINE = Atomic123;")
-
-    node.query(
-        """
-        DROP TABLE test_atomic.table_test_atomic;
-        DROP DATABASE test_atomic;
-       """
-    )
-
-
 def test_wrong_table_name(start):
     node.query(
         """

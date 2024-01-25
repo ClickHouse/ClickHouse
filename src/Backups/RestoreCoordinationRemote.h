@@ -21,8 +21,7 @@ public:
         const String & restore_uuid_,
         const Strings & all_hosts_,
         const String & current_host_,
-        bool is_internal_,
-        QueryStatusPtr process_list_element_);
+        bool is_internal_);
 
     ~RestoreCoordinationRemote() override;
 

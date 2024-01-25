@@ -15,8 +15,6 @@ jobs:
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
-      - name: DebugInfo
-        uses: hmarr/debug-action@a701ed95a46e6f2fb0df25e1a558c16356fae35a
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
@@ -35,9 +33,11 @@ jobs:
       - name: PrepareRunConfig
         id: runconfig
         run: |
+            echo "::group::configure CI run"
             python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --rebuild-all-binaries --outfile ${{ runner.temp }}/ci_run_data.json
+            echo "::endgroup::"
 
-            echo "::group::CI configuration"
+            echo "::group::CI run configure results"
             python3 -m json.tool ${{ runner.temp }}/ci_run_data.json
             echo "::endgroup::"
 
@@ -255,9 +255,9 @@ jobs:
       run_command: |
         cd "$GITHUB_WORKSPACE/tests/ci"
         python3 docker_server.py --release-type head \
-          --image-repo clickhouse/clickhouse-server --image-path docker/server --allow-build-reuse
+          --image-repo clickhouse/clickhouse-server --image-path docker/server
         python3 docker_server.py --release-type head \
-          --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper --allow-build-reuse
+          --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################

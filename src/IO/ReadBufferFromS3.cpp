@@ -6,7 +6,7 @@
 
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromS3.h>
-#include <Common/Scheduler/ResourceGuard.h>
+#include <IO/ResourceGuard.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Requests.h>
 

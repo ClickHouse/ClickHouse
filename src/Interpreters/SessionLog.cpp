@@ -67,7 +67,7 @@ SessionLogElement::SessionLogElement(const UUID & auth_id_, Type type_)
     std::tie(event_time, event_time_microseconds) = eventTime();
 }
 
-ColumnsDescription SessionLogElement::getColumnsDescription()
+NamesAndTypesList SessionLogElement::getNamesAndTypes()
 {
     auto event_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -119,7 +119,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
                 std::make_shared<DataTypeString>()
             })));
 
-    return ColumnsDescription
+    return
     {
         {"hostname", lc_string_datatype},
         {"type", std::move(event_type)},

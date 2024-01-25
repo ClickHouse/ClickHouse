@@ -11,8 +11,6 @@
 #include <Common/atomicRename.h>
 #include <Common/PoolId.h>
 #include <Common/logger_useful.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/hex.h>
 
 #include <Core/Defines.h>
@@ -42,7 +40,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -285,7 +282,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
-    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext());
+    DatabasePtr database = DatabaseFactory::get(create, metadata_path / "", getContext());
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -465,14 +462,6 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->children.push_back(column_declaration->ttl);
         }
 
-        if (!column.settings.empty())
-        {
-            auto settings = std::make_shared<ASTSetQuery>();
-            settings->is_standalone = false;
-            settings->changes = column.settings;
-            column_declaration->settings = std::move(settings);
-        }
-
         columns_list->children.push_back(column_declaration_ptr);
     }
 
@@ -606,7 +595,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     bool sanity_check_compression_codecs = !attach && !context_->getSettingsRef().allow_suspicious_codecs;
     bool allow_experimental_codecs = attach || context_->getSettingsRef().allow_experimental_codecs;
     bool enable_deflate_qpl_codec = attach || context_->getSettingsRef().enable_deflate_qpl_codec;
-    bool enable_zstd_qat_codec = attach || context_->getSettingsRef().enable_zstd_qat_codec;
 
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
@@ -667,7 +655,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.default_specifier == "ALIAS")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec, enable_zstd_qat_codec);
+                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec);
         }
 
         if (col_decl.stat_type)
@@ -679,12 +667,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         if (col_decl.ttl)
             column.ttl = col_decl.ttl;
-
-        if (col_decl.settings)
-        {
-            column.settings = col_decl.settings->as<ASTSetQuery &>().changes;
-            MergeTreeColumnSettings::validate(column.settings);
-        }
 
         res.add(std::move(column));
     }
@@ -1911,15 +1893,6 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
         ASTPtr columns = std::make_shared<ASTExpressionList>(*create_query_from_storage.columns_list->columns);
         create.columns_list->set(create.columns_list->columns, columns);
     }
-}
-
-void registerInterpreterCreateQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterCreateQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterCreateQuery", create_fn);
 }
 
 }

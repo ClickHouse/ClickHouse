@@ -538,7 +538,7 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
         for (const auto & object_from : source_blobs)
         {
-            auto object_key = destination_object_storage.generateObjectKeyForPath(to_path);
+            auto object_key = object_storage.generateObjectKeyForPath(to_path);
             auto object_to = StoredObject(object_key.serialize());
 
             object_storage.copyObjectToAnotherObjectStorage(object_from, object_to,read_settings,write_settings, destination_object_storage);

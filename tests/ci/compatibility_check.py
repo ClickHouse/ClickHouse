@@ -8,11 +8,22 @@ import logging
 import subprocess
 import sys
 
+from github import Github
+
 from build_download_helper import download_builds_filter
+from clickhouse_helper import (
+    ClickHouseHelper,
+    prepare_tests_results_for_clickhouse,
+)
+from commit_status_helper import RerunHelper, get_commit, post_commit_status
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import TEMP_PATH, REPORT_PATH
-from report import JobReport, TestResults, TestResult
+from get_robot_token import get_best_robot_token
+from pr_info import PRInfo
+from report import TestResults, TestResult
+from s3_helper import S3Helper
 from stopwatch import Stopwatch
+from upload_result_helper import upload_results
 
 IMAGE_UBUNTU = "clickhouse/test-old-ubuntu"
 IMAGE_CENTOS = "clickhouse/test-old-centos"
@@ -138,6 +149,16 @@ def main():
     temp_path.mkdir(parents=True, exist_ok=True)
     reports_path.mkdir(parents=True, exist_ok=True)
 
+    pr_info = PRInfo()
+
+    gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
+
+    rerun_helper = RerunHelper(commit, args.check_name)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
+
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
 
@@ -198,6 +219,7 @@ def main():
     else:
         raise Exception("Can't determine max glibc version")
 
+    s3_helper = S3Helper()
     state, description, test_results, additional_logs = process_result(
         result_path,
         server_log_path,
@@ -206,14 +228,38 @@ def main():
         max_glibc_version,
     )
 
-    JobReport(
-        description=description,
-        test_results=test_results,
-        status=state,
-        start_time=stopwatch.start_time_str,
-        duration=stopwatch.duration_seconds,
-        additional_files=additional_logs,
-    ).dump()
+    ch_helper = ClickHouseHelper()
+
+    report_url = upload_results(
+        s3_helper,
+        pr_info.number,
+        pr_info.sha,
+        test_results,
+        additional_logs,
+        args.check_name,
+    )
+    print(f"::notice ::Report url: {report_url}")
+    post_commit_status(
+        commit,
+        state,
+        report_url,
+        description,
+        args.check_name,
+        pr_info,
+        dump_to_file=True,
+    )
+
+    prepared_events = prepare_tests_results_for_clickhouse(
+        pr_info,
+        test_results,
+        state,
+        stopwatch.duration_seconds,
+        stopwatch.start_time_str,
+        report_url,
+        args.check_name,
+    )
+
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     if state == "failure":
         sys.exit(1)

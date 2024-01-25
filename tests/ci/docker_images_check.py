@@ -12,7 +12,7 @@ from github import Github
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import format_description, get_commit, post_commit_status
-from env_helper import RUNNER_TEMP, GITHUB_RUN_URL
+from env_helper import ROOT_DIR, RUNNER_TEMP, GITHUB_RUN_URL
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResults, TestResult
@@ -170,6 +170,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main():
+    # to be always aligned with docker paths from image.json
+    os.chdir(ROOT_DIR)
     logging.basicConfig(level=logging.INFO)
     stopwatch = Stopwatch()
 
