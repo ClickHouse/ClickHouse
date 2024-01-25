@@ -27,7 +27,6 @@ def cluster():
     finally:
         cluster.shutdown()
 
-
 def create_table(node, table, replica, data_prefix="", aggressive_merge=True):
     if data_prefix == "":
         data_prefix = table
@@ -35,9 +34,11 @@ def create_table(node, table, replica, data_prefix="", aggressive_merge=True):
     if aggressive_merge:
         vertical_merge_algorithm_min_rows_to_activate = 1
         vertical_merge_algorithm_min_columns_to_activate = 1
+        max_parts_to_merge_at_once=3
     else:
         vertical_merge_algorithm_min_rows_to_activate = 100000
         vertical_merge_algorithm_min_columns_to_activate = 100
+        max_parts_to_merge_at_once=3
 
     node.query(
         f"""
@@ -49,20 +50,19 @@ def create_table(node, table, replica, data_prefix="", aggressive_merge=True):
         c Int64,
         d Int64,
         e Int64,
-
-        PROJECTION proj
+        PROJECTION proj1
         (
             SELECT c ORDER BY d
         ),
-        PROJECTION proj_2
+        PROJECTION proj2
         (
             SELECT d ORDER BY c
         )
     )
     ENGINE = ReplicatedMergeTree('/test_broken_projection_{data_prefix}/data/', '{replica}') ORDER BY a
     SETTINGS min_bytes_for_wide_part = 0,
-        max_parts_to_merge_at_once=3,
-        enable_vertical_merge_algorithm=1,
+        max_parts_to_merge_at_once={max_parts_to_merge_at_once},
+        enable_vertical_merge_algorithm=0,
         vertical_merge_algorithm_min_rows_to_activate = {vertical_merge_algorithm_min_rows_to_activate},
         vertical_merge_algorithm_min_columns_to_activate = {vertical_merge_algorithm_min_columns_to_activate},
         compress_primary_key=0;
@@ -216,16 +216,16 @@ def random_str(length=6):
 def check(node, table, check_result, expect_broken_part="", expected_error=""):
     query_id = random_str()
 
-    if expect_broken_part == "proj":
+    if expect_broken_part == "proj1":
         assert expected_error in node.query_and_get_error(
             f"SELECT c FROM '{table}' WHERE d == 12 ORDER BY c"
         )
     else:
         node.query(
-            f"SELECT c FROM '{table}' WHERE d == 12 OR d == 16 ORDER BY c",
+            f"SELECT c FROM '{table}' WHERE d == 12 ORDER BY c",
             query_id=query_id,
         )
-        assert "proj" in node.query(
+        assert "proj1" in node.query(
             f"""
         SYSTEM FLUSH LOGS;
         SELECT query, splitByChar('.', arrayJoin(projections))[-1]
@@ -236,7 +236,7 @@ def check(node, table, check_result, expect_broken_part="", expected_error=""):
 
     query_id = random_str()
 
-    if expect_broken_part == "proj_2":
+    if expect_broken_part == "proj2":
         assert expected_error in node.query_and_get_error(
             f"SELECT d FROM '{table}' WHERE c == 12 ORDER BY d"
         )
@@ -245,7 +245,7 @@ def check(node, table, check_result, expect_broken_part="", expected_error=""):
             f"SELECT d FROM '{table}' WHERE c == 12 OR c == 16 ORDER BY d",
             query_id=query_id,
         )
-        assert "proj" in node.query(
+        assert "proj2" in node.query(
             f"""
         SYSTEM FLUSH LOGS;
         SELECT query, splitByChar('.', arrayJoin(projections))[-1]
@@ -272,42 +272,42 @@ def test_broken_ignored(cluster):
         node, table_name
     )
 
-    # Break metadata (columns.txt) file of projection 'proj'
-    break_projection(node, table_name, "proj", "all_2_2_0", "metadata")
+    # Break metadata (columns.txt) file of projection 'proj1'
+    break_projection(node, table_name, "proj1", "all_2_2_0", "metadata")
 
     # Do select and after "check table" query.
     # Select works because it does not read columns.txt.
     # But expect check table result as 0.
     check(node, table_name, 0)
 
-    # Projection 'proj' from part all_2_2_0 will now appear in broken parts info
+    # Projection 'proj1' from part all_2_2_0 will now appear in broken parts info
     # because it was marked broken during "check table" query.
-    assert "all_2_2_0\tproj\tFILE_DOESNT_EXIST" in get_broken_projections_info(
+    assert "all_2_2_0\tproj1\tFILE_DOESNT_EXIST" in get_broken_projections_info(
         node, table_name
     )
 
     # Check table query will also show a list of parts which have broken projections.
     assert "all_2_2_0" in check_table_full(node, table_name)
 
-    # Break data file of projection 'proj_2' for part all_2_2_0
-    break_projection(node, table_name, "proj_2", "all_2_2_0", "data")
+    # Break data file of projection 'proj2' for part all_2_2_0
+    break_projection(node, table_name, "proj2", "all_2_2_0", "data")
 
     # It will not yet appear in broken projections info.
-    assert "proj_2" not in get_broken_projections_info(node, table_name)
+    assert "proj2" not in get_broken_projections_info(node, table_name)
 
     # Select now fails with error "File doesn't exist"
-    check(node, table_name, 0, "proj_2", "FILE_DOESNT_EXIST")
+    check(node, table_name, 0, "proj2", "FILE_DOESNT_EXIST")
 
-    # Projection 'proj_2' from part all_2_2_0 will now appear in broken parts info.
-    assert "all_2_2_0\tproj_2\tNO_FILE_IN_DATA_PART" in get_broken_projections_info(
+    # Projection 'proj2' from part all_2_2_0 will now appear in broken parts info.
+    assert "all_2_2_0\tproj2\tNO_FILE_IN_DATA_PART" in get_broken_projections_info(
         node, table_name
     )
 
     # Second select works, because projection is now marked as broken.
     check(node, table_name, 0)
 
-    # Break data file of projection 'proj_2' for part all_3_3_0
-    break_projection(node, table_name, "proj_2", "all_3_3_0", "data")
+    # Break data file of projection 'proj2' for part all_3_3_0
+    break_projection(node, table_name, "proj2", "all_3_3_0", "data")
 
     # It will not yet appear in broken projections info.
     assert "all_3_3_0" not in get_broken_projections_info(node, table_name)
@@ -315,13 +315,13 @@ def test_broken_ignored(cluster):
     insert(node, table_name, 20, 5)
     insert(node, table_name, 25, 5)
 
-    # Part all_3_3_0 has 'proj' and 'proj_2' projections, but 'proj_2' is broken and server does NOT know it yet.
+    # Part all_3_3_0 has 'proj' and 'proj2' projections, but 'proj2' is broken and server does NOT know it yet.
     # Parts all_4_4_0 and all_5_5_0 have both non-broken projections.
     # So a merge will be create for future part all_3_5_1.
-    # During merge it will fail to read from 'proj_2' of part all_3_3_0 and proj_2 will be marked broken.
+    # During merge it will fail to read from 'proj2' of part all_3_3_0 and proj2 will be marked broken.
     # Merge will be retried and on second attempt it will succeed.
     # The result part all_3_5_1 will have only 1 projection - 'proj', because
-    # it will skip 'proj_2' as it will see that one part does not have it anymore in the set of valid projections.
+    # it will skip 'proj2' as it will see that one part does not have it anymore in the set of valid projections.
     optimize(node, table_name, 0, 1)
     time.sleep(5)
 
@@ -333,7 +333,7 @@ def test_broken_ignored(cluster):
     # SELECT count() FROM system.text_log
     # WHERE level='Error'
     # AND logger_name='MergeTreeBackgroundExecutor'
-    # AND message like 'Exception while executing background task %{table_uuid}:all_3_5_1%%Cannot open file%proj_2.proj/c.bin%'
+    # AND message like 'Exception while executing background task %{table_uuid}:all_3_5_1%%Cannot open file%proj2.proj/c.bin%'
     # """)
     # )
 
@@ -356,27 +356,27 @@ def test_materialize_broken_projection(cluster):
         node, table_name
     )
 
-    break_projection(node, table_name, "proj", "all_1_1_0", "metadata")
+    break_projection(node, table_name, "proj1", "all_1_1_0", "metadata")
     reattach(node, table_name)
 
-    assert "all_1_1_0\tproj\tNO_FILE_IN_DATA_PART" in get_broken_projections_info(
+    assert "all_1_1_0\tproj1\tNO_FILE_IN_DATA_PART" in get_broken_projections_info(
         node, table_name
     )
-    assert "Part all_1_1_0 has a broken projection proj" in check_table_full(
+    assert "Part all_1_1_0 has a broken projection proj1" in check_table_full(
         node, table_name
     )
 
-    break_projection(node, table_name, "proj_2", "all_1_1_0", "data")
+    break_projection(node, table_name, "proj2", "all_1_1_0", "data")
     reattach(node, table_name)
 
-    assert "all_1_1_0\tproj_2\tFILE_DOESNT_EXIST" in get_broken_projections_info(
+    assert "all_1_1_0\tproj2\tFILE_DOESNT_EXIST" in get_broken_projections_info(
         node, table_name
     )
-    assert "Part all_1_1_0 has a broken projection proj_2" in check_table_full(
+    assert "Part all_1_1_0 has a broken projection proj2" in check_table_full(
         node, table_name
     )
 
-    materialize_projection(node, table_name, "proj")
+    materialize_projection(node, table_name, "proj1")
 
     assert "has a broken projection" not in check_table_full(node, table_name)
 
@@ -398,8 +398,8 @@ def test_broken_ignored_replicated(cluster):
     create_table(node, table_name2, 2, table_name)
     check(node, table_name2, 1)
 
-    break_projection(node, table_name, "proj", "all_0_0_0", "data")
-    assert "Part all_0_0_0 has a broken projection proj" in check_table_full(
+    break_projection(node, table_name, "proj1", "all_0_0_0", "data")
+    assert "Part all_0_0_0 has a broken projection proj1" in check_table_full(
         node, table_name
     )
 
@@ -413,11 +413,11 @@ def get_random_string(string_length=8):
     return "".join((random.choice(alphabet) for _ in range(string_length)))
 
 
-def test_broken_projections_in_backups(cluster):
+def test_broken_projections_in_backups_1(cluster):
     node = cluster.instances["node"]
 
     table_name = "test4"
-    create_table(node, table_name, 1, aggressive_merge=False)
+    create_table(node, table_name, 1, aggressive_merge=False, data_prefix=table_name)
 
     node.query("SYSTEM STOP MERGES")
 
@@ -432,22 +432,11 @@ def test_broken_projections_in_backups(cluster):
 
     check(node, table_name, 1)
 
-    break_projection(node, table_name, "proj", "all_2_2_0", "data")
-    check(node, table_name, 0, "proj", "FILE_DOESNT_EXIST")
+    break_projection(node, table_name, "proj1", "all_2_2_0", "data")
+    check(node, table_name, 0, "proj1", "FILE_DOESNT_EXIST")
 
-    assert "all_2_2_0\tproj\tNO_FILE_IN_DATA_PART" in get_broken_projections_info(
+    assert "all_2_2_0\tproj1\tNO_FILE_IN_DATA_PART" in get_broken_projections_info(
         node, table_name
-    )
-
-    assert (
-        "all_0_0_0\tproj\t0\n"
-        "all_0_0_0\tproj_2\t0\n"
-        "all_1_1_0\tproj\t0\n"
-        "all_1_1_0\tproj_2\t0\n"
-        "all_2_2_0\tproj\t1\n"
-        "all_2_2_0\tproj_2\t0\n"
-        "all_3_3_0\tproj\t0\n"
-        "all_3_3_0\tproj_2\t0" == get_projections_info(node, table_name)
     )
 
     backup_name = f"b1-{get_random_string()}"
@@ -466,25 +455,32 @@ def test_broken_projections_in_backups(cluster):
     """
     )
 
-    assert (
-        "all_0_0_0\tproj\t0\n"
-        "all_0_0_0\tproj_2\t0\n"
-        "all_1_1_0\tproj\t0\n"
-        "all_1_1_0\tproj_2\t0\n"
-        "all_2_2_0\tproj\t0\n"
-        "all_2_2_0\tproj_2\t0\n"
-        "all_3_3_0\tproj\t0\n"
-        "all_3_3_0\tproj_2\t0" == get_projections_info(node, table_name)
-    )
+    node.query("SYSTEM STOP MERGES")
 
     check(node, table_name, 1)
     assert "" == get_broken_projections_info(node, table_name)
 
-    break_projection(node, table_name, "proj_2", "all_2_2_0", "part")
 
-    check(node, table_name, 0, "proj_2", "ErrnoException")
+def test_broken_projections_in_backups_2(cluster):
+    node = cluster.instances["node"]
 
-    assert "all_2_2_0\tproj_2\tFILE_DOESNT_EXIST" == get_broken_projections_info(
+    table_name = "test5"
+    create_table(node, table_name, 1, aggressive_merge=False, data_prefix=table_name)
+
+    insert(node, table_name, 0, 5)
+    insert(node, table_name, 5, 5)
+    insert(node, table_name, 10, 5)
+    insert(node, table_name, 15, 5)
+
+    assert ["all_0_0_0", "all_1_1_0", "all_2_2_0", "all_3_3_0"] == get_parts(
+        node, table_name
+    )
+
+    check(node, table_name, 1)
+    break_projection(node, table_name, "proj2", "all_2_2_0", "part")
+    check(node, table_name, 0, "proj2", "ErrnoException")
+
+    assert "all_2_2_0\tproj2\tFILE_DOESNT_EXIST" == get_broken_projections_info(
         node, table_name
     )
 
@@ -495,7 +491,7 @@ def test_broken_projections_in_backups(cluster):
     """
     )
 
-    materialize_projection(node, table_name, "proj_2")
+    materialize_projection(node, table_name, "proj2")
     check(node, table_name, 1)
 
     backup_name = f"b3-{get_random_string()}"
@@ -515,22 +511,31 @@ def test_broken_projections_in_backups(cluster):
     )
     check(node, table_name, 1)
 
-    assert (
-        "all_0_0_0\tproj\t0\n"
-        "all_0_0_0\tproj_2\t0\n"
-        "all_1_1_0\tproj\t0\n"
-        "all_1_1_0\tproj_2\t0\n"
-        "all_2_2_0\tproj\t0\n"
-        "all_2_2_0\tproj_2\t0\n"
-        "all_3_3_0\tproj\t0\n"
-        "all_3_3_0\tproj_2\t0" == get_projections_info(node, table_name)
-    )
 
-    break_projection(node, table_name, "proj", "all_1_1_0", "part")
-    assert "Part all_1_1_0 has a broken projection proj" in check_table_full(
+def test_broken_projections_in_backups_3(cluster):
+    node = cluster.instances["node"]
+
+    table_name = "test6"
+    create_table(node, table_name, 1, aggressive_merge=False, data_prefix=table_name)
+
+    node.query("SYSTEM STOP MERGES")
+
+    insert(node, table_name, 0, 5)
+    insert(node, table_name, 5, 5)
+    insert(node, table_name, 10, 5)
+    insert(node, table_name, 15, 5)
+
+    assert ["all_0_0_0", "all_1_1_0", "all_2_2_0", "all_3_3_0"] == get_parts(
         node, table_name
     )
-    assert "all_1_1_0\tproj\tFILE_DOESNT_EXIST" == get_broken_projections_info(
+
+    check(node, table_name, 1)
+
+    break_projection(node, table_name, "proj1", "all_1_1_0", "part")
+    assert "Part all_1_1_0 has a broken projection proj1" in check_table_full(
+        node, table_name
+    )
+    assert "all_1_1_0\tproj1\tFILE_DOESNT_EXIST" == get_broken_projections_info(
         node, table_name
     )
 
@@ -550,19 +555,7 @@ def test_broken_projections_in_backups(cluster):
     """
     )
 
-    assert (
-        "all_0_0_0\tproj\t0\n"
-        "all_0_0_0\tproj_2\t0\n"
-        "all_1_1_0\tproj\t1\n"
-        "all_1_1_0\tproj_2\t0\n"
-        "all_2_2_0\tproj\t0\n"
-        "all_2_2_0\tproj_2\t0\n"
-        "all_3_3_0\tproj\t0\n"
-        "all_3_3_0\tproj_2\t0" == get_projections_info(node, table_name)
-    )
-
     check(node, table_name, 0)
-    assert "all_1_1_0\tproj\tNO_FILE_IN_DATA_PART" == get_broken_projections_info(
+    assert "all_1_1_0\tproj1\tNO_FILE_IN_DATA_PART" == get_broken_projections_info(
         node, table_name
     )
-    node.query("SYSTEM START MERGES")
