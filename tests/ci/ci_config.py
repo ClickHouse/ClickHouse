@@ -1126,7 +1126,7 @@ CHECK_DESCRIPTIONS = [
         "Docs Check", "Builds and tests the documentation", lambda x: x == "Docs Check"
     ),
     CheckDescription(
-        "Fast test",
+        "Fast tests",
         "Normally this is the first check that is ran for a PR. It builds ClickHouse "
         'and runs most of <a href="https://clickhouse.com/docs/en/development/tests'
         '#functional-tests">stateless functional tests</a>, '
