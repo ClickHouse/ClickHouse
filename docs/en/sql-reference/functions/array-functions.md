@@ -19,7 +19,7 @@ empty([x])
 An array is considered empty if it does not contain any elements.
 
 :::note
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
+Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](../../operations/settings/settings.md#optimize-functions-to-subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
 :::
 
 The function also works for [strings](string-functions.md#empty) or [UUID](uuid-functions.md#empty).
@@ -104,7 +104,177 @@ Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operat
 
 Alias: `OCTET_LENGTH`
 
-## emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64
+## emptyArrayUInt8
+
+Accepts zero arguments and returns an empty UInt8 array.
+
+**Syntax**
+
+```sql
+emptyArrayUInt8()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE users (uid Int16, name String, age Int16, contacts Array(UInt8)) ENGINE=Memory;
+
+INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayUInt8());
+SELECT * FROM users;
+
+ALTER TABLE users UPDATE contacts = arrayPushBack(contacts, 255) WHERE uid = 1231;
+SELECT * FROM users;
+```
+
+Result:
+
+```response
+1234	Alex	33	[]
+1234	Alex	33	[255]
+```
+
+## emptyArrayUInt16
+
+Accepts zero arguments and returns an empty UInt16 array.
+
+**Syntax**
+
+```sql
+emptyArrayUInt16()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE users (uid Int16, name String, age Int16, contacts Array(UInt16)) ENGINE=Memory;
+
+INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayUInt16());
+SELECT * FROM users;
+
+ALTER TABLE users UPDATE contacts = arrayPushBack(contacts, 65535) WHERE uid = 1231;
+SELECT * FROM users;
+```
+
+Result:
+
+```response
+1231	Alex    33	[]
+1231	Alex    33	[65535]
+```
+
+## emptyArrayUInt32
+
+Accepts zero arguments and returns an empty UInt32 array.
+
+**Syntax**
+
+```sql
+emptyArrayUInt32()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE users (uid Int16, name String, age Int16, contacts Array(UInt32)) ENGINE=Memory;
+
+INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayUInt32());
+SELECT * FROM users;
+
+ALTER TABLE users UPDATE contacts = arrayPushBack(contacts, 4294967295) WHERE uid = 1231;
+SELECT * FROM users;
+```
+
+Result:
+
+```response
+1231	Alex	33	[]
+1231	Alex	33	[4294967295]
+```
+
+## emptyArrayUInt64
+
+Accepts zero arguments and returns an empty UInt64 array.
+
+**Syntax**
+
+```sql
+emptyArrayUInt64()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE users (uid Int16, name String, age Int16, contacts Array(UInt64)) ENGINE=Memory;
+
+INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayUInt64());
+SELECT * FROM users;
+
+ALTER TABLE users UPDATE contacts = arrayPushBack(contacts, 18446744073709551615) WHERE uid = 1231;
+SELECT * FROM users;
+```
+
+Result:
+
+```response
+1231	Alex	33	[]
+1231	Alex	33	[18446744073709551615]
+```
 
 ## emptyArrayInt8, emptyArrayInt16, emptyArrayInt32, emptyArrayInt64
 
