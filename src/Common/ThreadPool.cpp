@@ -193,96 +193,77 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     };
 
     {
-        auto thread_it = threads.end();
-        bool thread_added = false;
+        std::unique_lock lock(mutex);
 
+        auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || shutdown; };
+
+        if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set
         {
-            std::unique_lock lock(mutex);
-
-            auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || shutdown; };
-
-            if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set and the value is non zero.
-            {
-                if (!job_finished.wait_for(lock, std::chrono::microseconds(*wait_microseconds), pred))
-                    return on_error(fmt::format("no free thread (timeout={})", *wait_microseconds));
-            }
-            else
-                job_finished.wait(lock, pred);
-
-            if (shutdown)
-                return on_error("shutdown");
-
-
-            /// We must not allocate any memory after we emplaced a job in a queue.
-            /// Because if an exception would be thrown, we won't notify a thread about job occurrence.
-
-            /// Check if there are enough threads to process job.
-            if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
-            {
-                try
-                {
-                    threads.emplace_front();
-                }
-                catch (...)
-                {
-                    /// Most likely this is a std::bad_alloc exception
-                    return on_error("cannot allocate thread slot");
-                }
-                thread_it = threads.begin();
-                thread_added = true;
-
-            }
+            if (!job_finished.wait_for(lock, std::chrono::microseconds(*wait_microseconds), pred))
+                return on_error(fmt::format("no free thread (timeout={})", *wait_microseconds));
         }
+        else
+            job_finished.wait(lock, pred);
 
-        try
+        if (shutdown)
+            return on_error("shutdown");
+
+        bool scheduled_jobs_incremented = false;
+
+        /// We must not allocate any memory after we emplaced a job in a queue.
+        /// Because if an exception would be thrown, we won't notify a thread about job occurrence.
+
+        /// Check if there are enough threads to process job.
+        if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
         {
-            if (thread_added)
+            auto thread_it = threads.end();
+
+            try
             {
-                auto new_thread = Thread([thread_it, this] { worker(thread_it); });
+                threads.emplace_front();
+            }
+            catch (...)
+            {
+                /// Most likely this is a std::bad_alloc exception
+                return on_error("cannot allocate thread slot");
+            }
+            thread_it = threads.begin();
 
-                {
-                    std::unique_lock lock(mutex);
-                    if (!shutdown)
-                    {
-                        *thread_it = std::move(new_thread);
-                    }
-                }
+            ++scheduled_jobs;
+            scheduled_jobs_incremented = true;
+            lock.unlock();
 
-                // using namespace std::chrono_literals;
-                // if constexpr (std::is_same_v<Thread, std::thread>)
-                // {
-                //     std::this_thread::sleep_for(10ms);
-                // }
 
+            try
+            {
+                *thread_it = Thread([this, thread_it] { worker(thread_it); });
                 ProfileEvents::increment(
                     std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions
-                                         );
+                );
+
             }
-
-
-        }
-        catch (...)
-        {
-            std::unique_lock lock(mutex);
-            // mutex ??
-            threads.erase(thread_it);
-            return on_error("cannot allocate thread");
-        }
-
-        {
-            std::unique_lock lock(mutex);
-            if (!shutdown)
+            catch (...)
             {
-                jobs.emplace(std::move(job),
-                    priority,
-                    metric_scheduled_jobs,
-                    /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
-                    propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
-                    /// capture_frame_pointers
-                    DB::Exception::enable_job_stack_trace);
-
-                ++scheduled_jobs;
+                // threads.pop_front();
+                --scheduled_jobs;
+                threads.erase(thread_it);
+                return on_error("cannot allocate thread");
             }
+            lock.lock();
+
+        }
+
+        jobs.emplace(std::move(job),
+                     priority,
+                     metric_scheduled_jobs,
+                     /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
+                     propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
+                     /// capture_frame_pointers
+                     DB::Exception::enable_job_stack_trace);
+
+        if (!scheduled_jobs_incremented)
+        {
+            ++scheduled_jobs;
         }
     }
 
@@ -438,6 +419,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
     CurrentMetrics::Increment metric_pool_threads(metric_threads);
 
     bool job_is_done = false;
+
     std::exception_ptr exception_from_job;
 
     /// We'll run jobs in this worker while there are scheduled jobs and until some special event occurs (e.g. shutdown, or decreasing the number of max_threads).
