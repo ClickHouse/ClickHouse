@@ -62,7 +62,7 @@ public:
     void setFakeTime(std::optional<Int64> t);
 
 private:
-    Poco::Logger * log = nullptr;
+    LoggerPtr log = nullptr;
     std::weak_ptr<IStorage> view_to_refresh;
 
     /// Protects interrupt_execution and running_executor.

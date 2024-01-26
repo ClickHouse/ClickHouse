@@ -69,14 +69,14 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool 
 Exception::MessageMasked::MessageMasked(const std::string & msg_)
     : msg(msg_)
 {
-    if (auto * masker = SensitiveDataMasker::getInstance())
+    if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);
 }
 
 Exception::MessageMasked::MessageMasked(std::string && msg_)
     : msg(std::move(msg_))
 {
-    if (auto * masker = SensitiveDataMasker::getInstance())
+    if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);
 }
 
@@ -235,8 +235,9 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
     /// MemoryTracker until the exception will be logged.
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
-    /// Poco::Logger::get can allocate memory too
-    tryLogCurrentExceptionImpl(&Poco::Logger::get(log_name), start_of_message);
+    /// getLogger can allocate memory too
+    auto logger = getLogger(log_name);
+    tryLogCurrentExceptionImpl(logger.get(), start_of_message);
 }
 
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
@@ -249,6 +250,11 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     tryLogCurrentExceptionImpl(logger, start_of_message);
+}
+
+void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message)
+{
+    tryLogCurrentException(logger.get(), start_of_message);
 }
 
 static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
@@ -511,7 +517,7 @@ void tryLogException(std::exception_ptr e, const char * log_name, const std::str
     }
 }
 
-void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::string & start_of_message)
+void tryLogException(std::exception_ptr e, LoggerPtr logger, const std::string & start_of_message)
 {
     try
     {

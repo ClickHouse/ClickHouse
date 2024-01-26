@@ -71,7 +71,7 @@ private:
     String zookeeper_path;
     String replica_path;
     String logger_name;
-    Poco::Logger * log = nullptr;
+    LoggerPtr log = nullptr;
 
     /// Protects the queue, future_parts and other queue state variables.
     mutable std::mutex state_mutex;
@@ -430,7 +430,7 @@ public:
     ActionBlocker pull_log_blocker;
 
     /// Adds a subscriber
-    SubscriberHandler addSubscriber(SubscriberCallBack && callback, std::unordered_set<String> & out_entry_names, LogEntryPriorityTags & out_entry_priority_tags, SyncReplicaMode sync_mode);
+    SubscriberHandler addSubscriber(SubscriberCallBack && callback, std::unordered_set<String> & out_entry_names, LogEntryPriorityTags & out_entry_priority_tags, SyncReplicaMode sync_mode, std::unordered_set<String> src_replicas);
 
     void notifySubscribersOnPartialShutdown();
 
@@ -519,7 +519,7 @@ public:
     /// This predicate is checked for the first part of each range.
     bool canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String & out_reason) const;
 
-    CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, Poco::Logger * log_);
+    CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, LoggerPtr log_);
 
 protected:
     /// A list of partitions that can be used in the merge predicate

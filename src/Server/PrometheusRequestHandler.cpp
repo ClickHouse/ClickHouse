@@ -13,7 +13,7 @@
 
 namespace DB
 {
-void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
     try
     {
@@ -23,11 +23,15 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         const auto & config = server.config();
         unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
 
+        /// In order to make keep-alive works.
+        if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
+            response.setChunkedTransferEncoding(true);
+
         setResponseDefaultHeaders(response, keep_alive_timeout);
 
         response.setContentType("text/plain; version=0.0.4; charset=UTF-8");
 
-        WriteBufferFromHTTPServerResponse wb(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
+        WriteBufferFromHTTPServerResponse wb(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout, write_event);
         try
         {
             metrics_writer.write(wb);

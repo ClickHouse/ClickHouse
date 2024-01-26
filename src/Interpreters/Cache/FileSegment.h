@@ -112,7 +112,7 @@ public:
 
     bool isUnbound() const { return is_unbound; }
 
-    String getPathInLocalCache() const;
+    String getPath() const;
 
     int getFlagsForLocalRead() const { return O_RDONLY | O_CLOEXEC; }
 
@@ -243,7 +243,7 @@ private:
     LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
     FileSegmentGuard::Lock lockFileSegment() const;
 
-    String tryGetPathInLocalCache() const;
+    String tryGetPath() const;
 
     Key file_key;
     Range segment_range;
@@ -262,6 +262,7 @@ private:
     /// downloaded_size should always be less or equal to reserved_size
     std::atomic<size_t> downloaded_size = 0;
     std::atomic<size_t> reserved_size = 0;
+    mutable std::mutex write_mutex;
 
     mutable FileSegmentGuard segment_guard;
     std::weak_ptr<KeyMetadata> key_metadata;
@@ -269,7 +270,7 @@ private:
     FileCache * cache;
     std::condition_variable cv;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
