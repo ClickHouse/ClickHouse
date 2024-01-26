@@ -48,7 +48,7 @@ private:
 
     nuraft::ptr<nuraft::cluster_config> last_local_config;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Callback func which is called by NuRaft on all internal events.
     /// Used to determine the moment when raft is ready to server new requests

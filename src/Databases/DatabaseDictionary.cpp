@@ -51,7 +51,7 @@ namespace
 
 DatabaseDictionary::DatabaseDictionary(const String & name_, ContextPtr context_)
     : IDatabase(name_), WithContext(context_->getGlobalContext())
-    , log(&Poco::Logger::get("DatabaseDictionary(" + database_name + ")"))
+    , log(getLogger("DatabaseDictionary(" + database_name + ")"))
 {
 }
 

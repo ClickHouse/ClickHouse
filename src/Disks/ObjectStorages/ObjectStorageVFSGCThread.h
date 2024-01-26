@@ -1,5 +1,4 @@
 #pragma once
-#include "Poco/Logger.h"
 #include "Core/BackgroundSchedulePool.h"
 #include "VFSLogItem.h"
 #include "VFSSettings.h"
@@ -17,10 +16,10 @@ public:
 
 private:
     DiskObjectStorageVFS & storage;
-    Poco::Logger * const log;
+    LoggerPtr log;
     std::shared_ptr<const VFSSettings> settings;
 
-    void run();
+    void run() const;
     bool skipRun(size_t batch_size, Logpointer start, Logpointer end) const;
     void tryWriteSnapshotForZero() const;
     void updateSnapshotWithLogEntries(Logpointer start, Logpointer end) const;

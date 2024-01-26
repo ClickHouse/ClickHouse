@@ -3,7 +3,6 @@
 #include "IO/S3Common.h"
 #include "Interpreters/Context.h"
 #include "ObjectStorageVFSGCThread.h"
-
 #if USE_AZURE_BLOB_STORAGE
 #    include <azure/storage/common/storage_exception.hpp>
 #endif
@@ -35,7 +34,7 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS doesn't support send_metadata");
     zookeeper()->createAncestors(traits.log_item);
 
-    log = &Poco::Logger::get("DiskVFS(" + name + ")");
+    log = getLogger(fmt::format("DiskVFS({})", name));
 }
 
 DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()

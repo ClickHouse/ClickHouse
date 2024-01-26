@@ -52,7 +52,7 @@ public:
     };
 
     RetriesControlHolder createRetriesControlHolder(const String & name);
-    WithRetries(Poco::Logger * log, zkutil::GetZooKeeper get_zookeeper_, const KeeperSettings & settings, QueryStatusPtr process_list_element_, RenewerCallback callback);
+    WithRetries(LoggerPtr log, zkutil::GetZooKeeper get_zookeeper_, const KeeperSettings & settings, QueryStatusPtr process_list_element_, RenewerCallback callback);
 
     /// Used to re-establish new connection inside a retry loop.
     void renewZooKeeper(FaultyKeeper my_faulty_zookeeper) const;
@@ -62,7 +62,7 @@ private:
     /// This will provide a special wrapper which is useful for testing
     FaultyKeeper getFaultyZooKeeper() const;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     zkutil::GetZooKeeper get_zookeeper;
     KeeperSettings settings;
     QueryStatusPtr process_list_element;

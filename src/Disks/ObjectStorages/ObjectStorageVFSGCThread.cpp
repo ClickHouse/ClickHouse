@@ -28,7 +28,7 @@ extern const int LOGICAL_ERROR;
 }
 
 ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool)
-    : storage(storage_), log(&Poco::Logger::get(fmt::format("VFSGC({})", storage_.getName())))
+    : storage(storage_), log(getLogger(fmt::format("VFSGC({})", storage_.getName())))
 {
     storage.zookeeper()->createAncestors(storage.traits.gc_lock_path);
     LOG_INFO(log, "GC started");
@@ -54,7 +54,7 @@ ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storag
 using Logpointer = ObjectStorageVFSGCThread::Logpointer;
 
 const int EPHEMERAL = zkutil::CreateMode::Ephemeral;
-void ObjectStorageVFSGCThread::run()
+void ObjectStorageVFSGCThread::run() const
 {
     Stopwatch stop_watch;
 
@@ -184,7 +184,7 @@ void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(Logpointer start, Lo
     // TODO myrrc research zstd dictionary builder or zstd for compression
     Lz4DeflatingWriteBuffer new_snapshot_buf{std::move(uncompressed_buf), settings->snapshot_lz4_compression_level};
 
-    auto [obsolete, invalid] = getBatch(start, end).mergeWithSnapshot(*old_snapshot_buf, new_snapshot_buf, log);
+    auto [obsolete, invalid] = getBatch(start, end).mergeWithSnapshot(*old_snapshot_buf, new_snapshot_buf, &*log);
     obsolete.emplace_back(std::move(old_snapshot));
 
     ProfileEvents::increment(ProfileEvents::VFSGcCumulativeLogItemsRead, end - start);

@@ -1,7 +1,7 @@
 #pragma once
-#include <base/defines.h>
 #include <fmt/core.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include "base/types.h"
 
 namespace DB
 {

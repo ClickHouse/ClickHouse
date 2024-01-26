@@ -104,7 +104,7 @@ void RemoveRecursiveObjectStorageOperation::removeMetadataRecursive(MetadataTran
                 || e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED)
             {
                 LOG_DEBUG(
-                    &Poco::Logger::get("RemoveRecursiveObjectStorageOperation"),
+                    getLogger("RemoveRecursiveObjectStorageOperation"),
                     "Can't read metadata because of an exception. Just remove it from the filesystem. Path: {}, exception: {}",
                     metadata_storage.getPath() + path_to_remove,
                     e.message());
@@ -155,7 +155,7 @@ void RemoveRecursiveObjectStorageOperation::finalize()
     object_storage.removeObjectsIfExist(remove_from_remote);
 
     LOG_DEBUG(
-        &Poco::Logger::get("RemoveRecursiveObjectStorageOperation"),
+        getLogger("RemoveRecursiveObjectStorageOperation"),
         "Recursively remove path {}: "
         "metadata and objects were removed for [{}], "
         "only metadata were removed for [{}].",
@@ -218,7 +218,7 @@ void RemoveManyObjectStorageOperation::execute(MetadataTransactionPtr tx)
                 || e.code() == ErrorCodes::CANNOT_READ_ALL_DATA || e.code() == ErrorCodes::CANNOT_OPEN_FILE)
             {
                 LOG_DEBUG(
-                    &Poco::Logger::get("RemoveManyObjectStorageOperation"),
+                    getLogger("RemoveManyObjectStorageOperation"),
                     "Can't read metadata because of an exception. Just remove it from the filesystem. Path: {}, exception: {}",
                     metadata_storage.getPath() + path,
                     e.message());
@@ -246,7 +246,7 @@ void RemoveManyObjectStorageOperation::finalize()
     if (!keep_all_batch_data)
     {
         LOG_DEBUG(
-            &Poco::Logger::get("RemoveManyObjectStorageOperation"),
+            getLogger("RemoveManyObjectStorageOperation"),
             "metadata and objects were removed for [{}], "
             "only metadata were removed for [{}].",
             fmt::join(paths_removed_with_objects, ", "),

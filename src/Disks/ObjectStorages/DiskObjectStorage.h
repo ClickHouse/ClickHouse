@@ -217,7 +217,7 @@ protected:
     String getWriteResourceName() const;
 
     const String object_key_prefix;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     MetadataStoragePtr metadata_storage;
     ObjectStoragePtr object_storage;

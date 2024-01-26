@@ -114,7 +114,7 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
         disk_object_storage->wrapWithCache(cache, file_cache_settings, name);
 
         LOG_INFO(
-            &Poco::Logger::get("DiskCache"),
+            getLogger("DiskCache"),
             "Registered cached disk (`{}`) with structure: {}",
             // assert_cast wouldn't work for classes deriving from DiskObjectStorage
             name, disk_object_storage->getStructure());
