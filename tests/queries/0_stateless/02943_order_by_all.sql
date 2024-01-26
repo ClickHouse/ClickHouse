@@ -81,9 +81,9 @@ SELECT format('{} {}', a, b) AS all FROM order_by_all ORDER BY ALL;  -- { server
 SELECT format('{} {}', a, b) AS all FROM order_by_all ORDER BY all SETTINGS enable_order_by_all = false;
 
 SET allow_experimental_analyzer = 0;
-SELECT a, b, all FROM order_by_all ORDER BY all, a;
+SELECT a, b, all FROM order_by_all ORDER BY all, a; -- { serverError SYNTAX_ERROR }
 
 SET allow_experimental_analyzer = 1;
-SELECT a, b, all FROM order_by_all ORDER BY all, a;
+SELECT a, b, all FROM order_by_all ORDER BY all, a; -- { serverError SYNTAX_ERROR }
 
 DROP TABLE order_by_all;
