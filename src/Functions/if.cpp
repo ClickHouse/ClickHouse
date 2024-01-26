@@ -48,11 +48,11 @@ using namespace GatherUtils;
 */
 
 template <typename ResultType>
-struct is_native_int_or_decimal // NOLINT(readability-identifier-naming)
-{
-    static constexpr bool value = std::is_integral_v<ResultType> || (is_decimal<ResultType> && sizeof(ResultType) <= 8);
-};
+concept is_native_int_or_decimal_v
+    = std::is_integral_v<ResultType> || (is_decimal<ResultType> && sizeof(ResultType) <= 8);
 
+// This macro performs a branch-free conditional assignment for floating point types.
+// It uses bitwise operations to avoid branching, which can be beneficial for performance.
 #define BRANCHFREE_IF_FLOAT(TYPE, vc, va, vb, vr) \
     using UIntType = typename NumberTraits::Construct<false, false, sizeof(TYPE)>::Type; \
     using IntType = typename NumberTraits::Construct<true, false, sizeof(TYPE)>::Type; \
@@ -61,9 +61,6 @@ struct is_native_int_or_decimal // NOLINT(readability-identifier-naming)
     auto new_b = static_cast<ResultType>(vb); \
     auto tmp = (~mask & (*reinterpret_cast<UIntType *>(&new_a))) | (mask & (*reinterpret_cast<UIntType *>(&new_b))); \
     (vr) = *(reinterpret_cast<ResultType *>(&tmp));
-
-template <typename ResultType>
-inline constexpr bool is_native_int_or_decimal_v = is_native_int_or_decimal<ResultType>::value;
 
 template <typename ArrayCond, typename ArrayA, typename ArrayB, typename ArrayResult, typename ResultType>
 inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, ArrayResult & res)
