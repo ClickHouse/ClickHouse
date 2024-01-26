@@ -87,7 +87,7 @@ private:
 
     StorageReplicatedMergeTree & storage;
     String log_name;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     using StringSet = std::set<String>;
     struct PartToCheck

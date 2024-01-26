@@ -5,6 +5,7 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
+#include <Common/Logger.h>
 #include <Storages/IStorage.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
@@ -230,7 +231,6 @@ public:
                    < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.info.partition_id);
         }
     };
-
 
     using DataParts = std::set<DataPartPtr, LessDataPart>;
     using MutableDataParts = std::set<MutableDataPartPtr, LessDataPart>;
@@ -854,23 +854,6 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings);
 
-    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
-        const MergeTreeData::DataPartPtr & src_part,
-        const MergeTreePartition & new_partition,
-        const String & partition_id,
-        const IMergeTreeDataPart::MinMaxIndex & min_max_index,
-        const String & tmp_part_prefix,
-        const StorageMetadataPtr & my_metadata_snapshot,
-        const IDataPartStorage::ClonePartParams & clone_params,
-        ContextPtr local_context,
-        Int64 min_block,
-        Int64 max_block);
-
-    static std::pair<MergeTreePartition, IMergeTreeDataPart::MinMaxIndex> createPartitionAndMinMaxIndexFromSourcePart(
-        const MergeTreeData::DataPartPtr & src_part,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr local_context);
-
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
     /// Returns true if table can create new parts with adaptive granularity
@@ -1140,7 +1123,7 @@ protected:
     /// log_name will change during table RENAME. Use atomic_shared_ptr to allow concurrent RW.
     /// NOTE clang-14 doesn't have atomic_shared_ptr yet. Use std::atomic* operations for now.
     std::shared_ptr<String> log_name;
-    std::atomic<Poco::Logger *> log;
+    LoggerPtr log;
 
     /// Storage settings.
     /// Use get and set to receive readonly versions.
@@ -1624,10 +1607,10 @@ struct CurrentlySubmergingEmergingTagger
     MergeTreeData & storage;
     String emerging_part_name;
     MergeTreeData::DataPartsVector submerging_parts;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     CurrentlySubmergingEmergingTagger(
-        MergeTreeData & storage_, const String & name_, MergeTreeData::DataPartsVector && parts_, Poco::Logger * log_)
+        MergeTreeData & storage_, const String & name_, MergeTreeData::DataPartsVector && parts_, LoggerPtr log_)
         : storage(storage_), emerging_part_name(name_), submerging_parts(std::move(parts_)), log(log_)
     {
     }

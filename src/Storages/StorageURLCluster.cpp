@@ -45,7 +45,7 @@ StorageURLCluster::StorageURLCluster(
     const ConstraintsDescription & constraints_,
     const StorageURL::Configuration & configuration_,
     bool structure_argument_was_provided_)
-    : IStorageCluster(cluster_name_, table_id_, &Poco::Logger::get("StorageURLCluster (" + table_id_.table_name + ")"), structure_argument_was_provided_)
+    : IStorageCluster(cluster_name_, table_id_, getLogger("StorageURLCluster (" + table_id_.table_name + ")"), structure_argument_was_provided_)
     , uri(uri_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));

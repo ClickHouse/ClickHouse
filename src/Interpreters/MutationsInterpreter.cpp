@@ -1286,7 +1286,7 @@ void MutationsInterpreter::Source::read(
             for (size_t i = 0; i < num_filters; ++i)
                 nodes[i] = &steps[i]->actions()->findInOutputs(names[i]);
 
-            filter = ActionsDAG::buildFilterActionsDAG(nodes, {}, context_);
+            filter = ActionsDAG::buildFilterActionsDAG(nodes);
         }
 
         VirtualColumns virtual_columns(std::move(required_columns), part);
@@ -1296,7 +1296,7 @@ void MutationsInterpreter::Source::read(
             plan, *data, storage_snapshot, part,
             std::move(virtual_columns.columns_to_read),
             apply_deleted_mask_, filter, context_,
-            &Poco::Logger::get("MutationsInterpreter"));
+            getLogger("MutationsInterpreter"));
 
         virtual_columns.addVirtuals(plan);
     }

@@ -81,7 +81,7 @@ protected:
 
     IServer & server;
     TCPServer & tcp_server;
-    Poco::Logger * log;
+    LoggerPtr log;
     uint32_t connection_id = 0;
 
     uint32_t server_capabilities = 0;

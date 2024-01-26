@@ -61,7 +61,7 @@ static void splitAndModifyMutationCommands(
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     auto part_columns = part->getColumnsDescription();
 
@@ -899,7 +899,7 @@ struct MutationContext
     TableLockHolder * holder;
     MergeListEntry * mutate_entry;
 
-    Poco::Logger * log{&Poco::Logger::get("MutateTask")};
+    LoggerPtr log{getLogger("MutateTask")};
 
     FutureMergedMutatedPartPtr future_part;
     MergeTreeData::DataPartPtr source_part;
@@ -978,7 +978,7 @@ public:
         , projection(projection_)
         , block_num(block_num_)
         , ctx(ctx_)
-        , log(&Poco::Logger::get("MergeProjectionPartsTask"))
+        , log(getLogger("MergeProjectionPartsTask"))
         {
             LOG_DEBUG(log, "Selected {} projection_parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
             level_parts[current_level] = std::move(parts);
@@ -1082,7 +1082,7 @@ private:
     size_t & block_num;
     MutationContextPtr ctx;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::map<size_t, MergeTreeData::MutableDataPartsVector> level_parts;
     size_t current_level = 0;
