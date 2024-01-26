@@ -152,7 +152,7 @@ private:
 
     std::atomic<unsigned> finished_jobs_count{0};
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

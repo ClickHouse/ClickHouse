@@ -982,7 +982,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     if (!filter_by_database_virtual_column && !filter_by_table_virtual_column)
         return res;
 
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
     if (!filter_actions_dag)
         return res;
 

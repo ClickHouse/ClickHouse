@@ -7,6 +7,7 @@
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnDefault.h>
+#include <Common/SettingsChanges.h>
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
 
@@ -83,6 +84,7 @@ struct ColumnDescription
     ColumnDefault default_desc;
     String comment;
     ASTPtr codec;
+    SettingsChanges settings;
     ASTPtr ttl;
     std::optional<StatisticDescription> stat;
 

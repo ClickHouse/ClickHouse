@@ -28,7 +28,7 @@ void logDebug(String key, const T & value, const char * separator = " : ")
         else
             ss << value;
 
-        LOG_DEBUG(&Poco::Logger::get("FillingTransform"), "{}{}{}", key, separator, ss.str());
+        LOG_DEBUG(getLogger("FillingTransform"), "{}{}{}", key, separator, ss.str());
     }
 }
 

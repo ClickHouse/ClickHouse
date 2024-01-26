@@ -15,6 +15,7 @@
 #include <Common/Priority.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Common/Logger.h>
 
 
 namespace Poco { class Logger; }
@@ -40,7 +41,7 @@ using LoadTaskPtr = std::shared_ptr<LoadTask>;
 using LoadTaskPtrs = std::vector<LoadTaskPtr>;
 class AsyncLoader;
 
-void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch);
+void logAboutProgress(LoggerPtr log, size_t processed, size_t total, AtomicStopwatch & watch);
 
 // Execution status of a load job.
 enum class LoadStatus
@@ -419,7 +420,7 @@ private:
     // Logging
     const bool log_failures; // Worker should log all exceptions caught from job functions.
     const bool log_progress; // Periodically log total progress
-    Poco::Logger * log;
+    LoggerPtr log;
 
     mutable std::mutex mutex; // Guards all the fields below.
     bool is_running = true;
