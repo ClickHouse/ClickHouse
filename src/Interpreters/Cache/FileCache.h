@@ -8,7 +8,6 @@
 
 #include <IO/ReadSettings.h>
 
-#include <Common/ThreadPool.h>
 #include <Common/StatusFile.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/FileCache_fwd.h>

@@ -23,8 +23,6 @@
 #include <Poco/Logger.h>
 #include <Common/ErrorCodes.h>
 #include <Common/LRUResourceCache.h>
-#include <Common/ThreadPool.h>
-
 
 namespace DB
 {

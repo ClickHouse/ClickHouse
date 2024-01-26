@@ -6,6 +6,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB

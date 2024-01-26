@@ -14,6 +14,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Interpreters/Context.h>
 #include <boost/circular_buffer.hpp>
+#include <Common/ThreadPool.h>
 
 
 namespace DB

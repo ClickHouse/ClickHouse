@@ -24,6 +24,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>

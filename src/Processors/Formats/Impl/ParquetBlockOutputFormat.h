@@ -6,7 +6,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/Impl/Parquet/Write.h>
 #include <Formats/FormatSettings.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 
 namespace arrow
 {

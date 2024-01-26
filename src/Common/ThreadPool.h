@@ -131,12 +131,51 @@ private:
 
     boost::heap::priority_queue<JobWithPriority> jobs;
 
+    struct UtilizationRecord {
+        size_t max_scheduled_jobs = 0; // max number of scheduled jobs during the period
+        size_t min_scheduled_jobs = 0; // min
+        size_t period_start_scheduled_jobs = 0; // number of scheduled jobs at the beginning of the period
+        std::chrono::steady_clock::time_point timestamp; // time when the period started
+
+        UtilizationRecord() : UtilizationRecord(0) {}
+
+
+        UtilizationRecord(size_t scheduled_jobs_)
+            : max_scheduled_jobs(scheduled_jobs_)
+            , min_scheduled_jobs(scheduled_jobs_)
+            , period_start_scheduled_jobs(scheduled_jobs_)
+            , timestamp(std::chrono::steady_clock::now())
+        {}
+
+        void update(size_t scheduled_jobs_) {
+            max_scheduled_jobs = std::max(max_scheduled_jobs, scheduled_jobs_);
+            min_scheduled_jobs = std::min(min_scheduled_jobs, scheduled_jobs_);
+        }
+    };
+
+    struct ThreadIterarorHolder {
+        std::optional<typename std::list<Thread>::iterator> thread_it;
+
+        void set(std::list<Thread>::iterator it) {
+            thread_it = it;
+        }
+    };
+
+    // we keep utilization history to be able to calculate average utilization
+    std::deque<UtilizationRecord> utilization_history;
+    UtilizationRecord current_utilization_record;
+
     std::list<Thread> threads;
     mutable std::mutex threads_mutex; // used only for threads list manipulations
-    std::thread housekeepeing_thread; // thread that maintains the number of the threads in pool close to desired (asynchronously)
+
+    // housekeepeing_thread is used only for global thread pool
+    // it monitors regularly the demand for threads in the pool
+    // adjusts the size of the pool by decreasing or increasing
+    // its size depoending on the load
     std::atomic<size_t> desired_pool_size = 0;
     std::atomic<size_t> current_pool_size = 0;
-    std::condition_variable threads_cv;
+    std::condition_variable housekeeping_thread_cv;
+    std::condition_variable pool_grow_thread_cv;
 
     std::exception_ptr first_exception;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
@@ -145,15 +184,27 @@ private:
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
-    void worker(typename std::list<Thread>::iterator thread_it);
 
-    /// starts one thread (unless limit is reached). Must be called with `mutex` locked.
-    void createThreadNoLock();
+    void calculateDesiredThreadPoolSizeNoLock();
+
+    void worker(ThreadIterarorHolder thread_it_holder);
+
+    /// starts one thread
+    void createThread();
+    void removeThread(std::list<Thread>::iterator thread_it);
+
+    /// if number of threads is less than desired, creates new threads
+    /// for async mode it creates a task that creates new threads
+    /// otherwise it creates new threads synchronously in the current thread
+    void startThreads(bool async);
+
+    void adjustThreadPoolSize();
 
     void finalize();
     void onDestroy();
 
     void threadPoolHousekeep();
+    void threadPoolGrow();
 };
 
 

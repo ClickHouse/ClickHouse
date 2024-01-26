@@ -20,7 +20,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
 #include <Disks/DirectoryIterator.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 
 
