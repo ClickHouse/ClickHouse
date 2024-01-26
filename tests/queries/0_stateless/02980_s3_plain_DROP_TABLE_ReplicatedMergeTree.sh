@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings
 # Tag no-fasttest: requires S3
+# Tag no-random-settings, no-random-merge-tree-settings: to avoid creating extra files like serialization.json, this test too exocit anyway
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -19,7 +20,6 @@ $CLICKHOUSE_CLIENT -nm -q "
     drop table if exists data_write;
 
     create table data_write (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'write') order by key;
-    create table data_read (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'read') order by key settings disk='s3_plain_disk'; -- { serverError TABLE_IS_READ_ONLY }
     create table data_read (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'read') order by key;
 
     insert into data_write values (1);
@@ -28,7 +28,7 @@ $CLICKHOUSE_CLIENT -nm -q "
 "
 
 # suppress output
-$CLICKHOUSE_CLIENT -q "backup table data_read to S3('http://localhost:11111/test/backups/$CLICKHOUSE_DATABASE', 'test', 'testtest')" > /dev/null
+$CLICKHOUSE_CLIENT -q "backup table data_read to S3('http://localhost:11111/test/s3_plain/backups/$CLICKHOUSE_DATABASE', 'test', 'testtest')" > /dev/null
 
 $CLICKHOUSE_CLIENT -nm -q "
     drop table data_read;
@@ -36,7 +36,7 @@ $CLICKHOUSE_CLIENT -nm -q "
     settings
         max_suspicious_broken_parts=0,
         disk=disk(type=s3_plain,
-            endpoint='http://localhost:11111/test/backups/$CLICKHOUSE_DATABASE',
+            endpoint='http://localhost:11111/test/s3_plain/backups/$CLICKHOUSE_DATABASE',
             access_key_id='test',
             secret_access_key='testtest');
     select 'data after ATTACH', count() from data_read;
