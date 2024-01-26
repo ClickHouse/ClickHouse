@@ -105,7 +105,7 @@ private:
 
     bool nextFileSegmentsBatch();
 
-    Poco::Logger * log;
+    LoggerPtr log;
     FileCacheKey cache_key;
     String source_file_path;
 

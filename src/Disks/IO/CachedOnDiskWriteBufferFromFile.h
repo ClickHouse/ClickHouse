@@ -54,7 +54,7 @@ private:
     FileCache * cache;
     FileSegment::Key key;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     std::shared_ptr<FilesystemCacheLog> cache_log;
     String query_id;
     String source_path;
@@ -93,7 +93,7 @@ public:
 private:
     void cacheData(char * data, size_t size, bool throw_on_error);
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     FileCachePtr cache;
     String source_path;

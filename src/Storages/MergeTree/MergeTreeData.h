@@ -5,6 +5,7 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
+#include <Common/Logger.h>
 #include <Storages/IStorage.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
@@ -1135,7 +1136,7 @@ protected:
     /// log_name will change during table RENAME. Use atomic_shared_ptr to allow concurrent RW.
     /// NOTE clang-14 doesn't have atomic_shared_ptr yet. Use std::atomic* operations for now.
     std::shared_ptr<String> log_name;
-    std::atomic<Poco::Logger *> log;
+    LoggerPtr log;
 
     /// Storage settings.
     /// Use get and set to receive readonly versions.
@@ -1619,10 +1620,10 @@ struct CurrentlySubmergingEmergingTagger
     MergeTreeData & storage;
     String emerging_part_name;
     MergeTreeData::DataPartsVector submerging_parts;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     CurrentlySubmergingEmergingTagger(
-        MergeTreeData & storage_, const String & name_, MergeTreeData::DataPartsVector && parts_, Poco::Logger * log_)
+        MergeTreeData & storage_, const String & name_, MergeTreeData::DataPartsVector && parts_, LoggerPtr log_)
         : storage(storage_), emerging_part_name(name_), submerging_parts(std::move(parts_)), log(log_)
     {
     }
