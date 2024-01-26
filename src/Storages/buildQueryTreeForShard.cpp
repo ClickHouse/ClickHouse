@@ -16,6 +16,7 @@
 #include <Storages/StorageDummy.h>
 #include <Planner/Utils.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -283,7 +284,16 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     auto optimization_settings = QueryPlanOptimizationSettings::fromContext(mutable_context);
     auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(mutable_context);
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings)));
+    auto builder = query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings);
+
+    /// It's 16M squashing. 16 is a multiplier for compression.
+    size_t min_block_size_bytes = DBMS_DEFAULT_BUFFER_SIZE * 16;
+    auto squashing = std::make_shared<SimpleSquashingChunksTransform>(builder->getHeader(), 0, min_block_size_bytes);
+
+    builder->resize(1);
+    builder->addTransform(std::move(squashing));
+
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
     pipeline.complete(std::move(table_out));
     CompletedPipelineExecutor executor(pipeline);
