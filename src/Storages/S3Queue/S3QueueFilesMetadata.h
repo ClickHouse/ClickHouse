@@ -89,7 +89,7 @@ public:
     /// shard_id must be in range [0, shards_num - 1]
     size_t getIdForProcessingThread(size_t thread_id, size_t shard_id) const { return shard_id * threads_per_shard + thread_id; }
 
-    bool isProcessingIdBelongsToShard(size_t id, size_t shard_id) const { return shard_id * threads_per_shard <= id && id < shard_id * (threads_per_shard + 1); }
+    bool isProcessingIdBelongsToShard(size_t id, size_t shard_id) const { return shard_id * threads_per_shard <= id && id < (shard_id + 1) * threads_per_shard; }
 
 private:
     const S3QueueMode mode;

@@ -87,11 +87,14 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
                 if (val && sharded_processing)
                 {
                     auto shard = metadata->getProcessingIdForPath(val->key);
-                    if (idx != shard && metadata->isProcessingIdBelongsToShard(shard, current_shard))
+                    if (idx != shard)
                     {
-                        LOG_TEST(log, "Key {} is for shard {} (total: {})", val->key, shard, sharded_keys.size());
-                        auto & keys = sharded_keys.at(shard);
-                        keys.push_back(val);
+                        if (metadata->isProcessingIdBelongsToShard(shard, current_shard))
+                        {
+                            LOG_TEST(log, "Key {} is for shard {} (total: {})", val->key, shard, sharded_keys.size());
+                            auto & keys = sharded_keys.at(shard);
+                            keys.push_back(val);
+                        }
                         continue;
                     }
                 }
