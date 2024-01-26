@@ -1323,7 +1323,7 @@ static ActionsDAGPtr buildFilterDAG(
         }
     }
 
-    return ActionsDAG::buildFilterActionsDAG(nodes, node_name_to_input_node_column, context);
+    return ActionsDAG::buildFilterActionsDAG(nodes, node_name_to_input_node_column);
 }
 
 static void buildIndexes(

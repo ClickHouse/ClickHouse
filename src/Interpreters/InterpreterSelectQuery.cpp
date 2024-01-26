@@ -2329,7 +2329,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_paralle
             filter_nodes.push_back(&analysis_result.before_where->findInOutputs(analysis_result.where_column_name));
         }
 
-        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes, {}, context);
+        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes);
         if (!filter_actions_dag)
             return {};
 
