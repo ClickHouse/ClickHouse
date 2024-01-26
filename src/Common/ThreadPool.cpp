@@ -245,6 +245,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             catch (...)
             {
                 // threads.pop_front();
+                lock.lock();
                 --scheduled_jobs;
                 threads.erase(thread_it);
                 return on_error("cannot allocate thread");
