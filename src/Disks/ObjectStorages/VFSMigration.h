@@ -14,6 +14,6 @@ struct VFSMigration
     ContextMutablePtr ctx;
     LoggerPtr log = getLogger("VFSMigration");
     void migrate() const;
-    void migrateTable(StoragePtr table) const;
+    void migrateTable(StoragePtr table_ptr) const;
 };
 }

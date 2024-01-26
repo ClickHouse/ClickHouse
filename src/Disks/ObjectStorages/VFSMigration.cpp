@@ -1,9 +1,8 @@
 #include "VFSMigration.h"
 #include "DiskObjectStorageVFS.h"
 #include "Interpreters/ActionLocksManager.h"
-#include "Interpreters/Context.h"
 #include "Interpreters/DatabaseCatalog.h"
-#include "Interpreters/InterpreterSystemQuery.h"
+#include "Storages/StorageReplicatedMergeTree.h"
 
 namespace DB
 {
@@ -53,11 +52,27 @@ void VFSMigration::migrate() const
     }
 }
 
-void VFSMigration::migrateTable(StoragePtr table) const
+void VFSMigration::migrateTable(StoragePtr table_ptr) const
 {
-    LOG_INFO(log, "Migrating {}", table->getName());
-    auto manager = ctx->getActionLocksManager();
+    LOG_INFO(log, "Migrating {}", table_ptr->getName());
+
+    auto * table_casted_ptr = typeid_cast<StorageReplicatedMergeTree *>(table_ptr.get());
+    if (!table_casted_ptr)
+    {
+        LOG_INFO(log, "Only StorageReplicatedMergeTree is eligible for migration, skipping");
+        return;
+    }
+    StorageReplicatedMergeTree & table = *table_casted_ptr;
+
+    if (auto disks = table.getDisks(); std::ranges::find_if(disks, [&](DiskPtr d) { return d.get() == &disk; }) == disks.end())
+    {
+        LOG_INFO(log, "Table {} doesn't store data on disk {}, skipping", table.getName(), disk.getName());
+        return;
+    }
+
+    ActionLocksManagerPtr manager = ctx->getActionLocksManager();
     manager->cleanExpired();
+    // TODO support 0copy
 
     // TODO myrrc possibly better STOP ON VOLUME, research
     // TODO myrrc stop mutations
@@ -68,14 +83,32 @@ void VFSMigration::migrateTable(StoragePtr table) const
         for (const StorageActionBlockType action : ACTIONS)
             if (start)
             {
-                manager->remove(table, action);
-                table->onActionLockRemove(action);
+                manager->remove(table_ptr, action);
+                table.onActionLockRemove(action);
             }
             else
-                manager->add(table, action);
+                manager->add(table_ptr, action);
     };
 
     perform(false);
     SCOPE_EXIT(perform(true));
+
+    MetadataStoragePtr metadata_storage = disk.getMetadataStorage();
+
+    VFSLogItem item;
+
+    Strings paths; // TODO myrrc replace with streaming mode, parallelize
+    const String path = disk.getPath() + table.getRelativeDataPath();
+    LOG_DEBUG(log, "Will iterate {}", path);
+    for (const auto & entry : fs::recursive_directory_iterator{path})
+        if (entry.is_regular_file())
+            for (const StoredObject & elem : metadata_storage->getStorageObjects(entry.path()))
+            {
+                const size_t links = fs::hard_link_count(entry);
+                if (auto it = item.find(elem.remote_path); it == item.end())
+                    item.emplace(elem.remote_path, links);
+                else
+                    it->second += links;
+            }
 }
 }
