@@ -599,9 +599,7 @@ def test_schema_inference_with_globs(started_cluster):
         f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings schema_inference_use_cache_for_hdfs=0, input_format_json_infer_incomplete_types_as_strings=0"
     )
 
-    assert (
-        "CANNOT_EXTRACT_TABLE_STRUCTURE" in result
-    )
+    assert "CANNOT_EXTRACT_TABLE_STRUCTURE" in result
 
 
 def test_insert_select_schema_inference(started_cluster):
