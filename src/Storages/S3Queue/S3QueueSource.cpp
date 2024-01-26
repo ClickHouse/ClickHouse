@@ -43,12 +43,14 @@ StorageS3QueueSource::S3QueueKeyWithInfo::S3QueueKeyWithInfo(
 StorageS3QueueSource::FileIterator::FileIterator(
     std::shared_ptr<S3QueueFilesMetadata> metadata_,
     std::unique_ptr<GlobIterator> glob_iterator_,
+    size_t current_shard_,
     std::atomic<bool> & shutdown_called_)
     : metadata(metadata_)
     , glob_iterator(std::move(glob_iterator_))
     , shutdown_called(shutdown_called_)
     , log(&Poco::Logger::get("StorageS3QueueSource"))
     , sharded_processing(metadata->isShardedProcessing())
+    , current_shard(current_shard_)
 {
     if (sharded_processing)
     {
@@ -63,40 +65,36 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
     {
         KeyWithInfoPtr val{nullptr};
 
-        if (sharded_processing)
-        {
-            LOG_TEST(log, "CHECK: {}", idx);
-            auto & keys = sharded_keys.at(idx);
-            if (!keys.empty())
-            {
-                std::lock_guard lk(sharded_keys_mutex);
-                val = keys.front();
-                keys.pop_front();
-            }
-        }
-
-        if (!val)
         {
             std::unique_lock lk(sharded_keys_mutex, std::defer_lock);
             if (sharded_processing)
             {
-                /// To make sure order on keys in each shard in sharded_keys.
+                /// To make sure order on keys in each shard in sharded_keys
+                /// we need to check sharded_keys and to next() under lock.
                 lk.lock();
+
+                auto & keys = sharded_keys.at(idx);
+                if (!keys.empty())
+                {
+                    val = keys.front();
+                    keys.pop_front();
+                }
             }
 
-            val = glob_iterator->next();
-
-            if (val && sharded_processing)
+            if (!val)
             {
-                auto shard = metadata->getProcessingThreadForPath(val->key);
-                if (shard != idx)
+                val = glob_iterator->next();
+                if (val && sharded_processing)
                 {
-                    LOG_TEST(log, "Key {} is for shard {} (total: {})", val->key, shard, sharded_keys.size());
-                    auto & keys = sharded_keys.at(shard);
-                    keys.push_back(val);
-                    continue;
+                    auto shard = metadata->getProcessingIdForPath(val->key);
+                    if (idx != shard && metadata->isProcessingIdBelongsToShard(shard, current_shard))
+                    {
+                        LOG_TEST(log, "Key {} is for shard {} (total: {})", val->key, shard, sharded_keys.size());
+                        auto & keys = sharded_keys.at(shard);
+                        keys.push_back(val);
+                        continue;
+                    }
                 }
-                LOG_TEST(log, "Processing shard {} with key {}", shard, val->key);
             }
         }
 
@@ -115,6 +113,8 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
             LOG_TEST(log, "Shutdown was called, stopping file iterator");
             return {};
         }
+
+        LOG_TEST(log, "Checking if can process key {} for processing_id {}", val->key, idx);
 
         if (processing_holder)
         {

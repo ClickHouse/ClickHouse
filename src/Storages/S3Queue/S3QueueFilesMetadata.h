@@ -84,10 +84,12 @@ public:
 
     size_t getProcessingThreadsNum() const { return shards_num * threads_per_shard; }
 
-    size_t getProcessingThreadForPath(const std::string & path) const;
+    size_t getProcessingIdForPath(const std::string & path) const;
 
     /// shard_id must be in range [0, shards_num - 1]
     size_t getIdForProcessingThread(size_t thread_id, size_t shard_id) const { return shard_id * threads_per_shard + thread_id; }
+
+    bool isProcessingIdBelongsToShard(size_t id, size_t shard_id) const { return shard_id * threads_per_shard <= id && id < shard_id * (threads_per_shard + 1); }
 
 private:
     const S3QueueMode mode;

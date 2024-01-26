@@ -199,7 +199,7 @@ S3QueueFilesMetadata::NodeMetadata S3QueueFilesMetadata::createNodeMetadata(
     return metadata;
 }
 
-size_t S3QueueFilesMetadata::getProcessingThreadForPath(const std::string & path) const
+size_t S3QueueFilesMetadata::getProcessingIdForPath(const std::string & path) const
 {
     return sipHash64(path.data(), path.size()) % getProcessingThreadsNum();
 }
@@ -219,16 +219,24 @@ S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAs
         std::lock_guard lock(file_status->metadata_lock);
         switch (file_status->state)
         {
-            case FileStatus::State::Processing: [[fallthrough]];
+            case FileStatus::State::Processing:
+            {
+                LOG_TEST(log, "File {} is already processing", path);
+                return {};
+            }
             case FileStatus::State::Processed:
             {
+                LOG_TEST(log, "File {} is already processed", path);
                 return {};
             }
             case FileStatus::State::Failed:
             {
                 /// If max_loading_retries == 0, file is not retriable.
                 if (max_loading_retries == 0)
+                {
+                    LOG_TEST(log, "File {} is failed and processing retries are disabled", path);
                     return {};
+                }
 
                 /// Otherwise file_status->retries is also cached.
                 /// In case file_status->retries >= max_loading_retries we can fully rely that it is true
@@ -237,7 +245,10 @@ S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAs
                 /// (another server could have done a try after we cached retries value),
                 /// so check with zookeeper here.
                 if (file_status->retries >= max_loading_retries)
+                {
+                    LOG_TEST(log, "File {} is failed and processing retries are exceeeded", path);
                     return {};
+                }
 
                 break;
             }
@@ -291,31 +302,26 @@ S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAs
             if (!file_status->processing_start_time)
                 file_status->processing_start_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
-            break;
+            return processing_node_holder;
         }
         case SetFileProcessingResult::AlreadyProcessed:
         {
             std::lock_guard lock(file_status->metadata_lock);
             file_status->state = FileStatus::State::Processed;
-            break;
+            return {};
         }
         case SetFileProcessingResult::AlreadyFailed:
         {
             std::lock_guard lock(file_status->metadata_lock);
             file_status->state = FileStatus::State::Failed;
-            break;
+            return {};
         }
         case SetFileProcessingResult::ProcessingByOtherNode:
         {
             /// We cannot save any local state here, see comment above.
-            break;
+            return {};
         }
     }
-
-    if (result == SetFileProcessingResult::Success)
-        return processing_node_holder;
-
-    return {};
 }
 
 std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
@@ -396,7 +402,7 @@ S3QueueFilesMetadata::trySetFileAsProcessingForOrderedMode(const std::string & p
         /// in the same zookeeper transaction, so we use a while loop with tries).
 
         auto processed_node = isShardedProcessing()
-            ? zookeeper_processed_path / toString(getProcessingThreadForPath(path))
+            ? zookeeper_processed_path / toString(getProcessingIdForPath(path))
             : zookeeper_processed_path;
 
         NodeMetadata processed_node_metadata;
@@ -435,6 +441,8 @@ S3QueueFilesMetadata::trySetFileAsProcessingForOrderedMode(const std::string & p
         {
             auto holder = std::make_unique<ProcessingNodeHolder>(
                 node_metadata.processing_id, path, zookeeper_processing_path / node_name, file_status, zk_client);
+
+            LOG_TEST(log, "File {} is ready to be processed", path);
             return std::pair{SetFileProcessingResult::Success, std::move(holder)};
         }
 
@@ -526,9 +534,10 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedMode(ProcessingNodeHolderPt
     const auto zk_client = getZooKeeper();
 
     auto processed_node = isShardedProcessing()
-        ? zookeeper_processed_path / toString(getProcessingThreadForPath(path))
+        ? zookeeper_processed_path / toString(getProcessingIdForPath(path))
         : zookeeper_processed_path;
 
+    LOG_TEST(log, "Setting file `{}` as processed", path);
     while (true)
     {
         std::string res;

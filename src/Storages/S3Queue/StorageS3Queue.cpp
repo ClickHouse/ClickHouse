@@ -569,7 +569,7 @@ std::shared_ptr<StorageS3Queue::FileIterator> StorageS3Queue::createFileIterator
     auto glob_iterator = std::make_unique<StorageS3QueueSource::GlobIterator>(
         *configuration.client, configuration.url, predicate, virtual_columns, local_context,
         /* read_keys */nullptr, configuration.request_settings);
-    return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), shutdown_called);
+    return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), s3queue_settings->s3queue_current_shard_num, shutdown_called);
 }
 
 void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)

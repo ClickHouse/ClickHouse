@@ -41,6 +41,7 @@ public:
         FileIterator(
             std::shared_ptr<S3QueueFilesMetadata> metadata_,
             std::unique_ptr<GlobIterator> glob_iterator_,
+            size_t current_shard_,
             std::atomic<bool> & shutdown_called_);
 
         /// Note:
@@ -58,6 +59,7 @@ public:
         Poco::Logger * log;
 
         const bool sharded_processing;
+        const size_t current_shard;
         std::unordered_map<size_t, std::deque<KeyWithInfoPtr>> sharded_keys;
         std::mutex sharded_keys_mutex;
     };
