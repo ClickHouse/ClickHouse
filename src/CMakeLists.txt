@@ -321,6 +321,7 @@ target_link_libraries (clickhouse_compression
             clickhouse_parsers
         PRIVATE
             ch_contrib::lz4
+            ch_contrib::fsst
             ch_contrib::roaring
 )
 
@@ -406,6 +407,7 @@ dbms_target_link_libraries (
         clickhouse_dictionaries_embedded
         clickhouse_parsers
         ch_contrib::lz4
+        ch_contrib::fsst
         Poco::JSON
         string_utils
     PUBLIC
@@ -550,6 +552,7 @@ if (TARGET ch_contrib::datasketches)
 endif ()
 
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
+target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::fsst)
 
 if (TARGET ch_contrib::qpl)
     dbms_target_link_libraries(PUBLIC ch_contrib::qpl)

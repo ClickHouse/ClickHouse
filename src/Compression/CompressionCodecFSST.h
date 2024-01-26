@@ -2,6 +2,8 @@
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 
+#include <fsst.h>
+
 namespace DB
 {
 
@@ -30,5 +32,3 @@ private:
 CompressionCodecFSST::CompressionCodecFSST() {
     setCodecDescription("FSST");
 }
-
-
