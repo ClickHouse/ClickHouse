@@ -20,7 +20,7 @@ RUN apt-get update \
         zstd \
     --yes --no-install-recommends
 
-RUN pip3 install numpy==1.26.3 scipy==1.12.0 pandas==1.5.3 Jinja2==3.1.3
+RUN pip3 install numpy==1.24.4 scipy==1.12.0 pandas==1.5.3 Jinja2==3.1.3
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
 
