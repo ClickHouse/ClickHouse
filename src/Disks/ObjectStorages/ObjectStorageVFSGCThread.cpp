@@ -57,15 +57,11 @@ const int EPHEMERAL = zkutil::CreateMode::Ephemeral;
 void ObjectStorageVFSGCThread::run() const
 {
     Stopwatch stop_watch;
-
-    using enum Coordination::Error;
-    if (auto code = storage.zookeeper()->tryCreate(storage.traits.gc_lock_path, "", EPHEMERAL); code == ZNODEEXISTS)
+    if (!trySetLock())
     {
         LOG_DEBUG(log, "Failed to acquire lock, sleeping");
         return;
     }
-    else if (code != ZOK)
-        throw Coordination::Exception(code);
     LOG_DEBUG(log, "Acquired lock");
 
     bool successful_run = false, skip_run = false;
@@ -108,6 +104,17 @@ void ObjectStorageVFSGCThread::run() const
     removeBatch(start, end);
     LOG_DEBUG(log, "Removed lock for [{};{}]", start, end);
     successful_run = true;
+}
+
+bool ObjectStorageVFSGCThread::trySetLock() const
+{
+    using enum Coordination::Error;
+    if (auto code = storage.zookeeper()->tryCreate(storage.traits.gc_lock_path, "", EPHEMERAL); code == ZNODEEXISTS)
+        return false;
+    else if (code == ZOK)
+        return true;
+    else
+        throw Coordination::Exception(code);
 }
 
 bool ObjectStorageVFSGCThread::skipRun(size_t batch_size, Logpointer start, Logpointer end) const

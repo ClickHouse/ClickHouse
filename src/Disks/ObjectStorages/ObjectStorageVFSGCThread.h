@@ -15,11 +15,13 @@ public:
     using Logpointer = size_t;
 
 private:
+    friend struct VFSMigration;
     DiskObjectStorageVFS & storage;
     LoggerPtr log;
     std::shared_ptr<const VFSSettings> settings;
 
     void run() const;
+    bool trySetLock() const;
     bool skipRun(size_t batch_size, Logpointer start, Logpointer end) const;
     void tryWriteSnapshotForZero() const;
     void updateSnapshotWithLogEntries(Logpointer start, Logpointer end) const;
