@@ -115,14 +115,12 @@ StorageMergeTree::StorageMergeTree(
     , writer(*this)
     , merger_mutator(*this)
 {
-    if (!attach && isStaticStorage())
-        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Creating data on static storage is prohibited, use ATTACH instead");
-
     initializeDirectoriesAndFormatVersion(relative_data_path_, attach, date_column_name);
+
 
     loadDataParts(has_force_restore_data_flag, std::nullopt);
 
-    if (!attach && !getDataPartsForInternalUsage().empty())
+    if (!attach && !getDataPartsForInternalUsage().empty() && !isStaticStorage())
         throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Data directory for table already containing data parts - probably "
                         "it was unclean DROP table or manual intervention. "
