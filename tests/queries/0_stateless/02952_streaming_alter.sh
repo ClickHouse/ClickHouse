@@ -3,7 +3,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
-# shellcheck source=./replication.lib
+# shellcheck source=./streaming.lib
 . "$CURDIR"/streaming.lib
 
 opts=(
@@ -16,6 +16,7 @@ $CLICKHOUSE_CLIENT "${opts[@]}" -q "CREATE TABLE t_streaming_test (a String, b U
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "INSERT INTO t_streaming_test VALUES ('started', 0)"
 
 # start stream
+# shellcheck disable=2034
 read -r fifo_1 pid_1 < <(spawn $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT * FROM t_streaming_test STREAM")
 read_until "$fifo_1" "started"
 
@@ -44,6 +45,7 @@ echo "== Alter table: drop column b =="
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "ALTER TABLE t_streaming_test DROP COLUMN b"
 
 # open fifo for reading to extend it's lifetime
+# shellcheck disable=2034
 exec {fd}<>$fifo_1
 
 # insert some data into stream

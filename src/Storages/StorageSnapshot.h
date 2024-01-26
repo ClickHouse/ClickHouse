@@ -8,7 +8,8 @@ namespace DB
 
 class IStorage;
 
-struct StorageSnapshotSettings {
+struct StorageSnapshotSettings
+{
     bool need_to_create_subscription = false;
 };
 

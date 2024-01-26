@@ -3,10 +3,12 @@
 spawn()
 {
     # Create a unique name for the FIFO using mktemp
-    local fifo=$(mktemp -u)
+    local fifo
+    fifo=$(mktemp -u)
     mkfifo "$fifo"
 
     # Cycle fifo reading
+    # shellcheck disable=2034
     exec {fd}<>$fifo
 
     "${@}" > "$fifo" 2>&1 &

@@ -6220,7 +6220,8 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 auto from_table_identifier_alias = from_table_identifier.getAlias();
                 auto table_expression_modifiers = from_table_identifier.getTableExpressionModifiers();
 
-                auto table_identifier_lookup = IdentifierLookup{
+                IdentifierLookup table_identifier_lookup
+                {
                     from_table_identifier.getIdentifier(),
                     IdentifierLookupContext::TABLE_EXPRESSION,
                     table_expression_modifiers,
