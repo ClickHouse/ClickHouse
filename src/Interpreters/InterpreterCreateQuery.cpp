@@ -11,6 +11,8 @@
 #include <Common/atomicRename.h>
 #include <Common/PoolId.h>
 #include <Common/logger_useful.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/hex.h>
 
 #include <Core/Defines.h>
@@ -463,6 +465,14 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->children.push_back(column_declaration->ttl);
         }
 
+        if (!column.settings.empty())
+        {
+            auto settings = std::make_shared<ASTSetQuery>();
+            settings->is_standalone = false;
+            settings->changes = column.settings;
+            column_declaration->settings = std::move(settings);
+        }
+
         columns_list->children.push_back(column_declaration_ptr);
     }
 
@@ -669,6 +679,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         if (col_decl.ttl)
             column.ttl = col_decl.ttl;
+
+        if (col_decl.settings)
+        {
+            column.settings = col_decl.settings->as<ASTSetQuery &>().changes;
+            MergeTreeColumnSettings::validate(column.settings);
+        }
 
         res.add(std::move(column));
     }
@@ -1212,7 +1228,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
     else if (create.attach && !create.attach_short_syntax && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
     {
-        auto * log = &Poco::Logger::get("InterpreterCreateQuery");
+        auto log = getLogger("InterpreterCreateQuery");
         LOG_WARNING(log, "ATTACH TABLE query with full table definition is not recommended: "
                          "use either ATTACH TABLE {}; to attach existing table "
                          "or CREATE TABLE {} <table definition>; to create new table "
@@ -1453,7 +1469,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             /// so the existing directory probably contains some leftovers from previous unsuccessful attempts to create the table
 
             fs::path trash_path = fs::path{getContext()->getPath()} / "trash" / data_path / getHexUIntLowercase(thread_local_rng());
-            LOG_WARNING(&Poco::Logger::get("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
+            LOG_WARNING(getLogger("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
                         Poco::toLower(storage_name), String(data_path), trash_path);
             fs::create_directories(trash_path.parent_path());
             renameNoReplace(full_data_path, trash_path);

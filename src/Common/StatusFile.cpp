@@ -56,9 +56,9 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
         }
 
         if (!contents.empty())
-            LOG_INFO(&Poco::Logger::get("StatusFile"), "Status file {} already exists - unclean restart. Contents:\n{}", path, contents);
+            LOG_INFO(getLogger("StatusFile"), "Status file {} already exists - unclean restart. Contents:\n{}", path, contents);
         else
-            LOG_INFO(&Poco::Logger::get("StatusFile"), "Status file {} already exists and is empty - probably unclean hardware restart.", path);
+            LOG_INFO(getLogger("StatusFile"), "Status file {} already exists and is empty - probably unclean hardware restart.", path);
     }
 
     fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
@@ -99,10 +99,10 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
 StatusFile::~StatusFile()
 {
     if (0 != close(fd))
-        LOG_ERROR(&Poco::Logger::get("StatusFile"), "Cannot close file {}, {}", path, errnoToString());
+        LOG_ERROR(getLogger("StatusFile"), "Cannot close file {}, {}", path, errnoToString());
 
     if (0 != unlink(path.c_str()))
-        LOG_ERROR(&Poco::Logger::get("StatusFile"), "Cannot unlink file {}, {}", path, errnoToString());
+        LOG_ERROR(getLogger("StatusFile"), "Cannot unlink file {}, {}", path, errnoToString());
 }
 
 }

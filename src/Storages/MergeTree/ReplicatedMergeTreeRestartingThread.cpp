@@ -33,7 +33,7 @@ static String generateActiveNodeIdentifier()
 ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeRestartingThread)")
-    , log(&Poco::Logger::get(log_name))
+    , log(getLogger(log_name))
     , active_node_identifier(generateActiveNodeIdentifier())
 {
     const auto storage_settings = storage.getSettings();

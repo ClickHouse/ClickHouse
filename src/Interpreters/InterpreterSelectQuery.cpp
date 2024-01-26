@@ -381,7 +381,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     : IInterpreterUnionOrSelectQuery(options_.modify_inplace ? query_ptr_ : query_ptr_->clone(), context_, options_)
     , storage(storage_)
     , input_pipe(std::move(input_pipe_))
-    , log(&Poco::Logger::get("InterpreterSelectQuery"))
+    , log(getLogger("InterpreterSelectQuery"))
     , metadata_snapshot(metadata_snapshot_)
     , prepared_sets(prepared_sets_)
 {
@@ -589,9 +589,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             }
         }
         else if (auto * distributed = dynamic_cast<StorageDistributed *>(storage.get());
-                 distributed && canUseCustomKey(settings, *distributed->getCluster(), *context))
+                 distributed && context->canUseParallelReplicasCustomKey(*distributed->getCluster()))
         {
-            query_info.use_custom_key = true;
             context->setSetting("distributed_group_by_no_merge", 2);
         }
     }
@@ -1573,7 +1572,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     executeLimitBy(query_plan);
                 }
 
-                if (query.limitLength())
+                if (query.limitLength() && !query.limitBy())
                     executePreLimit(query_plan, true);
             }
         };
@@ -2330,7 +2329,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_paralle
             filter_nodes.push_back(&analysis_result.before_where->findInOutputs(analysis_result.where_column_name));
         }
 
-        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes, {}, context);
+        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes);
         if (!filter_actions_dag)
             return {};
 

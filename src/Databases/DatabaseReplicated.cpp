@@ -576,13 +576,30 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
             ddl_worker->startup();
             ddl_worker_initialized = true;
         });
+    std::scoped_lock lock(mutex);
     return startup_replicated_database_task = makeLoadTask(async_loader, {job});
 }
 
-void DatabaseReplicated::waitDatabaseStarted(bool no_throw) const
+void DatabaseReplicated::waitDatabaseStarted() const
 {
-    if (startup_replicated_database_task)
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_replicated_database_task, no_throw);
+    LoadTaskPtr task;
+    {
+        std::scoped_lock lock(mutex);
+        task = startup_replicated_database_task;
+    }
+    if (task)
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task);
+}
+
+void DatabaseReplicated::stopLoading()
+{
+    LoadTaskPtr stop_startup_replicated_database;
+    {
+        std::scoped_lock lock(mutex);
+        stop_startup_replicated_database.swap(startup_replicated_database_task);
+    }
+    stop_startup_replicated_database.reset();
+    DatabaseAtomic::stopLoading();
 }
 
 bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context, bool debug_check /* = true */) const
@@ -743,7 +760,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
 
 BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags)
 {
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     if (query_context->getCurrentTransaction() && query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Distributed DDL queries inside transactions are not supported");
@@ -807,7 +824,7 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
 
 void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr)
 {
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     is_recovering = true;
     SCOPE_EXIT({ is_recovering = false; });
@@ -1259,7 +1276,7 @@ void DatabaseReplicated::drop(ContextPtr context_)
         return;
     }
 
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     auto current_zookeeper = getZooKeeper();
     current_zookeeper->set(replica_path, DROPPED_MARK, -1);
@@ -1278,7 +1295,7 @@ void DatabaseReplicated::drop(ContextPtr context_)
 
 void DatabaseReplicated::stopReplication()
 {
-    waitDatabaseStarted(/* no_throw = */ true);
+    stopLoading();
     if (ddl_worker)
         ddl_worker->shutdown();
 }
@@ -1294,7 +1311,7 @@ void DatabaseReplicated::shutdown()
 
 void DatabaseReplicated::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
     assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id."));
@@ -1338,7 +1355,7 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
     if (exchange && !to_database.isTableExist(to_table_name, local_context))
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", to_table_name);
 
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     String statement = readMetadataFile(table_name);
     String statement_to;
@@ -1440,7 +1457,7 @@ bool DatabaseReplicated::canExecuteReplicatedMetadataAlter() const
 
 void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const String & table_name)
 {
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
     assert(!ddl_worker->isCurrentlyActive() || txn);
@@ -1465,7 +1482,7 @@ void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const 
 
 void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context, const String & table_name, const String & table_metadata_path, bool attach)
 {
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
     assert(!ddl_worker->isCurrentlyActive() || txn);
@@ -1503,7 +1520,7 @@ String DatabaseReplicated::readMetadataFile(const String & table_name) const
 std::vector<std::pair<ASTPtr, StoragePtr>>
 DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr &) const
 {
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     /// Here we read metadata from ZooKeeper. We could do that by simple call of DatabaseAtomic::getTablesForBackup() however
     /// reading from ZooKeeper is better because thus we won't be dependent on how fast the replication queue of this database is.
@@ -1546,7 +1563,7 @@ void DatabaseReplicated::createTableRestoredFromBackup(
     std::shared_ptr<IRestoreCoordination> restore_coordination,
     UInt64 timeout_ms)
 {
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     /// Because of the replication multiple nodes can try to restore the same tables again and failed with "Table already exists"
     /// because of some table could be restored already on other node and then replicated to this node.

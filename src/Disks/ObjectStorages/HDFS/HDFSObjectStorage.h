@@ -50,20 +50,15 @@ public:
         , settings(std::move(settings_))
         , hdfs_root_path(hdfs_root_path_)
     {
-        data_source_description.type = DataSourceType::HDFS;
-        data_source_description.description = hdfs_root_path_;
-        data_source_description.is_cached = false;
-        data_source_description.is_encrypted = false;
     }
 
     std::string getName() const override { return "HDFSObjectStorage"; }
 
     std::string getCommonKeyPrefix() const override { return hdfs_root_path; }
 
-    DataSourceDescription getDataSourceDescription() const override
-    {
-        return data_source_description;
-    }
+    std::string getDescription() const override { return hdfs_root_path; }
+
+    ObjectStorageType getType() const override { return ObjectStorageType::HDFS; }
 
     bool exists(const StoredObject & object) const override;
 
@@ -128,8 +123,6 @@ private:
     HDFSFSPtr hdfs_fs;
     SettingsPtr settings;
     const std::string hdfs_root_path;
-
-    DataSourceDescription data_source_description;
 };
 
 }

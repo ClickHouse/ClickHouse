@@ -184,7 +184,7 @@ Client::Client(
     , client_settings(client_settings_)
     , max_redirects(max_redirects_)
     , sse_kms_config(std::move(sse_kms_config_))
-    , log(&Poco::Logger::get("S3Client"))
+    , log(getLogger("S3Client"))
 {
     auto * endpoint_provider = dynamic_cast<Aws::S3::Endpoint::S3DefaultEpProviderBase *>(accessEndpointProvider().get());
     endpoint_provider->GetBuiltInParameters().GetParameter("Region").GetString(explicit_region);
@@ -234,7 +234,7 @@ Client::Client(
     , provider_type(other.provider_type)
     , max_redirects(other.max_redirects)
     , sse_kms_config(other.sse_kms_config)
-    , log(&Poco::Logger::get("S3Client"))
+    , log(getLogger("S3Client"))
 {
     cache = std::make_shared<ClientCache>(*other.cache);
     ClientCacheRegistry::instance().registerClient(cache);
@@ -705,9 +705,9 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
     if (api_mode == ApiMode::GCS)
     {
         /// some GCS requests don't like S3 specific headers that the client sets
+        /// all "x-amz-*" headers have to be either converted or deleted
+        /// note that "amz-sdk-invocation-id" and "amz-sdk-request" are preserved
         httpRequest->DeleteHeader("x-amz-api-version");
-        httpRequest->DeleteHeader("amz-sdk-invocation-id");
-        httpRequest->DeleteHeader("amz-sdk-request");
     }
 }
 
@@ -854,7 +854,7 @@ void ClientCacheRegistry::clearCacheForAll()
         }
         else
         {
-            LOG_INFO(&Poco::Logger::get("ClientCacheRegistry"), "Deleting leftover S3 client cache");
+            LOG_INFO(getLogger("ClientCacheRegistry"), "Deleting leftover S3 client cache");
             it = client_caches.erase(it);
         }
     }

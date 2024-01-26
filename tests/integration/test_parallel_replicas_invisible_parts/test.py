@@ -56,6 +56,8 @@ def _create_tables(table_name, table_size, index_granularity):
             """
         )
 
+    nodes[0].query(f"SYSTEM SYNC REPLICA ON CLUSTER {cluster_name} {table_name}")
+
     nodes[0].query(f"SYSTEM STOP FETCHES ON CLUSTER {cluster_name} {table_name}")
 
     for node in nodes:
