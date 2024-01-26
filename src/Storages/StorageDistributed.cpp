@@ -712,13 +712,14 @@ static bool requiresObjectColumns(const ColumnsDescription & all_columns, ASTPtr
     return false;
 }
 
-StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+StorageSnapshotPtr StorageDistributed::getStorageSnapshot(
+    const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, const StorageSnapshotSettings & additional_settings) const
 {
-    return getStorageSnapshotForQuery(metadata_snapshot, nullptr, query_context);
+    return getStorageSnapshotForQuery(metadata_snapshot, nullptr, query_context, additional_settings);
 }
 
 StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
-    const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr /*query_context*/) const
+    const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr /*query_context*/, const StorageSnapshotSettings & /*additional_settings*/) const
 {
     /// If query doesn't use columns of type Object, don't deduce
     /// concrete types for them, because it required extra round trip.

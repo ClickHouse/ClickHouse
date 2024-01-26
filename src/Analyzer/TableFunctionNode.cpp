@@ -32,7 +32,9 @@ void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePt
     table_function = std::move(table_function_value);
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
-    storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
+    storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context, {
+        .need_to_create_subscription = table_expression_modifiers.has_value() && table_expression_modifiers->hasStream(),
+    });
     unresolved_arguments_indexes = std::move(unresolved_arguments_indexes_);
 }
 

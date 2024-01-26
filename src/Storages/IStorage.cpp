@@ -370,6 +370,36 @@ void IStorage::restoreDataFromBackup(RestorerFromBackup & restorer, const String
                         getStorageID().getFullTableName(), data_path_in_backup);
 }
 
+StorageSnapshotPtr IStorage::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+{
+    return getStorageSnapshot(metadata_snapshot, query_context, {});
+}
+
+StorageSnapshotPtr IStorage::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/, const StorageSnapshotSettings & /*additional_settings*/) const
+{
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
+}
+
+StorageSnapshotPtr IStorage::getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr query_context) const
+{
+    return getStorageSnapshotForQuery(metadata_snapshot, query, query_context, {});
+}
+
+StorageSnapshotPtr IStorage::getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context, const StorageSnapshotSettings & additional_settings) const
+{
+    return getStorageSnapshot(metadata_snapshot, query_context, additional_settings);
+}
+
+StorageSnapshotPtr IStorage::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+{
+    return getStorageSnapshotWithoutData(metadata_snapshot, query_context, {});
+}
+
+StorageSnapshotPtr IStorage::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, const StorageSnapshotSettings & additional_settings) const
+{
+    return getStorageSnapshot(metadata_snapshot, query_context, additional_settings);
+}
+
 std::string PrewhereInfo::dump() const
 {
     WriteBufferFromOwnString ss;
