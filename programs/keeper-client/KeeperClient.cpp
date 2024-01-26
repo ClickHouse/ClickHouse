@@ -425,7 +425,7 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     {
         if (!config().has("host") && !config().has("port") && !keys.empty())
         {
-            LOG_INFO(&Poco::Logger::get("KeeperClient"), "Found keeper node in the config.xml, will use it for connection");
+            LOG_INFO(getLogger("KeeperClient"), "Found keeper node in the config.xml, will use it for connection");
 
             for (const auto & key : keys)
             {

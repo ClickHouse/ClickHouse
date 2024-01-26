@@ -63,7 +63,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
 
 {
     args = std::move(args_);
-    log = &Poco::Logger::get("ZooKeeper");
+    log = getLogger("ZooKeeper");
 
     if (args.implementation == "zookeeper")
     {
@@ -1463,7 +1463,7 @@ Coordination::RequestPtr makeExistsRequest(const std::string & path)
     return request;
 }
 
-std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log)
+std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, LoggerPtr log)
 {
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
@@ -1499,7 +1499,7 @@ String extractZooKeeperName(const String & path)
     return default_zookeeper_name;
 }
 
-String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log)
+String extractZooKeeperPath(const String & path, bool check_starts_with_slash, LoggerPtr log)
 {
     if (path.empty())
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path should not be empty");
