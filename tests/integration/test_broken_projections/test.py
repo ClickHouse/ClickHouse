@@ -230,7 +230,6 @@ def check(node, table, check_result, expect_broken_part="", expected_error=""):
         node.query("SYSTEM FLUSH LOGS")
         assert "proj1" in node.query(
             f"""
-        SYSTEM FLUSH LOGS;
         SELECT query, splitByChar('.', arrayJoin(projections))[-1]
         FROM system.query_log
         WHERE query_id='{query_id}' AND type='QueryFinish'
@@ -252,7 +251,6 @@ def check(node, table, check_result, expect_broken_part="", expected_error=""):
         node.query("SYSTEM FLUSH LOGS")
         assert "proj2" in node.query(
             f"""
-        SYSTEM FLUSH LOGS;
         SELECT query, splitByChar('.', arrayJoin(projections))[-1]
         FROM system.query_log
         WHERE query_id='{query_id}' AND type='QueryFinish'
