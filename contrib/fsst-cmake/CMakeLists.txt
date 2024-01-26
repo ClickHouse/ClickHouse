@@ -8,4 +8,4 @@ set (SRCS
 add_library (fsst ${SRCS})
 add_library (ch_contrib::fsst ALIAS fsst) 
 
-target_include_directories(fsst PUBLIC "${LIBRARY_DIR}/lib")
+target_include_directories(fsst PUBLIC "${LIBRARY_DIR}")
