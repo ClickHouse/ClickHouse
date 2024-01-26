@@ -323,10 +323,6 @@ void StorageMergeTree::checkTableCanBeDropped(ContextPtr query_context) const
 
 void StorageMergeTree::drop()
 {
-    /// In case there is read-only/write-once disk we do not allow DROP, use DETACH instead.
-    if (isStaticStorage())
-        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
-
     shutdown(true);
     dropAllData();
 }
