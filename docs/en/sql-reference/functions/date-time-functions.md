@@ -2491,6 +2491,49 @@ SELECT
 └──────────────────────────┴───────────────────────────────┴──────────────────────────────────────┘
 ```
 
+## dateTime64Diff
+
+Calculates the difference of two `DateTime64` values. Returns an `IntervalNanosecond` result.
+
+**Syntax**
+
+``` sql
+dateTime64Diff(date1, date2)
+```
+
+**Arguments**
+
+- `date1` - Left hand side `DateTime64`
+- `date2` - Right hand side `DateTime64`
+
+**Returned value**
+
+- The difference between the two `DateTime64` values
+
+Type: `IntervalNanosecond`
+
+Alias: `date1 - date2` (operator)
+
+**Example**
+
+``` sql
+WITH
+    toDateTime64('2022-01-01', 0) AS d1,
+    toDateTime64('2022-11-23 09:26:37.123456789', 9) AS d2
+SELECT
+    dateTime64Diff(d1, d2),
+    dateTime64Diff(d2, d1),
+    d2 - d1
+```
+
+Result:
+
+``` response
+┌─dateTime64Diff(d1, d2)─┬─dateTime64Diff(d2, d1)─┬─────minus(d2, d1)─┐
+│     -28200397123456789 │      28200397123456789 │ 28200397123456789 │
+└────────────────────────┴────────────────────────┴───────────────────┘
+```
+
 ## timeSlots(StartTime, Duration,\[, Size\])
 
 For a time interval starting at ‘StartTime’ and continuing for ‘Duration’ seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the ‘Size’ in seconds. ‘Size’ is an optional parameter set to 1800 (30 minutes) by default.
