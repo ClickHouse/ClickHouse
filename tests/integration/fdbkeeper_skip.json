@@ -43,5 +43,11 @@
   "test_replicated_user_defined_functions/test.py::test_replication",
   "test_replicated_user_defined_functions/test.py::test_reload_zookeeper",
   "test_inserts_with_keeper_retries/test.py::test_query_timeout_with_zk_down",
-  "test_drop_replica_with_auxiliary_zookeepers/test.py::test_drop_replica_in_auxiliary_zookeeper"
+  "test_drop_replica_with_auxiliary_zookeepers/test.py::test_drop_replica_in_auxiliary_zookeeper",
+  "test_replicated_merge_tree_with_auxiliary_zookeepers/test.py::test_create_replicated_merge_tree_with_auxiliary_zookeeper",
+  "test_replicated_merge_tree_with_auxiliary_zookeepers/test.py::test_drop_replicated_merge_tree_with_auxiliary_zookeeper",
+  "test_replicated_merge_tree_with_auxiliary_zookeepers/test.py::test_path_ambiguity",
+  "test_fetch_partition_with_outdated_parts/test.py::test_fetch_part_from_allowed_zookeeper",
+  "test_reload_auxiliary_zookeepers/test.py::test_reload_auxiliary_zookeepers",
+  ""
 ]
