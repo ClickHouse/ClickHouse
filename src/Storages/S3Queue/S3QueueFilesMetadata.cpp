@@ -135,7 +135,7 @@ S3QueueFilesMetadata::S3QueueFilesMetadata(const fs::path & zookeeper_path_, con
     , zookeeper_processed_path(zookeeper_path_ / "processed")
     , zookeeper_failed_path(zookeeper_path_ / "failed")
     , zookeeper_cleanup_lock_path(zookeeper_path_ / "cleanup_lock")
-    , log(&Poco::Logger::get("S3QueueFilesMetadata"))
+    , log(getLogger("S3QueueFilesMetadata"))
 {
     if (mode == S3QueueMode::UNORDERED && (max_set_size || max_set_age_sec))
     {
@@ -727,7 +727,7 @@ S3QueueFilesMetadata::ProcessingNodeHolder::ProcessingNodeHolder(
     , path(path_)
     , zk_node_path(zk_node_path_)
     , processing_id(processing_id_)
-    , log(&Poco::Logger::get("ProcessingNodeHolder"))
+    , log(getLogger("ProcessingNodeHolder"))
 {
 }
 

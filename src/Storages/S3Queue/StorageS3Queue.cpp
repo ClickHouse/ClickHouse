@@ -120,7 +120,7 @@ StorageS3Queue::StorageS3Queue(
     , configuration{configuration_}
     , format_settings(format_settings_)
     , reschedule_processing_interval_ms(s3queue_settings->s3queue_polling_min_timeout_ms)
-    , log(&Poco::Logger::get("StorageS3Queue (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageS3Queue (" + table_id_.table_name + ")"))
 {
     if (configuration.url.key.empty())
     {
@@ -252,7 +252,7 @@ void ReadFromS3Queue::createIterator(const ActionsDAG::Node * predicate)
 
 void ReadFromS3Queue::applyFilters()
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -603,7 +603,7 @@ void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)
                     if (user_format_settings.has(change.name))
                         user_format_settings.set(change.name, change.value);
                     else
-                        LOG_TRACE(&Poco::Logger::get("StorageS3"), "Remove: {}", change.name);
+                        LOG_TRACE(getLogger("StorageS3"), "Remove: {}", change.name);
                     args.storage_def->settings->changes.removeSetting(change.name);
                 }
 

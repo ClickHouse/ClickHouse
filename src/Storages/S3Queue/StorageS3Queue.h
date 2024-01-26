@@ -79,7 +79,7 @@ private:
     std::atomic<bool> shutdown_called = false;
     std::atomic<bool> table_is_being_dropped = false;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     void startup() override;
     void shutdown(bool is_drop) override;

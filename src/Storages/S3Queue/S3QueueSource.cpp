@@ -150,7 +150,7 @@ StorageS3QueueSource::StorageS3QueueSource(
     const std::atomic<bool> & table_is_being_dropped_,
     std::shared_ptr<S3QueueLog> s3_queue_log_,
     const StorageID & storage_id_,
-    Poco::Logger * log_)
+    LoggerPtr log_)
     : ISource(header_)
     , WithContext(context_)
     , name(std::move(name_))

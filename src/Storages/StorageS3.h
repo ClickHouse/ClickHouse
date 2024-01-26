@@ -242,7 +242,7 @@ private:
     size_t max_parsing_threads = 1;
     bool need_only_count;
 
-    Poco::Logger * log = &Poco::Logger::get("StorageS3Source");
+    LoggerPtr log = getLogger("StorageS3Source");
 
     ThreadPool create_reader_pool;
     ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;

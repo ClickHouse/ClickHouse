@@ -128,7 +128,7 @@ ColumnGathererTransform::ColumnGathererTransform(
     : IMergingTransform<ColumnGathererStream>(
         num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
         num_inputs, row_sources_buf_, block_preferred_size_)
-    , log(&Poco::Logger::get("ColumnGathererStream"))
+    , log(getLogger("ColumnGathererStream"))
 {
     if (header.columns() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Header should have 1 column, but contains {}",

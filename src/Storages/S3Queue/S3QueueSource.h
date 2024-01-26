@@ -78,7 +78,7 @@ public:
         const std::atomic<bool> & table_is_being_dropped_,
         std::shared_ptr<S3QueueLog> s3_queue_log_,
         const StorageID & storage_id_,
-        Poco::Logger * log_);
+        LoggerPtr log_);
 
     ~StorageS3QueueSource() override;
 
@@ -101,7 +101,7 @@ private:
     const StorageID storage_id;
 
     RemoveFileFunc remove_file_func;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     using ReaderHolder = StorageS3Source::ReaderHolder;
     ReaderHolder reader;
