@@ -1379,9 +1379,7 @@ def test_schema_inference_from_globs(started_cluster):
         f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow') settings schema_inference_use_cache_for_s3=0, input_format_json_infer_incomplete_types_as_strings=0"
     )
 
-    assert (
-        "CANNOT_EXTRACT_TABLE_STRUCTURE" in result
-    )
+    assert "CANNOT_EXTRACT_TABLE_STRUCTURE" in result
 
     url_filename = "test{0,1,2,3}.jsoncompacteachrow"
 
@@ -1389,9 +1387,7 @@ def test_schema_inference_from_globs(started_cluster):
         f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}') settings schema_inference_use_cache_for_url=0, input_format_json_infer_incomplete_types_as_strings=0"
     )
 
-    assert (
-        "CANNOT_EXTRACT_TABLE_STRUCTURE" in result
-    )
+    assert "CANNOT_EXTRACT_TABLE_STRUCTURE" in result
 
 
 def test_signatures(started_cluster):
