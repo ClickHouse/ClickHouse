@@ -31,7 +31,7 @@ class FunctionMap : public IFunction
 public:
     static constexpr auto name = "map";
 
-    FunctionMap(bool use_variant_as_common_type_) : use_variant_as_common_type(use_variant_as_common_type_) {}
+    explicit FunctionMap(bool use_variant_as_common_type_) : use_variant_as_common_type(use_variant_as_common_type_) {}
 
     static FunctionPtr create(ContextPtr context)
     {

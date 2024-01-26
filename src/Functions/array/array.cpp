@@ -16,7 +16,7 @@ class FunctionArray : public IFunction
 public:
     static constexpr auto name = "array";
 
-    FunctionArray(bool use_variant_as_common_type_ = false) : use_variant_as_common_type(use_variant_as_common_type_) {}
+    explicit FunctionArray(bool use_variant_as_common_type_ = false) : use_variant_as_common_type(use_variant_as_common_type_) {}
 
     static FunctionPtr create(ContextPtr context)
     {
