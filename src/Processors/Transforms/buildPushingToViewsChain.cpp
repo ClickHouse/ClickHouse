@@ -247,7 +247,8 @@ Chain buildPushingToViewsChain(
         {
             insert_context->setSetting("insert_deduplicate", Field{false});
         }
-        else if (insert_settings.update_insert_deduplication_token_in_dependent_materialized_views)
+        else if (insert_settings.update_insert_deduplication_token_in_dependent_materialized_views &&
+            !insert_settings.insert_deduplication_token.value.empty())
         {
             /** Update deduplication token passed to dependent MV with current table id. So it is possible to properly handle
               * deduplication in complex INSERT flows.
@@ -261,7 +262,7 @@ Chain buildPushingToViewsChain(
               * Here we want to avoid deduplication for two different blocks generated from `mv_2_1` and `mv_2_2` that will
               * be inserted into `ds_2_1`.
               */
-            auto insert_deduplication_token = insert_settings.insert_deduplication_token.toString();
+            auto insert_deduplication_token = insert_settings.insert_deduplication_token.value;
 
             if (table_id.hasUUID())
                 insert_deduplication_token += "_" + toString(table_id.uuid);
