@@ -220,7 +220,7 @@ template <typename ArrayCond, typename A, typename B, typename ArrayResult, type
 inline void fillConstantConstant(const ArrayCond & cond, A a, B b, ArrayResult & res)
 {
     size_t size = cond.size();
-    if constexpr (std::is_same_v<ResultType, Int8> || std::is_same_v<ResultType, UInt8> || is_over_big_int<ResultType>)
+    if constexpr (std::is_same_v<ResultType, Int8> || is_over_big_int<ResultType>)
     {
         alignas(64) const ResultType ab[2] = {static_cast<ResultType>(a), static_cast<ResultType>(b)};
         for (size_t i = 0; i < size; ++i)
