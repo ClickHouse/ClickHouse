@@ -226,12 +226,14 @@ def check(node, table, check_result, expect_broken_part="", expected_error=""):
             f"SELECT c FROM '{table}' WHERE d == 12 ORDER BY c",
             query_id=query_id,
         )
+        time.sleep(2)
+        node.query("SYSTEM FLUSH LOGS")
         assert "proj1" in node.query(
             f"""
         SYSTEM FLUSH LOGS;
         SELECT query, splitByChar('.', arrayJoin(projections))[-1]
         FROM system.query_log
-        WHERE current_database=currentDatabase() AND query_id='{query_id}' AND type='QueryFinish'
+        WHERE query_id='{query_id}' AND type='QueryFinish'
         """
         )
 
@@ -246,12 +248,14 @@ def check(node, table, check_result, expect_broken_part="", expected_error=""):
             f"SELECT d FROM '{table}' WHERE c == 12 OR c == 16 ORDER BY d",
             query_id=query_id,
         )
+        time.sleep(2)
+        node.query("SYSTEM FLUSH LOGS")
         assert "proj2" in node.query(
             f"""
         SYSTEM FLUSH LOGS;
         SELECT query, splitByChar('.', arrayJoin(projections))[-1]
         FROM system.query_log
-        WHERE current_database=currentDatabase() AND query_id='{query_id}' AND type='QueryFinish'
+        WHERE query_id='{query_id}' AND type='QueryFinish'
         """
         )
 
