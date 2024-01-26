@@ -7,21 +7,19 @@ namespace DB
 {
 class DiskObjectStorageVFS;
 
-class ObjectStorageVFSGCThread : public BackgroundSchedulePoolTaskHolder
+class VFSGarbageCollector : public BackgroundSchedulePoolTaskHolder
 {
 public:
-    ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool);
+    VFSGarbageCollector(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool);
     inline void stop() { (*this)->deactivate(); }
     using Logpointer = size_t;
 
 private:
-    friend struct VFSMigration;
     DiskObjectStorageVFS & storage;
     LoggerPtr log;
     std::shared_ptr<const VFSSettings> settings;
 
     void run() const;
-    bool trySetLock() const;
     bool skipRun(size_t batch_size, Logpointer start, Logpointer end) const;
     void tryWriteSnapshotForZero() const;
     void updateSnapshotWithLogEntries(Logpointer start, Logpointer end) const;

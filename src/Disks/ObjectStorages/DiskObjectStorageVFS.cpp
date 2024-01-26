@@ -2,7 +2,7 @@
 #include "DiskObjectStorageVFSTransaction.h"
 #include "IO/S3Common.h"
 #include "Interpreters/Context.h"
-#include "ObjectStorageVFSGCThread.h"
+#include "VFSGarbageCollector.h"
 #if USE_AZURE_BLOB_STORAGE
 #    include <azure/storage/common/storage_exception.hpp>
 #endif

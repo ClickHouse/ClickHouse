@@ -2,7 +2,7 @@
 #include "Common/MultiVersion.h"
 #include "Common/ZooKeeper/ZooKeeperWithFaultInjection.h"
 #include "DiskObjectStorage.h"
-#include "ObjectStorageVFSGCThread.h"
+#include "VFSGarbageCollector.h"
 #include "VFSSettings.h"
 
 namespace DB
@@ -42,9 +42,9 @@ private:
     friend struct RemoveManyObjectStorageVFSOperation;
     friend struct CopyFileObjectStorageVFSOperation;
     friend struct DiskObjectStorageVFSTransaction;
-    friend class ObjectStorageVFSGCThread;
+    friend class VFSGarbageCollector;
 
-    std::optional<ObjectStorageVFSGCThread> garbage_collector;
+    std::optional<VFSGarbageCollector> garbage_collector;
 
     const bool enable_gc; // In certain conditions we don't want a GC e.g. when running from clickhouse-disks
     const ObjectStorageType object_storage_type;

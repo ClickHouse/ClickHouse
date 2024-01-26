@@ -1,4 +1,4 @@
-#include "ObjectStorageVFSGCThread.h"
+#include "VFSGarbageCollector.h"
 #include "Common/ProfileEvents.h"
 #include "Common/Stopwatch.h"
 #include "DiskObjectStorageVFS.h"
@@ -27,7 +27,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool)
+VFSGarbageCollector::VFSGarbageCollector(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool)
     : storage(storage_), log(getLogger(fmt::format("VFSGC({})", storage_.getName())))
 {
     storage.zookeeper()->createAncestors(storage.traits.gc_lock_path);
@@ -51,17 +51,21 @@ ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storag
     (*this)->activateAndSchedule();
 }
 
-using Logpointer = ObjectStorageVFSGCThread::Logpointer;
+using Logpointer = VFSGarbageCollector::Logpointer;
 
 const int EPHEMERAL = zkutil::CreateMode::Ephemeral;
-void ObjectStorageVFSGCThread::run() const
+void VFSGarbageCollector::run() const
 {
     Stopwatch stop_watch;
-    if (!trySetLock())
+
+    using enum Coordination::Error;
+    if (auto code = storage.zookeeper()->tryCreate(storage.traits.gc_lock_path, "", EPHEMERAL); code == ZNODEEXISTS)
     {
         LOG_DEBUG(log, "Failed to acquire lock, sleeping");
         return;
     }
+    else if (code != ZOK)
+        throw Coordination::Exception(code);
     LOG_DEBUG(log, "Acquired lock");
 
     bool successful_run = false, skip_run = false;
@@ -106,18 +110,7 @@ void ObjectStorageVFSGCThread::run() const
     successful_run = true;
 }
 
-bool ObjectStorageVFSGCThread::trySetLock() const
-{
-    using enum Coordination::Error;
-    if (auto code = storage.zookeeper()->tryCreate(storage.traits.gc_lock_path, "", EPHEMERAL); code == ZNODEEXISTS)
-        return false;
-    else if (code == ZOK)
-        return true;
-    else
-        throw Coordination::Exception(code);
-}
-
-bool ObjectStorageVFSGCThread::skipRun(size_t batch_size, Logpointer start, Logpointer end) const
+bool VFSGarbageCollector::skipRun(size_t batch_size, Logpointer start, Logpointer end) const
 {
     // We have snapshot with name "0" either if 1. No items have been processed (needed for migrations),
     // 2. We processed a batch of single item with logpointer 0.
@@ -149,7 +142,7 @@ bool ObjectStorageVFSGCThread::skipRun(size_t batch_size, Logpointer start, Logp
     return delta < wait_ms;
 }
 
-void ObjectStorageVFSGCThread::tryWriteSnapshotForZero() const
+void VFSGarbageCollector::tryWriteSnapshotForZero() const
 {
     const StoredObject object = getSnapshotObject(0);
     if (storage.object_storage->exists(object))
@@ -159,7 +152,7 @@ void ObjectStorageVFSGCThread::tryWriteSnapshotForZero() const
     Lz4DeflatingWriteBuffer{std::move(buf), settings->snapshot_lz4_compression_level}.finalize();
 }
 
-void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(Logpointer start, Logpointer end) const
+void VFSGarbageCollector::updateSnapshotWithLogEntries(Logpointer start, Logpointer end) const
 {
     IObjectStorage & object_storage = *storage.object_storage;
     const size_t start_regarding_zero = start == 0 ? 0 : (start - 1);
@@ -236,7 +229,7 @@ static void check404(std::exception && e)
 }
 
 constexpr std::string_view SNAPSHOTS_PATH = "/snapshots";
-Logpointer ObjectStorageVFSGCThread::reconcileLogWithSnapshot(Logpointer start, Logpointer end, Exception && e) const
+Logpointer VFSGarbageCollector::reconcileLogWithSnapshot(Logpointer start, Logpointer end, Exception && e) const
 {
     check404(std::move(e));
     LOG_WARNING(log, "Snapshot for {} not found", start);
@@ -273,7 +266,7 @@ Logpointer ObjectStorageVFSGCThread::reconcileLogWithSnapshot(Logpointer start, 
     throw std::move(e);
 }
 
-VFSLogItem ObjectStorageVFSGCThread::getBatch(Logpointer start, Logpointer end) const
+VFSLogItem VFSGarbageCollector::getBatch(Logpointer start, Logpointer end) const
 {
     const size_t log_batch_length = end - start + 1;
 
@@ -291,7 +284,7 @@ VFSLogItem ObjectStorageVFSGCThread::getBatch(Logpointer start, Logpointer end) 
     return out;
 }
 
-void ObjectStorageVFSGCThread::removeBatch(Logpointer start, Logpointer end) const
+void VFSGarbageCollector::removeBatch(Logpointer start, Logpointer end) const
 {
     LOG_DEBUG(log, "Removing log range [{};{}]", start, end);
 
@@ -304,13 +297,13 @@ void ObjectStorageVFSGCThread::removeBatch(Logpointer start, Logpointer end) con
     storage.zookeeper()->multi(requests);
 }
 
-String ObjectStorageVFSGCThread::getNode(Logpointer ptr) const
+String VFSGarbageCollector::getNode(Logpointer ptr) const
 {
     // Zookeeper's sequential node is 10 digits with padding zeros
     return fmt::format("{}{:010}", storage.traits.log_item, ptr);
 }
 
-StoredObject ObjectStorageVFSGCThread::getSnapshotObject(Logpointer ptr) const
+StoredObject VFSGarbageCollector::getSnapshotObject(Logpointer ptr) const
 {
     // We need a separate folder to quickly get snapshot with unknown logpointer on reconciliation
     return storage.getMetadataObject(fmt::format("{}/{}", SNAPSHOTS_PATH, ptr));

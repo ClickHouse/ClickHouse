@@ -1,4 +1,7 @@
 #include "VFSMigration.h"
+#include "DiskObjectStorageVFS.h"
+#include "Interpreters/ActionLocksManager.h"
+#include "Interpreters/Context.h"
 #include "Interpreters/DatabaseCatalog.h"
 #include "Interpreters/InterpreterSystemQuery.h"
 
@@ -35,24 +38,43 @@ static const auto ACTIONS = {
 
 void VFSMigration::migrate() const
 {
-    if (!disk.garbage_collector->trySetLock()) {
+    LOG_INFO(log, "Migrating {}", disk.getName());
 
+    for (const auto & [name, db] : DatabaseCatalog::instance().getDatabases())
+    {
+        LOG_INFO(log, "Migrating {}", name);
+        for (auto it = db->getTablesIterator(ctx); it->isValid(); it->next())
+        {
+            StoragePtr table_ptr = it->table();
+            if (!table_ptr) // Lazy table
+                continue;
+            migrateTable(std::move(table_ptr));
+        }
     }
-    LOG_INFO(log, "Starting migration for {}", disk.getName());
+}
 
-    // TODO myrrc better granularity: e.g. stop only for table currently processed (e.g. STOP ON VOLUME / STOP table)
-    // need to match tables storing data on this disk
+void VFSMigration::migrateTable(StoragePtr table) const
+{
+    LOG_INFO(log, "Migrating {}", table->getName());
+    auto manager = ctx->getActionLocksManager();
+    manager->cleanExpired();
+
+    // TODO myrrc possibly better STOP ON VOLUME, research
     // TODO myrrc stop mutations
-    InterpreterSystemQuery interpreter({}, ctx);
-
-    // TODO myrrc respect settings set before migration. E.g. if moves were stopped for table / volume / globally, we
-    // shouldn't turn them off
+    // TODO stop only needed actions
+    // TODO myrrc respect settings set before migration. E.g. if moves were stopped for table / volume / globally, we shouldn't turn them off
     auto perform = [&](bool start)
     {
-        for (const auto & [name, db] : DatabaseCatalog::instance().getDatabases())
-            for (const StorageActionBlockType action : ACTIONS)
-                interpreter.startStopActionInDatabase(action, start, name, db, ctx, log);
+        for (const StorageActionBlockType action : ACTIONS)
+            if (start)
+            {
+                manager->remove(table, action);
+                table->onActionLockRemove(action);
+            }
+            else
+                manager->add(table, action);
     };
+
     perform(false);
     SCOPE_EXIT(perform(true));
 }
