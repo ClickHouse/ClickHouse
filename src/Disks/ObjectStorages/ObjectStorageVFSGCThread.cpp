@@ -31,10 +31,9 @@ ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storag
     : storage(storage_), log(&Poco::Logger::get(fmt::format("VFSGC({})", storage_.getName())))
 {
     storage.zookeeper()->createAncestors(storage.traits.gc_lock_path);
-
     LOG_INFO(log, "GC started");
 
-    task = pool.createTask(
+    *static_cast<BackgroundSchedulePoolTaskHolder *>(this) = pool.createTask(
         log->name(),
         [this]
         {
@@ -47,9 +46,9 @@ ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storag
             {
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
             }
-            task->scheduleAfter(settings->gc_sleep_ms);
+            (*this)->scheduleAfter(settings->gc_sleep_ms);
         });
-    task->activateAndSchedule();
+    (*this)->activateAndSchedule();
 }
 
 using Logpointer = ObjectStorageVFSGCThread::Logpointer;
@@ -145,11 +144,10 @@ bool ObjectStorageVFSGCThread::skipRun(size_t batch_size, Logpointer start, Logp
 
 void ObjectStorageVFSGCThread::tryWriteSnapshotForZero() const
 {
-    // On start, we may or may not have snapshot for state before processing first log item
     const StoredObject object = getSnapshotObject(0);
     if (storage.object_storage->exists(object))
         return;
-    LOG_DEBUG(log, "Didn't find snapshot for 0, writing empty file");
+    LOG_DEBUG(log, "Didn't find snapshot before start, writing empty file");
     auto buf = storage.object_storage->writeObject(object, WriteMode::Rewrite);
     Lz4DeflatingWriteBuffer{std::move(buf), settings->snapshot_lz4_compression_level}.finalize();
 }
@@ -204,7 +202,7 @@ void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(Logpointer start, Lo
     object_storage.removeObjects(obsolete);
 }
 
-static void check404(Exception && e)
+static void check404(std::exception && e)
 {
     // TODO myrrc this works only for s3 and azure
     if (false)
@@ -214,18 +212,18 @@ static void check404(Exception && e)
     else if (auto * e_s3 = typeid_cast<S3Exception *>(&e))
     {
         if (e_s3->getS3ErrorCode() != Aws::S3::S3Errors::NO_SUCH_KEY)
-            throw std::move(e);
+            throw e;
     }
 #endif
 #if USE_AZURE_BLOB_STORAGE
     else if (auto * e_azure = typeid_cast<Azure::Storage::StorageException *>(&e))
     {
         if (e_azure->StatusCode != Azure::Core::Http::HttpStatusCode::NotFound)
-            throw std::move(e);
+            throw e;
     }
 #endif
     else
-        throw std::move(e);
+        throw e;
 }
 
 constexpr std::string_view SNAPSHOTS_PATH = "/snapshots";
@@ -234,17 +232,20 @@ Logpointer ObjectStorageVFSGCThread::reconcileLogWithSnapshot(Logpointer start, 
     check404(std::move(e));
     LOG_WARNING(log, "Snapshot for {} not found", start);
 
-    const String snapshots_folder = storage.getMetadataObject(SNAPSHOTS_PATH).remote_path;
+    const fs::path snapshots_folder = storage.getMetadataObject(SNAPSHOTS_PATH).remote_path;
     RelativePathsWithMetadata snapshots;
     if (storage.object_storage->listObjects(snapshots_folder, snapshots, 5); snapshots.empty())
     {
-        LOG_ERROR(log, "Did not find any snapshots in {}", snapshots_folder);
+        e.addMessage("Did not find any snapshots in {}", snapshots_folder);
         throw std::move(e);
     }
+
     std::vector<Logpointer> candidates;
-    std::ranges::transform(
-        std::move(snapshots), std::back_inserter(candidates), [](auto & obj) { return parseFromString<Logpointer>(obj.relative_path); });
+    auto parse = [&](const RelativePathWithMetadata & obj)
+    { return parseFromString<Logpointer>(fs::path(obj.relative_path).lexically_relative(snapshots_folder).string()); };
+    std::ranges::transform(std::move(snapshots), std::back_inserter(candidates), std::move(parse));
     std::ranges::sort(candidates);
+    LOG_DEBUG(log, "Got snapshot candidates: [{}]", fmt::join(candidates, ", "));
 
     if (std::ranges::count(candidates, end) > 0)
     {
@@ -252,23 +253,24 @@ Logpointer ObjectStorageVFSGCThread::reconcileLogWithSnapshot(Logpointer start, 
         return end;
     }
 
-    // Zookeeper lost without backups thus sequential counter reset but we have snapshot, first GC run
+    // First GC run after Zookeeper lost without backups (thus sequential counter reset) but we have snapshot
     if (const Logpointer greatest_end = *candidates.rbegin(); start == 0 && greatest_end > 0)
     {
         LOG_INFO(log, "batch start = 0 but found snapshot with {}, using it", greatest_end);
         return greatest_end;
     }
 
-    return start;
+    // TODO myrrc add more heuristics. Current approach may be too conservative
+    throw std::move(e);
 }
 
-VFSLogItem ObjectStorageVFSGCThread::getBatch(size_t start_logpointer, size_t end_logpointer) const
+VFSLogItem ObjectStorageVFSGCThread::getBatch(Logpointer start, Logpointer end) const
 {
-    const size_t log_batch_length = end_logpointer - start_logpointer + 1;
+    const size_t log_batch_length = end - start + 1;
 
     Strings nodes(log_batch_length);
     for (size_t i = 0; i < log_batch_length; ++i)
-        nodes[i] = getNode(start_logpointer + i);
+        nodes[i] = getNode(start + i);
     auto responses = storage.zookeeper()->get(nodes);
     nodes = {};
 
@@ -280,14 +282,14 @@ VFSLogItem ObjectStorageVFSGCThread::getBatch(size_t start_logpointer, size_t en
     return out;
 }
 
-void ObjectStorageVFSGCThread::removeBatch(size_t start_logpointer, size_t end_logpointer) const
+void ObjectStorageVFSGCThread::removeBatch(Logpointer start, Logpointer end) const
 {
-    LOG_DEBUG(log, "Removing log range [{};{}]", start_logpointer, end_logpointer);
+    LOG_DEBUG(log, "Removing log range [{};{}]", start, end);
 
-    const size_t log_batch_length = end_logpointer - start_logpointer + 1;
+    const size_t log_batch_length = end - start + 1;
     Coordination::Requests requests(log_batch_length + 1);
     for (size_t i = 0; i < log_batch_length; ++i)
-        requests[i] = zkutil::makeRemoveRequest(getNode(start_logpointer + i), 0);
+        requests[i] = zkutil::makeRemoveRequest(getNode(start + i), 0);
     requests[log_batch_length] = zkutil::makeRemoveRequest(storage.traits.gc_lock_path, 0);
 
     storage.zookeeper()->multi(requests);

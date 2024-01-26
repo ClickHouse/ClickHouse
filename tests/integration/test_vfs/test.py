@@ -74,10 +74,13 @@ def test_already_processed_batch(started_cluster):
         zk.create(f"/vfs_log/already/ops/log-00000000{i}", b"invalid")
 
     started_cluster.minio_client.put_object(
-        started_cluster.minio_bucket, "data/vfs/_already_14", io.StringIO(""), 0
+        started_cluster.minio_bucket,
+        "data/vfs/already/snapshots/14",  # last written log item is 14
+        io.StringIO(""),
+        0,
     )
 
     time.sleep(5)
-    assert int(node.count_in_log("found snapshot for 14, discarding this batch")) == 1
+    assert int(node.count_in_log("Found leftover from previous GC run")) == 1
     assert zk.get_children("/vfs_log/already/ops") == []
     zk.stop()

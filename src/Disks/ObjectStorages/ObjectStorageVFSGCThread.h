@@ -8,17 +8,16 @@ namespace DB
 {
 class DiskObjectStorageVFS;
 
-class ObjectStorageVFSGCThread
+class ObjectStorageVFSGCThread : public BackgroundSchedulePoolTaskHolder
 {
 public:
     ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool);
-    inline void stop() { task->deactivate(); }
+    inline void stop() { (*this)->deactivate(); }
     using Logpointer = size_t;
 
 private:
     DiskObjectStorageVFS & storage;
     Poco::Logger * const log;
-    BackgroundSchedulePoolTaskHolder task;
     std::shared_ptr<const VFSSettings> settings;
 
     void run();
