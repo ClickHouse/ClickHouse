@@ -202,6 +202,8 @@ void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(Logpointer start, Lo
     object_storage.removeObjects(obsolete);
 }
 
+// Conditional [[noreturn]] doesn't exist
+#pragma clang diagnostic ignored "-Wmissing-noreturn"
 static void check404(std::exception && e)
 {
     // TODO myrrc this works only for s3 and azure
