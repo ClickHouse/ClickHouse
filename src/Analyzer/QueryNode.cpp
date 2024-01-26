@@ -338,6 +338,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->group_by_with_cube = is_group_by_with_cube;
     select_query->group_by_with_grouping_sets = is_group_by_with_grouping_sets;
     select_query->group_by_all = is_group_by_all;
+    select_query->order_by_all = is_order_by_all;
 
     if (hasWith())
         select_query->setExpression(ASTSelectQuery::Expression::WITH, getWith().toAST(options));

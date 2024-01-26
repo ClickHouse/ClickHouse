@@ -1214,7 +1214,7 @@ private:
 
     static void expandGroupByAll(QueryNode & query_tree_node_typed);
 
-    static void expandOrderByAll(QueryNode & query_tree_node_typed);
+    static void expandOrderByAll(QueryNode & query_tree_node_typed, const Settings & settings);
 
     static std::string
     rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
@@ -2328,8 +2328,11 @@ void QueryAnalyzer::expandGroupByAll(QueryNode & query_tree_node_typed)
         recursivelyCollectMaxOrdinaryExpressions(node, group_by_nodes);
 }
 
-void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed)
+void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Settings & settings)
 {
+    if (!settings.enable_order_by_all || !query_tree_node_typed.isOrderByAll())
+        return;
+
     auto * all_node = query_tree_node_typed.getOrderBy().getNodes()[0]->as<SortNode>();
     if (!all_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not sort node.");
@@ -2355,6 +2358,7 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed)
     }
 
     query_tree_node_typed.getOrderByNode() = list_node;
+    query_tree_node_typed.setIsOrderByAll(false);
 }
 
 std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
@@ -7133,8 +7137,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasHaving() && query_node_typed.isGroupByWithTotals() && is_rollup_or_cube)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING");
 
-    if (settings.enable_order_by_all && query_node_typed.isOrderByAll())
-        expandOrderByAll(query_node_typed);
+    expandOrderByAll(query_node_typed, settings);
 
     /// Initialize aliases in query node scope
     QueryExpressionsAliasVisitor visitor(scope);
