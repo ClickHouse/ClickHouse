@@ -79,7 +79,13 @@ std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTre
             {
                 const auto & join_node = query_tree_node->as<JoinNode &>();
                 auto join_kind = join_node.getKind();
-                if (join_kind != JoinKind::Inner && join_kind != JoinKind::Left)
+                auto join_strictness = join_node.getStrictness();
+
+                bool can_parallelize_join =
+                    join_kind == JoinKind::Left
+                    || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All);
+
+                if (!can_parallelize_join)
                     return {};
 
                 query_tree_node = join_node.getLeftTableExpression().get();
