@@ -304,16 +304,12 @@ struct LoggerDeleter
 {
 	void operator()(Poco::Logger * logger)
 	{
-		if (Logger::destroy(logger->name()))
-			return;
-
-		logger->release();
+		Logger::destroy(logger->name());
 	}
 };
 
 inline LoggerPtr makeLoggerPtr(Logger & logger)
 {
-	logger.duplicate();
 	return std::shared_ptr<Logger>(&logger, LoggerDeleter());
 }
 
@@ -329,8 +325,13 @@ Logger& Logger::get(const std::string& name)
 LoggerPtr Logger::getShared(const std::string & name)
 {
 	std::lock_guard<std::mutex> lock(getLoggerMutex());
+	bool logger_exists = _pLoggerMap && _pLoggerMap->contains(name);
 
-	return makeLoggerPtr(unsafeGet(name));
+	Logger & logger = unsafeGet(name);
+	if (logger_exists)
+		logger.duplicate();
+
+	return makeLoggerPtr(logger);
 }
 
 Logger& Logger::unsafeGet(const std::string& name)
