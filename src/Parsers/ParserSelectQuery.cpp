@@ -50,6 +50,13 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_having("HAVING");
     ParserKeyword s_window("WINDOW");
     ParserKeyword s_order_by("ORDER BY");
+    ParserKeyword ascending("ASCENDING");
+    ParserKeyword descending("DESCENDING");
+    ParserKeyword asc("ASC");
+    ParserKeyword desc("DESC");
+    ParserKeyword nulls("NULLS");
+    ParserKeyword first("FIRST");
+    ParserKeyword last("LAST");
     ParserKeyword s_limit("LIMIT");
     ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_by("BY");
@@ -269,36 +276,63 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// ORDER BY expr ASC|DESC COLLATE 'locale' list
     if (s_order_by.ignore(pos, expected))
     {
-        if (!order_list.parse(pos, order_expression_list, expected))
-            return false;
-
-        /// if any WITH FILL parse possible INTERPOLATE list
-        if (std::any_of(order_expression_list->children.begin(), order_expression_list->children.end(),
-                [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }))
+        if (s_all.ignore(pos, expected))
         {
-            if (s_interpolate.ignore(pos, expected))
+            int direction = 1;
+
+            if (descending.ignore(pos) || desc.ignore(pos))
+                direction = -1;
+            else
+                ascending.ignore(pos) || asc.ignore(pos);
+
+            int nulls_direction = direction;
+            bool nulls_direction_was_explicitly_specified = false;
+
+            if (nulls.ignore(pos))
             {
-                if (open_bracket.ignore(pos, expected))
-                {
-                    if (!interpolate_list.parse(pos, interpolate_expression_list, expected))
-                        return false;
-                    if (!close_bracket.ignore(pos, expected))
-                        return false;
-                } else
-                    interpolate_expression_list = std::make_shared<ASTExpressionList>();
+                nulls_direction_was_explicitly_specified = true;
+
+                if (first.ignore(pos))
+                    nulls_direction = -direction;
+                else if (last.ignore(pos))
+                    ;
+                else
+                    return false;
             }
+
+            order_expression_list = std::make_shared<ASTExpressionList>();
+            auto elem = std::make_shared<ASTOrderByElement>();
+            elem->direction = direction;
+            elem->nulls_direction = nulls_direction;
+            elem->nulls_direction_was_explicitly_specified = nulls_direction_was_explicitly_specified;
+            elem->children.push_back(std::make_shared<ASTIdentifier>("ALL"));
+            order_expression_list->children.push_back(elem);
+
+            select_query->order_by_all = true;
         }
         else
         {
-            /// ORDER BY ALL
-            auto * identifier = order_expression_list->children[0]->as<ASTOrderByElement>()->children[0]->as<ASTIdentifier>();
-            if (identifier != nullptr && Poco::toUpper(identifier->name()) == "ALL")
-            {
-                if (order_expression_list->children.size() != 1)
-                    throw Exception(
-                        ErrorCodes::SYNTAX_ERROR, "'ALL' may not be used in combination with other expressions in the ORDER BY clause");
+            if (!order_list.parse(pos, order_expression_list, expected))
+                return false;
 
-                select_query->order_by_all = true;
+            /// if any WITH FILL parse possible INTERPOLATE list
+            if (std::any_of(
+                    order_expression_list->children.begin(),
+                    order_expression_list->children.end(),
+                    [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }))
+            {
+                if (s_interpolate.ignore(pos, expected))
+                {
+                    if (open_bracket.ignore(pos, expected))
+                    {
+                        if (!interpolate_list.parse(pos, interpolate_expression_list, expected))
+                            return false;
+                        if (!close_bracket.ignore(pos, expected))
+                            return false;
+                    }
+                    else
+                        interpolate_expression_list = std::make_shared<ASTExpressionList>();
+                }
             }
         }
     }
