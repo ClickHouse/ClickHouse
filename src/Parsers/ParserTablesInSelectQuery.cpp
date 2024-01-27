@@ -8,8 +8,6 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Core/Joins.h>
 
-#include "Common/logger_useful.h"
-
 namespace DB
 {
 

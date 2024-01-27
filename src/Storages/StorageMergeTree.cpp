@@ -300,6 +300,11 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
         *this, metadata_snapshot, settings.max_partitions_per_insert_block, local_context);
 }
 
+Chain StorageMergeTree::toSubscribersWrite(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/)
+{
+    return Chain();
+}
+
 void StorageMergeTree::checkTableCanBeDropped(ContextPtr query_context) const
 {
     if (!supportsReplication() && isStaticStorage())
