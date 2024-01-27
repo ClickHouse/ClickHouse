@@ -1394,6 +1394,13 @@
     </merge_tree>
     -->
 
+    <!-- Settings to fine tune ReplicatedMergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
+    <!--
+    <replicated_merge_tree>
+        <max_replicated_fetches_network_bandwidth>1000000000</max_replicated_fetches_network_bandwidth>
+    </replicated_merge_tree>
+    -->
+
     <!-- Protection from accidental DROP.
          If size of a MergeTree table is greater than max_table_size_to_drop (in bytes) than table could not be dropped with any DROP query.
          If you want do delete one table and don't want to change clickhouse-server config, you could create special file <clickhouse-path>/flags/force_drop_table and make DROP once.
