@@ -29,6 +29,7 @@
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
@@ -111,6 +112,7 @@
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <base/defines.h>
 
 
 namespace fs = std::filesystem;
@@ -352,6 +354,7 @@ struct ContextSharedPart : boost::noncopyable
 
     std::optional<MergeTreeSettings> merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of MergeTree* engines.
     std::optional<MergeTreeSettings> replicated_merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of ReplicatedMergeTree* engines.
+    std::optional<DistributedSettings> distributed_settings TSA_GUARDED_BY(mutex);
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
     /// No lock required for format_schema_path modified only during initialization
@@ -4090,6 +4093,21 @@ const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
     }
 
     return *shared->replicated_merge_tree_settings;
+}
+
+const DistributedSettings & Context::getDistributedSettings() const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->distributed_settings)
+    {
+        const auto & config = shared->getConfigRefWithLock(lock);
+        DistributedSettings distributed_settings;
+        distributed_settings.loadFromConfig("distributed", config);
+        shared->distributed_settings.emplace(distributed_settings);
+    }
+
+    return *shared->distributed_settings;
 }
 
 const StorageS3Settings & Context::getStorageS3Settings() const

@@ -1922,7 +1922,7 @@ void registerStorageDistributed(StorageFactory & factory)
         }
 
         /// TODO: move some arguments from the arguments to the SETTINGS.
-        DistributedSettings distributed_settings;
+        DistributedSettings distributed_settings = context->getDistributedSettings();
         if (args.storage_def->settings)
         {
             distributed_settings.loadFromQuery(*args.storage_def);

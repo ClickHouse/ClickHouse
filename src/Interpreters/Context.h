@@ -113,6 +113,7 @@ class BlobStorageLog;
 class IAsynchronousReader;
 class IOUringReader;
 struct MergeTreeSettings;
+struct DistributedSettings;
 struct InitialAllRangesAnnouncement;
 struct ParallelReadRequest;
 struct ParallelReadResponse;
@@ -1073,6 +1074,7 @@ public:
 
     const MergeTreeSettings & getMergeTreeSettings() const;
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
+    const DistributedSettings & getDistributedSettings() const;
     const StorageS3Settings & getStorageS3Settings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
