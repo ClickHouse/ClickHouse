@@ -21,6 +21,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeIndexInverted.h>
+#include <Storages/BlockNumberColumn.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/ProfileEventsScope.h>
@@ -305,6 +306,15 @@ getColumnsForNewDataPart(
         {
             storage_columns.push_back(deleted_mask_column);
             storage_columns_set.insert(deleted_mask_column.name);
+        }
+    }
+
+    if (!storage_columns_set.contains(BlockNumberColumn::name))
+    {
+        if (source_part->tryGetSerialization(BlockNumberColumn::name) != nullptr)
+        {
+            storage_columns.push_back({BlockNumberColumn::name, BlockNumberColumn::type});
+            storage_columns_set.insert(BlockNumberColumn::name);
         }
     }
 
