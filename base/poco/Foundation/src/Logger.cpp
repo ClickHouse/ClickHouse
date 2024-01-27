@@ -422,7 +422,10 @@ LoggerPtr Logger::createShared(const std::string & name, Channel * pChannel, int
 {
 	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
-	return makeLoggerPtr(unsafeCreate(name, pChannel, level));
+	Logger & logger = unsafeCreate(name, pChannel, level);
+	_pLoggerMap->find(name)->second.owned_by_shared_ptr = true;
+
+	return makeLoggerPtr(logger);
 }
 
 Logger& Logger::root()
