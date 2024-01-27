@@ -29,3 +29,5 @@ echo "-- Lowercase tests"
 ${MYSQL_CLIENT} --execute "set sql_select_limit=3; $SELECT_STMT" # should fetch 3 records out of 4
 ${MYSQL_CLIENT} --execute "set net_write_timeout=55; $CHANGED_SETTINGS_QUERY"
 ${MYSQL_CLIENT} --execute "set net_read_timeout=66; $CHANGED_SETTINGS_QUERY"
+
+${MYSQL_CLIENT} --execute "$DROP_TABLE"
