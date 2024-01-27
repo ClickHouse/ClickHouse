@@ -58,7 +58,7 @@ struct ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk
         ProfileEvents::Counters part_counters;
 
         Partition() = default;
-        Partition(Poco::Logger * log_,
+        Partition(LoggerPtr log_,
                   MergeTreeDataWriter::TemporaryPart && temp_part_,
                   UInt64 elapsed_ns_,
                   BlockIDsType && block_id_,
@@ -92,7 +92,7 @@ std::vector<Int64> testSelfDeduplicate(std::vector<Int64> data, std::vector<size
     BlockWithPartition block1(std::move(block), Row(), std::move(offsets), std::move(tokens));
     ProfileEvents::Counters profile_counters;
     ReplicatedMergeTreeSinkImpl<true>::DelayedChunk::Partition part(
-        &Poco::Logger::get("testSelfDeduplicate"), MergeTreeDataWriter::TemporaryPart(), 0, std::move(hashes), std::move(block1), std::nullopt, std::move(profile_counters));
+        getLogger("testSelfDeduplicate"), MergeTreeDataWriter::TemporaryPart(), 0, std::move(hashes), std::move(block1), std::nullopt, std::move(profile_counters));
 
     part.filterSelfDuplicate();
 
@@ -138,7 +138,7 @@ ReplicatedMergeTreeSinkImpl<async_insert>::ReplicatedMergeTreeSinkImpl(
     , is_attach(is_attach_)
     , quorum_parallel(quorum_parallel_)
     , deduplicate(deduplicate_)
-    , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
+    , log(getLogger(storage.getLogName() + " (Replicated OutputStream)"))
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
 {
@@ -1089,6 +1089,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                     retry_context.actual_part_name,
                     quorum_info.status_path,
                     quorum_info.is_active_node_version,
+                    quorum_info.host_node_version,
                     replicas_num);
             });
         }
@@ -1117,7 +1118,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     const std::string & part_name,
     const std::string & quorum_path,
-    Int32 is_active_node_version,
+    int is_active_node_version,
+    int host_node_version,
     size_t replicas_num) const
 {
     /// We are waiting for quorum to be satisfied.
@@ -1153,12 +1155,16 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
 
     /// And what if it is possible that the current replica at this time has ceased to be active
     /// and the quorum is marked as failed and deleted?
-    Coordination::Stat stat;
-    String value;
-    if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, &stat) || stat.version != is_active_node_version)
+    /// Note: checking is_active is not enough since it's ephemeral, and the version can be the same after recreation,
+    /// so need to check host node as well
+    auto get_results = zookeeper->tryGet(Strings{storage.replica_path + "/is_active", storage.replica_path + "/host"});
+    const auto & is_active = get_results[0];
+    const auto & host = get_results[1];
+    if ((is_active.error == Coordination::Error::ZNONODE || is_active.stat.version != is_active_node_version)
+        || (host.error == Coordination::Error::ZNONODE || host.stat.version != host_node_version))
         throw Exception(
             ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
-            "Unknown quorum status. The data was inserted in the local replica but we could not verify quorum. Reason: "
+            "Unknown quorum status. The data was inserted in the local replica, but we could not verify the quorum. Reason: "
             "Replica became inactive while waiting for quorum");
 
     LOG_TRACE(log, "Quorum '{}' for part {} satisfied", quorum_path, part_name);

@@ -1269,6 +1269,28 @@ Possible values:
 
 Default value: `0`.
 
+### output_format_arrow_use_signed_indexes_for_dictionary {#output_format_arrow_use_signed_indexes_for_dictionary}
+
+Use signed integer types instead of unsigned in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
+
+Possible values:
+
+- 0 — Unsigned integer types are used for indexes in `DICTIONARY` type.
+- 1 — Signed integer types are used for indexes in `DICTIONARY` type.
+
+Default value: `1`.
+
+### output_format_arrow_use_64_bit_indexes_for_dictionary {#output_format_arrow_use_64_bit_indexes_for_dictionary}
+
+Use 64-bit integer type in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
+
+Possible values:
+
+- 0 — Type for indexes in `DICTIONARY` type is determined automatically.
+- 1 — 64-bit integer type is used for indexes in `DICTIONARY` type.
+
+Default value: `0`.
+
 ### output_format_arrow_string_as_string {#output_format_arrow_string_as_string}
 
 Use Arrow String type instead of Binary for String columns.
@@ -1575,7 +1597,13 @@ Result:
 
 Use ANSI escape sequences to paint colors in Pretty formats.
 
-Enabled by default.
+possible values:
+
+-   `0` — Disabled. Pretty formats do not use ANSI escape sequences.
+-   `1` — Enabled. Pretty formats will use ANSI escape sequences except for `NoEscapes` formats.
+-   `auto` - Enabled if `stdout` is a terminal except for `NoEscapes` formats.
+
+Default value is `auto`. 
 
 ### output_format_pretty_grid_charset {#output_format_pretty_grid_charset}
 

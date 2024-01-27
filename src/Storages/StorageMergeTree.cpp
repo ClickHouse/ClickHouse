@@ -29,6 +29,8 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
+#include <Planner/Utils.h>
+#include <Storages/buildQueryTreeForShard.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/AlterCommands.h>
@@ -72,7 +74,7 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsMove;
 }
 
-static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutationEntry & mutation, Poco::Logger * log = nullptr)
+static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutationEntry & mutation, LoggerPtr log = nullptr)
 {
     assert(!mutation.tid.isEmpty());
     if (mutation.tid.isPrehistoric())
@@ -213,16 +215,25 @@ void StorageMergeTree::read(
 {
     if (local_context->canUseParallelReplicasOnInitiator() && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
     {
-        const auto table_id = getStorageID();
-        const auto & modified_query_ast =  ClusterProxy::rewriteSelectQuery(
-            local_context, query_info.query,
-            table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
-
+        ASTPtr modified_query_ast;
         Block header;
         if (local_context->getSettingsRef().allow_experimental_analyzer)
-            header = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze());
+        {
+            QueryTreeNodePtr modified_query_tree = query_info.query_tree->clone();
+            rewriteJoinToGlobalJoin(modified_query_tree);
+            modified_query_tree = buildQueryTreeForShard(query_info, modified_query_tree);
+            header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+                modified_query_tree, local_context, SelectQueryOptions(processed_stage).analyze());
+            modified_query_ast = queryNodeToSelectQuery(modified_query_tree);
+        }
         else
-            header = InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+        {
+            const auto table_id = getStorageID();
+            modified_query_ast = ClusterProxy::rewriteSelectQuery(local_context, query_info.query,
+                table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
+            header
+                = InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+        }
 
         ClusterProxy::SelectStreamFactory select_stream_factory =
             ClusterProxy::SelectStreamFactory(
@@ -233,7 +244,6 @@ void StorageMergeTree::read(
 
         ClusterProxy::executeQueryWithParallelReplicas(
             query_plan,
-            getStorageID(),
             select_stream_factory,
             modified_query_ast,
             local_context,
