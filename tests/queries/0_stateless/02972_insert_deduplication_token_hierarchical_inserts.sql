@@ -83,7 +83,7 @@ INSERT INTO landing SELECT 1 as timestamp, 1 AS value FROM numbers(10);
 SYSTEM FLUSH LOGS;
 SELECT table, name, error FROM system.part_log
 WHERE database = currentDatabase()
-ORDER BY event_time, table, name;
+ORDER BY table, name;
 
 SELECT count() FROM landing;
 
