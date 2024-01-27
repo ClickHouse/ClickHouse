@@ -20,6 +20,7 @@
 #include "Poco/NumberParser.h"
 #include "Poco/String.h"
 
+#include <cassert>
 #include <mutex>
 
 namespace
@@ -37,12 +38,20 @@ std::mutex & getLoggerMutex()
 	return *logger_mutex;
 }
 
+struct LoggerEntry
+{
+	Poco::Logger * logger;
+	bool owned_by_shared_ptr = false;
+};
+
+using LoggerMap = std::unordered_map<std::string, LoggerEntry>;
+LoggerMap * _pLoggerMap = nullptr;
+
 }
 
 namespace Poco {
 
 
-Logger::LoggerMap* Logger::_pLoggerMap = 0;
 const std::string Logger::ROOT;
 
 
@@ -134,12 +143,12 @@ void Logger::setLevel(const std::string& name, int level)
 	if (_pLoggerMap)
 	{
 		std::string::size_type len = name.length();
-		for (LoggerMap::iterator it = _pLoggerMap->begin(); it != _pLoggerMap->end(); ++it)
+		for (auto & it : *_pLoggerMap)
 		{
 			if (len == 0 ||
-				(it->first.compare(0, len, name) == 0 && (it->first.length() == len || it->first[len] == '.')))
+				(it.first.compare(0, len, name) == 0 && (it.first.length() == len || it.first[len] == '.')))
 			{
-				it->second->setLevel(level);
+				it.second.logger->setLevel(level);
 			}
 		}
 	}
@@ -153,12 +162,12 @@ void Logger::setChannel(const std::string& name, Channel* pChannel)
 	if (_pLoggerMap)
 	{
 		std::string::size_type len = name.length();
-		for (LoggerMap::iterator it = _pLoggerMap->begin(); it != _pLoggerMap->end(); ++it)
+		for (auto & it : *_pLoggerMap)
 		{
 			if (len == 0 ||
-				(it->first.compare(0, len, name) == 0 && (it->first.length() == len || it->first[len] == '.')))
+				(it.first.compare(0, len, name) == 0 && (it.first.length() == len || it.first[len] == '.')))
 			{
-				it->second->setChannel(pChannel);
+				it.second.logger->setChannel(pChannel);
 			}
 		}
 	}
@@ -172,12 +181,12 @@ void Logger::setProperty(const std::string& loggerName, const std::string& prope
 	if (_pLoggerMap)
 	{
 		std::string::size_type len = loggerName.length();
-		for (LoggerMap::iterator it = _pLoggerMap->begin(); it != _pLoggerMap->end(); ++it)
+		for (auto & it : *_pLoggerMap)
 		{
 			if (len == 0 ||
-				(it->first.compare(0, len, loggerName) == 0 && (it->first.length() == len || it->first[len] == '.')))
+				(it.first.compare(0, len, loggerName) == 0 && (it.first.length() == len || it.first[len] == '.')))
 			{
-				it->second->setProperty(propertyName, value);
+				it.second.logger->setProperty(propertyName, value);
 			}
 		}
 	}
@@ -304,9 +313,30 @@ struct LoggerDeleter
 {
 	void operator()(Poco::Logger * logger)
 	{
-		Logger::destroy(logger->name());
+		std::lock_guard<std::mutex> lock(getLoggerMutex());
+
+		/// If logger infrastructure is destroyed just decrement logger reference count
+		if (!_pLoggerMap)
+		{
+			logger->release();
+			return;
+		}
+
+		auto it = _pLoggerMap->find(logger->name());
+		assert(it != _pLoggerMap->end());
+
+		/** If reference count is 1, this means this shared pointer owns logger
+		  * and need destroy it.
+		  */
+		size_t reference_count_before_release = logger->release();
+		if (reference_count_before_release == 1)
+		{
+			assert(it->second.owned_by_shared_ptr);
+			_pLoggerMap->erase(it);
+		}
 	}
 };
+
 
 inline LoggerPtr makeLoggerPtr(Logger & logger)
 {
@@ -315,12 +345,27 @@ inline LoggerPtr makeLoggerPtr(Logger & logger)
 
 }
 
+
 Logger& Logger::get(const std::string& name)
 {
 	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
-	return unsafeGet(name);
+	Logger & logger = unsafeGet(name);
+
+	/** If there are already shared pointer created for this logger
+	  * we need to increment Logger reference count and now logger
+	  * is owned by logger infrastructure.
+	  */
+	auto it = _pLoggerMap->find(name);
+	if (it->second.owned_by_shared_ptr)
+	{
+		it->second.logger->duplicate();
+		it->second.owned_by_shared_ptr = false;
+	}
+
+	return logger;
 }
+
 
 LoggerPtr Logger::getShared(const std::string & name)
 {
@@ -328,11 +373,23 @@ LoggerPtr Logger::getShared(const std::string & name)
 	bool logger_exists = _pLoggerMap && _pLoggerMap->contains(name);
 
 	Logger & logger = unsafeGet(name);
+
+	/** If logger already exists, then this shared pointer does not own it.
+	  * If logger does not exists, logger infrastructure could be already destroyed
+	  * or logger was created.
+	  */
 	if (logger_exists)
+	{
 		logger.duplicate();
+	}
+	else if (_pLoggerMap)
+	{
+		_pLoggerMap->find(name)->second.owned_by_shared_ptr = true;
+	}
 
 	return makeLoggerPtr(logger);
 }
+
 
 Logger& Logger::unsafeGet(const std::string& name)
 {
@@ -390,10 +447,14 @@ void Logger::shutdown()
 
 	if (_pLoggerMap)
 	{
-		for (LoggerMap::iterator it = _pLoggerMap->begin(); it != _pLoggerMap->end(); ++it)
+		for (auto & it : *_pLoggerMap)
 		{
-			it->second->release();
+			if (it.second.owned_by_shared_ptr)
+				continue;
+
+			it.second.logger->release();
 		}
+
 		delete _pLoggerMap;
 		_pLoggerMap = 0;
 	}
@@ -406,29 +467,9 @@ Logger* Logger::find(const std::string& name)
 	{
 		LoggerMap::iterator it = _pLoggerMap->find(name);
 		if (it != _pLoggerMap->end())
-			return it->second;
+			return it->second.logger;
 	}
 	return 0;
-}
-
-
-bool Logger::destroy(const std::string& name)
-{
-	std::lock_guard<std::mutex> lock(getLoggerMutex());
-
-	if (_pLoggerMap)
-	{
-		LoggerMap::iterator it = _pLoggerMap->find(name);
-		if (it != _pLoggerMap->end())
-		{
-			if (it->second->release() == 1)
-				_pLoggerMap->erase(it);
-
-			return true;
-		}
-	}
-
-	return false;
 }
 
 
@@ -539,7 +580,8 @@ void Logger::add(Logger* pLogger)
 {
 	if (!_pLoggerMap)
 		_pLoggerMap = new LoggerMap;
-	_pLoggerMap->insert(LoggerMap::value_type(pLogger->name(), pLogger));
+
+	_pLoggerMap->emplace(pLogger->name(), LoggerEntry{pLogger, false /*owned_by_shared_ptr*/});
 }
 
 
