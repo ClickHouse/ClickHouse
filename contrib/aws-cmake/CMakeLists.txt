@@ -35,6 +35,8 @@ set(AWS_PUBLIC_COMPILE_DEFS)
 set(AWS_PRIVATE_COMPILE_DEFS)
 set(AWS_PRIVATE_LIBS)
 
+list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DINTEL_NO_ITTNOTIFY_API")
+
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
     list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DDEBUG_BUILD")
 endif()
@@ -85,14 +87,20 @@ file(GLOB AWS_SDK_CORE_SRC
     "${AWS_SDK_CORE_DIR}/source/external/cjson/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/external/tinyxml2/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/http/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/http/crt/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/http/standard/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/internal/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/monitoring/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/net/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/net/linux-shared/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/platform/linux-shared/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/smithy/tracing/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/base64/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/utils/component-registry/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/*.cpp"
-    "${AWS_SDK_CORE_DIR}/source/utils/crypto/openssl/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/factory/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/utils/crypto/openssl/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/event/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/json/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/logging/*.cpp"
@@ -176,6 +184,7 @@ file(GLOB AWS_COMMON_SRC
     "${AWS_COMMON_DIR}/source/*.c"
     "${AWS_COMMON_DIR}/source/external/*.c"
     "${AWS_COMMON_DIR}/source/posix/*.c"
+    "${AWS_COMMON_DIR}/source/linux/*.c"
 )
 
 file(GLOB AWS_COMMON_ARCH_SRC
