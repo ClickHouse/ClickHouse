@@ -60,7 +60,7 @@ public:
     virtual size_t getAvailableEndpointsCount() const = 0;
     virtual size_t getEndpointsCount() const = 0;
 
-    virtual void logAllEndpoints(Poco::Logger *log) const = 0;
+    virtual void logAllEndpoints(LoggerPtr log) const = 0;
 
     virtual ~IClientsConnectionBalancer() = default;
 };
@@ -79,6 +79,9 @@ public:
     explicit ZooKeeperLoadBalancer(const std::string & config_name);
 
     void init(zkutil::ZooKeeperArgs args_, std::shared_ptr<ZooKeeperLog> zk_log_);
+
+    void setZooKeeperLog(std::shared_ptr<ZooKeeperLog> zk_log_) { zk_log = zk_log_; }
+
     std::unique_ptr<Coordination::ZooKeeper> createClient();
 
 private:
@@ -89,7 +92,7 @@ private:
     ClientsConnectionBalancerPtr connection_balancer;
 
     std::shared_ptr<ZooKeeperLog> zk_log;
-    Poco::Logger* log;
+    LoggerPtr log;
 };
 
 }

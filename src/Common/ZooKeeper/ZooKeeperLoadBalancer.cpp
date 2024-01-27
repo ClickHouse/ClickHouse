@@ -5,6 +5,7 @@
 #include <base/types.h>
 #include <base/sort.h>
 #include <base/getFQDNOrHostName.cpp>
+#include "Common/Logger.h"
 #include "Common/Priority.h"
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeperLoadBalancer.h>
@@ -80,7 +81,7 @@ public:
         return ids;
     }
 
-    void logAllEndpoints(Poco::Logger* logger) const
+    void logAllEndpoints(LoggerPtr logger) const
     {
         LOG_INFO(logger, "Reporting Endpoint status information.");
         for (const auto & endpoint : endpoints)
@@ -163,7 +164,7 @@ public:
         return registry.getRangeByStatus(ONLINE).size() + registry.getRangeByStatus(UNDEF).size();
     }
 
-    void logAllEndpoints(Poco::Logger *logger) const override
+    void logAllEndpoints(LoggerPtr logger) const override
     {
         registry.logAllEndpoints(logger);
     }
@@ -445,7 +446,7 @@ ClientsConnectionBalancerPtr getConnectionBalancer(LoadBalancing load_balancing_
     return nullptr;
 }
 
-bool isKeeperHostDNSAvailable(Poco::Logger* log, const std::string & address, bool & dns_error_occurred)
+bool isKeeperHostDNSAvailable(LoggerPtr log, const std::string & address, bool & dns_error_occurred)
 {
     /// We want to resolve all hosts without DNS cache for keeper connection.
     Coordination::DNSResolver::instance().removeHostFromCache(address);
@@ -481,7 +482,7 @@ ZooKeeperLoadBalancer & ZooKeeperLoadBalancer::instance(const std::string & conf
 }
 
 ZooKeeperLoadBalancer::ZooKeeperLoadBalancer(const std::string & config_name)
-    : log(&Poco::Logger::get("ZooKeeperLoadBalancer/" + config_name))
+    : log(getLogger("ZooKeeperLoadBalancer/" + config_name))
 {
 }
 

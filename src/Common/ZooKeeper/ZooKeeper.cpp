@@ -1259,6 +1259,7 @@ void ZooKeeper::finalize(const String & reason)
 void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
 {
     zk_log = std::move(zk_log_);
+    Coordination::ZooKeeperLoadBalancer::instance(config_name).setZooKeeperLog(zk_log_);
     if (auto * zk = dynamic_cast<Coordination::ZooKeeper *>(impl.get()))
         zk->setZooKeeperLog(zk_log);
 }
