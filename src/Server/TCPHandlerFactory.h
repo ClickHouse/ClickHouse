@@ -18,7 +18,7 @@ class TCPHandlerFactory : public TCPServerConnectionFactory
 private:
     IServer & server;
     bool parse_proxy_protocol = false;
-    Poco::Logger * log;
+    LoggerPtr log;
     std::string server_display_name;
 
     ProfileEvents::Event read_event;
@@ -38,7 +38,7 @@ public:
       */
     TCPHandlerFactory(IServer & server_, bool secure_, bool parse_proxy_protocol_, const ProfileEvents::Event & read_event_ = ProfileEvents::end(), const ProfileEvents::Event & write_event_ = ProfileEvents::end())
         : server(server_), parse_proxy_protocol(parse_proxy_protocol_)
-        , log(&Poco::Logger::get(std::string("TCP") + (secure_ ? "S" : "") + "HandlerFactory"))
+        , log(getLogger(std::string("TCP") + (secure_ ? "S" : "") + "HandlerFactory"))
         , read_event(read_event_)
         , write_event(write_event_)
     {

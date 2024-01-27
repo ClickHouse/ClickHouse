@@ -276,7 +276,7 @@ bool applyTrivialCountIfPossible(
         /// The query could use trivial count if it didn't use parallel replicas, so let's disable it
         query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
         query_context->setSetting("max_parallel_replicas", UInt64{0});
-        LOG_TRACE(&Poco::Logger::get("Planner"), "Disabling parallel replicas to be able to use a trivial count optimization");
+        LOG_TRACE(getLogger("Planner"), "Disabling parallel replicas to be able to use a trivial count optimization");
 
     }
 
@@ -478,7 +478,7 @@ FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
                 "(setting 'max_parallel_replcias'), but the table does not have custom_key defined for it "
                 " or it's invalid (setting 'parallel_replicas_custom_key')");
 
-    LOG_TRACE(&Poco::Logger::get("Planner"), "Processing query on a replica using custom_key '{}'", settings.parallel_replicas_custom_key.value);
+    LOG_TRACE(getLogger("Planner"), "Processing query on a replica using custom_key '{}'", settings.parallel_replicas_custom_key.value);
 
     auto parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
             settings.parallel_replicas_count,
@@ -728,7 +728,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                     size_t number_of_replicas_to_use = rows_to_read / settings.parallel_replicas_min_number_of_rows_per_replica;
                     LOG_TRACE(
-                        &Poco::Logger::get("Planner"),
+                        getLogger("Planner"),
                         "Estimated {} rows to read. It is enough work for {} parallel replicas",
                         rows_to_read,
                         number_of_replicas_to_use);
@@ -738,12 +738,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         planner_context->getMutableQueryContext()->setSetting(
                             "allow_experimental_parallel_reading_from_replicas", Field(0));
                         planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", UInt64{0});
-                        LOG_DEBUG(&Poco::Logger::get("Planner"), "Disabling parallel replicas because there aren't enough rows to read");
+                        LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because there aren't enough rows to read");
                     }
                     else if (number_of_replicas_to_use < settings.max_parallel_replicas)
                     {
                         planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", number_of_replicas_to_use);
-                        LOG_DEBUG(&Poco::Logger::get("Planner"), "Reducing the number of replicas to use to {}", number_of_replicas_to_use);
+                        LOG_DEBUG(getLogger("Planner"), "Reducing the number of replicas to use to {}", number_of_replicas_to_use);
                     }
                 }
 

@@ -102,7 +102,7 @@ private:
     bool use_user_setup;
 
     bool hash_exchange;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     RabbitMQConnectionPtr connection; /// Connection for all consumers
     RabbitMQConfiguration configuration;

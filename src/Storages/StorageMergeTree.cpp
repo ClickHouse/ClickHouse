@@ -74,7 +74,7 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsMove;
 }
 
-static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutationEntry & mutation, Poco::Logger * log = nullptr)
+static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutationEntry & mutation, LoggerPtr log = nullptr)
 {
     assert(!mutation.tid.isEmpty());
     if (mutation.tid.isPrehistoric())

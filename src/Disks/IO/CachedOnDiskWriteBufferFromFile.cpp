@@ -31,7 +31,7 @@ FileSegmentRangeWriter::FileSegmentRangeWriter(
     const String & source_path_)
     : cache(cache_)
     , key(key_)
-    , log(&Poco::Logger::get("FileSegmentRangeWriter"))
+    , log(getLogger("FileSegmentRangeWriter"))
     , cache_log(cache_log_)
     , query_id(query_id_)
     , source_path(source_path_)
@@ -205,7 +205,7 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     const FileCacheUserInfo & user_,
     std::shared_ptr<FilesystemCacheLog> cache_log_)
     : WriteBufferFromFileDecorator(std::move(impl_))
-    , log(&Poco::Logger::get("CachedOnDiskWriteBufferFromFile"))
+    , log(getLogger("CachedOnDiskWriteBufferFromFile"))
     , cache(cache_)
     , source_path(source_path_)
     , key(key_)
@@ -234,6 +234,8 @@ void CachedOnDiskWriteBufferFromFile::nextImpl()
     }
     catch (...)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
         /// If something was already written to cache, remove it.
         cache_writer.reset();
         cache->removeKeyIfExists(key, user.user_id);

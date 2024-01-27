@@ -56,7 +56,7 @@ public:
     void assertMySQLAvailable();
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
 
     String database_name;
     String mysql_database_name;

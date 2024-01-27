@@ -67,7 +67,7 @@ DiskObjectStorage::DiskObjectStorage(
     const String & config_prefix)
     : IDisk(name_, config, config_prefix)
     , object_key_prefix(object_key_prefix_)
-    , log (&Poco::Logger::get("DiskObjectStorage(" + name + ")"))
+    , log(getLogger("DiskObjectStorage(" + name + ")"))
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
     , send_metadata(config.getBool(config_prefix + ".send_metadata", false))

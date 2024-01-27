@@ -33,7 +33,7 @@ DeflateQplJobHWPool::DeflateQplJobHWPool()
     : max_hw_jobs(0)
     , random_engine(randomSeed())
 {
-    Poco::Logger * log = &Poco::Logger::get("DeflateQplJobHWPool");
+    LoggerPtr log = getLogger("DeflateQplJobHWPool");
     const char * qpl_version = qpl_get_library_version();
 
     // loop all configured workqueue size to get maximum job number.
@@ -141,7 +141,7 @@ void DeflateQplJobHWPool::unLockJob(UInt32 index)
 }
 
 HardwareCodecDeflateQpl::HardwareCodecDeflateQpl(SoftwareCodecDeflateQpl & sw_codec_)
-    : log(&Poco::Logger::get("HardwareCodecDeflateQpl"))
+    : log(getLogger("HardwareCodecDeflateQpl"))
     , sw_codec(sw_codec_)
 {
 }

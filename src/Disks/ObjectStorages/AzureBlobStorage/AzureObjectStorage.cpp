@@ -96,7 +96,7 @@ AzureObjectStorage::AzureObjectStorage(
     : name(name_)
     , client(std::move(client_))
     , settings(std::move(settings_))
-    , log(&Poco::Logger::get("AzureObjectStorage"))
+    , log(getLogger("AzureObjectStorage"))
 {
 }
 
