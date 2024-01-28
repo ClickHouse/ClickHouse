@@ -99,7 +99,7 @@ struct ReplicatedFetchReadCallback
 
 Service::Service(StorageReplicatedMergeTree & data_)
     : data(data_)
-    , log(&Poco::Logger::get(data.getStorageID().getNameForLogs() + " (Replicated PartsService)"))
+    , log(getLogger(data.getStorageID().getNameForLogs() + " (Replicated PartsService)"))
 {}
 
 std::string Service::getId(const std::string & node_id) const
@@ -415,7 +415,7 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
 
 Fetcher::Fetcher(StorageReplicatedMergeTree & data_)
     : data(data_)
-    , log(&Poco::Logger::get(data.getStorageID().getNameForLogs() + " (Fetcher)"))
+    , log(getLogger(data.getStorageID().getNameForLogs() + " (Fetcher)"))
 {}
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelectedPart(
@@ -474,7 +474,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
 
     if (disk)
     {
-        LOG_TRACE(log, "Will fetch to disk {} with type {}", disk->getName(), toString(disk->getDataSourceDescription().type));
+        LOG_TRACE(log, "Will fetch to disk {} with type {}", disk->getName(), disk->getDataSourceDescription().toString());
         UInt64 revision = disk->getRevision();
         if (revision)
             uri.addQueryParameter("disk_revision", toString(revision));
@@ -489,18 +489,18 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
             Disks disks = data.getDisks();
             for (const auto & data_disk : disks)
             {
-                LOG_TRACE(log, "Checking disk {} with type {}", data_disk->getName(), toString(data_disk->getDataSourceDescription().type));
+                LOG_TRACE(log, "Checking disk {} with type {}", data_disk->getName(), data_disk->getDataSourceDescription().toString());
                 if (data_disk->supportZeroCopyReplication())
                 {
-                    LOG_TRACE(log, "Disk {} (with type {}) supports zero-copy replication", data_disk->getName(), toString(data_disk->getDataSourceDescription().type));
-                    capability.push_back(toString(data_disk->getDataSourceDescription().type));
+                    LOG_TRACE(log, "Disk {} (with type {}) supports zero-copy replication", data_disk->getName(), data_disk->getDataSourceDescription().toString());
+                    capability.push_back(data_disk->getDataSourceDescription().toString());
                 }
             }
         }
         else if (disk->supportZeroCopyReplication())
         {
-            LOG_TRACE(log, "Trying to fetch with zero copy replication, provided disk {} with type {}", disk->getName(), toString(disk->getDataSourceDescription().type));
-            capability.push_back(toString(disk->getDataSourceDescription().type));
+            LOG_TRACE(log, "Trying to fetch with zero copy replication, provided disk {} with type {}", disk->getName(), disk->getDataSourceDescription().toString());
+            capability.push_back(disk->getDataSourceDescription().toString());
         }
     }
 
@@ -544,7 +544,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     {
         for (const auto & disk_candidate : data.getDisks())
         {
-            if (toString(disk_candidate->getDataSourceDescription().type) == remote_fs_metadata)
+            if (disk_candidate->getDataSourceDescription().toString() == remote_fs_metadata)
             {
                 preffered_disk = disk_candidate;
                 break;
@@ -601,11 +601,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     if (!disk)
     {
         disk = reservation->getDisk();
-        LOG_TRACE(log, "Disk for fetch is not provided, getting disk from reservation {} with type '{}'", disk->getName(), toString(disk->getDataSourceDescription().type));
+        LOG_TRACE(log, "Disk for fetch is not provided, getting disk from reservation {} with type '{}'", disk->getName(), disk->getDataSourceDescription().toString());
     }
     else
     {
-        LOG_TEST(log, "Disk for fetch is disk {} with type {}", disk->getName(), toString(disk->getDataSourceDescription().type));
+        LOG_TEST(log, "Disk for fetch is disk {} with type {}", disk->getName(), disk->getDataSourceDescription().toString());
     }
 
     UInt64 revision = parse<UInt64>(in->getResponseCookie("disk_revision", "0"));
@@ -888,7 +888,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         readStringBinary(part_id, in);
 
         if (!disk->supportZeroCopyReplication() || !disk->checkUniqueId(part_id))
-            throw Exception(ErrorCodes::ZERO_COPY_REPLICATION_ERROR, "Part {} unique id {} doesn't exist on {} (with type {}).", part_name, part_id, disk->getName(), toString(disk->getDataSourceDescription().type));
+            throw Exception(ErrorCodes::ZERO_COPY_REPLICATION_ERROR, "Part {} unique id {} doesn't exist on {} (with type {}).", part_name, part_id, disk->getName(), disk->getDataSourceDescription().toString());
 
         LOG_DEBUG(log, "Downloading part {} unique id {} metadata onto disk {}.", part_name, part_id, disk->getName());
         zero_copy_temporary_lock_holder = data.lockSharedDataTemporary(part_name, part_id, disk);
