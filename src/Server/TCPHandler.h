@@ -160,7 +160,7 @@ private:
     IServer & server;
     TCPServer & tcp_server;
     bool parse_proxy_protocol = false;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     String forwarded_for;
     String certificate;

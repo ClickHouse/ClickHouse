@@ -59,7 +59,7 @@ private:
         , client(std::move(client_))
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
-        , log(&Poco::Logger::get(logger_name))
+        , log(getLogger(logger_name))
     {
     }
 
@@ -179,7 +179,7 @@ private:
     MultiVersion<S3ObjectStorageSettings> s3_settings;
     S3Capabilities s3_capabilities;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 /// Do not encode keys, store as-is, and do not require separate disk for metadata.

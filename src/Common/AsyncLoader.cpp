@@ -34,11 +34,11 @@ namespace ErrorCodes
 static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
 static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 
-void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch)
+void logAboutProgress(LoggerPtr log, size_t processed, size_t total, AtomicStopwatch & watch)
 {
     if (total && (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS)))
     {
-        LOG_INFO(log, "Processed: {}%", processed * 100.0 / total);
+        LOG_INFO(log, "Processed: {}%", static_cast<Int64>(processed * 1000.0 / total) * 0.1);
         watch.restart();
     }
 }
@@ -205,7 +205,7 @@ void LoadTask::detach()
 AsyncLoader::AsyncLoader(std::vector<PoolInitializer> pool_initializers, bool log_failures_, bool log_progress_)
     : log_failures(log_failures_)
     , log_progress(log_progress_)
-    , log(&Poco::Logger::get("AsyncLoader"))
+    , log(getLogger("AsyncLoader"))
 {
     pools.reserve(pool_initializers.size());
     for (auto && init : pool_initializers)
