@@ -208,7 +208,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
         data[offset - 1] = 0;
     }
 
-    data.resize(offset);
+    data.resize_exact(offset);
 }
 
 
