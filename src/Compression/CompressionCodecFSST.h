@@ -1,10 +1,12 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
+#include "base/defines.h"
 #include "base/types.h"
 #include "fsst12.h"
 
 #include <fsst.h>
+#include <cstring>
 #include <vector>
 
 namespace DB
@@ -41,7 +43,14 @@ protected:
         // if (fsst_compress(encoder, 1, &srcLen[swap], &srcBuf[swap], FSST_MEMBUF*2, dstMem[swap]+FSST_MAXHEADER+3,
         //                                &dstLen[swap], &dstBuf[swap]) < 1) return -1;
     }
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override {
+        fsst_decoder_t decoder;
+        unsigned char* mutable_source = const_cast<unsigned char*>(reinterpret_cast<const unsigned char*>(source));
+
+        auto header_len = fsst_import(&decoder, mutable_source);
+        auto uncompressed_len = fsst_decompress(&decoder, source_size, mutable_source, uncompressed_size, reinterpret_cast<unsigned char*>(dest));
+        UNUSED(header_len, uncompressed_len);
+    }
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return true; }
