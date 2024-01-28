@@ -912,7 +912,8 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_RELEASE, job_config=JobConfig(**statless_test_common_params)  # type: ignore
         ),
         JobNames.STATELESS_TEST_RELEASE_COVERAGE: TestConfig(
-            Build.PACKAGE_RELEASE_COVERAGE, job_config=JobConfig(**statless_test_common_params)  # type: ignore
+            Build.PACKAGE_RELEASE_COVERAGE,
+            job_config=JobConfig(num_batches=6, **statless_test_common_params)  # type: ignore
         ),
         JobNames.STATELESS_TEST_AARCH64: TestConfig(
             Build.PACKAGE_AARCH64, job_config=JobConfig(**statless_test_common_params)  # type: ignore
