@@ -77,12 +77,30 @@ namespace SettingsChangesHistory
 
 /// History of settings changes that controls some backward incompatible changes
 /// across all ClickHouse versions. It maps ClickHouse version to settings changes that were done
-/// in this version. Settings changes is a vector of structs {setting_name, previous_value, new_value}
+/// in this version. This history contains both changes to existing settings and newly added settings.
+/// Settings changes is a vector of structs {setting_name, previous_value, new_value}.
+/// For newly added setting choose the most appropriate previous_value (for example, if new setting
+/// controls new feature and it's 'true' by default, use 'false' as previous_value).
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
     {"24.1", {{"print_pretty_type_names", false, true, "Better user experience."},
-              {"input_format_json_read_bools_as_strings", false, true, "Allow to read bools as strings in JSON formats by default"}}},
+              {"input_format_json_read_bools_as_strings", false, true, "Allow to read bools as strings in JSON formats by default"},
+              {"output_format_arrow_use_signed_indexes_for_dictionary", false, true, "Use signed indexes type for Arrow dictionaries by default as it's recommended"},
+              {"output_format_arrow_use_64_bit_indexes_for_dictionary", false, false, "Allow to use 64 bit indexes type in Arrow dictionaries"},
+              {"parallel_replicas_mark_segment_size", 128, 128, "Add new setting to control segment size in new parallel replicas coordinator implementation"},
+              {"ignore_materialized_views_with_dropped_target_table", false, false, "Add new setting to allow to ignore materialized views with dropped target table"},
+              {"output_format_compression_level", 3, 3, "Allow to change compression level in the query output"},
+              {"output_format_compression_zstd_window_log", 0, 0, "Allow to change zstd window log in the query output when zstd compression is used"},
+              {"enable_zstd_qat_codec", false, false, "Add new ZSTD_QAT codec"},
+              {"enable_vertical_final", false, true, "Use vertical final by default"},
+              {"output_format_arrow_use_64_bit_indexes_for_dictionary", false, false, "Allow to use 64 bit indexes type in Arrow dictionaries"},
+              {"max_rows_in_set_to_optimize_join", 100000, 0, "Disable join optimization as it prevents from read in order optimization"},
+              {"output_format_pretty_color", true, "auto", "Setting is changed to allow also for auto value, disabling ANSI escapes if output is not a tty"},
+              {"function_visible_width_behavior", 0, 1, "We changed the default behavior of `visibleWidth` to be more precise"},
+              {"max_estimated_execution_time", 0, 0, "Separate max_execution_time and max_estimated_execution_time"},
+              {"iceberg_engine_ignore_schema_evolution", false, false, "Allow to ignore schema evolution in Iceberg table engine"},
+              {"optimize_injective_functions_in_group_by", false, true, "Replace injective functions by it's arguments in GROUP BY section in analyzer"}}},
     {"23.12", {{"allow_suspicious_ttl_expressions", true, false, "It is a new setting, and in previous versions the behavior was equivalent to allowing."},
               {"input_format_parquet_allow_missing_columns", false, true, "Allow missing columns in Parquet files by default"},
               {"input_format_orc_allow_missing_columns", false, true, "Allow missing columns in ORC files by default"},

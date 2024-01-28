@@ -21,6 +21,7 @@
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/KeyHolderHelpers.h>
 
 
 namespace DB
@@ -215,8 +216,6 @@ private:
     bool include_counts;
     bool is_approx_top_k;
 
-    static void deserializeAndInsert(StringRef str, IColumn & data_to);
-
 public:
     AggregateFunctionTopKGeneric(
         UInt64 threshold_, UInt64 reserved_, bool include_counts_, bool is_approx_top_k_, const DataTypes & argument_types_, const Array & params)
@@ -355,19 +354,13 @@ public:
             {
                 column_count.insert(elem.count);
                 column_error.insert(elem.error);
-                if constexpr (is_plain_column)
-                    column_key.insertData(elem.key.data, elem.key.size);
-                else
-                    column_key.deserializeAndInsertFromArena(elem.key.data);
+                deserializeAndInsert<is_plain_column>(elem.key, column_key);
             }
         } else
         {
             for (auto & elem : result_vec)
             {
-                if constexpr (is_plain_column)
-                    data_to.insertData(elem.key.data, elem.key.size);
-                else
-                    data_to.deserializeAndInsertFromArena(elem.key.data);
+                deserializeAndInsert<is_plain_column>(elem.key, data_to);
             }
         }
     }

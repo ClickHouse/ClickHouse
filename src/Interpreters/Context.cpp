@@ -43,6 +43,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
@@ -59,7 +60,7 @@
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/GSSAcceptor.h>
-#include <IO/ResourceManagerFactory.h>
+#include <Common/Scheduler/ResourceManagerFactory.h>
 #include <Backups/BackupsWorker.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -197,7 +198,7 @@ namespace ErrorCodes
   */
 struct ContextSharedPart : boost::noncopyable
 {
-    Poco::Logger * log = &Poco::Logger::get("Context");
+    LoggerPtr log = getLogger("Context");
 
     /// For access of most of shared objects.
     mutable ContextSharedMutex mutex;
@@ -214,6 +215,8 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable zkutil::ZooKeeperPtr zookeeper TSA_GUARDED_BY(zookeeper_mutex);                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config TSA_GUARDED_BY(zookeeper_mutex);                      /// Stores zookeeper configs
+
+    ConfigurationPtr sensitive_data_masker_config;
 
 #if USE_NURAFT
     mutable std::mutex keeper_dispatcher_mutex;
@@ -235,6 +238,7 @@ struct ContextSharedPart : boost::noncopyable
     String dictionaries_lib_path TSA_GUARDED_BY(mutex);      /// Path to the directory with user provided binaries and libraries for external dictionaries.
     String user_scripts_path TSA_GUARDED_BY(mutex);          /// Path to the directory with user provided scripts.
     String filesystem_caches_path TSA_GUARDED_BY(mutex);     /// Path to the directory with filesystem caches.
+    String filesystem_cache_user TSA_GUARDED_BY(mutex);
     ConfigurationPtr config TSA_GUARDED_BY(mutex);           /// Global configuration settings.
     String tmp_path TSA_GUARDED_BY(mutex);                   /// Path to the temporary files that occur when processing the request.
 
@@ -287,6 +291,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable QueryCachePtr query_cache TSA_GUARDED_BY(mutex);                          /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
+    AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     ProcessList process_list;                                   /// Executing queries at the moment.
     SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
@@ -615,6 +620,7 @@ struct ContextSharedPart : boost::noncopyable
         const auto & caches = FileCacheFactory::instance().getAll();
         for (const auto & [_, cache] : caches)
             cache->cache->deactivateBackgroundOperations();
+        FileCacheFactory::instance().clear();
 
         {
             // Disk selector might not be initialized if there was some error during
@@ -886,17 +892,23 @@ String Context::getFilesystemCachesPath() const
     return shared->filesystem_caches_path;
 }
 
+String Context::getFilesystemCacheUser() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->filesystem_cache_user;
+}
+
 Strings Context::getWarnings() const
 {
     Strings common_warnings;
     {
         SharedLockGuard lock(shared->mutex);
         common_warnings = shared->warnings;
-        if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<DB::Int64>(shared->max_table_num_to_warn))
+        if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}", shared->max_table_num_to_warn));
-        if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<DB::Int64>(shared->max_database_num_to_warn))
+        if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}", shared->max_table_num_to_warn));
-        if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<DB::Int64>(shared->max_part_num_to_warn))
+        if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of active parts is more than {}", shared->max_part_num_to_warn));
     }
     /// Make setting's name ordered
@@ -993,7 +1005,13 @@ void Context::setFilesystemCachesPath(const String & path)
     shared->filesystem_caches_path = path;
 }
 
-static void setupTmpPath(Poco::Logger * log, const std::string & path)
+void Context::setFilesystemCacheUser(const String & user)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->filesystem_cache_user = user;
+}
+
+static void setupTmpPath(LoggerPtr log, const std::string & path)
 try
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
@@ -1626,6 +1644,11 @@ void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_proje
     std::lock_guard<std::mutex> lock(query_access_info.mutex);
     query_access_info.projections.emplace(fmt::format(
         "{}.{}", qualified_projection_name.storage_id.getFullTableName(), backQuoteIfNeed(qualified_projection_name.projection_name)));
+}
+
+Context::QueryFactoriesInfo Context::getQueryFactoriesInfo() const
+{
+    return query_factories_info;
 }
 
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
@@ -2535,15 +2558,22 @@ BackupsWorker & Context::getBackupsWorker() const
         const auto & config = getConfigRef();
         const bool allow_concurrent_backups = config.getBool("backups.allow_concurrent_backups", true);
         const bool allow_concurrent_restores = config.getBool("backups.allow_concurrent_restores", true);
+        const bool test_inject_sleep = config.getBool("backups.test_inject_sleep", false);
 
         const auto & settings_ref = getSettingsRef();
         UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref.backup_threads);
         UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref.restore_threads);
 
-        shared->backups_worker.emplace(getGlobalContext(), backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
+        shared->backups_worker.emplace(getGlobalContext(), backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores, test_inject_sleep);
     });
 
     return *shared->backups_worker;
+}
+
+void Context::waitAllBackupsAndRestores() const
+{
+    if (shared->backups_worker)
+        shared->backups_worker->waitAll();
 }
 
 
@@ -2835,6 +2865,18 @@ void Context::clearCaches() const
     shared->mmap_cache->clear();
 
     /// Intentionally not clearing the query cache which is transactionally inconsistent by design.
+}
+
+void Context::setAsynchronousMetrics(AsynchronousMetrics * asynchronous_metrics_)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->asynchronous_metrics = asynchronous_metrics_;
+}
+
+AsynchronousMetrics * Context::getAsynchronousMetrics() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->asynchronous_metrics;
 }
 
 ThreadPool & Context::getPrefetchThreadpool() const
@@ -3367,6 +3409,16 @@ bool Context::hasZooKeeper() const
 bool Context::hasAuxiliaryZooKeeper(const String & name) const
 {
     return getConfigRef().has("auxiliary_zookeepers." + name);
+}
+
+void Context::reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const
+{
+    const auto old_config = shared->sensitive_data_masker_config;
+    if (old_config && isSameConfiguration(*config, *old_config, "query_masking_rules"))
+        return;
+
+    SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(*config, "query_masking_rules"));
+    shared->sensitive_data_masker_config = config;
 }
 
 InterserverCredentialsPtr Context::getInterserverCredentials() const
@@ -4225,11 +4277,11 @@ void Context::setApplicationType(ApplicationType type)
     /// Lock isn't required, you should set it at start
     shared->application_type = type;
 
-    if (type == ApplicationType::SERVER)
-    {
+    if (type == ApplicationType::LOCAL || type == ApplicationType::SERVER)
         shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
+
+    if (type == ApplicationType::SERVER)
         shared->configureServerWideThrottling();
-    }
 }
 
 void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)
@@ -4240,7 +4292,7 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
     setCurrentProfile(shared->system_profile_name);
 
-    applySettingsQuirks(settings, &Poco::Logger::get("SettingsQuirks"));
+    applySettingsQuirks(settings, getLogger("SettingsQuirks"));
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
     buffer_context = Context::createCopy(shared_from_this());

@@ -2440,7 +2440,6 @@ bool ActionsDAG::isSortingPreserved(
 ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
     const NodeRawConstPtrs & filter_nodes,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
-    const ContextPtr & context,
     bool single_output_condition_node)
 {
     if (filter_nodes.empty())
@@ -2542,10 +2541,15 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                     {
                         if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
                         {
-                            auto index_hint_filter_dag = buildFilterActionsDAG(index_hint->getActions()->getOutputs(),
-                                node_name_to_input_node_column,
-                                context,
-                                false /*single_output_condition_node*/);
+                            ActionsDAGPtr index_hint_filter_dag;
+                            const auto & index_hint_args = index_hint->getActions()->getOutputs();
+
+                            if (index_hint_args.empty())
+                                index_hint_filter_dag = std::make_shared<ActionsDAG>();
+                            else
+                                index_hint_filter_dag = buildFilterActionsDAG(index_hint_args,
+                                    node_name_to_input_node_column,
+                                    false /*single_output_condition_node*/);
 
                             auto index_hint_function_clone = std::make_shared<FunctionIndexHint>();
                             index_hint_function_clone->setActions(std::move(index_hint_filter_dag));
@@ -2583,8 +2587,8 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
 
     if (result_dag_outputs.size() > 1 && single_output_condition_node)
     {
-        auto function_builder = FunctionFactory::instance().get("and", context);
-        result_dag_outputs = { &result_dag->addFunction(function_builder, result_dag_outputs, {}) };
+        FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+        result_dag_outputs = { &result_dag->addFunction(func_builder_and, result_dag_outputs, {}) };
     }
 
     return result_dag;
