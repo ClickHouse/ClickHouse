@@ -66,6 +66,7 @@ BlockIO InterpreterDropQuery::execute()
             auto cloned = drop.clone();
             auto & query = cloned->as<ASTDropQuery &>();
             query.database_and_tables = nullptr;
+            query.children.clear();
 
             auto database_and_table = dynamic_pointer_cast<ASTIdentifier>(child);
             if (database_and_table->name_parts.size() == 2)
