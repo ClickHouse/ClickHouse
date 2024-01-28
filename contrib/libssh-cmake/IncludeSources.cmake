@@ -70,10 +70,6 @@ set(libssh_SRCS
     ${LIB_SOURCE_DIR}/src/dh_crypto.c
 )
 
-if (NOT (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC))
-    add_compile_definitions(USE_BORINGSSL=1)
-endif()
-
 set(libssh_SRCS
 ${libssh_SRCS}
 ${LIB_SOURCE_DIR}/src/options.c
