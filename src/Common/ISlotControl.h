@@ -35,7 +35,7 @@ using SlotCount = UInt64;
 /// Unlimited number of slots
 constexpr SlotCount UnlimitedSlots = std::numeric_limits<SlotCount>::max();
 
-/// Acquired slot holder. Slot is considered to be acquired as long the object exists.
+/// Acquired slot holder. Slot is considered to be acquired as long as the object exists.
 class IAcquiredSlot : public std::enable_shared_from_this<IAcquiredSlot>, boost::noncopyable
 {
 public:
