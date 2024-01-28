@@ -335,7 +335,11 @@ public:
                         && column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData())
                         throw Exception(
                             ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                                "Arrays passed to {} must have equal size", getName());
+                            "Arrays passed to {} must have equal size. Argument {} has size {}, but expected {}",
+                            getName(),
+                            i,
+                            column_array->getOffsets().size(),
+                            typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData().size());
                 }
 
                 const auto * column_tuple = checkAndGetColumn<ColumnTuple>(&column_array->getData());

@@ -327,7 +327,7 @@ StorageKafka::StorageKafka(
     , max_rows_per_message(kafka_settings->kafka_max_rows_per_message.value)
     , schema_name(getContext()->getMacros()->expand(kafka_settings->kafka_schema.value, macros_info))
     , num_consumers(kafka_settings->kafka_num_consumers.value)
-    , log(&Poco::Logger::get("StorageKafka (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageKafka (" + table_id_.table_name + ")"))
     , intermediate_commit(kafka_settings->kafka_commit_every_batch.value)
     , settings_adjustments(createSettingsAdjustments())
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)

@@ -92,7 +92,7 @@ void TransactionsInfoLogElement::appendToBlock(MutableColumns & columns) const
 }
 
 
-void tryWriteEventToSystemLog(Poco::Logger * log,
+void tryWriteEventToSystemLog(LoggerPtr log,
                               TransactionsInfoLogElement::Type type, const TransactionID & tid,
                               const TransactionInfoContext & context)
 try
