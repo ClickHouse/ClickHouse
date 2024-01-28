@@ -141,9 +141,9 @@ void ColumnMap::updateHashFast(SipHash & hash) const
     nested->updateHashFast(hash);
 }
 
-void ColumnMap::insertFrom(const IColumn & src, size_t start)
+void ColumnMap::insertFrom(const IColumn & src, size_t n)
 {
-    nested->insertFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), start);
+    nested->insertFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), n);
 }
 
 void ColumnMap::insertRangeFrom(const IColumn & src, size_t start, size_t length)
