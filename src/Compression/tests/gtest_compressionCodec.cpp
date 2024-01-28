@@ -10,6 +10,7 @@
 #include <base/types.h>
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
+#include "base/defines.h"
 
 #include <Compression/LZ4_decompress_faster.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -1301,6 +1302,9 @@ TEST(LZ4Test, DecompressMalformedInput)
 
     auto codec = CompressionCodecFactory::instance().get("LZ4", {});
     ASSERT_THROW(codec->decompress(source, source_size, memory.data()), Exception);
+
+    auto fsst_codec = CompressionCodecFactory::instance().get("FSST", {});
+    UNUSED(fsst_codec);
 }
 
 }

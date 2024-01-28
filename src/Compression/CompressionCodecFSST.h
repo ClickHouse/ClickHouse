@@ -2,7 +2,6 @@
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <double-conversion/utils.h>
-#include "base/defines.h"
 #include "base/types.h"
 #include "fsst12.h"
 
@@ -89,7 +88,9 @@ private:
             }
             str_in.pop_back();
         }
-    }
+    };
 };
 
-};
+void registerCodecFSST(CompressionCodecFactory & factory);
+
+}
