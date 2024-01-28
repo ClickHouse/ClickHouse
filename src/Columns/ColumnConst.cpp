@@ -128,7 +128,7 @@ MutableColumns ColumnConst::scatter(ColumnIndex num_columns, const Selector & se
 void ColumnConst::getPermutation(PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
                                 size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const
 {
-    res.resize(s);
+    res.resize_exact(s);
     iota(res.data(), s, IColumn::Permutation::value_type(0));
 }
 
