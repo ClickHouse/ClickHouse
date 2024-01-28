@@ -80,7 +80,10 @@ public:
 
     void init(zkutil::ZooKeeperArgs args_, std::shared_ptr<ZooKeeperLog> zk_log_);
 
-    void setZooKeeperLog(std::shared_ptr<ZooKeeperLog> zk_log_) { zk_log = zk_log_; }
+    void setZooKeeperLog(std::shared_ptr<ZooKeeperLog> zk_log_)
+    {
+        zk_log = zk_log_;
+    }
 
     std::unique_ptr<Coordination::ZooKeeper> createClient();
 
