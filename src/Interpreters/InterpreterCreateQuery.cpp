@@ -716,7 +716,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     setEngine(create);
 
     /// We have to check access rights again (in case engine was changed).
-    if (create.storage)
+    if (create.storage && create.storage->engine)
     {
         auto source_access_type = StorageFactory::instance().getSourceAccessType(create.storage->engine->name);
         if (source_access_type != AccessType::NONE)
