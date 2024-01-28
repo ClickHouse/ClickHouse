@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -110,6 +111,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_comment("COMMENT");
     ParserKeyword s_codec("CODEC");
     ParserKeyword s_ttl("TTL");
+    ParserKeyword s_settings("SETTINGS");
 
     ParserKeyword s_remove_ttl("REMOVE TTL");
     ParserKeyword s_remove_sample_by("REMOVE SAMPLE BY");
@@ -117,6 +119,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
+    ParserStringAndSubstitution parser_string_and_substituion;
     ParserIdentifier parser_remove_property;
     ParserCompoundColumnDeclaration parser_col_decl;
     ParserIndexDeclaration parser_idx_decl;
@@ -138,6 +141,28 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserRefreshStrategy refresh_p;
     ParserTTLExpressionList parser_ttl_list;
 
+    ASTPtr command_col_decl;
+    ASTPtr command_column;
+    ASTPtr command_order_by;
+    ASTPtr command_sample_by;
+    ASTPtr command_index_decl;
+    ASTPtr command_index;
+    ASTPtr command_constraint_decl;
+    ASTPtr command_constraint;
+    ASTPtr command_projection_decl;
+    ASTPtr command_projection;
+    ASTPtr command_statistic_decl;
+    ASTPtr command_partition;
+    ASTPtr command_predicate;
+    ASTPtr command_update_assignments;
+    ASTPtr command_comment;
+    ASTPtr command_ttl;
+    ASTPtr command_settings_changes;
+    ASTPtr command_settings_resets;
+    ASTPtr command_select;
+    ASTPtr command_values;
+    ASTPtr command_rename_to;
+
     switch (alter_object)
     {
         case ASTAlterQuery::AlterObjectType::LIVE_VIEW:
@@ -154,7 +179,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         {
             if (s_modify_setting.ignore(pos, expected))
             {
-                if (!parser_settings.parse(pos, command->settings_changes, expected))
+                if (!parser_settings.parse(pos, command_settings_changes, expected))
                     return false;
                 command->type = ASTAlterCommand::MODIFY_DATABASE_SETTING;
             }
@@ -171,14 +196,14 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_not_exists.ignore(pos, expected))
                     command->if_not_exists = true;
 
-                if (!parser_col_decl.parse(pos, command->col_decl, expected))
+                if (!parser_col_decl.parse(pos, command_col_decl, expected))
                     return false;
 
                 if (s_first.ignore(pos, expected))
                     command->first = true;
                 else if (s_after.ignore(pos, expected))
                 {
-                    if (!parser_name.parse(pos, command->column, expected))
+                    if (!parser_name.parse(pos, command_column, expected))
                         return false;
                 }
 
@@ -189,20 +214,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_name.parse(pos, command->column, expected))
+                if (!parser_name.parse(pos, command_column, expected))
                     return false;
 
                 if (!s_to.ignore(pos, expected))
                     return false;
 
-                if (!parser_name.parse(pos, command->rename_to, expected))
+                if (!parser_name.parse(pos, command_rename_to, expected))
                     return false;
 
                 command->type = ASTAlterCommand::RENAME_COLUMN;
             }
             else if (s_materialize_column.ignore(pos, expected))
             {
-                if (!parser_name.parse(pos, command->column, expected))
+                if (!parser_name.parse(pos, command_column, expected))
                     return false;
 
                 command->type = ASTAlterCommand::MATERIALIZE_COLUMN;
@@ -210,20 +235,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 if (s_in_partition.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command->partition, expected))
+                    if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
                 }
             }
             else if (s_drop_partition.ignore(pos, expected))
             {
-                if (!parser_partition.parse(pos, command->partition, expected))
+                if (!parser_partition.parse(pos, command_partition, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_PARTITION;
             }
             else if (s_drop_part.ignore(pos, expected))
             {
-                if (!parser_string_literal.parse(pos, command->partition, expected))
+                if (!parser_string_and_substituion.parse(pos, command_partition, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_PARTITION;
@@ -231,14 +256,14 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_drop_detached_partition.ignore(pos, expected))
             {
-                if (!parser_partition.parse(pos, command->partition, expected))
+                if (!parser_partition.parse(pos, command_partition, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_DETACHED_PARTITION;
             }
             else if (s_drop_detached_part.ignore(pos, expected))
             {
-                if (!parser_string_literal.parse(pos, command->partition, expected))
+                if (!parser_string_and_substituion.parse(pos, command_partition, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_DETACHED_PARTITION;
@@ -249,7 +274,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_name.parse(pos, command->column, expected))
+                if (!parser_name.parse(pos, command_column, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_COLUMN;
@@ -260,7 +285,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_name.parse(pos, command->column, expected))
+                if (!parser_name.parse(pos, command_column, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_COLUMN;
@@ -269,7 +294,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 if (s_in_partition.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command->partition, expected))
+                    if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
                 }
             }
@@ -278,14 +303,14 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_not_exists.ignore(pos, expected))
                     command->if_not_exists = true;
 
-                if (!parser_idx_decl.parse(pos, command->index_decl, expected))
+                if (!parser_idx_decl.parse(pos, command_index_decl, expected))
                     return false;
 
                 if (s_first.ignore(pos, expected))
                     command->first = true;
                 else if (s_after.ignore(pos, expected))
                 {
-                    if (!parser_name.parse(pos, command->index, expected))
+                    if (!parser_name.parse(pos, command_index, expected))
                         return false;
                 }
 
@@ -296,7 +321,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_name.parse(pos, command->index, expected))
+                if (!parser_name.parse(pos, command_index, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_INDEX;
@@ -307,7 +332,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_name.parse(pos, command->index, expected))
+                if (!parser_name.parse(pos, command_index, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_INDEX;
@@ -316,7 +341,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 if (s_in_partition.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command->partition, expected))
+                    if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
                 }
             }
@@ -325,7 +350,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_name.parse(pos, command->index, expected))
+                if (!parser_name.parse(pos, command_index, expected))
                     return false;
 
                 command->type = ASTAlterCommand::MATERIALIZE_INDEX;
@@ -333,7 +358,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 if (s_in_partition.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command->partition, expected))
+                    if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
                 }
             }
@@ -342,7 +367,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_not_exists.ignore(pos, expected))
                     command->if_not_exists = true;
 
-                if (!parser_stat_decl.parse(pos, command->statistic_decl, expected))
+                if (!parser_stat_decl.parse(pos, command_statistic_decl, expected))
                     return false;
 
                 command->type = ASTAlterCommand::ADD_STATISTIC;
@@ -352,7 +377,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_stat_decl.parse(pos, command->statistic_decl, expected))
+                if (!parser_stat_decl.parse(pos, command_statistic_decl, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_STATISTIC;
@@ -362,7 +387,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_stat_decl.parse(pos, command->statistic_decl, expected))
+                if (!parser_stat_decl.parse(pos, command_statistic_decl, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_STATISTIC;
@@ -371,7 +396,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 if (s_in_partition.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command->partition, expected))
+                    if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
                 }
             }
@@ -380,7 +405,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_stat_decl.parse(pos, command->statistic_decl, expected))
+                if (!parser_stat_decl.parse(pos, command_statistic_decl, expected))
                     return false;
 
                 command->type = ASTAlterCommand::MATERIALIZE_STATISTIC;
@@ -388,7 +413,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 if (s_in_partition.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command->partition, expected))
+                    if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
                 }
             }
@@ -397,14 +422,14 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_not_exists.ignore(pos, expected))
                     command->if_not_exists = true;
 
-                if (!parser_projection_decl.parse(pos, command->projection_decl, expected))
+                if (!parser_projection_decl.parse(pos, command_projection_decl, expected))
                     return false;
 
                 if (s_first.ignore(pos, expected))
                     command->first = true;
                 else if (s_after.ignore(pos, expected))
                 {
-                    if (!parser_name.parse(pos, command->projection, expected))
+                    if (!parser_name.parse(pos, command_projection, expected))
                         return false;
                 }
 
@@ -415,7 +440,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_name.parse(pos, command->projection, expected))
+                if (!parser_name.parse(pos, command_projection, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_PROJECTION;
@@ -426,7 +451,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_name.parse(pos, command->projection, expected))
+                if (!parser_name.parse(pos, command_projection, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_PROJECTION;
@@ -435,7 +460,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 if (s_in_partition.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command->partition, expected))
+                    if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
                 }
             }
@@ -444,7 +469,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_name.parse(pos, command->projection, expected))
+                if (!parser_name.parse(pos, command_projection, expected))
                     return false;
 
                 command->type = ASTAlterCommand::MATERIALIZE_PROJECTION;
@@ -452,13 +477,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 if (s_in_partition.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command->partition, expected))
+                    if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
                 }
             }
             else if (s_move_part.ignore(pos, expected))
             {
-                if (!parser_string_literal.parse(pos, command->partition, expected))
+                if (!parser_string_and_substituion.parse(pos, command_partition, expected))
                     return false;
 
                 command->type = ASTAlterCommand::MOVE_PARTITION;
@@ -483,7 +508,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_move_partition.ignore(pos, expected))
             {
-                if (!parser_partition.parse(pos, command->partition, expected))
+                if (!parser_partition.parse(pos, command_partition, expected))
                     return false;
 
                 command->type = ASTAlterCommand::MOVE_PARTITION;
@@ -515,7 +540,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_not_exists.ignore(pos, expected))
                     command->if_not_exists = true;
 
-                if (!parser_constraint_decl.parse(pos, command->constraint_decl, expected))
+                if (!parser_constraint_decl.parse(pos, command_constraint_decl, expected))
                     return false;
 
                 command->type = ASTAlterCommand::ADD_CONSTRAINT;
@@ -525,7 +550,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_name.parse(pos, command->constraint, expected))
+                if (!parser_name.parse(pos, command_constraint, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_CONSTRAINT;
@@ -533,7 +558,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_detach_partition.ignore(pos, expected))
             {
-                if (!parser_partition.parse(pos, command->partition, expected))
+                if (!parser_partition.parse(pos, command_partition, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_PARTITION;
@@ -541,7 +566,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_detach_part.ignore(pos, expected))
             {
-                if (!parser_string_literal.parse(pos, command->partition, expected))
+                if (!parser_string_and_substituion.parse(pos, command_partition, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_PARTITION;
@@ -550,7 +575,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_attach_partition.ignore(pos, expected))
             {
-                if (!parser_partition.parse(pos, command->partition, expected))
+                if (!parser_partition.parse(pos, command_partition, expected))
                     return false;
 
                 if (s_from.ignore(pos))
@@ -568,7 +593,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_replace_partition.ignore(pos, expected))
             {
-                if (!parser_partition.parse(pos, command->partition, expected))
+                if (!parser_partition.parse(pos, command_partition, expected))
                     return false;
 
                 if (!s_from.ignore(pos, expected))
@@ -582,7 +607,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_attach_part.ignore(pos, expected))
             {
-                if (!parser_string_literal.parse(pos, command->partition, expected))
+                if (!parser_string_and_substituion.parse(pos, command_partition, expected))
                     return false;
 
                 command->part = true;
@@ -590,7 +615,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_fetch_partition.ignore(pos, expected))
             {
-                if (!parser_partition.parse(pos, command->partition, expected))
+                if (!parser_partition.parse(pos, command_partition, expected))
                     return false;
 
                 if (!s_from.ignore(pos, expected))
@@ -605,7 +630,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_fetch_part.ignore(pos, expected))
             {
-                if (!parser_string_literal.parse(pos, command->partition, expected))
+                if (!parser_string_and_substituion.parse(pos, command_partition, expected))
                     return false;
 
                 if (!s_from.ignore(pos, expected))
@@ -622,7 +647,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             {
                 if (s_partition.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command->partition, expected))
+                    if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
 
                     command->type = ASTAlterCommand::FREEZE_PARTITION;
@@ -649,7 +674,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             {
                 if (s_partition.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command->partition, expected))
+                    if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
 
                     command->type = ASTAlterCommand::UNFREEZE_PARTITION;
@@ -684,7 +709,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!is_modify)
                     parser_modify_col_decl.enableCheckTypeKeyword();
 
-                if (!parser_modify_col_decl.parse(pos, command->col_decl, expected))
+                if (!parser_modify_col_decl.parse(pos, command_col_decl, expected))
                     return false;
 
                 if (s_remove.ignore(pos, expected))
@@ -701,7 +726,19 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                         command->remove_property = "CODEC";
                     else if (s_ttl.ignore(pos, expected))
                         command->remove_property = "TTL";
+                    else if (s_settings.ignore(pos, expected))
+                        command->remove_property = "SETTINGS";
                     else
+                        return false;
+                }
+                else if (s_modify_setting.ignore(pos, expected))
+                {
+                    if (!parser_settings.parse(pos, command_settings_changes, expected))
+                        return false;
+                }
+                else if (s_reset_setting.ignore(pos, expected))
+                {
+                    if (!parser_reset_setting.parse(pos, command_settings_resets, expected))
                         return false;
                 }
                 else
@@ -710,7 +747,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                         command->first = true;
                     else if (s_after.ignore(pos, expected))
                     {
-                        if (!parser_name.parse(pos, command->column, expected))
+                        if (!parser_name.parse(pos, command_column, expected))
                             return false;
                     }
                 }
@@ -718,14 +755,14 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_modify_order_by.ignore(pos, expected))
             {
-                if (!parser_exp_elem.parse(pos, command->order_by, expected))
+                if (!parser_exp_elem.parse(pos, command_order_by, expected))
                     return false;
 
                 command->type = ASTAlterCommand::MODIFY_ORDER_BY;
             }
             else if (s_modify_sample_by.ignore(pos, expected))
             {
-                if (!parser_exp_elem.parse(pos, command->sample_by, expected))
+                if (!parser_exp_elem.parse(pos, command_sample_by, expected))
                     return false;
 
                 command->type = ASTAlterCommand::MODIFY_SAMPLE_BY;
@@ -738,33 +775,33 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             {
                 if (s_in_partition.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command->partition, expected))
+                    if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
                 }
 
                 if (!s_where.ignore(pos, expected))
                     return false;
 
-                if (!parser_exp_elem.parse(pos, command->predicate, expected))
+                if (!parser_exp_elem.parse(pos, command_predicate, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DELETE;
             }
             else if (s_update.ignore(pos, expected))
             {
-                if (!parser_assignment_list.parse(pos, command->update_assignments, expected))
+                if (!parser_assignment_list.parse(pos, command_update_assignments, expected))
                     return false;
 
                 if (s_in_partition.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command->partition, expected))
+                    if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
                 }
 
                 if (!s_where.ignore(pos, expected))
                     return false;
 
-                if (!parser_exp_elem.parse(pos, command->predicate, expected))
+                if (!parser_exp_elem.parse(pos, command_predicate, expected))
                     return false;
 
                 command->type = ASTAlterCommand::UPDATE;
@@ -774,17 +811,17 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_name.parse(pos, command->column, expected))
+                if (!parser_name.parse(pos, command_column, expected))
                     return false;
 
-                if (!parser_string_literal.parse(pos, command->comment, expected))
+                if (!parser_string_literal.parse(pos, command_comment, expected))
                     return false;
 
                 command->type = ASTAlterCommand::COMMENT_COLUMN;
             }
             else if (s_modify_ttl.ignore(pos, expected))
             {
-                if (!parser_ttl_list.parse(pos, command->ttl, expected))
+                if (!parser_ttl_list.parse(pos, command_ttl, expected))
                     return false;
                 command->type = ASTAlterCommand::MODIFY_TTL;
             }
@@ -798,25 +835,25 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 if (s_in_partition.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command->partition, expected))
+                    if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
                 }
             }
             else if (s_modify_setting.ignore(pos, expected))
             {
-                if (!parser_settings.parse(pos, command->settings_changes, expected))
+                if (!parser_settings.parse(pos, command_settings_changes, expected))
                     return false;
                 command->type = ASTAlterCommand::MODIFY_SETTING;
             }
             else if (s_reset_setting.ignore(pos, expected))
             {
-                if (!parser_reset_setting.parse(pos, command->settings_resets, expected))
+                if (!parser_reset_setting.parse(pos, command_settings_resets, expected))
                     return false;
                 command->type = ASTAlterCommand::RESET_SETTING;
             }
             else if (s_modify_query.ignore(pos, expected))
             {
-                if (!select_p.parse(pos, command->select, expected))
+                if (!select_p.parse(pos, command_select, expected))
                     return false;
                 command->type = ASTAlterCommand::MODIFY_QUERY;
             }
@@ -828,7 +865,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_modify_comment.ignore(pos, expected))
             {
-                if (!parser_string_literal.parse(pos, command->comment, expected))
+                if (!parser_string_literal.parse(pos, command_comment, expected))
                     return false;
 
                 command->type = ASTAlterCommand::MODIFY_COMMENT;
@@ -839,7 +876,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 if (s_in_partition.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command->partition, expected))
+                    if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
                 }
             }
@@ -848,44 +885,48 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
     }
 
-    if (command->col_decl)
-        command->children.push_back(command->col_decl);
-    if (command->column)
-        command->children.push_back(command->column);
-    if (command->partition)
-        command->children.push_back(command->partition);
-    if (command->order_by)
-        command->children.push_back(command->order_by);
-    if (command->sample_by)
-        command->children.push_back(command->sample_by);
-    if (command->index_decl)
-        command->children.push_back(command->index_decl);
-    if (command->index)
-        command->children.push_back(command->index);
-    if (command->constraint_decl)
-        command->children.push_back(command->constraint_decl);
-    if (command->constraint)
-        command->children.push_back(command->constraint);
-    if (command->projection_decl)
-        command->children.push_back(command->projection_decl);
-    if (command->projection)
-        command->children.push_back(command->projection);
-    if (command->predicate)
-        command->children.push_back(command->predicate);
-    if (command->update_assignments)
-        command->children.push_back(command->update_assignments);
-    if (command->values)
-        command->children.push_back(command->values);
-    if (command->comment)
-        command->children.push_back(command->comment);
-    if (command->ttl)
-        command->children.push_back(command->ttl);
-    if (command->settings_changes)
-        command->children.push_back(command->settings_changes);
-    if (command->select)
-        command->children.push_back(command->select);
-    if (command->rename_to)
-        command->children.push_back(command->rename_to);
+    if (command_col_decl)
+        command->col_decl = command->children.emplace_back(std::move(command_col_decl)).get();
+    if (command_column)
+        command->column = command->children.emplace_back(std::move(command_column)).get();
+    if (command_order_by)
+        command->order_by = command->children.emplace_back(std::move(command_order_by)).get();
+    if (command_sample_by)
+        command->sample_by = command->children.emplace_back(std::move(command_sample_by)).get();
+    if (command_index_decl)
+        command->index_decl = command->children.emplace_back(std::move(command_index_decl)).get();
+    if (command_index)
+        command->index = command->children.emplace_back(std::move(command_index)).get();
+    if (command_constraint_decl)
+        command->constraint_decl = command->children.emplace_back(std::move(command_constraint_decl)).get();
+    if (command_constraint)
+        command->constraint = command->children.emplace_back(std::move(command_constraint)).get();
+    if (command_projection_decl)
+        command->projection_decl = command->children.emplace_back(std::move(command_projection_decl)).get();
+    if (command_projection)
+        command->projection = command->children.emplace_back(std::move(command_projection)).get();
+    if (command_statistic_decl)
+        command->statistic_decl = command->children.emplace_back(std::move(command_statistic_decl)).get();
+    if (command_partition)
+        command->partition = command->children.emplace_back(std::move(command_partition)).get();
+    if (command_predicate)
+        command->predicate = command->children.emplace_back(std::move(command_predicate)).get();
+    if (command_update_assignments)
+        command->update_assignments = command->children.emplace_back(std::move(command_update_assignments)).get();
+    if (command_comment)
+        command->comment = command->children.emplace_back(std::move(command_comment)).get();
+    if (command_ttl)
+        command->ttl = command->children.emplace_back(std::move(command_ttl)).get();
+    if (command_settings_changes)
+        command->settings_changes = command->children.emplace_back(std::move(command_settings_changes)).get();
+    if (command_settings_resets)
+        command->settings_resets = command->children.emplace_back(std::move(command_settings_resets)).get();
+    if (command_select)
+        command->select = command->children.emplace_back(std::move(command_select)).get();
+    if (command_values)
+        command->values = command->children.emplace_back(std::move(command_values)).get();
+    if (command_rename_to)
+        command->rename_to = command->children.emplace_back(std::move(command_rename_to)).get();
 
     return true;
 }

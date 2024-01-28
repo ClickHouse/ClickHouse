@@ -21,7 +21,8 @@ RestoreCoordinationRemote::RestoreCoordinationRemote(
     const String & restore_uuid_,
     const Strings & all_hosts_,
     const String & current_host_,
-    bool is_internal_)
+    bool is_internal_,
+    QueryStatusPtr process_list_element_)
     : get_zookeeper(get_zookeeper_)
     , root_zookeeper_path(root_zookeeper_path_)
     , keeper_settings(keeper_settings_)
@@ -31,11 +32,12 @@ RestoreCoordinationRemote::RestoreCoordinationRemote(
     , current_host(current_host_)
     , current_host_index(BackupCoordinationRemote::findCurrentHostIndex(all_hosts, current_host))
     , is_internal(is_internal_)
-    , log(&Poco::Logger::get("RestoreCoordinationRemote"))
+    , log(getLogger("RestoreCoordinationRemote"))
     , with_retries(
         log,
         get_zookeeper_,
         keeper_settings,
+        process_list_element_,
         [my_zookeeper_path = zookeeper_path, my_current_host = current_host, my_is_internal = is_internal]
         (WithRetries::FaultyKeeper & zk)
         {

@@ -1,16 +1,14 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
-#include <iomanip>
 #include <iostream>
 
 
 #include <algorithm>
 #include <numeric>
-#include <random>
-#include <memory>
 #include <thread>
 
+#include <Common/iota.h>
 #include <Common/randomSeed.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
@@ -47,6 +45,11 @@ namespace fs = std::filesystem;
 using namespace DB;
 
 static constexpr auto TEST_LOG_LEVEL = "debug";
+
+namespace DB::ErrorCodes
+{
+    extern const int FILECACHE_ACCESS_DENIED;
+}
 
 void printRanges(const auto & segments)
 {
@@ -85,6 +88,7 @@ using HolderPtr = FileSegmentsHolderPtr;
 fs::path caches_dir = fs::current_path() / "lru_cache_test";
 std::string cache_base_path = caches_dir / "cache1" / "";
 std::string cache_base_path2 = caches_dir / "cache2" / "";
+std::string cache_base_path3 = caches_dir / "cache3" / "";
 
 
 void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
@@ -146,6 +150,18 @@ void assertEqual(const std::vector<FileSegment::Info> & file_segments, const Ran
     }
 }
 
+void assertEqual(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected_ranges, const States & expected_states = {})
+{
+    if (const auto * lru = dynamic_cast<const LRUFileCachePriority::LRUPriorityDump *>(dump.get()))
+    {
+        assertEqual(lru->infos, expected_ranges, expected_states);
+    }
+    else
+    {
+        ASSERT_TRUE(false);
+    }
+}
+
 void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected, bool assert_protected)
 {
     std::cerr << "\nFile segments: ";
@@ -187,6 +203,30 @@ void assertProbationary(const std::vector<FileSegmentInfo> & file_segments, cons
 {
     std::cerr << "\nAssert probationary";
     assertProtectedOrProbationary(file_segments, expected, false);
+}
+
+void assertProtected(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected)
+{
+    if (const auto * lru = dynamic_cast<const LRUFileCachePriority::LRUPriorityDump *>(dump.get()))
+    {
+        assertProtected(lru->infos, expected);
+    }
+    else
+    {
+        ASSERT_TRUE(false);
+    }
+}
+
+void assertProbationary(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected)
+{
+    if (const auto * lru = dynamic_cast<const LRUFileCachePriority::LRUPriorityDump *>(dump.get()))
+    {
+        assertProbationary(lru->infos, expected);
+    }
+    else
+    {
+        ASSERT_TRUE(false);
+    }
 }
 
 FileSegment & get(const HolderPtr & holder, int i)
@@ -319,14 +359,20 @@ TEST_F(FileCacheTest, LRUPolicy)
 
     const size_t file_size = INT_MAX; // the value doesn't really matter because boundary_alignment == 1.
 
+    const auto user = FileCache::getCommonUser();
     {
         std::cerr << "Step 1\n";
         auto cache = DB::FileCache("1", settings);
         cache.initialize();
         auto key = cache.createKeyForPath("key1");
 
+        auto get_or_set = [&](size_t offset, size_t size)
         {
-            auto holder = cache.getOrSet(key, 0, 10, file_size, {}); /// Add range [0, 9]
+            return cache.getOrSet(key, offset, size, file_size, {}, 0, user);
+        };
+
+        {
+            auto holder = get_or_set(0, 10); /// Add range [0, 9]
             assertEqual(holder, { Range(0, 9) }, { State::EMPTY });
             download(holder->front());
             assertEqual(holder, { Range(0, 9) }, { State::DOWNLOADED });
@@ -336,7 +382,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         /// Current cache:    [__________]
         ///                   ^          ^
         ///                   0          9
-        assertEqual(cache.getFileSegmentInfos(key), { Range(0, 9) });
+        assertEqual(cache.getFileSegmentInfos(key, user.user_id), { Range(0, 9) });
         assertEqual(cache.dumpQueue(), { Range(0, 9) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 1);
         ASSERT_EQ(cache.getUsedCacheSize(), 10);
@@ -345,7 +391,7 @@ TEST_F(FileCacheTest, LRUPolicy)
 
         {
             /// Want range [5, 14], but [0, 9] already in cache, so only [10, 14] will be put in cache.
-            auto holder = cache.getOrSet(key, 5, 10, file_size, {});
+            auto holder = get_or_set(5, 10);
             assertEqual(holder, { Range(0, 9), Range(10, 14) }, { State::DOWNLOADED, State::EMPTY });
             download(get(holder, 1));
             assertEqual(holder, { Range(0, 9), Range(10, 14) }, { State::DOWNLOADED, State::DOWNLOADED });
@@ -355,7 +401,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         /// Current cache:    [__________][_____]
         ///                   ^          ^^     ^
         ///                   0          910    14
-        assertEqual(cache.getFileSegmentInfos(key), { Range(0, 9), Range(10, 14) });
+        assertEqual(cache.getFileSegmentInfos(key, user.user_id), { Range(0, 9), Range(10, 14) });
         assertEqual(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 2);
         ASSERT_EQ(cache.getUsedCacheSize(), 15);
@@ -364,23 +410,23 @@ TEST_F(FileCacheTest, LRUPolicy)
 
         /// Get [9, 9]
         {
-            auto holder = cache.getOrSet(key, 9, 1, file_size, {});
+            auto holder = get_or_set(9, 1);
             assertEqual(holder, { Range(0, 9) }, { State::DOWNLOADED });
             increasePriority(holder);
         }
 
         assertEqual(cache.dumpQueue(), { Range(10, 14), Range(0, 9) });
         /// Get [9, 10]
-        assertEqual(cache.getOrSet(key, 9, 2, file_size, {}), {Range(0, 9), Range(10, 14)}, {State::DOWNLOADED, State::DOWNLOADED});
+        assertEqual(get_or_set(9, 2), {Range(0, 9), Range(10, 14)}, {State::DOWNLOADED, State::DOWNLOADED});
 
         /// Get [10, 10]
         {
-            auto holder = cache.getOrSet(key, 10, 1, file_size, {});
+            auto holder = get_or_set(10, 1);
             assertEqual(holder, { Range(10, 14) }, { State::DOWNLOADED });
             increasePriority(holder);
         }
 
-        assertEqual(cache.getFileSegmentInfos(key), { Range(0, 9), Range(10, 14) });
+        assertEqual(cache.getFileSegmentInfos(key, user.user_id), { Range(0, 9), Range(10, 14) });
         assertEqual(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 2);
         ASSERT_EQ(cache.getUsedCacheSize(), 15);
@@ -388,19 +434,19 @@ TEST_F(FileCacheTest, LRUPolicy)
         std::cerr << "Step 4\n";
 
         {
-            auto holder = cache.getOrSet(key, 17, 4, file_size, {});
+            auto holder = get_or_set(17, 4);
             download(holder); /// Get [17, 20]
             increasePriority(holder);
         }
 
         {
-            auto holder = cache.getOrSet(key, 24, 3, file_size, {});
+            auto holder = get_or_set(24, 3);
             download(holder); /// Get [24, 26]
             increasePriority(holder);
         }
 
         {
-            auto holder = cache.getOrSet(key, 27, 1, file_size, {});
+            auto holder = get_or_set(27, 1);
             download(holder); /// Get [27, 27]
             increasePriority(holder);
         }
@@ -409,14 +455,14 @@ TEST_F(FileCacheTest, LRUPolicy)
         ///                   ^          ^^     ^   ^    ^    ^   ^^^
         ///                   0          910    14  17   20   24  2627
         ///
-        assertEqual(cache.getFileSegmentInfos(key), { Range(0, 9), Range(10, 14), Range(17, 20), Range(24, 26), Range(27, 27) });
+        assertEqual(cache.getFileSegmentInfos(key, user.user_id), { Range(0, 9), Range(10, 14), Range(17, 20), Range(24, 26), Range(27, 27) });
         assertEqual(cache.dumpQueue(), { Range(0, 9), Range(10, 14), Range(17, 20), Range(24, 26), Range(27, 27) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 23);
 
         std::cerr << "Step 5\n";
         {
-            auto holder = cache.getOrSet(key, 0, 26, file_size, {}); /// Get [0, 25]
+            auto holder = get_or_set(0, 26);
             assertEqual(holder,
                         { Range(0, 9),       Range(10, 14),     Range(15, 16),  Range(17, 20),     Range(21, 23), Range(24, 26) },
                         { State::DOWNLOADED, State::DOWNLOADED, State::EMPTY,   State::DOWNLOADED, State::EMPTY,  State::DOWNLOADED });
@@ -433,12 +479,12 @@ TEST_F(FileCacheTest, LRUPolicy)
             /// Let's not invalidate pointers to returned segments from range [0, 25] and
             /// as max elements size is reached, next attempt to put something in cache should fail.
             /// This will also check that [27, 27] was indeed evicted.
-            auto holder2 = cache.getOrSet(key, 27, 1, file_size, {});
+            auto holder2 = get_or_set(27, 1);
             assertEqual(holder2, { Range(27, 27) }, { State::EMPTY });
             assertDownloadFails(holder2->front());
             assertEqual(holder2, { Range(27, 27) }, { State::DETACHED });
 
-            auto holder3 = cache.getOrSet(key, 28, 3, file_size, {});
+            auto holder3 = get_or_set(28, 3);
             assertEqual(holder3, { Range(28, 30) }, { State::EMPTY });
             assertDownloadFails(holder3->front());
             assertEqual(holder3, { Range(28, 30) }, { State::DETACHED });
@@ -452,7 +498,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         ///                   ^                            ^    ^
         ///                   0                            20   24
         ///
-        assertEqual(cache.getFileSegmentInfos(key), { Range(0, 9), Range(10, 14), Range(15, 16), Range(17, 20), Range(24, 26) });
+        assertEqual(cache.getFileSegmentInfos(key, user.user_id), { Range(0, 9), Range(10, 14), Range(15, 16), Range(17, 20), Range(24, 26) });
         assertEqual(cache.dumpQueue(), { Range(0, 9), Range(10, 14), Range(15, 16), Range(17, 20), Range(24, 26) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 24);
@@ -460,7 +506,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         std::cerr << "Step 6\n";
 
         {
-            auto holder = cache.getOrSet(key, 12, 10, file_size, {}); /// Get [12, 21]
+            auto holder = get_or_set(12, 10);
             assertEqual(holder,
                         { Range(10, 14),     Range(15, 16),     Range(17, 20),     Range(21, 21) },
                         { State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::EMPTY });
@@ -474,14 +520,14 @@ TEST_F(FileCacheTest, LRUPolicy)
         /// Current cache:    [_____][__][____][_]   [___]
         ///                   ^          ^       ^   ^   ^
         ///                   10         17      21  24  26
-        assertEqual(cache.getFileSegmentInfos(key), { Range(10, 14), Range(15, 16), Range(17, 20), Range(21, 21), Range(24, 26) });
+        assertEqual(cache.getFileSegmentInfos(key, user.user_id), { Range(10, 14), Range(15, 16), Range(17, 20), Range(21, 21), Range(24, 26) });
         assertEqual(cache.dumpQueue(), { Range(24, 26), Range(10, 14), Range(15, 16), Range(17, 20), Range(21, 21) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 15);
 
         std::cerr << "Step 7\n";
         {
-            auto holder = cache.getOrSet(key, 23, 5, file_size, {}); /// Get [23, 27]
+            auto holder = get_or_set(23, 5);
             assertEqual(holder,
                         { Range(23, 23), Range(24, 26),     Range(27, 27) },
                         { State::EMPTY,  State::DOWNLOADED, State::EMPTY });
@@ -493,32 +539,32 @@ TEST_F(FileCacheTest, LRUPolicy)
         /// Current cache:    [____][_]  [][___][__]
         ///                   ^       ^  ^^^   ^^  ^
         ///                   17      21 2324  26  27
-        assertEqual(cache.getFileSegmentInfos(key), { Range(17, 20), Range(21, 21), Range(23, 23), Range(24, 26), Range(27, 27) });
+        assertEqual(cache.getFileSegmentInfos(key, user.user_id), { Range(17, 20), Range(21, 21), Range(23, 23), Range(24, 26), Range(27, 27) });
         assertEqual(cache.dumpQueue(), { Range(17, 20), Range(21, 21), Range(23, 23), Range(24, 26), Range(27, 27) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 10);
 
         std::cerr << "Step 8\n";
         {
-            auto holder = cache.getOrSet(key, 2, 3, file_size, {}); /// Get [2, 4]
+            auto holder = get_or_set(2, 3); /// Get [2, 4]
             assertEqual(holder, { Range(2, 4) }, { State::EMPTY });
 
-            auto holder2 = cache.getOrSet(key, 30, 2, file_size, {}); /// Get [30, 31]
+            auto holder2 = get_or_set(30, 2); /// Get [30, 31]
             assertEqual(holder2, { Range(30, 31) }, { State::EMPTY });
 
             download(get(holder, 0));
             download(get(holder2, 0));
 
-            auto holder3 = cache.getOrSet(key, 23, 1, file_size, {}); /// Get [23, 23]
+            auto holder3 = get_or_set(23, 1); /// Get [23, 23]
             assertEqual(holder3, { Range(23, 23) }, { State::DOWNLOADED });
 
-            auto holder4 = cache.getOrSet(key, 24, 3, file_size, {}); /// Get [24, 26]
+            auto holder4 = get_or_set(24, 3); /// Get [24, 26]
             assertEqual(holder4, { Range(24, 26) }, { State::DOWNLOADED });
 
-            auto holder5 = cache.getOrSet(key, 27, 1, file_size, {}); /// Get [27, 27]
+            auto holder5 = get_or_set(27, 1); /// Get [27, 27]
             assertEqual(holder5, { Range(27, 27) }, { State::DOWNLOADED });
 
-            auto holder6 = cache.getOrSet(key, 0, 40, file_size, {});
+            auto holder6 = get_or_set(0, 40);
             assertEqual(holder6,
                         { Range(0, 1), Range(2, 4),        Range(5, 22), Range(23, 23),     Range(24, 26),     Range(27, 27),    Range(28, 29), Range(30, 31),     Range(32, 39) },
                         { State::EMPTY, State::DOWNLOADED, State::EMPTY, State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::EMPTY, State::DOWNLOADED, State::EMPTY });
@@ -539,21 +585,21 @@ TEST_F(FileCacheTest, LRUPolicy)
         /// Current cache:    [___]       [_][___][_]   [__]
         ///                   ^   ^       ^  ^   ^  ^   ^  ^
         ///                   2   4       23 24  26 27  30 31
-        assertEqual(cache.getFileSegmentInfos(key), { Range(2, 4), Range(23, 23), Range(24, 26), Range(27, 27), Range(30, 31) });
+        assertEqual(cache.getFileSegmentInfos(key, user.user_id), { Range(2, 4), Range(23, 23), Range(24, 26), Range(27, 27), Range(30, 31) });
         assertEqual(cache.dumpQueue(), { Range(2, 4), Range(23, 23), Range(24, 26), Range(27, 27), Range(30, 31) });
 
         std::cerr << "Step 9\n";
 
         /// Get [2, 4]
         {
-            auto holder = cache.getOrSet(key, 2, 3, file_size, {});
+            auto holder = get_or_set(2, 3);
             assertEqual(holder, { Range(2, 4) }, { State::DOWNLOADED });
             increasePriority(holder);
         }
 
 
         {
-            auto holder = cache.getOrSet(key, 25, 5, file_size, {}); /// Get [25, 29]
+            auto holder = get_or_set(25, 5); /// Get [25, 29]
             assertEqual(holder,
                         { Range(24, 26),     Range(27, 27),     Range(28, 29) },
                         { State::DOWNLOADED, State::DOWNLOADED, State::EMPTY });
@@ -575,7 +621,7 @@ TEST_F(FileCacheTest, LRUPolicy)
                 chassert(&DB::CurrentThread::get() == &thread_status_1);
                 DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
 
-                auto holder2 = cache.getOrSet(key, 25, 5, file_size, {}); /// Get [25, 29] once again.
+                auto holder2 = get_or_set(25, 5); /// Get [25, 29] once again.
                 assertEqual(holder2,
                             { Range(24, 26),     Range(27, 27),     Range(28, 29) },
                             { State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADING });
@@ -610,7 +656,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         /// Current cache:    [___]       [___][_][__][__]
         ///                   ^   ^       ^   ^  ^^  ^^  ^
         ///                   2   4       24  26 27  2930 31
-        assertEqual(cache.getFileSegmentInfos(key), { Range(2, 4), Range(24, 26), Range(27, 27), Range(28, 29), Range(30, 31) });
+        assertEqual(cache.getFileSegmentInfos(key, user.user_id), { Range(2, 4), Range(24, 26), Range(27, 27), Range(28, 29), Range(30, 31) });
         assertEqual(cache.dumpQueue(), { Range(30, 31), Range(2, 4), Range(24, 26), Range(27, 27), Range(28, 29) });
 
         std::cerr << "Step 10\n";
@@ -619,7 +665,7 @@ TEST_F(FileCacheTest, LRUPolicy)
             /// state is changed not manually via segment->completeWithState(state) but from destructor of holder
             /// and notify_all() is also called from destructor of holder.
 
-            auto holder = cache.getOrSet(key, 3, 23, file_size, {}); /// Get [3, 25]
+            auto holder = get_or_set(3, 23); /// Get [3, 25]
             assertEqual(holder,
                         { Range(2, 4),       Range(5, 23), Range(24, 26) },
                         { State::DOWNLOADED, State::EMPTY, State::DOWNLOADED });
@@ -641,7 +687,7 @@ TEST_F(FileCacheTest, LRUPolicy)
                 chassert(&DB::CurrentThread::get() == &thread_status_1);
                 DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
 
-                auto holder2 = cache.getOrSet(key, 3, 23, file_size, {}); /// Get [3, 25] once again
+                auto holder2 = get_or_set(3, 23); /// get [3, 25] once again.
                 assertEqual(holder,
                             { Range(2, 4),       Range(5, 23),       Range(24, 26) },
                             { State::DOWNLOADED, State::DOWNLOADING, State::DOWNLOADED });
@@ -686,7 +732,7 @@ TEST_F(FileCacheTest, LRUPolicy)
 
         /// Get [2, 29]
         assertEqual(
-            cache2.getOrSet(key, 2, 28, file_size, {}),
+            cache2.getOrSet(key, 2, 28, file_size, {}, 0, user),
             {Range(2, 4), Range(5, 23), Range(24, 26), Range(27, 27), Range(28, 29)},
             {State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED});
     }
@@ -705,7 +751,7 @@ TEST_F(FileCacheTest, LRUPolicy)
 
         /// Get [0, 24]
         assertEqual(
-            cache2.getOrSet(key, 0, 25, file_size, {}),
+            cache2.getOrSet(key, 0, 25, file_size, {}, 0, user),
             {Range(0, 9), Range(10, 19), Range(20, 24)},
             {State::EMPTY, State::EMPTY, State::EMPTY});
     }
@@ -717,21 +763,21 @@ TEST_F(FileCacheTest, LRUPolicy)
         auto cache = FileCache("4", settings);
         cache.initialize();
         const auto key = cache.createKeyForPath("key10");
-        const auto key_path = cache.getPathInLocalCache(key);
+        const auto key_path = cache.getKeyPath(key, user);
 
-        cache.removeAllReleasable();
+        cache.removeAllReleasable(user.user_id);
         ASSERT_EQ(cache.getUsedCacheSize(), 0);
         ASSERT_TRUE(!fs::exists(key_path));
         ASSERT_TRUE(!fs::exists(fs::path(key_path).parent_path()));
 
-        download(cache.getOrSet(key, 0, 10, file_size, {}));
+        download(cache.getOrSet(key, 0, 10, file_size, {}, 0, user));
         ASSERT_EQ(cache.getUsedCacheSize(), 10);
-        ASSERT_TRUE(fs::exists(cache.getPathInLocalCache(key, 0, FileSegmentKind::Regular)));
+        ASSERT_TRUE(fs::exists(cache.getFileSegmentPath(key, 0, FileSegmentKind::Regular, user)));
 
-        cache.removeAllReleasable();
+        cache.removeAllReleasable(user.user_id);
         ASSERT_EQ(cache.getUsedCacheSize(), 0);
         ASSERT_TRUE(!fs::exists(key_path));
-        ASSERT_TRUE(!fs::exists(cache.getPathInLocalCache(key, 0, FileSegmentKind::Regular)));
+        ASSERT_TRUE(!fs::exists(cache.getFileSegmentPath(key, 0, FileSegmentKind::Regular, user)));
     }
 
     std::cerr << "Step 14\n";
@@ -741,18 +787,18 @@ TEST_F(FileCacheTest, LRUPolicy)
         auto cache = DB::FileCache("5", settings);
         cache.initialize();
         const auto key = cache.createKeyForPath("key10");
-        const auto key_path = cache.getPathInLocalCache(key);
+        const auto key_path = cache.getKeyPath(key, user);
 
-        cache.removeAllReleasable();
+        cache.removeAllReleasable(user.user_id);
         ASSERT_EQ(cache.getUsedCacheSize(), 0);
         ASSERT_TRUE(!fs::exists(key_path));
         ASSERT_TRUE(!fs::exists(fs::path(key_path).parent_path()));
 
-        download(cache.getOrSet(key, 0, 10, file_size, {}));
+        download(cache.getOrSet(key, 0, 10, file_size, {}, 0, user));
         ASSERT_EQ(cache.getUsedCacheSize(), 10);
         ASSERT_TRUE(fs::exists(key_path));
 
-        cache.removeAllReleasable();
+        cache.removeAllReleasable(user.user_id);
         ASSERT_EQ(cache.getUsedCacheSize(), 0);
         sleepForSeconds(2);
         ASSERT_TRUE(!fs::exists(key_path));
@@ -769,17 +815,18 @@ TEST_F(FileCacheTest, writeBuffer)
 
     FileCache cache("6", settings);
     cache.initialize();
+    const auto user = FileCache::getCommonUser();
 
-    auto write_to_cache = [&cache, this](const String & key, const Strings & data, bool flush, ReadBufferPtr * out_read_buffer = nullptr)
+    auto write_to_cache = [&, this](const String & key, const Strings & data, bool flush, ReadBufferPtr * out_read_buffer = nullptr)
     {
         CreateFileSegmentSettings segment_settings;
         segment_settings.kind = FileSegmentKind::Temporary;
         segment_settings.unbounded = true;
 
         auto cache_key = cache.createKeyForPath(key);
-        auto holder = cache.set(cache_key, 0, 3, segment_settings);
+        auto holder = cache.set(cache_key, 0, 3, segment_settings, user);
         /// The same is done in TemporaryDataOnDisk::createStreamToCacheFile.
-        std::filesystem::create_directories(cache.getPathInLocalCache(cache_key));
+        std::filesystem::create_directories(cache.getKeyPath(cache_key, user));
         EXPECT_EQ(holder->size(), 1);
         auto & segment = holder->front();
         WriteBufferToFileSegment out(&segment);
@@ -788,7 +835,7 @@ TEST_F(FileCacheTest, writeBuffer)
 
         /// get random permutation of indexes
         std::vector<size_t> indexes(data.size());
-        std::iota(indexes.begin(), indexes.end(), 0);
+        iota(indexes.data(), indexes.size(), size_t(0));
         std::shuffle(indexes.begin(), indexes.end(), rng);
 
         for (auto i : indexes)
@@ -817,7 +864,7 @@ TEST_F(FileCacheTest, writeBuffer)
     std::vector<fs::path> file_segment_paths;
     {
         auto holder = write_to_cache("key1", {"abc", "defg"}, false);
-        file_segment_paths.emplace_back(holder->front().getPathInLocalCache());
+        file_segment_paths.emplace_back(holder->front().getPath());
 
         ASSERT_EQ(fs::file_size(file_segment_paths.back()), 7);
         EXPECT_EQ(holder->front().range().size(), 7);
@@ -828,7 +875,7 @@ TEST_F(FileCacheTest, writeBuffer)
             ReadBufferPtr reader = nullptr;
 
             auto holder2 = write_to_cache("key2", {"22", "333", "4444", "55555", "1"}, true, &reader);
-            file_segment_paths.emplace_back(holder2->front().getPathInLocalCache());
+            file_segment_paths.emplace_back(holder2->front().getPath());
 
             std::cerr << "\nFile segments: " << holder2->toString() << "\n";
 
@@ -899,9 +946,10 @@ TEST_F(FileCacheTest, temporaryData)
     DB::FileCache file_cache("7", settings);
     file_cache.initialize();
 
+    const auto user = FileCache::getCommonUser();
     auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(nullptr, &file_cache, 0);
 
-    auto some_data_holder = file_cache.getOrSet(file_cache.createKeyForPath("some_data"), 0, 5_KiB, 5_KiB, CreateFileSegmentSettings{});
+    auto some_data_holder = file_cache.getOrSet(file_cache.createKeyForPath("some_data"), 0, 5_KiB, 5_KiB, CreateFileSegmentSettings{}, 0, user);
 
     {
         ASSERT_EQ(some_data_holder->size(), 5);
@@ -1040,10 +1088,11 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     auto cache = std::make_shared<DB::FileCache>("8", settings);
     cache->initialize();
     auto key = cache->createKeyForPath(file_path);
+    const auto user = FileCache::getCommonUser();
 
     {
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
-            file_path, key, cache, read_buffer_creator, read_settings, "test", s.size(), false, false, std::nullopt, nullptr);
+            file_path, key, cache, user, read_buffer_creator, read_settings, "test", s.size(), false, false, std::nullopt, nullptr);
 
         WriteBufferFromOwnString result;
         copyData(*cached_buffer, result);
@@ -1058,7 +1107,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
         modified_settings.remote_fs_buffer_size = 10;
 
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
-            file_path, key, cache, read_buffer_creator, modified_settings, "test", s.size(), false, false, std::nullopt, nullptr);
+            file_path, key, cache, user, read_buffer_creator, modified_settings, "test", s.size(), false, false, std::nullopt, nullptr);
 
         cached_buffer->next();
         assertEqual(cache->dumpQueue(), {Range(10, 14), Range(15, 19), Range(20, 24), Range(25, 29), Range(0, 4), Range(5, 9)});
@@ -1145,6 +1194,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
 
     const size_t file_size = -1; // the value doesn't really matter because boundary_alignment == 1.
     size_t file_cache_name = 0;
+    const auto user = FileCache::getCommonUser();
 
     {
         auto cache = DB::FileCache(std::to_string(++file_cache_name), settings);
@@ -1155,7 +1205,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
         {
             std::cerr << "Add [" << offset << ", " << offset + size - 1 << "]" << std::endl;
 
-            auto holder = cache.getOrSet(key, offset, size, file_size, {});
+            auto holder = cache.getOrSet(key, offset, size, file_size, {}, 0, user);
             assertEqual(holder, { Range(offset, offset + size - 1) }, { State::EMPTY });
             download(holder->front());
             assertEqual(holder, { Range(offset, offset + size - 1) }, { State::DOWNLOADED });
@@ -1163,7 +1213,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
 
         auto check_covering_range = [&](size_t offset, size_t size, Ranges covering_ranges)
         {
-            auto holder = cache.getOrSet(key, offset, size, file_size, {});
+            auto holder = cache.getOrSet(key, offset, size, file_size, {}, 0, user);
             std::vector<State> states(covering_ranges.size(), State::DOWNLOADED);
             assertEqual(holder, covering_ranges, states);
             increasePriority(holder);
@@ -1172,7 +1222,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
         add_range(0, 10);
         add_range(10, 5);
 
-        assertEqual(cache.getFileSegmentInfos(key), { Range(0, 9), Range(10, 14) });
+        assertEqual(cache.getFileSegmentInfos(key, user.user_id), { Range(0, 9), Range(10, 14) });
         assertEqual(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
 
         ASSERT_EQ(cache.getFileSegmentsNum(), 2);
@@ -1202,7 +1252,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
         assertProbationary(cache.dumpQueue(), { Range(17, 20), Range(24, 26), Range(27, 27) });
         assertProtected(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
 
-        assertEqual(cache.getFileSegmentInfos(key), { Range(0, 9), Range(10, 14), Range(17, 20), Range(24, 26), Range(27, 27) });
+        assertEqual(cache.getFileSegmentInfos(key, user.user_id), { Range(0, 9), Range(10, 14), Range(17, 20), Range(24, 26), Range(27, 27) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 23);
 
@@ -1222,7 +1272,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
         assertProbationary(cache.dumpQueue(), { Range(24, 26), Range(10, 14) });
         assertProtected(cache.dumpQueue(), { Range(0, 9), Range(27, 27), Range(28, 30) });
 
-        assertEqual(cache.getFileSegmentInfos(key), { Range(0, 9), Range(10, 14), Range(24, 26), Range(27, 27), Range(28, 30) });
+        assertEqual(cache.getFileSegmentInfos(key, user.user_id), { Range(0, 9), Range(10, 14), Range(24, 26), Range(27, 27), Range(28, 30) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 22);
     }
@@ -1262,7 +1312,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
             };
 
             auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
-                file, key, cache, read_buffer_creator, read_settings, "test", expect_result.size(), false, false, std::nullopt, nullptr);
+                file, key, cache, user, read_buffer_creator, read_settings, "test", expect_result.size(), false, false, std::nullopt, nullptr);
 
             WriteBufferFromOwnString result;
             copyData(*cached_buffer, result);
@@ -1294,11 +1344,12 @@ TEST_F(FileCacheTest, SLRUPolicy)
         auto dump = cache->dumpQueue();
         assertEqual(dump, { Range(0, 4), Range(5, 9), Range(0, 4), Range(5, 9), Range(10, 14) });
 
-        ASSERT_EQ(dump[0].key, key2);
-        ASSERT_EQ(dump[1].key, key2);
-        ASSERT_EQ(dump[2].key, key1);
-        ASSERT_EQ(dump[3].key, key1);
-        ASSERT_EQ(dump[4].key, key1);
+        const auto & infos = dynamic_cast<const LRUFileCachePriority::LRUPriorityDump *>(dump.get())->infos;
+        ASSERT_EQ(infos[0].key, key2);
+        ASSERT_EQ(infos[1].key, key2);
+        ASSERT_EQ(infos[2].key, key1);
+        ASSERT_EQ(infos[3].key, key1);
+        ASSERT_EQ(infos[4].key, key1);
 
         assertProbationary(cache->dumpQueue(), { Range(0, 4), Range(5, 9) });
         assertProtected(cache->dumpQueue(), { Range(0, 4), Range(5, 9), Range(10, 14) });
@@ -1308,11 +1359,12 @@ TEST_F(FileCacheTest, SLRUPolicy)
         dump = cache->dumpQueue();
         assertEqual(dump, { Range(0, 4), Range(5, 9), Range(10, 14), Range(0, 4), Range(5, 9)  });
 
-        ASSERT_EQ(dump[0].key, key1);
-        ASSERT_EQ(dump[1].key, key1);
-        ASSERT_EQ(dump[2].key, key1);
-        ASSERT_EQ(dump[3].key, key2);
-        ASSERT_EQ(dump[4].key, key2);
+        const auto & infos2 = dynamic_cast<const LRUFileCachePriority::LRUPriorityDump *>(dump.get())->infos;
+        ASSERT_EQ(infos2[0].key, key1);
+        ASSERT_EQ(infos2[1].key, key1);
+        ASSERT_EQ(infos2[2].key, key1);
+        ASSERT_EQ(infos2[3].key, key2);
+        ASSERT_EQ(infos2[4].key, key2);
 
         assertProbationary(cache->dumpQueue(), { Range(0, 4), Range(5, 9) });
         assertProtected(cache->dumpQueue(), { Range(10, 14), Range(0, 4), Range(5, 9)  });

@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std::filesystem::path & local_path_)
 {
-    auto * log = &Poco::Logger::get("RemoteCacheController");
+    auto log = getLogger("RemoteCacheController");
 
     if (!std::filesystem::exists(local_path_ / "data.bin"))
     {

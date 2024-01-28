@@ -20,6 +20,7 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/registerInterpreters.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/scope_guard_safe.h>
 #include <Interpreters/Session.h>
@@ -220,7 +221,7 @@ void LocalServer::tryInitPath()
     {
         // The path is not provided explicitly - use a unique path in the system temporary directory
         // (or in the current dir if temporary don't exist)
-        Poco::Logger * log = &logger();
+        LoggerRawPtr log = &logger();
         std::filesystem::path parent_folder;
         std::filesystem::path default_path;
 
@@ -288,6 +289,11 @@ void LocalServer::cleanup()
     try
     {
         connection.reset();
+
+        /// Suggestions are loaded async in a separate thread and it can use global context.
+        /// We should reset it before resetting global_context.
+        if (suggest)
+            suggest.reset();
 
         if (global_context)
         {
@@ -486,6 +492,7 @@ try
         Poco::ErrorHandler::set(&error_handler);
     }
 
+    registerInterpreters();
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
@@ -624,7 +631,7 @@ void LocalServer::processConfig()
 
     tryInitPath();
 
-    Poco::Logger * log = &logger();
+    LoggerRawPtr log = &logger();
 
     /// Maybe useless
     if (config().has("macros"))

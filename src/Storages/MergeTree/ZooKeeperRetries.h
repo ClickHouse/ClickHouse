@@ -30,7 +30,7 @@ struct ZooKeeperRetriesInfo
 class ZooKeeperRetriesControl
 {
 public:
-    ZooKeeperRetriesControl(std::string name_, Poco::Logger * logger_, ZooKeeperRetriesInfo retries_info_, QueryStatusPtr elem)
+    ZooKeeperRetriesControl(std::string name_, LoggerPtr logger_, ZooKeeperRetriesInfo retries_info_, QueryStatusPtr elem)
         : name(std::move(name_)), logger(logger_), retries_info(retries_info_), process_list_element(elem)
     {
     }
@@ -151,7 +151,7 @@ public:
 
     bool isLastRetry() const { return total_failures >= retries_info.max_retries; }
 
-    bool isRetry() const { return current_iteration > 1; }
+    bool isRetry() const { return current_iteration > 0; }
 
     const std::string & getLastKeeperErrorMessage() const { return keeper_error.message; }
 
@@ -160,7 +160,7 @@ public:
 
     const std::string & getName() const { return name; }
 
-    Poco::Logger * getLogger() const { return logger; }
+    LoggerPtr getLogger() const { return logger; }
 
 private:
     struct KeeperError
@@ -263,7 +263,7 @@ private:
 
 
     std::string name;
-    Poco::Logger * logger = nullptr;
+    LoggerPtr logger = nullptr;
     ZooKeeperRetriesInfo retries_info;
     UInt64 total_failures = 0;
     UserError user_error;

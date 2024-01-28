@@ -61,7 +61,7 @@ private:
 
     Statistic stat;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     UInt64 last_used_row[2] = {0, 0};
 };
 
@@ -82,7 +82,7 @@ public:
 protected:
     void onFinish() override;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }
