@@ -4,7 +4,7 @@
 namespace DB
 {
 
-IMessageProducer::IMessageProducer(Poco::Logger * log_) : log(log_)
+IMessageProducer::IMessageProducer(LoggerPtr log_) : log(log_)
 {
 }
 

@@ -1293,7 +1293,7 @@ private:
     /// How many RAM were used to process the query before processing the first block.
     Int64 memory_usage_before_aggregation = 0;
 
-    Poco::Logger * log = &Poco::Logger::get("Aggregator");
+    LoggerPtr log = getLogger("Aggregator");
 
     /// For external aggregation.
     TemporaryDataOnDiskPtr tmp_data;

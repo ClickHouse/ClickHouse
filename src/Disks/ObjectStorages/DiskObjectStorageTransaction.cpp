@@ -242,7 +242,7 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
                     || e.code() == ErrorCodes::CANNOT_OPEN_FILE)
                 {
                     LOG_DEBUG(
-                        &Poco::Logger::get("RemoveManyObjectStorageOperation"),
+                        getLogger("RemoveManyObjectStorageOperation"),
                         "Can't read metadata because of an exception. Just remove it from the filesystem. Path: {}, exception: {}",
                         metadata_storage.getPath() + path,
                         e.message());
@@ -276,7 +276,7 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
         if (!keep_all_batch_data)
         {
             LOG_DEBUG(
-                &Poco::Logger::get("RemoveManyObjectStorageOperation"),
+                getLogger("RemoveManyObjectStorageOperation"),
                 "metadata and objects were removed for [{}], "
                 "only metadata were removed for [{}].",
                 boost::algorithm::join(paths_removed_with_objects, ", "),
@@ -345,7 +345,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
                     || e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED)
                 {
                     LOG_DEBUG(
-                        &Poco::Logger::get("RemoveRecursiveObjectStorageOperation"),
+                        getLogger("RemoveRecursiveObjectStorageOperation"),
                         "Can't read metadata because of an exception. Just remove it from the filesystem. Path: {}, exception: {}",
                         metadata_storage.getPath() + path_to_remove,
                         e.message());
@@ -399,7 +399,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
             object_storage.removeObjectsIfExist(remove_from_remote);
 
             LOG_DEBUG(
-                &Poco::Logger::get("RemoveRecursiveObjectStorageOperation"),
+                getLogger("RemoveRecursiveObjectStorageOperation"),
                 "Recursively remove path {}: "
                 "metadata and objects were removed for [{}], "
                 "only metadata were removed for [{}].",
@@ -538,7 +538,7 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
         for (const auto & object_from : source_blobs)
         {
-            auto object_key = object_storage.generateObjectKeyForPath(to_path);
+            auto object_key = destination_object_storage.generateObjectKeyForPath(to_path);
             auto object_to = StoredObject(object_key.serialize());
 
             object_storage.copyObjectToAnotherObjectStorage(object_from, object_to,read_settings,write_settings, destination_object_storage);
@@ -905,7 +905,7 @@ void DiskObjectStorageTransaction::commit()
         catch (...)
         {
             tryLogCurrentException(
-                &Poco::Logger::get("DiskObjectStorageTransaction"),
+                getLogger("DiskObjectStorageTransaction"),
                 fmt::format("An error occurred while executing transaction's operation #{} ({})", i, operations_to_execute[i]->getInfoForLog()));
 
             for (int64_t j = i; j >= 0; --j)
@@ -917,7 +917,7 @@ void DiskObjectStorageTransaction::commit()
                 catch (...)
                 {
                     tryLogCurrentException(
-                        &Poco::Logger::get("DiskObjectStorageTransaction"),
+                        getLogger("DiskObjectStorageTransaction"),
                         fmt::format("An error occurred while undoing transaction's operation #{}", i));
 
                     throw;

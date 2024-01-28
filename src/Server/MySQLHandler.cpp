@@ -78,7 +78,7 @@ MySQLHandler::MySQLHandler(
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
-    , log(&Poco::Logger::get("MySQLHandler"))
+    , log(getLogger("MySQLHandler"))
     , connection_id(connection_id_)
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
     , read_event(read_event_)

@@ -34,7 +34,7 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     : pool(pool_)
     , timeouts(timeouts_)
     , table_to_check(table_to_check_)
-    , log(&Poco::Logger::get("HedgedConnectionsFactory"))
+    , log(getLogger("HedgedConnectionsFactory"))
     , max_tries(max_tries_)
     , fallback_to_stale_replicas(fallback_to_stale_replicas_)
     , max_parallel_replicas(max_parallel_replicas_)
