@@ -427,12 +427,12 @@ public:
 
         auto return_type = std::invoke(
             [&arguments, &interval_type, &result_type]() -> std::shared_ptr<IDataType>
-            {   
+            {
                 switch (result_type)
                 {
                     case ResultType::Date:
                         return std::make_shared<DataTypeDate>();
-                    case ResultType::DateTime:                        
+                    case ResultType::DateTime:
                         return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
                     case ResultType::DateTime64:
                     {
