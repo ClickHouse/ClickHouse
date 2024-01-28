@@ -39,7 +39,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     size_t alignment)
 {
     if (file_size.has_value() && !*file_size)
-        return std::make_unique<ReadBufferFromEmptyFile>();
+        return std::make_unique<ReadBufferFromEmptyFile>(filename);
 
     size_t estimated_size = 0;
     if (read_hint.has_value())

@@ -178,6 +178,11 @@ void WriteBufferFromS3::preFinalize()
 
 void WriteBufferFromS3::finalizeImpl()
 {
+    OpenTelemetry::SpanHolder span("WriteBufferFromS3::finalizeImpl");
+    span.addAttribute("clickhouse.s3_bucket", bucket);
+    span.addAttribute("clickhouse.s3_key", key);
+    span.addAttribute("clickhouse.total_size", total_size);
+
     LOG_TRACE(limitedLog, "finalizeImpl WriteBufferFromS3. {}.", getShortLogDetails());
 
     if (!is_prefinalized)
@@ -187,6 +192,8 @@ void WriteBufferFromS3::finalizeImpl()
     chassert(hidden_size == 0);
 
     task_tracker->waitAll();
+
+    span.addAttributeIfNotZero("clickhouse.multipart_upload_parts", multipart_tags.size());
 
     if (!multipart_upload_id.empty())
     {

@@ -71,7 +71,7 @@ private:
     friend class SLRUFileCachePriority;
 
     LRUQueue queue;
-    Poco::Logger * log = &Poco::Logger::get("LRUFileCachePriority");
+    LoggerPtr log = getLogger("LRUFileCachePriority");
     StatePtr state;
 
     void updateElementsCount(int64_t num);

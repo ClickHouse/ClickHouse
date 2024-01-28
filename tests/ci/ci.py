@@ -62,20 +62,6 @@ def normalize_check_name(check_name: str) -> str:
     return res
 
 
-def is_build_job(job: str) -> bool:
-    if "package_" in job or "binary_" in job or job == "fuzzers":
-        return True
-    return False
-
-
-def is_test_job(job: str) -> bool:
-    return not is_build_job(job) and not "Style" in job and not "Docs check" in job
-
-
-def is_docs_job(job: str) -> bool:
-    return "Docs check" in job
-
-
 def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
     # FIXME: consider switching to sub_parser for configure, pre, run, post actions
     parser.add_argument(
@@ -421,7 +407,7 @@ def _configure_jobs(
             for batch in range(num_batches):  # type: ignore
                 success_flag_name = get_file_flag_name(job, digest, batch, num_batches)
                 if success_flag_name not in done_files or (
-                    rebuild_all_binaries and is_build_job(job)
+                    rebuild_all_binaries and CI_CONFIG.is_build_job(job)
                 ):
                     batches_to_do.append(batch)
 
@@ -562,7 +548,7 @@ def _update_gh_statuses(indata: Dict, s3: S3Helper) -> None:
     with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = []
         for job in job_digests:
-            if is_build_job(job):
+            if CI_CONFIG.is_build_job(job):
                 # no GH status for build jobs
                 continue
             digest = job_digests[job]
@@ -933,11 +919,15 @@ def main() -> int:
         result["ci_flags"] = ci_flags
         result["jobs_data"] = jobs_data
         result["docker_data"] = docker_data
-        if pr_info.number != 0 and not args.docker_digest_or_latest:
+        if (
+            not args.skip_jobs
+            and pr_info.number != 0
+            and not args.docker_digest_or_latest
+        ):
             # FIXME: it runs style check before docker build if possible (style-check images is not changed)
             #    find a way to do style check always before docker build and others
             _check_and_update_for_early_style_check(result)
-        if pr_info.has_changes_in_documentation_only():
+        if not args.skip_jobs and pr_info.has_changes_in_documentation_only():
             _update_config_for_docs_only(result)
     ### CONFIGURE action: end
 
@@ -982,7 +972,7 @@ def main() -> int:
             f"Check if rerun for name: [{check_name}], extended name [{check_name_with_group}]"
         )
         previous_status = None
-        if is_build_job(check_name):
+        if CI_CONFIG.is_build_job(check_name):
             # this is a build job - check if build report is present
             build_result = (
                 BuildResult.load_any(check_name, pr_info.number, pr_info.head_ref)
@@ -1030,14 +1020,14 @@ def main() -> int:
     ### POST action: start
     elif args.post:
         assert (
-            not is_build_job(args.job_name) or indata
+            not CI_CONFIG.is_build_job(args.job_name) or indata
         ), "--infile with config must be provided for POST action of a build type job [{args.job_name}]"
         job_report = JobReport.load() if JobReport.exist() else None
         if job_report:
             ch_helper = ClickHouseHelper()
             check_url = ""
 
-            if is_build_job(args.job_name):
+            if CI_CONFIG.is_build_job(args.job_name):
                 build_name = args.job_name
                 s3_path_prefix = "/".join(
                     (
@@ -1135,7 +1125,7 @@ def main() -> int:
 
         # FIXME: find generic design for propagating and handling job status (e.g. stop using statuses in GH api)
         #   now job ca be build job w/o status data, any other job that exit with 0 with or w/o status data
-        if is_build_job(job):
+        if CI_CONFIG.is_build_job(job):
             # there is no status for build jobs
             # create dummy success to mark it as done
             job_status = CommitStatusData(
@@ -1162,7 +1152,7 @@ def main() -> int:
             success_flag_name = get_file_flag_name(
                 job, indata["jobs_data"]["digests"][job], args.batch, num_batches
             )
-            if not is_docs_job(job):
+            if not CI_CONFIG.is_docs_job(job):
                 path = get_s3_path(indata["build"]) + success_flag_name
             else:
                 path = get_s3_path_docs(indata["docs"]) + success_flag_name
