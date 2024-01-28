@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel
 DROP DATABASE IF EXISTS 02961_db1;
 CREATE DATABASE IF NOT EXISTS 02961_db1;
 DROP DATABASE IF EXISTS 02961_db2;
