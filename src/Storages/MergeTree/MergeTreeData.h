@@ -5,6 +5,7 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
+#include <Common/Logger.h>
 #include <Storages/IStorage.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
@@ -404,8 +405,7 @@ public:
     Block getMinMaxCountProjectionBlock(
         const StorageMetadataPtr & metadata_snapshot,
         const Names & required_columns,
-        bool has_filter,
-        const SelectQueryInfo & query_info,
+        const ActionsDAGPtr & filter_dag,
         const DataPartsVector & parts,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
@@ -1118,7 +1118,7 @@ protected:
     /// log_name will change during table RENAME. Use atomic_shared_ptr to allow concurrent RW.
     /// NOTE clang-14 doesn't have atomic_shared_ptr yet. Use std::atomic* operations for now.
     std::shared_ptr<String> log_name;
-    std::atomic<Poco::Logger *> log;
+    LoggerPtr log;
 
     /// Storage settings.
     /// Use get and set to receive readonly versions.
@@ -1222,7 +1222,7 @@ protected:
         boost::iterator_range<DataPartIteratorByStateAndInfo> range, const ColumnsDescription & storage_columns);
 
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
-        const SelectQueryInfo & query_info, ContextPtr context, const DataPartsVector & parts) const;
+        const ActionsDAGPtr & filter_actions_dag, ContextPtr context, const DataPartsVector & parts) const;
 
     static decltype(auto) getStateModifier(DataPartState state)
     {
@@ -1602,10 +1602,10 @@ struct CurrentlySubmergingEmergingTagger
     MergeTreeData & storage;
     String emerging_part_name;
     MergeTreeData::DataPartsVector submerging_parts;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     CurrentlySubmergingEmergingTagger(
-        MergeTreeData & storage_, const String & name_, MergeTreeData::DataPartsVector && parts_, Poco::Logger * log_)
+        MergeTreeData & storage_, const String & name_, MergeTreeData::DataPartsVector && parts_, LoggerPtr log_)
         : storage(storage_), emerging_part_name(name_), submerging_parts(std::move(parts_)), log(log_)
     {
     }

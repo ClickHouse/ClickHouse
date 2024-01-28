@@ -98,7 +98,7 @@ bool ValuesBlockInputFormat::skipToNextRow(ReadBuffer * buf, size_t min_chunk_by
     return true;
 }
 
-Chunk ValuesBlockInputFormat::generate()
+Chunk ValuesBlockInputFormat::read()
 {
     if (total_rows == 0)
         readPrefix();
@@ -492,7 +492,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 &found_in_cache,
                 delimiter);
 
-            LOG_TEST(&Poco::Logger::get("ValuesBlockInputFormat"), "Will use an expression template to parse column {}: {}",
+            LOG_TEST(getLogger("ValuesBlockInputFormat"), "Will use an expression template to parse column {}: {}",
                      column_idx, structure->dumpTemplate());
 
             templates[column_idx].emplace(structure);

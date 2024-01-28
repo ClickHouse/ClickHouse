@@ -19,6 +19,13 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
 
         if (response.getChunkedTransferEncoding())
             setChunked();
+        else if (response.getContentLength() == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH)
+        {
+            /// In case there is no Content-Length we cannot use keep-alive,
+            /// since there is no way to know when the server send all the
+            /// data, so "Connection: close" should be sent.
+            response.setKeepAlive(false);
+        }
 
         if (add_cors_header)
             response.set("Access-Control-Allow-Origin", "*");
@@ -153,7 +160,14 @@ void WriteBufferFromHTTPServerResponse::setExceptionCode(int exception_code_)
 
 WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
 {
-    finalize();
+    try
+    {
+        finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void WriteBufferFromHTTPServerResponse::finalizeImpl()

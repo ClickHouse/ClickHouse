@@ -91,6 +91,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sinks/EmptySink.h>
@@ -328,7 +329,7 @@ StorageDistributed::StorageDistributed(
     , remote_database(remote_database_)
     , remote_table(remote_table_)
     , remote_table_function_ptr(remote_table_function_ptr_)
-    , log(&Poco::Logger::get("StorageDistributed (" + id_.table_name + ")"))
+    , log(getLogger("StorageDistributed (" + id_.table_name + ")"))
     , owned_cluster(std::move(owned_cluster_))
     , cluster_name(getContext()->getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
@@ -428,15 +429,10 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     size_t nodes = getClusterQueriedNodes(settings, cluster);
 
-    if (query_info.use_custom_key)
-    {
-        LOG_INFO(log, "Single shard cluster used with custom_key, transforming replicas into virtual shards");
-        query_info.cluster = cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
-    }
-    else
-    {
-        query_info.cluster = cluster;
+    query_info.cluster = cluster;
 
+    if (!local_context->canUseParallelReplicasCustomKey(*cluster))
+    {
         if (nodes > 1 && settings.optimize_skip_unused_shards)
         {
             /// Always calculate optimized cluster here, to avoid conditions during read()
@@ -879,30 +875,22 @@ void StorageDistributed::read(
             storage_snapshot,
             processed_stage);
 
-    auto settings = local_context->getSettingsRef();
+    const auto & settings = local_context->getSettingsRef();
 
     ClusterProxy::AdditionalShardFilterGenerator additional_shard_filter_generator;
-    if (query_info.use_custom_key)
+    if (local_context->canUseParallelReplicasCustomKey(*query_info.getCluster()))
     {
         if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *local_context))
         {
-            if (query_info.getCluster()->getShardCount() == 1)
-            {
-                // we are reading from single shard with multiple replicas but didn't transform replicas
-                // into virtual shards with custom_key set
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Replicas weren't transformed into virtual shards");
-            }
-
             additional_shard_filter_generator =
-                [&, my_custom_key_ast = std::move(custom_key_ast), shard_count = query_info.cluster->getShardCount()](uint64_t shard_num) -> ASTPtr
+                [my_custom_key_ast = std::move(custom_key_ast),
+                 column_description = this->getInMemoryMetadataPtr()->columns,
+                 custom_key_type = settings.parallel_replicas_custom_key_filter_type.value,
+                 context = local_context,
+                 replica_count = query_info.getCluster()->getShardsInfo().front().per_replica_pools.size()](uint64_t replica_num) -> ASTPtr
             {
                 return getCustomKeyFilterForParallelReplica(
-                    shard_count,
-                    shard_num - 1,
-                    my_custom_key_ast,
-                    settings.parallel_replicas_custom_key_filter_type,
-                    this->getInMemoryMetadataPtr()->columns,
-                    local_context);
+                    replica_count, replica_num - 1, my_custom_key_ast, custom_key_type, column_description, context);
             };
         }
     }
@@ -1068,15 +1056,67 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     return pipeline;
 }
 
+static ActionsDAGPtr getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
+{
+    QueryPlan plan;
+    SelectQueryOptions options;
+    options.only_analyze = true;
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        InterpreterSelectQueryAnalyzer interpreter(ast, context, options);
+        plan = std::move(interpreter).extractQueryPlan();
+    }
+    else
+    {
+        InterpreterSelectWithUnionQuery interpreter(ast, context, options);
+        interpreter.buildQueryPlan(plan);
+    }
+
+    plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
+
+    std::stack<QueryPlan::Node *> nodes;
+    nodes.push(plan.getRootNode());
+
+    SourceStepWithFilter * source = nullptr;
+
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.top();
+        nodes.pop();
+
+        if (auto * with_filter = dynamic_cast<SourceStepWithFilter *>(node->step.get()))
+        {
+            if (source)
+            {
+                WriteBufferFromOwnString buf;
+                plan.explainPlan(buf, {});
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Found multiple source steps for query\n{}\nPlan\n{}",
+                    queryToString(ast), buf.str());
+            }
+
+            source = with_filter;
+        }
+    }
+
+    if (!source)
+        return nullptr;
+
+    return ActionsDAG::buildFilterActionsDAG(source->getFilterNodes().nodes);
+}
+
 
 std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
-    auto & select = query.select->as<ASTSelectWithUnionQuery &>();
+
+    auto filter = getFilterFromQuery(query.select, local_context);
+    const ActionsDAG::Node * predicate = nullptr;
+    if (filter)
+        predicate = filter->getOutputs().at(0);
+
     /// Select query is needed for pruining on virtual columns
-    auto extension = src_storage_cluster.getTaskIteratorExtension(
-        select.list_of_selects->children.at(0)->as<ASTSelectQuery>()->clone(),
-        local_context);
+    auto extension = src_storage_cluster.getTaskIteratorExtension(predicate, local_context);
 
     auto dst_cluster = getCluster();
 
@@ -1100,22 +1140,20 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
 
-    /// Here we take addresses from destination cluster and assume source table exists on these nodes
-    for (const auto & replicas : getCluster()->getShardsAddresses())
-    {
-        /// There will be only one replica, because we consider each replica as a shard
-        for (const auto & node : replicas)
-        {
-            auto connection = std::make_shared<Connection>(
-                node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, ssh::SSHKey(), node.quota_key, node.cluster, node.cluster_secret,
-                "ParallelInsertSelectInititiator",
-                node.compression,
-                node.secure
-            );
+    const auto & current_settings = query_context->getSettingsRef();
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
+    /// Here we take addresses from destination cluster and assume source table exists on these nodes
+    for (const auto & replicas : getCluster()->getShardsInfo())
+    {
+        /// Skip unavailable hosts if necessary
+        auto try_results = replicas.pool->getMany(timeouts, current_settings, PoolMode::GET_MANY, /*async_callback*/ {}, /*skip_unavailable_endpoints*/ true);
+
+        /// There will be only one replica, because we consider each replica as a shard
+        for (const auto & try_result : try_results)
+        {
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                connection,
+                std::vector<IConnectionPool::Entry>{try_result},
                 new_query_str,
                 Block{},
                 query_context,
@@ -1559,7 +1597,7 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
     if (nodes.empty())
         return nullptr;
 
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes, {}, local_context);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes);
 
     size_t limit = local_context->getSettingsRef().optimize_skip_unused_shards_limit;
     if (!limit || limit > SSIZE_MAX)

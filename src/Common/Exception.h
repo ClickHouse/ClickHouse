@@ -10,6 +10,7 @@
 #include <base/errnoToString.h>
 #include <base/scope_guard.h>
 #include <Common/LoggingFormatStringHelpers.h>
+#include <Common/Logger.h>
 #include <Common/StackTrace.h>
 
 #include <fmt/format.h>
@@ -235,50 +236,15 @@ private:
     const char * className() const noexcept override { return "DB::ErrnoException"; }
 };
 
-
-/// Special class of exceptions, used mostly in ParallelParsingInputFormat for
-/// more convenient calculation of problem line number.
-class ParsingException : public Exception
-{
-    ParsingException(const std::string & msg, int code);
-public:
-    ParsingException();
-
-    // Format message with fmt::format, like the logging functions.
-    template <typename... Args>
-    ParsingException(int code, FormatStringHelper<Args...> fmt, Args &&... args) : Exception(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code)
-    {
-        message_format_string = fmt.message_format_string;
-    }
-
-    std::string displayText() const override;
-
-    ssize_t getLineNumber() const { return line_number; }
-    void setLineNumber(int line_number_) { line_number = line_number_;}
-
-    String getFileName() const { return file_name; }
-    void setFileName(const String & file_name_) { file_name = file_name_; }
-
-    Exception * clone() const override { return new ParsingException(*this); }
-    void rethrow() const override { throw *this; } // NOLINT
-
-private:
-    ssize_t line_number{-1};
-    String file_name;
-    mutable std::string formatted_message;
-
-    const char * name() const noexcept override { return "DB::ParsingException"; }
-    const char * className() const noexcept override { return "DB::ParsingException"; }
-};
-
-
 using Exceptions = std::vector<std::exception_ptr>;
 
 /** Try to write an exception to the log (and forget about it).
   * Can be used in destructors in the catch-all block.
   */
+/// TODO: Logger leak constexpr overload
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message = "");
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "");
+void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message = "");
 
 
 /** Prints current exception in canonical format.
@@ -321,9 +287,9 @@ struct ExecutionStatus
     bool tryDeserializeText(const std::string & data);
 };
 
-
+/// TODO: Logger leak constexpr overload
 void tryLogException(std::exception_ptr e, const char * log_name, const std::string & start_of_message = "");
-void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::string & start_of_message = "");
+void tryLogException(std::exception_ptr e, LoggerPtr logger, const std::string & start_of_message = "");
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);
 PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);

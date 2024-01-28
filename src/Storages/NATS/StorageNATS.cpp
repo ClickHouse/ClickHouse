@@ -59,7 +59,7 @@ StorageNATS::StorageNATS(
     , schema_name(getContext()->getMacros()->expand(nats_settings->nats_schema))
     , num_consumers(nats_settings->nats_num_consumers.value)
     , max_rows_per_message(nats_settings->nats_max_rows_per_message)
-    , log(&Poco::Logger::get("StorageNATS (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageNATS (" + table_id_.table_name + ")"))
     , semaphore(0, static_cast<int>(num_consumers))
     , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
     , is_attach(is_attach_)
@@ -347,11 +347,11 @@ void StorageNATS::read(
     if (pipe.empty())
     {
         auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, local_context);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), query_info, local_context);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), local_context, query_info);
         query_plan.addStep(std::move(read_step));
         query_plan.addInterpreterContext(modified_context);
     }

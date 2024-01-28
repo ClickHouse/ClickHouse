@@ -27,6 +27,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
+#include <Common/re2.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
@@ -50,15 +51,6 @@
 #include <chrono>
 #include <memory>
 #include <sstream>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 #if USE_SSL
 #include <Poco/Net/X509Certificate.h>
@@ -145,7 +137,7 @@ bool tryAddHttpOptionHeadersFromConfig(HTTPServerResponse & response, const Poco
             {
                 /// If there is empty header name, it will not be processed and message about it will be in logs
                 if (config.getString("http_options_response." + config_key + ".name", "").empty())
-                    LOG_WARNING(&Poco::Logger::get("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
+                    LOG_WARNING(getLogger("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
                 else
                     response.add(config.getString("http_options_response." + config_key + ".name", ""),
                                     config.getString("http_options_response." + config_key + ".value", ""));
@@ -336,7 +328,7 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 
 HTTPHandler::HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_)
     : server(server_)
-    , log(&Poco::Logger::get(name))
+    , log(getLogger(name))
     , default_settings(server.context()->getSettingsRef())
     , content_type_override(content_type_override_)
 {
@@ -642,7 +634,7 @@ void HTTPHandler::processQuery(
                 used_output.out_holder.get(),
                 http_response_compression_method,
                 static_cast<int>(http_zlib_compression_level),
-                DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0, false);
+                0, DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0, false);
         used_output.out = used_output.wrap_compressed_holder;
     }
 

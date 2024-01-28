@@ -634,7 +634,7 @@ private:
     const std::string config_name;
     ZooKeeperArgs args;
 
-    Poco::Logger * log = nullptr;
+    LoggerPtr log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
 
     AtomicStopwatch session_uptime;
@@ -713,7 +713,7 @@ public:
             else
             {
                 ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
-                LOG_DEBUG(&Poco::Logger::get("EphemeralNodeHolder"), "Cannot remove {} since session has been expired", path);
+                LOG_DEBUG(getLogger("EphemeralNodeHolder"), "Cannot remove {} since session has been expired", path);
             }
         }
         catch (...)
@@ -733,11 +733,11 @@ private:
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;
 
-String normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
+String normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, LoggerPtr log = nullptr);
 
 String extractZooKeeperName(const String & path);
 
-String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
+String extractZooKeeperPath(const String & path, bool check_starts_with_slash, LoggerPtr log = nullptr);
 
 String getSequentialNodeName(const String & prefix, UInt64 number);
 

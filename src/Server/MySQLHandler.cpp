@@ -2,7 +2,6 @@
 
 #include <limits>
 #include <optional>
-#include <regex>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -26,6 +25,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/config_version.h>
+#include <Common/re2.h>
 
 #if USE_SSL
 #    include <Poco/Crypto/RSAKey.h>
@@ -61,6 +61,8 @@ namespace ErrorCodes
 static const size_t PACKET_HEADER_SIZE = 4;
 static const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
 
+static String showWarningsReplacementQuery(const String & query);
+static String showCountWarningsReplacementQuery(const String & query);
 static String selectEmptyReplacementQuery(const String & query);
 static String showTableStatusReplacementQuery(const String & query);
 static String killConnectionIdReplacementQuery(const String & query);
@@ -76,7 +78,7 @@ MySQLHandler::MySQLHandler(
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
-    , log(&Poco::Logger::get("MySQLHandler"))
+    , log(getLogger("MySQLHandler"))
     , connection_id(connection_id_)
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
     , read_event(read_event_)
@@ -86,6 +88,8 @@ MySQLHandler::MySQLHandler(
     if (ssl_enabled)
         server_capabilities |= CLIENT_SSL;
 
+    replacements.emplace("SHOW WARNINGS", showWarningsReplacementQuery);
+    replacements.emplace("SHOW COUNT(*) WARNINGS", showCountWarningsReplacementQuery);
     replacements.emplace("KILL QUERY", killConnectionIdReplacementQuery);
     replacements.emplace("SHOW TABLE STATUS LIKE", showTableStatusReplacementQuery);
     replacements.emplace("SHOW VARIABLES", selectEmptyReplacementQuery);
@@ -530,16 +534,30 @@ void MySQLHandlerSSL::finishHandshakeSSL(
 
 static bool isFederatedServerSetupSetCommand(const String & query)
 {
-    static const std::regex expr{
+    re2::RE2::Options regexp_options;
+    regexp_options.set_case_sensitive(false);
+    static const re2::RE2 expr(
         "(^(SET NAMES(.*)))"
         "|(^(SET character_set_results(.*)))"
         "|(^(SET FOREIGN_KEY_CHECKS(.*)))"
         "|(^(SET AUTOCOMMIT(.*)))"
         "|(^(SET sql_mode(.*)))"
         "|(^(SET @@(.*)))"
-        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))"
-        , std::regex::icase};
-    return 1 == std::regex_match(query, expr);
+        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))", regexp_options);
+    assert(expr.ok());
+    return re2::RE2::FullMatch(query, expr);
+}
+
+/// Always return an empty set with appropriate column definitions for SHOW WARNINGS queries
+/// See also: https://dev.mysql.com/doc/refman/8.0/en/show-warnings.html
+static String showWarningsReplacementQuery([[maybe_unused]] const String & query)
+{
+    return "SELECT '' AS Level, 0::UInt32 AS Code, '' AS Message WHERE false";
+}
+
+static String showCountWarningsReplacementQuery([[maybe_unused]] const String & query)
+{
+    return "SELECT 0::UInt64 AS `@@session.warning_count`";
 }
 
 /// Replace "[query(such as SHOW VARIABLES...)]" into "".
@@ -598,8 +616,8 @@ static String killConnectionIdReplacementQuery(const String & query)
     if (query.size() > prefix.size())
     {
         String suffix = query.data() + prefix.length();
-        static const std::regex expr{"^[0-9]"};
-        if (std::regex_match(suffix, expr))
+        static const re2::RE2 expr("^[0-9]");
+        if (re2::RE2::FullMatch(suffix, expr))
         {
             String replacement = fmt::format("KILL QUERY WHERE query_id LIKE 'mysql:{}:%'", suffix);
             return replacement;

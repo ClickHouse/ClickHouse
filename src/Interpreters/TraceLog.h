@@ -8,6 +8,7 @@
 #include <Common/TraceSender.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
@@ -37,7 +38,7 @@ struct TraceLogElement
     ProfileEvents::Count increment{};
 
     static std::string name() { return "TraceLog"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
     static const char * getCustomColumnList() { return nullptr; }

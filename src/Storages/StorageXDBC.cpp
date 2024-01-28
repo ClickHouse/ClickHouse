@@ -45,7 +45,7 @@ StorageXDBC::StorageXDBC(
     , bridge_helper(bridge_helper_)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
-    , log(&Poco::Logger::get("Storage" + bridge_helper->getName()))
+    , log(getLogger("Storage" + bridge_helper->getName()))
 {
     uri = bridge_helper->getMainURI().toString();
 }
@@ -102,7 +102,8 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
     return write_body_callback;
 }
 
-Pipe StorageXDBC::read(
+void StorageXDBC::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -114,7 +115,7 @@ Pipe StorageXDBC::read(
     storage_snapshot->check(column_names);
 
     bridge_helper->startBridgeSync();
-    return IStorageURLBase::read(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+    IStorageURLBase::read(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
 }
 
 SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)

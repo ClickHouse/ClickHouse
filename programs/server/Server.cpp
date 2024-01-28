@@ -58,6 +58,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControl.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -75,8 +76,8 @@
 #include <Databases/registerDatabases.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
-#include <IO/Resource/registerSchedulerNodes.h>
-#include <IO/Resource/registerResourceManagers.h>
+#include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
+#include <Common/Scheduler/Nodes/registerResourceManagers.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
@@ -364,7 +365,7 @@ void Server::createServer(
 namespace
 {
 
-void setOOMScore(int value, Poco::Logger * log)
+void setOOMScore(int value, LoggerRawPtr log)
 {
     try
     {
@@ -449,7 +450,7 @@ void checkForUsersNotInMainConfig(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_path,
     const std::string & users_config_path,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     if (config.getBool("skip_check_for_incorrect_settings", false))
         return;
@@ -658,6 +659,7 @@ try
     }
 #endif
 
+    registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
@@ -1272,11 +1274,11 @@ try
         {
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
-            ServerSettings server_settings_;
-            server_settings_.loadSettingsFromConfig(*config);
+            ServerSettings new_server_settings;
+            new_server_settings.loadSettingsFromConfig(*config);
 
-            size_t max_server_memory_usage = server_settings_.max_server_memory_usage;
-            double max_server_memory_usage_to_ram_ratio = server_settings_.max_server_memory_usage_to_ram_ratio;
+            size_t max_server_memory_usage = new_server_settings.max_server_memory_usage;
+            double max_server_memory_usage_to_ram_ratio = new_server_settings.max_server_memory_usage_to_ram_ratio;
 
             size_t current_physical_server_memory = getMemoryAmount(); /// With cgroups, the amount of memory available to the server can be changed dynamically.
             size_t default_max_server_memory_usage = static_cast<size_t>(current_physical_server_memory * max_server_memory_usage_to_ram_ratio);
@@ -1306,9 +1308,9 @@ try
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
-            size_t merges_mutations_memory_usage_soft_limit = server_settings_.merges_mutations_memory_usage_soft_limit;
+            size_t merges_mutations_memory_usage_soft_limit = new_server_settings.merges_mutations_memory_usage_soft_limit;
 
-            size_t default_merges_mutations_server_memory_usage = static_cast<size_t>(current_physical_server_memory * server_settings_.merges_mutations_memory_usage_to_ram_ratio);
+            size_t default_merges_mutations_server_memory_usage = static_cast<size_t>(current_physical_server_memory * new_server_settings.merges_mutations_memory_usage_to_ram_ratio);
             if (merges_mutations_memory_usage_soft_limit == 0)
             {
                 merges_mutations_memory_usage_soft_limit = default_merges_mutations_server_memory_usage;
@@ -1316,7 +1318,7 @@ try
                     " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
-                    server_settings_.merges_mutations_memory_usage_to_ram_ratio);
+                    new_server_settings.merges_mutations_memory_usage_to_ram_ratio);
             }
             else if (merges_mutations_memory_usage_soft_limit > default_merges_mutations_server_memory_usage)
             {
@@ -1325,7 +1327,7 @@ try
                     " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
-                    server_settings_.merges_mutations_memory_usage_to_ram_ratio);
+                    new_server_settings.merges_mutations_memory_usage_to_ram_ratio);
             }
 
             LOG_INFO(log, "Merges and mutations memory limit is set to {}",
@@ -1334,7 +1336,7 @@ try
             background_memory_tracker.setDescription("(background)");
             background_memory_tracker.setMetric(CurrentMetrics::MergesMutationsMemoryTracking);
 
-            total_memory_tracker.setAllowUseJemallocMemory(server_settings_.allow_use_jemalloc_memory);
+            total_memory_tracker.setAllowUseJemallocMemory(new_server_settings.allow_use_jemalloc_memory);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
@@ -1358,26 +1360,26 @@ try
             global_context->setRemoteHostFilter(*config);
             global_context->setHTTPHeaderFilter(*config);
 
-            global_context->setMaxTableSizeToDrop(server_settings_.max_table_size_to_drop);
-            global_context->setMaxPartitionSizeToDrop(server_settings_.max_partition_size_to_drop);
-            global_context->setMaxTableNumToWarn(server_settings_.max_table_num_to_warn);
-            global_context->setMaxDatabaseNumToWarn(server_settings_.max_database_num_to_warn);
-            global_context->setMaxPartNumToWarn(server_settings_.max_part_num_to_warn);
+            global_context->setMaxTableSizeToDrop(new_server_settings.max_table_size_to_drop);
+            global_context->setMaxPartitionSizeToDrop(new_server_settings.max_partition_size_to_drop);
+            global_context->setMaxTableNumToWarn(new_server_settings.max_table_num_to_warn);
+            global_context->setMaxDatabaseNumToWarn(new_server_settings.max_database_num_to_warn);
+            global_context->setMaxPartNumToWarn(new_server_settings.max_part_num_to_warn);
 
             ConcurrencyControl::SlotCount concurrent_threads_soft_limit = ConcurrencyControl::Unlimited;
-            if (server_settings_.concurrent_threads_soft_limit_num > 0 && server_settings_.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)
-                concurrent_threads_soft_limit = server_settings_.concurrent_threads_soft_limit_num;
-            if (server_settings_.concurrent_threads_soft_limit_ratio_to_cores > 0)
+            if (new_server_settings.concurrent_threads_soft_limit_num > 0 && new_server_settings.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)
+                concurrent_threads_soft_limit = new_server_settings.concurrent_threads_soft_limit_num;
+            if (new_server_settings.concurrent_threads_soft_limit_ratio_to_cores > 0)
             {
-                auto value = server_settings_.concurrent_threads_soft_limit_ratio_to_cores * std::thread::hardware_concurrency();
+                auto value = new_server_settings.concurrent_threads_soft_limit_ratio_to_cores * std::thread::hardware_concurrency();
                 if (value > 0 && value < concurrent_threads_soft_limit)
                     concurrent_threads_soft_limit = value;
             }
             ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
 
-            global_context->getProcessList().setMaxSize(server_settings_.max_concurrent_queries);
-            global_context->getProcessList().setMaxInsertQueriesAmount(server_settings_.max_concurrent_insert_queries);
-            global_context->getProcessList().setMaxSelectQueriesAmount(server_settings_.max_concurrent_select_queries);
+            global_context->getProcessList().setMaxSize(new_server_settings.max_concurrent_queries);
+            global_context->getProcessList().setMaxInsertQueriesAmount(new_server_settings.max_concurrent_insert_queries);
+            global_context->getProcessList().setMaxSelectQueriesAmount(new_server_settings.max_concurrent_select_queries);
 
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
@@ -1388,68 +1390,68 @@ try
             /// This is done for backward compatibility.
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = server_settings_.background_pool_size;
-                auto new_ratio = server_settings_.background_merges_mutations_concurrency_ratio;
+                auto new_pool_size = new_server_settings.background_pool_size;
+                auto new_ratio = new_server_settings.background_merges_mutations_concurrency_ratio;
                 global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(new_pool_size * new_ratio));
-                global_context->getMergeMutateExecutor()->updateSchedulingPolicy(server_settings_.background_merges_mutations_scheduling_policy.toString());
+                global_context->getMergeMutateExecutor()->updateSchedulingPolicy(new_server_settings.background_merges_mutations_scheduling_policy.toString());
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = server_settings_.background_move_pool_size;
+                auto new_pool_size = new_server_settings.background_move_pool_size;
                 global_context->getMovesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = server_settings_.background_fetches_pool_size;
+                auto new_pool_size = new_server_settings.background_fetches_pool_size;
                 global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = server_settings_.background_common_pool_size;
+                auto new_pool_size = new_server_settings.background_common_pool_size;
                 global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
-            global_context->getBufferFlushSchedulePool().increaseThreadsCount(server_settings_.background_buffer_flush_schedule_pool_size);
-            global_context->getSchedulePool().increaseThreadsCount(server_settings_.background_schedule_pool_size);
-            global_context->getMessageBrokerSchedulePool().increaseThreadsCount(server_settings_.background_message_broker_schedule_pool_size);
-            global_context->getDistributedSchedulePool().increaseThreadsCount(server_settings_.background_distributed_schedule_pool_size);
+            global_context->getBufferFlushSchedulePool().increaseThreadsCount(new_server_settings.background_buffer_flush_schedule_pool_size);
+            global_context->getSchedulePool().increaseThreadsCount(new_server_settings.background_schedule_pool_size);
+            global_context->getMessageBrokerSchedulePool().increaseThreadsCount(new_server_settings.background_message_broker_schedule_pool_size);
+            global_context->getDistributedSchedulePool().increaseThreadsCount(new_server_settings.background_distributed_schedule_pool_size);
 
-            global_context->getAsyncLoader().setMaxThreads(TablesLoaderForegroundPoolId, server_settings_.tables_loader_foreground_pool_size);
-            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundLoadPoolId, server_settings_.tables_loader_background_pool_size);
-            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundStartupPoolId, server_settings_.tables_loader_background_pool_size);
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderForegroundPoolId, new_server_settings.tables_loader_foreground_pool_size);
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundLoadPoolId, new_server_settings.tables_loader_background_pool_size);
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundStartupPoolId, new_server_settings.tables_loader_background_pool_size);
 
             getIOThreadPool().reloadConfiguration(
-                server_settings.max_io_thread_pool_size,
-                server_settings.max_io_thread_pool_free_size,
-                server_settings.io_thread_pool_queue_size);
+                new_server_settings.max_io_thread_pool_size,
+                new_server_settings.max_io_thread_pool_free_size,
+                new_server_settings.io_thread_pool_queue_size);
 
             getBackupsIOThreadPool().reloadConfiguration(
-                server_settings.max_backups_io_thread_pool_size,
-                server_settings.max_backups_io_thread_pool_free_size,
-                server_settings.backups_io_thread_pool_queue_size);
+                new_server_settings.max_backups_io_thread_pool_size,
+                new_server_settings.max_backups_io_thread_pool_free_size,
+                new_server_settings.backups_io_thread_pool_queue_size);
 
             getActivePartsLoadingThreadPool().reloadConfiguration(
-                server_settings.max_active_parts_loading_thread_pool_size,
+                new_server_settings.max_active_parts_loading_thread_pool_size,
                 0, // We don't need any threads once all the parts will be loaded
-                server_settings.max_active_parts_loading_thread_pool_size);
+                new_server_settings.max_active_parts_loading_thread_pool_size);
 
             getOutdatedPartsLoadingThreadPool().reloadConfiguration(
-                server_settings.max_outdated_parts_loading_thread_pool_size,
+                new_server_settings.max_outdated_parts_loading_thread_pool_size,
                 0, // We don't need any threads once all the parts will be loaded
-                server_settings.max_outdated_parts_loading_thread_pool_size);
+                new_server_settings.max_outdated_parts_loading_thread_pool_size);
 
             /// It could grow if we need to synchronously wait until all the data parts will be loaded.
             getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(
-                server_settings.max_active_parts_loading_thread_pool_size
+                new_server_settings.max_active_parts_loading_thread_pool_size
             );
 
             getPartsCleaningThreadPool().reloadConfiguration(
-                server_settings.max_parts_cleaning_thread_pool_size,
+                new_server_settings.max_parts_cleaning_thread_pool_size,
                 0, // We don't need any threads one all the parts will be deleted
-                server_settings.max_parts_cleaning_thread_pool_size);
+                new_server_settings.max_parts_cleaning_thread_pool_size);
 
             if (config->has("resources"))
             {
@@ -1464,6 +1466,8 @@ try
                     global_context->reloadZooKeeperIfChanged(config);
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
+
+                global_context->reloadQueryMaskingRulesIfChanged(config);
 
                 std::lock_guard lock(servers_lock);
                 updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
@@ -1736,6 +1740,17 @@ try
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
     LoadTaskPtrs load_metadata_tasks;
+
+    // Make sure that if exception is thrown during startup async, new async loading jobs are not going to be called.
+    // This is important for the case when exception is thrown from loading of metadata with `async_load_databases = false`
+    // to avoid simultaneously running table startups and destructing databases.
+    SCOPE_EXIT_SAFE(
+        LOG_INFO(log, "Stopping AsyncLoader.");
+
+        // Waits for all currently running jobs to finish and do not run any other pending jobs.
+        global_context->getAsyncLoader().stop();
+    );
+
     try
     {
         auto & database_catalog = DatabaseCatalog::instance();
@@ -1884,6 +1899,7 @@ try
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
         async_metrics.start();
+        global_context->setAsynchronousMetrics(&async_metrics);
 
         main_config_reloader->start();
         access_control.startPeriodicReloading();
@@ -1999,6 +2015,12 @@ try
                 LOG_WARNING(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
             else
                 LOG_INFO(log, "Closed all listening sockets.");
+
+            /// Wait for unfinished backups and restores.
+            /// This must be done after closing listening sockets (no more backups/restores) but before ProcessList::killAllQueries
+            /// (because killAllQueries() will cancel all running backups/restores).
+            if (server_settings.shutdown_wait_backups_and_restores)
+                global_context->waitAllBackupsAndRestores();
 
             /// Killing remaining queries.
             if (!server_settings.shutdown_wait_unfinished_queries)
@@ -2468,7 +2490,7 @@ void Server::stopServers(
     const ServerType & server_type
 ) const
 {
-    Poco::Logger * log = &logger();
+    LoggerRawPtr log = &logger();
 
     /// Remove servers once all their connections are closed
     auto check_server = [&log](const char prefix[], auto & server)
@@ -2507,7 +2529,7 @@ void Server::updateServers(
     std::vector<ProtocolServerAdapter> & servers,
     std::vector<ProtocolServerAdapter> & servers_to_start_before_tables)
 {
-    Poco::Logger * log = &logger();
+    LoggerRawPtr log = &logger();
 
     const auto listen_hosts = getListenHosts(config);
     const auto interserver_listen_hosts = getInterserverListenHosts(config);

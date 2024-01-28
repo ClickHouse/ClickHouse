@@ -45,7 +45,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    TABLE id: 3, table_name: default.constraint_test_constants
+    TABLE id: 3, alias: __table1, table_name: default.constraint_test_constants
   WHERE
     FUNCTION id: 4, function_name: greater, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -63,7 +63,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    TABLE id: 3, table_name: default.constraint_test_constants
+    TABLE id: 3, alias: __table1, table_name: default.constraint_test_constants
   WHERE
     FUNCTION id: 4, function_name: greater, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -80,5 +80,5 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    TABLE id: 3, table_name: default.constraint_test_constants
+    TABLE id: 3, alias: __table1, table_name: default.constraint_test_constants
   SETTINGS allow_experimental_analyzer=1

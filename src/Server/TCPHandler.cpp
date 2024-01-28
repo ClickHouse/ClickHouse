@@ -189,7 +189,7 @@ TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::N
     , server(server_)
     , tcp_server(tcp_server_)
     , parse_proxy_protocol(parse_proxy_protocol_)
-    , log(&Poco::Logger::get("TCPHandler"))
+    , log(getLogger("TCPHandler"))
     , read_event(read_event_)
     , write_event(write_event_)
     , server_display_name(std::move(server_display_name_))
@@ -200,7 +200,7 @@ TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::N
 : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
-    , log(&Poco::Logger::get("TCPHandler"))
+    , log(getLogger("TCPHandler"))
     , forwarded_for(stack_data.forwarded_for)
     , certificate(stack_data.certificate)
     , read_event(read_event_)
@@ -2027,7 +2027,7 @@ void TCPHandler::initBlockOutput(const Block & block)
 
             if (state.compression == Protocol::Compression::Enable)
             {
-                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs, query_settings.enable_deflate_qpl_codec);
+                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs, query_settings.enable_deflate_qpl_codec, query_settings.enable_zstd_qat_codec);
 
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
                     *out, CompressionCodecFactory::instance().get(method, level));

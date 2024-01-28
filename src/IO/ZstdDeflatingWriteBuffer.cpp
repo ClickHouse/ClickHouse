@@ -1,28 +1,49 @@
 #include <IO/ZstdDeflatingWriteBuffer.h>
 #include <Common/Exception.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int ZSTD_ENCODER_FAILED;
+    extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
-void ZstdDeflatingWriteBuffer::initialize(int compression_level)
+static void setZstdParameter(ZSTD_CCtx * cctx, ZSTD_cParameter param, int value)
+{
+    auto ret = ZSTD_CCtx_setParameter(cctx, param, value);
+    if (ZSTD_isError(ret))
+        throw Exception(
+            ErrorCodes::ZSTD_ENCODER_FAILED,
+            "zstd stream encoder option setting failed: error code: {}; zstd version: {}",
+            ret,
+            ZSTD_VERSION_STRING);
+}
+
+void ZstdDeflatingWriteBuffer::initialize(int compression_level, int window_log)
 {
     cctx = ZSTD_createCCtx();
     if (cctx == nullptr)
         throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "zstd stream encoder init failed: zstd version: {}", ZSTD_VERSION_STRING);
-    size_t ret = ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, compression_level);
-    if (ZSTD_isError(ret))
-        throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED,
-                        "zstd stream encoder option setting failed: error code: {}; zstd version: {}",
-                        ret, ZSTD_VERSION_STRING);
-    ret = ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
-    if (ZSTD_isError(ret))
-        throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED,
-                        "zstd stream encoder option setting failed: error code: {}; zstd version: {}",
-                        ret, ZSTD_VERSION_STRING);
+    setZstdParameter(cctx, ZSTD_c_compressionLevel, compression_level);
+
+    if (window_log > 0)
+    {
+        ZSTD_bounds window_log_bounds = ZSTD_cParam_getBounds(ZSTD_c_windowLog);
+        if (ZSTD_isError(window_log_bounds.error))
+            throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "ZSTD windowLog parameter is not supported {}",
+                std::string(ZSTD_getErrorName(window_log_bounds.error)));
+        if (window_log > window_log_bounds.upperBound || window_log < window_log_bounds.lowerBound)
+            throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER,
+                            "ZSTD codec can't have window log more than {} and lower than {}, given {}",
+                            toString(window_log_bounds.upperBound),
+                            toString(window_log_bounds.lowerBound), toString(window_log));
+        setZstdParameter(cctx, ZSTD_c_enableLongDistanceMatching, 1);
+        setZstdParameter(cctx, ZSTD_c_windowLog, window_log);
+    }
+
+    setZstdParameter(cctx, ZSTD_c_checksumFlag, 1);
 
     input = {nullptr, 0, 0};
     output = {nullptr, 0, 0};

@@ -47,7 +47,7 @@ namespace
         if (!response.sent())
             *response.send() << message << '\n';
 
-        LOG_WARNING(&Poco::Logger::get("LibraryBridge"), fmt::runtime(message));
+        LOG_WARNING(getLogger("LibraryBridge"), fmt::runtime(message));
     }
 
     std::shared_ptr<Block> parseColumns(String && column_string)
@@ -92,7 +92,7 @@ static void writeData(Block data, OutputFormatPtr format)
 ExternalDictionaryLibraryBridgeRequestHandler::ExternalDictionaryLibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_)
     : WithContext(context_)
     , keep_alive_timeout(keep_alive_timeout_)
-    , log(&Poco::Logger::get("ExternalDictionaryLibraryBridgeRequestHandler"))
+    , log(getLogger("ExternalDictionaryLibraryBridgeRequestHandler"))
 {
 }
 
@@ -380,7 +380,7 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
 ExternalDictionaryLibraryBridgeExistsHandler::ExternalDictionaryLibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_)
     : WithContext(context_)
     , keep_alive_timeout(keep_alive_timeout_)
-    , log(&Poco::Logger::get("ExternalDictionaryLibraryBridgeExistsHandler"))
+    , log(getLogger("ExternalDictionaryLibraryBridgeExistsHandler"))
 {
 }
 
@@ -419,7 +419,7 @@ CatBoostLibraryBridgeRequestHandler::CatBoostLibraryBridgeRequestHandler(
     size_t keep_alive_timeout_, ContextPtr context_)
     : WithContext(context_)
     , keep_alive_timeout(keep_alive_timeout_)
-    , log(&Poco::Logger::get("CatBoostLibraryBridgeRequestHandler"))
+    , log(getLogger("CatBoostLibraryBridgeRequestHandler"))
 {
 }
 
@@ -464,6 +464,9 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
     {
         if (method == "catboost_list")
         {
+            auto & read_buf = request.getStream();
+            params.read(read_buf);
+
             ExternalModelInfos model_infos = CatBoostLibraryHandlerFactory::instance().getModelInfos();
 
             writeIntBinary(static_cast<UInt64>(model_infos.size()), out);
@@ -501,6 +504,9 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
         }
         else if (method == "catboost_removeAllModels")
         {
+            auto & read_buf = request.getStream();
+            params.read(read_buf);
+
             CatBoostLibraryHandlerFactory::instance().removeAllModels();
 
             String res = "1";
@@ -617,7 +623,7 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
 CatBoostLibraryBridgeExistsHandler::CatBoostLibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_)
     : WithContext(context_)
     , keep_alive_timeout(keep_alive_timeout_)
-    , log(&Poco::Logger::get("CatBoostLibraryBridgeExistsHandler"))
+    , log(getLogger("CatBoostLibraryBridgeExistsHandler"))
 {
 }
 

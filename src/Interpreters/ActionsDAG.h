@@ -115,6 +115,7 @@ public:
     explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_);
 
     const Nodes & getNodes() const { return nodes; }
+    static Nodes detachNodes(ActionsDAG && dag) { return std::move(dag.nodes); }
     const NodeRawConstPtrs & getOutputs() const { return outputs; }
     /** Output nodes can contain any column returned from DAG.
       * You may manually change it if needed.
@@ -388,8 +389,7 @@ public:
       */
     static ActionsDAGPtr buildFilterActionsDAG(
         const NodeRawConstPtrs & filter_nodes,
-        const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
-        const ContextPtr & context,
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column = {},
         bool single_output_condition_node = true);
 
     /// Check if `predicate` is a combination of AND functions.
