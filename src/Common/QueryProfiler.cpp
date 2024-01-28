@@ -105,7 +105,7 @@ namespace ErrorCodes
 
 #ifndef __APPLE__
 Timer::Timer()
-    : log(&Poco::Logger::get("Timer"))
+    : log(getLogger("Timer"))
 {}
 
 void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal)
@@ -211,7 +211,7 @@ void Timer::cleanup()
 
 template <typename ProfilerImpl>
 QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_)
-    : log(&Poco::Logger::get("QueryProfiler"))
+    : log(getLogger("QueryProfiler"))
     , pause_signal(pause_signal_)
 {
 #if defined(SANITIZER)
