@@ -44,12 +44,12 @@ namespace
     public:
         UploadHelper(
             const CreateReadBuffer & create_read_buffer_,
-            MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & client_,
+            std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client_,
             size_t offset_,
             size_t total_size_,
             const String & dest_container_for_logging_,
             const String & dest_blob_,
-            MultiVersion<AzureObjectStorageSettings> settings_,
+            std::shared_ptr<const AzureObjectStorageSettings> settings_,
             ThreadPoolCallbackRunner<void> schedule_,
             bool for_disk_azure_blob_storage_,
             const Poco::Logger * log_)
@@ -71,12 +71,12 @@ namespace
 
     protected:
         std::function<std::unique_ptr<SeekableReadBuffer>()> create_read_buffer;
-        MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & client;
+        std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
         size_t offset;
         size_t total_size;
         const String & dest_container_for_logging;
         const String & dest_blob;
-        MultiVersion<AzureObjectStorageSettings> settings;
+        std::shared_ptr<const AzureObjectStorageSettings> settings;
         ThreadPoolCallbackRunner<void> schedule;
         bool for_disk_azure_blob_storage;
         const Poco::Logger * log;
@@ -116,7 +116,7 @@ namespace
 
         void completeMultipartUpload()
         {
-            auto block_blob_client = client.get()->GetBlockBlobClient(dest_blob);
+            auto block_blob_client = client->GetBlockBlobClient(dest_blob);
             block_blob_client.CommitBlockList(block_ids);
         }
 
@@ -222,7 +222,7 @@ namespace
             if (for_disk_azure_blob_storage)
                 ProfileEvents::increment(ProfileEvents::DiskAzureUploadPart);
 
-            auto block_blob_client = client.get()->GetBlockBlobClient(dest_blob);
+            auto block_blob_client = client->GetBlockBlobClient(dest_blob);
 
             while (!task.read_buffer->eof())
             {
@@ -267,10 +267,10 @@ void copyDataToAzureBlobStorageFile(
     const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer,
     size_t offset,
     size_t size,
-    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & dest_client,
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> dest_client,
     const String & dest_container_for_logging,
     const String & dest_blob,
-    MultiVersion<AzureObjectStorageSettings> settings,
+    std::shared_ptr<const AzureObjectStorageSettings> settings,
     ThreadPoolCallbackRunner<void> schedule,
     bool for_disk_azure_blob_storage)
 {
@@ -280,15 +280,15 @@ void copyDataToAzureBlobStorageFile(
 
 
 void copyAzureBlobStorageFile(
-    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & src_client,
-    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & dest_client,
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> src_client,
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> dest_client,
     const String & src_container_for_logging,
     const String & src_blob,
     size_t offset,
     size_t size,
     const String & dest_container_for_logging,
     const String & dest_blob,
-    MultiVersion<AzureObjectStorageSettings> settings,
+    std::shared_ptr<const AzureObjectStorageSettings> settings,
     const ReadSettings & read_settings,
     ThreadPoolCallbackRunner<void> schedule,
     bool for_disk_azure_blob_storage)
@@ -300,8 +300,8 @@ void copyAzureBlobStorageFile(
         if (for_disk_azure_blob_storage)
             ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
 
-        auto block_blob_client_src = src_client.get()->GetBlockBlobClient(src_blob);
-        auto block_blob_client_dest = dest_client.get()->GetBlockBlobClient(dest_blob);
+        auto block_blob_client_src = src_client->GetBlockBlobClient(src_blob);
+        auto block_blob_client_dest = dest_client->GetBlockBlobClient(dest_blob);
         auto source_uri = block_blob_client_src.GetUrl();
 
         if (size < max_single_operation_copy_size)
@@ -328,7 +328,7 @@ void copyAzureBlobStorageFile(
         LOG_TRACE(&Poco::Logger::get("copyAzureBlobStorageFile"), "Reading from Container: {}, Blob: {}", src_container_for_logging, src_blob);
         auto create_read_buffer = [&]
         {
-            return std::make_unique<ReadBufferFromAzureBlobStorage>(src_client.get(), src_blob, read_settings, settings.get()->max_single_read_retries,
+            return std::make_unique<ReadBufferFromAzureBlobStorage>(src_client, src_blob, read_settings, settings.get()->max_single_read_retries,
             settings.get()->max_single_download_retries);
         };
 

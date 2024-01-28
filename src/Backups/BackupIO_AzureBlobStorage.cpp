@@ -89,7 +89,7 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderAzureBlobStorage::readFile(const
         key = file_name;
     }
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
-        client.get(), key, read_settings, settings.get()->max_single_read_retries,
+        client, key, read_settings, settings.get()->max_single_read_retries,
         settings.get()->max_single_download_retries);
 }
 
@@ -262,7 +262,7 @@ std::unique_ptr<ReadBuffer> BackupWriterAzureBlobStorage::readFile(const String 
     }
 
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
-        client.get(), key, read_settings, settings.get()->max_single_read_retries,
+        client, key, read_settings, settings.get()->max_single_read_retries,
         settings.get()->max_single_download_retries);
 }
 
@@ -278,7 +278,7 @@ std::unique_ptr<WriteBuffer> BackupWriterAzureBlobStorage::writeFile(const Strin
         key = file_name;
     }
     return std::make_unique<WriteBufferFromAzureBlobStorage>(
-        client.get(),
+        client,
         key,
         settings.get()->max_single_part_upload_size,
         DBMS_DEFAULT_BUFFER_SIZE,

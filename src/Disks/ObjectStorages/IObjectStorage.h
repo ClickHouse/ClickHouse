@@ -226,7 +226,7 @@ public:
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
 
 #if USE_AZURE_BLOB_STORAGE
-    virtual MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & getAzureBlobStorageClient()
+    virtual std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient()
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }

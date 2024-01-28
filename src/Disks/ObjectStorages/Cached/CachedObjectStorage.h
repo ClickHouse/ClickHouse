@@ -122,7 +122,7 @@ public:
     static bool canUseReadThroughCache(const ReadSettings & settings);
 
 #if USE_AZURE_BLOB_STORAGE
-    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & getAzureBlobStorageClient() override
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() override
     {
         return object_storage->getAzureBlobStorageClient();
     }

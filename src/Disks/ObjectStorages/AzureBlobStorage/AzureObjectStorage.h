@@ -137,11 +137,11 @@ public:
 
     bool isRemote() const override { return true; }
 
-    MultiVersion<AzureObjectStorageSettings> & getSettings() { return settings; }
+    std::shared_ptr<const AzureObjectStorageSettings> getSettings() { return settings.get(); }
 
-    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & getAzureBlobStorageClient() override
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() override
     {
-        return client;
+        return client.get();
     }
 
 private:

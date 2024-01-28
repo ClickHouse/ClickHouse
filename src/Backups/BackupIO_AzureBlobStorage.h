@@ -28,10 +28,10 @@ public:
 
 private:
     const DataSourceDescription data_source_description;
-    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
     StorageAzureBlob::Configuration configuration;
     std::unique_ptr<AzureObjectStorage> object_storage;
-    MultiVersion<AzureObjectStorageSettings> settings;
+    std::shared_ptr<const AzureObjectStorageSettings> settings;
 };
 
 class BackupWriterAzureBlobStorage : public BackupWriterDefault
@@ -57,10 +57,10 @@ private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
     void removeFilesBatch(const Strings & file_names);
     const DataSourceDescription data_source_description;
-    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
     StorageAzureBlob::Configuration configuration;
     std::unique_ptr<AzureObjectStorage> object_storage;
-    MultiVersion<AzureObjectStorageSettings> settings;
+    std::shared_ptr<const AzureObjectStorageSettings> settings;
 };
 
 }
