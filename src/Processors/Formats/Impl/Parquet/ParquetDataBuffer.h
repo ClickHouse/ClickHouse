@@ -34,7 +34,7 @@ public:
     void ALWAYS_INLINE readValue(TValue & dst)
     {
         checkAvaible(sizeof(TValue));
-        dst = *reinterpret_cast<const TValue *>(data);
+        dst = *(reinterpret_cast<const TValue *>(data));
         consume(sizeof(TValue));
     }
 

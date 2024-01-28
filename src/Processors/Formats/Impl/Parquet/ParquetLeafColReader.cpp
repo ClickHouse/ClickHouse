@@ -274,7 +274,14 @@ void ParquetLeafColReader<TColumn>::resetColumn(UInt64 rows_num)
 template <typename TColumn>
 void ParquetLeafColReader<TColumn>::degradeDictionary()
 {
+    // if last batch read all dictionary indices, then degrade is not needed this time
+    if (!column)
+    {
+        dictionary = nullptr;
+        return;
+    }
     assert(dictionary && column->size());
+
     null_map = std::make_unique<LazyNullMap>(reading_rows_num);
     auto col_existing = std::move(column);
     column = ColumnString::create();
@@ -304,7 +311,8 @@ void ParquetLeafColReader<TColumn>::degradeDictionary()
             col_dest.getOffsets()[i] = col_dest.getChars().size();
         }
     });
-    LOG_INFO(log, "degraded dictionary to normal column");
+    dictionary = nullptr;
+    LOG_DEBUG(log, "degraded dictionary to normal column");
 }
 
 template <typename TColumn>
@@ -364,7 +372,7 @@ void ParquetLeafColReader<TColumn>::readPage()
                 throw new Exception(
                     ErrorCodes::NOT_IMPLEMENTED, "Unsupported dictionary page encoding {}", dict_page.encoding());
             }
-            LOG_INFO(log, "{} values in dictionary page of column {}", dict_page.num_values(), col_descriptor.name());
+            LOG_DEBUG(log, "{} values in dictionary page of column {}", dict_page.num_values(), col_descriptor.name());
 
             dictionary = readDictPage<TColumn>(dict_page, col_descriptor, base_data_type);
             if (std::is_same_v<TColumn, ColumnString>)
