@@ -351,6 +351,7 @@ struct FormatSettings
         bool try_detect_header = true;
         bool skip_trailing_empty_lines = false;
         bool allow_variable_number_of_columns = false;
+        bool crlf_end_of_line_input = false;
     } tsv;
 
     struct

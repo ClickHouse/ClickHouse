@@ -175,6 +175,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.tsv.try_detect_header = settings.input_format_tsv_detect_header;
     format_settings.tsv.skip_trailing_empty_lines = settings.input_format_tsv_skip_trailing_empty_lines;
     format_settings.tsv.allow_variable_number_of_columns = settings.input_format_tsv_allow_variable_number_of_columns;
+    format_settings.tsv.crlf_end_of_line_input = settings.input_format_tsv_crlf_end_of_line;
     format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
     format_settings.values.allow_data_after_semicolon = settings.input_format_values_allow_data_after_semicolon;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
