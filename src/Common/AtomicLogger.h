@@ -47,5 +47,5 @@ public:
     }
 private:
     mutable DB::SharedMutex log_mutex;
-    LoggerPtr logger TSA_GUARDED_BY(log_mutex);
+    LoggerPtr logger;
 };
