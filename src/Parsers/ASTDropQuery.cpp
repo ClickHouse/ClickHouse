@@ -72,7 +72,7 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
     else if (database_and_tables)
     {
         auto & list = database_and_tables->as<ASTExpressionList &>();
-        for (auto it = list.children.begin(); it != list.children.end(); ++it)
+        for (auto * it = list.children.begin(); it != list.children.end(); ++it)
         {
             if (it != list.children.begin())
                 settings.ostr << ", ";
