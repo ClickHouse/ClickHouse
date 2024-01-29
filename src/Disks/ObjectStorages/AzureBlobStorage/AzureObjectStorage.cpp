@@ -264,6 +264,7 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
         client.get(),
         object.remote_path,
         settings.get()->max_single_part_upload_size,
+        settings.get()->max_unexpected_write_error_retries,
         buf_size,
         patchSettings(write_settings));
 }
