@@ -220,7 +220,9 @@ def check(node, table, check_result, expect_broken_part="", expected_error=""):
             f"SELECT c FROM '{table}' WHERE d == 12 ORDER BY c"
         )
     else:
-        query_id = node.query(f"SELECT queryID() FROM (SELECT c FROM '{table}' WHERE d == 12 ORDER BY c)").strip()
+        query_id = node.query(
+            f"SELECT queryID() FROM (SELECT c FROM '{table}' WHERE d == 12 ORDER BY c)"
+        ).strip()
         node.query("SYSTEM FLUSH LOGS")
         res = node.query(
             f"""
@@ -245,7 +247,9 @@ def check(node, table, check_result, expect_broken_part="", expected_error=""):
             f"SELECT d FROM '{table}' WHERE c == 12 ORDER BY d"
         )
     else:
-        query_id = node.query(f"SELECT queryID() FROM (SELECT d FROM '{table}' WHERE c == 12 ORDER BY d)").strip()
+        query_id = node.query(
+            f"SELECT queryID() FROM (SELECT d FROM '{table}' WHERE c == 12 ORDER BY d)"
+        ).strip()
         node.query("SYSTEM FLUSH LOGS")
         res = node.query(
             f"""
