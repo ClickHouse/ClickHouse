@@ -184,7 +184,11 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read(const BlockSizeParam
 
     Block block;
     if (read_result.num_rows != 0)
+    {
+        for (const auto & column : read_result.columns)
+            column->assumeMutableRef().shrinkToFit();
         block = sample_block.cloneWithColumns(read_result.columns);
+    }
 
     BlockAndProgress res = {
         .block = std::move(block),

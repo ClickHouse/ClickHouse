@@ -213,6 +213,7 @@ class BuildConfig:
                     "./programs",
                     "./packages",
                     "./docker/packager/packager",
+                    "./rust",
                 ],
                 exclude_files=[".md"],
                 docker=["clickhouse/binary-builder"],

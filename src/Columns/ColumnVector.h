@@ -182,6 +182,11 @@ public:
         data.reserve(n);
     }
 
+    void shrinkToFit() override
+    {
+        data.shrink_to_fit();
+    }
+
     const char * getFamilyName() const override { return TypeName<T>.data(); }
     TypeIndex getDataType() const override { return TypeToTypeIndex<T>; }
 

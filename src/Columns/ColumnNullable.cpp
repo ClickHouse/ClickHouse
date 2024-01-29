@@ -97,7 +97,7 @@ MutableColumnPtr ColumnNullable::cloneResized(size_t new_size) const
 
     if (new_size > 0)
     {
-        new_null_map->getData().resize(new_size);
+        new_null_map->getData().resize_exact(new_size);
 
         size_t count = std::min(size(), new_size);
         memcpy(new_null_map->getData().data(), getNullMapData().data(), count * sizeof(getNullMapData()[0]));
@@ -676,6 +676,12 @@ void ColumnNullable::reserve(size_t n)
 {
     getNestedColumn().reserve(n);
     getNullMapData().reserve(n);
+}
+
+void ColumnNullable::shrinkToFit()
+{
+    getNestedColumn().shrinkToFit();
+    getNullMapData().shrink_to_fit();
 }
 
 void ColumnNullable::ensureOwnership()
