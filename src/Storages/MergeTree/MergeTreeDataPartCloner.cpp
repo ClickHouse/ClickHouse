@@ -257,6 +257,7 @@ std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> cloneAndHand
     const WriteSettings & write_settings,
     const IDataPartStorage::ClonePartParams & params)
 {
+    chassert(!merge_tree_data->isStaticStorage());
     if (!doesStoragePolicyAllowSameDisk(merge_tree_data, src_part))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
