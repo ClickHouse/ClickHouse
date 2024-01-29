@@ -833,11 +833,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            /*
-             * If `ttl_only_drop_parts` is set, then we don't need to read all columns because
-             * there will be no partial pruning.
-             * */
-            if (materialize_ttl_recalculate_only || source.getMergeTreeData()->getSettings()->ttl_only_drop_parts)
+            if (materialize_ttl_recalculate_only)
             {
                 // just recalculate ttl_infos without remove expired data
                 auto all_columns_vec = all_columns.getNames();
@@ -850,9 +846,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                         dependencies.insert(dependency);
                 }
             }
-            else if (metadata_snapshot->hasRowsTTL()
-                || metadata_snapshot->hasAnyRowsWhereTTL()
-                || metadata_snapshot->hasAnyGroupByTTL())
+            else if (metadata_snapshot->hasAnyRowsWhereTTL() || metadata_snapshot->hasAnyGroupByTTL())
             {
                 for (const auto & column : all_columns)
                     dependencies.emplace(column.name, ColumnDependency::TTL_TARGET);
@@ -873,7 +867,15 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                 for (const auto & dependency : all_dependencies)
                 {
-                    if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
+                    /*
+                     * If `ttl_only_drop_parts` is set, we can skip reading columns which are not needed for TTL calculation.
+                     * If it is not set, we have to read all columns because we might need to do partial pruning.
+                     * */
+                    bool should_add_ttl_target_columns = metadata_snapshot->hasRowsTTL() && dependency.kind == ColumnDependency::TTL_TARGET
+                        && !source.getMergeTreeData()->getSettings()->ttl_only_drop_parts;
+                    bool should_add_column = dependency.kind == ColumnDependency::TTL_EXPRESSION || should_add_ttl_target_columns;
+
+                    if (should_add_column)
                         dependencies.insert(dependency);
                 }
 
