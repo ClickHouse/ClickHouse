@@ -41,12 +41,12 @@ public:
     String getName() const override { return "ProtobufRowInputFormat"; }
 
     void setReadBuffer(ReadBuffer & in_) override;
-    void resetParser() override;
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
+    void resetParserOnError();
 
     bool supportsCountRows() const override { return true; }
     size_t countRows(size_t max_block_size) override;
