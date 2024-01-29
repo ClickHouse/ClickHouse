@@ -13,7 +13,7 @@ namespace DB
 /// If inverted is true, we will work with inverted mask. This function is used in implementations of
 /// expand() method in IColumn interface.
 template <typename T>
-void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & mask, bool inverted);
+void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & mask, bool inverted, T default_value = T());
 
 struct MaskInfo
 {

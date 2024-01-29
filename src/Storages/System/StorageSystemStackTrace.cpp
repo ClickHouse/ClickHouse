@@ -463,7 +463,7 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
         Pipe pipe(std::make_shared<StackTraceSource>(
             column_names,
             getOutputStream().header,
