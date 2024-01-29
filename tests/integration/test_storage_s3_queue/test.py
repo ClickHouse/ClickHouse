@@ -165,6 +165,7 @@ def create_table(
     file_format="CSV",
     auth=DEFAULT_AUTH,
     bucket=None,
+    expect_error=False,
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
@@ -184,6 +185,10 @@ def create_table(
         ENGINE = S3Queue('{url}', {auth_params}, {file_format})
         SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
         """
+
+    if expect_error:
+        return node.query_and_get_error(create_query)
+
     node.query(create_query)
 
 
@@ -1200,3 +1205,64 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
         zk = started_cluster.get_kazoo_client("zoo1")
         processed_nodes = zk.get_children(f"{keeper_path}/processed/")
         assert len(processed_nodes) == shards_num * processing_threads
+
+
+def test_settings_check(started_cluster):
+    node = started_cluster.instances["instance"]
+    node_2 = started_cluster.instances["instance2"]
+    table_name = f"test_settings_check"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    mode = "ordered"
+
+    i = 0
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        mode,
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 5,
+            "s3queue_total_shards_num": 2,
+            "s3queue_current_shard_num": i,
+        },
+    )
+
+    assert (
+        "Existing table metadata in ZooKeeper differs in s3queue_total_shards_num setting. Stored in ZooKeeper: 2, local: 3"
+        in create_table(
+            started_cluster,
+            node_2,
+            table_name,
+            mode,
+            files_path,
+            additional_settings={
+                "keeper_path": keeper_path,
+                "s3queue_processing_threads_num": 5,
+                "s3queue_total_shards_num": 3,
+                "s3queue_current_shard_num": i,
+            },
+            expect_error=True,
+        )
+    )
+
+    assert (
+        "Existing table metadata in ZooKeeper differs in s3queue_processing_threads_num setting. Stored in ZooKeeper: 5, local: 2"
+        in create_table(
+            started_cluster,
+            node_2,
+            table_name,
+            mode,
+            files_path,
+            additional_settings={
+                "keeper_path": keeper_path,
+                "s3queue_processing_threads_num": 2,
+                "s3queue_total_shards_num": 2,
+                "s3queue_current_shard_num": i,
+            },
+            expect_error=True,
+        )
+    )
