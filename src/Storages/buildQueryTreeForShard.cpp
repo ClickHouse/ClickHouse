@@ -286,9 +286,9 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(mutable_context);
     auto builder = query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings);
 
-    /// It's 16M squashing. 16 is a multiplier for compression.
-    size_t min_block_size_bytes = DBMS_DEFAULT_BUFFER_SIZE * 16;
-    auto squashing = std::make_shared<SimpleSquashingChunksTransform>(builder->getHeader(), 0, min_block_size_bytes);
+    size_t min_block_size_rows = mutable_context->getSettingsRef().min_external_table_block_size_rows;
+    size_t min_block_size_bytes = mutable_context->getSettingsRef().min_external_table_block_size_bytes;
+    auto squashing = std::make_shared<SimpleSquashingChunksTransform>(builder->getHeader(), min_block_size_rows, min_block_size_bytes);
 
     builder->resize(1);
     builder->addTransform(std::move(squashing));
