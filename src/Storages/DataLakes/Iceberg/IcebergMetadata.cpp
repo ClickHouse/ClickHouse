@@ -596,9 +596,10 @@ Strings IcebergMetadata::getDataFiles()
             const auto status = status_int_column->getInt(i);
             const auto data_path = std::string(file_path_string_column->getDataAt(i).toView());
             const auto pos = data_path.find(configuration.url.key);
-            const auto file_path = data_path.substr(pos);
             if (pos == std::string::npos)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", configuration.url.key, data_path);
+
+            const auto file_path = data_path.substr(pos);
 
             if (ManifestEntryStatus(status) == ManifestEntryStatus::DELETED)
             {
