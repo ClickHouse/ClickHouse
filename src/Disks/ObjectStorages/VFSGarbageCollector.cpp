@@ -30,17 +30,27 @@ extern const int LOGICAL_ERROR;
 VFSGarbageCollector::VFSGarbageCollector(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool)
     : storage(storage_), log(getLogger(fmt::format("VFSGC({})", storage_.getName())))
 {
-    storage.zookeeper()->createAncestors(storage.traits.gc_lock_path);
+    auto create_parents = [&] { storage.zookeeper()->createAncestors(storage.traits.gc_lock_path); };
+    create_parents();
     LOG_INFO(log, "GC started");
 
     *static_cast<BackgroundSchedulePoolTaskHolder *>(this) = pool.createTask(
         log->name(),
-        [this]
+        [this, create_parents]
         {
             settings = storage.settings.get(); // update each run to capture new settings
             try
             {
                 run();
+            }
+            catch (const Coordination::Exception & e)
+            {
+                tryLogCurrentException(log, __PRETTY_FUNCTION__);
+                if (e.code == Coordination::Error::ZNONODE)
+                {
+                    LOG_ERROR(log, "Got no node error, will try to recreate VFS tree");
+                    create_parents();
+                }
             }
             catch (...)
             {
@@ -176,6 +186,8 @@ void VFSGarbageCollector::updateSnapshotWithLogEntries(Logpointer start, Logpoin
         const Logpointer new_start = reconcile(start_regarding_zero, end, std::move(e));
         if (new_start == end)
             return;
+        // TODO myrrc Here, we remove only one of snapshots. What if there were multiple candidates, shouldn't we
+        // remove all of them?
         populate_old_snapshot(new_start);
     }
 

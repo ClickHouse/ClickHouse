@@ -26,10 +26,7 @@ def started_cluster(request):
 
 
 # TODO myrrc check possible errors on merge and move
-def test_reacquire_session(started_cluster):
-    """
-    Test VFS can work when ZK session breaks
-    """
+def test_session_breaks(started_cluster):
     node: ClickHouseInstance = started_cluster.instances["node"]
     # non-replicated MergeTree implies ZK data flow will be vfs-related
     node.query("CREATE TABLE test (i UInt32) ENGINE=MergeTree ORDER BY i")
@@ -53,25 +50,17 @@ def test_reacquire_session(started_cluster):
     assert int(node.query("SELECT count() FROM test")) == 2
 
 
-def test_already_processed_batch(started_cluster):
-    """
-    Test if GC:
-    - processed a log batch
-    - wrote new snapshot
-    - removed old snapshot, and
-    - failed to remove old log batch from ZK,
-    next GC run will discard already processed batch
-    """
+def test_reconciliation(started_cluster):
     node: ClickHouseInstance = started_cluster.instances["node"]
     while int(node.count_in_log("VFSGC(already): Removed lock for")) < 1:
         time.sleep(0.3)
 
+    # Already processed log batch
+
     zk: KazooClient = started_cluster.get_kazoo_client("zoo1")
     assert zk.get_children("/vfs_log/already/ops") == []
-    for i in range(
-        11, 15
-    ):  # simulate already processed log (snapshot for 10 doesn't exist)
-        zk.create(f"/vfs_log/already/ops/log-00000000{i}", b"invalid")
+    for i in range(11, 15):  # snapshot for 10 doesn't exist
+        zk.create(f"/vfs_log/already/ops/log-00000000{i}", b"")
 
     started_cluster.minio_client.put_object(
         started_cluster.minio_bucket,
@@ -83,4 +72,12 @@ def test_already_processed_batch(started_cluster):
     time.sleep(5)
     assert int(node.count_in_log("Found leftover from previous GC run")) == 1
     assert zk.get_children("/vfs_log/already/ops") == []
+
+    # Zookeeper full loss (node counter resets, but snapshot present)
+
+    zk.delete("/vfs_log/already", recursive=True)
+    zk.create(f"/vfs_log/already/ops/log-", b"", sequence=True, makepath=True)
+    time.sleep(11)  # GC will fail, reschedule, and then succeed
+    assert int(node.count_in_log("but found snapshot with 14, using it")) == 1
+
     zk.stop()
