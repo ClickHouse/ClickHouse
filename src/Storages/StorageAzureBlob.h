@@ -320,7 +320,7 @@ private:
 
     ReaderHolder reader;
 
-    Poco::Logger * log = &Poco::Logger::get("StorageAzureBlobSource");
+    LoggerPtr log = getLogger("StorageAzureBlobSource");
 
     ThreadPool create_reader_pool;
     ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;

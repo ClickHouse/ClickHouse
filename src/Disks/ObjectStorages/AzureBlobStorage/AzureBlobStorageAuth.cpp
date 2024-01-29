@@ -168,7 +168,8 @@ std::unique_ptr<AzureObjectStorageSettings> getAzureBlobStorageSettings(const Po
         config.getInt(config_prefix + ".list_object_keys_size", 1000),
         config.getUInt64(config_prefix + ".max_upload_part_size", 5ULL * 1024 * 1024 * 1024),
         config.getUInt64(config_prefix + ".max_single_part_copy_size", context->getSettings().azure_max_single_part_copy_size),
-        config.getBool(config_prefix + ".use_native_copy", false)
+        config.getBool(config_prefix + ".use_native_copy", false),
+        config.getUInt64(config_prefix + ".max_unexpected_write_error_retries", context->getSettings().azure_max_unexpected_write_error_retries)
     );
 }
 

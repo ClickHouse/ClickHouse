@@ -90,6 +90,7 @@
 
 #include <base/insertAtEnd.h>
 #include <base/interpolate.h>
+#include <base/defines.h>
 
 #include <algorithm>
 #include <atomic>
@@ -300,7 +301,11 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             if (disk->isBroken())
                continue;
 
-            if (!disk->isReadOnly())
+            /// Write once disk is almost the same as read-only for MergeTree,
+            /// since it does not support move, that is required for any
+            /// operation over MergeTree, so avoid writing format_version.txt
+            /// into it as well, to avoid leaving it after DROP.
+            if (!disk->isReadOnly() && !disk->isWriteOnce())
             {
                 auto buf = disk->writeFile(format_version_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, getContext()->getWriteSettings());
                 writeIntText(format_version.toUnderType(), *buf);
@@ -355,7 +360,7 @@ MergeTreeData::MergeTreeData(
     , require_part_metadata(require_part_metadata_)
     , broken_part_callback(broken_part_callback_)
     , log_name(std::make_shared<String>(table_id_.getNameForLogs()))
-    , log(&Poco::Logger::get(*log_name))
+    , log(getLogger(*log_name))
     , storage_settings(std::move(storage_settings_))
     , pinned_part_uuids(std::make_shared<PinnedPartUUIDs>())
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
@@ -1222,7 +1227,7 @@ MergeTreeData::PartLoadingTree::build(PartLoadingInfos nodes)
 }
 
 static std::optional<size_t> calculatePartSizeSafe(
-    const MergeTreeData::DataPartPtr & part, Poco::Logger * log)
+    const MergeTreeData::DataPartPtr & part, const LoggerPtr & log)
 {
     try
     {
@@ -2735,11 +2740,20 @@ void MergeTreeData::renameInMemory(const StorageID & new_table_id)
 {
     IStorage::renameInMemory(new_table_id);
     std::atomic_store(&log_name, std::make_shared<String>(new_table_id.getNameForLogs()));
-    log = &Poco::Logger::get(*log_name);
+    log = getLogger(*log_name);
 }
 
 void MergeTreeData::dropAllData()
 {
+    /// In case there is read-only/write-once disk we cannot allow to call dropAllData(), but dropping tables is allowed.
+    ///
+    /// Note, that one may think that drop on write-once disk should be
+    /// supported, since it is pretty trivial to implement
+    /// MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(),
+    /// however removing part requires moveDirectory() as well.
+    if (isStaticStorage())
+        return;
+
     LOG_TRACE(log, "dropAllData: waiting for locks.");
     auto settings_ptr = getSettings();
 
@@ -7071,6 +7085,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     const ReadSettings & read_settings,
     const WriteSettings & write_settings)
 {
+    chassert(!isStaticStorage());
+
     /// Check that the storage policy contains the disk where the src_part is located.
     bool does_storage_policy_allow_same_disk = false;
     for (const DiskPtr & disk : getStoragePolicy()->getDisks())

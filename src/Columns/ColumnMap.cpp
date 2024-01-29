@@ -229,6 +229,11 @@ void ColumnMap::reserve(size_t n)
     nested->reserve(n);
 }
 
+void ColumnMap::shrinkToFit()
+{
+    nested->shrinkToFit();
+}
+
 void ColumnMap::ensureOwnership()
 {
     nested->ensureOwnership();

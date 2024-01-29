@@ -2321,11 +2321,15 @@ std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(
   */
 void QueryAnalyzer::expandGroupByAll(QueryNode & query_tree_node_typed)
 {
+    if (!query_tree_node_typed.isGroupByAll())
+        return;
+
     auto & group_by_nodes = query_tree_node_typed.getGroupBy().getNodes();
     auto & projection_list = query_tree_node_typed.getProjection();
 
     for (auto & node : projection_list.getNodes())
         recursivelyCollectMaxOrdinaryExpressions(node, group_by_nodes);
+    query_tree_node_typed.setIsGroupByAll(false);
 }
 
 void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed)
@@ -7422,8 +7426,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         node->removeAlias();
     }
 
-    if (query_node_typed.isGroupByAll())
-        expandGroupByAll(query_node_typed);
+    expandGroupByAll(query_node_typed);
 
     validateFilters(query_node);
     validateAggregates(query_node, { .group_by_use_nulls = scope.group_by_use_nulls });

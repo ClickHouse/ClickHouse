@@ -246,16 +246,19 @@ clickhouse-client -q "system flush logs" ||:
 stop_logs_replication
 
 # Try to get logs while server is running
-successfuly_saved=0
-for table in query_log zookeeper_log trace_log transactions_info_log
+failed_to_save_logs=0
+for table in query_log zookeeper_log trace_log transactions_info_log metric_log
 do
-    clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst
-    successfuly_saved=$?
+    err=$( { clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst; } 2>&1 )
+    echo "$err"
+    [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-        clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst
-        successfuly_saved=$((successfuly_saved | $?))
-        clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst
-        successfuly_saved=$((successfuly_saved | $?))
+        err=$( { clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst; } 2>&1 )
+        echo "$err"
+        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
+        err=$( { clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst; } 2>&1 )
+        echo "$err"
+        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
     fi
 done
 
@@ -280,7 +283,7 @@ fi
 
 
 # If server crashed dump system logs with clickhouse-local
-if [ $successfuly_saved -ne 0 ]; then
+if [ $failed_to_save_logs -ne 0 ]; then
     # Compress tables.
     #
     # NOTE:
@@ -288,7 +291,7 @@ if [ $successfuly_saved -ne 0 ]; then
     #   directly
     # - even though ci auto-compress some files (but not *.tsv) it does this only
     #   for files >64MB, we want this files to be compressed explicitly
-    for table in query_log zookeeper_log trace_log transactions_info_log
+    for table in query_log zookeeper_log trace_log transactions_info_log metric_log
     do
         clickhouse-local "$data_path_config" --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
         if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then

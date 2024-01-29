@@ -123,7 +123,7 @@ private:
     /// to set when creating a session context
     SettingsChanges settings_from_auth_server;
 
-    Poco::Logger * log = nullptr;
+    LoggerPtr log = nullptr;
 };
 
 }

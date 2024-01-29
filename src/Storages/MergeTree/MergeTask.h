@@ -228,7 +228,7 @@ private:
         size_t sum_compressed_bytes_upper_bound{0};
         bool blocks_are_granules_size{false};
 
-        Poco::Logger * log{&Poco::Logger::get("MergeTask::PrepareStage")};
+        LoggerPtr log{getLogger("MergeTask::PrepareStage")};
 
         /// Dependencies for next stages
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
@@ -354,7 +354,7 @@ private:
         MergeTasks tasks_for_projections;
         MergeTasks::iterator projections_iterator;
 
-        Poco::Logger * log{&Poco::Logger::get("MergeTask::MergeProjectionsStage")};
+        LoggerPtr log{getLogger("MergeTask::MergeProjectionsStage")};
     };
 
     using MergeProjectionsRuntimeContextPtr = std::shared_ptr<MergeProjectionsRuntimeContext>;

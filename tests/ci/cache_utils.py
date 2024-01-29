@@ -116,6 +116,7 @@ class Cache:
         self.s3_helper = s3_helper
 
     def _download(self, url: str, ignore_error: bool = False) -> None:
+        self.temp_path.mkdir(parents=True, exist_ok=True)
         compressed_cache = self.temp_path / self.archive_name
         try:
             if url.startswith("file://"):

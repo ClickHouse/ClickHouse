@@ -1096,6 +1096,8 @@ void StorageReplicatedMergeTree::drop()
         /// Table can be shut down, restarting thread is not active
         /// and calling StorageReplicatedMergeTree::getZooKeeper()/getAuxiliaryZooKeeper() won't suffice.
         zookeeper = getZooKeeperIfTableShutDown();
+        /// Update zookeeper client, since existing may be expired, while ZooKeeper is required inside dropAllData().
+        current_zookeeper = zookeeper;
 
         /// If probably there is metadata in ZooKeeper, we don't allow to drop the table.
         if (!zookeeper)
@@ -1133,7 +1135,7 @@ void StorageReplicatedMergeTree::drop()
 }
 
 void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
-                                             Poco::Logger * logger, MergeTreeSettingsPtr table_settings, std::optional<bool> * has_metadata_out)
+                                             LoggerPtr logger, MergeTreeSettingsPtr table_settings, std::optional<bool> * has_metadata_out)
 {
     if (zookeeper->expired())
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Table was not dropped because ZooKeeper session has expired.");
@@ -1251,7 +1253,7 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
     }
 }
 
-void StorageReplicatedMergeTree::dropReplica(const String & drop_zookeeper_path, const String & drop_replica, Poco::Logger * logger)
+void StorageReplicatedMergeTree::dropReplica(const String & drop_zookeeper_path, const String & drop_replica, LoggerPtr logger)
 {
     zkutil::ZooKeeperPtr zookeeper = getZooKeeperIfTableShutDown();
 
@@ -1266,7 +1268,7 @@ void StorageReplicatedMergeTree::dropReplica(const String & drop_zookeeper_path,
 
 
 bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper,
-        const String & zookeeper_path, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger)
+        const String & zookeeper_path, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, LoggerPtr logger)
 {
     bool completely_removed = false;
 
@@ -4316,7 +4318,7 @@ void StorageReplicatedMergeTree::waitForUniquePartsToBeFetchedByOtherReplicas(St
         LOG_INFO(log, "Successfully waited all the parts");
 }
 
-std::set<MergeTreePartInfo> StorageReplicatedMergeTree::findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, Poco::Logger * log_)
+std::set<MergeTreePartInfo> StorageReplicatedMergeTree::findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, LoggerPtr log_)
 {
     if (!zookeeper_->exists(fs::path(zookeeper_path_) / "replicas" / replica_name_ / "is_active"))
     {
@@ -4659,6 +4661,9 @@ bool StorageReplicatedMergeTree::fetchPart(
     zkutil::ZooKeeper::Ptr zookeeper_,
     bool try_fetch_shared)
 {
+    if (isStaticStorage())
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
+
     auto zookeeper = zookeeper_ ? zookeeper_ : getZooKeeper();
     const auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
@@ -5496,6 +5501,8 @@ void StorageReplicatedMergeTree::assertNotReadonly() const
 {
     if (is_readonly)
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode (replica path: {})", replica_path);
+    if (isStaticStorage())
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
 }
 
 
@@ -5504,6 +5511,8 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
     if (!initialization_done)
         throw Exception(ErrorCodes::NOT_INITIALIZED, "Table is not initialized yet");
 
+    if (isStaticStorage())
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
     /// If table is read-only because it doesn't have metadata in zk yet, then it's not possible to insert into it
     /// Without this check, we'll write data parts on disk, and afterwards will remove them since we'll fail to commit them into zk
     /// In case of remote storage like s3, it'll generate unnecessary PUT requests
@@ -9364,7 +9373,7 @@ namespace
 /// But sometimes we need an opposite. When we deleting all_0_0_0_1 it can be non replicated to other replicas, so we are the only owner of this part.
 /// In this case when we will drop all_0_0_0_1 we will drop blobs for all_0_0_0. But it will lead to dataloss. For such case we need to check that other replicas
 /// still need parent part.
-std::pair<bool, NameSet> getParentLockedBlobs(const ZooKeeperWithFaultInjectionPtr & zookeeper_ptr, const std::string & zero_copy_part_path_prefix, const MergeTreePartInfo & part_info, MergeTreeDataFormatVersion format_version, Poco::Logger * log)
+std::pair<bool, NameSet> getParentLockedBlobs(const ZooKeeperWithFaultInjectionPtr & zookeeper_ptr, const std::string & zero_copy_part_path_prefix, const MergeTreePartInfo & part_info, MergeTreeDataFormatVersion format_version, LoggerPtr log)
 {
     NameSet files_not_to_remove;
 
@@ -9455,7 +9464,7 @@ std::pair<bool, NameSet> getParentLockedBlobs(const ZooKeeperWithFaultInjectionP
 std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         String part_id, const String & table_uuid, const MergeTreePartInfo & part_info,
         const String & replica_name_, const std::string & disk_type, const ZooKeeperWithFaultInjectionPtr & zookeeper_ptr, const MergeTreeSettings & settings,
-        Poco::Logger * logger, const String & zookeeper_path_old, MergeTreeDataFormatVersion data_format_version)
+        LoggerPtr logger, const String & zookeeper_path_old, MergeTreeDataFormatVersion data_format_version)
 {
     boost::replace_all(part_id, "/", "_");
 
@@ -10143,7 +10152,7 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
                 size_t failed_op = zkutil::getFailedOpIndex(error, responses);
                 if (ops[failed_op]->getPath() == zookeeper_node)
                 {
-                    LOG_WARNING(&Poco::Logger::get("ZeroCopyLocks"), "Replacing persistent lock with ephemeral for path {}. It can happen only in case of local part loss", zookeeper_node);
+                    LOG_WARNING(getLogger("ZeroCopyLocks"), "Replacing persistent lock with ephemeral for path {}. It can happen only in case of local part loss", zookeeper_node);
                     replace_existing_lock = true;
                     continue;
                 }
@@ -10201,7 +10210,7 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
                 detached_replica_name,
                 disk->getDataSourceDescription().toString(),
                 std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), local_context->getReplicatedMergeTreeSettings(),
-                &Poco::Logger::get("StorageReplicatedMergeTree"),
+                getLogger("StorageReplicatedMergeTree"),
                 detached_zookeeper_path,
                 MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
 
