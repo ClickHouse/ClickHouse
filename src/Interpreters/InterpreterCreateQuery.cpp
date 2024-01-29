@@ -716,7 +716,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     setEngine(create);
 
     /// We have to check access rights again (in case engine was changed).
-    if (create.storage)
+    if (create.storage && create.storage->engine)
     {
         auto source_access_type = StorageFactory::instance().getSourceAccessType(create.storage->engine->name);
         if (source_access_type != AccessType::NONE)
@@ -954,6 +954,20 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
                         "because fixed string with size > {} is suspicious. "
                         "Set setting allow_suspicious_fixed_string_types = 1 in order to allow it",
                         name, type->getName(), MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
+            }
+        }
+    }
+    if (!create.attach && !settings.allow_experimental_variant_type)
+    {
+        for (const auto & [name, type] : properties.columns.getAllPhysical())
+        {
+            if (isVariant(type))
+            {
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Cannot create table with column '{}' which type is '{}' "
+                        "because experimental Variant type is not allowed. "
+                        "Set setting allow_experimental_variant_type = 1 in order to allow it",
+                        name, type->getName());
             }
         }
     }

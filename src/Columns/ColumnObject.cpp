@@ -2,6 +2,7 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Common/iota.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -475,7 +476,7 @@ void ColumnObject::Subcolumn::finalize()
             {
                 auto values = part->index(*offsets, offsets->size());
                 values = castColumn({values, from_type, ""}, to_type);
-                part = values->createWithOffsets(offsets_data, to_type->getDefault(), part_size, /*shift=*/ 0);
+                part = values->createWithOffsets(offsets_data, *createColumnConstWithDefaultValue(result_column->getPtr()), part_size, /*shift=*/ 0);
             }
         }
 

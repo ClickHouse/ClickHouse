@@ -43,7 +43,6 @@ LoggerRawPtr getRawLogger(const std::string & name);
 
 LoggerRawPtr createRawLogger(const std::string & name, Poco::Channel * channel, Poco::Message::Priority level = Poco::Message::PRIO_INFORMATION);
 
-
 /** Returns true, if currently Logger with specified name is created.
   * Otherwise, returns false.
   */
