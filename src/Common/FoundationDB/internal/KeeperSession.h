@@ -26,7 +26,7 @@ public:
 
 private:
     KeeperKeys & keys;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     void heartbeat();
     Coroutine::Task<void> heartbeatLoop(std::shared_ptr<FDBTransaction> trx);

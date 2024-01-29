@@ -19,7 +19,7 @@ public:
     Coroutine::Task<void> clean(FDBTransaction & tr, SessionID session);
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
     const KeeperKeys & keys;
 
     AsyncTrxTracker clear_trx_cancel;

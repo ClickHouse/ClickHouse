@@ -111,7 +111,7 @@ public:
     std::future<void> cleanSession(int64_t session_id);
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
     std::unique_ptr<DB::BackgroundSchedulePool> bg_pool;
 
     FoundationDBNetwork::Holder fdb_network;

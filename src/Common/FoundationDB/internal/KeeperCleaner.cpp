@@ -31,7 +31,7 @@ struct LittleEndianTimestamp
     static LittleEndianTimestamp now() { return LittleEndianTimestamp{Poco::Timestamp().epochMicroseconds() / 1000}; }
 };
 
-KeeperCleaner::KeeperCleaner(const KeeperKeys & keys_, FDBTransaction * tr) : log(&Poco::Logger::get("FDBKeeperCleaner")), keys(keys_)
+KeeperCleaner::KeeperCleaner(const KeeperKeys & keys_, FDBTransaction * tr) : log(getLogger("FDBKeeperCleaner")), keys(keys_)
 {
     cleaner(fdb_manage_object(tr))
         .start(

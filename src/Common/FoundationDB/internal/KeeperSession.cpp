@@ -6,7 +6,7 @@
 
 namespace DB::FoundationDB
 {
-KeeperSession::KeeperSession(KeeperKeys & keys_, FDBTransaction * tr) : keys(keys_), log(&Poco::Logger::get("FDBKeeperSession"))
+KeeperSession::KeeperSession(KeeperKeys & keys_, FDBTransaction * tr) : keys(keys_), log(getLogger("FDBKeeperSession"))
 {
     new_session_key_template = keys.getSessionKey(BigEndianTimestamp{}, FDBVersionstamp{}, true);
     heartbeatLoop(fdb_manage_object(tr))

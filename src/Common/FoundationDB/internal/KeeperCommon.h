@@ -282,7 +282,7 @@ inline Coordination::Error getKeeperErrorFromFDBError(fdb_error_t fdb_error, con
         case 1031:
             return Coordination::Error::ZOPERATIONTIMEOUT;
         default: {
-            auto * log = &Poco::Logger::get(__PRETTY_FUNCTION__);
+            LoggerPtr log = getLogger(__PRETTY_FUNCTION__);
             LOG_WARNING(log, "Unexpected fdb error {} ({}).{}", fdb_error, fdb_get_error(fdb_error), message);
             return Coordination::Error::ZSYSTEMERROR;
         }

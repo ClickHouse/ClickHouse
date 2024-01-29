@@ -161,7 +161,7 @@ static String chroot_path(const String & root, const String & path)
 }
 
 FDBKeeper::FDBKeeper(const zkutil::ZooKeeperArgs & args, std::shared_ptr<ZooKeeperLog> zk_log)
-    : log(&Poco::Logger::get("FDBKeeper"))
+    : log(getLogger("FDBKeeper"))
     , bg_pool(std::make_unique<DB::BackgroundSchedulePool>(
           1, CurrentMetrics::BackgroundCommonPoolTask, CurrentMetrics::BackgroundCommonPoolSize, "FDBKeeper"))
 {

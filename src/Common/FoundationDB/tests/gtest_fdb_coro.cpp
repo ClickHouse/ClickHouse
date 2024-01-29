@@ -39,7 +39,7 @@ public:
 
 protected:
     FDBDatabase * db = nullptr;
-    Poco::Logger * log = &Poco::Logger::get("GTestFDBAsyncTrx");
+    LoggerPtr * log = getLogger("GTestFDBAsyncTrx");
 
     FDBTransaction * newTrx()
     {

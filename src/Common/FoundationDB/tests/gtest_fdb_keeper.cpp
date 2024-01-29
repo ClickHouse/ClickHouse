@@ -63,7 +63,7 @@ public:
 protected:
     std::shared_ptr<FDBKeeper> keeper;
     zkutil::ZooKeeperArgs zookeeperArgs;
-    Poco::Logger * log = &Poco::Logger::get("GTestFDBKeeperSuite");
+    LoggerPtr log = getLogger("GTestFDBKeeperSuite");
 
     std::shared_ptr<FDBKeeper> createKeeper() { return std::make_shared<FDBKeeper>(zookeeperArgs); }
 
