@@ -124,11 +124,10 @@ bool DataTypeMap::checkKeyType(DataTypePtr key_type)
         if (!isStringOrFixedString(*(low_cardinality_data_type.getDictionaryType())))
             return false;
     }
-    else if (!key_type->isValueRepresentedByInteger()
-             && !isStringOrFixedString(*key_type)
-             && !WhichDataType(key_type).isNothing()
-             && !WhichDataType(key_type).isIPv6()
-             && !WhichDataType(key_type).isUUID())
+    else if (
+        !key_type->isValueRepresentedByNumber() && !isStringOrFixedString(*key_type) && !WhichDataType(key_type).isNothing()
+        && !WhichDataType(key_type).isIPv6() && !WhichDataType(key_type).isUUID() && !isMap(key_type) && !isArray(key_type)
+        && !isTuple(key_type))
     {
         return false;
     }
