@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Columns/ColumnConst.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Exception.h>
 #include <Disks/createVolume.h>
@@ -114,7 +115,7 @@ void buildScatterSelector(
     if (max_parts && partitions_count >= max_parts && !throw_on_limit)
     {
         const auto & client_info = context->getClientInfo();
-        Poco::Logger * log = &Poco::Logger::get("MergeTreeDataWriter");
+        LoggerPtr log = getLogger("MergeTreeDataWriter");
 
         LOG_WARNING(log, "INSERT query from initial_user {} (query ID: {}) inserted a block "
                          "that created parts in {} partitions. This is being logged "
@@ -314,7 +315,12 @@ Block MergeTreeDataWriter::mergeBlock(
     IColumn::Permutation *& permutation,
     const MergeTreeData::MergingParams & merging_params)
 {
+    OpenTelemetry::SpanHolder span("MergeTreeDataWriter::mergeBlock");
+
     size_t block_size = block.rows();
+
+    span.addAttribute("clickhouse.rows", block_size);
+    span.addAttribute("clickhouse.columns", block.columns());
 
     auto get_merging_algorithm = [&]() -> std::shared_ptr<IMergingAlgorithm>
     {
@@ -325,11 +331,11 @@ Block MergeTreeDataWriter::mergeBlock(
                 return nullptr;
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedAlgorithm>(
-                    block, 1, sort_description, merging_params.version_column, block_size + 1, /*block_size_bytes=*/0);
+                    block, 1, sort_description, merging_params.is_deleted_column, merging_params.version_column, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.sign_column,
-                    false, block_size + 1, /*block_size_bytes=*/0, &Poco::Logger::get("MergeTreeDataWriter"));
+                    false, block_size + 1, /*block_size_bytes=*/0, getLogger("MergeTreeDataWriter"));
             case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.columns_to_sum,
@@ -350,6 +356,8 @@ Block MergeTreeDataWriter::mergeBlock(
     auto merging_algorithm = get_merging_algorithm();
     if (!merging_algorithm)
         return block;
+
+    span.addAttribute("clickhouse.merging_algorithm", merging_algorithm->getName());
 
     Chunk chunk(block.getColumns(), block_size);
 
@@ -610,7 +618,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     bool is_temp,
     IMergeTreeDataPart * parent_part,
     const MergeTreeData & data,
-    Poco::Logger * log,
+    LoggerPtr log,
     Block block,
     const ProjectionDescription & projection)
 {
@@ -722,7 +730,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
 
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
     const MergeTreeData & data,
-    Poco::Logger * log,
+    LoggerPtr log,
     Block block,
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part)
@@ -741,7 +749,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
 /// projection part merges.
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
     const MergeTreeData & data,
-    Poco::Logger * log,
+    LoggerPtr log,
     Block block,
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,

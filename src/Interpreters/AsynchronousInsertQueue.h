@@ -214,7 +214,7 @@ private:
     /// Uses async_insert_busy_timeout_ms and processBatchDeadlines()
     std::vector<ThreadFromGlobalPool> dump_by_first_update_threads;
 
-    Poco::Logger * log = &Poco::Logger::get("AsynchronousInsertQueue");
+    LoggerPtr log = getLogger("AsynchronousInsertQueue");
 
     PushResult pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context);
     void preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context);
@@ -230,7 +230,7 @@ private:
         const std::list<InsertData::EntryPtr> & entries,
         const Block & header,
         const ContextPtr & insert_context,
-        const Poco::Logger * logger,
+        const LoggerPtr logger,
         LogFunc && add_to_async_insert_log);
 
     template <typename LogFunc>

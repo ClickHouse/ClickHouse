@@ -155,6 +155,7 @@ namespace
                 "formats",
                 "privileges",
                 "data_type_families",
+                "database_engines",
                 "table_engines",
                 "table_functions",
                 "aggregate_function_combinators",
@@ -297,7 +298,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
     }
 
     user_name = user->getName();
-    trace_log = &Poco::Logger::get("ContextAccess (" + user_name + ")");
+    trace_log = getLogger("ContextAccess (" + user_name + ")");
 
     std::vector<UUID> current_roles, current_roles_with_admin_option;
     if (params.use_default_roles)

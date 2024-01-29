@@ -65,6 +65,11 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         query->replace(ast_create_query.select, metadata.select.select_query);
     }
 
+    if (metadata.refresh)
+    {
+        query->replace(ast_create_query.refresh_strategy, metadata.refresh);
+    }
+
     /// MaterializedView, Dictionary are types of CREATE query without storage.
     if (ast_create_query.storage)
     {
@@ -192,7 +197,7 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
 
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
-        : IDatabase(name_), WithContext(context_->getGlobalContext()), log(&Poco::Logger::get(logger))
+        : IDatabase(name_), WithContext(context_->getGlobalContext()), log(getLogger(logger))
 {
 }
 

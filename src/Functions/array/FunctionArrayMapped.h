@@ -74,6 +74,8 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     /// Called if at least one function argument is a lambda expression.
     /// For argument-lambda expressions, it defines the types of arguments of these expressions.
     void getLambdaArgumentTypes(DataTypes & arguments) const override
@@ -333,7 +335,11 @@ public:
                         && column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData())
                         throw Exception(
                             ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                                "Arrays passed to {} must have equal size", getName());
+                            "Arrays passed to {} must have equal size. Argument {} has size {}, but expected {}",
+                            getName(),
+                            i,
+                            column_array->getOffsets().size(),
+                            typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData().size());
                 }
 
                 const auto * column_tuple = checkAndGetColumn<ColumnTuple>(&column_array->getData());
@@ -370,10 +376,10 @@ public:
 
             /// Put all the necessary columns multiplied by the sizes of arrays into the columns.
             auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(column_first_array->getOffsets()));
-            auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
-            replicated_column_function->appendArguments(arrays);
+            auto & replicated_column_function = typeid_cast<ColumnFunction &>(*replicated_column_function_ptr);
+            replicated_column_function.appendArguments(arrays);
 
-            auto lambda_result = replicated_column_function->reduce();
+            auto lambda_result = replicated_column_function.reduce();
 
             /// Convert LowCardinality(T) -> T and Const(LowCardinality(T)) -> Const(T),
             /// because we removed LowCardinality from return type of lambda expression.

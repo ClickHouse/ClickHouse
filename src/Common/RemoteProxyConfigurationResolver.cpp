@@ -27,7 +27,7 @@ RemoteProxyConfigurationResolver::RemoteProxyConfigurationResolver(
 
 ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 {
-    auto * logger = &Poco::Logger::get("RemoteProxyConfigurationResolver");
+    auto logger = getLogger("RemoteProxyConfigurationResolver");
 
     auto & [endpoint, proxy_protocol, proxy_port, cache_ttl_] = remote_server_configuration;
 
@@ -50,11 +50,10 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 
     /// 1 second is enough for now.
     /// TODO: Make timeouts configurable.
-    ConnectionTimeouts timeouts(
-        Poco::Timespan(1000000), /// Connection timeout.
-        Poco::Timespan(1000000), /// Send timeout.
-        Poco::Timespan(1000000)  /// Receive timeout.
-    );
+    auto timeouts = ConnectionTimeouts()
+        .withConnectionTimeout(1)
+        .withSendTimeout(1)
+        .withReceiveTimeout(1);
 
     try
     {

@@ -1,6 +1,7 @@
 #include <filesystem>
 
 #include <Core/Settings.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
@@ -37,6 +38,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_DATABASE_ENGINE;
 }
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
@@ -225,11 +227,18 @@ LoadTaskPtr DatabaseOrdinary::startupDatabaseAsync(
     LoadJobSet startup_after,
     LoadingStrictnessLevel /*mode*/)
 {
-    // NOTE: this task is empty, but it is required for correct dependency handling (startup should be done after tables loading)
     auto job = makeLoadJob(
         std::move(startup_after),
         TablesLoaderBackgroundStartupPoolId,
-        fmt::format("startup Ordinary database {}", getDatabaseName()));
+        fmt::format("startup Ordinary database {}", getDatabaseName()),
+        ignoreDependencyFailure,
+        [] (AsyncLoader &, const LoadJobPtr &)
+        {
+            // NOTE: this job is no-op, but it is required for correct dependency handling
+            // 1) startup should be done after tables loading
+            // 2) load or startup errors for tables should not lead to not starting up the whole database
+        });
+    std::scoped_lock lock(mutex);
     return startup_database_task = makeLoadTask(async_loader, {job});
 }
 
@@ -247,11 +256,35 @@ void DatabaseOrdinary::waitTableStarted(const String & name) const
         waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task);
 }
 
-void DatabaseOrdinary::waitDatabaseStarted(bool no_throw) const
+void DatabaseOrdinary::waitDatabaseStarted() const
 {
     /// Prioritize load and startup of all tables and database itself and wait for them synchronously
-    if (startup_database_task)
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_database_task, no_throw);
+    LoadTaskPtr task;
+    {
+        std::scoped_lock lock(mutex);
+        task = startup_database_task;
+    }
+    if (task)
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task);
+}
+
+void DatabaseOrdinary::stopLoading()
+{
+    std::unordered_map<String, LoadTaskPtr> stop_load_table;
+    std::unordered_map<String, LoadTaskPtr> stop_startup_table;
+    LoadTaskPtr stop_startup_database;
+    {
+        std::scoped_lock lock(mutex);
+        stop_load_table.swap(load_table);
+        stop_startup_table.swap(startup_table);
+        stop_startup_database.swap(startup_database_task);
+    }
+
+    // Cancel pending tasks and wait for currently running tasks
+    // Note that order must be backward of how it was created to make sure no dependent task is run after waiting for current task
+    stop_startup_database.reset();
+    stop_startup_table.clear();
+    stop_load_table.clear();
 }
 
 DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const
@@ -264,7 +297,7 @@ DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_c
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     String table_name = table_id.table_name;
 
@@ -321,4 +354,19 @@ void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_
     }
 }
 
+void registerDatabaseOrdinary(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        if (!args.create_query.attach && !args.context->getSettingsRef().allow_deprecated_database_ordinary)
+            throw Exception(
+                ErrorCodes::UNKNOWN_DATABASE_ENGINE,
+                "Ordinary database engine is deprecated (see also allow_deprecated_database_ordinary setting)");
+        return make_shared<DatabaseOrdinary>(
+            args.database_name,
+            args.metadata_path,
+            args.context);
+    };
+    factory.registerDatabase("Ordinary", create_fn);
+}
 }

@@ -18,7 +18,7 @@ namespace DB
 
 StorageSystemProjectionParts::StorageSystemProjectionParts(const StorageID & table_id_)
     : StorageSystemPartsBase(table_id_,
-    {
+    ColumnsDescription{
         {"partition",                                   std::make_shared<DataTypeString>()},
         {"name",                                        std::make_shared<DataTypeString>()},
         {"part_type",                                   std::make_shared<DataTypeString>()},

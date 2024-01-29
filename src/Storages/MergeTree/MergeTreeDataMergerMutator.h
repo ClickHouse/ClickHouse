@@ -165,6 +165,7 @@ public:
         ReservationSharedPtr space_reservation,
         bool deduplicate,
         const Names & deduplicate_by_columns,
+        bool cleanup,
         const MergeTreeData::MergingParams & merging_params,
         const MergeTreeTransactionPtr & txn,
         bool need_prefix = true,
@@ -212,7 +213,7 @@ public :
 private:
     MergeTreeData & data;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// When the last time you wrote to the log that the disk space was running out (not to write about this too often).
     time_t disk_space_warning_time = 0;

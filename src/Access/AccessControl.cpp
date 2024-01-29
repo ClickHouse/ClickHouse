@@ -24,19 +24,11 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/defines.h>
 #include <IO/Operators.h>
+#include <Common/re2.h>
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
 #include <filesystem>
 #include <mutex>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace DB
 {
@@ -55,7 +47,7 @@ namespace
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_path,
         const std::string & users_config_path,
-        Poco::Logger * log)
+        LoggerPtr log)
     {
         if (config.getBool("skip_check_for_incorrect_settings", false))
             return;

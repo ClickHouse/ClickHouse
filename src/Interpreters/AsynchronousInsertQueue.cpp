@@ -515,7 +515,7 @@ try
 
     SCOPE_EXIT(CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size()));
 
-    const auto * log = &Poco::Logger::get("AsynchronousInsertQueue");
+    const auto log = getLogger("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
     auto insert_context = Context::createCopy(global_context);
@@ -732,7 +732,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     const std::list<InsertData::EntryPtr> & entries,
     const Block & header,
     const ContextPtr & insert_context,
-    const Poco::Logger * logger,
+    const LoggerPtr logger,
     LogFunc && add_to_async_insert_log)
 {
     size_t total_rows = 0;
@@ -767,7 +767,6 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     };
 
     StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
-    std::unique_ptr<ReadBuffer> last_buffer;
     auto chunk_info = std::make_shared<AsyncInsertInfo>();
     auto query_for_logging = serializeQuery(*key.query, insert_context->getSettingsRef().log_queries_cut_to_length);
 
@@ -783,11 +782,6 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
         size_t num_bytes = bytes->size();
         size_t num_rows = executor.execute(*buffer);
-
-        /// Keep buffer, because it still can be used
-        /// in destructor, while resetting buffer at next iteration.
-        last_buffer = std::move(buffer);
-
         total_rows += num_rows;
         chunk_info->offsets.push_back(total_rows);
         chunk_info->tokens.push_back(entry->async_dedup_token);
@@ -795,8 +789,6 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         add_to_async_insert_log(entry, query_for_logging, current_exception, num_rows, num_bytes);
         current_exception.clear();
     }
-
-    format->addBuffer(std::move(last_buffer));
 
     Chunk chunk(executor.getResultColumns(), total_rows);
     chunk.setChunkInfo(std::move(chunk_info));

@@ -531,6 +531,7 @@ class FailureReason(enum.Enum):
     FAST_ONLY = "running fast tests only"
     NO_LONG = "not running long tests"
     REPLICATED_DB = "replicated-database"
+    NON_ATOMIC_DB = "database engine not Atomic"
     S3_STORAGE = "s3-storage"
     BUILD = "not running for current build"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
@@ -947,6 +948,8 @@ class TestCase:
             else ""
         )
 
+        self.show_whitespaces_in_diff = args.show_whitespaces_in_diff
+
     # should skip test, should increment skipped_total, skip reason
     def should_skip_test(self, suite) -> Optional[FailureReason]:
         tags = self.tags
@@ -996,6 +999,13 @@ class TestCase:
 
         elif tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
+
+        elif (
+            tags
+            and ("atomic-database" in tags)
+            and (args.replicated_database or args.db_engine not in (None, "Atomic"))
+        ):
+            return FailureReason.NON_ATOMIC_DB
 
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
@@ -1163,7 +1173,7 @@ class TestCase:
         )
 
         if result_is_different:
-            diff = Popen(
+            diff_proc = Popen(
                 [
                     "diff",
                     "-U",
@@ -1174,7 +1184,18 @@ class TestCase:
                 encoding="latin-1",
                 stdout=PIPE,
                 universal_newlines=True,
-            ).communicate()[0]
+            )
+            if self.show_whitespaces_in_diff:
+                sed_proc = Popen(
+                    ["sed", "-e", "s/[ \t]\\+$/&$/g"],
+                    stdin=diff_proc.stdout,
+                    stdout=PIPE,
+                )
+                diff_proc.stdout.close()  # Allow diff to receive a SIGPIPE if cat exits.
+                diff = sed_proc.communicate()[0].decode("utf-8", errors="ignore")
+            else:
+                diff = diff_proc.communicate()[0]
+
             if diff.startswith("Binary files "):
                 diff += "Content of stdout:\n===================\n"
                 file = open(self.stdout_file, "rb")
@@ -2770,6 +2791,12 @@ def parse_args():
         "--run-by-hash-total",
         type=int,
         help="Total test groups for crc32(test_name) % run_by_hash_total == run_by_hash_num",
+    )
+
+    parser.add_argument(
+        "--show-whitespaces-in-diff",
+        action="store_true",
+        help="Display $ characters after line with trailing whitespaces in diff output",
     )
 
     group = parser.add_mutually_exclusive_group(required=False)

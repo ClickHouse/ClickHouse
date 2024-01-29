@@ -66,7 +66,7 @@ public:
         size_t num_streams) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override;
-    std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const override;
+    std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings &) const override;
 
@@ -81,6 +81,7 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
+        bool cleanup,
         ContextPtr context) override;
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
@@ -169,13 +170,14 @@ private:
       * Returns true if merge is finished successfully.
       */
     bool merge(
-        bool aggressive,
-        const String & partition_id,
-        bool final, bool deduplicate,
-        const Names & deduplicate_by_columns,
-        const MergeTreeTransactionPtr & txn,
-        String & out_disable_reason,
-        bool optimize_skip_merged_partitions = false);
+            bool aggressive,
+            const String & partition_id,
+            bool final, bool deduplicate,
+            const Names & deduplicate_by_columns,
+            bool cleanup,
+            const MergeTreeTransactionPtr & txn,
+            String & out_disable_reason,
+            bool optimize_skip_merged_partitions = false);
 
     void renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
 
@@ -270,6 +272,8 @@ private:
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
     PreparedSetsCachePtr getPreparedSetsCache(Int64 mutation_id);
+
+    void assertNotReadonly() const;
 
     friend class MergeTreeSink;
     friend class MergeTreeData;

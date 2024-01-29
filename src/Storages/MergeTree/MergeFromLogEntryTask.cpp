@@ -28,7 +28,7 @@ MergeFromLogEntryTask::MergeFromLogEntryTask(
     StorageReplicatedMergeTree & storage_,
     IExecutableTask::TaskResultCallback & task_result_callback_)
     : ReplicatedMergeMutateTaskBase(
-        &Poco::Logger::get(
+        getLogger(
             storage_.getStorageID().getShortName() + "::" + selected_entry_->log_entry->new_part_name + " (MergeFromLogEntryTask)"),
         storage_,
         selected_entry_,
@@ -43,6 +43,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
         fmt::join(entry.source_parts, ", "), entry.new_part_name);
 
+    StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
+    int32_t metadata_version = metadata_snapshot->getMetadataVersion();
     const auto storage_settings_ptr = storage.getSettings();
 
     if (storage_settings_ptr->always_fetch_merged_part)
@@ -129,6 +131,18 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             };
         }
 
+        int32_t part_metadata_version = source_part_or_covering->getMetadataVersion();
+        if (part_metadata_version > metadata_version)
+        {
+            LOG_DEBUG(log, "Source part metadata version {} is newer then the table metadata version {}. ALTER_METADATA is still in progress.",
+                part_metadata_version, metadata_version);
+            return PrepareResult{
+                .prepared_successfully = false,
+                .need_to_check_missing_part_in_fetch = false,
+                .part_log_writer = {}
+            };
+        }
+
         parts.push_back(source_part_or_covering);
     }
 
@@ -175,8 +189,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     /// It will live until the whole task is being destroyed
     table_lock_holder = storage.lockForShare(RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
-
-    StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
 
     auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_format);
     if (future_merged_part->name != entry.new_part_name)
@@ -312,6 +324,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             reserved_space,
             entry.deduplicate,
             entry.deduplicate_by_columns,
+            entry.cleanup,
             storage.merging_params,
             NO_TRANSACTION_PTR);
 

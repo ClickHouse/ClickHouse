@@ -69,10 +69,15 @@ namespace
         /// Requests in backups can be extremely long, set to one hour
         client_configuration.requestTimeoutMs = 60 * 60 * 1000;
 
+        S3::ClientSettings client_settings{
+            .use_virtual_addressing = s3_uri.is_virtual_hosted_style,
+            .disable_checksum = local_settings.s3_disable_checksum,
+            .gcs_issue_compose_request = context->getConfigRef().getBool("s3.gcs_issue_compose_request", false),
+        };
+
         return S3::ClientFactory::instance().create(
             client_configuration,
-            s3_uri.is_virtual_hosted_style,
-            local_settings.s3_disable_checksum,
+            client_settings,
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
             settings.auth_settings.server_side_encryption_customer_key_base64,
@@ -119,9 +124,9 @@ BackupReaderS3::BackupReaderS3(
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
     const ContextPtr & context_)
-    : BackupReaderDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupReaderS3"))
+    : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderS3"))
     , s3_uri(s3_uri_)
-    , data_source_description{DataSourceType::S3, s3_uri.endpoint, false, false}
+    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
     , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()))
 {
     auto & request_settings = s3_settings.request_settings;
@@ -209,9 +214,9 @@ BackupWriterS3::BackupWriterS3(
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
     const ContextPtr & context_)
-    : BackupWriterDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupWriterS3"))
+    : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterS3"))
     , s3_uri(s3_uri_)
-    , data_source_description{DataSourceType::S3, s3_uri.endpoint, false, false}
+    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
     , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()))
 {
     auto & request_settings = s3_settings.request_settings;

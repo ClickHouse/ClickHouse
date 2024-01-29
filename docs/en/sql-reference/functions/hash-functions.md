@@ -1777,15 +1777,19 @@ Result:
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-## sqid
+## sqidEncode
 
-Transforms numbers into YouTube-like short URL hash called [Sqid](https://sqids.org/).
+Encodes numbers as a [Sqid](https://sqids.org/) which is a YouTube-like ID string.
+The output alphabet is `abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`.
+Do not use this function for hashing - the generated IDs can be decoded back into the original numbers.
 
 **Syntax**
 
 ```sql
-sqid(number1, ...)
+sqidEncode(number1, ...)
 ```
+
+Alias: `sqid`
 
 **Arguments**
 
@@ -1793,16 +1797,47 @@ sqid(number1, ...)
 
 **Returned Value**
 
-A hash id [String](/docs/en/sql-reference/data-types/string.md).
+A sqid [String](/docs/en/sql-reference/data-types/string.md).
 
 **Example**
 
 ```sql
-SELECT sqid(1, 2, 3, 4, 5);
+SELECT sqidEncode(1, 2, 3, 4, 5);
 ```
 
 ```response
-┌─sqid(1, 2, 3, 4, 5)─┐
-│ gXHfJ1C6dN          │
-└─────────────────────┘
+┌─sqidEncode(1, 2, 3, 4, 5)─┐
+│ gXHfJ1C6dN                │
+└───────────────────────────┘
+```
+
+## sqidDecode
+
+Decodes a [Sqid](https://sqids.org/) back into its original numbers.
+Returns an empty array in case the input string is not a valid sqid.
+
+**Syntax**
+
+```sql
+sqidDecode(sqid)
+```
+
+**Arguments**
+
+- A sqid - [String](/docs/en/sql-reference/data-types/string.md)
+
+**Returned Value**
+
+The sqid transformed to numbers [Array(UInt64)](/docs/en/sql-reference/data-types/array.md).
+
+**Example**
+
+```sql
+SELECT sqidDecode('gXHfJ1C6dN');
+```
+
+```response
+┌─sqidDecode('gXHfJ1C6dN')─┐
+│ [1,2,3,4,5]              │
+└──────────────────────────┘
 ```

@@ -24,7 +24,7 @@ namespace ErrorCodes
 BackupCoordinationStageSync::BackupCoordinationStageSync(
     const String & root_zookeeper_path_,
     WithRetries & with_retries_,
-    Poco::Logger * log_)
+    LoggerPtr log_)
     : zookeeper_path(root_zookeeper_path_ + "/stage")
     , with_retries(with_retries_)
     , log(log_)
@@ -154,14 +154,14 @@ BackupCoordinationStageSync::State BackupCoordinationStageSync::readCurrentState
                 /// If the "alive" node doesn't exist then we don't have connection to the corresponding host.
                 /// This node is ephemeral so probably it will be recreated soon. We use zookeeper retries to wait.
                 /// In worst case when we won't manage to see the alive node for a long time we will just abort the backup.
-                String message;
+                const auto * const suffix = retries_ctl.isLastRetry() ? "" : ", will retry";
                 if (started)
-                    message = fmt::format("Lost connection to host {}", host);
+                    retries_ctl.setUserError(Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
+                                                       "Lost connection to host {}{}", host, suffix));
                 else
-                    message = fmt::format("No connection to host {} yet", host);
-                if (!retries_ctl.isLastRetry())
-                    message += ", will retry";
-                retries_ctl.setUserError(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, message);
+                    retries_ctl.setUserError(Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
+                                                       "No connection to host {} yet{}", host, suffix));
+
                 state.disconnected_host = host;
                 return state;
             }

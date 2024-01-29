@@ -36,7 +36,10 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
+#include "Functions/FunctionsLogical.h"
 #include "Functions/IFunction.h"
+#include "Functions/IFunctionAdaptors.h"
+#include "Functions/indexHint.h"
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
@@ -208,7 +211,7 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
         const auto * expr_const_node = actions->tryFindInOutputs(expr_column_name);
         if (!expr_const_node)
             return false;
-        auto filter_actions = ActionsDAG::buildFilterActionsDAG({expr_const_node}, {}, context);
+        auto filter_actions = ActionsDAG::buildFilterActionsDAG({expr_const_node});
         const auto & nodes = filter_actions->getNodes();
         bool has_dependent_columns = std::any_of(nodes.begin(), nodes.end(), [&](const auto & node)
         {
@@ -250,19 +253,7 @@ static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & co
                 if (!future_set->get())
                 {
                     if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
-                    {
-                        auto plan = set_from_subquery->build(context);
-
-                        if (!plan)
-                            continue;
-
-                        auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
-                        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-                        pipeline.complete(std::make_shared<EmptySink>(Block()));
-
-                        CompletedPipelineExecutor executor(pipeline);
-                        executor.execute();
-                    }
+                        set_from_subquery->buildSetInplace(context);
                 }
             }
         }
@@ -390,9 +381,9 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
 
-ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList & virtual_columns, const String & path_example, const ContextPtr & context)
+ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns)
 {
-    if (!query || virtual_columns.empty())
+    if (!predicate || virtual_columns.empty())
         return {};
 
     Block block;
@@ -401,16 +392,12 @@ ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList 
         if (column.name == "_file" || column.name == "_path")
             block.insert({column.type->createColumn(), column.type, column.name});
     }
-    /// Create a block with one row to construct filter
-    /// Append "idx" column as the filter result
+
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
-    addPathAndFileToVirtualColumns(block, path_example, 0);
-    ASTPtr filter_ast;
-    prepareFilterBlockWithQuery(query, context, block, filter_ast);
-    return filter_ast;
+    return splitFilterDagForAllowedInputs(predicate, &block);
 }
 
-ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context, ASTPtr filter_ast)
+ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ActionsDAGPtr & dag, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
 {
     Block block;
     for (const auto & column : virtual_columns)
@@ -423,7 +410,7 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     for (size_t i = 0; i != paths.size(); ++i)
         addPathAndFileToVirtualColumns(block, paths[i], i);
 
-    filterBlockWithQuery(query, block, context, filter_ast);
+    filterBlockWithDAG(dag, block, context);
 
     return block.getByName("_idx").column;
 }
@@ -481,7 +468,7 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block & allo
 
 static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
     const ActionsDAG::Node * node,
-    const Block & allowed_inputs,
+    const Block * allowed_inputs,
     ActionsDAG::Nodes & additional_nodes)
 {
     if (node->type == ActionsDAG::ActionType::FUNCTION)
@@ -502,9 +489,12 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 const ActionsDAG::Node * res = node_copy.children.front();
                 /// Expression like (not_allowed AND 256) can't be resuced to (and(256)) because AND requires
                 /// at least two arguments; also it can't be reduced to (256) because result type is different.
-                /// TODO: add CAST here
                 if (!res->result_type->equals(*node->result_type))
-                    return nullptr;
+                {
+                    ActionsDAG tmp_dag;
+                    res = &tmp_dag.addCast(*res, node->result_type, {});
+                    additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));
+                }
 
                 return res;
             }
@@ -520,15 +510,46 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
 
             return &node_copy;
         }
+        else if (node->function_base->getName() == "indexHint")
+        {
+            if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node->function_base.get()))
+            {
+                if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
+                {
+                    auto index_hint_dag = index_hint->getActions()->clone();
+                    ActionsDAG::NodeRawConstPtrs atoms;
+                    for (const auto & output : index_hint_dag->getOutputs())
+                        if (const auto * child_copy = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes))
+                            atoms.push_back(child_copy);
+
+                    if (!atoms.empty())
+                    {
+                        const auto * res = atoms.at(0);
+
+                        if (atoms.size() > 1)
+                        {
+                            FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+                            res = &index_hint_dag->addFunction(func_builder_and, atoms, {});
+                        }
+
+                        if (!res->result_type->equals(*node->result_type))
+                            res = &index_hint_dag->addCast(*res, node->result_type, {});
+
+                        additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(*index_hint_dag)));
+                        return res;
+                    }
+                }
+            }
+        }
     }
 
-    if (!canEvaluateSubtree(node, allowed_inputs))
+    if (allowed_inputs && !canEvaluateSubtree(node, *allowed_inputs))
         return nullptr;
 
     return node;
 }
 
-ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block & allowed_inputs)
+ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs)
 {
     if (!predicate)
         return nullptr;
@@ -543,7 +564,7 @@ ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate,
 
 void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block, ContextPtr context)
 {
-    auto dag = splitFilterDagForAllowedInputs(predicate, block);
+    auto dag = splitFilterDagForAllowedInputs(predicate, &block);
     if (dag)
         filterBlockWithDAG(dag, block, context);
 }

@@ -66,7 +66,7 @@ static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 2;
 static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 
 MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_)
-    : data(data_), log(&Poco::Logger::get(data.getLogName() + " (MergerMutator)"))
+    : data(data_), log(getLogger(data.getLogName() + " (MergerMutator)"))
 {
 }
 
@@ -239,8 +239,8 @@ MergeTreeDataMergerMutator::PartitionIdsHint MergeTreeDataMergerMutator::getPart
     if (!best_partition_id_to_optimize.empty())
         res.emplace(std::move(best_partition_id_to_optimize));
 
-    LOG_TRACE(log, "Checked {} partitions, found {} partitions with parts that may be merged: [{}]"
-              "(max_total_size_to_merge={}, merge_with_ttl_allowed{})",
+    LOG_TRACE(log, "Checked {} partitions, found {} partitions with parts that may be merged: [{}] "
+              "(max_total_size_to_merge={}, merge_with_ttl_allowed={})",
               all_partition_ids.size(), res.size(), fmt::join(res, ", "), max_total_size_to_merge, merge_with_ttl_allowed);
     return res;
 }
@@ -676,6 +676,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     ReservationSharedPtr space_reservation,
     bool deduplicate,
     const Names & deduplicate_by_columns,
+    bool cleanup,
     const MergeTreeData::MergingParams & merging_params,
     const MergeTreeTransactionPtr & txn,
     bool need_prefix,
@@ -692,6 +693,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         space_reservation,
         deduplicate,
         deduplicate_by_columns,
+        cleanup,
         merging_params,
         need_prefix,
         parent_part,

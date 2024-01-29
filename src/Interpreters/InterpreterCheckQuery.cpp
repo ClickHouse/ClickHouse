@@ -1,4 +1,5 @@
 #include <Interpreters/InterpreterCheckQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 
 #include <algorithm>
 
@@ -148,7 +149,7 @@ private:
 class TableCheckSource : public ISource
 {
 public:
-    TableCheckSource(Strings databases_, ContextPtr context_, Poco::Logger * log_)
+    TableCheckSource(Strings databases_, ContextPtr context_, LoggerPtr log_)
         : ISource(getSingleValueBlock(0))
         , databases(databases_)
         , context(context_)
@@ -156,7 +157,7 @@ public:
     {
     }
 
-    TableCheckSource(std::shared_ptr<TableCheckTask> table_check_task_, Poco::Logger * log_)
+    TableCheckSource(std::shared_ptr<TableCheckTask> table_check_task_, LoggerPtr log_)
         : ISource(getSingleValueBlock(0))
         , table_check_task(table_check_task_)
         , log(log_)
@@ -259,14 +260,14 @@ private:
 
     ContextPtr context;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 /// Receives TableCheckTask and returns CheckResult converted to sinle-row chunk
 class TableCheckWorkerProcessor : public ISimpleTransform
 {
 public:
-    TableCheckWorkerProcessor(bool with_table_name_, Poco::Logger * log_)
+    TableCheckWorkerProcessor(bool with_table_name_, LoggerPtr log_)
         : ISimpleTransform(getSingleValueBlock(0), getHeaderForCheckResult(with_table_name_), true)
         , with_table_name(with_table_name_)
         , log(log_)
@@ -307,7 +308,7 @@ private:
     /// If true, then output will contain columns with database and table names
     bool with_table_name;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 /// Accumulates all results and returns single value
@@ -470,6 +471,15 @@ BlockIO InterpreterCheckQuery::execute()
     res.pipeline.setNumThreads(num_streams);
 
     return res;
+}
+
+void registerInterpreterCheckQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterCheckQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterCheckQuery", create_fn);
 }
 
 }
