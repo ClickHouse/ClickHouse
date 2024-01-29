@@ -675,15 +675,25 @@ static NameToNameVector collectFilesForRenames(
     {
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
-            if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx2"))
+            static const std::array<String, 2> suffixes = {".idx2", ".idx"};
+            static const std::array<String, 4> gin_suffixes = {".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"}; /// .gin_* is inverted index
+
+            for (const auto & suffix : suffixes)
             {
-                add_rename(INDEX_FILE_PREFIX + command.column_name + ".idx2", "");
-                add_rename(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
+                const String filename = INDEX_FILE_PREFIX + command.column_name + suffix;
+                const String filename_mrk = INDEX_FILE_PREFIX + command.column_name + mrk_extension;
+
+                if (source_part->checksums.has(filename))
+                {
+                    add_rename(filename, "");
+                    add_rename(filename_mrk, "");
+                }
             }
-            else if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx"))
+            for (const auto & gin_suffix : gin_suffixes)
             {
-                add_rename(INDEX_FILE_PREFIX + command.column_name + ".idx", "");
-                add_rename(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
+                const String filename = INDEX_FILE_PREFIX + command.column_name + gin_suffix;
+                if (source_part->checksums.has(filename))
+                    add_rename(filename, "");
             }
         }
         else if (command.type == MutationCommand::Type::DROP_PROJECTION)
