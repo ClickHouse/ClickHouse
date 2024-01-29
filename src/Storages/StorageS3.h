@@ -78,7 +78,7 @@ public:
         DisclosedGlobIterator(
             const S3::Client & client_,
             const S3::URI & globbed_uri_,
-            const ActionsDAG::Node * predicate,
+            ASTPtr query,
             const NamesAndTypesList & virtual_columns,
             ContextPtr context,
             KeysWithInfo * read_keys_ = nullptr,
@@ -145,11 +145,17 @@ public:
         const String & url_host_and_port,
         std::shared_ptr<IIterator> file_iterator_,
         size_t max_parsing_threads,
-        bool need_only_count_);
+        bool need_only_count_,
+        std::optional<SelectQueryInfo> query_info);
 
     ~StorageS3Source() override;
 
     String getName() const override;
+
+    void setKeyCondition(const SelectQueryInfo & query_info_, ContextPtr context_) override
+    {
+        setKeyConditionImpl(query_info_, context_, sample_block);
+    }
 
     void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override
     {
@@ -174,6 +180,7 @@ private:
     std::shared_ptr<const S3::Client> client;
     Block sample_block;
     std::optional<FormatSettings> format_settings;
+    std::optional<SelectQueryInfo> query_info;
 
     struct ReaderHolder
     {

@@ -1,4 +1,5 @@
 #include <numeric>
+#include <regex>
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -53,7 +54,6 @@
 #include <Common/ProfileEvents.h>
 #include <base/sleep.h>
 #include <Common/logger_useful.h>
-#include <boost/algorithm/string/replace.hpp>
 
 #include <Storages/LiveView/StorageBlocks.h>
 
@@ -62,7 +62,6 @@
 
 #include <QueryPipeline/printPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-
 
 namespace DB
 {
@@ -418,7 +417,8 @@ ASTPtr StorageWindowView::getCleanupQuery()
 
     auto alter_command = std::make_shared<ASTAlterCommand>();
     alter_command->type = ASTAlterCommand::DELETE;
-    alter_command->predicate = alter_command->children.emplace_back(function_less).get();
+    alter_command->predicate = function_less;
+    alter_command->children.push_back(alter_command->predicate);
     alter_query->command_list->children.push_back(alter_command);
     return alter_query;
 }
@@ -1268,7 +1268,7 @@ ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr contex
     if (is_time_column_func_now)
         window_id_name = func_now_data.window_id_name;
 
-    window_column_name = boost::replace_all_copy(window_id_name, "windowID", is_tumble ? "tumble" : "hop");
+    window_column_name = std::regex_replace(window_id_name, std::regex("windowID"), is_tumble ? "tumble" : "hop");
 
     /// Parse final query (same as mergeable query but has tumble/hop instead of windowID)
     final_query = mergeable_query->clone();

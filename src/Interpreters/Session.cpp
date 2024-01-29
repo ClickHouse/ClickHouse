@@ -112,7 +112,8 @@ public:
                 throw Exception(ErrorCodes::SESSION_NOT_FOUND, "Session {} not found", session_id);
 
             /// Create a new session from current context.
-            it = sessions.insert(std::make_pair(key, std::make_shared<NamedSessionData>(key, global_context, timeout, *this))).first;
+            auto context = Context::createCopy(global_context);
+            it = sessions.insert(std::make_pair(key, std::make_shared<NamedSessionData>(key, context, timeout, *this))).first;
             const auto & session = it->second;
 
             if (!thread.joinable())
@@ -127,7 +128,7 @@ public:
             /// Use existing session.
             const auto & session = it->second;
 
-            LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
+            LOG_TEST(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
 
             if (!session.unique())
                 throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
@@ -702,10 +703,6 @@ void Session::releaseSessionID()
 {
     if (!named_session)
         return;
-
-    prepared_client_info = getClientInfo();
-    session_context.reset();
-
     named_session->release();
     named_session = nullptr;
 }

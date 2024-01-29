@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from enum import Enum
 import logging
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from dataclasses import dataclass, field
@@ -7,42 +8,10 @@ from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Literal, Optional, Union
 
 from integration_test_images import IMAGES
-from ci_utils import WithIter
 
 
-class Labels(metaclass=WithIter):
-    DO_NOT_TEST_LABEL = "do_not_test"
-    NO_MERGE_COMMIT = "no_merge_commit"
-    NO_CI_CACHE = "no_ci_cache"
-    CI_SET_REDUCED = "ci_set_reduced"
-
-
-class JobNames(metaclass=WithIter):
-    STYLE_CHECK = "Style check"
-    FAST_TEST = "Fast tests"
-    DOCKER_SERVER = "Docker server and keeper images"
-    PACKAGE_DEBUG = "package_debug"
-    PACKAGE_RELEASE = "package_release"
-    PACKAGE_RELEASE = "package_aarch64"
-    PACKAGE_BIN_RELEASE = "binary_release"
-    INSTALL_TEST_AMD = "Install packages (amd64)"
-    INSTALL_TEST_ARM = "Install packages (arm64)"
-    STATELESS_TEST_DEBUG = "Stateless tests (debug)"
-    STATEFUL_TEST_DEBUG = "Stateful tests (debug)"
-    INTEGRATION_TEST = "Integration tests (release)"
-    UPGRADE_TEST_DEBUG = "Upgrade check (debug)"
-    AST_FUZZER_TEST_DEBUG = "AST fuzzer (debug)"
-    COMPATIBILITY_TEST = "Compatibility check (amd64)"
-    UNIT_TEST = "Unit tests (release)"
-    PERFORMANCE_TEST_AMD64 = "Performance Comparison"
-    SQL_LANCER_TEST = "SQLancer (release)"
-    SQL_LOGIC_TEST = "Sqllogic test (release)"
-    CLCIKBENCH_TEST = "ClickBench (amd64)"
-    LIBFUZZER_TEST = "libFuzzer tests"
-    STRESS_TEST_DEBUG = "Stress test (debug)"
-    BUILD_CHECK = "ClickHouse build check"
-    DOCS_CHECK = "Docs check"
-    # FIXME: add all jobs
+class Labels(Enum):
+    DO_NOT_TEST_LABEL = "do not test"
 
 
 @dataclass
@@ -78,7 +47,7 @@ class JobConfig:
     @num_batches - sets number of batches for multi-batch job
     """
 
-    digest: DigestConfig = field(default_factory=DigestConfig)
+    digest: DigestConfig = DigestConfig()
     run_command: str = ""
     timeout: Optional[int] = None
     num_batches: int = 1
@@ -98,35 +67,20 @@ class BuildConfig:
     sparse_checkout: bool = False
     comment: str = ""
     static_binary_name: str = ""
-    job_config: JobConfig = field(
-        default_factory=lambda: JobConfig(
-            digest=DigestConfig(
-                include_paths=[
-                    "./src",
-                    "./contrib/*-cmake",
-                    "./contrib/consistent-hashing",
-                    "./contrib/murmurhash",
-                    "./contrib/libfarmhash",
-                    "./contrib/pdqsort",
-                    "./contrib/cityhash102",
-                    "./contrib/sparse-checkout",
-                    "./contrib/libmetrohash",
-                    "./contrib/update-submodules.sh",
-                    "./contrib/CMakeLists.txt",
-                    "./CMakeLists.txt",
-                    "./PreLoad.cmake",
-                    "./cmake",
-                    "./base",
-                    "./programs",
-                    "./packages",
-                    "./docker/packager/packager",
-                ],
-                exclude_files=[".md"],
-                docker=["clickhouse/binary-builder"],
-                git_submodules=True,
-            ),
-            run_command="build_check.py $BUILD_NAME",
-        )
+    job_config: JobConfig = JobConfig(
+        digest=DigestConfig(
+            include_paths=[
+                "./src",
+                "./contrib/*-cmake",
+                "./cmake",
+                "./base",
+                "./programs",
+                "./packages",
+            ],
+            exclude_files=[".md"],
+            docker=["clickhouse/binary-builder"],
+            git_submodules=True,
+        ),
     )
 
     def export_env(self, export: bool = False) -> str:
@@ -143,23 +97,14 @@ class BuildConfig:
 @dataclass
 class BuildReportConfig:
     builds: List[str]
-    job_config: JobConfig = field(
-        default_factory=lambda: JobConfig(
-            digest=DigestConfig(
-                include_paths=[
-                    "./tests/ci/build_report_check.py",
-                    "./tests/ci/upload_result_helper.py",
-                ],
-            ),
-        )
-    )
+    job_config: JobConfig = JobConfig()
 
 
 @dataclass
 class TestConfig:
     required_build: str
     force_tests: bool = False
-    job_config: JobConfig = field(default_factory=JobConfig)
+    job_config: JobConfig = JobConfig()
 
 
 BuildConfigs = Dict[str, BuildConfig]
@@ -176,32 +121,19 @@ install_check_digest = DigestConfig(
     include_paths=["./tests/ci/install_check.py"],
     docker=["clickhouse/install-deb-test", "clickhouse/install-rpm-test"],
 )
-stateless_check_digest = DigestConfig(
-    include_paths=[
-        "./tests/queries/0_stateless/",
-        "./tests/clickhouse-test",
-        "./tests/*.txt",
-    ],
+statless_check_digest = DigestConfig(
+    include_paths=["./tests/queries/0_stateless/"],
     exclude_files=[".md"],
     docker=["clickhouse/stateless-test"],
 )
 stateful_check_digest = DigestConfig(
-    include_paths=[
-        "./tests/queries/1_stateful/",
-        "./tests/clickhouse-test",
-        "./tests/*.txt",
-    ],
+    include_paths=["./tests/queries/1_stateful/"],
     exclude_files=[".md"],
     docker=["clickhouse/stateful-test"],
 )
-
+# FIXME: which tests are stresstest? stateless?
 stress_check_digest = DigestConfig(
-    include_paths=[
-        "./tests/queries/0_stateless/",
-        "./tests/queries/1_stateful/",
-        "./tests/clickhouse-test",
-        "./tests/*.txt",
-    ],
+    include_paths=["./tests/queries/0_stateless/"],
     exclude_files=[".md"],
     docker=["clickhouse/stress-test"],
 )
@@ -265,7 +197,7 @@ bugfix_validate_check = DigestConfig(
 )
 # common test params
 statless_test_common_params = {
-    "digest": stateless_check_digest,
+    "digest": statless_check_digest,
     "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
     "timeout": 10800,
 }
@@ -331,7 +263,7 @@ class CiConfig:
 
     def get_label_config(self, label_name: str) -> Optional[LabelConfig]:
         for label, config in self.label_configs.items():
-            if self.normalize_string(label_name) == self.normalize_string(label):
+            if label_name == label:
                 return config
         return None
 
@@ -351,21 +283,20 @@ class CiConfig:
         ), f"Invalid check_name or CI_CONFIG outdated, config not found for [{check_name}]"
         return res  # type: ignore
 
-    @staticmethod
-    def normalize_string(input_string: str) -> str:
-        lowercase_string = input_string.lower()
-        normalized_string = (
-            lowercase_string.replace(" ", "_")
-            .replace("-", "_")
-            .replace("(", "")
-            .replace(")", "")
-            .replace(",", "")
-        )
-        return normalized_string
-
     def get_job_with_parents(self, check_name: str) -> List[str]:
+        def _normalize_string(input_string: str) -> str:
+            lowercase_string = input_string.lower()
+            normalized_string = (
+                lowercase_string.replace(" ", "_")
+                .replace("-", "_")
+                .replace("(", "")
+                .replace(")", "")
+                .replace(",", "")
+            )
+            return normalized_string
+
         res = []
-        check_name = self.normalize_string(check_name)
+        check_name = _normalize_string(check_name)
 
         for config in (
             self.build_config,
@@ -374,18 +305,18 @@ class CiConfig:
             self.other_jobs_configs,
         ):
             for job_name in config:  # type: ignore
-                if check_name == self.normalize_string(job_name):
+                if check_name == _normalize_string(job_name):
                     res.append(job_name)
                     if isinstance(config[job_name], TestConfig):  # type: ignore
-                        if config[job_name].required_build:  # type: ignore
-                            res.append(config[job_name].required_build)  # type: ignore
+                        assert config[
+                            job_name
+                        ].required_build, f"Error: Experimantal feature... Not supported job [{job_name}]"  # type: ignore
+                        res.append(config[job_name].required_build)  # type: ignore
+                        res.append("Fast tests")
+                        res.append("Style check")
                     elif isinstance(config[job_name], BuildConfig):  # type: ignore
-                        pass
-                    elif isinstance(config[job_name], BuildReportConfig):  # type: ignore
-                        # add all build jobs as parents for build report check
-                        res.extend(
-                            [job for job in JobNames if job in self.build_config]
-                        )
+                        res.append("Fast tests")
+                        res.append("Style check")
                     else:
                         assert (
                             False
@@ -485,24 +416,7 @@ class CiConfig:
 
 CI_CONFIG = CiConfig(
     label_configs={
-        Labels.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
-        Labels.CI_SET_REDUCED: LabelConfig(
-            run_jobs=[
-                job
-                for job in JobNames
-                if not any(
-                    [
-                        nogo in job
-                        for nogo in (
-                            "asan",
-                            "tsan",
-                            "msan",
-                            "ubsan",
-                        )
-                    ]
-                )
-            ]
-        ),
+        Labels.DO_NOT_TEST_LABEL.value: LabelConfig(run_jobs=["Style check"]),
     },
     build_config={
         "package_release": BuildConfig(
@@ -548,7 +462,7 @@ CI_CONFIG = CiConfig(
             compiler="clang-17",
             debug_build=True,
             package_type="deb",
-            sparse_checkout=True,  # Check that it works with at least one build, see also update-submodules.sh
+            sparse_checkout=True,
         ),
         "binary_release": BuildConfig(
             name="binary_release",
@@ -569,7 +483,7 @@ CI_CONFIG = CiConfig(
             compiler="clang-17-darwin",
             package_type="binary",
             static_binary_name="macos",
-            sparse_checkout=True,  # Check that it works with at least one build, see also update-submodules.sh
+            sparse_checkout=True,
         ),
         "binary_aarch64": BuildConfig(
             name="binary_aarch64",
@@ -634,7 +548,7 @@ CI_CONFIG = CiConfig(
         ),
     },
     builds_report_config={
-        JobNames.BUILD_CHECK: BuildReportConfig(
+        "ClickHouse build check": BuildReportConfig(
             builds=[
                 "package_release",
                 "package_aarch64",
@@ -645,7 +559,7 @@ CI_CONFIG = CiConfig(
                 "package_debug",
                 "binary_release",
                 "fuzzers",
-            ],
+            ]
         ),
         "ClickHouse special build check": BuildReportConfig(
             builds=[
@@ -660,11 +574,11 @@ CI_CONFIG = CiConfig(
                 "binary_s390x",
                 "binary_amd64_compat",
                 "binary_amd64_musl",
-            ],
+            ]
         ),
     },
     other_jobs_configs={
-        JobNames.DOCKER_SERVER: TestConfig(
+        "Docker server and keeper images": TestConfig(
             "",
             job_config=JobConfig(
                 digest=DigestConfig(
@@ -685,7 +599,7 @@ CI_CONFIG = CiConfig(
                 ),
             ),
         ),
-        JobNames.FAST_TEST: TestConfig(
+        "Fast tests": TestConfig(
             "",
             job_config=JobConfig(
                 digest=DigestConfig(
@@ -695,7 +609,7 @@ CI_CONFIG = CiConfig(
                 )
             ),
         ),
-        JobNames.STYLE_CHECK: TestConfig(
+        "Style check": TestConfig(
             "",
             job_config=JobConfig(
                 run_always=True,
@@ -708,10 +622,10 @@ CI_CONFIG = CiConfig(
         ),
     },
     test_configs={
-        JobNames.INSTALL_TEST_AMD: TestConfig(
+        "Install packages (amd64)": TestConfig(
             "package_release", job_config=JobConfig(digest=install_check_digest)
         ),
-        JobNames.INSTALL_TEST_ARM: TestConfig(
+        "Install packages (arm64)": TestConfig(
             "package_aarch64", job_config=JobConfig(digest=install_check_digest)
         ),
         "Stateful tests (asan)": TestConfig(
@@ -864,7 +778,7 @@ CI_CONFIG = CiConfig(
         "Compatibility check (aarch64)": TestConfig(
             "package_aarch64", job_config=JobConfig(digest=compatibility_check_digest)
         ),
-        JobNames.UNIT_TEST: TestConfig(
+        "Unit tests (release)": TestConfig(
             "binary_release", job_config=JobConfig(**unit_test_common_params)  # type: ignore
         ),
         "Unit tests (asan)": TestConfig(
@@ -899,18 +813,10 @@ CI_CONFIG = CiConfig(
             "package_asan",
             job_config=JobConfig(**{**statless_test_common_params, "timeout": 3600}),  # type: ignore
         ),
-        "ClickHouse Keeper Jepsen": TestConfig(
-            "binary_release",
-            job_config=JobConfig(
-                run_by_label="jepsen-test", run_command="jepsen_check.py keeper"
-            ),
-        ),
-        "ClickHouse Server Jepsen": TestConfig(
-            "binary_release",
-            job_config=JobConfig(
-                run_by_label="jepsen-test", run_command="jepsen_check.py server"
-            ),
-        ),
+        # FIXME: add digest and params
+        "ClickHouse Keeper Jepsen": TestConfig("binary_release"),
+        # FIXME: add digest and params
+        "ClickHouse Server Jepsen": TestConfig("binary_release"),
         "Performance Comparison": TestConfig(
             "package_release",
             job_config=JobConfig(num_batches=4, **perf_test_common_params),  # type: ignore

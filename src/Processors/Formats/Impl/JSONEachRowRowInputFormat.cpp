@@ -142,7 +142,7 @@ inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
     skipWhitespaceIfAny(*in);
 
     if (in->eof())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while parsing JSONEachRow format");
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while parsing JSONEachRow format");
     else if (*in->position() == '}')
     {
         ++in->position();
@@ -205,7 +205,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         return false;
     skipWhitespaceIfAny(*in);
 
-    bool is_first_row = getRowNum() == 0;
+    bool is_first_row = getCurrentUnitNumber() == 0 && getTotalRows() == 1;
     if (checkEndOfData(is_first_row))
         return false;
 
@@ -308,7 +308,7 @@ size_t JSONEachRowRowInputFormat::countRows(size_t max_block_size)
         return 0;
 
     size_t num_rows = 0;
-    bool is_first_row = getRowNum() == 0;
+    bool is_first_row = getCurrentUnitNumber() == 0 && getTotalRows() == 0;
     skipWhitespaceIfAny(*in);
     while (num_rows < max_block_size && !checkEndOfData(is_first_row))
     {

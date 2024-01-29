@@ -61,29 +61,21 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDis
 DiskObjectStorage::DiskObjectStorage(
     const String & name_,
     const String & object_key_prefix_,
+    const String & log_name,
     MetadataStoragePtr metadata_storage_,
     ObjectStoragePtr object_storage_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
     : IDisk(name_, config, config_prefix)
     , object_key_prefix(object_key_prefix_)
-    , log (&Poco::Logger::get("DiskObjectStorage(" + name + ")"))
+    , log (&Poco::Logger::get("DiskObjectStorage(" + log_name + ")"))
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
     , send_metadata(config.getBool(config_prefix + ".send_metadata", false))
     , read_resource_name(config.getString(config_prefix + ".read_resource", ""))
     , write_resource_name(config.getString(config_prefix + ".write_resource", ""))
     , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}, WriteSettings{}))
-{
-    data_source_description = DataSourceDescription{
-        .type = DataSourceType::ObjectStorage,
-        .object_storage_type = object_storage->getType(),
-        .metadata_type = metadata_storage->getType(),
-        .description = object_storage->getDescription(),
-        .is_encrypted = false,
-        .is_cached = object_storage->supportsCache(),
-    };
-}
+{}
 
 StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) const
 {
@@ -266,6 +258,12 @@ String DiskObjectStorage::getUniqueId(const String & path) const
 
 bool DiskObjectStorage::checkUniqueId(const String & id) const
 {
+    if (!id.starts_with(object_key_prefix))
+    {
+        LOG_DEBUG(log, "Blob with id {} doesn't start with blob storage prefix {}, Stack {}", id, object_key_prefix, StackTrace().toString());
+        return false;
+    }
+
     auto object = StoredObject(id);
     return object_storage->exists(object);
 }
@@ -488,6 +486,7 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
     return std::make_shared<DiskObjectStorage>(
         getName(),
         object_key_prefix,
+        getName(),
         metadata_storage,
         object_storage,
         Context::getGlobalContextInstance()->getConfigRef(),

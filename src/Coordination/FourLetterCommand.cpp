@@ -300,11 +300,7 @@ String MonitorCommand::run()
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
-    auto max_file_descriptor_count = getMaxFileDescriptorCount();
-    if (max_file_descriptor_count.has_value())
-        print(ret, "max_file_descriptor_count", *max_file_descriptor_count);
-    else
-        print(ret, "max_file_descriptor_count", -1);
+    print(ret, "max_file_descriptor_count", getMaxFileDescriptorCount());
 #endif
 
     if (keeper_info.is_leader)

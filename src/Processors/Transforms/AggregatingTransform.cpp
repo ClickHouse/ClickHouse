@@ -1,4 +1,3 @@
-#include <atomic>
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Formats/NativeReader.h>
@@ -579,7 +578,7 @@ IProcessor::Status AggregatingTransform::prepare()
     }
 
     /// Finish data processing, prepare to generating.
-    if (is_consume_finished && !is_generate_initialized.test())
+    if (is_consume_finished && !is_generate_initialized)
     {
         /// Close input port in case max_rows_to_group_by was reached but not all data was read.
         inputs.front().close();
@@ -587,7 +586,7 @@ IProcessor::Status AggregatingTransform::prepare()
         return Status::Ready;
     }
 
-    if (is_generate_initialized.test() && !is_pipeline_created && !processors.empty())
+    if (is_generate_initialized && !is_pipeline_created && !processors.empty())
         return Status::ExpandPipeline;
 
     /// Only possible while consuming.
@@ -688,8 +687,10 @@ void AggregatingTransform::consume(Chunk chunk)
 
 void AggregatingTransform::initGenerate()
 {
-    if (is_generate_initialized.test_and_set())
+    if (is_generate_initialized.load(std::memory_order_acquire))
         return;
+
+    is_generate_initialized.store(true, std::memory_order_release);
 
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.

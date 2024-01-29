@@ -3847,8 +3847,6 @@ Possible values:
 - `none` — Is similar to throw, but distributed DDL query returns no result set.
 - `null_status_on_timeout` — Returns `NULL` as execution status in some rows of result set instead of throwing `TIMEOUT_EXCEEDED` if query is not finished on the corresponding hosts.
 - `never_throw` — Do not throw `TIMEOUT_EXCEEDED` and do not rethrow exceptions if query has failed on some hosts.
-- `null_status_on_timeout_only_active` — similar to `null_status_on_timeout`, but doesn't wait for inactive replicas of the `Replicated` database
-- `throw_only_active` — similar to `throw`, but doesn't wait for inactive replicas of the `Replicated` database
 
 Default value: `throw`.
 
@@ -4772,45 +4770,6 @@ Allows you to select the max window log of ZSTD (it will not be used for MergeTr
 Type: Int64
 
 Default: 0
-
-## enable_deflate_qpl_codec {#enable_deflate_qpl_codec}
-
-If turned on, the DEFLATE_QPL codec may be used to compress columns.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-
-Type: Bool
-
-## enable_zstd_qat_codec {#enable_zstd_qat_codec}
-
-If turned on, the ZSTD_QAT codec may be used to compress columns.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-
-Type: Bool
-
-## output_format_compression_level
-
-Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`.
-
-Possible values: from `1` to `22`
-
-Default: `3`
-
-
-## output_format_compression_zstd_window_log
-
-Can be used when the output compression method is `zstd`. If greater than `0`, this setting explicitly sets compression window size (power of `2`) and enables a long-range mode for zstd compression. This can help to achieve a better compression ratio.
-
-Possible values: non-negative numbers. Note that if the value is too small or too big, `zstdlib` will throw an exception. Typical values are from `20` (window size = `1MB`) to `30` (window size = `1GB`).
-
-Default: `0`
 
 ## rewrite_count_distinct_if_with_count_distinct_implementation
 

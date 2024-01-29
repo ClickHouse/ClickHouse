@@ -82,7 +82,6 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
             object_path,
             cache_key,
             settings.remote_fs_cache,
-            FileCache::getCommonUser(),
             std::move(current_read_buffer_creator),
             settings,
             query_id,

@@ -47,6 +47,7 @@
 #include <Common/Exception.h>
 #include <Core/AccurateComparison.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/toFixedString.h>
@@ -59,6 +60,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Common/IPv6ToBinary.h>
+#include "DataTypes/IDataType.h"
 #include <Core/Types.h>
 
 

@@ -84,7 +84,7 @@ inline std::string_view toDescription(OvercommitResult result)
     }
 }
 
-bool shouldTrackAllocation(Float64 probability, void * ptr)
+bool shouldTrackAllocation(DB::Float64 probability, void * ptr)
 {
     return intHash64(uintptr_t(ptr)) < std::numeric_limits<uint64_t>::max() * probability;
 }

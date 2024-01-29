@@ -13,6 +13,7 @@ from typing import Dict, List, Tuple
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import (
+    RerunHelper,
     get_commit,
     override_status,
     post_commit_status,
@@ -188,9 +189,13 @@ def main():
         logging.info("Skipping '%s' (no pr-bugfix in '%s')", check_name, pr_info.labels)
         sys.exit(0)
 
-    # FIXME: switch to JobReport and remove:
     gh = GitHub(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
+
+    rerun_helper = RerunHelper(commit, check_name_with_group)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     images = [pull_image(get_docker_image(i)) for i in IMAGES]
     result_path = temp_path / "output_dir"

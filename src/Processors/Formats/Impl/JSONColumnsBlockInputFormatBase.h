@@ -56,7 +56,7 @@ public:
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 protected:
-    Chunk read() override;
+    Chunk generate() override;
 
     size_t readColumn(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name);
 

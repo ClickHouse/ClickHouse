@@ -89,30 +89,22 @@ namespace
         BlobStorageLogWriterPtr blob_storage_log;
         const Poco::Logger * log;
 
-        /// Represents a task uploading a single part.
-        /// Keep this struct small because there can be thousands of parts.
-        /// For example, `UploadPartTask` must not contain a read buffer or `S3::UploadPartRequest`
-        /// because such read buffer can consume about 1MB memory and it could cause memory issues when the number of parts is big enough.
         struct UploadPartTask
         {
-            size_t part_number;
-            size_t part_offset;
-            size_t part_size;
-            String tag;
+            std::unique_ptr<Aws::AmazonWebServiceRequest> req;
             bool is_finished = false;
+            String tag;
             std::exception_ptr exception;
         };
 
-        size_t num_parts;
         size_t normal_part_size;
         String multipart_upload_id;
         std::atomic<bool> multipart_upload_aborted = false;
         Strings part_tags;
 
         std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks;
-        size_t num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
-        size_t num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
-        size_t num_finished_parts TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+        int num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+        int num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
         std::mutex bg_tasks_mutex;
         std::condition_variable bg_tasks_condvar;
 
@@ -307,7 +299,7 @@ namespace
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_upload_part_size must not be less than min_upload_part_size");
 
             size_t part_size = min_upload_part_size;
-            num_parts = (total_size + part_size - 1) / part_size;
+            size_t num_parts = (total_size + part_size - 1) / part_size;
 
             if (num_parts > max_part_number)
             {
@@ -346,7 +338,7 @@ namespace
 
         void uploadPart(size_t part_number, size_t part_offset, size_t part_size)
         {
-            LOG_TRACE(log, "Writing part #{} of {}. Bucket: {}, Key: {}, Upload_id: {}, Size: {}", part_number, num_parts, dest_bucket, dest_key, multipart_upload_id, part_size);
+            LOG_TRACE(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Size: {}", dest_bucket, dest_key, multipart_upload_id, part_size);
 
             if (!part_size)
             {
@@ -361,9 +353,6 @@ namespace
                 {
                     std::lock_guard lock(bg_tasks_mutex);
                     task = &bg_tasks.emplace_back();
-                    task->part_number = part_number;
-                    task->part_offset = part_offset;
-                    task->part_size = part_size;
                     ++num_added_bg_tasks;
                 }
 
@@ -382,6 +371,8 @@ namespace
 
                 try
                 {
+                    task->req = fillUploadPartRequest(part_number, part_offset, part_size);
+
                     schedule([this, task, task_finish_notify]()
                     {
                         try
@@ -404,9 +395,7 @@ namespace
             else
             {
                 UploadPartTask task;
-                task.part_number = part_number;
-                task.part_offset = part_offset;
-                task.part_size = part_size;
+                task.req = fillUploadPartRequest(part_number, part_offset, part_size);
                 processUploadTask(task);
                 part_tags.push_back(task.tag);
             }
@@ -417,18 +406,14 @@ namespace
             if (multipart_upload_aborted)
                 return; /// Already aborted.
 
-            auto request = makeUploadPartRequest(task.part_number, task.part_offset, task.part_size);
-            auto tag = processUploadPartRequest(*request);
+            auto tag = processUploadPartRequest(*task.req);
 
             std::lock_guard lock(bg_tasks_mutex); /// Protect bg_tasks from race
             task.tag = tag;
-            ++num_finished_parts;
-            LOG_TRACE(log, "Finished writing part #{}. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Finished parts: {} of {}",
-                      task.part_number, dest_key, multipart_upload_id, task.tag, bg_tasks.size(), num_finished_parts, num_parts);
+            LOG_TRACE(log, "Writing part finished. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Parts: {}", dest_bucket, dest_key, multipart_upload_id, task.tag, bg_tasks.size());
         }
 
-        /// These functions can be called from multiple threads, so derived class needs to take care about synchronization.
-        virtual std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) const = 0;
+        virtual std::unique_ptr<Aws::AmazonWebServiceRequest> fillUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) = 0;
         virtual String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) = 0;
 
         void waitForAllBackgroundTasks()
@@ -596,7 +581,7 @@ namespace
 
         void performMultipartUpload() { UploadHelper::performMultipartUpload(offset, size); }
 
-        std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) const override
+        std::unique_ptr<Aws::AmazonWebServiceRequest> fillUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) override
         {
             auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), part_offset, part_size);
 
@@ -810,7 +795,7 @@ namespace
 
         void performMultipartUploadCopy() { UploadHelper::performMultipartUpload(offset, size); }
 
-        std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) const override
+        std::unique_ptr<Aws::AmazonWebServiceRequest> fillUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) override
         {
             auto request = std::make_unique<S3::UploadPartCopyRequest>();
 

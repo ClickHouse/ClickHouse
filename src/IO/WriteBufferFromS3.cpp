@@ -11,7 +11,7 @@
 #include <Common/Throttler.h>
 #include <Interpreters/Cache/FileCache.h>
 
-#include <Common/Scheduler/ResourceGuard.h>
+#include <IO/ResourceGuard.h>
 #include <IO/WriteHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>

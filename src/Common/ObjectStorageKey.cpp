@@ -65,5 +65,4 @@ ObjectStorageKey ObjectStorageKey::createAsAbsolute(String key_)
     object_key.is_relative = false;
     return object_key;
 }
-
 }

@@ -10,9 +10,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeCustomGeo.h>
 #include <Common/typeid_cast.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -42,12 +40,6 @@ void ExternalResultDescription::init(const Block & sample_block_)
         bool is_nullable = elem.type->isNullable();
         DataTypePtr type_not_nullable = removeNullable(elem.type);
         const IDataType * type = type_not_nullable.get();
-
-        if (dynamic_cast<const DataTypePointName *>(type->getCustomName()))
-        {
-            types.emplace_back(ValueType::vtPoint, is_nullable);
-            continue;
-        }
 
         WhichDataType which(type);
 
