@@ -1,6 +1,5 @@
-if (APPLE OR SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "memory")
-    # llvm-tblgen, that is used during LLVM build, doesn't work with UBSan.
-    set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
+if (APPLE OR SANITIZE STREQUAL "memory")
+    # llvm-tblgen, that is used during LLVM build, doesn't work with MSAN.
     set (ENABLE_DWARF_PARSER_DEFAULT OFF)
 else()
     set (ENABLE_EMBEDDED_COMPILER_DEFAULT ${ENABLE_LIBRARIES})
