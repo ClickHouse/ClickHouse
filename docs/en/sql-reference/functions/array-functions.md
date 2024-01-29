@@ -534,8 +534,6 @@ Result:
 1231	Alex	33	[1999999999]
 ```
 
-## emptyArrayDate, emptyArrayDateTime
-
 ## emptyArrayDate
 
 Accepts zero arguments and returns an empty Date array.
