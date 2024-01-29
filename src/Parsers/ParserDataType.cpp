@@ -123,7 +123,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         auto test_pos = pos;
         ++test_pos;
         if (ParserToken(TokenType::ClosingRoundBracket).ignore(test_pos, test_expected))
-        { // the end of the type definition was reached, there was a trailing comma
+        { // the end of the type definition was reached and there was a trailing comma
             ++pos;
         }
     }
