@@ -215,18 +215,12 @@ def random_str(length=6):
 
 
 def check(node, table, check_result, expect_broken_part="", expected_error=""):
-    query_id = random_str()
-
     if expect_broken_part == "proj1":
         assert expected_error in node.query_and_get_error(
             f"SELECT c FROM '{table}' WHERE d == 12 ORDER BY c"
         )
     else:
-        node.query(
-            f"SELECT c FROM '{table}' WHERE d == 12 ORDER BY c",
-            query_id=query_id,
-        )
-        time.sleep(2)
+        query_id = node.query(f"SELECT queryID() FROM (SELECT c FROM '{table}' WHERE d == 12 ORDER BY c)").strip()
         node.query("SYSTEM FLUSH LOGS")
         res = node.query(
             f"""
@@ -238,26 +232,20 @@ def check(node, table, check_result, expect_broken_part="", expected_error=""):
         if res == "":
             res = node.query(
                 """
-                SELECT query, splitByChar('.', arrayJoin(projections))[-1]
-                FROM system.query_log
+                SELECT query_id, query, splitByChar('.', arrayJoin(projections))[-1]
+                FROM system.query_log ORDER BY query_start_time_microseconds DESC
             """
             )
-            print(res)
+            print(f"LOG: {res}")
             assert False
         assert "proj1" in res
-
-    query_id = random_str()
 
     if expect_broken_part == "proj2":
         assert expected_error in node.query_and_get_error(
             f"SELECT d FROM '{table}' WHERE c == 12 ORDER BY d"
         )
     else:
-        node.query(
-            f"SELECT d FROM '{table}' WHERE c == 12 OR c == 16 ORDER BY d",
-            query_id=query_id,
-        )
-        time.sleep(2)
+        query_id = node.query(f"SELECT queryID() FROM (SELECT d FROM '{table}' WHERE c == 12 ORDER BY d)").strip()
         node.query("SYSTEM FLUSH LOGS")
         res = node.query(
             f"""
@@ -269,11 +257,11 @@ def check(node, table, check_result, expect_broken_part="", expected_error=""):
         if res == "":
             res = node.query(
                 """
-                SELECT query, splitByChar('.', arrayJoin(projections))[-1]
-                FROM system.query_log
+                SELECT query_id, query, splitByChar('.', arrayJoin(projections))[-1]
+                FROM system.query_log ORDER BY query_start_time_microseconds DESC
             """
             )
-            print(res)
+            print(f"LOG: {res}")
             assert False
         assert "proj2" in res
 
