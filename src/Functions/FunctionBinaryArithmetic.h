@@ -153,17 +153,18 @@ public:
     using ResultDataType = Switch<
         /// Result must be Integer
         Case<
-            only_integer && IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>,
+            only_integer && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>),
             Switch<
-                Case<std::is_same_v<LeftDataType, DataTypeDecimal256> || std::is_same_v<RightDataType, DataTypeDecimal256>, DataTypeInt256>,
-                Case<std::is_same_v<LeftDataType, DataTypeDecimal128> || std::is_same_v<RightDataType, DataTypeDecimal128>, DataTypeInt128>,
-                Case<std::is_same_v<LeftDataType, DataTypeDecimal64> || std::is_same_v<RightDataType, DataTypeDecimal64>, DataTypeInt64>,
-                Case<std::is_same_v<LeftDataType, DataTypeDecimal32> || std::is_same_v<RightDataType, DataTypeDecimal32>, DataTypeInt32>>>,
-        Case<
-            only_integer,
-            Switch<
-                Case<IsIntegral<LeftDataType>, LeftDataType>,
-                Case<IsIntegral<RightDataType>, RightDataType>>>,
+                Case<
+                    IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>,
+                    Switch<
+                        Case<IsIntegralOrExtended<LeftDataType>, LeftDataType>,
+                        Case<IsIntegralOrExtended<RightDataType>, RightDataType>,
+                        Case<std::is_same_v<LeftDataType, DataTypeDecimal256> || std::is_same_v<RightDataType, DataTypeDecimal256>, DataTypeInt256>,
+                        Case<std::is_same_v<LeftDataType, DataTypeDecimal128> || std::is_same_v<RightDataType, DataTypeDecimal128>, DataTypeInt128>,
+                        Case<std::is_same_v<LeftDataType, DataTypeDecimal64> || std::is_same_v<RightDataType, DataTypeDecimal64>, DataTypeInt64>,
+                        Case<std::is_same_v<LeftDataType, DataTypeDecimal32> || std::is_same_v<RightDataType, DataTypeDecimal32>, DataTypeInt32>>>>>,
+
         /// Decimal cases
         Case<!allow_decimal && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>), InvalidType>,
         Case<
@@ -1713,12 +1714,37 @@ public:
                             type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
                         }
                     }
-                    else if constexpr ((IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>) ||
-                        (IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>))
-                        type_res = std::make_shared<DataTypeFloat64>();
+                    else if constexpr (((IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>) ||
+                        (IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>)) && !(is_div_int || is_div_int_or_zero))
+                    {
+                        if constexpr ((is_div_int || is_div_int_or_zero) && IsDataTypeDecimal<LeftDataType>)
+                        {
+                            if constexpr (std::is_same_v<LeftDataType, DataTypeDecimal256>)
+                                type_res = std::make_shared<DataTypeInt256>();
+                            else if constexpr (std::is_same_v<LeftDataType, DataTypeDecimal128>)
+                                type_res = std::make_shared<DataTypeInt128>();
+                            else if constexpr (std::is_same_v<LeftDataType, DataTypeDecimal64> || std::is_same_v<RightDataType, DataTypeFloat64>)
+                                type_res = std::make_shared<DataTypeInt64>();
+                            else
+                                type_res = std::make_shared<DataTypeInt32>();
+                        }
+                        else if constexpr (is_div_int || is_div_int_or_zero)
+                        {
+                            if constexpr (std::is_same_v<RightDataType, DataTypeDecimal256>)
+                                type_res = std::make_shared<DataTypeInt256>();
+                            else if constexpr (std::is_same_v<RightDataType, DataTypeDecimal128>)
+                                type_res = std::make_shared<DataTypeInt128>();
+                            else if constexpr (std::is_same_v<RightDataType, DataTypeDecimal64> || std::is_same_v<LeftDataType, DataTypeFloat64>)
+                                type_res = std::make_shared<DataTypeInt64>();
+                            else
+                                type_res = std::make_shared<DataTypeInt32>();
+                        }
+                        else
+                            type_res = std::make_shared<DataTypeFloat64>();
+                    }
                     else if constexpr (IsDataTypeDecimal<LeftDataType>)
                     {
-                        if constexpr ((is_div_int || is_div_int_or_zero) && IsIntegral<RightDataType>)
+                        if constexpr ((is_div_int || is_div_int_or_zero) && IsIntegralOrExtended<RightDataType>)
                             type_res = std::make_shared<RightDataType>();
                         else if constexpr (is_div_int || is_div_int_or_zero)
                         {
