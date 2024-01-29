@@ -47,7 +47,6 @@ struct AzureObjectStorageSettings
     int list_object_keys_size = 1000;
     size_t min_upload_part_size = 16 * 1024 * 1024;
     size_t max_upload_part_size = 5ULL * 1024 * 1024 * 1024;
-    size_t max_part_number = 10000;
     size_t max_single_part_copy_size = 256 * 1024 * 1024;
     bool use_native_copy = false;
 };
