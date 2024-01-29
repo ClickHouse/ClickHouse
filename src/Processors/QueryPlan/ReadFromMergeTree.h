@@ -120,7 +120,7 @@ public:
         size_t num_streams_,
         bool sample_factor_column_queried_,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
-        Poco::Logger * log_,
+        LoggerPtr log_,
         AnalysisResultPtr analyzed_result_ptr_,
         bool enable_parallel_reading);
 
@@ -168,7 +168,7 @@ public:
         const MergeTreeData & data,
         const Names & real_column_names,
         bool sample_factor_column_queried,
-        Poco::Logger * log,
+        LoggerPtr log,
         std::optional<Indexes> & indexes);
 
     AnalysisResultPtr selectRangesToRead(
@@ -217,7 +217,7 @@ private:
         const MergeTreeData & data,
         const Names & real_column_names,
         bool sample_factor_column_queried,
-        Poco::Logger * log,
+        LoggerPtr log,
         std::optional<Indexes> & indexes);
 
     int getSortDirection() const
@@ -259,7 +259,7 @@ private:
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     UInt64 selected_parts = 0;
     UInt64 selected_rows = 0;
     UInt64 selected_marks = 0;

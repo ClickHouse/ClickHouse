@@ -1050,7 +1050,7 @@ void StorageFileSource::beforeDestroy()
             catch (const std::exception & e)
             {
                 // Cannot throw exception from destructor, will write only error
-                LOG_ERROR(&Poco::Logger::get("~StorageFileSource"), "Failed to rename file {}: {}", file_path_ref, e.what());
+                LOG_ERROR(getLogger("~StorageFileSource"), "Failed to rename file {}: {}", file_path_ref, e.what());
                 continue;
             }
         }
@@ -1362,7 +1362,7 @@ private:
 
 void ReadFromFile::applyFilters()
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
