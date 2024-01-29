@@ -181,6 +181,11 @@ public:
         chars.reserve(n * size);
     }
 
+    void shrinkToFit() override
+    {
+        chars.shrink_to_fit();
+    }
+
     void resize(size_t size)
     {
         chars.resize(n * size);
