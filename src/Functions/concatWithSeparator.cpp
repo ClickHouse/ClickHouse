@@ -27,7 +27,6 @@ class ConcatWithSeparatorImpl : public IFunction
 public:
     static constexpr auto name = Name::name;
     explicit ConcatWithSeparatorImpl(ContextPtr context_) : context(context_) { }
-
     static FunctionPtr create(ContextPtr context) { return std::make_shared<ConcatWithSeparatorImpl>(context); }
 
     String getName() const override { return name; }
@@ -70,8 +69,8 @@ public:
         if (arguments.size() == 1)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        auto c_res = ColumnString::create();
-        c_res->reserve(input_rows_count);
+        auto col_res = ColumnString::create();
+        col_res->reserve(input_rows_count);
         const ColumnConst * col_sep = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
         if (!col_sep)
             throw Exception(
@@ -129,10 +128,10 @@ public:
             offsets,
             fixed_string_sizes,
             constant_strings,
-            c_res->getChars(),
-            c_res->getOffsets(),
+            col_res->getChars(),
+            col_res->getOffsets(),
             input_rows_count);
-        return std::move(c_res);
+        return std::move(col_res);
     }
 
 private:
