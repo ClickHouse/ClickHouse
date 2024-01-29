@@ -54,8 +54,8 @@ StorageS3QueueSource::FileIterator::FileIterator(
 {
     if (sharded_processing)
     {
-        for (size_t i = 0; i < metadata->getProcessingThreadsNum(); ++i)
-            sharded_keys.emplace(i, std::deque<KeyWithInfoPtr>{});
+        for (const auto & id : metadata->getProcessingIdsForShard(current_shard))
+            sharded_keys.emplace(id, std::deque<KeyWithInfoPtr>{});
     }
 }
 
@@ -73,11 +73,20 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
                 /// we need to check sharded_keys and to next() under lock.
                 lk.lock();
 
-                auto & keys = sharded_keys.at(idx);
-                if (!keys.empty())
+                if (auto it = sharded_keys.find(idx); it != sharded_keys.end())
                 {
-                    val = keys.front();
-                    keys.pop_front();
+                    auto & keys = it->second;
+                    if (!keys.empty())
+                    {
+                        val = keys.front();
+                        keys.pop_front();
+                    }
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                    "Processing id {} does not exist (Expexted ids: {})",
+                                    idx, fmt::join(metadata->getProcessingIdsForShard(current_shard), ", "));
                 }
             }
 
@@ -86,14 +95,24 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
                 val = glob_iterator->next();
                 if (val && sharded_processing)
                 {
-                    auto shard = metadata->getProcessingIdForPath(val->key);
-                    if (idx != shard)
+                    const auto processing_id_for_key = metadata->getProcessingIdForPath(val->key);
+                    if (idx != processing_id_for_key)
                     {
-                        if (metadata->isProcessingIdBelongsToShard(shard, current_shard))
+                        if (metadata->isProcessingIdBelongsToShard(processing_id_for_key, current_shard))
                         {
-                            LOG_TEST(log, "Key {} is for shard {} (total: {})", val->key, shard, sharded_keys.size());
-                            auto & keys = sharded_keys.at(shard);
-                            keys.push_back(val);
+                            LOG_TEST(log, "Putting key {} into queue of shard {} (total: {})",
+                                     val->key, processing_id_for_key, sharded_keys.size());
+
+                            if (auto it = sharded_keys.find(idx); it != sharded_keys.end())
+                            {
+                                it->second.push_back(val);
+                            }
+                            else
+                            {
+                                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                                "Processing id {} does not exist (Expexted ids: {})",
+                                                idx, fmt::join(metadata->getProcessingIdsForShard(current_shard), ", "));
+                            }
                         }
                         continue;
                     }

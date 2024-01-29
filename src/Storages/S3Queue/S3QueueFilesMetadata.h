@@ -91,6 +91,13 @@ public:
 
     bool isProcessingIdBelongsToShard(size_t id, size_t shard_id) const { return shard_id * threads_per_shard <= id && id < (shard_id + 1) * threads_per_shard; }
 
+    std::vector<size_t> getProcessingIdsForShard(size_t shard_id) const
+    {
+        std::vector<size_t> res(threads_per_shard);
+        std::iota(res.begin(), res.end(), shard_id * threads_per_shard);
+        return res;
+    }
+
 private:
     const S3QueueMode mode;
     const UInt64 max_set_size;
