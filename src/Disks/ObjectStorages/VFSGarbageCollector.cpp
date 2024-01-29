@@ -204,7 +204,7 @@ void VFSGarbageCollector::updateSnapshotWithLogEntries(Logpointer start, Logpoin
 
 // Conditional [[noreturn]] doesn't exist
 #pragma clang diagnostic ignored "-Wmissing-noreturn"
-static void check404(std::exception && e)
+static void check404(std::exception & e)
 {
     // TODO myrrc this works only for s3 and azure
     if (false)
@@ -231,7 +231,7 @@ static void check404(std::exception && e)
 constexpr std::string_view SNAPSHOTS_PATH = "/snapshots";
 Logpointer VFSGarbageCollector::reconcileLogWithSnapshot(Logpointer start, Logpointer end, Exception && e) const
 {
-    check404(std::move(e));
+    check404(e);
     LOG_WARNING(log, "Snapshot for {} not found", start);
 
     const fs::path snapshots_folder = storage.getMetadataObject(SNAPSHOTS_PATH).remote_path;

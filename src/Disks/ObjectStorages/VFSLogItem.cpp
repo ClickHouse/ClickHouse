@@ -4,39 +4,48 @@
 #include "IO/ReadHelpers.h"
 #include "IO/WriteHelpers.h"
 
+using ItemPair = DB::VFSLogItemStorage::value_type;
+template <>
+struct fmt::formatter<ItemPair>
+{
+    constexpr auto parse(auto & ctx) { return ctx.begin(); }
+    constexpr auto format(const ItemPair & item, auto & ctx) { return fmt::format_to(ctx.out(), "{} {}", item.first, item.second); }
+};
+
 namespace DB
 {
-// TODO myrrc this assumes single log item will never have more than one link to a single stored object
-String VFSLogItem::getSerialised(StoredObjects && link, StoredObjects && unlink)
-{
-    String out = fmt::format("{}\n", link.size());
-    for (const auto & obj : link)
-        out += fmt::format("{}\n", obj.remote_path);
-    out += fmt::format("{}\n", unlink.size());
-    for (const auto & obj : unlink)
-        out += fmt::format("{}\n", obj.remote_path);
-    return out;
-}
-
 VFSLogItem VFSLogItem::parse(std::string_view str)
 {
     VFSLogItem out;
     ReadBufferFromString buf{str};
     String path;
+    int delta;
 
-    for (int size; int links : {1, -1})
+    // TODO myrrc this doesn't work for empty log item
+    while (!buf.eof())
     {
-        readIntTextUnsafe(size, buf);
-        out.reserve(out.size() + size);
+        readStringUntilWhitespace(path, buf);
+        readIntTextUnsafe(delta, buf);
         checkChar('\n', buf);
-        for (int i = 0; i < size; ++i)
-        {
-            readString(path, buf);
-            checkChar('\n', buf);
-            out.emplace(std::move(path), links);
-        }
+        out.emplace(std::move(path), delta);
     }
-    assertEOF(buf);
+    return out;
+}
+
+String VFSLogItem::serialize() const
+{
+    return fmt::format("{}\n", fmt::join(*this, "\n"));
+}
+
+// TODO myrrc this assumes single log item will never have more than one link to a single stored object
+// which doesn't work for 0copy
+String VFSLogItem::getSerialised(StoredObjects && link, StoredObjects && unlink)
+{
+    String out;
+    for (const auto & obj : link)
+        out += fmt::format("{} 1\n", obj.remote_path);
+    for (const auto & obj : unlink)
+        out += fmt::format("{} -1\n", obj.remote_path);
     return out;
 }
 

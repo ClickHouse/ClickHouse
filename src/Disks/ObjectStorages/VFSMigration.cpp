@@ -2,7 +2,8 @@
 #include "DiskObjectStorageVFS.h"
 #include "Interpreters/ActionLocksManager.h"
 #include "Interpreters/DatabaseCatalog.h"
-#include "Storages/StorageReplicatedMergeTree.h"
+#include "Storages/MergeTree/MergeTreeData.h"
+//#include "Storages/StorageReplicatedMergeTree.h"
 
 namespace DB
 {
@@ -35,34 +36,33 @@ static const auto ACTIONS = {
     ViewRefresh,
 };
 
+VFSMigration::VFSMigration(DiskObjectStorageVFS & disk_, ContextWeakPtr ctx)
+    : WithContext(std::move(ctx)), disk(disk_), log(getLogger(fmt::format("VFSMigration({})", disk.getName())))
+{
+}
+
 void VFSMigration::migrate() const
 {
     LOG_INFO(log, "Migrating {}", disk.getName());
+    auto ctx = getContext();
 
-    for (const auto & [name, db] : DatabaseCatalog::instance().getDatabases())
-    {
-        LOG_INFO(log, "Migrating {}", name);
+    for (const auto & [_, db] : DatabaseCatalog::instance().getDatabases())
         for (auto it = db->getTablesIterator(ctx); it->isValid(); it->next())
-        {
-            StoragePtr table_ptr = it->table();
-            if (!table_ptr) // Lazy table
-                continue;
-            migrateTable(std::move(table_ptr));
-        }
-    }
+            if (StoragePtr table_ptr = it->table()) // Lazy tables may return nullptr
+                migrateTable(std::move(table_ptr), *ctx);
 }
 
-void VFSMigration::migrateTable(StoragePtr table_ptr) const
+void VFSMigration::migrateTable(StoragePtr table_ptr, const Context & ctx) const
 {
     LOG_INFO(log, "Migrating {}", table_ptr->getName());
 
-    auto * table_casted_ptr = typeid_cast<StorageReplicatedMergeTree *>(table_ptr.get());
+    auto * const table_casted_ptr = dynamic_cast<MergeTreeData *>(table_ptr.get());
     if (!table_casted_ptr)
     {
-        LOG_INFO(log, "Only StorageReplicatedMergeTree is eligible for migration, skipping");
+        LOG_INFO(log, "Only MergeTree-derived tables are eligible for migration, skipping");
         return;
     }
-    StorageReplicatedMergeTree & table = *table_casted_ptr;
+    MergeTreeData & table = *table_casted_ptr;
 
     if (auto disks = table.getDisks(); std::ranges::find_if(disks, [&](DiskPtr d) { return d.get() == &disk; }) == disks.end())
     {
@@ -70,12 +70,14 @@ void VFSMigration::migrateTable(StoragePtr table_ptr) const
         return;
     }
 
-    ActionLocksManagerPtr manager = ctx->getActionLocksManager();
+    ActionLocksManagerPtr manager = ctx.getActionLocksManager();
     manager->cleanExpired();
-    // TODO support 0copy
+
+    // We don't need to stop mutations if we temporarily ban replicated fetches
+    // TODO ban user to connect to replica while migrating OR ban requests to
+    // specific table
 
     // TODO myrrc possibly better STOP ON VOLUME, research
-    // TODO myrrc stop mutations
     // TODO stop only needed actions
     // TODO myrrc respect settings set before migration. E.g. if moves were stopped for table / volume / globally, we shouldn't turn them off
     auto perform = [&](bool start)
@@ -94,11 +96,10 @@ void VFSMigration::migrateTable(StoragePtr table_ptr) const
     SCOPE_EXIT(perform(true));
 
     MetadataStoragePtr metadata_storage = disk.getMetadataStorage();
+    VFSLogItem item; // TODO myrrc batch in 1MB sizes (may be done on VFSTransaction side by @mkmkme)
 
-    VFSLogItem item;
-
-    Strings paths; // TODO myrrc replace with streaming mode, parallelize
-    const String path = disk.getPath() + table.getRelativeDataPath();
+    // TODO myrrc replace with streaming mode, parallelize
+    const auto path = fs::path(disk.getPath()) / table.getRelativeDataPath();
     LOG_DEBUG(log, "Will iterate {}", path);
     for (const auto & entry : fs::recursive_directory_iterator{path})
         if (entry.is_regular_file())
@@ -110,5 +111,24 @@ void VFSMigration::migrateTable(StoragePtr table_ptr) const
                 else
                     it->second += links;
             }
+
+    disk.zookeeper()->create(disk.traits.log_item, item.serialize(), zkutil::CreateMode::PersistentSequential);
+}
+
+bool VFSMigration::fromZeroCopy(IStorage & table, zkutil::ZooKeeper & zookeeper) const
+{
+    (void)table;
+    (void)zookeeper;
+    return false;
+    //auto * const ptr = dynamic_cast<StorageReplicatedMergeTree *>(&table);
+    //if (!ptr)
+    //    return false;
+    //const auto & settings = ptr->getSettings();
+    //const DataSourceType disk_type = disk.getDataSourceDescription().type;
+    //chassert(!settings->remote_fs_zero_copy_path_compatible_mode);
+    //const Strings paths_for_dummy_part
+    //    = StorageReplicatedMergeTree::getZeroCopyPartPath(*settings, toString(disk_type), ptr->getTableSharedID(), "dummy_part", "");
+    //const String zk_table_path = fs::path(paths_for_dummy_part[0]).parent_path();
+    //return zookeeper.exists(zk_table_path);
 }
 }

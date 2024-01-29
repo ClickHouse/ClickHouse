@@ -3,17 +3,21 @@
 #include "Interpreters/Context_fwd.h"
 #include "Storages/IStorage_fwd.h"
 
+namespace zkutil
+{
+class ZooKeeper;
+}
 namespace DB
 {
-class InterpreterSystemQuery;
 class DiskObjectStorageVFS;
 
-struct VFSMigration
+struct VFSMigration : WithContext
 {
+    explicit VFSMigration(DiskObjectStorageVFS & disk_, ContextWeakPtr ctx);
     DiskObjectStorageVFS & disk;
-    ContextMutablePtr ctx;
-    LoggerPtr log = getLogger("VFSMigration");
+    LoggerPtr log;
     void migrate() const;
-    void migrateTable(StoragePtr table_ptr) const;
+    void migrateTable(StoragePtr table_ptr, const Context & ctx) const;
+    bool fromZeroCopy(IStorage & table, zkutil::ZooKeeper & zookeeper) const;
 };
 }

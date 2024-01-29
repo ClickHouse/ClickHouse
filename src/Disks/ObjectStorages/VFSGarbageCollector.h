@@ -7,7 +7,7 @@ namespace DB
 {
 class DiskObjectStorageVFS;
 
-class VFSGarbageCollector : public BackgroundSchedulePoolTaskHolder
+class VFSGarbageCollector : private BackgroundSchedulePoolTaskHolder
 {
 public:
     VFSGarbageCollector(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool);

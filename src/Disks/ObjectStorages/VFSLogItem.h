@@ -22,7 +22,11 @@ struct VFSMergeResult
 struct VFSLogItem : VFSLogItemStorage
 {
     static VFSLogItem parse(std::string_view str);
+
+    String serialize() const;
+    // Faster alternative that avoids constructing VFSLogItem object
     static String getSerialised(StoredObjects && link, StoredObjects && unlink);
+
     void merge(VFSLogItem && other);
     VFSMergeResult mergeWithSnapshot(ReadBuffer & snapshot, WriteBuffer & new_snapshot, Poco::Logger * log) &&;
 };

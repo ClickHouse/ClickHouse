@@ -43,6 +43,7 @@ private:
     friend struct CopyFileObjectStorageVFSOperation;
     friend struct DiskObjectStorageVFSTransaction;
     friend class VFSGarbageCollector;
+    friend struct VFSMigration;
 
     std::optional<VFSGarbageCollector> garbage_collector;
 
