@@ -918,6 +918,19 @@ void StorageDistributed::read(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline is not initialized");
 }
 
+void StorageDistributed::streamingRead(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams)
+{
+    // it is possible to call regular read here, because streaming will be configured on every shard locally
+    read(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+}
 
 SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
