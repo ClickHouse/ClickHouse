@@ -42,6 +42,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Processors/QueryPlan/ReadFromStreamLikeEngine.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
@@ -175,52 +176,30 @@ struct StorageKafkaInterceptors
     }
 };
 
-class ReadFromStorageKafkaStep final : public ISourceStep
+class ReadFromStorageKafka final : public ReadFromStreamLikeEngine
 {
 public:
-    ReadFromStorageKafkaStep(
+    ReadFromStorageKafka(
         const Names & column_names_,
         StoragePtr storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         SelectQueryInfo & query_info,
         ContextPtr context_)
-        : ISourceStep{DataStream{.header = storage_snapshot_->getSampleBlockForColumns(column_names_)}}
+        : ReadFromStreamLikeEngine{column_names_, storage_snapshot_, query_info.storage_limits, context_}
         , column_names{column_names_}
         , storage{storage_}
         , storage_snapshot{storage_snapshot_}
-        , storage_limits{query_info.storage_limits}
-        , context{context_}
     {
     }
 
     String getName() const override { return "ReadFromStorageKafka"; }
 
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
-    {
-        auto pipe = makePipe();
-
-        /// Add storage limits.
-        for (const auto & processor : pipe.getProcessors())
-            processor->setStorageLimits(storage_limits);
-
-        /// Add to processors to get processor info through explain pipeline statement.
-        for (const auto & processor : pipe.getProcessors())
-            processors.emplace_back(processor);
-
-        pipeline.init(std::move(pipe));
-    }
-
 private:
-    Pipe makePipe()
+    Pipe makePipe() final
     {
         auto & kafka_storage = storage->as<StorageKafka &>();
         if (kafka_storage.num_created_consumers == 0)
             return {};
-
-        if (!context->getSettingsRef().stream_like_engine_allow_direct_select)
-            throw Exception(
-                ErrorCodes::QUERY_NOT_ALLOWED,
-                "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
 
         if (kafka_storage.mv_attached)
             throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka with attached materialized views");
@@ -229,8 +208,8 @@ private:
 
         /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
         Pipes pipes;
-        pipes.reserve(kafka_storage.num_created_consumers);
-        auto modified_context = Context::createCopy(context);
+        pipes.reserve(kafka_storage.num_consumers);
+        auto modified_context = Context::createCopy(getContext());
         modified_context->applySettingsChanges(kafka_storage.settings_adjustments);
 
         // Claim as many consumers as requested, but don't block
@@ -252,13 +231,10 @@ private:
         LOG_DEBUG(kafka_storage.log, "Starting reading {} streams", pipes.size());
         return Pipe::unitePipes(std::move(pipes));
     }
-    ActionsDAGPtr buildFilterDAG();
 
     const Names column_names;
     StoragePtr storage;
     StorageSnapshotPtr storage_snapshot;
-    std::shared_ptr<const StorageLimitsList> storage_limits;
-    ContextPtr context;
 };
 
 namespace
@@ -434,7 +410,7 @@ void StorageKafka::read(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    query_plan.addStep(std::make_unique<ReadFromStorageKafkaStep>(
+    query_plan.addStep(std::make_unique<ReadFromStorageKafka>(
         column_names, shared_from_this(), storage_snapshot, query_info, std::move(query_context)));
 }
 
