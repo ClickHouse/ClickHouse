@@ -218,7 +218,7 @@ class BuildConfig:
                     # when there are changes in performance test scripts.
                     # Due to the current design of the perf test we need to rebuild CH when the performance test changes,
                     # otherwise the changes will not be visible in the PerformanceTest job in CI
-                    "./tests/performance"
+                    "./tests/performance",
                 ],
                 exclude_files=[".md"],
                 docker=["clickhouse/binary-builder"],
