@@ -762,7 +762,8 @@ CREATE TABLE system.quota_limits
     `max_read_rows` Nullable(UInt64),
     `max_read_bytes` Nullable(UInt64),
     `max_execution_time` Nullable(Float64),
-    `max_written_bytes` Nullable(UInt64)
+    `max_written_bytes` Nullable(UInt64),
+    `max_failed_sequential_authentications` Nullable(UInt64)
 )
 ENGINE = SystemQuotaLimits
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -792,7 +793,9 @@ CREATE TABLE system.quota_usage
     `execution_time` Nullable(Float64),
     `max_execution_time` Nullable(Float64),
     `written_bytes` Nullable(UInt64),
-    `max_written_bytes` Nullable(UInt64)
+    `max_written_bytes` Nullable(UInt64),
+    `failed_sequential_authentications` Nullable(UInt64),
+    `max_failed_sequential_authentications` Nullable(UInt64)
 )
 ENGINE = SystemQuotaUsage
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -836,7 +839,9 @@ CREATE TABLE system.quotas_usage
     `execution_time` Nullable(Float64),
     `max_execution_time` Nullable(Float64),
     `written_bytes` Nullable(UInt64),
-    `max_written_bytes` Nullable(UInt64)
+    `max_written_bytes` Nullable(UInt64),
+    `failed_sequential_authentications` Nullable(UInt64),
+    `max_failed_sequential_authentications` Nullable(UInt64)
 )
 ENGINE = SystemQuotasUsage
 COMMENT 'SYSTEM TABLE is built on the fly.'

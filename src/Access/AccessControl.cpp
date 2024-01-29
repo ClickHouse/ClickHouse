@@ -559,16 +559,26 @@ AccessChangesNotifier & AccessControl::getChangesNotifier()
 }
 
 
-AuthResult AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const
+AuthResult AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const String & forwarded_address) const
 {
+    // NOTE: In the case where the user has never been logged in using LDAP,
+    // Then user_id is not generated, and the authentication quota will always be nullptr.
+    auto authentication_quota = getAuthenticationQuota(credentials.getUserName(), address, forwarded_address);
+    if (authentication_quota)
+        authentication_quota->checkExceeded(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS);
+
     try
     {
-        return MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, allow_no_password,
-                                                   allow_plaintext_password);
+        const auto auth_result = MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, allow_no_password,
+                                                                     allow_plaintext_password);
+
+        return auth_result;
     }
     catch (...)
     {
         tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed");
+        if (authentication_quota)
+            authentication_quota->used(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS, 1, true);
 
         WriteBufferFromOwnString message;
         message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name.";
@@ -588,6 +598,9 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
                                             "{}: Authentication failed: password is incorrect, or there is no user with such name.{}"},
                         ErrorCodes::AUTHENTICATION_FAILED);
     }
+
+    if (authentication_quota)
+        authentication_quota->reset(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS);
 }
 
 void AccessControl::restoreFromBackup(RestorerFromBackup & restorer)
@@ -763,7 +776,34 @@ std::shared_ptr<const EnabledQuota> AccessControl::getEnabledQuota(
     const String & forwarded_address,
     const String & custom_quota_key) const
 {
-    return quota_cache->getEnabledQuota(user_id, user_name, enabled_roles, address, forwarded_address, custom_quota_key);
+    return quota_cache->getEnabledQuota(user_id, user_name, enabled_roles, address, forwarded_address, custom_quota_key, true);
+}
+
+std::shared_ptr<const EnabledQuota> AccessControl::getAuthenticationQuota(
+    const String & user_name, const Poco::Net::IPAddress & address, const std::string & forwarded_address) const
+{
+    auto user_id = find<User>(user_name);
+    UserPtr user;
+    if (user_id && (user = tryRead<User>(*user_id)))
+    {
+        const auto new_current_roles = user->granted_roles.findGranted(user->default_roles);
+        const auto roles_info = getEnabledRolesInfo(new_current_roles, {});
+
+        // client_key is not received at the moment of authentication during TCP connection
+        // if key type is set to QuotaKeyType::CLIENT_KEY
+        // QuotaCache::QuotaInfo::calculateKey will throw exception without throw_if_client_key_empty = false
+        String quota_key;
+        bool throw_if_client_key_empty = false;
+        return quota_cache->getEnabledQuota(*user_id,
+                                            user->getName(),
+                                            roles_info->enabled_roles,
+                                            address,
+                                            forwarded_address,
+                                            quota_key,
+                                            throw_if_client_key_empty);
+    }
+    else
+        return nullptr;
 }
 
 
