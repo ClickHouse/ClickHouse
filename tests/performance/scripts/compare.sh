@@ -444,10 +444,8 @@ create view query_logs as
 create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-arrays.tsv')
     as
     with (
-        -- sumMapState with the list of all keys with 'nan' values. 'nan' is because
-        -- sumMap removes keys with positive/negative zeros.
         with (select groupUniqArrayArray(mapKeys(ProfileEvents)) from query_logs) as all_names
-            select arrayReduce('sumMapState', [(all_names, arrayMap(x->nan, all_names))])
+            select arrayReduce('sumMapState', [(all_names, arrayMap(x->0::Nullable(Float64), all_names))])
         ) as all_metrics
     select test, query_index, version, query_id,
         (finalizeAggregation(
@@ -456,14 +454,12 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
                     all_metrics,
                     arrayReduce('sumMapState',
                         [(mapKeys(ProfileEvents),
-                            arrayMap(x->toFloat64(x), mapValues(ProfileEvents)))]
+                            arrayMap(x->toNullable(toFloat64(x)), mapValues(ProfileEvents)))]
                     ),
                     arrayReduce('sumMapState', [(
                         ['client_time', 'server_time', 'memory_usage'],
-                        arrayMap(x->if(x != 0., x, nan), [
-                            toFloat64(query_runs.time),
-                            toFloat64(query_duration_ms / 1000.),
-                            toFloat64(memory_usage)]))])
+                        [toNullable(toFloat64(query_runs.time)), toNullable(toFloat64(query_duration_ms / 1000.)), toNullable(toFloat64(memory_usage))]
+                      )])
                 ]
             )) as metrics_tuple).1 metric_names,
         arrayMap(x->if(isNaN(x),0,x), metrics_tuple.2) metric_values
