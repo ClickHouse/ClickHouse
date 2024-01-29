@@ -1102,7 +1102,7 @@ static ActionsDAGPtr getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
     if (!source)
         return nullptr;
 
-    return ActionsDAG::buildFilterActionsDAG(source->getFilterNodes().nodes, {}, context);
+    return ActionsDAG::buildFilterActionsDAG(source->getFilterNodes().nodes);
 }
 
 
@@ -1597,7 +1597,7 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
     if (nodes.empty())
         return nullptr;
 
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes, {}, local_context);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes);
 
     size_t limit = local_context->getSettingsRef().optimize_skip_unused_shards_limit;
     if (!limit || limit > SSIZE_MAX)

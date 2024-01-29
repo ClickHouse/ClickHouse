@@ -818,7 +818,7 @@ private:
 
 void ReadFromHive::applyFilters()
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
     createFiles(filter_actions_dag);
 }
 
