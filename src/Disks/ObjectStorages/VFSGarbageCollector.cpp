@@ -173,7 +173,7 @@ void VFSGarbageCollector::updateSnapshotWithLogEntries(Logpointer start, Logpoin
     }
     catch (Exception & e)
     {
-        const Logpointer new_start = reconcileLogWithSnapshot(start_regarding_zero, end, std::move(e));
+        const Logpointer new_start = reconcile(start_regarding_zero, end, std::move(e));
         if (new_start == end)
             return;
         populate_old_snapshot(new_start);
@@ -229,7 +229,7 @@ static void check404(std::exception & e)
 }
 
 constexpr std::string_view SNAPSHOTS_PATH = "/snapshots";
-Logpointer VFSGarbageCollector::reconcileLogWithSnapshot(Logpointer start, Logpointer end, Exception && e) const
+Logpointer VFSGarbageCollector::reconcile(Logpointer start, Logpointer end, Exception && e) const
 {
     check404(e);
     LOG_WARNING(log, "Snapshot for {} not found", start);

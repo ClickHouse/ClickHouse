@@ -22,10 +22,12 @@ std::ostream & operator<<(std::ostream & stream, const DB::StoredObject & obj)
 TEST(DiskObjectStorageVFS, VFSLogItem)
 {
     Poco::Logger * log = &Poco::Logger::root();
-    EXPECT_THROW(VFSLogItem::parse(""), Exception);
+    EXPECT_EQ(VFSLogItem::parse(""), VFSLogItem{});
 
     VFSLogItem item{{{"link", 1}, {"unlink", -1}}};
     EXPECT_EQ(item, VFSLogItem::parse(VFSLogItem::getSerialised({StoredObject{"link"}}, {StoredObject{"unlink"}})));
+    EXPECT_EQ(item.serialize(), VFSLogItem::getSerialised({StoredObject{"link"}}, {StoredObject{"unlink"}}));
+    EXPECT_EQ(item, VFSLogItem::parse(item.serialize()));
 
     item.merge({{{"link", 5}, {"unlink", 1}, {"delta", -2}}});
     EXPECT_EQ(item, (VFSLogItem{{{"link", 6}, {"unlink", 0}, {"delta", -2}}}));

@@ -38,8 +38,12 @@ def test_reacquire_session(started_cluster):
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(node)
         node.query_and_get_error("INSERT INTO test VALUES (1)")
-        time.sleep(6)  # GC must fail on some run
+        time.sleep(4)
+    time.sleep(2)  # Wait for CH to reconnect to ZK before next GC run
 
+    assert (
+        int(node.count_in_log("VFSGC(reacquire): Removed lock for")) > 1
+    ), "GC must run at least twice"
     assert (
         int(node.count_in_log("Trying to establish a new connection with ZooKeeper"))
         > 1
@@ -47,13 +51,6 @@ def test_reacquire_session(started_cluster):
 
     node.query("INSERT INTO test VALUES (2)")
     assert int(node.query("SELECT count() FROM test")) == 2
-
-    time.sleep(6)
-    succesful_runs = node.grep_in_log("VFSGC(reacquire): Removed lock for")
-    assert len(succesful_runs) > 0
-    if len(succesful_runs) == 1:
-        # successful run happened after zookeeper session dropped
-        assert not succesful_runs[0].ends_with("[0; 1]")
 
 
 def test_already_processed_batch(started_cluster):

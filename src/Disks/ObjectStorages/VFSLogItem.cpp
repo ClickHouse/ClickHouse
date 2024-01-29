@@ -1,6 +1,6 @@
 #include "VFSLogItem.h"
 #include "Common/logger_useful.h"
-#include "IO/ReadBufferFromString.h"
+#include "IO/ReadBufferFromMemory.h"
 #include "IO/ReadHelpers.h"
 #include "IO/WriteHelpers.h"
 
@@ -16,18 +16,18 @@ namespace DB
 {
 VFSLogItem VFSLogItem::parse(std::string_view str)
 {
+    if (str.empty() || str == "\n")
+        return VFSLogItem{};
     VFSLogItem out;
-    ReadBufferFromString buf{str};
-    String path;
-    int delta;
-
-    // TODO myrrc this doesn't work for empty log item
+    ReadBufferFromMemory buf{std::move(str)};
+    ItemPair pair;
     while (!buf.eof())
     {
-        readStringUntilWhitespace(path, buf);
-        readIntTextUnsafe(delta, buf);
+        readStringUntilWhitespace(pair.first, buf);
+        checkChar(' ', buf);
+        readIntTextUnsafe(pair.second, buf);
         checkChar('\n', buf);
-        out.emplace(std::move(path), delta);
+        out.emplace(std::move(pair));
     }
     return out;
 }
@@ -55,7 +55,7 @@ void VFSLogItem::merge(VFSLogItem && other)
     // As we have only link + unlink, we can't distinguish 2 situations:
     // 1. We created an object and deleted it in the log batch -- then we need to remove it
     // 2. We created and removed link to object -- we don't need to remove the object.
-    // So we leave objects with <=0 references and postpone the decision till we merge with snapshot
+    // So we leave objects with non-positive references and postpone the decision till we merge with snapshot
     for (auto & elem : other)
         if (auto it = find(elem.first); it == end())
             emplace(std::move(elem));

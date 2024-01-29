@@ -251,7 +251,7 @@ def test_delete_race_leftovers(cluster_started):
 
         if testing_vfs:  # remove snapshot
             all_remote_paths = all_remote_paths - set(
-                (e for e in all_remote_paths if e.startswith("data2/vfs/_"))
+                (e for e in all_remote_paths if e.startswith("data2/vfs/s32/snapshots"))
             )
 
         # Some blobs can be deleted after we listed remote_data_paths
