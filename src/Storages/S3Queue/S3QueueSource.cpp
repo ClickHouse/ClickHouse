@@ -85,7 +85,7 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
                 else
                 {
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                    "Processing id {} does not exist (Expexted ids: {})",
+                                    "Processing id {} does not exist (Expected ids: {})",
                                     idx, fmt::join(metadata->getProcessingIdsForShard(current_shard), ", "));
                 }
             }
@@ -110,7 +110,7 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
                             else
                             {
                                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                                "Processing id {} does not exist (Expexted ids: {})",
+                                                "Processing id {} does not exist (Expected ids: {})",
                                                 idx, fmt::join(metadata->getProcessingIdsForShard(current_shard), ", "));
                             }
                         }

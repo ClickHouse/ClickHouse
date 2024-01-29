@@ -89,6 +89,7 @@ def started_cluster():
                 "configs/zookeeper.xml",
                 "configs/s3queue_log.xml",
             ],
+            stay_alive=True,
         )
         cluster.add_instance(
             "instance2",
@@ -1049,7 +1050,6 @@ def test_shards(started_cluster, mode, processing_threads):
                 "keeper_path": keeper_path,
                 "s3queue_processing_threads_num": processing_threads,
                 "s3queue_total_shards_num": shards_num,
-                "s3queue_current_shard_num": i,
             },
         )
         create_mv(node, table, dst_table)
@@ -1115,6 +1115,8 @@ def test_shards(started_cluster, mode, processing_threads):
         zk = started_cluster.get_kazoo_client("zoo1")
         processed_nodes = zk.get_children(f"{keeper_path}/processed/")
         assert len(processed_nodes) == shards_num * processing_threads
+        shard_nodes = zk.get_children(f"{keeper_path}/shards/")
+        assert len(shard_nodes) == shards_num
 
 
 @pytest.mark.parametrize(
@@ -1150,7 +1152,6 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
                 "keeper_path": keeper_path,
                 "s3queue_processing_threads_num": processing_threads,
                 "s3queue_total_shards_num": shards_num,
-                "s3queue_current_shard_num": i,
             },
         )
         i += 1
@@ -1205,6 +1206,8 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
         zk = started_cluster.get_kazoo_client("zoo1")
         processed_nodes = zk.get_children(f"{keeper_path}/processed/")
         assert len(processed_nodes) == shards_num * processing_threads
+        shard_nodes = zk.get_children(f"{keeper_path}/shards/")
+        assert len(shard_nodes) == shards_num
 
 
 def test_settings_check(started_cluster):
@@ -1216,7 +1219,8 @@ def test_settings_check(started_cluster):
     files_path = f"{table_name}_data"
     mode = "ordered"
 
-    i = 0
+    node.restart_clickhouse()
+
     create_table(
         started_cluster,
         node,
@@ -1227,7 +1231,6 @@ def test_settings_check(started_cluster):
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 5,
             "s3queue_total_shards_num": 2,
-            "s3queue_current_shard_num": i,
         },
     )
 
@@ -1243,7 +1246,6 @@ def test_settings_check(started_cluster):
                 "keeper_path": keeper_path,
                 "s3queue_processing_threads_num": 5,
                 "s3queue_total_shards_num": 3,
-                "s3queue_current_shard_num": i,
             },
             expect_error=True,
         )
@@ -1261,8 +1263,17 @@ def test_settings_check(started_cluster):
                 "keeper_path": keeper_path,
                 "s3queue_processing_threads_num": 2,
                 "s3queue_total_shards_num": 2,
-                "s3queue_current_shard_num": i,
             },
             expect_error=True,
         )
     )
+
+    assert "s3queue_current_shard_num = 0" in node.query(
+        f"SHOW CREATE TABLE {table_name}"
+    )
+    node.restart_clickhouse()
+    assert "s3queue_current_shard_num = 0" in node.query(
+        f"SHOW CREATE TABLE {table_name}"
+    )
+
+    node.query(f"DROP TABLE {table_name} SYNC")

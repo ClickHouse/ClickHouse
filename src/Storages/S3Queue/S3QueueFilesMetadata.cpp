@@ -134,6 +134,7 @@ S3QueueFilesMetadata::S3QueueFilesMetadata(const fs::path & zookeeper_path_, con
     , zookeeper_processing_path(zookeeper_path_ / "processing")
     , zookeeper_processed_path(zookeeper_path_ / "processed")
     , zookeeper_failed_path(zookeeper_path_ / "failed")
+    , zookeeper_shards_path(zookeeper_path_ / "shards")
     , zookeeper_cleanup_lock_path(zookeeper_path_ / "cleanup_lock")
     , log(getLogger("S3QueueFilesMetadata"))
 {
@@ -159,7 +160,11 @@ void S3QueueFilesMetadata::deactivateCleanupTask()
 
 zkutil::ZooKeeperPtr S3QueueFilesMetadata::getZooKeeper() const
 {
-    return Context::getGlobalContextInstance()->getZooKeeper();
+    if (!zookeeper || zookeeper->expired())
+    {
+        zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
+    }
+    return zookeeper;
 }
 
 S3QueueFilesMetadata::FileStatusPtr S3QueueFilesMetadata::getFileStatus(const std::string & path)
@@ -199,9 +204,121 @@ S3QueueFilesMetadata::NodeMetadata S3QueueFilesMetadata::createNodeMetadata(
     return metadata;
 }
 
+bool S3QueueFilesMetadata::isShardedProcessing() const
+{
+    return getProcessingIdsNum() > 1 && mode == S3QueueMode::ORDERED;
+}
+
+size_t S3QueueFilesMetadata::registerNewShard()
+{
+    if (!isShardedProcessing())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot register a new shard, because processing is not sharded");
+    }
+
+    const auto zk_client = getZooKeeper();
+    zk_client->createAncestors(zookeeper_shards_path / "");
+
+    std::string shard_node_path;
+    size_t shard_id = 0;
+    for (size_t i = 0; i < shards_num; ++i)
+    {
+        const auto node_path = getZooKeeperPathForShard(i);
+        auto err = zk_client->tryCreate(node_path, "", zkutil::CreateMode::Persistent);
+        if (err == Coordination::Error::ZOK)
+        {
+            shard_node_path = node_path;
+            shard_id = i;
+            break;
+        }
+        else if (err == Coordination::Error::ZNODEEXISTS)
+            continue;
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Unexpected error: {}", magic_enum::enum_name(err));
+    }
+
+    if (shard_node_path.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to register a new shard");
+
+    LOG_TRACE(log, "Using shard {} (zk node: {})", shard_id, shard_node_path);
+    return shard_id;
+}
+
+std::string S3QueueFilesMetadata::getZooKeeperPathForShard(size_t shard_id) const
+{
+    return zookeeper_shards_path / ("shard" + toString(shard_id));
+}
+
+void S3QueueFilesMetadata::registerNewShard(size_t shard_id)
+{
+    if (!isShardedProcessing())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot register a new shard, because processing is not sharded");
+    }
+
+    const auto zk_client = getZooKeeper();
+    const auto node_path = getZooKeeperPathForShard(shard_id);
+    zk_client->createAncestors(node_path);
+
+    auto err = zk_client->tryCreate(node_path, "", zkutil::CreateMode::Persistent);
+    if (err != Coordination::Error::ZOK)
+    {
+        if (err == Coordination::Error::ZNODEEXISTS)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot register shard {}: already exists", shard_id);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Unexpected error: {}", magic_enum::enum_name(err));
+    }
+}
+
+bool S3QueueFilesMetadata::isShardRegistered(size_t shard_id)
+{
+    const auto zk_client = getZooKeeper();
+    const auto node_path = getZooKeeperPathForShard(shard_id);
+    return zk_client->exists(node_path);
+}
+
+void S3QueueFilesMetadata::unregisterShard(size_t shard_id)
+{
+    if (!isShardedProcessing())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot unregister a shard, because processing is not sharded");
+    }
+
+    const auto zk_client = getZooKeeper();
+    const auto node_path = getZooKeeperPathForShard(shard_id);
+    zk_client->remove(node_path);
+}
+
+size_t S3QueueFilesMetadata::getProcessingIdsNum() const
+{
+    return shards_num * threads_per_shard;
+}
+
+std::vector<size_t> S3QueueFilesMetadata::getProcessingIdsForShard(size_t shard_id) const
+{
+    std::vector<size_t> res(threads_per_shard);
+    std::iota(res.begin(), res.end(), shard_id * threads_per_shard);
+    return res;
+}
+
+bool S3QueueFilesMetadata::isProcessingIdBelongsToShard(size_t id, size_t shard_id) const
+{
+    return shard_id * threads_per_shard <= id && id < (shard_id + 1) * threads_per_shard;
+}
+
+size_t S3QueueFilesMetadata::getIdForProcessingThread(size_t thread_id, size_t shard_id) const
+{
+    return shard_id * threads_per_shard + thread_id;
+}
+
 size_t S3QueueFilesMetadata::getProcessingIdForPath(const std::string & path) const
 {
-    return sipHash64(path.data(), path.size()) % getProcessingThreadsNum();
+    return sipHash64(path.data(), path.size()) % getProcessingIdsNum();
 }
 
 S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAsProcessing(const std::string & path)

@@ -93,13 +93,6 @@ namespace
                             "Setting `s3queue_cleanup_interval_min_ms` ({}) must be less or equal to `s3queue_cleanup_interval_max_ms` ({})",
                             s3queue_settings.s3queue_cleanup_interval_min_ms, s3queue_settings.s3queue_cleanup_interval_max_ms);
         }
-
-        if (s3queue_settings.s3queue_current_shard_num >= s3queue_settings.s3queue_total_shards_num)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Setting `s3queue_current_shard_num` ({}) cannot exceed `{}` (`s3queue_total_shards_num` - 1)",
-                            s3queue_settings.s3queue_current_shard_num, s3queue_settings.s3queue_total_shards_num);
-
-        ///TODO: Add a test with different total_shards_settings for same keeper path - exception must be thrown.
     }
 }
 
@@ -111,7 +104,8 @@ StorageS3Queue::StorageS3Queue(
     const ConstraintsDescription & constraints_,
     const String & comment,
     ContextPtr context_,
-    std::optional<FormatSettings> format_settings_)
+    std::optional<FormatSettings> format_settings_,
+    ASTStorage * engine_args)
     : IStorage(table_id_)
     , WithContext(context_)
     , s3queue_settings(std::move(s3queue_settings_))
@@ -174,6 +168,19 @@ StorageS3Queue::StorageS3Queue(
         S3QueueMetadataFactory::instance().remove(zk_path);
         throw;
     }
+
+    if (files_metadata->isShardedProcessing())
+    {
+        if (!s3queue_settings->s3queue_current_shard_num.changed)
+        {
+            s3queue_settings->s3queue_current_shard_num = static_cast<UInt32>(files_metadata->registerNewShard());
+            engine_args->settings->changes.setSetting("s3queue_current_shard_num", s3queue_settings->s3queue_current_shard_num.value);
+        }
+        else if (!files_metadata->isShardRegistered(s3queue_settings->s3queue_current_shard_num))
+        {
+            files_metadata->registerNewShard(s3queue_settings->s3queue_current_shard_num);
+        }
+    }
 }
 
 void StorageS3Queue::startup()
@@ -187,6 +194,7 @@ void StorageS3Queue::shutdown(bool is_drop)
     table_is_being_dropped = is_drop;
     shutdown_called = true;
 
+    LOG_TRACE(log, "Shutting down storage...");
     if (task)
     {
         task->deactivate();
@@ -195,8 +203,16 @@ void StorageS3Queue::shutdown(bool is_drop)
     if (files_metadata)
     {
         files_metadata->deactivateCleanupTask();
+
+        if (is_drop && files_metadata->isShardedProcessing())
+        {
+            files_metadata->unregisterShard(s3queue_settings->s3queue_current_shard_num);
+            LOG_TRACE(log, "Unregistered shard {} from zookeeper", s3queue_settings->s3queue_current_shard_num);
+        }
+
         files_metadata.reset();
     }
+    LOG_TRACE(log, "Shut down storage");
 }
 
 void StorageS3Queue::drop()
@@ -627,7 +643,8 @@ void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)
                 args.constraints,
                 args.comment,
                 args.getContext(),
-                format_settings);
+                format_settings,
+                args.storage_def);
         },
         {
             .supports_settings = true,
