@@ -444,6 +444,8 @@ create view query_logs as
 create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-arrays.tsv')
     as
     with (
+        -- sumMapState with the list of all keys with nullable '0' values because sumMap removes keys with default values
+        -- and 0::Nullable != NULL
         with (select groupUniqArrayArray(mapKeys(ProfileEvents)) from query_logs) as all_names
             select arrayReduce('sumMapState', [(all_names, arrayMap(x->0::Nullable(Float64), all_names))])
         ) as all_metrics
