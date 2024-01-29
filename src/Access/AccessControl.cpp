@@ -567,12 +567,11 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
     if (authentication_quota)
         authentication_quota->checkExceeded(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS);
 
+    AuthResult auth_result;
     try
     {
-        const auto auth_result = MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, allow_no_password,
-                                                                     allow_plaintext_password);
-
-        return auth_result;
+        auth_result = MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, allow_no_password,
+                                                          allow_plaintext_password);
     }
     catch (...)
     {
@@ -601,6 +600,8 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
 
     if (authentication_quota)
         authentication_quota->reset(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS);
+
+    return auth_result;
 }
 
 void AccessControl::restoreFromBackup(RestorerFromBackup & restorer)
