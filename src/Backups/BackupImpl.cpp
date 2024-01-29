@@ -535,7 +535,6 @@ void BackupImpl::checkBackupDoesntExist() const
     else
         file_name_to_check_existence = ".backup";
 
-    LOG_INFO(&Poco::Logger::get("BackupImpl"), "checkBackupDoesntExist 1");
     if (writer->fileExists(file_name_to_check_existence))
         throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
 
@@ -567,8 +566,6 @@ bool BackupImpl::checkLockFile(bool throw_if_failed) const
 
     if (throw_if_failed)
     {
-        LOG_INFO(&Poco::Logger::get("BackupImpl"), "checkLockFile");
-
         if (!writer->fileExists(lock_file_name))
         {
             throw Exception(
