@@ -28,12 +28,12 @@ ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & hea
 {
 }
 
-Chunk ArrowBlockInputFormat::generate()
+Chunk ArrowBlockInputFormat::read()
 {
     Chunk res;
     block_missing_values.clear();
     arrow::Result<std::shared_ptr<arrow::RecordBatch>> batch_result;
-
+    size_t batch_start = getDataOffsetMaybeCompressed(*in);
     if (stream)
     {
         if (!stream_reader)
@@ -45,6 +45,9 @@ Chunk ArrowBlockInputFormat::generate()
         batch_result = stream_reader->Next();
         if (batch_result.ok() && !(*batch_result))
             return res;
+
+        if (need_only_count && batch_result.ok())
+            return getChunkForCount((*batch_result)->num_rows());
     }
     else
     {
@@ -57,16 +60,25 @@ Chunk ArrowBlockInputFormat::generate()
         if (record_batch_current >= record_batch_total)
             return res;
 
+        if (need_only_count)
+        {
+            auto rows = file_reader->RecordBatchCountRows(record_batch_current++);
+            if (!rows.ok())
+                throw Exception(
+                    ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
+            return getChunkForCount(*rows);
+        }
+
         batch_result = file_reader->ReadRecordBatch(record_batch_current);
     }
 
     if (!batch_result.ok())
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while reading batch of Arrow data: {}", batch_result.status().ToString());
 
     auto table_result = arrow::Table::FromRecordBatches({*batch_result});
     if (!table_result.ok())
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while reading batch of Arrow data: {}", table_result.status().ToString());
 
     ++record_batch_current;
@@ -76,6 +88,11 @@ Chunk ArrowBlockInputFormat::generate()
     BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
     arrow_column_to_ch_column->arrowTableToCHChunk(res, *table_result, (*table_result)->num_rows(), block_missing_values_ptr);
 
+    /// There is no easy way to get original record batch size from Arrow metadata.
+    /// Let's just use the number of bytes read from read buffer.
+    auto batch_end = getDataOffsetMaybeCompressed(*in);
+    if (batch_end > batch_start)
+        approx_bytes_read_for_chunk = batch_end - batch_start;
     return res;
 }
 
@@ -138,10 +155,11 @@ void ArrowBlockInputFormat::prepareReader()
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
         getPort().getHeader(),
         "Arrow",
-        format_settings.arrow.import_nested,
         format_settings.arrow.allow_missing_columns,
         format_settings.null_as_default,
-        format_settings.arrow.case_insensitive_column_matching);
+        format_settings.date_time_overflow_behavior,
+        format_settings.arrow.case_insensitive_column_matching,
+        stream);
 
     if (stream)
         record_batch_total = -1;
@@ -156,23 +174,49 @@ ArrowSchemaReader::ArrowSchemaReader(ReadBuffer & in_, bool stream_, const Forma
 {
 }
 
-NamesAndTypesList ArrowSchemaReader::readSchema()
+void ArrowSchemaReader::initializeIfNeeded()
 {
-    std::shared_ptr<arrow::Schema> schema;
+    if (file_reader || stream_reader)
+        return;
 
     if (stream)
-        schema = createStreamReader(in)->schema();
+        stream_reader = createStreamReader(in);
     else
     {
         std::atomic<int> is_stopped = 0;
-        schema = createFileReader(in, format_settings, is_stopped)->schema();
+        file_reader = createFileReader(in, format_settings, is_stopped);
     }
+}
+
+NamesAndTypesList ArrowSchemaReader::readSchema()
+{
+    initializeIfNeeded();
+
+    std::shared_ptr<arrow::Schema> schema;
+
+    if (stream)
+        schema = stream_reader->schema();
+    else
+        schema = file_reader->schema();
 
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema, stream ? "ArrowStream" : "Arrow", format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference);
     if (format_settings.schema_inference_make_columns_nullable)
         return getNamesAndRecursivelyNullableTypes(header);
-    return header.getNamesAndTypesList();}
+    return header.getNamesAndTypesList();
+}
+
+std::optional<size_t> ArrowSchemaReader::readNumberOrRows()
+{
+    if (stream)
+        return std::nullopt;
+
+    auto rows = file_reader->CountRows();
+    if (!rows.ok())
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
+
+    return *rows;
+}
 
 void registerInputFormatArrow(FormatFactory & factory)
 {
@@ -185,7 +229,6 @@ void registerInputFormatArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowBlockInputFormat>(buf, sample, false, format_settings);
         });
-    factory.markFormatSupportsSubcolumns("Arrow");
     factory.markFormatSupportsSubsetOfColumns("Arrow");
     factory.registerInputFormat(
         "ArrowStream",

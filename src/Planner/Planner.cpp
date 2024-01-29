@@ -3,11 +3,13 @@
 #include <Core/ProtocolDefines.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Columns/ColumnSet.h>
 
 #include <DataTypes/DataTypeString.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/CastOverloadResolver.h>
+#include <Functions/indexHint.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -38,11 +40,14 @@
 #include <Interpreters/StorageID.h>
 
 #include <Storages/ColumnsDescription.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/StorageDummy.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageDistributed.h>
+#include <Storages/StorageDummy.h>
 
 #include <Analyzer/Utils.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/SortNode.h>
@@ -111,7 +116,7 @@ namespace
 void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
-    if (query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+    if (!query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
         return;
 
     if (!query_context->getCurrentTransaction())
@@ -125,13 +130,94 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
         else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
             storage = table_function_node->getStorage();
 
-        if (storage->supportsTransactions())
+        if (storage && !storage->supportsTransactions())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Storage {} (table {}) does not support transactions",
+                storage->getName(),
+                storage->getStorageID().getNameForLogs());
+    }
+}
+
+/** Storages can rely that filters that for storage will be available for analysis before
+  * getQueryProcessingStage method will be called.
+  *
+  * StorageDistributed skip unused shards optimization relies on this.
+  * Parallel replicas estimation relies on this too.
+  *
+  * To collect filters that will be applied to specific table in case we have JOINs requires
+  * to run query plan optimization pipeline.
+  *
+  * Algorithm:
+  * 1. Replace all table expressions in query tree with dummy tables.
+  * 2. Build query plan.
+  * 3. Optimize query plan.
+  * 4. Extract filters from ReadFromDummy query plan steps from query plan leaf nodes.
+  */
+void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
+{
+    bool collect_filters = false;
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
+
+    bool parallel_replicas_estimation_enabled
+        = query_context->canUseParallelReplicasOnInitiator() && settings.parallel_replicas_min_number_of_rows_per_replica > 0;
+
+    for (auto & [table_expression, table_expression_data] : planner_context->getTableExpressionNodeToData())
+    {
+        auto * table_node = table_expression->as<TableNode>();
+        auto * table_function_node = table_expression->as<TableFunctionNode>();
+        if (!table_node && !table_function_node)
             continue;
 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Storage {} (table {}) does not support transactions",
-            storage->getName(),
-            storage->getStorageID().getNameForLogs());
+        const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+        if (typeid_cast<const StorageDistributed *>(storage.get())
+            || (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage)))
+        {
+            collect_filters = true;
+            break;
+        }
+    }
+
+    if (!collect_filters)
+        return;
+
+    ResultReplacementMap replacement_map;
+    auto updated_query_tree = replaceTableExpressionsWithDummyTables(query_tree, planner_context->getQueryContext(), &replacement_map);
+
+    std::unordered_map<const IStorage *, TableExpressionData *> dummy_storage_to_table_expression_data;
+
+    for (auto & [from_table_expression, dummy_table_expression] : replacement_map)
+    {
+        auto * dummy_storage = dummy_table_expression->as<TableNode &>().getStorage().get();
+        auto * table_expression_data = &planner_context->getTableExpressionDataOrThrow(from_table_expression);
+        dummy_storage_to_table_expression_data.emplace(dummy_storage, table_expression_data);
+    }
+
+    SelectQueryOptions select_query_options;
+    Planner planner(updated_query_tree, select_query_options);
+    planner.buildQueryPlanIfNeeded();
+
+    auto & result_query_plan = planner.getQueryPlan();
+
+    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(query_context);
+    result_query_plan.optimize(optimization_settings);
+
+    std::vector<QueryPlan::Node *> nodes_to_process;
+    nodes_to_process.push_back(result_query_plan.getRootNode());
+
+    while (!nodes_to_process.empty())
+    {
+        const auto * node_to_process = nodes_to_process.back();
+        nodes_to_process.pop_back();
+        nodes_to_process.insert(nodes_to_process.end(), node_to_process->children.begin(), node_to_process->children.end());
+
+        auto * read_from_dummy = typeid_cast<ReadFromDummy *>(node_to_process->step.get());
+        if (!read_from_dummy)
+            continue;
+
+        auto filter_actions = ActionsDAG::buildFilterActionsDAG(read_from_dummy->getFilterNodes().nodes);
+        auto & table_expression_data = dummy_storage_to_table_expression_data.at(&read_from_dummy->getStorage());
+        table_expression_data->setFilterActions(std::move(filter_actions));
     }
 }
 
@@ -171,8 +257,9 @@ public:
             && !query_node.isGroupByWithTotals() && !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
         aggregation_with_rollup_or_cube_or_grouping_sets = query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() ||
             query_node.isGroupByWithGroupingSets();
-        aggregation_should_produce_results_in_order_of_bucket_number = query_processing_info.getToStage() == QueryProcessingStage::WithMergeableState &&
-            settings.distributed_aggregation_memory_efficient;
+        aggregation_should_produce_results_in_order_of_bucket_number
+            = query_processing_info.getToStage() == QueryProcessingStage::WithMergeableState
+            && (settings.distributed_aggregation_memory_efficient || settings.enable_memory_bound_merging_of_aggregation_results);
 
         query_has_array_join_in_join_tree = queryHasArrayJoinInJoinTree(query_tree);
         query_has_with_totals_in_any_subquery_in_join_tree = queryHasWithTotalsInAnySubqueryInJoinTree(query_tree);
@@ -287,9 +374,22 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings.max_block_size,
         settings.enable_software_prefetch_in_aggregation,
         /* only_merge */ false,
+        settings.optimize_group_by_constant_keys,
+        settings.min_hit_rate_to_use_consecutive_keys_optimization,
         stats_collecting_params);
 
     return aggregator_params;
+}
+
+SortDescription getSortDescriptionFromNames(const Names & names)
+{
+    SortDescription order_descr;
+    order_descr.reserve(names.size());
+
+    for (const auto & name : names)
+        order_descr.emplace_back(name, 1, 1);
+
+    return order_descr;
 }
 
 void addAggregationStep(QueryPlan & query_plan,
@@ -303,6 +403,12 @@ void addAggregationStep(QueryPlan & query_plan,
 
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
+
+    if (settings.force_aggregation_in_order)
+    {
+        group_by_sort_description = getSortDescriptionFromNames(aggregation_analysis_result.aggregation_keys);
+        sort_description_for_merging = group_by_sort_description;
+    }
 
     auto merge_threads = settings.max_threads;
     auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
@@ -372,15 +478,18 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         aggregation_analysis_result.aggregate_descriptions,
         query_analysis_result.aggregate_overflow_row,
         settings.max_threads,
-        settings.max_block_size);
+        settings.max_block_size,
+        settings.min_hit_rate_to_use_consecutive_keys_optimization);
 
     bool is_remote_storage = false;
+    bool parallel_replicas_from_merge_tree = false;
 
     const auto & table_expression_node_to_data = planner_context->getTableExpressionNodeToData();
     if (table_expression_node_to_data.size() == 1)
     {
         auto it = table_expression_node_to_data.begin();
         is_remote_storage = it->second.isRemote();
+        parallel_replicas_from_merge_tree = it->second.isMergeTree() && query_context->canUseParallelReplicasOnInitiator();
     }
 
     SortDescription group_by_sort_description;
@@ -390,7 +499,7 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         params,
         query_analysis_result.aggregate_final,
         /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
-        settings.distributed_aggregation_memory_efficient && is_remote_storage && !query_analysis_result.aggregation_with_rollup_or_cube_or_grouping_sets,
+        settings.distributed_aggregation_memory_efficient && (is_remote_storage || parallel_replicas_from_merge_tree) && !query_analysis_result.aggregation_with_rollup_or_cube_or_grouping_sets,
         settings.max_threads,
         settings.aggregation_memory_efficient_merge_threads,
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
@@ -800,15 +909,24 @@ void addWindowSteps(QueryPlan & query_plan,
           * has suitable sorting. Also don't create sort steps when there are no
           * columns to sort by, because the sort nodes are confused by this. It
           * happens in case of `over ()`.
+          * Even if full_sort_description of both windows match, in case of different
+          * partitioning we need to add a SortingStep to reshuffle data in the streams.
           */
-        if (!window_description.full_sort_description.empty() &&
-            (i == 0 || !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)))
+
+        bool need_sort = !window_description.full_sort_description.empty();
+        if (need_sort && i != 0)
+        {
+            need_sort = !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)
+                        || (settings.max_threads != 1 && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
+        }
+        if (need_sort)
         {
             SortingStep::Settings sort_settings(*query_context);
 
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentDataStream(),
                 window_description.full_sort_description,
+                window_description.partition_by,
                 0 /*limit*/,
                 sort_settings,
                 settings.optimize_sorting_by_input_stream_properties);
@@ -816,8 +934,12 @@ void addWindowSteps(QueryPlan & query_plan,
             query_plan.addStep(std::move(sorting_step));
         }
 
+        // Fan out streams only for the last window to preserve the ordering between windows,
+        // and WindowTransform works on single stream anyway.
+        const bool streams_fan_out = settings.query_plan_enable_multithreading_after_window_functions && ((i + 1) == window_descriptions_size);
+
         auto window_step
-            = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), window_description, window_description.window_functions);
+            = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), window_description, window_description.window_functions, streams_fan_out);
         window_step->setStepDescription("Window step for window '" + window_description.window_name + "'");
         query_plan.addStep(std::move(window_step));
     }
@@ -893,49 +1015,72 @@ void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_ana
     query_plan.addStep(std::move(offsets_step));
 }
 
-void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
+void collectSetsFromActionsDAG(const ActionsDAGPtr & dag, std::unordered_set<const FutureSet *> & useful_sets)
+{
+    for (const auto & node : dag->getNodes())
+    {
+        if (node.column)
+        {
+            const IColumn * column = node.column.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+                column = &column_const->getDataColumn();
+
+            if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
+                useful_sets.insert(column_set->getData().get());
+        }
+
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->getName() == "indexHint")
+        {
+            ActionsDAG::NodeRawConstPtrs children;
+            if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
+            {
+                if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
+                {
+                    collectSetsFromActionsDAG(index_hint->getActions(), useful_sets);
+                }
+            }
+        }
+    }
+}
+
+void addBuildSubqueriesForSetsStepIfNeeded(
+    QueryPlan & query_plan,
     const SelectQueryOptions & select_query_options,
     const PlannerContextPtr & planner_context,
     const std::vector<ActionsDAGPtr> & result_actions_to_execute)
 {
-    PreparedSets::SubqueriesForSets subqueries_for_sets;
+    auto subqueries = planner_context->getPreparedSets().getSubqueries();
+    std::unordered_set<const FutureSet *> useful_sets;
 
     for (const auto & actions_to_execute : result_actions_to_execute)
+        collectSetsFromActionsDAG(actions_to_execute, useful_sets);
+
+    auto predicate = [&useful_sets](const auto & set) { return !useful_sets.contains(set.get()); };
+    auto it = std::remove_if(subqueries.begin(), subqueries.end(), std::move(predicate));
+    subqueries.erase(it, subqueries.end());
+
+    for (auto & subquery : subqueries)
     {
-        for (const auto & node : actions_to_execute->getNodes())
-        {
-            const auto & set_key = node.result_name;
-            auto * planner_set = planner_context->getSetOrNull(set_key);
-            if (!planner_set)
-                continue;
+        auto query_tree = subquery->detachQueryTree();
+        auto subquery_options = select_query_options.subquery();
+        Planner subquery_planner(
+            query_tree,
+            subquery_options,
+            std::make_shared<GlobalPlannerContext>()); //planner_context->getGlobalPlannerContext());
+        subquery_planner.buildQueryPlanIfNeeded();
 
-            if (planner_set->getSet().isCreated() || !planner_set->getSubqueryNode())
-                continue;
-
-            auto subquery_options = select_query_options.subquery();
-            Planner subquery_planner(
-                planner_set->getSubqueryNode(),
-                subquery_options,
-                planner_context->getGlobalPlannerContext());
-            subquery_planner.buildQueryPlanIfNeeded();
-
-            const auto & settings = planner_context->getQueryContext()->getSettingsRef();
-            SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
-            bool tranform_null_in = settings.transform_null_in;
-            auto set = std::make_shared<Set>(size_limits_for_set, false /*fill_set_elements*/, tranform_null_in);
-
-            SubqueryForSet subquery_for_set;
-            subquery_for_set.key = set_key;
-            subquery_for_set.set_in_progress = set;
-            subquery_for_set.set = planner_set->getSet();
-            subquery_for_set.promise_to_fill_set = planner_set->extractPromiseToBuildSet();
-            subquery_for_set.source = std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan());
-
-            subqueries_for_sets.emplace(set_key, std::move(subquery_for_set));
-        }
+        subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
     }
 
-    addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), planner_context->getQueryContext());
+    if (!subqueries.empty())
+    {
+        auto step = std::make_unique<DelayedCreatingSetsStep>(
+            query_plan.getCurrentDataStream(),
+            std::move(subqueries),
+            planner_context->getQueryContext());
+
+        query_plan.addStep(std::move(step));
+    }
 }
 
 /// Support for `additional_result_filter` setting
@@ -1021,7 +1166,7 @@ PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    const SelectQueryOptions & select_query_options_)
+    SelectQueryOptions & select_query_options_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
     , planner_context(buildPlannerContext(query_tree, select_query_options, std::make_shared<GlobalPlannerContext>()))
@@ -1029,7 +1174,7 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    const SelectQueryOptions & select_query_options_,
+    SelectQueryOptions & select_query_options_,
     GlobalPlannerContextPtr global_planner_context_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
@@ -1038,7 +1183,7 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    const SelectQueryOptions & select_query_options_,
+    SelectQueryOptions & select_query_options_,
     PlannerContextPtr planner_context_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
@@ -1051,7 +1196,7 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_plan.isInitialized())
         return;
 
-    LOG_TRACE(&Poco::Logger::get("Planner"), "Query {} to stage {}{}",
+    LOG_TRACE(getLogger("Planner"), "Query {} to stage {}{}",
         query_tree->formatConvertedASTForErrorMessage(),
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
@@ -1085,6 +1230,8 @@ void Planner::buildPlanForUnionNode()
     {
         Planner query_planner(query_node, select_query_options);
         query_planner.buildQueryPlanIfNeeded();
+        for (const auto & row_policy : query_planner.getUsedRowPolicies())
+            used_row_policies.insert(row_policy);
         auto query_node_plan = std::make_unique<QueryPlan>(std::move(query_planner).extractQueryPlan());
         query_plans_headers.push_back(query_node_plan->getCurrentDataStream().header);
         query_plans.push_back(std::move(query_node_plan));
@@ -1196,32 +1343,73 @@ void Planner::buildPlanForQueryNode()
         query_node.getHaving() = {};
     }
 
-    checkStoragesSupportTransactions(planner_context);
     collectSets(query_tree, *planner_context);
-    collectTableExpressionData(query_tree, planner_context);
 
     const auto & settings = query_context->getSettingsRef();
-
-    /// Check support for JOIN for parallel replicas with custom key
-    if (planner_context->getTableExpressionNodeToData().size() > 1)
+    if (query_context->canUseTaskBasedParallelReplicas())
     {
-        if (settings.allow_experimental_parallel_reading_from_replicas == 1 || !settings.parallel_replicas_custom_key.value.empty())
+        if (planner_context->getPreparedSets().hasSubqueries())
         {
-            LOG_WARNING(
-                &Poco::Logger::get("Planner"),
-                "JOINs are not supported with parallel replicas. Query will be executed without using them.");
+            if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");
 
             auto & mutable_context = planner_context->getMutableQueryContext();
             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            mutable_context->setSetting("parallel_replicas_custom_key", String{""});
-        }
-        else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
-        {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
+            LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas to execute a query with IN with subquery");
         }
     }
 
-    /// TODO: Also disable parallel replicas in case of FINAL
+    collectTableExpressionData(query_tree, planner_context);
+    checkStoragesSupportTransactions(planner_context);
+
+    if (!select_query_options.only_analyze)
+        collectFiltersForAnalysis(query_tree, planner_context);
+
+    if (query_context->canUseTaskBasedParallelReplicas())
+    {
+        const auto & table_expression_nodes = planner_context->getTableExpressionNodeToData();
+        for (const auto & it : table_expression_nodes)
+        {
+            auto * table_node = it.first->as<TableNode>();
+            if (!table_node)
+                continue;
+
+            const auto & modifiers = table_node->getTableExpressionModifiers();
+            if (modifiers.has_value() && modifiers->hasFinal())
+            {
+                if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
+                else
+                {
+                    LOG_DEBUG(
+                        getLogger("Planner"),
+                        "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
+                    auto & mutable_context = planner_context->getMutableQueryContext();
+                    mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                }
+            }
+        }
+    }
+
+    if (!settings.parallel_replicas_custom_key.value.empty())
+    {
+        /// Check support for JOIN for parallel replicas with custom key
+        if (planner_context->getTableExpressionNodeToData().size() > 1)
+        {
+            if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
+            else
+            {
+                LOG_DEBUG(
+                    getLogger("Planner"),
+                    "JOINs are not supported with parallel replicas. Query will be executed without using them.");
+
+                auto & mutable_context = planner_context->getMutableQueryContext();
+                mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                mutable_context->setSetting("parallel_replicas_custom_key", String{""});
+            }
+        }
+    }
 
     auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
     auto join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,
@@ -1229,10 +1417,12 @@ void Planner::buildPlanForQueryNode()
         select_query_options,
         top_level_identifiers,
         planner_context);
+
     auto from_stage = join_tree_query_plan.from_stage;
     query_plan = std::move(join_tree_query_plan.query_plan);
+    used_row_policies = std::move(join_tree_query_plan.used_row_policies);
 
-    LOG_TRACE(&Poco::Logger::get("Planner"), "Query {} from stage {} to stage {}{}",
+    LOG_TRACE(getLogger("Planner"), "Query {} from stage {} to stage {}{}",
         query_tree->formatConvertedASTForErrorMessage(),
         QueryProcessingStage::toString(from_stage),
         QueryProcessingStage::toString(select_query_options.to_stage),
@@ -1248,12 +1438,15 @@ void Planner::buildPlanForQueryNode()
         planner_context,
         query_processing_info);
 
-    std::vector<ActionsDAGPtr> result_actions_to_execute;
+    std::vector<ActionsDAGPtr> result_actions_to_execute = std::move(join_tree_query_plan.actions_dags);
 
     for (auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
     {
         if (table_expression_data.getPrewhereFilterActions())
             result_actions_to_execute.push_back(table_expression_data.getPrewhereFilterActions());
+
+        if (table_expression_data.getRowLevelFilterActions())
+            result_actions_to_execute.push_back(table_expression_data.getRowLevelFilterActions());
     }
 
     if (query_processing_info.isIntermediateStage())

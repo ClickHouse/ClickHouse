@@ -547,46 +547,6 @@ remote_servers:
         port: 9000
         # Optional. Priority of the replica for load_balancing. Default: 1 (less value has more priority).
         # priority: 1
-  test_cluster_two_shards_localhost:
-    shard:
-      - replica:
-          host: localhost
-          port: 9000
-      - replica:
-          host: localhost
-          port: 9000
-  test_cluster_two_shards:
-    shard:
-      - replica:
-          host: 127.0.0.1
-          port: 9000
-      - replica:
-          host: 127.0.0.2
-          port: 9000
-  test_cluster_two_shards_internal_replication:
-    shard:
-      - internal_replication: true
-        replica:
-          host: 127.0.0.1
-          port: 9000
-      - internal_replication: true
-        replica:
-          host: 127.0.0.2
-          port: 9000
-  test_shard_localhost_secure:
-    shard:
-      replica:
-        host: localhost
-        port: 9440
-        secure: 1
-  test_unavailable_shard:
-    shard:
-      - replica:
-          host: localhost
-          port: 9000
-      - replica:
-          host: localhost
-          port: 1
 
 # The list of hosts allowed to use in URL-related storage engines and table functions.
 # If this section is not present in configuration, all hosts are allowed.
@@ -678,7 +638,6 @@ default_session_timeout: 60
 # metrics - send data from table system.metrics
 # events - send data from table system.events
 # asynchronous_metrics - send data from table system.asynchronous_metrics
-# status_info - send data from different component from CH, ex: Dictionaries status
 
 # prometheus:
 #     endpoint: /metrics
@@ -687,7 +646,6 @@ default_session_timeout: 60
 #     metrics: true
 #     events: true
 #     asynchronous_metrics: true
-#     status_info: true
 
 # Query log. Used only for queries with setting log_queries = 1.
 query_log:

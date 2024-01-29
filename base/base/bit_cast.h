@@ -7,7 +7,13 @@
 
 /** Returns value `from` converted to type `To` while retaining bit representation.
   * `To` and `From` must satisfy `CopyConstructible`.
+  *
   * In contrast to std::bit_cast can cast types of different width.
+  *
+  * Note: for signed types of narrower size, the casted result is zero-extended
+  * instead of sign-extended as with regular static_cast.
+  * For example, -1 Int8 (represented as 0xFF) bit_casted to UInt64
+  * gives 255 (represented as 0x00000000000000FF) instead of 0xFFFFFFFFFFFFFFFF
   */
 template <typename To, typename From>
 std::decay_t<To> bit_cast(const From & from)

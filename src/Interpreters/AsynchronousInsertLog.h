@@ -1,10 +1,11 @@
 #pragma once
 
-#include "Common/Exception.h"
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/SystemLog.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -21,22 +22,27 @@ struct AsynchronousInsertLogElement
     time_t event_time{};
     Decimal64 event_time_microseconds{};
 
-    ASTPtr query;
     String query_id;
+    String query_for_logging;
+    String database;
+    String table;
+    String format;
     UInt64 bytes{};
     UInt64 rows{};
     String exception;
     Status status{};
+
+    using DataKind = AsynchronousInsertQueue::DataKind;
+    DataKind data_kind{};
 
     time_t flush_time{};
     Decimal64 flush_time_microseconds{};
     String flush_query_id;
 
     static std::string name() { return "AsynchronousInsertLog"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class AsynchronousInsertLog : public SystemLog<AsynchronousInsertLogElement>

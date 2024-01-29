@@ -151,7 +151,7 @@ public:
         s -= n;
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin) const override
+    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const UInt8 *) const override
     {
         return data->serializeValueIntoArena(0, arena, begin);
     }
@@ -230,12 +230,12 @@ public:
         data->getExtremes(min, max);
     }
 
-    void forEachSubcolumn(ColumnCallback callback) const override
+    void forEachSubcolumn(MutableColumnCallback callback) override
     {
         callback(data);
     }
 
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*data);
         data->forEachSubcolumnRecursively(callback);

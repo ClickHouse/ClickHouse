@@ -1,5 +1,8 @@
 SET compile_aggregate_expressions = 1;
 SET min_count_to_compile_aggregate_expression = 0;
+-- The test uses many aggregations. A low max_bytes_before_external_group_by value will lead to high disk usage
+-- which in CI leads to timeouts
+SET max_bytes_before_external_group_by=0;
 
 SELECT 'Aggregation using JIT compilation';
 

@@ -53,19 +53,20 @@ Engines in the family:
 - [JDBC](../../engines/table-engines/integrations/jdbc.md)
 - [MySQL](../../engines/table-engines/integrations/mysql.md)
 - [MongoDB](../../engines/table-engines/integrations/mongodb.md)
+- [Redis](../../engines/table-engines/integrations/redis.md)
 - [HDFS](../../engines/table-engines/integrations/hdfs.md)
 - [S3](../../engines/table-engines/integrations/s3.md)
 - [Kafka](../../engines/table-engines/integrations/kafka.md)
 - [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md)
 - [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md)
 - [PostgreSQL](../../engines/table-engines/integrations/postgresql.md)
+- [S3Queue](../../engines/table-engines/integrations/s3queue.md)
 
 ### Special Engines {#special-engines}
 
 Engines in the family:
 
 - [Distributed](../../engines/table-engines/special/distributed.md#distributed)
-- [MaterializedView](../../engines/table-engines/special/materializedview.md#materializedview)
 - [Dictionary](../../engines/table-engines/special/dictionary.md#dictionary)
 - [Merge](../../engines/table-engines/special/merge.md#merge)
 - [File](../../engines/table-engines/special/file.md#file)

@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Poco/Message.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -14,7 +15,6 @@ struct TextLogElement
 {
     time_t event_time{};
     Decimal64 event_time_microseconds{};
-    UInt32 microseconds{};
 
     String thread_name;
     UInt64 thread_id{};
@@ -31,7 +31,7 @@ struct TextLogElement
     std::string_view message_format_string;
 
     static std::string name() { return "TextLog"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
     static const char * getCustomColumnList() { return nullptr; }
@@ -40,12 +40,17 @@ struct TextLogElement
 class TextLog : public SystemLog<TextLogElement>
 {
 public:
-    TextLog(
-        ContextPtr context_,
-        const String & database_name_,
-        const String & table_name_,
-        const String & storage_def_,
-        size_t flush_interval_milliseconds_);
+    using Queue = SystemLogQueue<TextLogElement>;
+
+    explicit TextLog(ContextPtr context_, const SystemLogSettings & settings);
+
+    static std::shared_ptr<Queue> getLogQueue(const SystemLogQueueSettings & settings)
+    {
+        static std::shared_ptr<Queue> queue = std::make_shared<Queue>(settings);
+        return queue;
+    }
+
+    static consteval bool shouldTurnOffLogger() { return true; }
 };
 
 }

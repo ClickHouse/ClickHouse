@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
-from collections import namedtuple
 import fnmatch
 import json
 import time
+from collections import namedtuple
+from urllib.parse import quote
 
 import requests  # type: ignore
-
 from lambda_shared.pr import TRUSTED_CONTRIBUTORS
 from lambda_shared.token import get_cached_access_token
 
@@ -64,6 +64,7 @@ NEED_RERUN_WORKFLOWS = {
     "DocsCheck",
     "MasterCI",
     "NightlyBuilds",
+    "PublishedReleaseCI",
     "PullRequestCI",
     "ReleaseBranchCI",
 }
@@ -128,7 +129,7 @@ def _exec_post_with_retry(url, token, data=None):
 
 
 def _get_pull_requests_from(repo_url, owner, branch, token):
-    url = f"{repo_url}/pulls?head={owner}:{branch}"
+    url = f"{repo_url}/pulls?head={quote(owner)}:{quote(branch)}"
     return _exec_get_with_retry(url, token)
 
 
@@ -224,8 +225,8 @@ def approve_run(workflow_description: WorkflowDescription, token: str) -> None:
 
 
 def label_manual_approve(pull_request, token):
-    url = f"{pull_request['url']}/labels"
-    data = {"labels": "manual approve"}
+    url = f"{pull_request['issue_url']}/labels"
+    data = {"labels": ["manual approve"]}
 
     _exec_post_with_retry(url, token, data)
 
@@ -376,11 +377,10 @@ def main(event):
     changed_files = get_changed_files_for_pull_request(pull_request, token)
     print(f"Totally have {len(changed_files)} changed files in PR:", changed_files)
     if check_suspicious_changed_files(changed_files):
-        print(
-            f"Pull Request {pull_request['number']} has suspicious changes, "
-            "label it for manuall approve"
-        )
-        label_manual_approve(pull_request, token)
+        print(f"Pull Request {pull_request['number']} has suspicious changes")
+        if "manual approve" not in labels:
+            print("Label the PR as needed for manuall approve")
+            label_manual_approve(pull_request, token)
     else:
         print(f"Pull Request {pull_request['number']} has no suspicious changes")
         approve_run(workflow_description, token)

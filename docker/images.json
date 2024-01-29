@@ -1,9 +1,7 @@
 {
     "docker/packager/binary": {
         "name": "clickhouse/binary-builder",
-        "dependent": [
-            "docker/test/codebrowser"
-        ]
+        "dependent": []
     },
     "docker/test/compatibility/centos": {
         "name": "clickhouse/test-old-centos",
@@ -19,6 +17,10 @@
     },
     "docker/test/fuzzer": {
         "name": "clickhouse/fuzzer",
+        "dependent": []
+    },
+    "docker/test/libfuzzer": {
+        "name": "clickhouse/libfuzzer",
         "dependent": []
     },
     "docker/test/performance-comparison": {
@@ -57,10 +59,6 @@
     },
     "docker/test/upgrade": {
         "name": "clickhouse/upgrade-check",
-        "dependent": []
-    },
-    "docker/test/codebrowser": {
-        "name": "clickhouse/codebrowser",
         "dependent": []
     },
     "docker/test/integration/runner": {
@@ -120,11 +118,15 @@
     "docker/test/base": {
          "name": "clickhouse/test-base",
          "dependent": [
-            "docker/test/stateless",
-            "docker/test/integration/base",
             "docker/test/fuzzer",
+            "docker/test/libfuzzer",
+            "docker/test/integration/base",
             "docker/test/keeper-jepsen",
-            "docker/test/server-jepsen"
+            "docker/test/server-jepsen",
+            "docker/test/sqllogic",
+            "docker/test/sqltest",
+            "docker/test/clickbench",
+            "docker/test/stateless"
          ]
     },
     "docker/test/integration/kerberized_hadoop": {
@@ -144,6 +146,10 @@
         "name": "clickhouse/server-jepsen-test",
         "dependent": []
     },
+    "docker/test/clickbench": {
+        "name": "clickhouse/clickbench",
+        "dependent": []
+    },
     "docker/test/install/deb": {
         "name": "clickhouse/install-deb-test",
         "dependent": []
@@ -154,11 +160,18 @@
     },
     "docker/docs/builder": {
         "name": "clickhouse/docs-builder",
-        "dependent": [
-        ]
+        "dependent": []
     },
     "docker/test/sqllogic": {
         "name": "clickhouse/sqllogic-test",
+        "dependent": []
+    },
+    "docker/test/sqltest": {
+        "name": "clickhouse/sqltest",
+        "dependent": []
+    },
+    "docker/test/integration/nginx_dav": {
+        "name": "clickhouse/nginx-dav",
         "dependent": []
     }
 }

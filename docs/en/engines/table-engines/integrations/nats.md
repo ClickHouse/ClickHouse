@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/nats
-sidebar_position: 14
+sidebar_position: 140
 sidebar_label: NATS
 ---
 
@@ -13,7 +13,7 @@ This engine allows integrating ClickHouse with [NATS](https://nats.io/).
 - Publish or subscribe to message subjects.
 - Process new messages as they become available.
 
-## Creating a Table {#table_engine-redisstreams-creating-a-table}
+## Creating a Table {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -25,7 +25,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     nats_url = 'host:port',
     nats_subjects = 'subject1,subject2,...',
     nats_format = 'data_format'[,]
-    [nats_row_delimiter = 'delimiter_symbol',]
     [nats_schema = '',]
     [nats_num_consumers = N,]
     [nats_queue_group = 'group_name',]
@@ -40,7 +39,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
     [nats_startup_connect_tries = '5']
-    [nats_max_rows_per_message = 1]
+    [nats_max_rows_per_message = 1,]
+    [nats_handle_error_mode = 'default']
 ```
 
 Required parameters:
@@ -51,7 +51,6 @@ Required parameters:
 
 Optional parameters:
 
-- `nats_row_delimiter` – Delimiter character, which ends the message.  **This setting is deprecated and is no longer used, not left for compatibility reasons.**
 - `nats_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `nats_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient.
 - `nats_queue_group` – Name for queue group of NATS subscribers. Default is the table name.
@@ -59,13 +58,14 @@ Optional parameters:
 - `nats_reconnect_wait` – Amount of time in milliseconds to sleep between each reconnect attempt. Default: `5000`.
 - `nats_server_list` - Server list for connection. Can be specified to connect to NATS cluster.
 - `nats_skip_broken_messages` - NATS message parser tolerance to schema-incompatible messages per block. Default: `0`. If `nats_skip_broken_messages = N` then the engine skips *N* RabbitMQ messages that cannot be parsed (a message equals a row of data).
-- `nats_max_block_size` - Number of row collected by poll(s) for flushing data from NATS. Default: [max_insert_block_size](../../../operations/settings/settings.md#setting-max_insert_block_size).
+- `nats_max_block_size` - Number of row collected by poll(s) for flushing data from NATS. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
 - `nats_flush_interval_ms` - Timeout for flushing data read from NATS. Default: [stream_flush_interval_ms](../../../operations/settings/settings.md#stream-flush-interval-ms).
 - `nats_username` - NATS username.
 - `nats_password` - NATS password.
 - `nats_token` - NATS auth token.
 - `nats_startup_connect_tries` - Number of connect tries at startup. Default: `5`.
 - `nats_max_rows_per_message` — The maximum number of rows written in one NATS message for row-based formats. (default : `1`).
+- `nats_handle_error_mode` — How to handle errors for RabbitMQ engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
 
 SSL connection:
 
@@ -83,12 +83,12 @@ You can select one of the subjects the table reads from and publish your data th
   CREATE TABLE queue (
     key UInt64,
     value UInt64
-  ) ENGINE = NATS 
+  ) ENGINE = NATS
     SETTINGS nats_url = 'localhost:4444',
              nats_subjects = 'subject1,subject2',
              nats_format = 'JSONEachRow';
 
-  INSERT INTO queue 
+  INSERT INTO queue
   SETTINGS stream_like_engine_insert_queue = 'subject2'
   VALUES (1, 1);
 ```
@@ -102,7 +102,7 @@ Example:
     key UInt64,
     value UInt64,
     date DateTime
-  ) ENGINE = NATS 
+  ) ENGINE = NATS
     SETTINGS nats_url = 'localhost:4444',
              nats_subjects = 'subject1',
              nats_format = 'JSONEachRow',
@@ -137,7 +137,7 @@ Example:
   CREATE TABLE queue (
     key UInt64,
     value UInt64
-  ) ENGINE = NATS 
+  ) ENGINE = NATS
     SETTINGS nats_url = 'localhost:4444',
              nats_subjects = 'subject1',
              nats_format = 'JSONEachRow',
@@ -163,7 +163,15 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 
 ## Virtual Columns {#virtual-columns}
 
-- `_subject` - NATS message subject.
+- `_subject` - NATS message subject. Data type: `String`.
+
+Additional virtual columns when `kafka_handle_error_mode='stream'`:
+
+- `_raw_message` - Raw message that couldn't be parsed successfully. Data type: `Nullable(String)`.
+- `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.
+
+Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always `NULL` when message was parsed successfully.
+
 
 ## Data formats support {#data-formats-support}
 

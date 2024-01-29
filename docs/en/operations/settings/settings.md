@@ -17,7 +17,8 @@ Default value: 0.
 **Example**
 
 ``` sql
-insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+SELECT * FROM table_1;
 ```
 ```response
 ┌─x─┬─y────┐
@@ -30,7 +31,7 @@ insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
 ```sql
 SELECT *
 FROM table_1
-SETTINGS additional_table_filters = (('table_1', 'x != 2'))
+SETTINGS additional_table_filters = {'table_1': 'x != 2'}
 ```
 ```response
 ┌─x─┬─y────┐
@@ -50,7 +51,8 @@ Default value: `''`.
 **Example**
 
 ``` sql
-insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+SElECT * FROM table_1;
 ```
 ```response
 ┌─x─┬─y────┐
@@ -95,6 +97,18 @@ Default value: 0.
 
 </profiles>
 ```
+
+## mutations_execute_nondeterministic_on_initiator {#mutations_execute_nondeterministic_on_initiator}
+
+If true constant nondeterministic functions (e.g. function `now()`) are executed on initiator and replaced to literals in `UPDATE` and `DELETE` queries. It helps to keep data in sync on replicas while executing mutations with constant nondeterministic functions. Default value: `false`.
+
+## mutations_execute_subqueries_on_initiator {#mutations_execute_subqueries_on_initiator}
+
+If true scalar subqueries are executed on initiator and replaced to literals in `UPDATE` and `DELETE` queries. Default value: `false`.
+
+## mutations_max_literal_size_to_replace {#mutations_max_literal_size_to_replace}
+
+The maximum size of serialized literal in bytes to replace in `UPDATE` and `DELETE` queries. Takes effect only if at least one the two settings above is enabled. Default value: 16384 (16 KiB).
 
 ## distributed_product_mode {#distributed-product-mode}
 
@@ -163,7 +177,7 @@ If `enable_optimize_predicate_expression = 1`, then the execution time of these 
 
 If `enable_optimize_predicate_expression = 0`, then the execution time of the second query is much longer because the `WHERE` clause applies to all the data after the subquery finishes.
 
-## fallback_to_stale_replicas_for_distributed_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
+## fallback_to_stale_replicas_for_distributed_queries {#fallback_to_stale_replicas_for_distributed_queries}
 
 Forces a query to an out-of-date replica if updated data is not available. See [Replication](../../engines/table-engines/mergetree-family/replication.md).
 
@@ -173,7 +187,7 @@ Used when performing `SELECT` from a distributed table that points to replicated
 
 By default, 1 (enabled).
 
-## force_index_by_date {#settings-force_index_by_date}
+## force_index_by_date {#force_index_by_date}
 
 Disables query execution if the index can’t be used by date.
 
@@ -189,7 +203,7 @@ Works with tables in the MergeTree family.
 
 If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
-## use_skip_indexes {#settings-use_skip_indexes}
+## use_skip_indexes {#use_skip_indexes}
 
 Use data skipping indexes during query execution.
 
@@ -200,7 +214,7 @@ Possible values:
 
 Default value: 1.
 
-## force_data_skipping_indices {#settings-force_data_skipping_indices}
+## force_data_skipping_indices {#force_data_skipping_indices}
 
 Disables query execution if passed data skipping indices wasn't used.
 
@@ -225,6 +239,89 @@ SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='d1_i
 SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_idx`'; -- Ok (example of full featured parser).
 SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- query will produce INDEX_NOT_USED error, since d1_null_idx is not used.
 SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- Ok.
+```
+
+## ignore_data_skipping_indices {#ignore_data_skipping_indices}
+
+Ignores the skipping indexes specified if used by the query.
+
+Consider the following example:
+
+```sql
+CREATE TABLE data
+(
+    key Int,
+    x Int,
+    y Int,
+    INDEX x_idx x TYPE minmax GRANULARITY 1,
+    INDEX y_idx y TYPE minmax GRANULARITY 1,
+    INDEX xy_idx (x,y) TYPE minmax GRANULARITY 1
+)
+Engine=MergeTree()
+ORDER BY key;
+
+INSERT INTO data VALUES (1, 2, 3);
+
+SELECT * FROM data;
+SELECT * FROM data SETTINGS ignore_data_skipping_indices=''; -- query will produce CANNOT_PARSE_TEXT error.
+SELECT * FROM data SETTINGS ignore_data_skipping_indices='x_idx'; -- Ok.
+SELECT * FROM data SETTINGS ignore_data_skipping_indices='na_idx'; -- Ok.
+
+SELECT * FROM data WHERE x = 1 AND y = 1 SETTINGS ignore_data_skipping_indices='xy_idx',force_data_skipping_indices='xy_idx' ; -- query will produce INDEX_NOT_USED error, since xy_idx is explictly ignored.
+SELECT * FROM data WHERE x = 1 AND y = 2 SETTINGS ignore_data_skipping_indices='xy_idx';
+```
+
+The query without ignoring any indexes:
+```sql
+EXPLAIN indexes = 1 SELECT * FROM data WHERE x = 1 AND y = 2;
+
+Expression ((Projection + Before ORDER BY))
+  Filter (WHERE)
+    ReadFromMergeTree (default.data)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 1/1
+        Granules: 1/1
+      Skip
+        Name: x_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/1
+        Granules: 0/1
+      Skip
+        Name: y_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/0
+        Granules: 0/0
+      Skip
+        Name: xy_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/0
+        Granules: 0/0
+```
+
+Ignoring the `xy_idx` index:
+```sql
+EXPLAIN indexes = 1 SELECT * FROM data WHERE x = 1 AND y = 2 SETTINGS ignore_data_skipping_indices='xy_idx';
+
+Expression ((Projection + Before ORDER BY))
+  Filter (WHERE)
+    ReadFromMergeTree (default.data)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 1/1
+        Granules: 1/1
+      Skip
+        Name: x_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/1
+        Granules: 0/1
+      Skip
+        Name: y_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/0
+        Granules: 0/0
 ```
 
 Works with tables in the MergeTree family.
@@ -304,7 +401,7 @@ Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/func
 
 It makes sense to disable it if the server has millions of tiny tables that are constantly being created and destroyed.
 
-## function_range_max_elements_in_block {#settings-function_range_max_elements_in_block}
+## function_range_max_elements_in_block {#function_range_max_elements_in_block}
 
 Sets the safety threshold for data volume generated by function [range](../../sql-reference/functions/array-functions.md/#range). Defines the maximum number of values generated by function per block of data (sum of array sizes for every row in a block).
 
@@ -319,7 +416,7 @@ Default value: `500,000,000`.
 - [max_block_size](#setting-max_block_size)
 - [min_insert_block_size_rows](#min-insert-block-size-rows)
 
-## enable_http_compression {#settings-enable_http_compression}
+## enable_http_compression {#enable_http_compression}
 
 Enables or disables data compression in the response to an HTTP request.
 
@@ -332,15 +429,15 @@ Possible values:
 
 Default value: 0.
 
-## http_zlib_compression_level {#settings-http_zlib_compression_level}
+## http_zlib_compression_level {#http_zlib_compression_level}
 
-Sets the level of data compression in the response to an HTTP request if [enable_http_compression = 1](#settings-enable_http_compression).
+Sets the level of data compression in the response to an HTTP request if [enable_http_compression = 1](#enable_http_compression).
 
 Possible values: Numbers from 1 to 9.
 
 Default value: 3.
 
-## http_native_compression_disable_checksumming_on_decompress {#settings-http_native_compression_disable_checksumming_on_decompress}
+## http_native_compression_disable_checksumming_on_decompress {#http_native_compression_disable_checksumming_on_decompress}
 
 Enables or disables checksum verification when decompressing the HTTP POST data from the client. Used only for ClickHouse native compression format (not used with `gzip` or `deflate`).
 
@@ -363,6 +460,12 @@ Possible values:
 
 Default value: 1048576.
 
+## http_make_head_request {#http-make-head-request}
+
+The `http_make_head_request` setting allows the execution of a `HEAD` request while reading data from HTTP to retrieve information about the file to be read, such as its size. Since it's enabled by default, it may be desirable to disable this setting in cases where the server does not support `HEAD` requests.
+
+Default value: `true`.
+
 ## table_function_remote_max_addresses {#table_function_remote_max_addresses}
 
 Sets the maximum number of addresses generated from patterns for the [remote](../../sql-reference/table-functions/remote.md) function.
@@ -383,7 +486,7 @@ Possible values:
 
 Default value: `1000`.
 
-## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
+## send_progress_in_http_headers {#send_progress_in_http_headers}
 
 Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
 
@@ -421,7 +524,7 @@ Possible values:
 
 Default value: `1`.
 
-## join_default_strictness {#settings-join_default_strictness}
+## join_default_strictness {#join_default_strictness}
 
 Sets default strictness for [JOIN clauses](../../sql-reference/statements/select/join.md/#select-join).
 
@@ -434,7 +537,7 @@ Possible values:
 
 Default value: `ALL`.
 
-## join_algorithm {#settings-join_algorithm}
+## join_algorithm {#join_algorithm}
 
 Specifies which [JOIN](../../sql-reference/statements/select/join.md) algorithm is used.
 
@@ -450,7 +553,7 @@ Possible values:
 
  [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
 
- The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/docs/en/operations/settings/query-complexity.md/#settings-max_bytes_in_join)), the number of buckets is increased and the assigned bucket for each row. Any rows which don’t belong to the current bucket are flushed and reassigned.
+ The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/docs/en/operations/settings/query-complexity.md/#max_bytes_in_join)), the number of buckets is increased and the assigned bucket for each row. Any rows which don’t belong to the current bucket are flushed and reassigned.
 
  Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
@@ -491,7 +594,7 @@ Possible values:
  ClickHouse always tries to use `partial_merge` join if possible, otherwise, it uses `hash`. *Deprecated*, same as `partial_merge,hash`.
 
 
-## join_any_take_last_row {#settings-join_any_take_last_row}
+## join_any_take_last_row {#join_any_take_last_row}
 
 Changes the behaviour of join operations with `ANY` strictness.
 
@@ -510,7 +613,7 @@ See also:
 
 - [JOIN clause](../../sql-reference/statements/select/join.md/#select-join)
 - [Join table engine](../../engines/table-engines/special/join.md)
-- [join_default_strictness](#settings-join_default_strictness)
+- [join_default_strictness](#join_default_strictness)
 
 ## join_use_nulls {#join_use_nulls}
 
@@ -634,11 +737,13 @@ Default value: LZ4.
 
 ## max_block_size {#setting-max_block_size}
 
-In ClickHouse, data is processed by blocks (sets of column parts). The internal processing cycles for a single block are efficient enough, but there are noticeable expenditures on each block. The `max_block_size` setting is a recommendation for what size of the block (in a count of rows) to load from tables. The block size shouldn’t be too small, so that the expenditures on each block are still noticeable, but not too large so that the query with LIMIT that is completed after the first block is processed quickly. The goal is to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
+In ClickHouse, data is processed by blocks, which are sets of column parts. The internal processing cycles for a single block are efficient but there are noticeable costs when processing each block.
 
-Default value: 65,536.
+The `max_block_size` setting indicates the recommended maximum number of rows to include in a single block when loading data from tables. Blocks the size of `max_block_size` are not always loaded from the table: if ClickHouse determines that less data needs to be retrieved, a smaller block is processed.
 
-Blocks the size of `max_block_size` are not always loaded from the table. If it is obvious that less data needs to be retrieved, a smaller block is processed.
+The block size should not be too small to avoid noticeable costs when processing each block. It should also not be too large to ensure that queries with a LIMIT clause execute quickly after processing the first block. When setting `max_block_size`, the goal should be to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
+
+Default value: `65,409`
 
 ## preferred_block_size_bytes {#preferred-block-size-bytes}
 
@@ -782,7 +887,7 @@ Possible values:
 
 Default value: 2013265920.
 
-## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
+## min_bytes_to_use_direct_io {#min-bytes-to-use-direct-io}
 
 The minimum data volume required for using direct I/O access to the storage disk.
 
@@ -820,7 +925,7 @@ Possible values:
 
 Default value: `1`.
 
-## log_queries {#settings-log-queries}
+## log_queries {#log-queries}
 
 Setting up query logging.
 
@@ -832,7 +937,7 @@ Example:
 log_queries=1
 ```
 
-## log_queries_min_query_duration_ms {#settings-log-queries-min-query-duration-ms}
+## log_queries_min_query_duration_ms {#log-queries-min-query-duration-ms}
 
 If enabled (non-zero), queries faster than the value of this setting will not be logged (you can think about this as a `long_query_time` for [MySQL Slow Query Log](https://dev.mysql.com/doc/refman/5.7/en/slow-query-log.html)), and this basically means that you will not find them in the following tables:
 
@@ -847,7 +952,7 @@ Only the queries with the following type will get to the log:
 - Type: milliseconds
 - Default value: 0 (any query)
 
-## log_queries_min_type {#settings-log-queries-min-type}
+## log_queries_min_type {#log-queries-min-type}
 
 `query_log` minimal type to log.
 
@@ -865,11 +970,11 @@ Can be used to limit which entities will go to `query_log`, say you are interest
 log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 ```
 
-## log_query_threads {#settings-log-query-threads}
+## log_query_threads {#log-query-threads}
 
 Setting up query threads logging.
 
-Query threads log into the [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting has effect only when [log_queries](#settings-log-queries) is true. Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md/#server_configuration_parameters-query_thread_log) server configuration parameter.
+Query threads log into the [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting has effect only when [log_queries](#log-queries) is true. Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md/#server_configuration_parameters-query_thread_log) server configuration parameter.
 
 Possible values:
 
@@ -884,7 +989,7 @@ Default value: `1`.
 log_query_threads=1
 ```
 
-## log_query_views {#settings-log-query-views}
+## log_query_views {#log-query-views}
 
 Setting up query views logging.
 
@@ -896,7 +1001,7 @@ Example:
 log_query_views=1
 ```
 
-## log_formatted_queries {#settings-log-formatted-queries}
+## log_formatted_queries {#log-formatted-queries}
 
 Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table (populates `formatted_query` column in the [system.query_log](../../operations/system-tables/query_log.md)).
 
@@ -907,7 +1012,7 @@ Possible values:
 
 Default value: `0`.
 
-## log_comment {#settings-log-comment}
+## log_comment {#log-comment}
 
 Specifies the value for the `log_comment` field of the [system.query_log](../system-tables/query_log.md) table and comment text for the server log.
 
@@ -915,7 +1020,7 @@ It can be used to improve the readability of server logs. Additionally, it helps
 
 Possible values:
 
-- Any string no longer than [max_query_size](#settings-max_query_size). If the max_query_size is exceeded, the server throws an exception.
+- Any string no longer than [max_query_size](#max_query_size). If the max_query_size is exceeded, the server throws an exception.
 
 Default value: empty string.
 
@@ -939,7 +1044,7 @@ Result:
 └─────────────┴───────────┘
 ```
 
-## log_processors_profiles {#settings-log_processors_profiles}
+## log_processors_profiles {#log_processors_profiles}
 
 Write time that processor spent during execution/waiting for data to `system.processors_profile_log` table.
 
@@ -948,7 +1053,7 @@ See also:
 - [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md)
 - [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md#explain-pipeline)
 
-## max_insert_block_size {#settings-max_insert_block_size}
+## max_insert_block_size {#max_insert_block_size}
 
 The size of blocks (in a count of rows) to form for insertion into a table.
 This setting only applies in cases when the server forms the blocks.
@@ -982,7 +1087,7 @@ Possible values:
 
 Default value: 268435456.
 
-## max_replica_delay_for_distributed_queries {#settings-max_replica_delay_for_distributed_queries}
+## max_replica_delay_for_distributed_queries {#max_replica_delay_for_distributed_queries}
 
 Disables lagging replicas for distributed queries. See [Replication](../../engines/table-engines/mergetree-family/replication.md).
 
@@ -999,7 +1104,7 @@ Default value: 300.
 
 Used when performing `SELECT` from a distributed table that points to replicated tables.
 
-## max_threads {#settings-max_threads}
+## max_threads {#max_threads}
 
 The maximum number of query processing threads, excluding threads for retrieving data from remote servers (see the ‘max_distributed_connections’ parameter).
 
@@ -1012,7 +1117,7 @@ For queries that are completed quickly because of a LIMIT, you can set a lower �
 
 The smaller the `max_threads` value, the less memory is consumed.
 
-## max_insert_threads {#settings-max-insert-threads}
+## max_insert_threads {#max-insert-threads}
 
 The maximum number of threads to execute the `INSERT SELECT` query.
 
@@ -1023,7 +1128,7 @@ Possible values:
 
 Default value: 0.
 
-Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [max_threads](#settings-max_threads) setting.
+Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [max_threads](#max_threads) setting.
 Higher values will lead to higher memory usage.
 
 ## max_compress_block_size {#max-compress-block-size}
@@ -1052,7 +1157,7 @@ We are writing a URL column with the String type (average size of 60 bytes per v
 This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
 :::
 
-## max_query_size {#settings-max_query_size}
+## max_query_size {#max_query_size}
 
 The maximum number of bytes of a query string parsed by the SQL parser.
 Data in the VALUES clause of INSERT queries is processed by a separate stream parser (that consumes O(1) RAM) and not affected by this restriction.
@@ -1241,7 +1346,7 @@ Connection pool size for PostgreSQL table engine and database engine.
 
 Default value: 16
 
-## postgresql_connection_pool_size {#postgresql-connection-pool-size}
+## postgresql_connection_pool_wait_timeout {#postgresql-connection-pool-wait-timeout}
 
 Connection pool push/pop timeout on empty pool for PostgreSQL table engine and database engine. By default it will block on empty pool.
 
@@ -1296,7 +1401,7 @@ Default value: 5000.
 
 ## stream_flush_interval_ms {#stream-flush-interval-ms}
 
-Works for tables with streaming in the case of a timeout, or when a thread generates [max_insert_block_size](#settings-max_insert_block_size) rows.
+Works for tables with streaming in the case of a timeout, or when a thread generates [max_insert_block_size](#max_insert_block_size) rows.
 
 The default value is 7500.
 
@@ -1308,7 +1413,7 @@ Timeout for polling data from/to streaming storages.
 
 Default value: 500.
 
-## load_balancing {#settings-load_balancing}
+## load_balancing {#load_balancing}
 
 Specifies the algorithm of replicas selection that is used for distributed query processing.
 
@@ -1316,13 +1421,14 @@ ClickHouse supports the following algorithms of choosing replicas:
 
 - [Random](#load_balancing-random) (by default)
 - [Nearest hostname](#load_balancing-nearest_hostname)
+- [Hostname levenshtein distance](#load_balancing-hostname_levenshtein_distance)
 - [In order](#load_balancing-in_order)
 - [First or random](#load_balancing-first_or_random)
 - [Round robin](#load_balancing-round_robin)
 
 See also:
 
-- [distributed_replica_max_ignored_errors](#settings-distributed_replica_max_ignored_errors)
+- [distributed_replica_max_ignored_errors](#distributed_replica_max_ignored_errors)
 
 ### Random (by Default) {#load_balancing-random}
 
@@ -1346,6 +1452,25 @@ This method might seem primitive, but it does not require external data about ne
 
 Thus, if there are equivalent replicas, the closest one by name is preferred.
 We can also assume that when sending a query to the same server, in the absence of failures, a distributed query will also go to the same servers. So even if different data is placed on the replicas, the query will return mostly the same results.
+
+### Hostname levenshtein distance {#load_balancing-hostname_levenshtein_distance}
+
+``` sql
+load_balancing = hostname_levenshtein_distance
+```
+
+Just like `nearest_hostname`, but it compares hostname in a [levenshtein distance](https://en.wikipedia.org/wiki/Levenshtein_distance) manner. For example:
+
+``` text
+example-clickhouse-0-0 ample-clickhouse-0-0
+1
+
+example-clickhouse-0-0 example-clickhouse-1-10
+2
+
+example-clickhouse-0-0 example-clickhouse-12-0
+3
+```
 
 ### In Order {#load_balancing-in_order}
 
@@ -1376,20 +1501,20 @@ load_balancing = round_robin
 
 This algorithm uses a round-robin policy across replicas with the same number of errors (only the queries with `round_robin` policy is accounted).
 
-## prefer_localhost_replica {#settings-prefer-localhost-replica}
+## prefer_localhost_replica {#prefer-localhost-replica}
 
 Enables/disables preferable using the localhost replica when processing distributed queries.
 
 Possible values:
 
 - 1 — ClickHouse always sends a query to the localhost replica if it exists.
-- 0 — ClickHouse uses the balancing strategy specified by the [load_balancing](#settings-load_balancing) setting.
+- 0 — ClickHouse uses the balancing strategy specified by the [load_balancing](#load_balancing) setting.
 
 Default value: 1.
 
 :::note
-Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas) without [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key).
-If [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key) is set, disable this setting only if it's used on a cluster with multiple shards containing multiple replicas.
+Disable this setting if you use [max_parallel_replicas](#max_parallel_replicas) without [parallel_replicas_custom_key](#parallel_replicas_custom_key).
+If [parallel_replicas_custom_key](#parallel_replicas_custom_key) is set, disable this setting only if it's used on a cluster with multiple shards containing multiple replicas.
 If it's used on a cluster with a single shard and multiple replicas, disabling this setting will have negative effects.
 :::
 
@@ -1403,7 +1528,7 @@ See the section “WITH TOTALS modifier”.
 The threshold for `totals_mode = 'auto'`.
 See the section “WITH TOTALS modifier”.
 
-## max_parallel_replicas {#settings-max_parallel_replicas}
+## max_parallel_replicas {#max_parallel_replicas}
 
 The maximum number of replicas for each shard when executing a query.
 
@@ -1430,23 +1555,23 @@ A query may be processed faster if it is executed on several servers in parallel
 - The sampling key is an expression that is expensive to calculate.
 - The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
 
-### Parallel processing using [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key)
+### Parallel processing using [parallel_replicas_custom_key](#parallel_replicas_custom_key)
 
 This setting is useful for any replicated table.
 
-## parallel_replicas_custom_key {#settings-parallel_replicas_custom_key}
+## parallel_replicas_custom_key {#parallel_replicas_custom_key}
 
 An arbitrary integer expression that can be used to split work between replicas for a specific table.
 The value can be any integer expression.
-A query may be processed faster if it is executed on several servers in parallel but it depends on the used [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key)
-and [parallel_replicas_custom_key_filter_type](#settings-parallel_replicas_custom_key_filter_type).
+A query may be processed faster if it is executed on several servers in parallel but it depends on the used [parallel_replicas_custom_key](#parallel_replicas_custom_key)
+and [parallel_replicas_custom_key_filter_type](#parallel_replicas_custom_key_filter_type).
 
 Simple expressions using primary keys are preferred.
 
 If the setting is used on a cluster that consists of a single shard with multiple replicas, those replicas will be converted into virtual shards.
 Otherwise, it will behave same as for `SAMPLE` key, it will use multiple replicas of each shard.
 
-## parallel_replicas_custom_key_filter_type {#settings-parallel_replicas_custom_key_filter_type}
+## parallel_replicas_custom_key_filter_type {#parallel_replicas_custom_key_filter_type}
 
 How to use `parallel_replicas_custom_key` expression for splitting work between replicas.
 
@@ -1459,9 +1584,15 @@ Default value: `default`.
 
 ## allow_experimental_parallel_reading_from_replicas
 
-If true, ClickHouse will send a SELECT query to all replicas of a table (up to `max_parallel_replicas`) . It will work for any kind of MergeTree table.
+Enables or disables sending SELECT queries to all replicas of a table (up to `max_parallel_replicas`). Reading is parallelized and coordinated dynamically. It will work for any kind of MergeTree table.
 
-Default value: `false`.
+Possible values:
+
+- 0 - Disabled.
+- 1 - Enabled, silently disabled in case of failure.
+- 2 - Enabled, throws an exception in case of failure.
+
+Default value: `0`.
 
 ## compile_expressions {#compile-expressions}
 
@@ -1540,16 +1671,17 @@ Possible values:
 
 Default value: `1`.
 
-## query_cache_store_results_of_queries_with_nondeterministic_functions {#query--store-results-of-queries-with-nondeterministic-functions}
+## query_cache_nondeterministic_function_handling {#query-cache-nondeterministic-function-handling}
 
-If turned on, then results of `SELECT` queries with non-deterministic functions (e.g. `rand()`, `now()`) can be cached in the [query cache](../query-cache.md).
+Controls how the [query cache](../query-cache.md) handles `SELECT` queries with non-deterministic functions like `rand()` or `now()`.
 
 Possible values:
 
-- 0 - Disabled
-- 1 - Enabled
+- `'throw'` - Throw an exception and don't cache the query result.
+- `'save'` - Cache the query result.
+- `'ignore'` - Don't cache the query result and don't throw an exception.
 
-Default value: `0`.
+Default value: `throw`.
 
 ## query_cache_min_query_runs {#query-cache-min-query-runs}
 
@@ -1584,7 +1716,7 @@ Default value: `1`
 
 ## query_cache_squash_partial_results {#query-cache-squash-partial-results}
 
-Squash partial result blocks to blocks of size [max_block_size](#setting-max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
+Squash partial result blocks to blocks of size [max_block_size](#setting-max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query-cache-compress-entries)).
 
 Possible values:
 
@@ -1635,7 +1767,7 @@ Possible values:
 
 Default value: 0 (no restriction).
 
-## insert_quorum {#settings-insert_quorum}
+## insert_quorum {#insert_quorum}
 
 Enables the quorum writes.
 
@@ -1649,7 +1781,7 @@ Quorum writes
 
 `INSERT` succeeds only when ClickHouse manages to correctly write data to the `insert_quorum` of replicas during the `insert_quorum_timeout`. If for any reason the number of replicas with successful writes does not reach the `insert_quorum`, the write is considered failed and ClickHouse will delete the inserted block from all the replicas where data has already been written.
 
-When `insert_quorum_parallel` is disabled, all replicas in the quorum are consistent, i.e. they contain data from all previous `INSERT` queries (the `INSERT` sequence is linearized). When reading data written using `insert_quorum` and `insert_quorum_parallel` is disabled, you can turn on sequential consistency for `SELECT` queries using [select_sequential_consistency](#settings-select_sequential_consistency).
+When `insert_quorum_parallel` is disabled, all replicas in the quorum are consistent, i.e. they contain data from all previous `INSERT` queries (the `INSERT` sequence is linearized). When reading data written using `insert_quorum` and `insert_quorum_parallel` is disabled, you can turn on sequential consistency for `SELECT` queries using [select_sequential_consistency](#select_sequential_consistency).
 
 ClickHouse generates an exception:
 
@@ -1658,11 +1790,11 @@ ClickHouse generates an exception:
 
 See also:
 
-- [insert_quorum_timeout](#settings-insert_quorum_timeout)
-- [insert_quorum_parallel](#settings-insert_quorum_parallel)
-- [select_sequential_consistency](#settings-select_sequential_consistency)
+- [insert_quorum_timeout](#insert_quorum_timeout)
+- [insert_quorum_parallel](#insert_quorum_parallel)
+- [select_sequential_consistency](#select_sequential_consistency)
 
-## insert_quorum_timeout {#settings-insert_quorum_timeout}
+## insert_quorum_timeout {#insert_quorum_timeout}
 
 Write to a quorum timeout in milliseconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
 
@@ -1670,11 +1802,11 @@ Default value: 600 000 milliseconds (ten minutes).
 
 See also:
 
-- [insert_quorum](#settings-insert_quorum)
-- [insert_quorum_parallel](#settings-insert_quorum_parallel)
-- [select_sequential_consistency](#settings-select_sequential_consistency)
+- [insert_quorum](#insert_quorum)
+- [insert_quorum_parallel](#insert_quorum_parallel)
+- [select_sequential_consistency](#select_sequential_consistency)
 
-## insert_quorum_parallel {#settings-insert_quorum_parallel}
+## insert_quorum_parallel {#insert_quorum_parallel}
 
 Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
 
@@ -1687,11 +1819,11 @@ Default value: 1.
 
 See also:
 
-- [insert_quorum](#settings-insert_quorum)
-- [insert_quorum_timeout](#settings-insert_quorum_timeout)
-- [select_sequential_consistency](#settings-select_sequential_consistency)
+- [insert_quorum](#insert_quorum)
+- [insert_quorum_timeout](#insert_quorum_timeout)
+- [select_sequential_consistency](#select_sequential_consistency)
 
-## select_sequential_consistency {#settings-select_sequential_consistency}
+## select_sequential_consistency {#select_sequential_consistency}
 
 Enables or disables sequential consistency for `SELECT` queries. Requires `insert_quorum_parallel` to be disabled (enabled by default).
 
@@ -1710,11 +1842,11 @@ When `insert_quorum_parallel` is enabled (the default), then `select_sequential_
 
 See also:
 
-- [insert_quorum](#settings-insert_quorum)
-- [insert_quorum_timeout](#settings-insert_quorum_timeout)
-- [insert_quorum_parallel](#settings-insert_quorum_parallel)
+- [insert_quorum](#insert_quorum)
+- [insert_quorum_timeout](#insert_quorum_timeout)
+- [insert_quorum_parallel](#insert_quorum_parallel)
 
-## insert_deduplicate {#settings-insert-deduplicate}
+## insert_deduplicate {#insert-deduplicate}
 
 Enables or disables block deduplication of `INSERT` (for Replicated\* tables).
 
@@ -1841,7 +1973,7 @@ For the replicated tables, by default, only 10000 of the most recent inserts for
 We recommend enabling the [async_block_ids_cache](merge-tree-settings.md/#use-async-block-ids-cache) to increase the efficiency of deduplication.
 This function does not work for non-replicated tables.
 
-## deduplicate_blocks_in_dependent_materialized_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
+## deduplicate_blocks_in_dependent_materialized_views {#deduplicate-blocks-in-dependent-materialized-views}
 
 Enables or disables the deduplication check for materialized views that receive data from Replicated\* tables.
 
@@ -1875,6 +2007,10 @@ Default value: empty string (disabled)
 
 For the replicated tables by default the only 100 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md/#replicated-deduplication-window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated-deduplication-window-seconds)).
 For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non-replicated-deduplication-window).
+
+:::note
+`insert_deduplication_token` works on a partition level (the same as `insert_deduplication` checksum). Multiple partitions can have the same `insert_deduplication_token`.
+:::
 
 Example:
 
@@ -1947,7 +2083,7 @@ Possible values:
 
 Default value: 10000
 
-## max_network_bytes {#settings-max-network-bytes}
+## max_network_bytes {#max-network-bytes}
 
 Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies to every individual query.
 
@@ -1958,7 +2094,7 @@ Possible values:
 
 Default value: 0.
 
-## max_network_bandwidth {#settings-max-network-bandwidth}
+## max_network_bandwidth {#max-network-bandwidth}
 
 Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
 
@@ -1969,7 +2105,7 @@ Possible values:
 
 Default value: 0.
 
-## max_network_bandwidth_for_user {#settings-max-network-bandwidth-for-user}
+## max_network_bandwidth_for_user {#max-network-bandwidth-for-user}
 
 Limits the speed of the data exchange over the network in bytes per second. This setting applies to all concurrently running queries performed by a single user.
 
@@ -1980,7 +2116,7 @@ Possible values:
 
 Default value: 0.
 
-## max_network_bandwidth_for_all_users {#settings-max-network-bandwidth-for-all-users}
+## max_network_bandwidth_for_all_users {#max-network-bandwidth-for-all-users}
 
 Limits the speed that data is exchanged at over the network in bytes per second. This setting applies to all concurrently running queries on the server.
 
@@ -1991,7 +2127,7 @@ Possible values:
 
 Default value: 0.
 
-## count_distinct_implementation {#settings-count_distinct_implementation}
+## count_distinct_implementation {#count_distinct_implementation}
 
 Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference/count.md/#agg_function-count) construction.
 
@@ -2005,7 +2141,7 @@ Possible values:
 
 Default value: `uniqExact`.
 
-## skip_unavailable_shards {#settings-skip_unavailable_shards}
+## skip_unavailable_shards {#skip_unavailable_shards}
 
 Enables or disables silently skipping of unavailable shards.
 
@@ -2169,7 +2305,7 @@ Possible values:
 
 Default value: 0
 
-## force_optimize_skip_unused_shards_nesting {#settings-force_optimize_skip_unused_shards_nesting}
+## force_optimize_skip_unused_shards_nesting {#force_optimize_skip_unused_shards_nesting}
 
 Controls [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards) (hence still requires [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
 
@@ -2282,7 +2418,35 @@ See also:
 
 - [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
 
-## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
+## optimize_trivial_approximate_count_query {#optimize_trivial_approximate_count_query}
+
+Use an approximate value for trivial count optimization of storages that support such estimation, for example, EmbeddedRocksDB.
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+
+Default value: `0`.
+
+## optimize_count_from_files {#optimize_count_from_files}
+
+Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
+
+Possible values:
+
+- 0 — Optimization disabled.
+- 1 — Optimization enabled.
+
+Default value: `1`.
+
+## use_cache_for_count_from_files {#use_cache_for_count_from_files}
+
+Enables caching of rows number during count from files in table functions `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
+
+Enabled by default.
+
+## distributed_replica_error_half_life {#distributed_replica_error_half_life}
 
 - Type: seconds
 - Default value: 60 seconds
@@ -2293,10 +2457,10 @@ See also:
 
 - [load_balancing](#load_balancing-round_robin)
 - [Table engine Distributed](../../engines/table-engines/special/distributed.md)
-- [distributed_replica_error_cap](#settings-distributed_replica_error_cap)
-- [distributed_replica_max_ignored_errors](#settings-distributed_replica_max_ignored_errors)
+- [distributed_replica_error_cap](#distributed_replica_error_cap)
+- [distributed_replica_max_ignored_errors](#distributed_replica_max_ignored_errors)
 
-## distributed_replica_error_cap {#settings-distributed_replica_error_cap}
+## distributed_replica_error_cap {#distributed_replica_error_cap}
 
 - Type: unsigned int
 - Default value: 1000
@@ -2307,10 +2471,10 @@ See also:
 
 - [load_balancing](#load_balancing-round_robin)
 - [Table engine Distributed](../../engines/table-engines/special/distributed.md)
-- [distributed_replica_error_half_life](#settings-distributed_replica_error_half_life)
-- [distributed_replica_max_ignored_errors](#settings-distributed_replica_max_ignored_errors)
+- [distributed_replica_error_half_life](#distributed_replica_error_half_life)
+- [distributed_replica_max_ignored_errors](#distributed_replica_max_ignored_errors)
 
-## distributed_replica_max_ignored_errors {#settings-distributed_replica_max_ignored_errors}
+## distributed_replica_max_ignored_errors {#distributed_replica_max_ignored_errors}
 
 - Type: unsigned int
 - Default value: 0
@@ -2321,10 +2485,10 @@ See also:
 
 - [load_balancing](#load_balancing-round_robin)
 - [Table engine Distributed](../../engines/table-engines/special/distributed.md)
-- [distributed_replica_error_cap](#settings-distributed_replica_error_cap)
-- [distributed_replica_error_half_life](#settings-distributed_replica_error_half_life)
+- [distributed_replica_error_cap](#distributed_replica_error_cap)
+- [distributed_replica_error_half_life](#distributed_replica_error_half_life)
 
-## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
+## distributed_background_insert_sleep_time_ms {#distributed_background_insert_sleep_time_ms}
 
 Base interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. The actual interval grows exponentially in the event of errors.
 
@@ -2334,9 +2498,9 @@ Possible values:
 
 Default value: 100 milliseconds.
 
-## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
+## distributed_background_insert_max_sleep_time_ms {#distributed_background_insert_max_sleep_time_ms}
 
-Maximum interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) setting.
+Maximum interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed_background_insert_sleep_time_ms](#distributed_background_insert_sleep_time_ms) setting.
 
 Possible values:
 
@@ -2344,7 +2508,7 @@ Possible values:
 
 Default value: 30000 milliseconds (30 seconds).
 
-## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
+## distributed_background_insert_batch {#distributed_background_insert_batch}
 
 Enables/disables inserted data sending in batches.
 
@@ -2357,13 +2521,13 @@ Possible values:
 
 Default value: 0.
 
-## distributed_directory_monitor_split_batch_on_failure {#distributed_directory_monitor_split_batch_on_failure}
+## distributed_background_insert_split_batch_on_failure {#distributed_background_insert_split_batch_on_failure}
 
 Enables/disables splitting batches on failures.
 
 Sometimes sending particular batch to the remote shard may fail, because of some complex pipeline after (i.e. `MATERIALIZED VIEW` with `GROUP BY`) due to `Memory limit exceeded` or similar errors. In this case, retrying will not help (and this will stuck distributed sends for the table) but sending files from that batch one by one may succeed INSERT.
 
-So installing this setting to `1` will disable batching for such batches (i.e. temporary disables `distributed_directory_monitor_batch_inserts` for failed batches).
+So installing this setting to `1` will disable batching for such batches (i.e. temporary disables `distributed_background_insert_batch` for failed batches).
 
 Possible values:
 
@@ -2477,7 +2641,7 @@ Possible values:
 
 Default value: 0.
 
-## allow_introspection_functions {#settings-allow_introspection_functions}
+## allow_introspection_functions {#allow_introspection_functions}
 
 Enables or disables [introspection functions](../../sql-reference/functions/introspection.md) for query profiling.
 
@@ -2495,7 +2659,7 @@ Default value: 0.
 
 ## input_format_parallel_parsing {#input-format-parallel-parsing}
 
-Enables or disables order-preserving parallel parsing of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TKSV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
+Enables or disables order-preserving parallel parsing of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
 
 Possible values:
 
@@ -2506,7 +2670,7 @@ Default value: `1`.
 
 ## output_format_parallel_formatting {#output-format-parallel-formatting}
 
-Enables or disables parallel formatting of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TKSV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
+Enables or disables parallel formatting of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
 
 Possible values:
 
@@ -2546,15 +2710,15 @@ Possible values:
 
 Default value: 0.
 
-## insert_distributed_sync {#insert_distributed_sync}
+## distributed_foreground_insert {#distributed_foreground_insert}
 
 Enables or disables synchronous data insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table.
 
-By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in asynchronous mode. When `insert_distributed_sync=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all shards (at least one replica for each shard if `internal_replication` is true).
+By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in background mode. When `distributed_foreground_insert=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all shards (at least one replica for each shard if `internal_replication` is true).
 
 Possible values:
 
-- 0 — Data is inserted in asynchronous mode.
+- 0 — Data is inserted in background mode.
 - 1 — Data is inserted in synchronous mode.
 
 Default value: `0`.
@@ -2563,6 +2727,10 @@ Default value: `0`.
 
 - [Distributed Table Engine](../../engines/table-engines/special/distributed.md/#distributed)
 - [Managing Distributed Tables](../../sql-reference/statements/system.md/#query-language-system-distributed)
+
+## insert_distributed_sync {#insert_distributed_sync}
+
+Alias for [`distributed_foreground_insert`](#distributed_foreground_insert).
 
 ## insert_shard_id {#insert_shard_id}
 
@@ -2613,7 +2781,7 @@ Result:
 
 ## use_compact_format_in_distributed_parts_names {#use_compact_format_in_distributed_parts_names}
 
-Uses compact format for storing blocks for async (`insert_distributed_sync`) INSERT into tables with `Distributed` engine.
+Uses compact format for storing blocks for background (`distributed_foreground_insert`) INSERT into tables with `Distributed` engine.
 
 Possible values:
 
@@ -2623,7 +2791,7 @@ Possible values:
 Default value: `1`.
 
 :::note
-- with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for async INSERT.
+- with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for background INSERT.
 - with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
 :::
 
@@ -2856,7 +3024,7 @@ Default value: `0`.
 
 ## mutations_sync {#mutations_sync}
 
-Allows to execute `ALTER TABLE ... UPDATE|DELETE` queries ([mutations](../../sql-reference/statements/alter/index.md#mutations)) synchronously.
+Allows to execute `ALTER TABLE ... UPDATE|DELETE|MATERIALIZE INDEX|MATERIALIZE PROJECTION|MATERIALIZE COLUMN` queries ([mutations](../../sql-reference/statements/alter/index.md#mutations)) synchronously.
 
 Possible values:
 
@@ -3018,7 +3186,7 @@ Do not enable this feature in version `<= 21.8`. It's not properly implemented a
 ## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 
 Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](../../sql-reference/aggregate-functions/combinators.md/#agg-functions-combinator-ornull) suffix to them. Enable it for SQL standard compatibility.
-It is implemented via query rewrite (similar to [count_distinct_implementation](#settings-count_distinct_implementation) setting) to get consistent results for distributed queries.
+It is implemented via query rewrite (similar to [count_distinct_implementation](#count_distinct_implementation) setting) to get consistent results for distributed queries.
 
 Possible values:
 
@@ -3116,6 +3284,40 @@ ENGINE = Log
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
+## default_temporary_table_engine {#default_temporary_table_engine}
+
+Same as [default_table_engine](#default_table_engine) but for temporary tables.
+
+Default value: `Memory`.
+
+In this example, any new temporary table that does not specify an `Engine` will use the `Log` table engine:
+
+Query:
+
+```sql
+SET default_temporary_table_engine = 'Log';
+
+CREATE TEMPORARY TABLE my_table (
+    x UInt32,
+    y UInt32
+);
+
+SHOW CREATE TEMPORARY TABLE my_table;
+```
+
+Result:
+
+```response
+┌─statement────────────────────────────────────────────────────────────────┐
+│ CREATE TEMPORARY TABLE default.my_table
+(
+    `x` UInt32,
+    `y` UInt32
+)
+ENGINE = Log
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
 ## data_type_default_nullable {#data_type_default_nullable}
 
 Allows data types without explicit modifiers [NULL or NOT NULL](../../sql-reference/statements/create/table.md/#null-modifiers) in column definition will be [Nullable](../../sql-reference/data-types/nullable.md/#data_type-nullable).
@@ -3124,6 +3326,28 @@ Possible values:
 
 - 1 — The data types in column definitions are set to `Nullable` by default.
 - 0 — The data types in column definitions are set to not `Nullable` by default.
+
+Default value: `0`.
+
+## mysql_map_string_to_text_in_show_columns {#mysql_map_string_to_text_in_show_columns}
+
+When enabled, [String](../../sql-reference/data-types/string.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
+
+Has an effect only when the connection is made through the MySQL wire protocol.
+
+- 0 - Use `BLOB`.
+- 1 - Use `TEXT`.
+
+Default value: `0`.
+
+## mysql_map_fixed_string_to_text_in_show_columns {#mysql_map_fixed_string_to_text_in_show_columns}
+
+When enabled, [FixedString](../../sql-reference/data-types/fixedstring.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
+
+Has an effect only when the connection is made through the MySQL wire protocol.
+
+- 0 - Use `BLOB`.
+- 1 - Use `TEXT`.
 
 Default value: `0`.
 
@@ -3155,7 +3379,7 @@ Possible values:
 - Positive integer.
 - 0 or 1 — Disabled. `SELECT` queries are executed in a single thread.
 
-Default value: `16`.
+Default value: `max_threads`.
 
 ## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
 
@@ -3243,7 +3467,35 @@ Possible values:
 
 Default value: `0`.
 
-## s3_truncate_on_insert
+## engine_file_allow_create_multiple_files {#engine_file_allow_create_multiple_files}
+
+Enables or disables creating a new file on each insert in file engine tables if the format has the suffix (`JSON`, `ORC`, `Parquet`, etc.). If enabled, on each insert a new file will be created with a name following this pattern:
+
+`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
+
+Possible values:
+- 0 — `INSERT` query appends new data to the end of the file.
+- 1 — `INSERT` query creates a new file.
+
+Default value: `0`.
+
+## engine_file_skip_empty_files {#engine_file_skip_empty_files}
+
+Enables or disables skipping empty files in [File](../../engines/table-engines/special/file.md) engine tables.
+
+Possible values:
+- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
+- 1 — `SELECT` returns empty result for empty file.
+
+Default value: `0`.
+
+## storage_file_read_method {#storage_file_read_method}
+
+Method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local).
+
+Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.
+
+## s3_truncate_on_insert {#s3_truncate_on_insert}
 
 Enables or disables truncate before inserts in s3 engine tables. If disabled, an exception will be thrown on insert attempts if an S3 object already exists.
 
@@ -3253,7 +3505,29 @@ Possible values:
 
 Default value: `0`.
 
-## hdfs_truncate_on_insert
+## s3_create_new_file_on_insert {#s3_create_new_file_on_insert}
+
+Enables or disables creating a new file on each insert in s3 engine tables. If enabled, on each insert a new S3 object will be created with the key, similar to this pattern:
+
+initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
+
+Possible values:
+- 0 — `INSERT` query appends new data to the end of the file.
+- 1 — `INSERT` query creates a new file.
+
+Default value: `0`.
+
+## s3_skip_empty_files {#s3_skip_empty_files}
+
+Enables or disables skipping empty files in [S3](../../engines/table-engines/integrations/s3.md) engine tables.
+
+Possible values:
+- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
+- 1 — `SELECT` returns empty result for empty file.
+
+Default value: `0`.
+
+## hdfs_truncate_on_insert {#hdfs_truncate_on_insert}
 
 Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists.
 
@@ -3263,31 +3537,7 @@ Possible values:
 
 Default value: `0`.
 
-## engine_file_allow_create_multiple_files
-
-Enables or disables creating a new file on each insert in file engine tables if the format has the suffix (`JSON`, `ORC`, `Parquet`, etc.). If enabled, on each insert a new file will be created with a name following this pattern:
-
-`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
-
-Possible values:
-- 0 — `INSERT` query appends new data to the end of the file.
-- 1 — `INSERT` query replaces existing content of the file with the new data.
-
-Default value: `0`.
-
-## s3_create_new_file_on_insert
-
-Enables or disables creating a new file on each insert in s3 engine tables. If enabled, on each insert a new S3 object will be created with the key, similar to this pattern:
-
-initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
-
-Possible values:
-- 0 — `INSERT` query appends new data to the end of the file.
-- 1 — `INSERT` query replaces existing content of the file with the new data.
-
-Default value: `0`.
-
-## hdfs_create_new_file_on_insert
+## hdfs_create_new_file_on_insert {#hdfs_create_new_file_on_insert
 
 Enables or disables creating a new file on each insert in HDFS engine tables. If enabled, on each insert a new HDFS file will be created with the name, similar to this pattern:
 
@@ -3295,9 +3545,35 @@ initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
 
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
-- 1 — `INSERT` query replaces existing content of the file with the new data.
+- 1 — `INSERT` query creates a new file.
 
 Default value: `0`.
+
+## hdfs_skip_empty_files {#hdfs_skip_empty_files}
+
+Enables or disables skipping empty files in [HDFS](../../engines/table-engines/integrations/hdfs.md) engine tables.
+
+Possible values:
+- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
+- 1 — `SELECT` returns empty result for empty file.
+
+Default value: `0`.
+
+## engine_url_skip_empty_files {#engine_url_skip_empty_files}
+
+Enables or disables skipping empty files in [URL](../../engines/table-engines/special/url.md) engine tables.
+
+Possible values:
+- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
+- 1 — `SELECT` returns empty result for empty file.
+
+Default value: `0`.
+
+## enable_url_encoding {#enable_url_encoding}
+
+Allows to enable/disable decoding/encoding path in uri in [URL](../../engines/table-engines/special/url.md) engine tables.
+
+Enabled by default.
 
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
@@ -3370,7 +3646,7 @@ Possible values:
 - Any positive integer.
 - 0 - Disabled (infinite timeout).
 
-Default value: 180.
+Default value: 30.
 
 ## http_receive_timeout {#http_receive_timeout}
 
@@ -3381,7 +3657,7 @@ Possible values:
 - Any positive integer.
 - 0 - Disabled (infinite timeout).
 
-Default value: 180.
+Default value: 30.
 
 ## check_query_single_value_result {#check_query_single_value_result}
 
@@ -3571,6 +3847,8 @@ Possible values:
 - `none` — Is similar to throw, but distributed DDL query returns no result set.
 - `null_status_on_timeout` — Returns `NULL` as execution status in some rows of result set instead of throwing `TIMEOUT_EXCEEDED` if query is not finished on the corresponding hosts.
 - `never_throw` — Do not throw `TIMEOUT_EXCEEDED` and do not rethrow exceptions if query has failed on some hosts.
+- `null_status_on_timeout_only_active` — similar to `null_status_on_timeout`, but doesn't wait for inactive replicas of the `Replicated` database
+- `throw_only_active` — similar to `throw`, but doesn't wait for inactive replicas of the `Replicated` database
 
 Default value: `throw`.
 
@@ -3676,6 +3954,27 @@ Possible values:
 
 Default value: `0`.
 
+## force_optimize_projection_name {#force-optimize-projection_name}
+
+If it is set to a non-empty string, check that this projection is used in the query at least once.
+
+Possible values:
+
+- string: name of projection that used in a query
+
+Default value: `''`.
+
+## preferred_optimize_projection_name {#preferred_optimize_projection_name}
+
+If it is set to a non-empty string, ClickHouse will try to apply specified projection in query.
+
+
+Possible values:
+
+- string: name of preferred projection
+
+Default value: `''`.
+
 ## alter_sync {#alter-sync}
 
 Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
@@ -3687,6 +3986,10 @@ Possible values:
 - 2 — Wait for everyone.
 
 Default value: `1`.
+
+:::note
+`alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
+:::
 
 ## replication_wait_for_inactive_replica_timeout {#replication-wait-for-inactive-replica-timeout}
 
@@ -3863,6 +4166,52 @@ Result:
 └─────┴─────┴───────┘
 ```
 
+## enable_order_by_all {#enable-order-by-all}
+
+Enables or disables sorting by `ALL` columns, i.e. [ORDER BY](../../sql-reference/statements/select/order-by.md)
+
+Possible values:
+
+- 0 — Disable ORDER BY ALL.
+- 1 — Enable ORDER BY ALL.
+
+Default value: `1`.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE TAB(C1 Int, C2 Int, ALL Int) ENGINE=Memory();
+
+INSERT INTO TAB VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
+
+SELECT * FROM TAB ORDER BY ALL; -- returns an error that ALL is ambiguous
+
+SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all;
+```
+
+Result:
+
+```text
+┌─C1─┬─C2─┬─ALL─┐
+│ 20 │ 20 │  10 │
+│ 30 │ 10 │  20 │
+│ 10 │ 20 │  30 │
+└────┴────┴─────┘
+```
+
+## splitby_max_substrings_includes_remaining_string {#splitby_max_substrings_includes_remaining_string}
+
+Controls whether function [splitBy*()](../../sql-reference/functions/splitting-merging-functions.md) with argument `max_substrings` > 0 will include the remaining string in the last element of the result array.
+
+Possible values:
+
+- `0` - The remaining string will not be included in the last element of the result array.
+- `1` - The remaining string will be included in the last element of the result array. This is the behavior of Spark's [`split()`](https://spark.apache.org/docs/3.1.2/api/python/reference/api/pyspark.sql.functions.split.html) function and Python's ['string.split()'](https://docs.python.org/3/library/stdtypes.html#str.split) method.
+
+Default value: `0`
+
 ## enable_extended_results_for_datetime_functions {#enable-extended-results-for-datetime-functions}
 
 Enables or disables returning results of type:
@@ -3875,6 +4224,18 @@ Possible values:
 - 1 — Functions return `Date32` or `DateTime64` for `Date32` or `DateTime64` arguments and `Date` or `DateTime` otherwise.
 
 Default value: `0`.
+
+## date_time_overflow_behavior {#date_time_overflow_behavior}
+
+Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
+
+Possible values:
+
+- `ignore` — Silently ignore overflows. The result is random.
+- `throw` — Throw an exception in case of conversion overflow.
+- `saturate` — Silently saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
+
+Default value: `ignore`.
 
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
@@ -4037,6 +4398,8 @@ Default value: `1GiB`.
 
 ## Schema Inference settings
 
+See [schema inference](../../interfaces/schema-inference.md#schema-inference-modes) documentation for more details.
+
 ### schema_inference_use_cache_for_file {schema_inference_use_cache_for_file}
 
 Enable schemas cache for schema inference in `file` table function.
@@ -4077,6 +4440,13 @@ Possible values:
 - 2 - auto
 
 Default value: 2.
+
+### schema_inference_mode {schema_inference_mode}
+
+The mode of schema inference. Possible values: `default` and `union`.
+See [schema inference modes](../../interfaces/schema-inference.md#schema-inference-modes) section for more details.
+
+Default value: `default`.
 
 ## compatibility {#compatibility}
 
@@ -4119,6 +4489,69 @@ Default value: `0`.
 :::note
 Use this setting only for backward compatibility if your use cases depend on old syntax.
 :::
+
+## session_timezone {#session_timezone}
+
+Sets the implicit time zone of the current session or query.
+The implicit time zone is the time zone applied to values of type DateTime/DateTime64 which have no explicitly specified time zone.
+The setting takes precedence over the globally configured (server-level) implicit time zone.
+A value of '' (empty string) means that the implicit time zone of the current session or query is equal to the [server time zone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
+
+You can use functions `timeZone()` and `serverTimeZone()` to get the session time zone and server time zone.
+
+Possible values:
+
+-    Any time zone name from `system.time_zones`, e.g. `Europe/Berlin`, `UTC` or `Zulu`
+
+Default value: `''`.
+
+Examples:
+
+```sql
+SELECT timeZone(), serverTimeZone() FORMAT TSV
+
+Europe/Berlin	Europe/Berlin
+```
+
+```sql
+SELECT timeZone(), serverTimeZone() SETTINGS session_timezone = 'Asia/Novosibirsk' FORMAT TSV
+
+Asia/Novosibirsk	Europe/Berlin
+```
+
+Assign session time zone 'America/Denver' to the inner DateTime without explicitly specified time zone:
+
+```sql
+SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich') SETTINGS session_timezone = 'America/Denver' FORMAT TSV
+
+1999-12-13 07:23:23.123
+```
+
+:::warning
+Not all functions that parse DateTime/DateTime64 respect `session_timezone`. This can lead to subtle errors.
+See the following example and explanation.
+:::
+
+```sql
+CREATE TABLE test_tz (`d` DateTime('UTC')) ENGINE = Memory AS SELECT toDateTime('2000-01-01 00:00:00', 'UTC');
+
+SELECT *, timeZone() FROM test_tz WHERE d = toDateTime('2000-01-01 00:00:00') SETTINGS session_timezone = 'Asia/Novosibirsk'
+0 rows in set.
+
+SELECT *, timeZone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS session_timezone = 'Asia/Novosibirsk'
+┌───────────────────d─┬─timeZone()───────┐
+│ 2000-01-01 00:00:00 │ Asia/Novosibirsk │
+└─────────────────────┴──────────────────┘
+```
+
+This happens due to different parsing pipelines:
+
+- `toDateTime()` without explicitly given time zone used in the first `SELECT` query honors setting `session_timezone` and the global time zone.
+- In the second query, a DateTime is parsed from a String, and inherits the type and time zone of the existing column`d`. Thus, setting `session_timezone` and the global time zone are not honored.
+
+**See also**
+
+- [timezone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
 
 ## final {#final}
 
@@ -4284,6 +4717,33 @@ Possible values:
 
 Default value: `false`.
 
+## rename_files_after_processing {#rename_files_after_processing}
+
+- **Type:** String
+
+- **Default value:** Empty string
+
+This setting allows to specify renaming pattern for files processed by `file` table function. When option is set, all files read by `file` table function will be renamed according to specified pattern with placeholders, only if files processing was successful.
+
+### Placeholders
+
+- `%a` — Full original filename (e.g., "sample.csv").
+- `%f` — Original filename without extension (e.g., "sample").
+- `%e` — Original file extension with dot (e.g., ".csv").
+- `%t` — Timestamp (in microseconds).
+- `%%` — Percentage sign ("%").
+
+### Example
+- Option: `--rename_files_after_processing="processed_%f_%t%e"`
+
+- Query: `SELECT * FROM file('sample.csv')`
+
+
+If reading `sample.csv` is successful, file will be renamed to `processed_sample_1683473210851438.csv`
+
+
+
+
 ## function_json_value_return_type_allow_complex
 
 Control whether allow to return complex type (such as: struct, array, map) for json_value function.
@@ -4313,3 +4773,437 @@ Type: Int64
 
 Default: 0
 
+## enable_deflate_qpl_codec {#enable_deflate_qpl_codec}
+
+If turned on, the DEFLATE_QPL codec may be used to compress columns.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Type: Bool
+
+## enable_zstd_qat_codec {#enable_zstd_qat_codec}
+
+If turned on, the ZSTD_QAT codec may be used to compress columns.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Type: Bool
+
+## output_format_compression_level
+
+Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`.
+
+Possible values: from `1` to `22`
+
+Default: `3`
+
+
+## output_format_compression_zstd_window_log
+
+Can be used when the output compression method is `zstd`. If greater than `0`, this setting explicitly sets compression window size (power of `2`) and enables a long-range mode for zstd compression. This can help to achieve a better compression ratio.
+
+Possible values: non-negative numbers. Note that if the value is too small or too big, `zstdlib` will throw an exception. Typical values are from `20` (window size = `1MB`) to `30` (window size = `1GB`).
+
+Default: `0`
+
+## rewrite_count_distinct_if_with_count_distinct_implementation
+
+Allows you to rewrite `countDistcintIf` with [count_distinct_implementation](#count_distinct_implementation) setting.
+
+Possible values:
+
+- true — Allow.
+- false — Disallow.
+
+Default value: `false`.
+
+## precise_float_parsing {#precise_float_parsing}
+
+Switches [Float32/Float64](../../sql-reference/data-types/float.md) parsing algorithms:
+* If the value is `1`, then precise method is used. It is slower than fast method, but it always returns a number that is the closest machine representable number to the input.
+* Otherwise, fast method is used (default). It usually returns the same value as precise, but in rare cases result may differ by one or two least significant digits.
+
+Possible values: `0`, `1`.
+
+Default value: `0`.
+
+Example:
+
+```sql
+SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_parsing = 0;
+
+┌─toFloat64('1.7091')─┬─toFloat64('1.5008753E7')─┐
+│  1.7090999999999998 │       15008753.000000002 │
+└─────────────────────┴──────────────────────────┘
+
+SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_parsing = 1;
+
+┌─toFloat64('1.7091')─┬─toFloat64('1.5008753E7')─┐
+│              1.7091 │                 15008753 │
+└─────────────────────┴──────────────────────────┘
+```
+
+## validate_tcp_client_information {#validate-tcp-client-information}
+
+Determines whether validation of client information enabled when query packet is received from a client using a TCP connection.
+
+If `true`, an exception will be thrown on invalid client information from the TCP client.
+
+If `false`, the data will not be validated. The server will work with clients of all versions.
+
+The default value is `false`.
+
+**Example**
+
+``` xml
+<validate_tcp_client_information>true</validate_tcp_client_information>
+```
+
+## print_pretty_type_names {#print_pretty_type_names}
+
+Allows to print deep-nested type names in a pretty way with indents in `DESCRIBE` query and in `toTypeName()` function.
+
+Example:
+
+```sql
+CREATE TABLE test (a Tuple(b String, c Tuple(d Nullable(UInt64), e Array(UInt32), f Array(Tuple(g String, h Map(String, Array(Tuple(i String, j UInt64))))), k Date), l Nullable(String))) ENGINE=Memory;
+DESCRIBE TABLE test FORMAT TSVRaw SETTINGS print_pretty_type_names=1;
+```
+
+```
+a	Tuple(
+    b String,
+    c Tuple(
+        d Nullable(UInt64),
+        e Array(UInt32),
+        f Array(Tuple(
+            g String,
+            h Map(
+                String,
+                Array(Tuple(
+                    i String,
+                    j UInt64
+                ))
+            )
+        )),
+        k Date
+    ),
+    l Nullable(String)
+)
+```
+
+## allow_experimental_statistic {#allow_experimental_statistic}
+
+Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md#column-statistics).
+
+## allow_statistic_optimize {#allow_statistic_optimize}
+
+Allows using statistic to optimize the order of [prewhere conditions](../../sql-reference/statements/select/prewhere.md).
+
+## analyze_index_with_space_filling_curves
+
+If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
+
+## query_plan_enable_optimizations {#query_plan_enable_optimizations}
+
+Toggles query optimization at the query plan level.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable all optimizations at the query plan level
+- 1 - Enable optimizations at the query plan level (but individual optimizations may still be disabled via their individual settings)
+
+Default value: `1`.
+
+## query_plan_max_optimizations_to_apply
+
+Limits the total number of optimizations applied to query plan, see setting [query_plan_enable_optimizations](#query_plan_enable_optimizations).
+Useful to avoid long optimization times for complex queries.
+If the actual number of optimizations exceeds this setting, an exception is thrown.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+Default value: '10000'
+
+## query_plan_lift_up_array_join
+
+Toggles a query-plan-level optimization which moves ARRAY JOINs up in the execution plan.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_push_down_limit
+
+Toggles a query-plan-level optimization which moves LIMITs down in the execution plan.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_split_filter
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Toggles a query-plan-level optimization which splits filters into expressions.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_merge_expressions
+
+Toggles a query-plan-level optimization which merges consecutive filters.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_filter_push_down
+
+Toggles a query-plan-level optimization which moves filters down in the execution plan.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_execute_functions_after_sorting
+
+Toggles a query-plan-level optimization which moves expressions after sorting steps.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_reuse_storage_ordering_for_window_functions
+
+Toggles a query-plan-level optimization which uses storage sorting when sorting for window functions.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_lift_up_union
+
+Toggles a query-plan-level optimization which moves larger subtrees of the query plan into union to enable further optimizations.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_distinct_in_order
+
+Toggles the distinct in-order optimization query-plan-level optimization.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_read_in_order
+
+Toggles the read in-order optimization query-plan-level optimization.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_aggregation_in_order
+
+Toggles the aggregation in-order query-plan-level optimization.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `0`.
+
+## query_plan_remove_redundant_sorting
+
+Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_remove_redundant_distinct
+
+Toggles a query-plan-level optimization which removes redundant DISTINCT steps.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## dictionary_use_async_executor {#dictionary_use_async_executor}
+
+Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.
+
+You may specify it in `SETTINGS` section of dictionary definition:
+
+```sql
+CREATE DICTIONARY t1_dict ( key String, attr UInt64 )
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(QUERY `SELECT key, attr FROM t1 GROUP BY key`))
+LIFETIME(MIN 0 MAX 3600)
+LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
+SETTINGS(dictionary_use_async_executor=1, max_threads=8);
+```
+
+## storage_metadata_write_full_object_key {#storage_metadata_write_full_object_key}
+
+When set to `true` the metadata files are written with `VERSION_FULL_OBJECT_KEY` format version. With that format full object storage key names are written to the metadata files.
+When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section. 
+
+Default value: `false`.
+
+## s3_use_adaptive_timeouts {#s3_use_adaptive_timeouts}
+
+When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
+When set to `false` than all attempts are made with identical timeouts.
+
+Default value: `true`.
+
+## max_partition_size_to_drop
+
+Restriction on dropping partitions in query time.
+
+Default value: 50 GB.
+The value 0 means that you can drop partitions without any restrictions.
+
+:::note
+This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-partition-size-to-drop)
+:::
+
+## max_table_size_to_drop
+
+Restriction on deleting tables in query time.
+
+Default value: 50 GB.
+The value 0 means that you can delete all tables without any restrictions.
+
+:::note
+This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop)
+:::
+
+## iceberg_engine_ignore_schema_evolution {#iceberg_engine_ignore_schema_evolution}
+
+Allow to ignore schema evolution in Iceberg table engine and read all data using schema specified by the user on table creation or latest schema parsed from metadata on table creation.
+
+:::note
+Enabling this setting can lead to incorrect result as in case of evolved schema all data files will be read using the same schema.
+:::
+
+Default value: 'false'.

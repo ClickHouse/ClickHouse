@@ -26,17 +26,19 @@
 #include <IO/S3/Client.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Storages/StorageS3Settings.h>
+#include <Poco/Util/ServerApplication.h>
 
 #include "TestPocoHTTPServer.h"
 
+/*
+ * When all tests are executed together, `Context::getGlobalContextInstance()` is not null. Global context is used by
+ * ProxyResolvers to get proxy configuration (used by S3 clients). If global context does not have a valid ConfigRef, it relies on
+ * Poco::Util::Application::instance() to grab the config. However, at this point, the application is not yet initialized and
+ * `Poco::Util::Application::instance()` returns nullptr. This causes the test to fail. To fix this, we create a dummy application that takes
+ * care of initialization.
+ * */
+[[maybe_unused]] static Poco::Util::ServerApplication app;
 
-class NoRetryStrategy : public Aws::Client::StandardRetryStrategy
-{
-    bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> &, long /* NOLINT */) const override { return false; }
-
-public:
-    ~NoRetryStrategy() override = default;
-};
 
 String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
 {
@@ -92,8 +94,9 @@ void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::
         client,
         uri.bucket,
         uri.key,
-        DBMS_DEFAULT_BUFFER_SIZE,
-        request_settings
+        DB::DBMS_DEFAULT_BUFFER_SIZE,
+        request_settings,
+        {}
     );
 
     write_buffer.write('\0'); // doesn't matter what we write here, just needs to be something
@@ -104,6 +107,7 @@ using RequestFn = std::function<void(std::shared_ptr<const DB::S3::Client>, cons
 
 void testServerSideEncryption(
     RequestFn do_request,
+    bool disable_checksum,
     String server_side_encryption_customer_key_base64,
     DB::S3::ServerSideEncryptionKMSConfig sse_kms_config,
     String expected_headers)
@@ -112,6 +116,7 @@ void testServerSideEncryption(
 
     DB::RemoteHostFilter remote_host_filter;
     unsigned int s3_max_redirects = 100;
+    unsigned int s3_retry_attempts = 0;
     DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt");
     String access_key_id = "ACCESS_KEY_ID";
     String secret_access_key = "SECRET_ACCESS_KEY";
@@ -121,22 +126,29 @@ void testServerSideEncryption(
         region,
         remote_host_filter,
         s3_max_redirects,
+        s3_retry_attempts,
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         /* get_request_throttler = */ {},
-        /* put_request_throttler = */ {}
+        /* put_request_throttler = */ {},
+        uri.uri.getScheme()
     );
 
     client_configuration.endpointOverride = uri.endpoint;
-    client_configuration.retryStrategy = std::make_shared<NoRetryStrategy>();
 
     DB::HTTPHeaderEntries headers;
     bool use_environment_credentials = false;
     bool use_insecure_imds_request = false;
 
+    DB::S3::ClientSettings client_settings{
+        .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = disable_checksum,
+        .gcs_issue_compose_request = false,
+    };
+
     std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
         client_configuration,
-        uri.is_virtual_hosted_style,
+        client_settings,
         access_key_id,
         secret_access_key,
         server_side_encryption_customer_key_base64,
@@ -161,16 +173,21 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersRead)
     /// See https://github.com/ClickHouse/ClickHouse/pull/19748
     testServerSideEncryption(
         doReadRequest,
+        /* disable_checksum= */ false,
         "Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=",
         {},
         "authorization: ... SignedHeaders="
         "amz-sdk-invocation-id;"
         "amz-sdk-request;"
+        "clickhouse-request;"
         "content-type;"
         "host;"
         "x-amz-api-version;"
         "x-amz-content-sha256;"
-        "x-amz-date, ...\n"
+        "x-amz-date;"
+        "x-amz-server-side-encryption-customer-algorithm;"
+        "x-amz-server-side-encryption-customer-key;"
+        "x-amz-server-side-encryption-customer-key-md5, ...\n"
         "x-amz-server-side-encryption-customer-algorithm: AES256\n"
         "x-amz-server-side-encryption-customer-key: Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=\n"
         "x-amz-server-side-encryption-customer-key-md5: fMNuOw6OLU5GG2vc6RTA+g==\n");
@@ -181,6 +198,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersWrite)
     /// See https://github.com/ClickHouse/ClickHouse/pull/19748
     testServerSideEncryption(
         doWriteRequest,
+        /* disable_checksum= */ false,
         "Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=",
         {},
         "authorization: ... SignedHeaders="
@@ -191,7 +209,34 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersWrite)
         "content-type;"
         "host;"
         "x-amz-content-sha256;"
-        "x-amz-date, ...\n"
+        "x-amz-date;"
+        "x-amz-server-side-encryption-customer-algorithm;"
+        "x-amz-server-side-encryption-customer-key;"
+        "x-amz-server-side-encryption-customer-key-md5, ...\n"
+        "x-amz-server-side-encryption-customer-algorithm: AES256\n"
+        "x-amz-server-side-encryption-customer-key: Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=\n"
+        "x-amz-server-side-encryption-customer-key-md5: fMNuOw6OLU5GG2vc6RTA+g==\n");
+}
+
+TEST(IOTestAwsS3Client, AppendExtraSSECHeadersWriteDisableChecksum)
+{
+    /// See https://github.com/ClickHouse/ClickHouse/pull/19748
+    testServerSideEncryption(
+        doWriteRequest,
+        /* disable_checksum= */ true,
+        "Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=",
+        {},
+        "authorization: ... SignedHeaders="
+        "amz-sdk-invocation-id;"
+        "amz-sdk-request;"
+        "content-length;"
+        "content-type;"
+        "host;"
+        "x-amz-content-sha256;"
+        "x-amz-date;"
+        "x-amz-server-side-encryption-customer-algorithm;"
+        "x-amz-server-side-encryption-customer-key;"
+        "x-amz-server-side-encryption-customer-key-md5, ...\n"
         "x-amz-server-side-encryption-customer-algorithm: AES256\n"
         "x-amz-server-side-encryption-customer-key: Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=\n"
         "x-amz-server-side-encryption-customer-key-md5: fMNuOw6OLU5GG2vc6RTA+g==\n");
@@ -206,11 +251,13 @@ TEST(IOTestAwsS3Client, AppendExtraSSEKMSHeadersRead)
     // KMS headers shouldn't be set on a read request
     testServerSideEncryption(
         doReadRequest,
+        /* disable_checksum= */ false,
         "",
         sse_kms_config,
         "authorization: ... SignedHeaders="
         "amz-sdk-invocation-id;"
         "amz-sdk-request;"
+        "clickhouse-request;"
         "content-type;"
         "host;"
         "x-amz-api-version;"
@@ -226,6 +273,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSEKMSHeadersWrite)
     sse_kms_config.bucket_key_enabled = true;
     testServerSideEncryption(
         doWriteRequest,
+        /* disable_checksum= */ false,
         "",
         sse_kms_config,
         "authorization: ... SignedHeaders="

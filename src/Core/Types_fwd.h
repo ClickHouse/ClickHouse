@@ -27,16 +27,10 @@ namespace DB
 
 using UUID = StrongTypedef<UInt128, struct UUIDTag>;
 
-using IPv4 = StrongTypedef<UInt32, struct IPv4Tag>;
-
+struct IPv4;
 struct IPv6;
 
 struct Null;
-
-using UInt128 = ::UInt128;
-using UInt256 = ::UInt256;
-using Int128 = ::Int128;
-using Int256 = ::Int256;
 
 enum class TypeIndex;
 

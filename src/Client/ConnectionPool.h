@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/PoolBase.h>
+#include <Common/Priority.h>
 #include <Client/Connection.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
@@ -29,12 +30,13 @@ public:
     virtual ~IConnectionPool() = default;
 
     /// Selects the connection to work.
+    virtual Entry get(const ConnectionTimeouts & timeouts) = 0;
     /// If force_connected is false, the client must manually ensure that returned connection is good.
     virtual Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
-                      const Settings * settings = nullptr,
+                      const Settings & settings,
                       bool force_connected = true) = 0;
 
-    virtual Int64 getPriority() const { return 1; }
+    virtual Priority getPriority() const { return Priority{1}; }
 };
 
 using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
@@ -60,9 +62,9 @@ public:
             const String & client_name_,
             Protocol::Compression compression_,
             Protocol::Secure secure_,
-            Int64 priority_ = 1)
+            Priority priority_ = Priority{1})
        : Base(max_connections_,
-        &Poco::Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
+        getLogger("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
         host(host_),
         port(port_),
         default_database(default_database_),
@@ -78,15 +80,18 @@ public:
     {
     }
 
+    Entry get(const ConnectionTimeouts & timeouts) override
+    {
+        Entry entry = Base::get(-1);
+        entry->forceConnected(timeouts);
+        return entry;
+    }
+
     Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
-              const Settings * settings = nullptr,
+              const Settings & settings,
               bool force_connected = true) override
     {
-        Entry entry;
-        if (settings)
-            entry = Base::get(settings->connection_pool_max_wait_ms.totalMilliseconds());
-        else
-            entry = Base::get(-1);
+        Entry entry = Base::get(settings.connection_pool_max_wait_ms.totalMilliseconds());
 
         if (force_connected)
             entry->forceConnected(timeouts);
@@ -103,7 +108,7 @@ public:
         return host + ":" + toString(port);
     }
 
-    Int64 getPriority() const override
+    Priority getPriority() const override
     {
         return priority;
     }
@@ -114,7 +119,7 @@ protected:
     {
         return std::make_shared<Connection>(
             host, port,
-            default_database, user, password, quota_key,
+            default_database, user, password, ssh::SSHKey(), quota_key,
             cluster, cluster_secret,
             client_name, compression, secure);
     }
@@ -134,7 +139,7 @@ private:
     String client_name;
     Protocol::Compression compression; /// Whether to compress data when interacting with the server.
     Protocol::Secure secure;           /// Whether to encrypt data when interacting with the server.
-    Int64 priority;                    /// priority from <remote_servers>
+    Priority priority;                 /// priority from <remote_servers>
 };
 
 /**
@@ -157,7 +162,7 @@ public:
         String client_name;
         Protocol::Compression compression;
         Protocol::Secure secure;
-        Int64 priority;
+        Priority priority;
     };
 
     struct KeyHash
@@ -180,7 +185,7 @@ public:
         String client_name,
         Protocol::Compression compression,
         Protocol::Secure secure,
-        Int64 priority);
+        Priority priority);
 private:
     mutable std::mutex mutex;
     using ConnectionPoolWeakPtr = std::weak_ptr<IConnectionPool>;

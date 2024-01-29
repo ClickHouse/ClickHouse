@@ -5,17 +5,19 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 
 #include <magic_enum.hpp>
-#include <base/EnumReflection.h>
-
-namespace ErrorCodes
-{
-}
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
 
 [[nodiscard]] static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                                  Expected & expected, bool require_table, bool allow_string_literal)
@@ -282,7 +284,19 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 if (ParserKeyword{"STRICT"}.ignore(pos, expected))
                     res->sync_replica_mode = SyncReplicaMode::STRICT;
                 else if (ParserKeyword{"LIGHTWEIGHT"}.ignore(pos, expected))
+                {
                     res->sync_replica_mode = SyncReplicaMode::LIGHTWEIGHT;
+                    if (ParserKeyword{"FROM"}.ignore(pos, expected))
+                    {
+                        do
+                        {
+                            ASTPtr replica_ast;
+                            if (!ParserStringLiteral{}.parse(pos, replica_ast, expected))
+                                return false;
+                            res->src_replicas.insert(replica_ast->as<ASTLiteral &>().value.safeGet<String>());
+                        } while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+                    }
+                }
                 else if (ParserKeyword{"PULL"}.ignore(pos, expected))
                     res->sync_replica_mode = SyncReplicaMode::PULL;
             }
@@ -379,10 +393,48 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATED_SENDS:
         case Type::STOP_REPLICATION_QUEUES:
         case Type::START_REPLICATION_QUEUES:
+        case Type::STOP_PULLING_REPLICATION_LOG:
+        case Type::START_PULLING_REPLICATION_LOG:
+        case Type::STOP_CLEANUP:
+        case Type::START_CLEANUP:
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
             break;
+
+        case Type::REFRESH_VIEW:
+        case Type::START_VIEW:
+        case Type::STOP_VIEW:
+        case Type::CANCEL_VIEW:
+            if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
+                return false;
+            break;
+
+        case Type::START_VIEWS:
+        case Type::STOP_VIEWS:
+            break;
+
+        case Type::TEST_VIEW:
+        {
+            if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
+                return false;
+
+            if (ParserKeyword{"UNSET FAKE TIME"}.ignore(pos, expected))
+                break;
+
+            if (!ParserKeyword{"SET FAKE TIME"}.ignore(pos, expected))
+                return false;
+            ASTPtr ast;
+            if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                return false;
+            String time_str = ast->as<ASTLiteral &>().value.get<const String &>();
+            ReadBufferFromString buf(time_str);
+            time_t time;
+            readDateTimeText(time, buf);
+            res->fake_time_for_view = Int64(time);
+
+            break;
+        }
 
         case Type::SUSPEND:
         {
@@ -405,10 +457,32 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ParserLiteral path_parser;
             ASTPtr ast;
             if (path_parser.parse(pos, ast, expected))
+            {
+                res->filesystem_cache_name = ast->as<ASTLiteral>()->value.safeGet<String>();
+                if (ParserKeyword{"KEY"}.ignore(pos, expected) && ParserIdentifier().parse(pos, ast, expected))
+                {
+                    res->key_to_drop = ast->as<ASTIdentifier>()->name();
+                    if (ParserKeyword{"OFFSET"}.ignore(pos, expected) && ParserLiteral().parse(pos, ast, expected))
+                        res->offset_to_drop = ast->as<ASTLiteral>()->value.safeGet<UInt64>();
+                }
+            }
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+            break;
+        }
+        case Type::SYNC_FILESYSTEM_CACHE:
+        {
+            ParserLiteral path_parser;
+            ASTPtr ast;
+            if (path_parser.parse(pos, ast, expected))
                 res->filesystem_cache_name = ast->as<ASTLiteral>()->value.safeGet<String>();
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             break;
+        }
+        case Type::DROP_DISK_METADATA_CACHE:
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
         }
         case Type::DROP_SCHEMA_CACHE:
         {
@@ -422,12 +496,24 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     res->schema_cache_storage = "HDFS";
                 else if (ParserKeyword{"URL"}.ignore(pos, expected))
                     res->schema_cache_storage = "URL";
+                else if (ParserKeyword{"AZURE"}.ignore(pos, expected))
+                    res->schema_cache_storage = "AZURE";
                 else
                     return false;
             }
             break;
         }
-
+        case Type::DROP_FORMAT_SCHEMA_CACHE:
+        {
+            if (ParserKeyword{"FOR"}.ignore(pos, expected))
+            {
+                if (ParserKeyword{"Protobuf"}.ignore(pos, expected))
+                    res->schema_cache_format = "Protobuf";
+                else
+                    return false;
+            }
+            break;
+        }
         case Type::UNFREEZE:
         {
             ASTPtr ast;
@@ -439,6 +525,81 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 return false;
             }
+            break;
+        }
+
+        case Type::START_LISTEN:
+        case Type::STOP_LISTEN:
+        {
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+
+            auto parse_server_type = [&](ServerType::Type & type, std::string & custom_name) -> bool
+            {
+                type = ServerType::Type::END;
+                custom_name = "";
+
+                for (const auto & cur_type : magic_enum::enum_values<ServerType::Type>())
+                {
+                    if (ParserKeyword{ServerType::serverTypeToString(cur_type)}.ignore(pos, expected))
+                    {
+                        type = cur_type;
+                        break;
+                    }
+                }
+
+                if (type == ServerType::Type::END)
+                    return false;
+
+                if (type == ServerType::CUSTOM)
+                {
+                    ASTPtr ast;
+
+                    if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                        return false;
+
+                    custom_name = ast->as<ASTLiteral &>().value.get<const String &>();
+                }
+
+                return true;
+            };
+
+            ServerType::Type base_type;
+            std::string base_custom_name;
+
+            ServerType::Types exclude_type;
+            ServerType::CustomNames exclude_custom_names;
+
+            if (!parse_server_type(base_type, base_custom_name))
+                return false;
+
+            if (ParserKeyword{"EXCEPT"}.ignore(pos, expected))
+            {
+                if (base_type != ServerType::Type::QUERIES_ALL &&
+                    base_type != ServerType::Type::QUERIES_DEFAULT &&
+                    base_type != ServerType::Type::QUERIES_CUSTOM)
+                    return false;
+
+                ServerType::Type current_type;
+                std::string current_custom_name;
+
+                while (true)
+                {
+                    if (!exclude_type.empty() && !ParserToken(TokenType::Comma).ignore(pos, expected))
+                        break;
+
+                    if (!parse_server_type(current_type, current_custom_name))
+                        return false;
+
+                    exclude_type.insert(current_type);
+
+                    if (current_type == ServerType::Type::CUSTOM)
+                        exclude_custom_names.insert(current_custom_name);
+                }
+            }
+
+            res->server_type = ServerType(base_type, base_custom_name, exclude_type, exclude_custom_names);
+
             break;
         }
 

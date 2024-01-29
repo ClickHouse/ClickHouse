@@ -18,8 +18,8 @@ empty([x])
 
 Массив считается пустым, если он не содержит ни одного элемента.
 
-:::note "Примечание"
-    Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT empty(arr) FROM TABLE` преобразуется к запросу `SELECT arr.size0 = 0 FROM TABLE`.
+:::note Примечание
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT empty(arr) FROM TABLE` преобразуется к запросу `SELECT arr.size0 = 0 FROM TABLE`.
 :::
 
 Функция также поддерживает работу с типами [String](string-functions.md#empty) и [UUID](uuid-functions.md#empty).
@@ -62,8 +62,8 @@ notEmpty([x])
 
 Массив считается непустым, если он содержит хотя бы один элемент.
 
-:::note "Примечание"
-    Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT notEmpty(arr) FROM table` преобразуется к запросу `SELECT arr.size0 != 0 FROM TABLE`.
+:::note Примечание
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT notEmpty(arr) FROM table` преобразуется к запросу `SELECT arr.size0 != 0 FROM TABLE`.
 :::
 
 Функция также поддерживает работу с типами [String](string-functions.md#notempty) и [UUID](uuid-functions.md#notempty).
@@ -144,6 +144,8 @@ range([start, ] end [, step])
 -   Не поддерживаются отрицательные значения аргументов: `start`, `end`, `step` имеют тип `UInt`.
 
 -   Если в результате запроса создаются массивы суммарной длиной больше, чем количество элементов, указанное настройкой [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block), то генерируется исключение.
+
+-   Возвращает Null если любой аргумент Nullable(Nothing) типа. Генерируется исключение если любой аргумент Null (Nullable(T) тип).
 
 **Примеры**
 
@@ -692,8 +694,8 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 └─────────┘
 ```
 
-:::note "Примечание"
-    Для улучшения эффективности сортировки применяется [преобразование Шварца](https://ru.wikipedia.org/wiki/%D0%9F%D1%80%D0%B5%D0%BE%D0%B1%D1%80%D0%B0%D0%B7%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5_%D0%A8%D0%B2%D0%B0%D1%80%D1%86%D0%B0).
+:::note Примечание
+Для улучшения эффективности сортировки применяется [преобразование Шварца](https://ru.wikipedia.org/wiki/%D0%9F%D1%80%D0%B5%D0%BE%D0%B1%D1%80%D0%B0%D0%B7%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5_%D0%A8%D0%B2%D0%B0%D1%80%D1%86%D0%B0).
 :::
 
 ## arrayPartialSort(\[func,\] limit, arr, …) {#array_functions-sort}
@@ -1700,4 +1702,328 @@ SELECT arrayProduct([toDecimal64(1,8), toDecimal64(2,8), toDecimal64(3,8)]) as r
 ┌─res─┬─toTypeName(arrayProduct(array(toDecimal64(1, 8), toDecimal64(2, 8), toDecimal64(3, 8))))─┐
 │ 6   │ Float64                                                                                  │
 └─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## arrayRotateLeft
+
+Поворачивает [массив](../../sql-reference/data-types/array.md) влево на заданное число элементов.
+Если количество элементов отрицательно, то массив поворачивается вправо.
+
+**Синтаксис**
+
+``` sql
+arrayRotateLeft(arr, n)
+```
+
+**Аргументы**
+
+- `arr` — [Массив](../../sql-reference/data-types/array.md).
+- `n` — Число элементов, на которое нужно повернуть массив.
+
+**Возвращаемое значение**
+
+- Массив, повернутый на заданное число элементов влево.
+
+Тип: [Массив](../../sql-reference/data-types/array.md).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT arrayRotateLeft([1,2,3,4,5,6], 2) as res;
+```
+
+Результат:
+
+``` text
+┌─res───────────┐
+│ [3,4,5,6,1,2] │
+└───────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arrayRotateLeft([1,2,3,4,5,6], -2) as res;
+```
+
+Результат:
+
+``` text
+┌─res───────────┐
+│ [5,6,1,2,3,4] │
+└───────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arrayRotateLeft(['a','b','c','d','e'], 3) as res;
+```
+
+Результат:
+
+``` text
+┌─res───────────────────┐
+│ ['d','e','a','b','c'] │
+└───────────────────────┘
+```
+
+## arrayRotateRight
+
+Поворачивает [массив](../../sql-reference/data-types/array.md) вправо на заданное число элементов.
+Если количество элементов отрицательно, то массив поворачивается влево.
+
+**Синтаксис**
+
+``` sql
+arrayRotateRight(arr, n)
+```
+
+**Аргументы**
+
+- `arr` — [Массив](../../sql-reference/data-types/array.md).
+- `n` — Число элементов, на которое нужно повернуть массив.
+
+**Возвращаемое значение**
+
+- Массив, повернутый на заданное число элементов вправо.
+
+Тип: [Массив](../../sql-reference/data-types/array.md).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT arrayRotateRight([1,2,3,4,5,6], 2) as res;
+```
+
+Результат:
+
+``` text
+┌─res───────────┐
+│ [5,6,1,2,3,4] │
+└───────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arrayRotateRight([1,2,3,4,5,6], -2) as res;
+```
+
+Результат:
+
+``` text
+┌─res───────────┐
+│ [3,4,5,6,1,2] │
+└───────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arrayRotateRight(['a','b','c','d','e'], 3) as res;
+```
+
+Результат:
+
+``` text
+┌─res───────────────────┐
+│ ['c','d','e','a','b'] │
+└───────────────────────┘
+```
+
+## arrayShiftLeft
+
+Сдвигает [массив](../../sql-reference/data-types/array.md) влево на заданное число элементов.
+Новые элементы заполняются переданным аргументом или значением по умолчанию для типа элементов массива.
+Если количество элементов отрицательно, то массив сдвигается вправо.
+
+**Синтаксис**
+
+``` sql
+arrayShiftLeft(arr, n[, default])
+```
+
+**Аргументы**
+
+- `arr` — [Массив](../../sql-reference/data-types/array.md).
+- `n` — Число элементов, на которое нужно сдвинуть массив.
+- `default` — Опциональный. Значение по умолчанию для новых элементов.
+
+**Возвращаемое значение**
+
+- Массив, сдвинутый на заданное число элементов влево.
+
+Тип: [Массив](../../sql-reference/data-types/array.md).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT arrayShiftLeft([1,2,3,4,5,6], 2) as res;
+```
+
+Результат:
+
+``` text
+┌─res───────────┐
+│ [3,4,5,6,0,0] │
+└───────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arrayShiftLeft([1,2,3,4,5,6], -2) as res;
+```
+
+Результат:
+
+``` text
+┌─res───────────┐
+│ [0,0,1,2,3,4] │
+└───────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arrayShiftLeft([1,2,3,4,5,6], 2, 42) as res;
+```
+
+Результат:
+
+``` text
+┌─res─────────────┐
+│ [3,4,5,6,42,42] │
+└─────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arrayShiftLeft(['a','b','c','d','e','f'], 3, 'foo') as res;
+```
+
+Результат:
+
+``` text
+┌─res─────────────────────────────┐
+│ ['d','e','f','foo','foo','foo'] │
+└─────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arrayShiftLeft([1,2,3,4,5,6] :: Array(UInt16), 2, 4242) as res;
+```
+
+Результат:
+
+``` text
+┌─res─────────────────┐
+│ [3,4,5,6,4242,4242] │
+└─────────────────────┘
+```
+
+## arrayShiftRight
+
+Сдвигает [массив](../../sql-reference/data-types/array.md) вправо на заданное число элементов.
+Новые элементы заполняются переданным аргументом или значением по умолчанию для типа элементов массива.
+Если количество элементов отрицательно, то массив сдвигается влево.
+
+**Синтаксис**
+
+``` sql
+arrayShiftRight(arr, n[, default])
+```
+
+**Аргументы**
+
+- `arr` — [Массив](../../sql-reference/data-types/array.md).
+- `n` — Число элементов, на которое нужно сдвинуть массив.
+- `default` — Опциональный. Значение по умолчанию для новых элементов.
+
+**Возвращаемое значение**
+
+- Массив, сдвинутый на заданное число элементов вправо.
+
+Тип: [Массив](../../sql-reference/data-types/array.md).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT arrayShiftRight([1,2,3,4,5,6], 2) as res;
+```
+
+Результат:
+
+``` text
+┌─res───────────┐
+│ [0,0,1,2,3,4] │
+└───────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arrayShiftRight([1,2,3,4,5,6], -2) as res;
+```
+
+Результат:
+
+``` text
+┌─res───────────┐
+│ [3,4,5,6,0,0] │
+└───────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arrayShiftRight([1,2,3,4,5,6], 2, 42) as res;
+```
+
+Результат:
+
+``` text
+┌─res─────────────┐
+│ [42,42,1,2,3,4] │
+└─────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arrayShiftRight(['a','b','c','d','e','f'], 3, 'foo') as res;
+```
+
+Результат:
+
+``` text
+┌─res─────────────────────────────┐
+│ ['foo','foo','foo','a','b','c'] │
+└─────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arrayShiftRight([1,2,3,4,5,6] :: Array(UInt16), 2, 4242) as res;
+```
+
+Результат:
+
+``` text
+┌─res─────────────────┐
+│ [4242,4242,1,2,3,4] │
+└─────────────────────┘
 ```

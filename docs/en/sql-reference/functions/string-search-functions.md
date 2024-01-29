@@ -207,7 +207,7 @@ Functions `multiSearchFirstIndexCaseInsensitive`, `multiSearchFirstIndexUTF8` an
 multiSearchFirstIndex(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, needle<sub>n</sub>\])
 ```
 
-## multiSearchAny
+## multiSearchAny {#multisearchany}
 
 Returns 1, if at least one string needle<sub>i</sub> matches the string `haystack` and 0 otherwise.
 
@@ -219,7 +219,7 @@ Functions `multiSearchAnyCaseInsensitive`, `multiSearchAnyUTF8` and `multiSearch
 multiSearchAny(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, needle<sub>n</sub>\])
 ```
 
-## match
+## match {#match}
 
 Returns whether string `haystack` matches the regular expression `pattern` in [re2 regular syntax](https://github.com/google/re2/wiki/Syntax).
 
@@ -414,7 +414,7 @@ Result:
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## like
+## like {#like}
 
 Returns whether string `haystack` matches the LIKE expression `pattern`.
 
@@ -445,7 +445,7 @@ like(haystack, pattern)
 
 Alias: `haystack LIKE pattern` (operator)
 
-## notLike
+## notLike {#notlike}
 
 Like `like` but negates the result.
 
@@ -631,3 +631,53 @@ Result:
 │ 100                                          │ 200                                          │ 100-200                                      │ 100                                       │
 └──────────────────────────────────────────────┴──────────────────────────────────────────────┴──────────────────────────────────────────────┴───────────────────────────────────────────┘
 ```
+
+## hasSubsequence
+
+Returns 1 if needle is a subsequence of haystack, or 0 otherwise.
+A subsequence of a string is a sequence that can be derived from the given string by deleting zero or more elements without changing the order of the remaining elements.
+
+
+**Syntax**
+
+``` sql
+hasSubsequence(haystack, needle)
+```
+
+**Arguments**
+
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Subsequence to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+
+**Returned values**
+
+- 1, if needle is a subsequence of haystack.
+- 0, otherwise.
+
+Type: `UInt8`.
+
+**Examples**
+
+``` sql
+SELECT hasSubsequence('garbage', 'arg') ;
+```
+
+Result:
+
+``` text
+┌─hasSubsequence('garbage', 'arg')─┐
+│                                1 │
+└──────────────────────────────────┘
+```
+
+## hasSubsequenceCaseInsensitive
+
+Like [hasSubsequence](#hasSubsequence) but searches case-insensitively.
+
+## hasSubsequenceUTF8
+
+Like [hasSubsequence](#hasSubsequence) but assumes `haystack` and `needle` are UTF-8 encoded strings.
+
+## hasSubsequenceCaseInsensitiveUTF8
+
+Like [hasSubsequenceUTF8](#hasSubsequenceUTF8) but searches case-insensitively.

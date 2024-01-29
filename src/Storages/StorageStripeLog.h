@@ -49,11 +49,12 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    CheckResults checkData(const ASTPtr & query, ContextPtr ocal_context) override;
+    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override;
+    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
@@ -93,6 +94,20 @@ private:
     const DiskPtr disk;
     String table_path;
 
+    struct DataValidationTasks : public IStorage::DataValidationTasksBase
+    {
+        DataValidationTasks(FileChecker::DataValidationTasksPtr file_checker_tasks_, ReadLock && lock_)
+            : file_checker_tasks(std::move(file_checker_tasks_)), lock(std::move(lock_))
+        {}
+
+        size_t size() const override { return file_checker_tasks->size(); }
+
+        FileChecker::DataValidationTasksPtr file_checker_tasks;
+
+        /// Lock to prevent table modification while checking
+        ReadLock lock;
+    };
+
     String data_file_path;
     String index_file_path;
     FileChecker file_checker;
@@ -108,7 +123,7 @@ private:
 
     mutable std::shared_timed_mutex rwlock;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

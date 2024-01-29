@@ -2,7 +2,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "Core/ProtocolDefines.h"
+#include <Core/ProtocolDefines.h>
+#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
@@ -23,8 +24,15 @@ MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & part_name, Merg
         throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {} for format version: {}", part_name, format_version);
 }
 
-void MergeTreePartInfo::validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version)
+void MergeTreePartInfo::validatePartitionID(const ASTPtr & partition_id_ast, MergeTreeDataFormatVersion format_version)
 {
+    std::string partition_id;
+    if (auto * literal = partition_id_ast->as<ASTLiteral>(); literal != nullptr && literal->value.getType() == Field::Types::String)
+        partition_id = literal->value.safeGet<String>();
+
+    else
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition id must be string literal");
+
     if (partition_id.empty())
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition id is empty");
 
@@ -148,7 +156,7 @@ void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & part_name, D
         throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {}", part_name);
     }
 
-    const auto & date_lut = DateLUT::instance();
+    const auto & date_lut = DateLUT::serverTimezoneInstance();
 
     min_date = date_lut.YYYYMMDDToDayNum(min_yyyymmdd);
     max_date = date_lut.YYYYMMDDToDayNum(max_yyyymmdd);
@@ -219,7 +227,7 @@ String MergeTreePartInfo::getPartNameV1() const
 
 String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) const
 {
-    const auto & date_lut = DateLUT::instance();
+    const auto & date_lut = DateLUT::serverTimezoneInstance();
 
     /// Directory name for the part has form: `YYYYMMDD_YYYYMMDD_N_N_L`.
 
@@ -292,6 +300,33 @@ void MergeTreePartInfo::deserialize(ReadBuffer & in)
     readBoolText(use_leagcy_max_level, in);
 }
 
+bool MergeTreePartInfo::areAllBlockNumbersCovered(const MergeTreePartInfo & blocks_range, std::vector<MergeTreePartInfo> candidates)
+{
+    if (candidates.empty())
+        return false;
+
+    std::sort(candidates.begin(), candidates.end());
+
+    /// First doesn't cover left border
+    if (candidates[0].min_block != blocks_range.min_block)
+        return false;
+
+    int64_t current_right_block = candidates[0].min_block - 1;
+
+    for (const auto & candidate : candidates)
+    {
+        if (current_right_block + 1 != candidate.min_block)
+            return false;
+
+        current_right_block = candidate.max_block;
+    }
+
+    if (current_right_block != blocks_range.max_block)
+        return false;
+
+    return true;
+}
+
 DetachedPartInfo DetachedPartInfo::parseDetachedPartName(
     const DiskPtr & disk, std::string_view dir_name, MergeTreeDataFormatVersion format_version)
 {
@@ -359,9 +394,10 @@ DetachedPartInfo DetachedPartInfo::parseDetachedPartName(
     return part_info;
 }
 
-void DetachedPartInfo::addParsedPartInfo(const MergeTreePartInfo& part)
+void DetachedPartInfo::addParsedPartInfo(const MergeTreePartInfo & part)
 {
     // Both class are aggregates so it's ok.
     static_cast<MergeTreePartInfo &>(*this) = part;
 }
+
 }

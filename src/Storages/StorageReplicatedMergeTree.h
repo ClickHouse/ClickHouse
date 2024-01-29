@@ -108,11 +108,39 @@ public:
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag,
-        RenamingRestrictions renaming_restrictions_);
+        RenamingRestrictions renaming_restrictions_,
+        bool need_check_structure);
 
     void startup() override;
-    void shutdown() override;
+
+    /// To many shutdown methods....
+    ///
+    /// Partial shutdown called if we loose connection to zookeeper.
+    /// Table can also recover after partial shutdown and continue
+    /// to work. This method can be called regularly.
     void partialShutdown();
+
+    /// These two methods are called during final table shutdown (DROP/DETACH/overall server shutdown).
+    /// The shutdown process is split into two methods to make it more soft and fast. In database shutdown()
+    /// looks like:
+    /// for (table : tables)
+    ///     table->flushAndPrepareForShutdown()
+    ///
+    /// for (table : tables)
+    ///     table->shutdown()
+    ///
+    /// So we stop producing all the parts first for all tables (fast operation). And after we can wait in shutdown()
+    /// for other replicas to download parts.
+    ///
+    /// In flushAndPrepareForShutdown we cancel all part-producing operations:
+    /// merges, fetches, moves and so on. If it wasn't called before shutdown() -- shutdown() will
+    /// call it (defensive programming).
+    void flushAndPrepareForShutdown() override;
+    /// In shutdown we completely terminate table -- remove
+    /// is_active node and interserver handler. Also optionally
+    /// wait until other replicas will download some parts from our replica.
+    void shutdown(bool is_drop) override;
+
     ~StorageReplicatedMergeTree() override;
 
     static String getDefaultZooKeeperPath(const Poco::Util::AbstractConfiguration & config);
@@ -129,16 +157,17 @@ public:
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        ContextPtr context,
+        ContextPtr local_context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context) const override;
+    std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/) override;
 
@@ -171,9 +200,7 @@ public:
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    bool supportsIndexForIn() const override { return true; }
-
-    void checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
@@ -181,7 +208,7 @@ public:
 
     /// Wait till replication queue's current last entry is processed or till size becomes 0
     /// If timeout is exceeded returns false
-    bool waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode);
+    bool waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode, std::unordered_set<String> source_replicas);
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
     void getStatus(ReplicatedTableStatus & res, bool with_zk_fields = true);
@@ -202,7 +229,8 @@ public:
     /// Add a part to the queue of parts whose data you want to check in the background thread.
     void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0);
 
-    CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
+    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override;
+    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     /// Checks ability to use granularity
     bool canUseAdaptiveGranularity() const override;
@@ -227,13 +255,13 @@ public:
     /** Remove a specific replica from zookeeper.
      */
     static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
-                            Poco::Logger * logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
+                            LoggerPtr logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
 
-    void dropReplica(const String & drop_zookeeper_path, const String & drop_replica, Poco::Logger * logger);
+    void dropReplica(const String & drop_zookeeper_path, const String & drop_replica, LoggerPtr logger);
 
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
-                                              const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger);
+                                              const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, LoggerPtr logger);
 
     /// Schedules job to execute in background pool (merge, mutate, drop range and so on)
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
@@ -243,7 +271,7 @@ public:
     bool canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const;
 
     /// Fetch part only when it stored on shared storage like S3
-    MutableDataPartStoragePtr executeFetchShared(const String & source_replica, const String & new_part_name, const DiskPtr & disk, const String & path);
+    MutableDataPartPtr executeFetchShared(const String & source_replica, const String & new_part_name, const DiskPtr & disk, const String & path);
 
     /// Lock part in zookeeper for use shared data in several nodes
     void lockSharedData(const IMergeTreeDataPart & part, bool replace_existing_lock, std::optional<HardlinkedFiles> hardlinked_files) const override;
@@ -280,15 +308,15 @@ public:
         const std::string & disk_type,
         const ZooKeeperWithFaultInjectionPtr & zookeeper_,
         const MergeTreeSettings & settings,
-        Poco::Logger * logger,
+        LoggerPtr logger,
         const String & zookeeper_path_old,
         MergeTreeDataFormatVersion data_format_version);
 
     /// Fetch part only if some replica has it on shared storage like S3
-    MutableDataPartStoragePtr tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
+    MutableDataPartPtr tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
 
     /// Get best replica having this partition on a same type remote disk
-    String getSharedDataReplica(const IMergeTreeDataPart & part, DataSourceType data_source_type) const;
+    String getSharedDataReplica(const IMergeTreeDataPart & part, const DataSourceDescription & data_source_description) const;
 
     inline const String & getReplicaName() const { return replica_name; }
 
@@ -319,7 +347,7 @@ public:
     // Return table id, common for different replicas
     String getTableSharedID() const override;
 
-    size_t getNumberOfUnfinishedMutations() const override;
+    std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
 
     /// Returns the same as getTableSharedID(), but extracts it from a create query.
     static std::optional<String> tryGetTableSharedIDFromCreateQuery(const IAST & create_query, const ContextPtr & global_context);
@@ -339,18 +367,25 @@ public:
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
 
+    void addLastSentPart(const MergeTreePartInfo & info);
+
+    /// Wait required amount of milliseconds to give other replicas a chance to
+    /// download unique parts from our replica
+    using ShutdownDeadline = std::chrono::time_point<std::chrono::system_clock>;
+    void waitForUniquePartsToBeFetchedByOtherReplicas(ShutdownDeadline shutdown_deadline);
+
 private:
     std::atomic_bool are_restoring_replica {false};
 
-    /// Delete old parts from disk and from ZooKeeper.
-    void clearOldPartsAndRemoveFromZK();
+    /// Delete old parts from disk and from ZooKeeper. Returns the number of removed parts
+    size_t clearOldPartsAndRemoveFromZK();
     void clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKeeperPtr zookeeper, DataPartsVector && parts);
 
     template<bool async_insert>
     friend class ReplicatedMergeTreeSinkImpl;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
-    friend class AsyncBlockIDsCache;
+    friend class AsyncBlockIDsCache<StorageReplicatedMergeTree>;
     friend class ReplicatedMergeTreeAlterThread;
     friend class ReplicatedMergeTreeRestartingThread;
     friend class ReplicatedMergeTreeAttachThread;
@@ -392,10 +427,7 @@ private:
     /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
     std::optional<bool> has_metadata_in_zookeeper;
 
-    /// during server restart or attach table process, set since_metadata_err_incr_readonly_metric = true and increase readonly metric if has_metadata_in_zookeeper = false.
-    /// during detach or drop table process, decrease readonly metric if since_metadata_err_incr_readonly_metric = true.
-    /// during restore replica process, set since_metadata_err_incr_readonly_metric = false and decrease readonly metric if since_metadata_err_incr_readonly_metric = true.
-    bool since_metadata_err_incr_readonly_metric = false;
+    bool is_readonly_metric_set = false;
 
     static const String default_zookeeper_name;
     const String zookeeper_name;
@@ -443,20 +475,33 @@ private:
     Poco::Event partial_shutdown_event {false};     /// Poco::Event::EVENT_MANUALRESET
 
     std::atomic<bool> shutdown_called {false};
-    std::atomic<bool> flush_called {false};
+    std::atomic<bool> shutdown_prepared_called {false};
+    std::optional<ShutdownDeadline> shutdown_deadline;
+
+    /// We call flushAndPrepareForShutdown before acquiring DDLGuard, so we can shutdown a table that is being created right now
+    mutable std::mutex flush_and_shutdown_mutex;
+
+
+    mutable std::mutex last_sent_parts_mutex;
+    std::condition_variable last_sent_parts_cv;
+    std::deque<MergeTreePartInfo> last_sent_parts;
 
     /// Threads.
+    ///
 
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
     bool queue_update_in_progress = false;
     BackgroundSchedulePool::TaskHolder queue_updating_task;
 
     BackgroundSchedulePool::TaskHolder mutations_updating_task;
+    Coordination::WatchCallbackPtr mutations_watch_callback;
 
     /// A task that selects parts to merge.
     BackgroundSchedulePool::TaskHolder merge_selecting_task;
     /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
     std::mutex merge_selecting_mutex;
+
+    UInt64 merge_selecting_sleep_ms;
 
     /// A task that marks finished mutations as done.
     BackgroundSchedulePool::TaskHolder mutations_finalizing_task;
@@ -464,7 +509,7 @@ private:
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;
 
-    AsyncBlockIDsCache async_block_ids_cache;
+    AsyncBlockIDsCache<StorageReplicatedMergeTree> async_block_ids_cache;
 
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;
@@ -510,6 +555,32 @@ private:
 
     static std::optional<QueryPipeline> distributedWriteFromClusterStorage(const std::shared_ptr<IStorageCluster> & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context);
 
+    void readLocalImpl(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr local_context,
+        size_t max_block_size,
+        size_t num_streams);
+
+    void readLocalSequentialConsistencyImpl(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr local_context,
+        size_t max_block_size,
+        size_t num_streams);
+
+    void readParallelReplicasImpl(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr local_context,
+        QueryProcessingStage::Enum processed_stage);
+
     template <class Func>
     void foreachActiveParts(Func && func, bool select_sequential_consistency) const;
 
@@ -527,7 +598,7 @@ private:
       */
     void createNewZooKeeperNodes();
 
-    void checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot);
+    bool checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, bool strict_check = true);
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
     /// Must be called under IStorage::lockForAlter() lock.
@@ -542,6 +613,7 @@ private:
       *  But if there are too many, throw an exception just in case - it's probably a configuration error.
       */
     void checkParts(bool skip_sanity_checks);
+    bool checkPartsImpl(bool skip_sanity_checks);
 
     /// Synchronize the list of part uuids which are currently pinned. These should be sent to root query executor
     /// to be used for deduplication.
@@ -553,10 +625,18 @@ private:
       * Adds actions to `ops` that add data about the part into ZooKeeper.
       * Call under lockForShare.
       */
-    void checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper, const DataPartPtr & part,
-                                           Coordination::Requests & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
+    bool checkPartChecksumsAndAddCommitOps(
+        const ZooKeeperWithFaultInjectionPtr & zookeeper,
+        const DataPartPtr & part,
+        Coordination::Requests & ops,
+        String part_name,
+        NameSet & absent_replicas_paths);
 
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
+
+    bool getOpsToCheckPartChecksumsAndCommit(const ZooKeeperWithFaultInjectionPtr & zookeeper, const MutableDataPartPtr & part,
+                                             std::optional<HardlinkedFiles> hardlinked_files, bool replace_zero_copy_lock,
+                                             Coordination::Requests & ops, size_t & num_check_ops);
 
     /// Accepts a PreActive part, atomically checks its checksums with ones on other replicas and commit the part
     DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {}, bool replace_zero_copy_lock=false);
@@ -578,6 +658,10 @@ private:
     /// Remove parts from ZooKeeper, throw exception if unable to do so after max_retries.
     void removePartsFromZooKeeperWithRetries(const Strings & part_names, size_t max_retries = 5);
     void removePartsFromZooKeeperWithRetries(PartsToRemoveFromZooKeeper & parts, size_t max_retries = 5);
+
+    void forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(const String & part_name) override;
+
+    void paranoidCheckForCoveredPartsInZooKeeperOnStart(const Strings & parts_in_zk, const Strings & parts_to_fetch) const;
 
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name, bool storage_init);
@@ -606,7 +690,7 @@ private:
     /// If fetch was not successful, clears entry.actual_new_part_name.
     bool executeFetch(LogEntry & entry, bool need_to_check_missing_part=true);
 
-    bool executeReplaceRange(const LogEntry & entry);
+    bool executeReplaceRange(LogEntry & entry);
     void executeClonePartFromShard(const LogEntry & entry);
 
     /** Updates the queue.
@@ -672,10 +756,6 @@ private:
         int32_t alter_version,
         int32_t log_version);
 
-    /// Exchange parts.
-
-    ConnectionTimeouts getFetchPartHTTPTimeouts(ContextPtr context);
-
     /** Returns an empty string if no one has a part.
       */
     String findReplicaHavingPart(const String & part_name, bool active);
@@ -691,7 +771,9 @@ private:
       * If not found, returns empty string.
       */
     String findReplicaHavingCoveringPart(LogEntry & entry, bool active);
-    String findReplicaHavingCoveringPart(const String & part_name, bool active, String & found_part_name);
+    bool findReplicaHavingCoveringPart(const String & part_name, bool active);
+    String findReplicaHavingCoveringPartImplLowLevel(LogEntry * entry, const String & part_name, String & found_part_name, bool active);
+    static std::set<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, LoggerPtr log_);
 
     /** Download the specified part from the specified replica.
       * If `to_detached`, the part is placed in the `detached` directory.
@@ -712,7 +794,7 @@ private:
       * Used for replace local part on the same s3-shared part in hybrid storage.
       * Returns false if part is already fetching right now.
       */
-    MutableDataPartStoragePtr fetchExistsPart(
+    MutableDataPartPtr fetchExistsPart(
         const String & part_name,
         const StorageMetadataPtr & metadata_snapshot,
         const String & replica_path,
@@ -908,6 +990,34 @@ private:
     bool waitZeroCopyLockToDisappear(const ZeroCopyLock & lock, size_t milliseconds_to_wait) override;
 
     void startupImpl(bool from_attach_thread);
+
+    struct DataValidationTasks : public IStorage::DataValidationTasksBase
+    {
+        explicit DataValidationTasks(DataPartsVector && parts_, std::unique_lock<std::mutex> && parts_check_lock_)
+            : parts_check_lock(std::move(parts_check_lock_)), parts(std::move(parts_)), it(parts.begin())
+        {}
+
+        DataPartPtr next()
+        {
+            std::lock_guard lock(mutex);
+            if (it == parts.end())
+                return nullptr;
+            return *(it++);
+        }
+
+        size_t size() const override
+        {
+            std::lock_guard lock(mutex);
+            return std::distance(it, parts.end());
+        }
+
+        std::unique_lock<std::mutex> parts_check_lock;
+
+        mutable std::mutex mutex;
+        DataPartsVector parts;
+        DataPartsVector::const_iterator it;
+    };
+
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);

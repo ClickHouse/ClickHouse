@@ -8,7 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int UNEXPECTED_END_OF_FILE;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
 
@@ -50,7 +50,7 @@ ParallelReadBuffer::ParallelReadBuffer(
     , file_size(file_size_)
     , range_step(std::max(1ul, range_step_))
 {
-    LOG_TRACE(&Poco::Logger::get("ParallelReadBuffer"), "Parallel reading is used");
+    LOG_TRACE(getLogger("ParallelReadBuffer"), "Parallel reading is used");
 
     try
     {
@@ -125,9 +125,10 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
             if (w->bytes_produced > diff)
             {
                 working_buffer = internal_buffer = Buffer(
-                    w->segment.data() + diff, w->segment.data() + w->bytes_produced);
+                    w->segment.data(), w->segment.data() + w->bytes_produced);
+                pos = working_buffer.begin() + diff;
                 w->bytes_consumed = w->bytes_produced;
-                current_position += w->start_offset + w->bytes_consumed;
+                current_position = w->start_offset + w->bytes_consumed;
                 addReaders();
                 return offset;
             }
@@ -255,11 +256,11 @@ void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
             return false;
         };
 
-        size_t r = input.readBigAt(read_worker->segment.data(), read_worker->segment.size(), read_worker->start_offset);
+        size_t r = input.readBigAt(read_worker->segment.data(), read_worker->segment.size(), read_worker->start_offset, on_progress);
 
         if (!on_progress(r) && r < read_worker->segment.size())
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
+                ErrorCodes::UNEXPECTED_END_OF_FILE,
                 "Failed to read all the data from the reader at offset {}, got {}/{} bytes",
                 read_worker->start_offset, r, read_worker->segment.size());
     }

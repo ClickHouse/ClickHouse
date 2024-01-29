@@ -46,7 +46,12 @@ pg_manager = PostgresManager()
 def started_cluster():
     try:
         cluster.start()
-        pg_manager.init(instance, cluster.postgres_ip, cluster.postgres_port)
+        pg_manager.init(
+            instance,
+            cluster.postgres_ip,
+            cluster.postgres_port,
+            default_database="postgres_database",
+        )
         yield cluster
 
     finally:
@@ -74,16 +79,10 @@ def test_load_and_sync_all_database_tables(started_cluster):
 
 
 def test_replicating_dml(started_cluster):
-    conn = get_postgres_conn(
-        ip=started_cluster.postgres_ip,
-        port=started_cluster.postgres_port,
-        database=True,
-    )
-    cursor = conn.cursor()
     NUM_TABLES = 5
 
     for i in range(NUM_TABLES):
-        create_postgres_table(cursor, "postgresql_replica_{}".format(i))
+        pg_manager.create_postgres_table(f"postgresql_replica_{i}")
         instance.query(
             "INSERT INTO postgres_database.postgresql_replica_{} SELECT number, {} from numbers(50)".format(
                 i, i
@@ -96,39 +95,29 @@ def test_replicating_dml(started_cluster):
 
     for i in range(NUM_TABLES):
         instance.query(
-            "INSERT INTO postgres_database.postgresql_replica_{} SELECT 50 + number, {} from numbers(1000)".format(
-                i, i
-            )
+            f"INSERT INTO postgres_database.postgresql_replica_{i} SELECT 50 + number, {i} from numbers(1000)"
         )
     check_several_tables_are_synchronized(instance, NUM_TABLES)
 
     for i in range(NUM_TABLES):
-        cursor.execute(
-            "UPDATE postgresql_replica_{} SET value = {} * {} WHERE key < 50;".format(
-                i, i, i
-            )
+        pg_manager.execute(
+            f"UPDATE postgresql_replica_{i} SET value = {i} * {i} WHERE key < 50;"
         )
-        cursor.execute(
-            "UPDATE postgresql_replica_{} SET value = {} * {} * {} WHERE key >= 50;".format(
-                i, i, i, i
-            )
+        pg_manager.execute(
+            f"UPDATE postgresql_replica_{i} SET value = {i} * {i} * {i} WHERE key >= 50;"
         )
+
     check_several_tables_are_synchronized(instance, NUM_TABLES)
 
     for i in range(NUM_TABLES):
-        cursor.execute(
-            "DELETE FROM postgresql_replica_{} WHERE (value*value + {}) % 2 = 0;".format(
-                i, i
-            )
+        pg_manager.execute(
+            f"DELETE FROM postgresql_replica_{i} WHERE (value*value + {i}) % 2 = 0;"
         )
-        cursor.execute(
-            "UPDATE postgresql_replica_{} SET value = value - (value % 7) WHERE key > 128 AND key < 512;".format(
-                i
-            )
+        pg_manager.execute(
+            f"UPDATE postgresql_replica_{i} SET value = value - (value % 7) WHERE key > 128 AND key < 512;"
         )
-        cursor.execute(
-            "DELETE FROM postgresql_replica_{} WHERE key % 7 = 1;".format(i, i)
-        )
+        pg_manager.execute(f"DELETE FROM postgresql_replica_{i} WHERE key % 7 = 1;")
+
     check_several_tables_are_synchronized(instance, NUM_TABLES)
 
 
@@ -288,13 +277,7 @@ def test_load_and_sync_subset_of_database_tables(started_cluster):
 
 
 def test_changing_replica_identity_value(started_cluster):
-    conn = get_postgres_conn(
-        ip=started_cluster.postgres_ip,
-        port=started_cluster.postgres_port,
-        database=True,
-    )
-    cursor = conn.cursor()
-    create_postgres_table(cursor, "postgresql_replica")
+    pg_manager.create_postgres_table("postgresql_replica")
     instance.query(
         "INSERT INTO postgres_database.postgresql_replica SELECT 50 + number, number from numbers(50)"
     )
@@ -307,7 +290,7 @@ def test_changing_replica_identity_value(started_cluster):
         "INSERT INTO postgres_database.postgresql_replica SELECT 100 + number, number from numbers(50)"
     )
     check_tables_are_synchronized(instance, "postgresql_replica")
-    cursor.execute("UPDATE postgresql_replica SET key=key-25 WHERE key<100 ")
+    pg_manager.execute("UPDATE postgresql_replica SET key=key-25 WHERE key<100 ")
     check_tables_are_synchronized(instance, "postgresql_replica")
 
 
@@ -331,18 +314,13 @@ def test_clickhouse_restart(started_cluster):
 
 
 def test_replica_identity_index(started_cluster):
-    conn = get_postgres_conn(
-        ip=started_cluster.postgres_ip,
-        port=started_cluster.postgres_port,
-        database=True,
+    pg_manager.create_postgres_table(
+        "postgresql_replica", template=postgres_table_template_3
     )
-    cursor = conn.cursor()
-
-    create_postgres_table(
-        cursor, "postgresql_replica", template=postgres_table_template_3
+    pg_manager.execute("CREATE unique INDEX idx on postgresql_replica(key1, key2);")
+    pg_manager.execute(
+        "ALTER TABLE postgresql_replica REPLICA IDENTITY USING INDEX idx"
     )
-    cursor.execute("CREATE unique INDEX idx on postgresql_replica(key1, key2);")
-    cursor.execute("ALTER TABLE postgresql_replica REPLICA IDENTITY USING INDEX idx")
     instance.query(
         "INSERT INTO postgres_database.postgresql_replica SELECT number, number, number, number from numbers(50, 10)"
     )
@@ -355,35 +333,29 @@ def test_replica_identity_index(started_cluster):
     )
     check_tables_are_synchronized(instance, "postgresql_replica", order_by="key1")
 
-    cursor.execute("UPDATE postgresql_replica SET key1=key1-25 WHERE key1<100 ")
-    cursor.execute("UPDATE postgresql_replica SET key2=key2-25 WHERE key2>100 ")
-    cursor.execute("UPDATE postgresql_replica SET value1=value1+100 WHERE key1<100 ")
-    cursor.execute("UPDATE postgresql_replica SET value2=value2+200 WHERE key2>100 ")
+    pg_manager.execute("UPDATE postgresql_replica SET key1=key1-25 WHERE key1<100 ")
+    pg_manager.execute("UPDATE postgresql_replica SET key2=key2-25 WHERE key2>100 ")
+    pg_manager.execute(
+        "UPDATE postgresql_replica SET value1=value1+100 WHERE key1<100 "
+    )
+    pg_manager.execute(
+        "UPDATE postgresql_replica SET value2=value2+200 WHERE key2>100 "
+    )
     check_tables_are_synchronized(instance, "postgresql_replica", order_by="key1")
 
-    cursor.execute("DELETE FROM postgresql_replica WHERE key2<75;")
+    pg_manager.execute("DELETE FROM postgresql_replica WHERE key2<75;")
     check_tables_are_synchronized(instance, "postgresql_replica", order_by="key1")
 
 
 def test_table_schema_changes(started_cluster):
-    conn = get_postgres_conn(
-        ip=started_cluster.postgres_ip,
-        port=started_cluster.postgres_port,
-        database=True,
-    )
-    cursor = conn.cursor()
     NUM_TABLES = 5
 
     for i in range(NUM_TABLES):
-        create_postgres_table(
-            cursor,
-            "postgresql_replica_{}".format(i),
-            template=postgres_table_template_2,
+        pg_manager.create_postgres_table(
+            f"postgresql_replica_{i}", template=postgres_table_template_2
         )
         instance.query(
-            "INSERT INTO postgres_database.postgresql_replica_{} SELECT number, {}, {}, {} from numbers(25)".format(
-                i, i, i, i
-            )
+            f"INSERT INTO postgres_database.postgresql_replica_{i} SELECT number, {i}, {i}, {i} from numbers(25)"
         )
 
     pg_manager.create_materialized_db(
@@ -393,9 +365,7 @@ def test_table_schema_changes(started_cluster):
 
     for i in range(NUM_TABLES):
         instance.query(
-            "INSERT INTO postgres_database.postgresql_replica_{} SELECT 25 + number, {}, {}, {} from numbers(25)".format(
-                i, i, i, i
-            )
+            f"INSERT INTO postgres_database.postgresql_replica_{i} SELECT 25 + number, {i}, {i}, {i} from numbers(25)"
         )
 
     check_several_tables_are_synchronized(instance, NUM_TABLES)
@@ -410,9 +380,9 @@ def test_table_schema_changes(started_cluster):
         instance.query(f"SELECT count() FROM test_database.{altered_table}")
     )
 
-    cursor.execute(f"ALTER TABLE {altered_table} DROP COLUMN value2")
+    pg_manager.execute(f"ALTER TABLE {altered_table} DROP COLUMN value2")
     for i in range(NUM_TABLES):
-        cursor.execute(f"INSERT INTO postgresql_replica_{i} VALUES (50, {i}, {i})")
+        pg_manager.execute(f"INSERT INTO postgresql_replica_{i} VALUES (50, {i}, {i})")
 
     assert instance.wait_for_log_line(
         f"Table postgresql_replica_{altered_idx} is skipped from replication stream"
@@ -423,18 +393,19 @@ def test_table_schema_changes(started_cluster):
 
 
 def test_many_concurrent_queries(started_cluster):
+    table = "test_many_conc"
     query_pool = [
-        "DELETE FROM postgresql_replica_{} WHERE (value*value) % 3 = 0;",
-        "UPDATE postgresql_replica_{} SET value = value - 125 WHERE key % 2 = 0;",
-        "DELETE FROM postgresql_replica_{} WHERE key % 10 = 0;",
-        "UPDATE postgresql_replica_{} SET value = value*5 WHERE key % 2 = 1;",
-        "DELETE FROM postgresql_replica_{} WHERE value % 2 = 0;",
-        "UPDATE postgresql_replica_{} SET value = value + 2000 WHERE key % 5 = 0;",
-        "DELETE FROM postgresql_replica_{} WHERE value % 3 = 0;",
-        "UPDATE postgresql_replica_{} SET value = value * 2 WHERE key % 3 = 0;",
-        "DELETE FROM postgresql_replica_{} WHERE value % 9 = 2;",
-        "UPDATE postgresql_replica_{} SET value = value + 2  WHERE key % 3 = 1;",
-        "DELETE FROM postgresql_replica_{} WHERE value%5 = 0;",
+        "DELETE FROM {} WHERE (value*value) % 3 = 0;",
+        "UPDATE {} SET value = value - 125 WHERE key % 2 = 0;",
+        "DELETE FROM {} WHERE key % 10 = 0;",
+        "UPDATE {} SET value = value*5 WHERE key % 2 = 1;",
+        "DELETE FROM {} WHERE value % 2 = 0;",
+        "UPDATE {} SET value = value + 2000 WHERE key % 5 = 0;",
+        "DELETE FROM {} WHERE value % 3 = 0;",
+        "UPDATE {} SET value = value * 2 WHERE key % 3 = 0;",
+        "DELETE FROM {} WHERE value % 9 = 2;",
+        "UPDATE {} SET value = value + 2  WHERE key % 3 = 1;",
+        "DELETE FROM {} WHERE value%5 = 0;",
     ]
 
     NUM_TABLES = 5
@@ -445,8 +416,8 @@ def test_many_concurrent_queries(started_cluster):
         database=True,
     )
     cursor = conn.cursor()
-    pg_manager.create_and_fill_postgres_tables_from_cursor(
-        cursor, NUM_TABLES, numbers=10000
+    pg_manager.create_and_fill_postgres_tables(
+        NUM_TABLES, numbers=10000, table_name_base=table
     )
 
     def attack(thread_id):
@@ -455,17 +426,23 @@ def test_many_concurrent_queries(started_cluster):
         for i in range(20):
             query_id = random.randrange(0, len(query_pool) - 1)
             table_id = random.randrange(0, 5)  # num tables
+            random_table_name = f"{table}_{table_id}"
+            table_name = f"{table}_{thread_id}"
 
             # random update / delete query
-            cursor.execute(query_pool[query_id].format(table_id))
-            print("table {} query {} ok".format(table_id, query_id))
+            cursor.execute(query_pool[query_id].format(random_table_name))
+            print(
+                "Executing for table {} query: {}".format(
+                    random_table_name, query_pool[query_id]
+                )
+            )
 
             # allow some thread to do inserts (not to violate key constraints)
             if thread_id < 5:
                 print("try insert table {}".format(thread_id))
                 instance.query(
-                    "INSERT INTO postgres_database.postgresql_replica_{} SELECT {}*10000*({} +  number), number from numbers(1000)".format(
-                        i, thread_id, k
+                    "INSERT INTO postgres_database.{} SELECT {}*10000*({} +  number), number from numbers(1000)".format(
+                        table_name, thread_id, k
                     )
                 )
                 k += 1
@@ -475,8 +452,8 @@ def test_many_concurrent_queries(started_cluster):
                     # also change primary key value
                     print("try update primary key {}".format(thread_id))
                     cursor.execute(
-                        "UPDATE postgresql_replica_{} SET key=key%100000+100000*{} WHERE key%{}=0".format(
-                            thread_id, i + 1, i + 1
+                        "UPDATE {table}_{} SET key=key%100000+100000*{} WHERE key%{}=0".format(
+                            table_name, i + 1, i + 1
                         )
                     )
                     print("update primary key {} ok".format(thread_id))
@@ -499,25 +476,25 @@ def test_many_concurrent_queries(started_cluster):
     n[0] = 50000
     for table_id in range(NUM_TABLES):
         n[0] += 1
+        table_name = f"{table}_{table_id}"
         instance.query(
-            "INSERT INTO postgres_database.postgresql_replica_{} SELECT {} +  number, number from numbers(5000)".format(
-                table_id, n[0]
+            "INSERT INTO postgres_database.{} SELECT {} +  number, number from numbers(5000)".format(
+                table_name, n[0]
             )
         )
-        # cursor.execute("UPDATE postgresql_replica_{} SET key=key%100000+100000*{} WHERE key%{}=0".format(table_id, table_id+1, table_id+1))
+        # cursor.execute("UPDATE {table}_{} SET key=key%100000+100000*{} WHERE key%{}=0".format(table_id, table_id+1, table_id+1))
 
     for thread in threads:
         thread.join()
 
     for i in range(NUM_TABLES):
-        check_tables_are_synchronized(instance, "postgresql_replica_{}".format(i))
+        table_name = f"{table}_{i}"
+        check_tables_are_synchronized(instance, table_name)
         count1 = instance.query(
-            "SELECT count() FROM postgres_database.postgresql_replica_{}".format(i)
+            "SELECT count() FROM postgres_database.{}".format(table_name)
         )
         count2 = instance.query(
-            "SELECT count() FROM (SELECT * FROM test_database.postgresql_replica_{})".format(
-                i
-            )
+            "SELECT count() FROM (SELECT * FROM test_database.{})".format(table_name)
         )
         assert int(count1) == int(count2)
         print(count1, count2)
@@ -589,9 +566,8 @@ def test_multiple_databases(started_cluster):
         port=started_cluster.postgres_port,
         database=False,
     )
-    cursor = conn.cursor()
-    pg_manager.create_postgres_db(cursor, "postgres_database_1")
-    pg_manager.create_postgres_db(cursor, "postgres_database_2")
+    pg_manager.create_postgres_db("postgres_database_1")
+    pg_manager.create_postgres_db("postgres_database_2")
 
     conn1 = get_postgres_conn(
         ip=started_cluster.postgres_ip,
@@ -610,15 +586,13 @@ def test_multiple_databases(started_cluster):
     cursor2 = conn2.cursor()
 
     pg_manager.create_clickhouse_postgres_db(
-        cluster.postgres_ip,
-        cluster.postgres_port,
         "postgres_database_1",
+        "",
         "postgres_database_1",
     )
     pg_manager.create_clickhouse_postgres_db(
-        cluster.postgres_ip,
-        cluster.postgres_port,
         "postgres_database_2",
+        "",
         "postgres_database_2",
     )
 

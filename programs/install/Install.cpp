@@ -20,10 +20,7 @@
 #include <Common/formatReadable.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/OpenSSLHelpers.h>
-#include <base/hex.h>
-#include <Common/getResource.h>
 #include <base/sleep.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
@@ -34,6 +31,14 @@
 #include <readpassphrase.h>
 
 #include <Poco/Util/XMLConfiguration.h>
+
+#include <incbin.h>
+
+#include "config.h"
+
+/// Embedded configuration files used inside the install program
+INCBIN(resource_config_xml, SOURCE_DIR "/programs/server/config.xml");
+INCBIN(resource_users_xml, SOURCE_DIR "/programs/server/users.xml");
 
 
 /** This tool can be used to install ClickHouse without a deb/rpm/tgz package, having only "clickhouse" binary.
@@ -323,7 +328,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 fs::create_symlink(binary_self_canonical_path, main_bin_path);
 
                 if (0 != chmod(binary_self_canonical_path.string().c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
-                    throwFromErrno(fmt::format("Cannot chmod {}", binary_self_canonical_path.string()), ErrorCodes::SYSTEM_ERROR);
+                    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot chmod {}", binary_self_canonical_path.string());
             }
         }
         else
@@ -356,7 +361,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             if (already_installed)
             {
                 if (0 != chmod(main_bin_path.string().c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
-                    throwFromErrno(fmt::format("Cannot chmod {}", main_bin_path.string()), ErrorCodes::SYSTEM_ERROR);
+                    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot chmod {}", main_bin_path.string());
             }
             else
             {
@@ -390,7 +395,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     }
 
                     if (0 != chmod(destination.c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
-                        throwFromErrno(fmt::format("Cannot chmod {}", main_bin_tmp_path.string()), ErrorCodes::SYSTEM_ERROR);
+                        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot chmod {}", main_bin_tmp_path.string());
                 }
                 catch (const Exception & e)
                 {
@@ -415,7 +420,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         /// Create symlinks.
 
-        std::initializer_list<const char *> tools
+        std::initializer_list<std::string_view> tools
         {
             "clickhouse-server",
             "clickhouse-client",
@@ -430,6 +435,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-keeper",
             "clickhouse-keeper-converter",
             "clickhouse-disks",
+            "ch",
+            "chl",
+            "chc",
         };
 
         for (const auto & tool : tools)
@@ -439,29 +447,39 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
             if (fs::exists(symlink_path))
             {
-                bool is_symlink = FS::isSymlink(symlink_path);
-                fs::path points_to;
-                if (is_symlink)
-                    points_to = fs::weakly_canonical(FS::readSymlink(symlink_path));
-
-                if (is_symlink && (points_to == main_bin_path || (options.count("link") && points_to == binary_self_canonical_path)))
+                /// Do not replace short named symlinks if they are already present in the system
+                /// to avoid collision with other tools.
+                if (!tool.starts_with("clickhouse"))
                 {
+                    fmt::print("Symlink {} already exists. Will keep it.\n", symlink_path.string());
                     need_to_create = false;
                 }
                 else
                 {
-                    if (!is_symlink)
+                    bool is_symlink = FS::isSymlink(symlink_path);
+                    fs::path points_to;
+                    if (is_symlink)
+                        points_to = fs::weakly_canonical(FS::readSymlink(symlink_path));
+
+                    if (is_symlink && (points_to == main_bin_path || (options.count("link") && points_to == binary_self_canonical_path)))
                     {
-                        fs::path rename_path = symlink_path.replace_extension(".old");
-                        fmt::print("File {} already exists but it's not a symlink. Will rename to {}.\n",
-                                   symlink_path.string(), rename_path.string());
-                        fs::rename(symlink_path, rename_path);
+                        need_to_create = false;
                     }
-                    else if (points_to != main_bin_path)
+                    else
                     {
-                        fmt::print("Symlink {} already exists but it points to {}. Will replace the old symlink to {}.\n",
-                                   symlink_path.string(), points_to.string(), main_bin_path.string());
-                        fs::remove(symlink_path);
+                        if (!is_symlink)
+                        {
+                            fs::path rename_path = symlink_path.replace_extension(".old");
+                            fmt::print("File {} already exists but it's not a symlink. Will rename to {}.\n",
+                                       symlink_path.string(), rename_path.string());
+                            fs::rename(symlink_path, rename_path);
+                        }
+                        else if (points_to != main_bin_path)
+                        {
+                            fmt::print("Symlink {} already exists but it points to {}. Will replace the old symlink to {}.\n",
+                                       symlink_path.string(), points_to.string(), main_bin_path.string());
+                            fs::remove(symlink_path);
+                        }
                     }
                 }
             }
@@ -560,7 +578,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (!fs::exists(main_config_file))
         {
-            std::string_view main_config_content = getResource("config.xml");
+            std::string_view main_config_content(reinterpret_cast<const char *>(gresource_config_xmlData), gresource_config_xmlSize);
             if (main_config_content.empty())
             {
                 fmt::print("There is no default config.xml, you have to download it and place to {}.\n", main_config_file.string());
@@ -672,7 +690,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (!fs::exists(users_config_file))
         {
-            std::string_view users_config_content = getResource("users.xml");
+            std::string_view users_config_content(reinterpret_cast<const char *>(gresource_users_xmlData), gresource_users_xmlSize);
             if (users_config_content.empty())
             {
                 fmt::print("There is no default users.xml, you have to download it and place to {}.\n", users_config_file.string());
@@ -992,7 +1010,9 @@ namespace
         {
             /// sudo respects limits in /etc/security/limits.conf e.g. open files,
             /// that's why we are using it instead of the 'clickhouse su' tool.
-            command = fmt::format("sudo -u '{}' {}", user, command);
+            /// by default, sudo resets all the ENV variables, but we should preserve
+            /// the values /etc/default/clickhouse in /etc/init.d/clickhouse file
+            command = fmt::format("sudo --preserve-env -u '{}' {}", user, command);
         }
 
         fmt::print("Will run {}\n", command);
@@ -1102,7 +1122,7 @@ namespace
                 return 0;
             }
             else
-                throwFromErrno(fmt::format("Cannot obtain the status of pid {} with `kill`", pid), ErrorCodes::CANNOT_KILL);
+                throw ErrnoException(ErrorCodes::CANNOT_KILL, "Cannot obtain the status of pid {} with `kill`", pid);
         }
 
         if (!pid)
@@ -1123,7 +1143,7 @@ namespace
         if (0 == kill(pid, signal))
             fmt::print("Sent {} signal to process with pid {}.\n", signal_name, pid);
         else
-            throwFromErrno(fmt::format("Cannot send {} signal", signal_name), ErrorCodes::SYSTEM_ERROR);
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot send {} signal", signal_name);
 
         size_t try_num = 0;
         for (; try_num < max_tries; ++try_num)

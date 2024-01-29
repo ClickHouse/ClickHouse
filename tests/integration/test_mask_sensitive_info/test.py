@@ -7,8 +7,9 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=[
-        "configs/named_collections.xml",
+        "configs/overrides.xml",
     ],
+    user_configs=["configs/users.xml"],
     with_zookeeper=True,
 )
 
@@ -114,10 +115,9 @@ def test_create_alter_user():
     node.query("DROP USER u1, u2")
 
 
-def check_secrets_for_tables(tables, table_name_prefix, password):
-    for i, table in enumerate(tables):
-        table_name = table_name_prefix + str(i)
-        if password in table:
+def check_secrets_for_tables(test_cases, password):
+    for table_name, query, error in test_cases:
+        if (not error) and (password in query):
             assert password in node.query(
                 f"SHOW CREATE TABLE {table_name} {show_secrets}=1"
             )
@@ -125,6 +125,50 @@ def check_secrets_for_tables(tables, table_name_prefix, password):
                 f"SELECT create_table_query, engine_full FROM system.tables WHERE name = '{table_name}' "
                 f"{show_secrets}=1"
             )
+
+
+def test_backup_table():
+    password = new_password()
+
+    setup_queries = [
+        "CREATE TABLE backup_test (x int) ENGINE = MergeTree ORDER BY x",
+        "INSERT INTO backup_test SELECT * FROM numbers(10)",
+    ]
+
+    endpoints_with_credentials = [
+        (
+            f"S3('http://minio1:9001/root/data/backup_test_base', 'minio', '{password}')",
+            f"S3('http://minio1:9001/root/data/backup_test_incremental', 'minio', '{password}')",
+        )
+    ]
+
+    for query in setup_queries:
+        node.query_and_get_answer_with_error(query)
+
+    # Actually need to make two backups to have base_backup
+    def make_test_case(endpoint_specs):
+        # Run ASYNC so it returns the backup id
+        return (
+            f"BACKUP TABLE backup_test TO {endpoint_specs[0]} ASYNC",
+            f"BACKUP TABLE backup_test TO {endpoint_specs[1]} SETTINGS async=1, base_backup={endpoint_specs[0]}",
+        )
+
+    test_cases = [
+        make_test_case(endpoint_spec) for endpoint_spec in endpoints_with_credentials
+    ]
+    for base_query, inc_query in test_cases:
+        node.query_and_get_answer_with_error(base_query)[0]
+
+        inc_backup_query_output = node.query_and_get_answer_with_error(inc_query)[0]
+        inc_backup_id = TSV.toMat(inc_backup_query_output)[0][0]
+        names_in_system_backups_output, _ = node.query_and_get_answer_with_error(
+            f"SELECT base_backup_name, name FROM system.backups where id = '{inc_backup_id}'"
+        )
+
+        base_backup_name, name = TSV.toMat(names_in_system_backups_output)[0]
+
+        assert password not in base_backup_name
+        assert password not in name
 
 
 def test_create_table():
@@ -145,10 +189,31 @@ def test_create_table():
         f"PostgreSQL(named_collection_4, host = 'postgres1', port = 5432, database = 'postgres_db', table = 'postgres_table', user = 'postgres_user', password = '{password}')",
         f"MongoDB(named_collection_5, host = 'mongo1', port = 5432, db = 'mongo_db', collection = 'mongo_col', user = 'mongo_user', password = '{password}')",
         f"S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '{password}', format = 'CSV')",
+        f"S3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV', 'gzip')",
+        f"S3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '{password}')",
+        (
+            f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
+            "DNS_ERROR",
+        ),
     ]
 
-    for i, table_engine in enumerate(table_engines):
-        node.query(f"CREATE TABLE table{i} (x int) ENGINE = {table_engine}")
+    def make_test_case(i):
+        table_name = f"table{i}"
+        table_engine = table_engines[i]
+        error = None
+        if isinstance(table_engine, tuple):
+            table_engine, error = table_engine
+        query = f"CREATE TABLE {table_name} (x int) ENGINE = {table_engine}"
+        return table_name, query, error
+
+    # Generate test cases as a list of tuples (table_name, query, error).
+    test_cases = [make_test_case(i) for i in range(len(table_engines))]
+
+    for table_name, query, error in test_cases:
+        if error:
+            assert error in node.query_and_get_error(query)
+        else:
+            node.query(query)
 
     for toggle, secret in enumerate(["[HIDDEN]", password]):
         assert (
@@ -186,43 +251,69 @@ def test_create_table():
             "CREATE TABLE table11 (`x` int) ENGINE = PostgreSQL(named_collection_4, host = 'postgres1', port = 5432, database = 'postgres_db', table = 'postgres_table', user = 'postgres_user', password = '[HIDDEN]')",
             "CREATE TABLE table12 (`x` int) ENGINE = MongoDB(named_collection_5, host = 'mongo1', port = 5432, db = 'mongo_db', collection = 'mongo_col', user = 'mongo_user', password = '[HIDDEN]'",
             "CREATE TABLE table13 (`x` int) ENGINE = S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '[HIDDEN]', format = 'CSV')",
+            "CREATE TABLE table14 (x int) ENGINE = S3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV', 'gzip')",
+            "CREATE TABLE table15 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '[HIDDEN]')",
+            "CREATE TABLE table16 (`x` int) ENGINE = DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )
 
-    check_secrets_for_tables(table_engines, "table", password)
+    check_secrets_for_tables(test_cases, password)
 
-    for i in range(len(table_engines)):
-        node.query(f"DROP TABLE table{i}")
+    for table_name, query, error in test_cases:
+        if not error:
+            node.query(f"DROP TABLE {table_name}")
 
 
 def test_create_database():
     password = new_password()
 
     database_engines = [
-        f"MySQL('localhost:3306', 'mysql_db', 'mysql_user', '{password}') SETTINGS connect_timeout=1, connection_max_tries=1",
-        f"MySQL(named_collection_1, host = 'localhost', port = 3306, database = 'mysql_db', user = 'mysql_user', password = '{password}') SETTINGS connect_timeout=1, connection_max_tries=1",
+        (
+            f"MySQL('localhost:3306', 'mysql_db', 'mysql_user', '{password}') SETTINGS connect_timeout=1, connection_max_tries=1",
+            "ALL_CONNECTION_TRIES_FAILED",
+        ),
+        (
+            f"MySQL(named_collection_1, host = 'localhost', port = 3306, database = 'mysql_db', user = 'mysql_user', password = '{password}') SETTINGS connect_timeout=1, connection_max_tries=1",
+            "ALL_CONNECTION_TRIES_FAILED",
+        ),
+        f"S3('http://minio1:9001/root/data', 'minio', '{password}')",
+        f"S3(named_collection_2, secret_access_key = '{password}', access_key_id = 'minio')",
         # f"PostgreSQL('localhost:5432', 'postgres_db', 'postgres_user', '{password}')",
     ]
 
-    for i, database_engine in enumerate(database_engines):
-        # query_and_get_answer_with_error() is used here because we don't want to stop on error "Cannot connect to MySQL server".
-        # We test logging here and not actual work with MySQL server.
-        node.query_and_get_answer_with_error(
-            f"CREATE DATABASE database{i} ENGINE = {database_engine}"
-        )
+    def make_test_case(i):
+        database_name = f"database{i}"
+        database_engine = database_engines[i]
+        error = None
+        if isinstance(database_engine, tuple):
+            database_engine, error = database_engine
+        query = f"CREATE DATABASE {database_name} ENGINE = {database_engine}"
+        return database_name, query, error
+
+    # Generate test cases as a list of tuples (database_name, query, error).
+    test_cases = [make_test_case(i) for i in range(len(database_engines))]
+
+    for database_name, query, error in test_cases:
+        if error:
+            assert error in node.query_and_get_error(query)
+        else:
+            node.query(query)
 
     check_logs(
         must_contain=[
             "CREATE DATABASE database0 ENGINE = MySQL('localhost:3306', 'mysql_db', 'mysql_user', '[HIDDEN]')",
             "CREATE DATABASE database1 ENGINE = MySQL(named_collection_1, host = 'localhost', port = 3306, database = 'mysql_db', user = 'mysql_user', password = '[HIDDEN]')",
-            # "CREATE DATABASE database2 ENGINE = PostgreSQL('localhost:5432', 'postgres_db', 'postgres_user', '[HIDDEN]')",
+            "CREATE DATABASE database2 ENGINE = S3('http://minio1:9001/root/data', 'minio', '[HIDDEN]')",
+            "CREATE DATABASE database3 ENGINE = S3(named_collection_2, secret_access_key = '[HIDDEN]', access_key_id = 'minio')",
+            # "CREATE DATABASE database4 ENGINE = PostgreSQL('localhost:5432', 'postgres_db', 'postgres_user', '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )
 
-    for i in range(len(database_engines)):
-        node.query(f"DROP DATABASE IF EXISTS database{i}")
+    for database_name, query, error in test_cases:
+        if not error:
+            node.query(f"DROP DATABASE {database_name}")
 
 
 def test_table_functions():
@@ -259,10 +350,28 @@ def test_table_functions():
         f"s3(named_collection_2, url = 'http://minio1:9001/root/data/test4.csv', access_key_id = 'minio', secret_access_key = '{password}')",
         f"remote(named_collection_6, addresses_expr = '127.{{2..11}}', database = 'default', table = 'remote_table', user = 'remote_user', password = '{password}', sharding_key = rand())",
         f"remoteSecure(named_collection_6, addresses_expr = '127.{{2..11}}', database = 'default', table = 'remote_table', user = 'remote_user', password = '{password}')",
+        f"s3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV')",
+        f"s3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '{password}')",
+        (
+            f"deltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
+            "DNS_ERROR",
+        ),
     ]
 
-    for i, table_function in enumerate(table_functions):
-        node.query(f"CREATE TABLE tablefunc{i} (x int) AS {table_function}")
+    def make_test_case(i):
+        table_name = f"tablefunc{i}"
+        table_function = table_functions[i]
+        error = None
+        if isinstance(table_function, tuple):
+            table_function, error = table_function
+        query = f"CREATE TABLE {table_name} (x int) AS {table_function}"
+        return table_name, query, error
+
+    # Generate test cases as a list of tuples (table_name, query, error).
+    test_cases = [make_test_case(i) for i in range(len(table_functions))]
+
+    for table_name, query, error in test_cases:
+        node.query(query)
 
     for toggle, secret in enumerate(["[HIDDEN]", password]):
         assert (
@@ -317,14 +426,18 @@ def test_table_functions():
             "CREATE TABLE tablefunc27 (`x` int) AS s3(named_collection_2, url = 'http://minio1:9001/root/data/test4.csv', access_key_id = 'minio', secret_access_key = '[HIDDEN]')",
             "CREATE TABLE tablefunc28 (`x` int) AS remote(named_collection_6, addresses_expr = '127.{2..11}', database = 'default', table = 'remote_table', user = 'remote_user', password = '[HIDDEN]', sharding_key = rand())",
             "CREATE TABLE tablefunc29 (`x` int) AS remoteSecure(named_collection_6, addresses_expr = '127.{2..11}', database = 'default', table = 'remote_table', user = 'remote_user', password = '[HIDDEN]')",
+            "CREATE TABLE tablefunc30 (x int) AS s3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV')",
+            "CREATE TABLE tablefunc31 (`x` int) AS s3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '[HIDDEN]')",
+            "CREATE TABLE tablefunc32 (`x` int) AS deltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )
 
-    check_secrets_for_tables(table_functions, "tablefunc", password)
+    check_secrets_for_tables(test_cases, password)
 
-    for i in range(len(table_functions)):
-        node.query(f"DROP TABLE tablefunc{i}")
+    for table_name, query, error in test_cases:
+        if not error:
+            node.query(f"DROP TABLE {table_name}")
 
 
 def test_table_function_ways_to_call():

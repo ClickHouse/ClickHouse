@@ -8,7 +8,10 @@ from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/named_collections.xml"], with_postgres=True
+    "node1",
+    main_configs=["configs/named_collections.xml"],
+    user_configs=["configs/users.xml"],
+    with_postgres=True,
 )
 
 postgres_table_template = """
@@ -395,6 +398,71 @@ def test_datetime(started_cluster):
     node1.query("detach table pg.test")
     node1.query("attach table pg.test")
     assert "DateTime64(6)" in node1.query("show create table pg.test")
+
+
+def test_postgresql_password_leak(started_cluster):
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+
+    cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
+    cursor.execute("CREATE SCHEMA test_schema")
+    cursor.execute("CREATE TABLE test_schema.table1 (a integer)")
+    cursor.execute("CREATE TABLE table2 (a integer)")
+
+    node1.query("DROP DATABASE IF EXISTS postgres_database")
+    node1.query(
+        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword', 'test_schema')"
+    )
+
+    node1.query("DROP DATABASE IF EXISTS postgres_database2")
+    node1.query(
+        "CREATE DATABASE postgres_database2 ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+    )
+
+    assert "mysecretpassword" not in node1.query("SHOW CREATE postgres_database.table1")
+    assert "mysecretpassword" not in node1.query(
+        "SHOW CREATE postgres_database2.table2"
+    )
+
+    node1.query("DROP DATABASE postgres_database")
+    node1.query("DROP DATABASE postgres_database2")
+
+    cursor.execute("DROP SCHEMA test_schema CASCADE")
+    cursor.execute("DROP TABLE table2")
+
+
+# PostgreSQL database engine is created async in ClickHouse (first create the object then another thread
+# do the connection), causing a created database object with an inaccessible URI, and access of system.tables
+# timed out when touching the inaccessible database. We add the filter engine ability so we add a test here.
+def test_inaccessible_postgresql_database_engine_filterable_on_system_tables(
+    started_cluster,
+):
+    # This query takes some time depending on the trial times and conn timeout setting.
+    node1.query(
+        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('google.com:5432', 'dummy', 'dummy', 'dummy')"
+    )
+    assert "postgres_database" in node1.query("SHOW DATABASES")
+
+    # Should quickly return result instead of wasting time in connection since it gets filtered.
+    assert (
+        node1.query(
+            "SELECT DISTINCT(name) FROM system.tables WHERE engine!='PostgreSQL' AND name='COLUMNS'"
+        )
+        == "COLUMNS\n"
+    )
+
+    # Enigne of system.tables in fact means storage name, so View should not get filtered.
+    assert (
+        node1.query(
+            "SELECT DISTINCT(name) FROM system.tables WHERE engine='View' and name='COLUMNS'"
+        )
+        == "COLUMNS\n"
+    )
+
+    node1.query("DROP DATABASE postgres_database")
+    assert "postgres_database" not in node1.query("SHOW DATABASES")
 
 
 if __name__ == "__main__":

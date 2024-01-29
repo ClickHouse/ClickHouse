@@ -21,6 +21,7 @@ public:
 
     Kind kind;
     bool if_exists{false};
+    bool if_empty{false};
 
     /// Useful if we already have a DDL lock
     bool no_ddl_lock{false};

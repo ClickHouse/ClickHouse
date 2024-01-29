@@ -5,9 +5,13 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Operators.h>
 #include <Interpreters/ClientInfo.h>
+#include <base/getThreadId.h>
+#include <base/hex.h>
 
 namespace DB
 {
+
+// NOLINTBEGIN(bugprone-undefined-memory-manipulation)
 
 namespace ErrorCodes
 {
@@ -259,7 +263,8 @@ Packet MultiplexedConnections::drain()
 
         switch (packet.type)
         {
-            case Protocol::Server::MergeTreeAllRangesAnnounecement:
+            case Protocol::Server::TimezoneUpdate:
+            case Protocol::Server::MergeTreeAllRangesAnnouncement:
             case Protocol::Server::MergeTreeReadTaskRequest:
             case Protocol::Server::ReadTaskRequest:
             case Protocol::Server::PartUUIDs:
@@ -318,29 +323,27 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
         throw Exception(ErrorCodes::NO_AVAILABLE_REPLICA, "Logical error: no available replica");
 
     Packet packet;
+    try
     {
         AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
-
-        try
+        packet = current_connection->receivePacket();
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
         {
-            packet = current_connection->receivePacket();
+            /// Exception may happen when packet is received, e.g. when got unknown packet.
+            /// In this case, invalidate replica, so that we would not read from it anymore.
+            current_connection->disconnect();
+            invalidateReplica(state);
         }
-        catch (Exception & e)
-        {
-            if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
-            {
-                /// Exception may happen when packet is received, e.g. when got unknown packet.
-                /// In this case, invalidate replica, so that we would not read from it anymore.
-                current_connection->disconnect();
-                invalidateReplica(state);
-            }
-            throw;
-        }
+        throw;
     }
 
     switch (packet.type)
     {
-        case Protocol::Server::MergeTreeAllRangesAnnounecement:
+        case Protocol::Server::TimezoneUpdate:
+        case Protocol::Server::MergeTreeAllRangesAnnouncement:
         case Protocol::Server::MergeTreeReadTaskRequest:
         case Protocol::Server::ReadTaskRequest:
         case Protocol::Server::PartUUIDs:
@@ -468,5 +471,7 @@ void MultiplexedConnections::setAsyncCallback(AsyncCallback async_callback)
             state.connection->setAsyncCallback(async_callback);
     }
 }
+
+// NOLINTEND(bugprone-undefined-memory-manipulation)
 
 }

@@ -18,7 +18,7 @@ namespace DB
 
 StorageSystemProjectionParts::StorageSystemProjectionParts(const StorageID & table_id_)
     : StorageSystemPartsBase(table_id_,
-    {
+    ColumnsDescription{
         {"partition",                                   std::make_shared<DataTypeString>()},
         {"name",                                        std::make_shared<DataTypeString>()},
         {"part_type",                                   std::make_shared<DataTypeString>()},
@@ -221,17 +221,17 @@ void StorageSystemProjectionParts::processNextStorage(
             if (columns_mask[src_index++])
             {
                 auto checksum = helper.hash_of_all_files;
-                columns[res_index++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
+                columns[res_index++]->insert(getHexUIntLowercase(checksum));
             }
             if (columns_mask[src_index++])
             {
                 auto checksum = helper.hash_of_uncompressed_files;
-                columns[res_index++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
+                columns[res_index++]->insert(getHexUIntLowercase(checksum));
             }
             if (columns_mask[src_index++])
             {
                 auto checksum = helper.uncompressed_hash_of_compressed_files;
-                columns[res_index++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
+                columns[res_index++]->insert(getHexUIntLowercase(checksum));
             }
         }
 

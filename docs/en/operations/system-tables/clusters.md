@@ -23,6 +23,7 @@ Columns:
 - `database_shard_name` ([String](../../sql-reference/data-types/string.md)) — The name of the `Replicated` database shard (for clusters that belong to a `Replicated` database).
 - `database_replica_name` ([String](../../sql-reference/data-types/string.md)) — The name of the `Replicated` database replica (for clusters that belong to a `Replicated` database).
 - `is_active` ([Nullable(UInt8)](../../sql-reference/data-types/int-uint.md)) — The status of the `Replicated` database replica (for clusters that belong to a `Replicated` database): 1 means "replica is online", 0 means "replica is offline", `NULL` means "unknown".
+- `name` ([String](../../sql-reference/data-types/string.md)) - An alias to cluster.
 
 **Example**
 
@@ -77,5 +78,5 @@ is_active:               NULL
 **See Also**
 
 - [Table engine Distributed](../../engines/table-engines/special/distributed.md)
-- [distributed_replica_error_cap setting](../../operations/settings/settings.md#settings-distributed_replica_error_cap)
-- [distributed_replica_error_half_life setting](../../operations/settings/settings.md#settings-distributed_replica_error_half_life)
+- [distributed_replica_error_cap setting](../../operations/settings/settings.md#distributed_replica_error_cap)
+- [distributed_replica_error_half_life setting](../../operations/settings/settings.md#distributed_replica_error_half_life)

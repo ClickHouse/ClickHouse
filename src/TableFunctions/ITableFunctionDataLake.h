@@ -26,14 +26,15 @@ protected:
         const ASTPtr & /*ast_function*/,
         ContextPtr context,
         const std::string & table_name,
-        ColumnsDescription /*cached_columns*/) const override
+        ColumnsDescription /*cached_columns*/,
+        bool /*is_insert_query*/) const override
     {
         ColumnsDescription columns;
         if (TableFunction::configuration.structure != "auto")
             columns = parseColumnsListFromString(TableFunction::configuration.structure, context);
 
-        StoragePtr storage = std::make_shared<Storage>(
-            TableFunction::configuration, context, StorageID(TableFunction::getDatabaseName(), table_name),
+        StoragePtr storage = Storage::create(
+            TableFunction::configuration, context, false, StorageID(TableFunction::getDatabaseName(), table_name),
             columns, ConstraintsDescription{}, String{}, std::nullopt);
 
         storage->startup();
@@ -42,7 +43,7 @@ protected:
 
     const char * getStorageTypeName() const override { return Storage::name; }
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const override
     {
         if (TableFunction::configuration.structure == "auto")
         {

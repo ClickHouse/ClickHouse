@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-USER_FILES_PATH=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
+USER_FILES_PATH=$($CLICKHOUSE_CLIENT_BINARY --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 
 mkdir -p $USER_FILES_PATH/test_02504
 
@@ -77,7 +77,7 @@ system reload dictionary regexp_dict1; -- { serverError 489 }
 "
 
 cat > "$yaml" <<EOL
-- regexp: 
+- regexp:
   name: 'TencentOS'
   version: '\1'
 EOL
@@ -175,10 +175,130 @@ select dictGetAll('regexp_dict3', ('tag', 'topological_index', 'captured', 'pare
 select dictGetAll('regexp_dict3', ('tag', 'topological_index', 'captured', 'parent'), 'github.com/clickhouse/tree/master/docs', 2);
 "
 
+# Test that things work the same for "simple" regexps that go through Hyperscan and "complex" regexps that go through RE2.
+# An easy way to force the use of RE2 is to disable Hyperscan.
+# This tree is constructed purposely so that text might (falsely) match leaf nodes without matching their corresponding parent nodes
+cat > "$yaml" <<EOL
+- regexp: 'clickhouse\.com'
+  tag: 'ClickHouse'
+  paths:
+    - regexp: 'docs'
+      tag: 'ClickHouse Documentation'
+
+- regexp: 'github\.com'
+  tag: 'GitHub'
+  paths:
+    - regexp: 'docs'
+      tag: 'GitHub Documentation'
+
+- regexp: '/docs(/|$)'
+  tag: 'Documentation'
+EOL
+
+$CLICKHOUSE_CLIENT -n --query="
+drop dictionary if exists regexp_dict3;
+create dictionary regexp_dict3
+(
+    regexp String,
+    tag String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '$yaml'))
+LIFETIME(0)
+LAYOUT(regexp_tree)
+SETTINGS(regexp_dict_allow_hyperscan = true);
+
+select dictGet('regexp_dict3', 'tag', 'clickhouse.com');
+select dictGetAll('regexp_dict3', 'tag', 'clickhouse.com');
+select dictGet('regexp_dict3', 'tag', 'clickhouse.com/docs');
+select dictGetAll('regexp_dict3', 'tag', 'clickhouse.com/docs');
+select dictGet('regexp_dict3', 'tag', 'docs.github.com');
+select dictGetAll('regexp_dict3', 'tag', 'docs.github.com');
+select dictGet('regexp_dict3', 'tag', '/docs');
+select dictGetAll('regexp_dict3', 'tag', '/docs');
+
+drop dictionary if exists regexp_dict3;
+create dictionary regexp_dict3
+(
+    regexp String,
+    tag String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '$yaml'))
+LIFETIME(0)
+LAYOUT(regexp_tree)
+SETTINGS(regexp_dict_allow_hyperscan = false);
+
+select dictGet('regexp_dict3', 'tag', 'clickhouse.com');
+select dictGetAll('regexp_dict3', 'tag', 'clickhouse.com');
+select dictGet('regexp_dict3', 'tag', 'clickhouse.com/docs');
+select dictGetAll('regexp_dict3', 'tag', 'clickhouse.com/docs');
+select dictGet('regexp_dict3', 'tag', 'docs.github.com');
+select dictGetAll('regexp_dict3', 'tag', 'docs.github.com');
+select dictGet('regexp_dict3', 'tag', '/docs');
+select dictGetAll('regexp_dict3', 'tag', '/docs');
+"
+
+# Test case-insensitive and dot-all match modes
+cat > "$yaml" <<EOL
+- regexp: 'foo'
+  pattern: 'foo'
+- regexp: '(?i)foo'
+  pattern: '(?i)foo'
+- regexp: '(?-i)foo'
+  pattern: '(?-i)foo'
+- regexp: 'hello.*world'
+  pattern: 'hello.*world'
+- regexp: '(?i)hello.*world'
+  pattern: '(?i)hello.*world'
+- regexp: '(?-i)hello.*world'
+  pattern: '(?-i)hello.*world'
+EOL
+
+$CLICKHOUSE_CLIENT -n --query="
+drop dictionary if exists regexp_dict4;
+create dictionary regexp_dict4
+(
+    regexp String,
+    pattern String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '$yaml'))
+LIFETIME(0)
+LAYOUT(regexp_tree);
+
+select dictGetAll('regexp_dict4', 'pattern', 'foo');
+select dictGetAll('regexp_dict4', 'pattern', 'FOO');
+select dictGetAll('regexp_dict4', 'pattern', 'hello world');
+select dictGetAll('regexp_dict4', 'pattern', 'hello\nworld');
+select dictGetAll('regexp_dict4', 'pattern', 'HELLO WORLD');
+select dictGetAll('regexp_dict4', 'pattern', 'HELLO\nWORLD');
+
+drop dictionary if exists regexp_dict4;
+create dictionary regexp_dict4
+(
+    regexp String,
+    pattern String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '$yaml'))
+LIFETIME(0)
+LAYOUT(regexp_tree)
+SETTINGS(regexp_dict_flag_case_insensitive = true, regexp_dict_flag_dotall = true);
+
+select dictGetAll('regexp_dict4', 'pattern', 'foo');
+select dictGetAll('regexp_dict4', 'pattern', 'FOO');
+select dictGetAll('regexp_dict4', 'pattern', 'hello world');
+select dictGetAll('regexp_dict4', 'pattern', 'hello\nworld');
+select dictGetAll('regexp_dict4', 'pattern', 'HELLO WORLD');
+select dictGetAll('regexp_dict4', 'pattern', 'HELLO\nWORLD');
+"
+
 $CLICKHOUSE_CLIENT -n --query="
 drop dictionary regexp_dict1;
 drop dictionary regexp_dict2;
 drop dictionary regexp_dict3;
+drop dictionary regexp_dict4;
 "
 
 rm -rf "$USER_FILES_PATH/test_02504"

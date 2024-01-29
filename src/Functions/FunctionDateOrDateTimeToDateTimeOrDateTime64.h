@@ -34,7 +34,7 @@ public:
 
         WhichDataType which(from_type);
 
-        std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
+        std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false);
 
         /// If the time zone is specified but empty, throw an exception.
         /// only validate the time_zone part if the number of arguments is 2.

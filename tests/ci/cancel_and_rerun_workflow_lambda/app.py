@@ -1,28 +1,24 @@
 #!/usr/bin/env python3
 
-from base64 import b64decode
-from collections import namedtuple
-from typing import Any, Dict, List, Optional, Tuple
-from threading import Thread
-from queue import Queue
 import json
 import re
 import time
+from base64 import b64decode
+from collections import namedtuple
+from queue import Queue
+from threading import Thread
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests  # type: ignore
-
 from lambda_shared.pr import CATEGORY_TO_LABEL, check_pr_description
 from lambda_shared.token import get_cached_access_token
 
-
-NEED_RERUN_ON_EDITED = {
-    "PullRequestCI",
-    "DocsCheck",
-}
-
 NEED_RERUN_OR_CANCELL_WORKFLOWS = {
     "BackportPR",
-}.union(NEED_RERUN_ON_EDITED)
+    "DocsCheck",
+    "MasterCI",
+    "PullRequestCI",
+}
 
 MAX_RETRY = 5
 
@@ -323,7 +319,9 @@ def main(event):
 
     if action == "edited":
         print("PR is edited, check if the body is correct")
-        error, category = check_pr_description(pull_request["body"])
+        error, _ = check_pr_description(
+            pull_request["body"], pull_request["base"]["repo"]["full_name"]
+        )
         if error:
             print(
                 f"The PR's body is wrong, is going to comment it. The error is: {error}"

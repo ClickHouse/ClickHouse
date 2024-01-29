@@ -42,7 +42,7 @@ StorageSQLite::StorageSQLite(
     , remote_table_name(remote_table_name_)
     , database_path(database_path_)
     , sqlite_db(sqlite_db_)
-    , log(&Poco::Logger::get("StorageSQLite (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageSQLite (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -91,6 +91,7 @@ Pipe StorageSQLite::read(
         column_names,
         storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes,
+        LiteralEscapingStyle::Regular,
         "",
         remote_table_name,
         context_);
@@ -169,7 +170,7 @@ private:
 };
 
 
-SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr)
+SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
 {
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);

@@ -10,32 +10,20 @@ from threading import Thread
 import gzip
 import lz4.frame
 
+script_dir = os.path.dirname(os.path.realpath(__file__))
+pb2_dir = os.path.join(script_dir, "pb2")
+if pb2_dir not in sys.path:
+    sys.path.append(pb2_dir)
+import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute pb2/generate.py to generate these modules.
+
+
 GRPC_PORT = 9100
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_ENCODING = "utf-8"
-
-
-# Use grpcio-tools to generate *pb2.py files from *.proto.
-
-proto_dir = os.path.join(SCRIPT_DIR, "./protos")
-gen_dir = os.path.join(SCRIPT_DIR, "./_gen")
-os.makedirs(gen_dir, exist_ok=True)
-run_and_check(
-    "python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} \
-    {proto_dir}/clickhouse_grpc.proto".format(
-        proto_dir=proto_dir, gen_dir=gen_dir
-    ),
-    shell=True,
-)
-
-sys.path.append(gen_dir)
-import clickhouse_grpc_pb2
-import clickhouse_grpc_pb2_grpc
 
 
 # Utilities
 
-config_dir = os.path.join(SCRIPT_DIR, "./configs")
+config_dir = os.path.join(script_dir, "./configs")
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
@@ -352,9 +340,13 @@ def test_authentication():
 
 
 def test_logs():
-    logs = query_and_get_logs("SELECT 1", settings={"send_logs_level": "debug"})
-    assert "SELECT 1" in logs
-    assert "Read 1 rows" in logs
+    query = "SELECT has(groupArray(number), 42) FROM numbers(1000000) SETTINGS max_block_size=100000"
+    logs = query_and_get_logs(
+        query,
+        settings={"send_logs_level": "debug"},
+    )
+    assert query in logs
+    assert "Read 1000000 rows" in logs
     assert "Peak memory usage" in logs
 
 
@@ -396,8 +388,6 @@ def test_progress():
                 rows=8,
                 blocks=4,
                 allocated_bytes=1092,
-                applied_limit=True,
-                rows_before_limit=8,
             )
         ),
     ]

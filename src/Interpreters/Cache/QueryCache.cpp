@@ -6,10 +6,12 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
-#include <Common/logger_useful.h>
+#include <Parsers/formatAST.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
+#include <Common/formatReadable.h>
+#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
 
@@ -115,43 +117,50 @@ ASTPtr removeQueryCacheSettings(ASTPtr ast)
     return transformed_ast;
 }
 
+String queryStringFromAST(ASTPtr ast)
+{
+    WriteBufferFromOwnString buf;
+    formatAST(*ast, buf, /*hilite*/ false, /*one_line*/ true, /*show_secrets*/ false);
+    return buf.str();
+}
+
 }
 
 QueryCache::Key::Key(
     ASTPtr ast_,
     Block header_,
-    const String & user_name_, bool is_shared_,
+    std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+    bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_)
     : ast(removeQueryCacheSettings(ast_))
     , header(header_)
-    , user_name(user_name_)
+    , user_id(user_id_)
+    , current_user_roles(current_user_roles_)
     , is_shared(is_shared_)
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
+    , query_string(queryStringFromAST(ast_))
 {
 }
+
+QueryCache::Key::Key(ASTPtr ast_, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_)
+    : QueryCache::Key(ast_, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST or user name
+{
+}
+
+/// Hashing of ASTs must consider aliases (issue #56258)
+static constexpr bool ignore_aliases = false;
 
 bool QueryCache::Key::operator==(const Key & other) const
 {
-    return ast->getTreeHash() == other.ast->getTreeHash();
-}
-
-String QueryCache::Key::queryStringFromAst() const
-{
-    WriteBufferFromOwnString buf;
-    IAST::FormatSettings format_settings(buf, /*one_line*/ true);
-    format_settings.show_secrets = false;
-    ast->format(format_settings);
-    return buf.str();
+    return ast->getTreeHash(ignore_aliases) == other.ast->getTreeHash(ignore_aliases);
 }
 
 size_t QueryCache::KeyHasher::operator()(const Key & key) const
 {
-    SipHash hash;
-    hash.update(key.ast->getTreeHash());
-    auto res = hash.get64();
-    return res;
+    IAST::Hash hash = key.ast->getTreeHash(ignore_aliases);
+    return hash.low64;
 }
 
 size_t QueryCache::QueryCacheEntryWeight::operator()(const Entry & entry) const
@@ -186,7 +195,7 @@ QueryCache::Writer::Writer(
     if (auto entry = cache.getWithKey(key); entry.has_value() && !IsStale()(entry->key))
     {
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
-        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (non-stale entry found), query: {}", key.queryStringFromAst());
+        LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
     }
 }
 
@@ -233,6 +242,7 @@ void QueryCache::Writer::buffer(Chunk && chunk, ChunkType chunk_type)
             auto & buffered_chunk = (chunk_type == ChunkType::Totals) ? query_result->totals : query_result->extremes;
 
             convertToFullIfSparse(chunk);
+            convertToFullIfConst(chunk);
 
             if (!buffered_chunk.has_value())
                 buffered_chunk = std::move(chunk);
@@ -255,24 +265,25 @@ void QueryCache::Writer::finalizeWrite()
 
     /// Check some reasons why the entry must not be cached:
 
-    if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time) < min_query_runtime)
+    if (auto query_runtime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time); query_runtime < min_query_runtime)
     {
-        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (query not expensive enough), query: {}", key.queryStringFromAst());
+        LOG_TRACE(logger, "Skipped insert because the query is not expensive enough, query runtime: {} msec (minimum query runtime: {} msec), query: {}",
+                query_runtime.count(), min_query_runtime.count(), doubleQuoteString(key.query_string));
         return;
     }
 
     if (auto entry = cache.getWithKey(key); entry.has_value() && !IsStale()(entry->key))
     {
-        /// same check as in ctor because a parallel Writer could have inserted the current key in the meantime
-        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (non-stale entry found), query: {}", key.queryStringFromAst());
+        /// Same check as in ctor because a parallel Writer could have inserted the current key in the meantime
+        LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
         return;
     }
 
     if (squash_partial_results)
     {
-        // Squash partial result chunks to chunks of size 'max_block_size' each. This costs some performance but provides a more natural
-        // compression of neither too small nor big blocks. Also, it will look like 'max_block_size' is respected when the query result is
-        // served later on from the query cache.
+        /// Squash partial result chunks to chunks of size 'max_block_size' each. This costs some performance but provides a more natural
+        /// compression of neither too small nor big blocks. Also, it will look like 'max_block_size' is respected when the query result is
+        /// served later on from the query cache.
 
         Chunks squashed_chunks;
         size_t rows_remaining_in_squashed = 0; /// how many further rows can the last squashed chunk consume until it reaches max_block_size
@@ -280,6 +291,7 @@ void QueryCache::Writer::finalizeWrite()
         for (auto & chunk : query_result->chunks)
         {
             convertToFullIfSparse(chunk);
+            convertToFullIfConst(chunk);
 
             const size_t rows_chunk = chunk.getNumRows();
             if (rows_chunk == 0)
@@ -346,11 +358,14 @@ void QueryCache::Writer::finalizeWrite()
 
     if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
     {
-        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (query result too big), new_entry_size_in_bytes: {} ({}), new_entry_size_in_rows: {} ({}), query: {}", new_entry_size_in_bytes, max_entry_size_in_bytes, new_entry_size_in_rows, max_entry_size_in_rows, key.queryStringFromAst());
+        LOG_TRACE(logger, "Skipped insert because the query result is too big, query result size: {} (maximum size: {}), query result size in rows: {} (maximum size: {}), query: {}",
+                formatReadableSizeWithBinarySuffix(new_entry_size_in_bytes, 0), formatReadableSizeWithBinarySuffix(max_entry_size_in_bytes, 0), new_entry_size_in_rows, max_entry_size_in_rows, doubleQuoteString(key.query_string));
         return;
     }
 
     cache.set(key, query_result);
+
+    LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
 
     was_finalized = true;
 }
@@ -381,23 +396,28 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
 
     if (!entry.has_value())
     {
-        LOG_TRACE(&Poco::Logger::get("QueryCache"), "No entry found for query {}", key.queryStringFromAst());
+        LOG_TRACE(logger, "No query result found for query {}", doubleQuoteString(key.query_string));
         return;
     }
 
-    if (!entry->key.is_shared && entry->key.user_name != key.user_name)
+    const auto & entry_key = entry->key;
+    const auto & entry_mapped = entry->mapped;
+
+    const bool is_same_user_id = ((!entry_key.user_id.has_value() && !key.user_id.has_value()) || (entry_key.user_id.has_value() && key.user_id.has_value() && *entry_key.user_id == *key.user_id));
+    const bool is_same_current_user_roles = (entry_key.current_user_roles == key.current_user_roles);
+    if (!entry_key.is_shared && (!is_same_user_id || !is_same_current_user_roles))
     {
-        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Inaccessible entry found for query {}", key.queryStringFromAst());
+        LOG_TRACE(logger, "Inaccessible query result found for query {}", doubleQuoteString(key.query_string));
         return;
     }
 
-    if (IsStale()(entry->key))
+    if (IsStale()(entry_key))
     {
-        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Stale entry found for query {}", key.queryStringFromAst());
+        LOG_TRACE(logger, "Stale query result found for query {}", doubleQuoteString(key.query_string));
         return;
     }
 
-    if (!entry->key.is_compressed)
+    if (!entry_key.is_compressed)
     {
         // Cloning chunks isn't exactly great. It could be avoided by another indirection, i.e. wrapping Entry's members chunks, totals and
         // extremes into shared_ptrs and assuming that the lifecycle of these shared_ptrs coincides with the lifecycle of the Entry
@@ -406,15 +426,15 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
         // optimization.
 
         Chunks cloned_chunks;
-        for (const auto & chunk : entry->mapped->chunks)
+        for (const auto & chunk : entry_mapped->chunks)
             cloned_chunks.push_back(chunk.clone());
 
-        buildSourceFromChunks(entry->key.header, std::move(cloned_chunks), entry->mapped->totals, entry->mapped->extremes);
+        buildSourceFromChunks(entry_key.header, std::move(cloned_chunks), entry_mapped->totals, entry_mapped->extremes);
     }
     else
     {
         Chunks decompressed_chunks;
-        const Chunks & chunks = entry->mapped->chunks;
+        const Chunks & chunks = entry_mapped->chunks;
         for (const auto & chunk : chunks)
         {
             const Columns & columns = chunk.getColumns();
@@ -428,10 +448,10 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
             decompressed_chunks.push_back(std::move(decompressed_chunk));
         }
 
-        buildSourceFromChunks(entry->key.header, std::move(decompressed_chunks), entry->mapped->totals, entry->mapped->extremes);
+        buildSourceFromChunks(entry_key.header, std::move(decompressed_chunks), entry_mapped->totals, entry_mapped->extremes);
     }
 
-    LOG_TRACE(&Poco::Logger::get("QueryCache"), "Entry found for query {}", key.queryStringFromAst());
+    LOG_TRACE(logger, "Query result found for query {}", doubleQuoteString(key.query_string));
 }
 
 bool QueryCache::Reader::hasCacheEntryForKey() const
@@ -461,6 +481,21 @@ std::unique_ptr<SourceFromChunks> QueryCache::Reader::getSourceExtremes()
     return std::move(source_from_chunks_extremes);
 }
 
+QueryCache::QueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
+    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryCacheEntryWeight, IsStale>>(std::make_unique<PerUserTTLCachePolicyUserQuota>()))
+{
+    updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
+}
+
+void QueryCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
+{
+    std::lock_guard lock(mutex);
+    cache.setMaxSizeInBytes(max_size_in_bytes);
+    cache.setMaxCount(max_entries);
+    max_entry_size_in_bytes = max_entry_size_in_bytes_;
+    max_entry_size_in_rows = max_entry_size_in_rows_;
+}
+
 QueryCache::Reader QueryCache::createReader(const Key & key)
 {
     std::lock_guard lock(mutex);
@@ -472,18 +507,29 @@ QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::millis
     /// Update the per-user cache quotas with the values stored in the query context. This happens per query which writes into the query
     /// cache. Obviously, this is overkill but I could find the good place to hook into which is called when the settings profiles in
     /// users.xml change.
-    cache.setQuotaForUser(key.user_name, max_query_cache_size_in_bytes_quota, max_query_cache_entries_quota);
+    /// user_id == std::nullopt is the internal user for which no quota can be configured
+    if (key.user_id.has_value())
+        cache.setQuotaForUser(*key.user_id, max_query_cache_size_in_bytes_quota, max_query_cache_entries_quota);
 
     std::lock_guard lock(mutex);
     return Writer(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
 
-void QueryCache::reset()
+void QueryCache::clear()
 {
-    cache.reset();
+    cache.clear();
     std::lock_guard lock(mutex);
     times_executed.clear();
-    cache_size_in_bytes = 0;
+}
+
+size_t QueryCache::sizeInBytes() const
+{
+    return cache.sizeInBytes();
+}
+
+size_t QueryCache::count() const
+{
+    return cache.count();
 }
 
 size_t QueryCache::recordQueryRun(const Key & key)
@@ -491,7 +537,7 @@ size_t QueryCache::recordQueryRun(const Key & key)
     std::lock_guard lock(mutex);
     size_t times = ++times_executed[key];
     // Regularly drop times_executed to avoid DOS-by-unlimited-growth.
-    static constexpr size_t TIMES_EXECUTED_MAX_SIZE = 10'000;
+    static constexpr auto TIMES_EXECUTED_MAX_SIZE = 10'000uz;
     if (times_executed.size() > TIMES_EXECUTED_MAX_SIZE)
         times_executed.clear();
     return times;
@@ -500,25 +546,6 @@ size_t QueryCache::recordQueryRun(const Key & key)
 std::vector<QueryCache::Cache::KeyMapped> QueryCache::dump() const
 {
     return cache.dump();
-}
-
-QueryCache::QueryCache()
-    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryCacheEntryWeight, IsStale>>(std::make_unique<PerUserTTLCachePolicyUserQuota>()))
-{
-}
-
-void QueryCache::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
-{
-    std::lock_guard lock(mutex);
-
-    size_t max_size_in_bytes = config.getUInt64("query_cache.max_size_in_bytes", 1_GiB);
-    cache.setMaxSize(max_size_in_bytes);
-
-    size_t max_entries = config.getUInt64("query_cache.max_entries", 1024);
-    cache.setMaxCount(max_entries);
-
-    max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size_in_bytes", 1_MiB);
-    max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows_in_rows", 30'000'000);
 }
 
 }

@@ -77,7 +77,7 @@ public:
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            data(place).count += countBytesInFilter(flags);
+            data(place).count += countBytesInFilter(flags.data(), row_begin, row_end);
         }
         else
         {
@@ -116,7 +116,7 @@ public:
         /// Return normalized state type: count()
         AggregateFunctionProperties properties;
         return std::make_shared<DataTypeAggregateFunction>(
-            AggregateFunctionFactory::instance().get(getName(), {}, {}, properties), DataTypes{}, Array{});
+            AggregateFunctionFactory::instance().get(getName(), NullsAction::EMPTY, {}, {}, properties), DataTypes{}, Array{});
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -165,7 +165,7 @@ public:
         b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), sizeof(AggregateFunctionCountData), llvm::assumeAligned(this->alignOfData()));
     }
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes &, const std::vector<llvm::Value *> &) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType &) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
@@ -267,7 +267,7 @@ public:
         /// Return normalized state type: count()
         AggregateFunctionProperties properties;
         return std::make_shared<DataTypeAggregateFunction>(
-            AggregateFunctionFactory::instance().get(getName(), {}, {}, properties), DataTypes{}, Array{});
+            AggregateFunctionFactory::instance().get(getName(), NullsAction::EMPTY, {}, {}, properties), DataTypes{}, Array{});
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -309,13 +309,13 @@ public:
         b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), sizeof(AggregateFunctionCountData), llvm::assumeAligned(this->alignOfData()));
     }
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes &, const std::vector<llvm::Value *> & values) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
         auto * return_type = toNativeType(b, this->getResultType());
 
-        auto * is_null_value = b.CreateExtractValue(values[0], {1});
+        auto * is_null_value = b.CreateExtractValue(arguments[0].value, {1});
         auto * increment_value = b.CreateSelect(is_null_value, llvm::ConstantInt::get(return_type, 0), llvm::ConstantInt::get(return_type, 1));
 
         auto * count_value_ptr = aggregate_data_ptr;

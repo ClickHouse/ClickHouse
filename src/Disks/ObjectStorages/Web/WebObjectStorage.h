@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <shared_mutex>
 
 namespace Poco
 {
@@ -20,17 +21,13 @@ class WebObjectStorage : public IObjectStorage, WithContext
 public:
     WebObjectStorage(const String & url_, ContextPtr context_);
 
-    DataSourceDescription getDataSourceDescription() const override
-    {
-        return DataSourceDescription{
-            .type = DataSourceType::WebServer,
-            .description = url,
-            .is_encrypted = false,
-            .is_cached = false,
-        };
-    }
-
     std::string getName() const override { return "WebObjectStorage"; }
+
+    ObjectStorageType getType() const override { return ObjectStorageType::Web; }
+
+    std::string getCommonKeyPrefix() const override { return url; }
+
+    std::string getDescription() const override { return url; }
 
     bool exists(const StoredObject & object) const override;
 
@@ -67,6 +64,8 @@ public:
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
     void shutdown() override;
@@ -86,16 +85,18 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    std::string generateBlobNameForPath(const std::string & path) override { return path; }
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override
+    {
+        return ObjectStorageKey::createAsRelative(path);
+    }
 
     bool isRemote() const override { return true; }
 
     bool isReadOnly() const override { return true; }
 
 protected:
-    void initialize(const String & uri_path) const;
-
     [[noreturn]] static void throwNotAllowed();
+    bool exists(const std::string & path) const;
 
     enum class FileType
     {
@@ -103,20 +104,61 @@ protected:
         Directory
     };
 
+    struct FileData;
+    using FileDataPtr = std::shared_ptr<FileData>;
+
     struct FileData
     {
-        FileType type{};
-        size_t size = 0;
+        FileData(FileType type_, size_t size_, bool loaded_children_ = false)
+            : type(type_), size(size_), loaded_children(loaded_children_) {}
+
+        static FileDataPtr createFileInfo(size_t size_)
+        {
+            return std::make_shared<FileData>(FileType::File, size_, false);
+        }
+
+        static FileDataPtr createDirectoryInfo(bool loaded_childrent_)
+        {
+            return std::make_shared<FileData>(FileType::Directory, 0, loaded_childrent_);
+        }
+
+        FileType type;
+        size_t size;
+        std::atomic<bool> loaded_children;
     };
 
-    using Files = std::map<String, FileData>; /// file path -> file data
-    mutable Files files;
+    struct Files : public std::map<String, FileDataPtr>
+    {
+        auto find(const String & path, bool is_file) const
+        {
+            if (is_file)
+                return std::map<String, FileDataPtr>::find(path);
+            else
+                return std::map<String, FileDataPtr>::find(path.ends_with("/") ? path : path + '/');
+        }
 
-    String url;
+        auto add(const String & path, FileDataPtr data)
+        {
+            if (data->type == FileType::Directory)
+                return emplace(path.ends_with("/") ? path : path + '/', data);
+            else
+                return emplace(path, data);
+        }
+    };
+
+    mutable Files files;
+    mutable std::shared_mutex metadata_mutex;
+
+    FileDataPtr tryGetFileInfo(const String & path) const;
+    std::vector<std::filesystem::path> listDirectory(const String & path) const;
+    FileDataPtr getFileInfo(const String & path) const;
 
 private:
-    Poco::Logger * log;
+    std::pair<WebObjectStorage::FileDataPtr, std::vector<std::filesystem::path>>
+    loadFiles(const String & path, const std::unique_lock<std::shared_mutex> &) const;
 
+    const String url;
+    LoggerPtr log;
     size_t min_bytes_for_seek;
 };
 

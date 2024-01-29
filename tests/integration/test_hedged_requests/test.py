@@ -133,7 +133,7 @@ def check_if_query_sending_was_suspended():
         "SELECT value FROM system.events WHERE event='SuspendSendingQueryToShard'"
     )
 
-    assert int(result) >= 1
+    return len(result) != 0 and int(result) >= 1
 
 
 def check_if_query_sending_was_not_suspended():
@@ -239,7 +239,7 @@ def test_long_query(started_cluster):
     NODES["node"].restart_clickhouse()
 
     result = NODES["node"].query(
-        "select hostName(), max(id + sleep(1.5)) from distributed settings max_block_size = 1, max_threads = 1;"
+        "select hostName(), max(id + sleep(1.5)) from distributed settings max_block_size = 1, max_threads = 1, max_distributed_connections = 1;"
     )
     assert TSV(result) == TSV("node_1\t99")
 
@@ -372,7 +372,7 @@ def test_async_connect(started_cluster):
     )
 
     NODES["node"].query(
-        "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=0, max_threads=1"
+        "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=0, max_threads=1, max_distributed_connections=1"
     )
     check_changing_replica_events(2)
     check_if_query_sending_was_not_suspended()
@@ -380,11 +380,19 @@ def test_async_connect(started_cluster):
     # Restart server to reset connection pool state
     NODES["node"].restart_clickhouse()
 
-    NODES["node"].query(
-        "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=1, max_threads=1"
-    )
-    check_changing_replica_events(2)
-    check_if_query_sending_was_suspended()
+    attempt = 0
+    while attempt < 100:
+        NODES["node"].query(
+            "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=1, max_threads=1, max_distributed_connections=1"
+        )
+
+        check_changing_replica_events(2)
+        if check_if_query_sending_was_suspended():
+            break
+
+        attempt += 1
+
+    assert attempt < 100
 
     NODES["node"].query("DROP TABLE distributed_connect")
 
@@ -414,14 +422,21 @@ def test_async_query_sending(started_cluster):
 
     NODES["node"].query(
         "SELECT hostName(), id FROM distributed_query_sending ORDER BY id LIMIT 1 SETTINGS"
-        " prefer_localhost_replica = 0, async_query_sending_for_remote=0, max_threads = 1"
+        " prefer_localhost_replica = 0, async_query_sending_for_remote=0, max_threads = 1, max_distributed_connections=1"
     )
     check_if_query_sending_was_not_suspended()
 
-    NODES["node"].query(
-        "SELECT hostName(), id FROM distributed_query_sending ORDER BY id LIMIT 1 SETTINGS"
-        " prefer_localhost_replica = 0, async_query_sending_for_remote=1, max_threads = 1"
-    )
-    check_if_query_sending_was_suspended()
+    attempt = 0
+    while attempt < 100:
+        NODES["node"].query(
+            "SELECT hostName(), id FROM distributed_query_sending ORDER BY id LIMIT 1 SETTINGS"
+            " prefer_localhost_replica = 0, async_query_sending_for_remote=1, max_threads = 1, max_distributed_connections=1"
+        )
 
+        if check_if_query_sending_was_suspended():
+            break
+
+        attempt += 1
+
+    assert attempt < 100
     NODES["node"].query("DROP TABLE distributed_query_sending")

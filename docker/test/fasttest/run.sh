@@ -9,14 +9,14 @@ trap 'kill $(jobs -pr) ||:' EXIT
 stage=${stage:-}
 
 # Compiler version, normally set by Dockerfile
-export LLVM_VERSION=${LLVM_VERSION:-16}
+export LLVM_VERSION=${LLVM_VERSION:-17}
 
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
 # it being undefined. Also read it as array so that we can pass an empty list
 # of additional variable to cmake properly, and it doesn't generate an extra
 # empty parameter.
-# Read it as CMAKE_FLAGS to not lose exported FASTTEST_CMAKE_FLAGS on subsequential launch
+# Read it as CMAKE_FLAGS to not lose exported FASTTEST_CMAKE_FLAGS on subsequent launch
 read -ra CMAKE_FLAGS <<< "${FASTTEST_CMAKE_FLAGS:-}"
 
 # Run only matching tests.
@@ -28,6 +28,12 @@ FASTTEST_BUILD=$(readlink -f "${FASTTEST_BUILD:-${BUILD:-$FASTTEST_WORKSPACE/bui
 FASTTEST_DATA=$(readlink -f "${FASTTEST_DATA:-$FASTTEST_WORKSPACE/db-fasttest}")
 FASTTEST_OUTPUT=$(readlink -f "${FASTTEST_OUTPUT:-$FASTTEST_WORKSPACE}")
 PATH="$FASTTEST_BUILD/programs:$FASTTEST_SOURCE/tests:$PATH"
+# Work around for non-existent user
+if [ "$HOME" == "/" ]; then
+    HOME="$FASTTEST_WORKSPACE/user-home"
+    mkdir -p "$HOME"
+    export HOME
+fi
 
 # Export these variables, so that all subsequent invocations of the script
 # use them, and not try to guess them anew, which leads to weird effects.
@@ -80,7 +86,7 @@ function start_server
 
 function clone_root
 {
-    git config --global --add safe.directory "$FASTTEST_SOURCE"
+    [ "$UID" -eq 0 ] && git config --global --add safe.directory "$FASTTEST_SOURCE"
     git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$FASTTEST_SOURCE" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/clone_log.txt"
 
     (
@@ -120,7 +126,7 @@ function clone_submodules
             contrib/libxml2
             contrib/libunwind
             contrib/fmtlib
-            contrib/base64
+            contrib/aklomp-base64
             contrib/cctz
             contrib/libcpuid
             contrib/libdivide
@@ -141,17 +147,22 @@ function clone_submodules
             contrib/jemalloc
             contrib/replxx
             contrib/wyhash
-            contrib/hashidsxx
             contrib/c-ares
             contrib/morton-nd
             contrib/xxHash
             contrib/simdjson
             contrib/liburing
             contrib/libfiu
+            contrib/incbin
+            contrib/yaml-cpp
         )
 
         git submodule sync
-        git submodule update --jobs=16 --depth 1 --init "${SUBMODULES_TO_UPDATE[@]}"
+        git submodule init
+        # --jobs does not work as fast as real parallel running
+        printf '%s\0' "${SUBMODULES_TO_UPDATE[@]}" | \
+            xargs --max-procs=100 --null --no-run-if-empty --max-args=1 \
+              git submodule update --depth 1 --single-branch
         git submodule foreach git reset --hard
         git submodule foreach git checkout @ -f
         git submodule foreach git clean -xfd
@@ -164,13 +175,12 @@ function run_cmake
         "-DENABLE_LIBRARIES=0"
         "-DENABLE_TESTS=0"
         "-DENABLE_UTILS=0"
-        "-DENABLE_EMBEDDED_COMPILER=0"
         "-DENABLE_THINLTO=0"
-        "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
         "-DENABLE_SIMDJSON=1"
         "-DENABLE_JEMALLOC=1"
         "-DENABLE_LIBURING=1"
+        "-DENABLE_YAML_CPP=1"
     )
 
     export CCACHE_DIR="$FASTTEST_WORKSPACE/ccache"
@@ -187,7 +197,7 @@ function run_cmake
 
     (
         cd "$FASTTEST_BUILD"
-        cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" -DCMAKE_C_COMPILER="clang-${LLVM_VERSION}" "${CMAKE_LIBS_CONFIG[@]}" "${CMAKE_FLAGS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
+        cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" -DCMAKE_C_COMPILER="clang-${LLVM_VERSION}" -DCMAKE_TOOLCHAIN_FILE="${FASTTEST_SOURCE}/cmake/linux/toolchain-x86_64-musl.cmake" "${CMAKE_LIBS_CONFIG[@]}" "${CMAKE_FLAGS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
     )
 }
 
@@ -196,16 +206,16 @@ function build
     (
         cd "$FASTTEST_BUILD"
         TIMEFORMAT=$'\nreal\t%3R\nuser\t%3U\nsys\t%3S'
-        ( time ninja clickhouse-bundle) |& ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
+        ( time ninja clickhouse-bundle clickhouse-stripped) |& ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
         BUILD_SECONDS_ELAPSED=$(awk '/^....-..-.. ..:..:.. real\t[0-9]/ {print $4}' < "$FASTTEST_OUTPUT/build_log.txt")
         echo "build_clickhouse_fasttest_binary: [ OK ] $BUILD_SECONDS_ELAPSED sec." \
           | ts '%Y-%m-%d %H:%M:%S' \
           | tee "$FASTTEST_OUTPUT/test_result.txt"
         if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
-            cp programs/clickhouse "$FASTTEST_OUTPUT/clickhouse"
+            mkdir -p "$FASTTEST_OUTPUT/binaries/"
+            cp programs/clickhouse "$FASTTEST_OUTPUT/binaries/clickhouse"
 
-            strip programs/clickhouse -o "$FASTTEST_OUTPUT/clickhouse-stripped"
-            zstd --threads=0 "$FASTTEST_OUTPUT/clickhouse-stripped"
+            zstd --threads=0 programs/clickhouse-stripped -o "$FASTTEST_OUTPUT/binaries/clickhouse-stripped.zst"
         fi
         ccache_status
         ccache --evict-older-than 1d ||:
@@ -269,34 +279,12 @@ case "$stage" in
     ;&
 "clone_root")
     clone_root
-
-    # Pass control to the script from cloned sources, unless asked otherwise.
-    if ! [ -v FASTTEST_LOCAL_SCRIPT ]
-    then
-        # 'run' stage is deprecated, used for compatibility with old scripts.
-        # Replace with 'clone_submodules' after Nov 1, 2020.
-        # cd and CLICKHOUSE_DIR are also a setup for old scripts, remove as well.
-        # In modern script we undo it by changing back into workspace dir right
-        # away, see below. Remove that as well.
-        cd "$FASTTEST_SOURCE"
-        CLICKHOUSE_DIR=$(pwd)
-        export CLICKHOUSE_DIR
-        stage=run "$FASTTEST_SOURCE/docker/test/fasttest/run.sh"
-        exit $?
-    fi
-    ;&
-"run")
-    # A deprecated stage that is called by old script and equivalent to everything
-    # after cloning root, starting with cloning submodules.
     ;&
 "clone_submodules")
-    # Recover after being called from the old script that changes into source directory.
-    # See the compatibility hacks in `clone_root` stage above. Remove at the same time,
-    # after Nov 1, 2020.
-    cd "$FASTTEST_WORKSPACE"
     clone_submodules 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/submodule_log.txt"
     ;&
 "run_cmake")
+    cd "$FASTTEST_WORKSPACE"
     run_cmake
     ;&
 "build")

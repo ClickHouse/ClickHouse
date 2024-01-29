@@ -28,8 +28,18 @@ HedgedConnections::HedgedConnections(
     const ThrottlerPtr & throttler_,
     PoolMode pool_mode,
     std::shared_ptr<QualifiedTableName> table_to_check_,
-    AsyncCallback async_callback)
-    : hedged_connections_factory(pool_, &context_->getSettingsRef(), timeouts_, table_to_check_)
+    AsyncCallback async_callback,
+    GetPriorityForLoadBalancing::Func priority_func)
+    : hedged_connections_factory(
+        pool_,
+        context_->getSettingsRef(),
+        timeouts_,
+        context_->getSettingsRef().connections_with_failover_max_tries.value,
+        context_->getSettingsRef().fallback_to_stale_replicas_for_distributed_queries.value,
+        context_->getSettingsRef().max_parallel_replicas.value,
+        context_->getSettingsRef().skip_unavailable_shards.value,
+        table_to_check_,
+        priority_func)
     , context(std::move(context_))
     , settings(context->getSettingsRef())
     , throttler(throttler_)
@@ -353,6 +363,8 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
 
     if (replica_state.packet_receiver->isPacketReady())
     {
+        /// Reset the socket timeout after some packet received
+        replica_state.packet_receiver->setTimeout(hedged_connections_factory.getConnectionTimeouts().receive_timeout);
         last_received_packet = replica_state.packet_receiver->getPacket();
         return true;
     }
@@ -386,7 +398,7 @@ int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
     bool blocking = !static_cast<bool>(async_callback);
     while (events_count == 0)
     {
-        events_count = epoll.getManyReady(1, &event, blocking);
+        events_count = epoll.getManyReady(1, &event, blocking ? -1 : 0);
         if (!events_count && async_callback)
             async_callback(epoll.getFileDescriptor(), 0, AsyncEventTimeoutType::NONE, epoll.getDescription(), AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
     }
@@ -419,6 +431,7 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
             }
             replica_with_last_received_packet = replica_location;
             break;
+        case Protocol::Server::TimezoneUpdate:
         case Protocol::Server::PartUUIDs:
         case Protocol::Server::ProfileInfo:
         case Protocol::Server::Totals:

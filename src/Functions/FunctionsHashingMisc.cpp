@@ -21,10 +21,10 @@ REGISTER_FUNCTION(Hashing)
         .categories{"Hash"}
     });
     factory.registerFunction<FunctionSipHash128ReferenceKeyed>(FunctionDocumentation{
-        .description="Same as [sipHash128Reference](#hash_functions-siphash128reference) but additionally takes an explicit key argument instead of using a fixed key.",
+        .description = "Same as [sipHash128Reference](#hash_functions-siphash128reference) but additionally takes an explicit key argument "
+                       "instead of using a fixed key.",
         .examples{{"hash", "SELECT hex(sipHash128ReferenceKeyed((506097522914230528, 1084818905618843912),'foo', '\\x01', 3));", ""}},
-        .categories{"Hash"}
-    });
+        .categories{"Hash"}});
     factory.registerFunction<FunctionCityHash64>();
     factory.registerFunction<FunctionFarmFingerprint64>();
     factory.registerFunction<FunctionFarmHash64>();
@@ -46,19 +46,34 @@ REGISTER_FUNCTION(Hashing)
 
     factory.registerFunction<FunctionWyHash64>();
 
+#if USE_SSL
+    factory.registerFunction<FunctionHalfMD5>(FunctionDocumentation{
+        .description = R"(
+[Interprets](../..//sql-reference/functions/type-conversion-functions.md/#type_conversion_functions-reinterpretAsString) all the input
+parameters as strings and calculates the MD5 hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the
+resulting string, and interprets them as [UInt64](../../../sql-reference/data-types/int-uint.md) in big-endian byte order. The function is
+relatively slow (5 million short strings per second per processor core).
 
-    factory.registerFunction<FunctionBLAKE3>(
-    FunctionDocumentation{
-        .description=R"(
-Calculates BLAKE3 hash string and returns the resulting set of bytes as FixedString.
-This cryptographic hash-function is integrated into ClickHouse with BLAKE3 Rust library.
-The function is rather fast and shows approximately two times faster performance compared to SHA-2, while generating hashes of the same length as SHA-256.
-It returns a BLAKE3 hash as a byte array with type FixedString(32).
-)",
-        .examples{
-            {"hash", "SELECT hex(BLAKE3('ABC'))", ""}},
-        .categories{"Hash"}
-    },
-    FunctionFactory::CaseSensitive);
+Consider using the [sipHash64](../../sql-reference/functions/hash-functions.md/#hash_functions-siphash64) function instead.
+                       )",
+        .syntax = "SELECT halfMD5(par1,par2,...,parN);",
+        .arguments
+        = {{"par1,par2,...,parN",
+            R"(
+The function takes a variable number of input parameters. Arguments can be any of the supported data types. For some data types calculated
+value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed
+Tuple with the same data, Map and the corresponding Array(Tuple(key, value)) type with the same data).
+                       )"}},
+        .returned_value = "The computed half MD5 hash of the given input params returned as a "
+                          "[UInt64](../../../sql-reference/data-types/int-uint.md) in big-endian byte order.",
+        .examples
+        = {{"",
+            "SELECT HEX(halfMD5('abc', 'cde', 'fgh'));",
+            R"(
+┌─hex(halfMD5('abc', 'cde', 'fgh'))─┐
+│ 2C9506B7374CFAF4                  │
+└───────────────────────────────────┘
+            )"}}});
+#endif
 }
 }

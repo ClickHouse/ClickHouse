@@ -6,7 +6,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
-#include <IO/ResourceGuard.h>
+#include <Common/Scheduler/ResourceGuard.h>
 
 
 namespace ProfileEvents
@@ -27,7 +27,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     size_t buf_size_,
     const WriteSettings & write_settings_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
-    , log(&Poco::Logger::get("WriteBufferFromAzureBlobStorage"))
+    , log(getLogger("WriteBufferFromAzureBlobStorage"))
     , max_single_part_upload_size(max_single_part_upload_size_)
     , blob_path(blob_path_)
     , write_settings(write_settings_)
@@ -61,10 +61,6 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, 
             ResourceGuard rlock(write_settings.resource_link, cost); // Note that zero-cost requests are ignored
             func();
             break;
-        }
-        catch (const Azure::Core::Http::TransportException & e)
-        {
-            handle_exception(e, i);
         }
         catch (const Azure::Core::RequestFailedException & e)
         {

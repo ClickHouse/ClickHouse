@@ -111,7 +111,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUnique(const IDataTyp
 {
     auto creator = [&](auto x)
     {
-        using ColumnType = typename std::remove_pointer<decltype(x)>::type;
+        using ColumnType = typename std::remove_pointer_t<decltype(x)>;
         return ColumnUnique<ColumnType>::create(keys_type);
     };
     return createColumnUniqueImpl(keys_type, creator);
@@ -121,7 +121,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUnique(const IDataTyp
 {
     auto creator = [&](auto x)
     {
-        using ColumnType = typename std::remove_pointer<decltype(x)>::type;
+        using ColumnType = typename std::remove_pointer_t<decltype(x)>;
         return ColumnUnique<ColumnType>::create(std::move(keys), keys_type.isNullable());
     };
     return createColumnUniqueImpl(keys_type, creator);
@@ -176,4 +176,8 @@ DataTypePtr removeLowCardinality(const DataTypePtr & type)
     return type;
 }
 
+DataTypePtr removeLowCardinalityAndNullable(const DataTypePtr & type)
+{
+    return removeNullable(removeLowCardinality(type));
+};
 }

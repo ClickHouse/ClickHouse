@@ -33,6 +33,12 @@ class TableJoin;
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
+struct SetAndKey;
+using SetAndKeyPtr = std::shared_ptr<SetAndKey>;
+
+class PreparedSetsCache;
+using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
+
 class QueryPipelineBuilder
 {
 public:
@@ -138,7 +144,12 @@ public:
     /// This is used for CreatingSets.
     void addPipelineBefore(QueryPipelineBuilder pipeline);
 
-    void addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, ContextPtr context);
+    void addCreatingSetsTransform(
+        const Block & res_header,
+        SetAndKeyPtr set_and_key,
+        StoragePtr external_table,
+        const SizeLimits & limits,
+        PreparedSetsCachePtr prepared_sets_cache);
 
     PipelineExecutorPtr execute();
 
@@ -172,8 +183,19 @@ public:
             max_threads = max_threads_;
     }
 
+    void setConcurrencyControl(bool concurrency_control_)
+    {
+        concurrency_control = concurrency_control_;
+    }
+
+    bool getConcurrencyControl()
+    {
+        return concurrency_control;
+    }
+
     void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
     void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
+    void addContext(ContextPtr context) { resources.interpreter_context.emplace_back(std::move(context)); }
 
     /// Convert query pipeline to pipe.
     static Pipe getPipe(QueryPipelineBuilder pipeline, QueryPlanResourceHolder & resources);
@@ -188,6 +210,8 @@ private:
     /// Limit on the number of threads. Zero means no limit.
     /// Sometimes, more streams are created then the number of threads for more optimal execution.
     size_t max_threads = 0;
+
+    bool concurrency_control = false;
 
     QueryStatusPtr process_list_element;
     ProgressCallback progress_callback = nullptr;

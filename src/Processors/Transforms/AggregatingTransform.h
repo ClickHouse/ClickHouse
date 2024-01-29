@@ -13,6 +13,7 @@ namespace CurrentMetrics
 {
     extern const Metric DestroyAggregatesThreads;
     extern const Metric DestroyAggregatesThreadsActive;
+    extern const Metric DestroyAggregatesThreadsScheduled;
 }
 
 namespace DB
@@ -95,6 +96,7 @@ struct ManyAggregatedData
             const auto pool = std::make_unique<ThreadPool>(
                 CurrentMetrics::DestroyAggregatesThreads,
                 CurrentMetrics::DestroyAggregatesThreadsActive,
+                CurrentMetrics::DestroyAggregatesThreadsScheduled,
                 variants.size());
 
             for (auto && variant : variants)
@@ -178,7 +180,7 @@ private:
     Processors processors;
 
     AggregatingTransformParamsPtr params;
-    Poco::Logger * log = &Poco::Logger::get("AggregatingTransform");
+    LoggerPtr log = getLogger("AggregatingTransform");
 
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
@@ -203,7 +205,7 @@ private:
     UInt64 src_rows = 0;
     UInt64 src_bytes = 0;
 
-    bool is_generate_initialized = false;
+    std::atomic_flag is_generate_initialized;
     bool is_consume_finished = false;
     bool is_pipeline_created = false;
 

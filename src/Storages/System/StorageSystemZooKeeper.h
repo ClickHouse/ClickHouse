@@ -18,9 +18,9 @@ public:
 
     std::string getName() const override { return "SystemZooKeeper"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
-    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/) override;
+    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, bool /*async_insert*/) override;
 
     void read(
         QueryPlan & query_plan,
@@ -33,8 +33,6 @@ public:
         size_t /*num_streams*/) override;
 
     bool isSystemStorage() const override { return true; }
-    bool supportsIndexForIn() const override { return true; }
-    bool mayBenefitFromIndexForIn(const ASTPtr & node, ContextPtr, const StorageMetadataPtr &) const override;
 };
 
 }

@@ -2,17 +2,18 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnSparse.h>
+#include <Common/iota.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/NestedUtils.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashSet.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <numeric>
+
 
 namespace DB
 {
@@ -559,6 +560,7 @@ FieldInfo ColumnObject::Subcolumn::getFieldInfo() const
         .have_nulls = base_type->isNullable(),
         .need_convert = false,
         .num_dimensions = least_common_type.getNumberOfDimensions(),
+        .need_fold_dimension = false,
     };
 }
 
@@ -664,18 +666,18 @@ size_t ColumnObject::allocatedBytes() const
     return res;
 }
 
-void ColumnObject::forEachSubcolumn(ColumnCallback callback) const
+void ColumnObject::forEachSubcolumn(MutableColumnCallback callback)
 {
-    for (const auto & entry : subcolumns)
-        for (const auto & part : entry->data.data)
+    for (auto & entry : subcolumns)
+        for (auto & part : entry->data.data)
             callback(part);
 }
 
-void ColumnObject::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+void ColumnObject::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
 {
-    for (const auto & entry : subcolumns)
+    for (auto & entry : subcolumns)
     {
-        for (const auto & part : entry->data.data)
+        for (auto & part : entry->data.data)
         {
             callback(*part);
             part->forEachSubcolumnRecursively(callback);
@@ -837,7 +839,7 @@ MutableColumnPtr ColumnObject::cloneResized(size_t new_size) const
 void ColumnObject::getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation & res) const
 {
     res.resize(num_rows);
-    std::iota(res.begin(), res.end(), 0);
+    iota(res.data(), res.size(), size_t(0));
 }
 
 void ColumnObject::compareColumn(const IColumn & rhs, size_t rhs_row_num,

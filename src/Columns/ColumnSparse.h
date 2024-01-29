@@ -78,7 +78,7 @@ public:
 
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char *) const override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -140,8 +140,8 @@ public:
 
     ColumnPtr compress() const override;
 
-    void forEachSubcolumn(ColumnCallback callback) const override;
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
+    void forEachSubcolumn(MutableColumnCallback callback) override;
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
 
     bool structureEquals(const IColumn & rhs) const override;
 

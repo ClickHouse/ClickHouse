@@ -14,12 +14,12 @@ namespace ErrorCodes
 
 Block JoiningTransform::transformHeader(Block header, const JoinPtr & join)
 {
-    LOG_DEBUG(&Poco::Logger::get("JoiningTransform"), "Before join block: '{}'", header.dumpStructure());
+    LOG_DEBUG(getLogger("JoiningTransform"), "Before join block: '{}'", header.dumpStructure());
     join->checkTypesOfKeys(header);
     join->initialize(header);
     ExtraBlockPtr tmp;
     join->joinBlock(header, tmp);
-    LOG_DEBUG(&Poco::Logger::get("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
+    LOG_DEBUG(getLogger("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
     return header;
 }
 
@@ -304,22 +304,17 @@ void FillingRightJoinSideTransform::work()
     if (for_totals)
         join->setTotals(block);
     else
-        stop_reading = !join->addJoinedBlock(block);
+        stop_reading = !join->addBlockToJoin(block);
 
     set_totals = for_totals;
 }
 
 
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(
-    Block left_header_,
     Block output_header_,
-    size_t max_block_size_,
-    JoinPtr join_)
+    NonJoinedStreamBuilder non_joined_stream_builder_)
     : IProcessor(InputPorts{Block()}, OutputPorts{output_header_})
-    , left_header(left_header_)
-    , output_header(output_header_)
-    , max_block_size(max_block_size_)
-    , join(join_)
+    , non_joined_stream_builder(std::move(non_joined_stream_builder_))
 {
 }
 
@@ -372,15 +367,16 @@ IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
 
         if (!data.chunk.hasChunkInfo())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform must have chunk info");
-        task = std::dynamic_pointer_cast<const DelayedBlocksTask>(data.chunk.getChunkInfo());
 
+        task = std::dynamic_pointer_cast<const DelayedBlocksTask>(data.chunk.getChunkInfo());
     }
     else
     {
         input.setNotNeeded();
     }
 
-    if (task->finished)
+    // When delayed_blocks is nullptr, it means that all buckets have been joined.
+    if (!task->delayed_blocks)
     {
         input.close();
         output.finish();
@@ -394,16 +390,14 @@ void DelayedJoinedBlocksWorkerTransform::work()
 {
     if (!task)
         return;
+
     Block block;
-    if (!left_delayed_stream_finished)
+    /// All joined and non-joined rows from left stream are emitted, only right non-joined rows are left
+    if (!task->delayed_blocks->isFinished())
     {
         block = task->delayed_blocks->next();
-
         if (!block)
-        {
-            left_delayed_stream_finished = true;
             block = nextNonJoinedBlock();
-        }
     }
     else
     {
@@ -423,28 +417,20 @@ void DelayedJoinedBlocksWorkerTransform::work()
 void DelayedJoinedBlocksWorkerTransform::resetTask()
 {
     task.reset();
-    left_delayed_stream_finished = false;
-    setup_non_joined_stream = false;
     non_joined_delayed_stream = nullptr;
 }
 
 Block DelayedJoinedBlocksWorkerTransform::nextNonJoinedBlock()
 {
-    if (!setup_non_joined_stream)
+    // Before read from non-joined stream, all blocks in left file reader must have been joined.
+    // For example, in HashJoin, it may return invalid mismatch rows from non-joined stream before
+    // the all blocks in left file reader have been finished, since the used flags are incomplete.
+    // To make only one processor could read from non-joined stream seems be a easy way.
+    if (!non_joined_delayed_stream && task && task->left_delayed_stream_finish_counter->isLast())
     {
-        setup_non_joined_stream = true;
-        // Before read from non-joined stream, all blocks in left file reader must have been joined.
-        // For example, in HashJoin, it may return invalid mismatch rows from non-joined stream before
-        // the all blocks in left file reader have been finished, since the used flags are incomplete.
-        // To make only one processor could read from non-joined stream seems be a easy way.
-        if (task && task->left_delayed_stream_finish_counter->isLast())
-        {
-            if (!non_joined_delayed_stream)
-            {
-                non_joined_delayed_stream = join->getNonJoinedBlocks(left_header, output_header, max_block_size);
-            }
-        }
+        non_joined_delayed_stream = non_joined_stream_builder();
     }
+
     if (non_joined_delayed_stream)
     {
         return non_joined_delayed_stream->next();

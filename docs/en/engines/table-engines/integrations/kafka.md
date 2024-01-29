@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/kafka
-sidebar_position: 8
+sidebar_position: 110
 sidebar_label: Kafka
 ---
 
@@ -14,7 +14,7 @@ Kafka lets you:
 - Organize fault-tolerant storage.
 - Process streams as they become available.
 
-## Creating a Table {#table_engine-kafka-creating-a-table}
+## Creating a Table {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -28,7 +28,6 @@ SETTINGS
     kafka_topic_list = 'topic1,topic2,...',
     kafka_group_name = 'group_name',
     kafka_format = 'data_format'[,]
-    [kafka_row_delimiter = 'delimiter_symbol',]
     [kafka_schema = '',]
     [kafka_num_consumers = N,]
     [kafka_max_block_size = 0,]
@@ -53,10 +52,9 @@ Required parameters:
 
 Optional parameters:
 
-- `kafka_row_delimiter` — Delimiter character, which ends the message. **This setting is deprecated and is no longer used, not left for compatibility reasons.**
 - `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `kafka_num_consumers` — The number of consumers per table. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition, and must not be greater than the number of physical cores on the server where ClickHouse is deployed. Default: `1`.
-- `kafka_max_block_size` — The maximum batch size (in messages) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#setting-max_insert_block_size).
+- `kafka_max_block_size` — The maximum batch size (in messages) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
 - `kafka_skip_broken_messages` — Kafka message parser tolerance to schema-incompatible messages per block. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data). Default: `0`.
 - `kafka_commit_every_batch` — Commit every consumed and handled batch instead of a single commit after writing a whole block. Default: `0`.
 - `kafka_client_id` — Client identifier. Empty by default.
@@ -64,7 +62,7 @@ Optional parameters:
 - `kafka_poll_max_batch_size` — Maximum amount of messages to be polled in a single Kafka poll. Default: [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
 - `kafka_flush_interval_ms` — Timeout for flushing data from Kafka. Default: [stream_flush_interval_ms](../../../operations/settings/settings.md#stream-flush-interval-ms).
 - `kafka_thread_per_consumer` — Provide independent thread for each consumer. When enabled, every consumer flush the data independently, in parallel (otherwise — rows from several consumers squashed to form one block). Default: `0`.
-- `kafka_handle_error_mode` — How to handle errors for Kafka engine. Possible values: default, stream.
+- `kafka_handle_error_mode` — How to handle errors for Kafka engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
 - `kafka_commit_on_select` —  Commit messages when select query is made. Default: `false`.
 - `kafka_max_rows_per_message` — The maximum number of rows written in one kafka message for row-based formats. Default : `1`.
 
@@ -153,7 +151,7 @@ Example:
 
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
-To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/settings/settings.md#settings-max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/settings/settings.md/#stream-flush-interval-ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/settings/settings.md/#stream-flush-interval-ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
@@ -173,6 +171,7 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
     <!-- Global configuration options for all tables of Kafka engine type -->
     <debug>cgrp</debug>
     <auto_offset_reset>smallest</auto_offset_reset>
+	<statistics_interval_ms>600</statistics_interval_ms>
 
     <!-- Configuration specific to topics "logs" and "stats" -->
 
@@ -239,14 +238,21 @@ Example:
 
 ## Virtual Columns {#virtual-columns}
 
-- `_topic` — Kafka topic.
-- `_key` — Key of the message.
-- `_offset` — Offset of the message.
-- `_timestamp` — Timestamp of the message.
-- `_timestamp_ms` — Timestamp in milliseconds of the message.
-- `_partition` — Partition of Kafka topic.
-- `_headers.name` — Array of message's headers keys.
-- `_headers.value` — Array of message's headers values.
+- `_topic` — Kafka topic. Data type: `LowCardinality(String)`.
+- `_key` — Key of the message. Data type: `String`.
+- `_offset` — Offset of the message. Data type: `UInt64`.
+- `_timestamp` — Timestamp of the message Data type: `Nullable(DateTime)`.
+- `_timestamp_ms` — Timestamp in milliseconds of the message. Data type: `Nullable(DateTime64(3))`.
+- `_partition` — Partition of Kafka topic. Data type: `UInt64`.
+- `_headers.name` — Array of message's headers keys. Data type: `Array(String)`.
+- `_headers.value` — Array of message's headers values. Data type: `Array(String)`.
+
+Additional virtual columns when `kafka_handle_error_mode='stream'`:
+
+- `_raw_message` - Raw message that couldn't be parsed successfully. Data type: `String`.
+- `_error` - Exception message happened during failed parsing. Data type: `String`.
+
+Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always empty when message was parsed successfully.
 
 ## Data formats support {#data-formats-support}
 
@@ -260,3 +266,4 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 
 - [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
 - [background_message_broker_schedule_pool_size](../../../operations/server-configuration-parameters/settings.md#background_message_broker_schedule_pool_size)
+- [system.kafka_consumers](../../../operations/system-tables/kafka_consumers.md)

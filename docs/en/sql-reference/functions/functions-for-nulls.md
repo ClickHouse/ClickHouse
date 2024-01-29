@@ -8,7 +8,7 @@ sidebar_label: Nullable
 
 ## isNull
 
-Returns whether the argument is [NULL](../../sql-reference/syntax.md#null-literal).
+Returns whether the argument is [NULL](../../sql-reference/syntax.md#null).
 
 ``` sql
 isNull(x)
@@ -92,6 +92,50 @@ Result:
 └───┘
 ```
 
+## isZeroOrNull
+
+Returns whether the argument is 0 (zero) or [NULL](../../sql-reference/syntax.md#null-literal).
+
+``` sql
+isZeroOrNull(x)
+```
+
+**Arguments:**
+
+- `x` — A value of non-compound data type.
+
+**Returned value**
+
+- `1` if `x` is 0 (zero) or `NULL`.
+- `0` else.
+
+**Example**
+
+Table:
+
+``` text
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 2 │    0 │
+│ 3 │    3 │
+└───┴──────┘
+```
+
+Query:
+
+``` sql
+SELECT x FROM t_null WHERE isZeroOrNull(y);
+```
+
+Result:
+
+``` text
+┌─x─┐
+│ 1 │
+│ 2 │
+└───┘
+```
+
 ## coalesce
 
 Returns the leftmost non-`NULL` argument.
@@ -120,7 +164,7 @@ Consider a list of contacts that may specify multiple ways to contact a customer
 └──────────┴──────┴───────────┴───────────┘
 ```
 
-The `mail` and `phone` fields are of type String, but the `icq` field is `UInt32`, so it needs to be converted to `String`.
+The `mail` and `phone` fields are of type String, but the `telegram` field is `UInt32`, so it needs to be converted to `String`.
 
 Get the first available contact method for the customer from the contact list:
 

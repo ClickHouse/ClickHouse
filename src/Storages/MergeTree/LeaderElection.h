@@ -19,7 +19,7 @@ namespace zkutil
   * For now, every replica can become leader if there is no leader among replicas with old version.
   */
 
-void checkNoOldLeaders(Poco::Logger * log, ZooKeeper & zookeeper, const String path)
+void checkNoOldLeaders(LoggerPtr log, ZooKeeper & zookeeper, const String path)
 {
     /// Previous versions (before 21.12) used to create ephemeral sequential node path/leader_election-
     /// Replica with the lexicographically smallest node name becomes leader (before 20.6) or enables multi-leader mode (since 20.6)
@@ -36,7 +36,7 @@ void checkNoOldLeaders(Poco::Logger * log, ZooKeeper & zookeeper, const String p
         if (code == Coordination::Error::ZNONODE)
             return;
         else if (code != Coordination::Error::ZOK)
-            throw KeeperException(code, path);
+            throw KeeperException::fromPath(code, path);
 
         Coordination::Requests ops;
 

@@ -38,7 +38,7 @@ public:
 
     /// Execute pipeline in multiple threads. Must be called once.
     /// In case of exception during execution throws any occurred.
-    void execute(size_t num_threads);
+    void execute(size_t num_threads, bool concurrency_control);
 
     /// Execute single step. Step will be stopped when yield_flag is true.
     /// Execution is happened in a single thread.
@@ -67,7 +67,7 @@ private:
 
     ExecutorTasks tasks;
 
-    // Concurrency control related
+    /// Concurrency control related
     ConcurrencyControl::AllocationPtr slots;
     ConcurrencyControl::SlotPtr single_thread_slot; // slot for single-thread mode to work using executeStep()
     std::unique_ptr<ThreadPool> pool;
@@ -83,7 +83,7 @@ private:
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_reading = false;
 
-    Poco::Logger * log = &Poco::Logger::get("PipelineExecutor");
+    LoggerPtr log = getLogger("PipelineExecutor");
 
     /// Now it's used to check if query was killed.
     QueryStatusPtr process_list_element;
@@ -92,12 +92,12 @@ private:
 
     using Queue = std::queue<ExecutingGraph::Node *>;
 
-    void initializeExecution(size_t num_threads); /// Initialize executor contexts and task_queue.
+    void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
     void spawnThreads();
 
     /// Methods connected to execution.
-    void executeImpl(size_t num_threads);
+    void executeImpl(size_t num_threads, bool concurrency_control);
     void executeStepImpl(size_t thread_num, std::atomic_bool * yield_flag = nullptr);
     void executeSingleThread(size_t thread_num);
     void finish();

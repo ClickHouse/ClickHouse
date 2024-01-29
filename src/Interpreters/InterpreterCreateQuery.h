@@ -66,9 +66,14 @@ public:
         need_ddl_guard = false;
     }
 
+    void setIsRestoreFromBackup(bool is_restore_from_backup_)
+    {
+        is_restore_from_backup = is_restore_from_backup_;
+    }
+
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
-    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, bool attach);
+    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, bool attach, bool is_restore_from_backup);
     static ConstraintsDescription getConstraintsDescription(const ASTExpressionList * constraints);
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
@@ -90,8 +95,6 @@ private:
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
     TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create) const;
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
-    static String getTableEngineName(DefaultTableEngine default_table_engine);
-    static void setDefaultTableEngine(ASTStorage & storage, ContextPtr local_context);
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
@@ -118,6 +121,7 @@ private:
     bool force_attach = false;
     bool load_database_without_tables = false;
     bool need_ddl_guard = true;
+    bool is_restore_from_backup = false;
 
     mutable String as_database_saved;
     mutable String as_table_saved;

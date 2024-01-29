@@ -56,7 +56,7 @@ static std::optional<Exception> checkTupleNames(const Strings & names)
             return Exception(ErrorCodes::BAD_ARGUMENTS, "Names of tuple elements cannot be empty");
 
         if (!names_set.insert(name).second)
-            return Exception(ErrorCodes::DUPLICATE_COLUMN, "Names of tuple elements must be unique");
+            return Exception(ErrorCodes::DUPLICATE_COLUMN, "Names of tuple elements must be unique. Duplicate name: {}", name);
     }
 
     return {};
@@ -90,6 +90,45 @@ std::string DataTypeTuple::doGetName() const
         s << elems[i]->getName();
     }
     s << ")";
+
+    return s.str();
+}
+
+std::string DataTypeTuple::doGetPrettyName(size_t indent) const
+{
+    size_t size = elems.size();
+    WriteBufferFromOwnString s;
+
+    /// If the Tuple is named, we will output it in multiple lines with indentation.
+    if (have_explicit_names)
+    {
+        s << "Tuple(\n";
+
+        for (size_t i = 0; i != size; ++i)
+        {
+            if (i != 0)
+                s << ",\n";
+
+            s << fourSpaceIndent(indent + 1)
+                << backQuoteIfNeed(names[i]) << ' '
+                << elems[i]->getPrettyName(indent + 1);
+        }
+
+        s << ')';
+    }
+    else
+    {
+        s << "Tuple(";
+
+        for (size_t i = 0; i != size; ++i)
+        {
+            if (i != 0)
+                s << ", ";
+            s << elems[i]->getPrettyName(indent);
+        }
+
+        s << ')';
+    }
 
     return s.str();
 }
@@ -281,7 +320,7 @@ SerializationPtr DataTypeTuple::doGetDefaultSerialization() const
     {
         String elem_name = have_explicit_names ? names[i] : toString(i + 1);
         auto serialization = elems[i]->getDefaultSerialization();
-        serializations[i] = std::make_shared<SerializationNamed>(serialization, elem_name);
+        serializations[i] = std::make_shared<SerializationNamed>(serialization, elem_name, SubstreamType::TupleElement);
     }
 
     return std::make_shared<SerializationTuple>(std::move(serializations), have_explicit_names);
@@ -296,7 +335,7 @@ SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info)
     {
         String elem_name = have_explicit_names ? names[i] : toString(i + 1);
         auto serialization = elems[i]->getSerialization(*info_tuple.getElementInfo(i));
-        serializations[i] = std::make_shared<SerializationNamed>(serialization, elem_name);
+        serializations[i] = std::make_shared<SerializationNamed>(serialization, elem_name, SubstreamType::TupleElement);
     }
 
     return std::make_shared<SerializationTuple>(std::move(serializations), have_explicit_names);

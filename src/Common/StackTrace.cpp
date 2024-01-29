@@ -20,12 +20,9 @@
 #include <sstream>
 #include <unordered_map>
 #include <fmt/format.h>
+#include <libunwind.h>
 
 #include "config.h"
-
-#if USE_UNWIND
-#    include <libunwind.h>
-#endif
 
 namespace
 {
@@ -35,6 +32,10 @@ std::atomic<bool> show_addresses = true;
 
 bool shouldShowAddress(const void * addr)
 {
+    /// Likely inline frame
+    if (!addr)
+        return false;
+
     /// If the address is less than 4096, most likely it is a nullptr dereference with offset,
     /// and showing this offset is secure nevertheless.
     /// NOTE: 4096 is the page size on x86 and it can be different on other systems,
@@ -206,21 +207,24 @@ static void * getCallerAddress(const ucontext_t & context)
 #endif
 }
 
-// FIXME: looks like this is used only for Sentry but duplicates the whole algo, maybe replace?
-void StackTrace::symbolize(
-    const StackTrace::FramePointers & frame_pointers, [[maybe_unused]] size_t offset, size_t size, StackTrace::Frames & frames)
+void StackTrace::forEachFrame(
+    const StackTrace::FramePointers & frame_pointers,
+    size_t offset,
+    size_t size,
+    std::function<void(const Frame &)> callback,
+    bool fatal)
 {
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    auto symbol_index_ptr = DB::SymbolIndex::instance();
-    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
-    for (size_t i = 0; i < offset; ++i)
-        frames[i].virtual_addr = frame_pointers[i];
+    using enum DB::Dwarf::LocationInfoMode;
+    const auto mode = fatal ? FULL_WITH_INLINE : FAST;
 
     for (size_t i = offset; i < size; ++i)
     {
-        StackTrace::Frame & current_frame = frames[i];
+        StackTrace::Frame current_frame;
+        std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
         current_frame.virtual_addr = frame_pointers[i];
         const auto * object = symbol_index.findObject(current_frame.virtual_addr);
         uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
@@ -234,26 +238,41 @@ void StackTrace::symbolize(
                 auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
 
                 DB::Dwarf::LocationInfo location;
-                std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
                 if (dwarf_it->second.findAddress(
-                        uintptr_t(current_frame.physical_addr), location, DB::Dwarf::LocationInfoMode::FAST, inline_frames))
+                        uintptr_t(current_frame.physical_addr), location, mode, inline_frames))
                 {
                     current_frame.file = location.file.toString();
                     current_frame.line = location.line;
                 }
             }
         }
-        else
-            current_frame.object = "?";
 
         if (const auto * symbol = symbol_index.findSymbol(current_frame.virtual_addr))
             current_frame.symbol = demangle(symbol->name);
-        else
-            current_frame.symbol = "?";
+
+        for (const auto & frame : inline_frames)
+        {
+            StackTrace::Frame current_inline_frame;
+            const String file_for_inline_frame = frame.location.file.toString();
+
+            current_inline_frame.file = "inlined from " + file_for_inline_frame;
+            current_inline_frame.line = frame.location.line;
+            current_inline_frame.symbol = frame.name;
+
+            callback(current_inline_frame);
+        }
+
+        callback(current_frame);
     }
 #else
-    for (size_t i = 0; i < size; ++i)
-        frames[i].virtual_addr = frame_pointers[i];
+    UNUSED(fatal);
+
+    for (size_t i = offset; i < size; ++i)
+    {
+        StackTrace::Frame current_frame;
+        current_frame.virtual_addr = frame_pointers[i];
+        callback(current_frame);
+    }
 #endif
 }
 
@@ -287,21 +306,31 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
 
 void StackTrace::tryCapture()
 {
-#if USE_UNWIND
     size = unw_backtrace(frame_pointers.data(), capacity);
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
-#else
-    size = 0;
-#endif
 }
 
 /// ClickHouse uses bundled libc++ so type names will be the same on every system thus it's safe to hardcode them
 constexpr std::pair<std::string_view, std::string_view> replacements[]
     = {{"::__1", ""}, {"std::basic_string<char, std::char_traits<char>, std::allocator<char>>", "String"}};
 
-String collapseNames(String && haystack)
+// Demangle @c symbol_name if it's not from __functional header (as such functions don't provide any useful
+// information but pollute stack traces).
+// Replace parts from @c replacements with shorter aliases
+String demangleAndCollapseNames(std::string_view file, const char * const symbol_name)
 {
-    // TODO: surely there is a written version already for better in place search&replace
+    if (!symbol_name)
+        return "?";
+
+    std::string_view file_copy = file;
+    if (auto trim_pos = file.find_last_of('/'); trim_pos != file.npos)
+        file_copy.remove_suffix(file.size() - trim_pos);
+    if (file_copy.ends_with("functional"))
+        return "?";
+
+    String haystack = demangle(symbol_name);
+
+    // TODO myrrc surely there is a written version already for better in place search&replace
     for (auto [needle, to] : replacements)
     {
         size_t pos = 0;
@@ -343,72 +372,71 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
     if (stack_trace.size == 0)
         return callback("<Empty trace>");
 
+    size_t frame_index = stack_trace.offset;
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-
-    using enum DB::Dwarf::LocationInfoMode;
-    const auto mode = fatal ? FULL_WITH_INLINE : FAST;
-
-    auto symbol_index_ptr = DB::SymbolIndex::instance();
-    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
-    std::unordered_map<String, DB::Dwarf> dwarfs;
-
-    for (size_t i = stack_trace.offset; i < stack_trace.size; ++i)
+    size_t inline_frame_index = 0;
+    auto callback_wrapper = [&](const StackTrace::Frame & frame)
     {
-        std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
-        const void * virtual_addr = stack_trace.pointers[i];
-        const auto * object = symbol_index.findObject(virtual_addr);
-        uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
-        const void * physical_addr = reinterpret_cast<const void *>(uintptr_t(virtual_addr) - virtual_offset);
-
         DB::WriteBufferFromOwnString out;
-        out << i << ". ";
 
-        if (std::error_code ec; object && std::filesystem::exists(object->name, ec) && !ec)
+        /// Inline frame
+        if (!frame.virtual_addr)
         {
-            auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
-
-            DB::Dwarf::LocationInfo location;
-
-            if (dwarf_it->second.findAddress(uintptr_t(physical_addr), location, mode, inline_frames))
-                out << location.file.toString() << ":" << location.line << ": ";
+            out << frame_index << "." << inline_frame_index++ << ". ";
+        }
+        else
+        {
+            out << frame_index++ << ". ";
+            inline_frame_index = 0;
         }
 
-        if (const auto * const symbol = symbol_index.findSymbol(virtual_addr))
-            out << collapseNames(demangle(symbol->name));
+        if (frame.file.has_value() && frame.line.has_value())
+            out << *frame.file << ':' << *frame.line << ": ";
+
+        if (frame.symbol.has_value() && frame.file.has_value())
+            out << demangleAndCollapseNames(*frame.file, frame.symbol->data());
         else
             out << "?";
 
-        if (shouldShowAddress(physical_addr))
+        if (shouldShowAddress(frame.physical_addr))
         {
             out << " @ ";
-            DB::writePointerHex(physical_addr, out);
+            DB::writePointerHex(frame.physical_addr, out);
         }
 
-        out << " in " << (object ? object->name : "?");
-
-        for (size_t j = 0; j < inline_frames.size(); ++j)
-        {
-            const auto & frame = inline_frames[j];
-            callback(fmt::format(
-                "{}.{}. inlined from {}:{}: {}",
-                i,
-                j + 1,
-                frame.location.file.toString(),
-                frame.location.line,
-                collapseNames(demangle(frame.name))));
-        }
+        if (frame.object.has_value())
+            out << " in " << *frame.object;
 
         callback(out.str());
-    }
+    };
 #else
-    for (size_t i = stack_trace.offset; i < stack_trace.size; ++i)
-        if (const void * const addr = stack_trace.pointers[i]; shouldShowAddress(addr))
-            callback(fmt::format("{}. {}", i, addr));
+    auto callback_wrapper = [&](const StackTrace::Frame & frame)
+    {
+        if (frame.virtual_addr && shouldShowAddress(frame.virtual_addr))
+            callback(fmt::format("{}. {}", frame_index++, frame.virtual_addr));
+    };
 #endif
+
+    StackTrace::forEachFrame(stack_trace.pointers, stack_trace.offset, stack_trace.size, callback_wrapper, fatal);
 }
 
 void StackTrace::toStringEveryLine(std::function<void(std::string_view)> callback) const
 {
+    toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
+}
+
+void StackTrace::toStringEveryLine(const FramePointers & frame_pointers, std::function<void(std::string_view)> callback)
+{
+    toStringEveryLineImpl(true, {frame_pointers, 0, static_cast<size_t>(std::ranges::find(frame_pointers, nullptr) - frame_pointers.begin())}, std::move(callback));
+}
+
+void StackTrace::toStringEveryLine(void ** frame_pointers_raw, size_t offset, size_t size, std::function<void(std::string_view)> callback)
+{
+    __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
+
+    StackTrace::FramePointers frame_pointers{};
+    std::copy_n(frame_pointers_raw, size, frame_pointers.begin());
+
     toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
 }
 

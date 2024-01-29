@@ -4,7 +4,7 @@
 
 
 /// Available events. Add something here as you wish.
-#define APPLY_FOR_EVENTS(M) \
+#define APPLY_FOR_BUILTIN_EVENTS(M) \
     M(Query, "Number of queries to be interpreted and potentially executed. Does not include queries that failed to parse or were rejected due to AST size limits, quota limits or limits on the number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.") \
     M(SelectQuery, "Same as Query, but only for SELECT queries.") \
     M(InsertQuery, "Same as Query, but only for INSERT queries.") \
@@ -45,6 +45,7 @@
     M(MMappedFileCacheMisses, "Number of times a file has not been found in the MMap cache (for the 'mmap' read_method), so we had to mmap it again.") \
     M(OpenedFileCacheHits, "Number of times a file has been found in the opened file cache, so we didn't have to open it again.") \
     M(OpenedFileCacheMisses, "Number of times a file has been found in the opened file cache, so we had to open it again.") \
+    M(OpenedFileCacheMicroseconds, "Amount of time spent executing OpenedFileCache methods.") \
     M(AIOWrite, "Number of writes with Linux or FreeBSD AIO interface") \
     M(AIOWriteBytes, "Number of bytes written with Linux or FreeBSD AIO interface") \
     M(AIORead, "Number of reads with Linux or FreeBSD AIO interface") \
@@ -57,8 +58,8 @@
     M(TableFunctionExecute, "Number of table function calls.") \
     M(MarkCacheHits, "Number of times an entry has been found in the mark cache, so we didn't have to load a mark file.") \
     M(MarkCacheMisses, "Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.") \
-    M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided).") \
-    M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation).") \
+    M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.") \
+    M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Only updated for SELECT queries with SETTING use_query_cache = 1.") \
     M(CreatedReadBufferOrdinary, "Number of times ordinary read buffer was created for reading data (while choosing among other read methods).") \
     M(CreatedReadBufferDirectIO, "Number of times a read buffer with O_DIRECT was created for reading data (while choosing among other read methods).") \
     M(CreatedReadBufferDirectIOFailed, "Number of times a read buffer with O_DIRECT was attempted to be created for reading data (while choosing among other read methods), but the OS did not allow it (due to lack of filesystem support or other reasons) and we fallen back to the ordinary reading method.") \
@@ -100,6 +101,7 @@
     M(ReplicatedPartChecks, "Number of times we had to perform advanced search for a data part on replicas or to clarify the need of an existing data part.") \
     M(ReplicatedPartChecksFailed, "Number of times the advanced search for a data part on replicas did not give result or when unexpected part has been found and moved away.") \
     M(ReplicatedDataLoss, "Number of times a data part that we wanted doesn't exist on any replica (even on replicas that are offline right now). That data parts are definitely lost. This is normal due to asynchronous replication (if quorum inserts were not enabled), when the replica on which the data part was written was failed and when it became online after fail it doesn't contain that data part.") \
+    M(ReplicatedCoveredPartsInZooKeeperOnStart, "For debugging purposes. Number of parts in ZooKeeper that have a covering part, but doesn't exist on disk. Checked on server start.") \
     \
     M(InsertedRows, "Number of rows INSERTed to all tables.") \
     M(InsertedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) INSERTed to all tables.") \
@@ -125,6 +127,7 @@
     M(ZooKeeperMulti, "Number of 'multi' requests to ZooKeeper (compound transactions).") \
     M(ZooKeeperCheck, "Number of 'check' requests to ZooKeeper. Usually they don't make sense in isolation, only as part of a complex transaction.") \
     M(ZooKeeperSync, "Number of 'sync' requests to ZooKeeper. These requests are rarely needed or usable.") \
+    M(ZooKeeperReconfig, "Number of 'reconfig' requests to ZooKeeper.") \
     M(ZooKeeperClose, "Number of times connection with ZooKeeper has been closed voluntary.") \
     M(ZooKeeperWatchResponse, "Number of times watch notification has been received from ZooKeeper.") \
     M(ZooKeeperUserExceptions, "Number of exceptions while working with ZooKeeper related to the data (no node, bad version or similar).") \
@@ -209,6 +212,7 @@
     \
     M(RegexpCreated, "Compiled regular expressions. Identical regular expressions compiled just once and cached forever.") \
     M(ContextLock, "Number of times the lock of Context was acquired or tried to acquire. This is global lock.") \
+    M(ContextLockWaitMicroseconds, "Context lock wait time in microseconds") \
     \
     M(StorageBufferFlush, "Number of times a buffer in a 'Buffer' table was flushed.") \
     M(StorageBufferErrorOnFlush, "Number of times a buffer in the 'Buffer' table has not been able to flush due to error writing in the destination table.") \
@@ -233,7 +237,8 @@
     M(DictCacheLockWriteNs, "Number of nanoseconds spend in waiting for write lock to update the data for the dictionaries of 'cache' types.") \
     M(DictCacheLockReadNs, "Number of nanoseconds spend in waiting for read lock to lookup the data for the dictionaries of 'cache' types.") \
     \
-    M(DistributedSyncInsertionTimeoutExceeded, "A timeout has exceeded while waiting for shards during synchronous insertion into a Distributed table (with 'insert_distributed_sync' = 1)") \
+    M(DistributedSyncInsertionTimeoutExceeded, "A timeout has exceeded while waiting for shards during synchronous insertion into a Distributed table (with 'distributed_foreground_insert' = 1)") \
+    M(DistributedAsyncInsertionFailures, "Number of failures for asynchronous insertion into a Distributed table (with 'distributed_foreground_insert' = 0)") \
     M(DataAfterMergeDiffersFromReplica, R"(
 Number of times data after merge is not byte-identical to the data on another replicas. There could be several reasons:
 1. Using newer version of compression library after server update.
@@ -245,25 +250,34 @@ Number of times data after merge is not byte-identical to the data on another re
 7. Manual modification of source data after server startup.
 8. Manual modification of checksums stored in ZooKeeper.
 9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas.
-The server successfully detected this situation and will download merged part from replica to force byte-identical result.
+The server successfully detected this situation and will download merged part from the replica to force the byte-identical result.
 )") \
-    M(DataAfterMutationDiffersFromReplica, "Number of times data after mutation is not byte-identical to the data on another replicas. In addition to the reasons described in 'DataAfterMergeDiffersFromReplica', it is also possible due to non-deterministic mutation.") \
+    M(DataAfterMutationDiffersFromReplica, "Number of times data after mutation is not byte-identical to the data on other replicas. In addition to the reasons described in 'DataAfterMergeDiffersFromReplica', it is also possible due to non-deterministic mutation.") \
     M(PolygonsAddedToPool, "A polygon has been added to the cache (pool) for the 'pointInPolygon' function.") \
     M(PolygonsInPoolAllocatedBytes, "The number of bytes for polygons added to the cache (pool) for the 'pointInPolygon' function.") \
+    \
+    M(USearchAddCount, "Number of vectors added to usearch indexes.") \
+    M(USearchAddVisitedMembers, "Number of nodes visited when adding vectors to usearch indexes.") \
+    M(USearchAddComputedDistances, "Number of times distance was computed when adding vectors to usearch indexes.") \
+    M(USearchSearchCount, "Number of search operations performed in usearch indexes.") \
+    M(USearchSearchVisitedMembers, "Number of nodes visited when searching in usearch indexes.") \
+    M(USearchSearchComputedDistances, "Number of times distance was computed when searching usearch indexes.") \
     \
     M(RWLockAcquiredReadLocks, "Number of times a read lock was acquired (in a heavy RWLock).") \
     M(RWLockAcquiredWriteLocks, "Number of times a write lock was acquired (in a heavy RWLock).") \
     M(RWLockReadersWaitMilliseconds, "Total time spent waiting for a read lock to be acquired (in a heavy RWLock).") \
     M(RWLockWritersWaitMilliseconds, "Total time spent waiting for a write lock to be acquired (in a heavy RWLock).") \
     M(DNSError, "Total count of errors in DNS resolution") \
+    M(PartsLockHoldMicroseconds, "Total time spent holding data parts lock in MergeTree tables") \
+    M(PartsLockWaitMicroseconds, "Total time spent waiting for data parts lock in MergeTree tables") \
     \
     M(RealTimeMicroseconds, "Total (wall clock) time spent in processing (queries and other tasks) threads (note that this is a sum).") \
-    M(UserTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in user mode. This include time CPU pipeline was stalled due to main memory access, cache misses, branch mispredictions, hyper-threading, etc.") \
+    M(UserTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in user mode. This includes time CPU pipeline was stalled due to main memory access, cache misses, branch mispredictions, hyper-threading, etc.") \
     M(SystemTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in OS kernel mode. This is time spent in syscalls, excluding waiting time during blocking syscalls.") \
     M(MemoryOvercommitWaitTimeMicroseconds, "Total time spent in waiting for memory to be freed in OvercommitTracker.") \
     M(MemoryAllocatorPurge, "Total number of times memory allocator purge was requested") \
     M(MemoryAllocatorPurgeTimeMicroseconds, "Total number of times memory allocator purge was requested") \
-    M(SoftPageFaults, "The number of soft page faults in query execution threads. Soft page fault usually means a miss in the memory allocator cache which required a new memory mapping from the OS and subsequent allocation of a page of physical memory.") \
+    M(SoftPageFaults, "The number of soft page faults in query execution threads. Soft page fault usually means a miss in the memory allocator cache, which requires a new memory mapping from the OS and subsequent allocation of a page of physical memory.") \
     M(HardPageFaults, "The number of hard page faults in query execution threads. High values indicate either that you forgot to turn off swap on your server, or eviction of memory pages of the ClickHouse binary during very high memory pressure, or successful usage of the 'mmap' read method for the tables data.") \
     \
     M(OSIOWaitMicroseconds, "Total time a thread spent waiting for a result of IO operation, from the OS point of view. This is real IO that doesn't include page cache.") \
@@ -274,10 +288,22 @@ The server successfully detected this situation and will download merged part fr
     M(OSReadChars, "Number of bytes read from filesystem, including page cache.") \
     M(OSWriteChars, "Number of bytes written to filesystem, including page cache.") \
     \
+    M(ParallelReplicasHandleRequestMicroseconds, "Time spent processing requests for marks from replicas") \
+    M(ParallelReplicasHandleAnnouncementMicroseconds, "Time spent processing replicas announcements") \
+    \
+    M(ParallelReplicasReadAssignedMarks, "Sum across all replicas of how many of scheduled marks were assigned by consistent hash") \
+    M(ParallelReplicasReadUnassignedMarks, "Sum across all replicas of how many unassigned marks were scheduled") \
+    M(ParallelReplicasReadAssignedForStealingMarks, "Sum across all replicas of how many of scheduled marks were assigned for stealing by consistent hash") \
+    \
+    M(ParallelReplicasStealingByHashMicroseconds, "Time spent collecting segments meant for stealing by hash") \
+    M(ParallelReplicasProcessingPartsMicroseconds, "Time spent processing data parts") \
+    M(ParallelReplicasStealingLeftoversMicroseconds, "Time spent collecting orphaned segments") \
+    M(ParallelReplicasCollectingOwnedSegmentsMicroseconds, "Time spent collecting segments meant by hash") \
+    \
     M(PerfCpuCycles, "Total cycles. Be wary of what happens during CPU frequency scaling.")  \
     M(PerfInstructions, "Retired instructions. Be careful, these can be affected by various issues, most notably hardware interrupt counts.") \
-    M(PerfCacheReferences, "Cache accesses. Usually this indicates Last Level Cache accesses but this may vary depending on your CPU. This may include prefetches and coherency messages; again this depends on the design of your CPU.") \
-    M(PerfCacheMisses, "Cache misses. Usually this indicates Last Level Cache misses; this is intended to be used in con‐junction with the PERFCOUNTHWCACHEREFERENCES event to calculate cache miss rates.") \
+    M(PerfCacheReferences, "Cache accesses. Usually, this indicates Last Level Cache accesses, but this may vary depending on your CPU. This may include prefetches and coherency messages; again this depends on the design of your CPU.") \
+    M(PerfCacheMisses, "Cache misses. Usually this indicates Last Level Cache misses; this is intended to be used in conjunction with the PERFCOUNTHWCACHEREFERENCES event to calculate cache miss rates.") \
     M(PerfBranchInstructions, "Retired branch instructions. Prior to Linux 2.6.35, this used the wrong event on AMD processors.") \
     M(PerfBranchMisses, "Mispredicted branch instructions.") \
     M(PerfBusCycles, "Bus cycles, which can be different from total cycles.") \
@@ -304,6 +330,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(CannotWriteToWriteBufferDiscard, "Number of stack traces dropped by query profiler or signal handler because pipe is full or cannot write to pipe.") \
     M(QueryProfilerSignalOverruns, "Number of times we drop processing of a query profiler signal due to overrun plus the number of signals that OS has not delivered due to overrun.") \
+    M(QueryProfilerConcurrencyOverruns, "Number of times we drop processing of a query profiler signal due to too many concurrent query profilers in other threads, which may indicate overload.") \
     M(QueryProfilerRuns, "Number of times QueryProfiler had been run.") \
     \
     M(CreatedLogEntryForMerge, "Successfully created log entry to merge parts in ReplicatedMergeTree.") \
@@ -348,6 +375,9 @@ The server successfully detected this situation and will download merged part fr
     M(S3PutObject, "Number of S3 API PutObject calls.") \
     M(S3GetObject, "Number of S3 API GetObject calls.") \
     \
+    M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
+    M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.") \
+    \
     M(DiskS3DeleteObjects, "Number of DiskS3 API DeleteObject(s) calls.") \
     M(DiskS3CopyObject, "Number of DiskS3 API CopyObject calls.") \
     M(DiskS3ListObjects, "Number of DiskS3 API ListObjects calls.") \
@@ -361,10 +391,19 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3PutObject, "Number of DiskS3 API PutObject calls.") \
     M(DiskS3GetObject, "Number of DiskS3 API GetObject calls.") \
     \
+    M(S3Clients, "Number of created S3 clients.") \
+    M(TinyS3Clients, "Number of S3 clients copies which reuse an existing auth provider from another client.") \
+    \
+    M(EngineFileLikeReadFiles, "Number of files read in table engines working with files (like File/S3/URL/HDFS).") \
+    \
     M(ReadBufferFromS3Microseconds, "Time spent on reading from S3.") \
     M(ReadBufferFromS3InitMicroseconds, "Time spent initializing connection to S3.") \
     M(ReadBufferFromS3Bytes, "Bytes read from S3.") \
     M(ReadBufferFromS3RequestsErrors, "Number of exceptions while reading from S3.") \
+    M(ReadBufferFromS3ResetSessions, "Number of HTTP sessions that were reset in ReadBufferFromS3.") \
+    M(ReadBufferFromS3PreservedSessions, "Number of HTTP sessions that were preserved in ReadBufferFromS3.") \
+    \
+    M(ReadWriteBufferFromHTTPPreservedSessions, "Number of HTTP sessions that were preserved in ReadWriteBufferFromHTTP.") \
     \
     M(WriteBufferFromS3Microseconds, "Time spent on writing to S3.") \
     M(WriteBufferFromS3Bytes, "Bytes written to S3.") \
@@ -372,17 +411,39 @@ The server successfully detected this situation and will download merged part fr
     M(WriteBufferFromS3WaitInflightLimitMicroseconds, "Time spent on waiting while some of the current requests are done when its number reached the limit defined by s3_max_inflight_parts_for_one_file.") \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
     \
+    M(CachedReadBufferReadFromCacheHits, "Number of times the read from filesystem cache hit the cache.") \
+    M(CachedReadBufferReadFromCacheMisses, "Number of times the read from filesystem cache miss the cache.") \
     M(CachedReadBufferReadFromSourceMicroseconds, "Time reading from filesystem cache source (from remote filesystem, etc)") \
     M(CachedReadBufferReadFromCacheMicroseconds, "Time reading from filesystem cache") \
     M(CachedReadBufferReadFromSourceBytes, "Bytes read from filesystem cache source (from remote fs, etc)") \
     M(CachedReadBufferReadFromCacheBytes, "Bytes read from filesystem cache") \
     M(CachedReadBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
     M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
+    M(CachedReadBufferCreateBufferMicroseconds, "Prepare buffer time") \
     M(CachedWriteBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
     M(CachedWriteBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
     \
+    M(FilesystemCacheLoadMetadataMicroseconds, "Time spent loading filesystem cache metadata") \
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache") \
     M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache") \
+    M(FilesystemCacheEvictionSkippedFileSegments, "Number of file segments skipped for eviction because of being unreleasable") \
+    M(FilesystemCacheEvictionTries, "Number of filesystem cache eviction attempts") \
+    M(FilesystemCacheLockKeyMicroseconds, "Lock cache key time") \
+    M(FilesystemCacheLockMetadataMicroseconds, "Lock filesystem cache metadata time") \
+    M(FilesystemCacheLockCacheMicroseconds, "Lock filesystem cache time") \
+    M(FilesystemCacheReserveMicroseconds, "Filesystem cache space reservation time") \
+    M(FilesystemCacheEvictMicroseconds, "Filesystem cache eviction time") \
+    M(FilesystemCacheGetOrSetMicroseconds, "Filesystem cache getOrSet() time") \
+    M(FilesystemCacheGetMicroseconds, "Filesystem cache get() time") \
+    M(FileSegmentWaitMicroseconds, "Wait on DOWNLOADING state") \
+    M(FileSegmentCompleteMicroseconds, "Duration of FileSegment::complete() in filesystem cache") \
+    M(FileSegmentLockMicroseconds, "Lock file segment time") \
+    M(FileSegmentWriteMicroseconds, "File segment write() time") \
+    M(FileSegmentUseMicroseconds, "File segment use() time") \
+    M(FileSegmentRemoveMicroseconds, "File segment remove() time") \
+    M(FileSegmentHolderCompleteMicroseconds, "File segments holder complete() time") \
+    M(FilesystemCacheHoldFileSegments, "Filesystem cache file segments count, which were hold") \
+    M(FilesystemCacheUnusedHoldFileSegments, "Filesystem cache file segments count, which were hold, but not used (because of seek or LIMIT n, etc)") \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer") \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
@@ -399,29 +460,36 @@ The server successfully detected this situation and will download merged part fr
     M(WaitPrefetchTaskMicroseconds, "Time spend waiting for prefetched reader") \
     \
     M(ThreadpoolReaderTaskMicroseconds, "Time spent getting the data in asynchronous reading") \
+    M(ThreadpoolReaderPrepareMicroseconds, "Time spent on preparation (e.g. call to reader seek() method)") \
     M(ThreadpoolReaderReadBytes, "Bytes read from a threadpool task in asynchronous reading") \
     M(ThreadpoolReaderSubmit, "Bytes read from a threadpool task in asynchronous reading") \
+    M(ThreadpoolReaderSubmitReadSynchronously, "How many times we haven't scheduled a task on the thread pool and read synchronously instead") \
+    M(ThreadpoolReaderSubmitReadSynchronouslyBytes, "How many bytes were read synchronously") \
+    M(ThreadpoolReaderSubmitReadSynchronouslyMicroseconds, "How much time we spent reading synchronously") \
+    M(ThreadpoolReaderSubmitLookupInCacheMicroseconds, "How much time we spent checking if content is cached") \
+    M(AsynchronousReaderIgnoredBytes, "Number of bytes ignored during asynchronous reading") \
     \
     M(FileSegmentWaitReadBufferMicroseconds, "Metric per file segment. Time spend waiting for internal read buffer (includes cache waiting)") \
     M(FileSegmentReadMicroseconds, "Metric per file segment. Time spend reading from file") \
-    M(FileSegmentWriteMicroseconds, "Metric per file segment. Time spend writing cache") \
     M(FileSegmentCacheWriteMicroseconds, "Metric per file segment. Time spend writing data to cache") \
-    M(FileSegmentPredownloadMicroseconds, "Metric per file segment. Time spent predownloading data to cache (predownloading - finishing file segment download (after someone who failed to do that) up to the point current thread was requested to do)") \
+    M(FileSegmentPredownloadMicroseconds, "Metric per file segment. Time spent pre-downloading data to cache (pre-downloading - finishing file segment download (after someone who failed to do that) up to the point current thread was requested to do)") \
     M(FileSegmentUsedBytes, "Metric per file segment. How many bytes were actually used from current file segment") \
     \
     M(ReadBufferSeekCancelConnection, "Number of seeks which lead to new connection (s3, http)") \
     \
     M(SleepFunctionCalls, "Number of times a sleep function (sleep, sleepEachRow) has been called.") \
-    M(SleepFunctionMicroseconds, "Time spent sleeping due to a sleep function call.") \
+    M(SleepFunctionMicroseconds, "Time set to sleep in a sleep function (sleep, sleepEachRow).") \
+    M(SleepFunctionElapsedMicroseconds, "Time spent sleeping in a sleep function (sleep, sleepEachRow).") \
     \
-    M(ThreadPoolReaderPageCacheHit, "Number of times the read inside ThreadPoolReader was done from page cache.") \
-    M(ThreadPoolReaderPageCacheHitBytes, "Number of bytes read inside ThreadPoolReader when it was done from page cache.") \
+    M(ThreadPoolReaderPageCacheHit, "Number of times the read inside ThreadPoolReader was done from the page cache.") \
+    M(ThreadPoolReaderPageCacheHitBytes, "Number of bytes read inside ThreadPoolReader when it was done from the page cache.") \
     M(ThreadPoolReaderPageCacheHitElapsedMicroseconds, "Time spent reading data from page cache in ThreadPoolReader.") \
     M(ThreadPoolReaderPageCacheMiss, "Number of times the read inside ThreadPoolReader was not done from page cache and was hand off to thread pool.") \
     M(ThreadPoolReaderPageCacheMissBytes, "Number of bytes read inside ThreadPoolReader when read was not done from page cache and was hand off to thread pool.") \
-    M(ThreadPoolReaderPageCacheMissElapsedMicroseconds, "Time spent reading data inside the asynchronous job in ThreadPoolReader - when read was not done from page cache.") \
+    M(ThreadPoolReaderPageCacheMissElapsedMicroseconds, "Time spent reading data inside the asynchronous job in ThreadPoolReader - when read was not done from the page cache.") \
     \
-    M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads.") \
+    M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads in asynchronous local read.") \
+    M(SynchronousReadWaitMicroseconds, "Time spent in waiting for synchronous reads in asynchronous local read.") \
     M(AsynchronousRemoteReadWaitMicroseconds, "Time spent in waiting for asynchronous remote reads.") \
     M(SynchronousRemoteReadWaitMicroseconds, "Time spent in waiting for synchronous remote reads.") \
     \
@@ -431,13 +499,6 @@ The server successfully detected this situation and will download merged part fr
     \
     M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.") \
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.") \
-    \
-    M(MergeTreeMetadataCacheGet, "Number of rocksdb reads (used for merge tree metadata cache)") \
-    M(MergeTreeMetadataCachePut, "Number of rocksdb puts (used for merge tree metadata cache)") \
-    M(MergeTreeMetadataCacheDelete, "Number of rocksdb deletes (used for merge tree metadata cache)") \
-    M(MergeTreeMetadataCacheSeek, "Number of rocksdb seeks (used for merge tree metadata cache)") \
-    M(MergeTreeMetadataCacheHit, "Number of times the read of meta file was done from MergeTree metadata cache") \
-    M(MergeTreeMetadataCacheMiss, "Number of times the read of meta file was not done from MergeTree metadata cache") \
     \
     M(KafkaRebalanceRevocations, "Number of partition revocations (the first stage of consumer group rebalance)") \
     M(KafkaRebalanceAssignments, "Number of partition assignments (the final stage of consumer group rebalance)") \
@@ -462,8 +523,12 @@ The server successfully detected this situation and will download merged part fr
     M(ScalarSubqueriesLocalCacheHit, "Number of times a read from a scalar subquery was done using the local cache") \
     M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely")                                                                                                                                                                                                 \
     \
-    M(SchemaInferenceCacheHits, "Number of times a schema from cache was used for schema inference") \
-    M(SchemaInferenceCacheMisses, "Number of times a schema is not in cache while schema inference") \
+    M(SchemaInferenceCacheHits, "Number of times the requested source is found in schema cache") \
+    M(SchemaInferenceCacheSchemaHits, "Number of times the schema is found in schema cache during schema inference") \
+    M(SchemaInferenceCacheNumRowsHits, "Number of times the number of rows is found in schema cache during count from files") \
+    M(SchemaInferenceCacheMisses, "Number of times the requested source is not in schema cache") \
+    M(SchemaInferenceCacheSchemaMisses, "Number of times the requested source is in cache but the schema is not in cache during schema inference") \
+    M(SchemaInferenceCacheNumRowsMisses, "Number of times the requested source is in cache but the number of rows is not in cache while count from files") \
     M(SchemaInferenceCacheEvictions, "Number of times a schema from cache was evicted due to overflow") \
     M(SchemaInferenceCacheInvalidations, "Number of times a schema in cache became invalid due to changes in data") \
     \
@@ -482,6 +547,7 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperCreateRequest, "Number of create requests")\
     M(KeeperRemoveRequest, "Number of remove requests")\
     M(KeeperSetRequest, "Number of set requests")\
+    M(KeeperReconfigRequest, "Number of reconfig requests")\
     M(KeeperCheckRequest, "Number of check requests")\
     M(KeeperMultiRequest, "Number of multi requests")\
     M(KeeperMultiReadRequest, "Number of multi read requests")\
@@ -493,23 +559,40 @@ The server successfully detected this situation and will download merged part fr
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.") \
     M(OverflowAny, "Number of times approximate GROUP BY was in effect: when aggregation was performed only on top of first 'max_rows_to_group_by' unique keys and other keys were ignored due to 'group_by_overflow_mode' = 'any'.") \
     \
+    M(S3QueueSetFileProcessingMicroseconds, "Time spent to set file as processing")\
+    M(S3QueueSetFileProcessedMicroseconds, "Time spent to set file as processed")\
+    M(S3QueueSetFileFailedMicroseconds, "Time spent to set file as failed")\
+    M(S3QueueCleanupMaxSetSizeOrTTLMicroseconds, "Time spent to set file as failed")\
+    M(S3QueuePullMicroseconds, "Time spent to read file data")\
+    M(S3QueueLockLocalFileStatusesMicroseconds, "Time spent to lock local file statuses")\
+    \
     M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds")\
     M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted") \
     M(IOUringSQEsResubmits, "Total number of io_uring SQE resubmits performed") \
     M(IOUringCQEsCompleted, "Total number of successfully completed io_uring CQEs") \
     M(IOUringCQEsFailed, "Total number of completed io_uring CQEs with failures") \
     \
+    M(BackupsOpenedForRead, "Number of backups opened for reading") \
+    M(BackupsOpenedForWrite, "Number of backups opened for writing") \
+    M(BackupReadMetadataMicroseconds, "Time spent reading backup metadata from .backup file") \
+    M(BackupWriteMetadataMicroseconds, "Time spent writing backup metadata to .backup file") \
+    M(BackupEntriesCollectorMicroseconds, "Time spent making backup entries") \
+    M(BackupEntriesCollectorForTablesDataMicroseconds, "Time spent making backup entries for tables data") \
+    M(BackupEntriesCollectorRunPostTasksMicroseconds, "Time spent running post tasks after making backup entries") \
+    \
     M(ReadTaskRequestsReceived, "The number of callbacks requested from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the initiator server side.") \
     M(MergeTreeReadTaskRequestsReceived, "The number of callbacks requested from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the initiator server side.") \
     \
     M(ReadTaskRequestsSent, "The number of callbacks requested from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the remote server side.") \
     M(MergeTreeReadTaskRequestsSent, "The number of callbacks requested from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.") \
-    M(MergeTreeAllRangesAnnouncementsSent, "The number of announcement sent from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
+    M(MergeTreeAllRangesAnnouncementsSent, "The number of announcements sent from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
     M(ReadTaskRequestsSentElapsedMicroseconds, "Time spent in callbacks requested from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the remote server side.") \
     M(MergeTreeReadTaskRequestsSentElapsedMicroseconds, "Time spent in callbacks requested from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.") \
     M(MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, "Time spent in sending the announcement from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
     \
     M(ConnectionPoolIsFullMicroseconds, "Total time spent waiting for a slot in connection pool.") \
+    \
+    M(AsyncLoaderWaitMicroseconds, "Total time a query was waiting for async loader jobs.") \
     \
     M(LogTest, "Number of log messages with level Test") \
     M(LogTrace, "Number of log messages with level Trace") \
@@ -518,7 +601,27 @@ The server successfully detected this situation and will download merged part fr
     M(LogWarning, "Number of log messages with level Warning") \
     M(LogError, "Number of log messages with level Error") \
     M(LogFatal, "Number of log messages with level Fatal") \
+    \
+    M(InterfaceHTTPSendBytes, "Number of bytes sent through HTTP interfaces") \
+    M(InterfaceHTTPReceiveBytes, "Number of bytes received through HTTP interfaces") \
+    M(InterfaceNativeSendBytes, "Number of bytes sent through native interfaces") \
+    M(InterfaceNativeReceiveBytes, "Number of bytes received through native interfaces") \
+    M(InterfacePrometheusSendBytes, "Number of bytes sent through Prometheus interfaces") \
+    M(InterfacePrometheusReceiveBytes, "Number of bytes received through Prometheus interfaces") \
+    M(InterfaceInterserverSendBytes, "Number of bytes sent through interserver interfaces") \
+    M(InterfaceInterserverReceiveBytes, "Number of bytes received through interserver interfaces") \
+    M(InterfaceMySQLSendBytes, "Number of bytes sent through MySQL interfaces") \
+    M(InterfaceMySQLReceiveBytes, "Number of bytes received through MySQL interfaces") \
+    M(InterfacePostgreSQLSendBytes, "Number of bytes sent through PostgreSQL interfaces") \
+    M(InterfacePostgreSQLReceiveBytes, "Number of bytes received through PostgreSQL interfaces") \
+    \
+    M(ParallelReplicasUsedCount, "Number of replicas used to execute a query with task-based parallel replicas") \
 
+#ifdef APPLY_FOR_EXTERNAL_EVENTS
+    #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)
+#else
+    #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M)
+#endif
 
 namespace ProfileEvents
 {
@@ -535,6 +638,28 @@ Counters global_counters(global_counters_array);
 
 const Event Counters::num_counters = END;
 
+
+Timer::Timer(Counters & counters_, Event timer_event_, Resolution resolution_)
+    : counters(counters_), timer_event(timer_event_), resolution(resolution_)
+{
+}
+
+Timer::Timer(Counters & counters_, Event timer_event_, Event counter_event, Resolution resolution_)
+    : Timer(counters_, timer_event_, resolution_)
+{
+    counters.increment(counter_event);
+}
+
+UInt64 Timer::get()
+{
+    return watch.elapsedNanoseconds() / static_cast<UInt64>(resolution);
+}
+
+void Timer::end()
+{
+    counters.increment(timer_event, get());
+    watch.reset();
+}
 
 Counters::Counters(VariableContext level_, Counters * parent_)
     : counters_holder(new Counter[num_counters] {}),

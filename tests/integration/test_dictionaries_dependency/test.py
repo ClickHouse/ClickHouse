@@ -2,9 +2,13 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance("node1", stay_alive=True)
+node1 = cluster.add_instance(
+    "node1", stay_alive=True, main_configs=["configs/overrides.xml"]
+)
 node2 = cluster.add_instance(
-    "node2", stay_alive=True, main_configs=["configs/disable_lazy_load.xml"]
+    "node2",
+    stay_alive=True,
+    main_configs=["configs/disable_lazy_load.xml", "configs/overrides.xml"],
 )
 nodes = [node1, node2]
 

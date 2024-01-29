@@ -33,7 +33,7 @@ SELECT
     toTypeName(toNullable('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
-    
+
 ┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
 │ Nullable(String) │ Nullable(String)    │ String           │
 └──────────────────┴─────────────────────┴──────────────────┘
@@ -203,7 +203,7 @@ Result:
 
 ## toDate
 
-Converts the argument to [Date](/docs/en/sql-reference/data-types/date.md) data type. 
+Converts the argument to [Date](/docs/en/sql-reference/data-types/date.md) data type.
 
 If the argument is [DateTime](/docs/en/sql-reference/data-types/datetime.md) or [DateTime64](/docs/en/sql-reference/data-types/datetime64.md), it truncates it and leaves the date component of the DateTime:
 
@@ -232,7 +232,7 @@ SELECT
 │ 2022-12-30 │ Date                             │
 └────────────┴──────────────────────────────────┘
 
-1 row in set. Elapsed: 0.001 sec. 
+1 row in set. Elapsed: 0.001 sec.
 ```
 
 ```sql
@@ -314,19 +314,186 @@ SELECT
 └─────────────────────┴───────────────┴─────────────┴─────────────────────┘
 ```
 
+
 ## toDateOrZero
+
+The same as [toDate](#todate) but returns lower boundary of [Date](/docs/en/sql-reference/data-types/date.md) if an invalid argument is received. Only [String](/docs/en/sql-reference/data-types/string.md) argument is supported.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toDateOrZero('2022-12-30'), toDateOrZero('');
+```
+
+Result:
+
+```response
+┌─toDateOrZero('2022-12-30')─┬─toDateOrZero('')─┐
+│                 2022-12-30 │       1970-01-01 │
+└────────────────────────────┴──────────────────┘
+```
+
 
 ## toDateOrNull
 
+The same as [toDate](#todate) but returns `NULL` if an invalid argument is received. Only [String](/docs/en/sql-reference/data-types/string.md) argument is supported.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toDateOrNull('2022-12-30'), toDateOrNull('');
+```
+
+Result:
+
+```response
+┌─toDateOrNull('2022-12-30')─┬─toDateOrNull('')─┐
+│                 2022-12-30 │             ᴺᵁᴸᴸ │
+└────────────────────────────┴──────────────────┘
+```
+
+
 ## toDateOrDefault
+
+Like [toDate](#todate) but if unsuccessful, returns a default value which is either the second argument (if specified), or otherwise the lower boundary of [Date](/docs/en/sql-reference/data-types/date.md).
+
+**Syntax**
+
+``` sql
+toDateOrDefault(expr [, default_value])
+```
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toDateOrDefault('2022-12-30'), toDateOrDefault('', '2023-01-01'::Date);
+```
+
+Result:
+
+```response
+┌─toDateOrDefault('2022-12-30')─┬─toDateOrDefault('', CAST('2023-01-01', 'Date'))─┐
+│                    2022-12-30 │                                      2023-01-01 │
+└───────────────────────────────┴─────────────────────────────────────────────────┘
+```
+
 
 ## toDateTime
 
+Converts an input value to [DateTime](/docs/en/sql-reference/data-types/datetime.md).
+
+**Syntax**
+
+``` sql
+toDateTime(expr[, time_zone ])
+```
+
+**Arguments**
+
+- `expr` — The value. [String](/docs/en/sql-reference/data-types/string.md), [Int](/docs/en/sql-reference/data-types/int-uint.md), [Date](/docs/en/sql-reference/data-types/date.md) or [DateTime](/docs/en/sql-reference/data-types/datetime.md).
+- `time_zone` — Time zone. [String](/docs/en/sql-reference/data-types/string.md).
+
+:::note
+If `expr` is a number, it is interpreted as the number of seconds since the beginning of the Unix Epoch (as Unix timestamp).  
+If `expr` is a [String](/docs/en/sql-reference/data-types/string.md), it may be interpreted as a Unix timestamp or as a string representation of date / date with time.  
+Thus, parsing of short numbers' string representations (up to 4 digits) is explicitly disabled due to ambiguity, e.g. a string `'1999'` may be both a year (an incomplete string representation of Date / DateTime) or a unix timestamp. Longer numeric strings are allowed.
+:::
+
+**Returned value**
+
+- A date time. [DateTime](/docs/en/sql-reference/data-types/datetime.md)
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toDateTime('2022-12-30 13:44:17'), toDateTime(1685457500, 'UTC');
+```
+
+Result:
+
+```response
+┌─toDateTime('2022-12-30 13:44:17')─┬─toDateTime(1685457500, 'UTC')─┐
+│               2022-12-30 13:44:17 │           2023-05-30 14:38:20 │
+└───────────────────────────────────┴───────────────────────────────┘
+```
+
+
 ## toDateTimeOrZero
+
+The same as [toDateTime](#todatetime) but returns lower boundary of [DateTime](/docs/en/sql-reference/data-types/datetime.md) if an invalid argument is received. Only [String](/docs/en/sql-reference/data-types/string.md) argument is supported.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toDateTimeOrZero('2022-12-30 13:44:17'), toDateTimeOrZero('');
+```
+
+Result:
+
+```response
+┌─toDateTimeOrZero('2022-12-30 13:44:17')─┬─toDateTimeOrZero('')─┐
+│                     2022-12-30 13:44:17 │  1970-01-01 00:00:00 │
+└─────────────────────────────────────────┴──────────────────────┘
+```
+
 
 ## toDateTimeOrNull
 
+The same as [toDateTime](#todatetime) but returns `NULL` if an invalid argument is received. Only [String](/docs/en/sql-reference/data-types/string.md) argument is supported.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toDateTimeOrNull('2022-12-30 13:44:17'), toDateTimeOrNull('');
+```
+
+Result:
+
+```response
+┌─toDateTimeOrNull('2022-12-30 13:44:17')─┬─toDateTimeOrNull('')─┐
+│                     2022-12-30 13:44:17 │                 ᴺᵁᴸᴸ │
+└─────────────────────────────────────────┴──────────────────────┘
+```
+
+
 ## toDateTimeOrDefault
+
+Like [toDateTime](#todatetime) but if unsuccessful, returns a default value which is either the third argument (if specified), or otherwise the lower boundary of [DateTime](/docs/en/sql-reference/data-types/datetime.md).
+
+**Syntax**
+
+``` sql
+toDateTimeOrDefault(expr [, time_zone [, default_value]])
+```
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toDateTimeOrDefault('2022-12-30 13:44:17'), toDateTimeOrDefault('', 'UTC', '2023-01-01'::DateTime('UTC'));
+```
+
+Result:
+
+```response
+┌─toDateTimeOrDefault('2022-12-30 13:44:17')─┬─toDateTimeOrDefault('', 'UTC', CAST('2023-01-01', 'DateTime(\'UTC\')'))─┐
+│                        2022-12-30 13:44:17 │                                                     2023-01-01 00:00:00 │
+└────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────┘
+```
+
 
 ## toDate32
 
@@ -519,6 +686,11 @@ SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeN
 └─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
 ```
 
+## toDateTime64OrZero
+
+## toDateTime64OrNull
+
+## toDateTime64OrDefault
 
 ## toDecimal(32\|64\|128\|256)
 
@@ -720,16 +892,29 @@ Query:
 
 ``` sql
 SELECT
-    now() AS now_local,
-    toString(now(), 'Asia/Yekaterinburg') AS now_yekat;
+    now() AS ts,
+    time_zone,
+    toString(ts, time_zone) AS str_tz_datetime
+FROM system.time_zones
+WHERE time_zone LIKE 'Europe%'
+LIMIT 10
 ```
 
 Result:
 
 ```response
-┌───────────now_local─┬─now_yekat───────────┐
-│ 2016-06-15 00:11:21 │ 2016-06-15 02:11:21 │
-└─────────────────────┴─────────────────────┘
+┌──────────────────ts─┬─time_zone─────────┬─str_tz_datetime─────┐
+│ 2023-09-08 19:14:59 │ Europe/Amsterdam  │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Andorra    │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Astrakhan  │ 2023-09-08 23:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Athens     │ 2023-09-08 22:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Belfast    │ 2023-09-08 20:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Belgrade   │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Berlin     │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Bratislava │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Brussels   │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Bucharest  │ 2023-09-08 22:14:59 │
+└─────────────────────┴───────────────────┴─────────────────────┘
 ```
 
 Also see the `toUnixTimestamp` function.
@@ -1247,7 +1432,7 @@ Returns DateTime values parsed from input string according to a MySQL style form
 **Supported format specifiers**
 
 All format specifiers listed in [formatDateTime](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTime) except:
-- %Q: Quarter (1-4) 
+- %Q: Quarter (1-4)
 
 **Example**
 
@@ -1341,10 +1526,12 @@ parseDateTimeBestEffort(time_string [, time_zone])
 - A string containing 9..10 digit [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
 - A string with a date and a time component: `YYYYMMDDhhmmss`, `DD/MM/YYYY hh:mm:ss`, `DD-MM-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
 - A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `DD/MM/YYYY`, `DD-MM-YY` etc.
-- A string with a day and time: `DD`, `DD hh`, `DD hh:mm`. In this case `YYYY-MM` are substituted as `2000-01`.
+- A string with a day and time: `DD`, `DD hh`, `DD hh:mm`. In this case `MM` is substituted by `01`.
 - A string that includes the date and time along with time zone offset information: `YYYY-MM-DD hh:mm:ss ±h:mm`, etc. For example, `2020-12-12 17:36:00 -5:00`.
+- A [syslog timestamp](https://datatracker.ietf.org/doc/html/rfc3164#section-4.1.2): `Mmm dd hh:mm:ss`. For example, `Jun  9 14:20:32`.
 
 For all of the formats with separator the function parses months names expressed by their full name or by the first three letters of a month name. Examples: `24/DEC/18`, `24-Dec-18`, `01-September-2018`.
+If the year is not specified, it is considered to be equal to the current year. If the resulting DateTime happen to be in the future (even by a second after the current moment), then the current year is substituted by the previous year.
 
 **Returned value**
 
@@ -1415,23 +1602,46 @@ Result:
 Query:
 
 ``` sql
-SELECT parseDateTimeBestEffort('10 20:19');
+SELECT toYear(now()) as year, parseDateTimeBestEffort('10 20:19');
 ```
 
 Result:
 
 ```response
-┌─parseDateTimeBestEffort('10 20:19')─┐
-│                 2000-01-10 20:19:00 │
-└─────────────────────────────────────┘
+┌─year─┬─parseDateTimeBestEffort('10 20:19')─┐
+│ 2023 │                 2023-01-10 20:19:00 │
+└──────┴─────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+WITH
+    now() AS ts_now,
+    formatDateTime(ts_around, '%b %e %T') AS syslog_arg
+SELECT
+    ts_now,
+    syslog_arg,
+    parseDateTimeBestEffort(syslog_arg)
+FROM (SELECT arrayJoin([ts_now - 30, ts_now + 30]) AS ts_around);
+```
+
+Result:
+
+```response
+┌──────────────ts_now─┬─syslog_arg──────┬─parseDateTimeBestEffort(syslog_arg)─┐
+│ 2023-06-30 23:59:30 │ Jun 30 23:59:00 │                 2023-06-30 23:59:00 │
+│ 2023-06-30 23:59:30 │ Jul  1 00:00:00 │                 2022-07-01 00:00:00 │
+└─────────────────────┴─────────────────┴─────────────────────────────────────┘
 ```
 
 **See Also**
 
-- [RFC 1123](https://tools.ietf.org/html/rfc1123)
+- [RFC 1123](https://datatracker.ietf.org/doc/html/rfc1123)
 - [toDate](#todate)
 - [toDateTime](#todatetime)
 - [ISO 8601 announcement by @xkcd](https://xkcd.com/1179/)
+- [RFC 3164](https://datatracker.ietf.org/doc/html/rfc3164#section-4.1.2)
 
 ## parseDateTimeBestEffortUS
 
@@ -1630,9 +1840,9 @@ Converts an `Int64` to a `DateTime64` value with fixed sub-second precision and 
 **Syntax**
 
 ``` sql
-fromUnixTimestamp64Milli(value [, timezone])
-fromUnixTimestamp64Micro(value [, timezone])
-fromUnixTimestamp64Nano(value [, timezone])
+fromUnixTimestamp64Milli(value[, timezone])
+fromUnixTimestamp64Micro(value[, timezone])
+fromUnixTimestamp64Nano(value[, timezone])
 ```
 
 **Arguments**
@@ -1772,12 +1982,12 @@ Result:
 
 ## snowflakeToDateTime
 
-Extracts time from [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as [DateTime](/docs/en/sql-reference/data-types/datetime.md) format.
+Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) in [DateTime](/docs/en/sql-reference/data-types/datetime.md) format.
 
 **Syntax**
 
 ``` sql
-snowflakeToDateTime(value [, time_zone])
+snowflakeToDateTime(value[, time_zone])
 ```
 
 **Parameters**
@@ -1787,7 +1997,7 @@ snowflakeToDateTime(value [, time_zone])
 
 **Returned value**
 
-- Input value converted to the [DateTime](/docs/en/sql-reference/data-types/datetime.md) data type.
+- The timestamp component of `value` as a [DateTime](/docs/en/sql-reference/data-types/datetime.md) value.
 
 **Example**
 
@@ -1808,12 +2018,12 @@ Result:
 
 ## snowflakeToDateTime64
 
-Extracts time from [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) format.
+Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) in [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) format.
 
 **Syntax**
 
 ``` sql
-snowflakeToDateTime64(value [, time_zone])
+snowflakeToDateTime64(value[, time_zone])
 ```
 
 **Parameters**
@@ -1823,7 +2033,7 @@ snowflakeToDateTime64(value [, time_zone])
 
 **Returned value**
 
-- Input value converted to the [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) data type.
+- The timestamp component of `value` as a [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) with scale = 3, i.e. millisecond precision.
 
 **Example**
 
@@ -1844,7 +2054,7 @@ Result:
 
 ## dateTimeToSnowflake
 
-Converts [DateTime](/docs/en/sql-reference/data-types/datetime.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
+Converts a [DateTime](/docs/en/sql-reference/data-types/datetime.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
 
 **Syntax**
 
@@ -1854,7 +2064,7 @@ dateTimeToSnowflake(value)
 
 **Parameters**
 
-- `value` — Date and time. [DateTime](/docs/en/sql-reference/data-types/datetime.md).
+- `value` — Date with time. [DateTime](/docs/en/sql-reference/data-types/datetime.md).
 
 **Returned value**
 
@@ -1878,7 +2088,7 @@ Result:
 
 ## dateTime64ToSnowflake
 
-Convert [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
+Convert a [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
 
 **Syntax**
 
@@ -1888,7 +2098,7 @@ dateTime64ToSnowflake(value)
 
 **Parameters**
 
-- `value` — Date and time. [DateTime64](/docs/en/sql-reference/data-types/datetime64.md).
+- `value` — Date with time. [DateTime64](/docs/en/sql-reference/data-types/datetime64.md).
 
 **Returned value**
 

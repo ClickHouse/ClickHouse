@@ -6,7 +6,7 @@
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Common/Throttler_fwd.h>
 #include <Common/Priority.h>
-#include <IO/ResourceLink.h>
+#include <Common/Scheduler/ResourceLink.h>
 
 namespace DB
 {
@@ -98,9 +98,9 @@ struct ReadSettings
     bool enable_filesystem_cache = true;
     bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
     bool enable_filesystem_cache_log = false;
-    bool is_file_cache_persistent = false; /// Some files can be made non-evictable.
     /// Don't populate cache when the read is not part of query execution (e.g. background thread).
     bool avoid_readthrough_cache_outside_query_context = true;
+    size_t filesystem_cache_segments_batch_size = 20;
 
     size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
     bool skip_download_if_exceeds_query_cache = true;
@@ -120,6 +120,7 @@ struct ReadSettings
     size_t http_retry_initial_backoff_ms = 100;
     size_t http_retry_max_backoff_ms = 1600;
     bool http_skip_not_found_url_for_globs = true;
+    bool http_make_head_request = true;
 
     /// Monitoring
     bool for_object_storage = false; // to choose which profile events should be incremented

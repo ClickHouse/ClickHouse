@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterGrantQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
@@ -7,6 +8,7 @@
 #include <Access/RolesOrUsersSet.h>
 #include <Access/User.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <boost/range/algorithm/copy.hpp>
@@ -139,7 +141,7 @@ namespace
         /// For example, to execute
         /// GRANT ALL ON mydb.* TO role1
         /// REVOKE ALL ON *.* FROM role1
-        /// the current user needs to have grants only on the 'mydb' database.
+        /// the current user needs to have the grants only on the 'mydb' database.
         AccessRights all_granted_access;
         for (const auto & id : grantees_from_query)
         {
@@ -166,7 +168,7 @@ namespace
         access_to_revoke.grant(elements_to_revoke);
         access_to_revoke.makeIntersection(all_granted_access);
 
-        /// Build more accurate list of elements to revoke, now we use an intesection of the initial list of elements to revoke
+        /// Build more accurate list of elements to revoke, now we use an intersection of the initial list of elements to revoke
         /// and all the granted access rights to these grantees.
         bool grant_option = !elements_to_revoke.empty() && elements_to_revoke[0].grant_option;
         elements_to_revoke.clear();
@@ -396,7 +398,8 @@ namespace
 
 BlockIO InterpreterGrantQuery::execute()
 {
-    auto & query = query_ptr->as<ASTGrantQuery &>();
+    const auto updated_query = removeOnClusterClauseIfNeeded(query_ptr, getContext());
+    auto & query = updated_query->as<ASTGrantQuery &>();
 
     query.replaceCurrentUserTag(getContext()->getUserName());
     query.access_rights_elements.eraseNonGrantable();
@@ -430,7 +433,7 @@ BlockIO InterpreterGrantQuery::execute()
         current_user_access->checkGranteesAreAllowed(grantees);
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        return executeDDLQueryOnCluster(updated_query, getContext(), params);
     }
 
     /// Check if the current user has corresponding access rights granted with grant option.
@@ -476,6 +479,15 @@ void InterpreterGrantQuery::updateUserFromQuery(User & user, const ASTGrantQuery
 void InterpreterGrantQuery::updateRoleFromQuery(Role & role, const ASTGrantQuery & query)
 {
     updateFromQuery(role, query);
+}
+
+void registerInterpreterGrantQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterGrantQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterGrantQuery", create_fn);
 }
 
 }

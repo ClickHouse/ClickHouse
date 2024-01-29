@@ -3,15 +3,10 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/MultiVersion.h>
-
-#if USE_AZURE_BLOB_STORAGE
 #include <azure/storage/blobs.hpp>
-#endif
 
 namespace Poco
 {
@@ -37,11 +32,13 @@ struct AzureObjectStorageSettings
     {
     }
 
-    size_t max_single_part_upload_size; /// NOTE: on 32-bit machines it will be at most 4GB, but size_t is also used in BufferBase for offset
-    uint64_t min_bytes_for_seek;
-    size_t max_single_read_retries;
-    size_t max_single_download_retries;
-    int list_object_keys_size;
+    AzureObjectStorageSettings() = default;
+
+    size_t max_single_part_upload_size = 100 * 1024 * 1024; /// NOTE: on 32-bit machines it will be at most 4GB, but size_t is also used in BufferBase for offset
+    uint64_t min_bytes_for_seek = 1024 * 1024;
+    size_t max_single_read_retries = 3;
+    size_t max_single_download_retries = 3;
+    int list_object_keys_size = 1000;
 };
 
 using AzureClient = Azure::Storage::Blobs::BlobContainerClient;
@@ -62,9 +59,13 @@ public:
 
     ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
 
-    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
-
     std::string getName() const override { return "AzureObjectStorage"; }
+
+    ObjectStorageType getType() const override { return ObjectStorageType::Azure; }
+
+    std::string getCommonKeyPrefix() const override { return ""; }
+
+    std::string getDescription() const override { return client.get()->GetUrl(); }
 
     bool exists(const StoredObject & object) const override;
 
@@ -102,6 +103,8 @@ public:
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
     void shutdown() override {}
@@ -121,7 +124,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    std::string generateBlobNameForPath(const std::string & path) override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
 
     bool isRemote() const override { return true; }
 
@@ -131,9 +134,7 @@ private:
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
     MultiVersion<AzureObjectStorageSettings> settings;
 
-    Poco::Logger * log;
-
-    DataSourceDescription data_source_description;
+    LoggerPtr log;
 };
 
 }

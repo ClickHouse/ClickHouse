@@ -18,6 +18,8 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/TableFunctionNode.h>
 
 #include <boost/algorithm/string.hpp>
 
@@ -32,31 +34,43 @@ namespace ErrorCodes
 }
 
 
-/// This is needed to avoid copy-pase. Because s3Cluster arguments only differ in additional argument (first) - cluster name
+std::vector<size_t> TableFunctionS3::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
+{
+    auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
+    auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
+    size_t table_function_arguments_size = table_function_arguments_nodes.size();
+
+    std::vector<size_t> result;
+
+    for (size_t i = 0; i < table_function_arguments_size; ++i)
+    {
+        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
+        if (function_node && function_node->getFunctionName() == "headers")
+            result.push_back(i);
+    }
+
+    return result;
+}
+
+/// This is needed to avoid copy-paste. Because s3Cluster arguments only differ in additional argument (first) - cluster name
 void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
     {
         StorageS3::processNamedCollectionResult(configuration, *named_collection);
+        if (configuration.format == "auto")
+        {
+            String file_path = named_collection->getOrDefault<String>("filename", Poco::URI(named_collection->get<String>("url")).getPath());
+            configuration.format = FormatFactory::instance().getFormatFromFileName(file_path, true);
+        }
     }
     else
     {
-        if (args.empty() || args.size() > 6)
+
+        size_t count = StorageURL::evalArgsAndCollectHeaders(args, configuration.headers_from_ast, context);
+
+        if (count == 0 || count > 7)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
-
-        auto * header_it = StorageURL::collectHeaders(args, configuration.headers_from_ast, context);
-        if (header_it != args.end())
-            args.erase(header_it);
-
-        for (auto & arg : args)
-            arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
-
-        /// Size -> argument indexes
-        static std::unordered_map<size_t, std::unordered_map<std::string_view, size_t>> size_to_args
-        {
-            {1, {{}}},
-            {6, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}, {"compression_method", 5}}}
-        };
 
         std::unordered_map<std::string_view, size_t> args_to_idx;
 
@@ -66,7 +80,7 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
         /// - s3(source, format)
         /// - s3(source, NOSIGN)
         /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN or not.
-        if (args.size() == 2)
+        if (count == 2)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
@@ -76,10 +90,10 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
         }
         /// For 3 arguments we support 3 possible variants:
         /// - s3(source, format, structure)
-        /// - s3(source, access_key_id, access_key_id)
+        /// - s3(source, access_key_id, secret_access_key)
         /// - s3(source, NOSIGN, format)
         /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
-        else if (args.size() == 3)
+        else if (count == 3)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/access_key_id/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
@@ -92,12 +106,13 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
             else
                 args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
         }
-        /// For 4 arguments we support 3 possible variants:
+        /// For 4 arguments we support 4 possible variants:
         /// - s3(source, format, structure, compression_method),
-        /// - s3(source, access_key_id, access_key_id, format)
+        /// - s3(source, access_key_id, secret_access_key, format),
+        /// - s3(source, access_key_id, secret_access_key, session_token)
         /// - s3(source, NOSIGN, format, structure)
-        /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
-        else if (args.size() == 4)
+        /// We can distinguish them by looking at the 2-nd and 4-th argument: check if it's a format name or not.
+        else if (count == 4)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/access_key_id/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
@@ -106,15 +121,29 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
                 args_to_idx = {{"format", 2}, {"structure", 3}};
             }
             else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
+            {
                 args_to_idx = {{"format", 1}, {"structure", 2}, {"compression_method", 3}};
+            }
             else
-                args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
+            {
+                auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
+                if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+                {
+                    args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
+                }
+                else
+                {
+                    args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}};
+                }
+            }
         }
-        /// For 5 arguments we support 2 possible variants:
-        /// - s3(source, access_key_id, access_key_id, format, structure)
+        /// For 5 arguments we support 3 possible variants:
+        /// - s3(source, access_key_id, secret_access_key, format, structure)
+        /// - s3(source, access_key_id, secret_access_key, session_token, format)
         /// - s3(source, NOSIGN, format, structure, compression_method)
-        /// We can distinguish them by looking at the 2-nd argument: check if it's a NOSIGN keyword name or not.
-        else if (args.size() == 5)
+        /// We can distinguish them by looking at the 2-nd argument: check if it's a NOSIGN keyword name or no,
+        /// and by the 4-th argument, check if it's a format name or not
+        else if (count == 5)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "NOSIGN/access_key_id");
             if (boost::iequals(second_arg, "NOSIGN"))
@@ -123,15 +152,42 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
                 args_to_idx = {{"format", 2}, {"structure", 3}, {"compression_method", 4}};
             }
             else
-                args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}};
+            {
+                auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
+                if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+                {
+                    args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}};
+                }
+                else
+                {
+                    args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}};
+                }
+            }
         }
-        else
+        // For 6 arguments we support 2 possible variants:
+        /// - s3(source, access_key_id, secret_access_key, format, structure, compression_method)
+        /// - s3(source, access_key_id, secret_access_key, session_token, format, structure)
+        /// We can distinguish them by looking at the 4-th argument: check if it's a format name or not
+        else if (count == 6)
         {
-            args_to_idx = size_to_args[args.size()];
+            auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
+            if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+            {
+                args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}, {"compression_method", 5}};
+            }
+            else
+            {
+                args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}};
+            }
+        }
+        else if (count == 7)
+        {
+            args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}};
         }
 
         /// This argument is always the first
-        configuration.url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"));
+        String url = checkAndGetLiteralArgument<String>(args[0], "url");
+        configuration.url = S3::URI(url);
 
         if (args_to_idx.contains("format"))
         {
@@ -154,13 +210,16 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
         if (args_to_idx.contains("secret_access_key"))
             configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(args[args_to_idx["secret_access_key"]], "secret_access_key");
 
+        if (args_to_idx.contains("session_token"))
+            configuration.auth_settings.session_token = checkAndGetLiteralArgument<String>(args[args_to_idx["session_token"]], "session_token");
+
         configuration.auth_settings.no_sign_request = no_sign_request;
+
+        if (configuration.format == "auto")
+            configuration.format = FormatFactory::instance().getFormatFromFileName(Poco::URI(url).getPath(), true);
     }
 
     configuration.keys = {configuration.url.key};
-
-    if (configuration.format == "auto")
-        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url.uri.getPath(), true);
 }
 
 void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -191,24 +250,16 @@ void TableFunctionS3::addColumnsStructureToArguments(ASTs & args, const String &
     }
     else
     {
-        /// If arguments contain headers, just remove it and add to the end of arguments later
-        /// (header argument can be at any position).
         HTTPHeaderEntries tmp_headers;
-        auto * headers_it = StorageURL::collectHeaders(args, tmp_headers, context);
-        ASTPtr headers_ast;
-        if (headers_it != args.end())
-        {
-            headers_ast = *headers_it;
-            args.erase(headers_it);
-        }
+        size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, context);
 
-        if (args.empty() || args.size() > getMaxNumberOfArguments())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function, got {}", getMaxNumberOfArguments(), args.size());
+        if (count == 0 || count > getMaxNumberOfArguments())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function, got {}", getMaxNumberOfArguments(), count);
 
         auto structure_literal = std::make_shared<ASTLiteral>(structure);
 
         /// s3(s3_url)
-        if (args.size() == 1)
+        if (count == 1)
         {
             /// Add format=auto before structure argument.
             args.push_back(std::make_shared<ASTLiteral>("auto"));
@@ -216,7 +267,7 @@ void TableFunctionS3::addColumnsStructureToArguments(ASTs & args, const String &
         }
         /// s3(s3_url, format) or s3(s3_url, NOSIGN)
         /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN or not.
-        else if (args.size() == 2)
+        else if (count == 2)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
             /// If there is NOSIGN, add format=auto before structure.
@@ -225,10 +276,10 @@ void TableFunctionS3::addColumnsStructureToArguments(ASTs & args, const String &
             args.push_back(structure_literal);
         }
         /// s3(source, format, structure) or
-        /// s3(source, access_key_id, access_key_id) or
+        /// s3(source, access_key_id, secret_access_key) or
         /// s3(source, NOSIGN, format)
         /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN, format name or neither.
-        else if (args.size() == 3)
+        else if (count == 3)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
@@ -237,7 +288,7 @@ void TableFunctionS3::addColumnsStructureToArguments(ASTs & args, const String &
             }
             else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
             {
-                args.back() = structure_literal;
+                args[count - 1] = structure_literal;
             }
             else
             {
@@ -247,52 +298,49 @@ void TableFunctionS3::addColumnsStructureToArguments(ASTs & args, const String &
             }
         }
         /// s3(source, format, structure, compression_method) or
-        /// s3(source, access_key_id, access_key_id, format) or
+        /// s3(source, access_key_id, secret_access_key, format) or
         /// s3(source, NOSIGN, format, structure)
         /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN, format name or neither.
-        else if (args.size() == 4)
+        else if (count == 4)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
             {
-                args.back() = structure_literal;
+                args[count - 1] = structure_literal;
             }
             else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
             {
-                args[args.size() - 2] = structure_literal;
+                args[count - 2] = structure_literal;
             }
             else
             {
                 args.push_back(structure_literal);
             }
         }
-        /// s3(source, access_key_id, access_key_id, format, structure) or
+        /// s3(source, access_key_id, secret_access_key, format, structure) or
         /// s3(source, NOSIGN, format, structure, compression_method)
         /// We can distinguish them by looking at the 2-nd argument: check if it's a NOSIGN keyword name or not.
-        else if (args.size() == 5)
+        else if (count == 5)
         {
             auto sedond_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
             if (boost::iequals(sedond_arg, "NOSIGN"))
             {
-                args[args.size() - 2] = structure_literal;
+                args[count - 2] = structure_literal;
             }
             else
             {
-                args.back() = structure_literal;
+                args[count - 1] = structure_literal;
             }
         }
-        /// s3(source, access_key_id, access_key_id, format, structure, compression)
-        else if (args.size() == 6)
+        /// s3(source, access_key_id, secret_access_key, format, structure, compression)
+        else if (count == 6)
         {
-            args[args.size() - 2] = structure_literal;
+            args[count - 2] = structure_literal;
         }
-
-        if (headers_ast)
-            args.push_back(headers_ast);
     }
 }
 
-ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     if (configuration.structure == "auto")
     {
@@ -304,12 +352,18 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
     return parseColumnsListFromString(configuration.structure, context);
 }
 
-bool TableFunctionS3::supportsReadingSubsetOfColumns()
+bool TableFunctionS3::supportsReadingSubsetOfColumns(const ContextPtr & context)
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context);
 }
 
-StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+std::unordered_set<String> TableFunctionS3::getVirtualsToCheckBeforeUsingStructureHint() const
+{
+    auto virtual_column_names = StorageS3::getVirtualColumnNames();
+    return {virtual_column_names.begin(), virtual_column_names.end()};
+}
+
+StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const
 {
     S3::URI s3_uri (configuration.url);
 
@@ -318,6 +372,8 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
         columns = parseColumnsListFromString(configuration.structure, context);
     else if (!structure_hint.empty())
         columns = structure_hint;
+    else if (!cached_columns.empty())
+        columns = cached_columns;
 
     StoragePtr storage = std::make_shared<StorageS3>(
         configuration,

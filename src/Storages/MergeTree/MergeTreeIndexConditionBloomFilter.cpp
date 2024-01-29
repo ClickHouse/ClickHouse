@@ -36,6 +36,7 @@ ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
 
     Columns set_elements;
     for (auto & set_element : prepared_set->getSetElements())
+
         set_elements.emplace_back(set_element->convertToFullColumnIfConst());
 
     return {ColumnTuple::create(set_elements), std::make_shared<DataTypeTuple>(prepared_set->getElementsTypes()), "dummy"};
@@ -96,39 +97,18 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
 }
 
 MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
-    const SelectQueryInfo & info_, ContextPtr context_, const Block & header_, size_t hash_functions_)
-    : WithContext(context_), header(header_), query_info(info_), hash_functions(hash_functions_)
+    const ActionsDAGPtr & filter_actions_dag, ContextPtr context_, const Block & header_, size_t hash_functions_)
+    : WithContext(context_), header(header_), hash_functions(hash_functions_)
 {
-    if (context_->getSettingsRef().allow_experimental_analyzer)
-    {
-        if (!query_info.filter_actions_dag)
-        {
-            rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
-            return;
-        }
-
-        RPNBuilder<RPNElement> builder(
-            query_info.filter_actions_dag->getOutputs().at(0),
-            context_,
-            [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
-        rpn = std::move(builder).extractRPN();
-        return;
-    }
-
-    ASTPtr filter_node = buildFilterNode(query_info.query);
-
-    if (!filter_node)
+    if (!filter_actions_dag)
     {
         rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
         return;
     }
 
-    auto block_with_constants = KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context_);
     RPNBuilder<RPNElement> builder(
-        filter_node,
+        filter_actions_dag->getOutputs().at(0),
         context_,
-        std::move(block_with_constants),
-        query_info.prepared_sets,
         [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
     rpn = std::move(builder).extractRPN();
 }
@@ -310,13 +290,17 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
 
         if (functionIsInOrGlobalInOperator(function_name))
         {
-            ConstSetPtr prepared_set = rhs_argument.tryGetPreparedSet();
-
-            if (prepared_set && prepared_set->hasExplicitSetElements())
+            if (auto future_set = rhs_argument.tryGetPreparedSet(); future_set)
             {
-                const auto prepared_info = getPreparedSetInfo(prepared_set);
-                if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
-                    maybe_useful = true;
+                if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext()); prepared_set)
+                {
+                    if (prepared_set->hasExplicitSetElements())
+                    {
+                        const auto prepared_info = getPreparedSetInfo(prepared_set);
+                        if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
+                            maybe_useful = true;
+                    }
+                }
             }
         }
         else if (function_name == "equals" ||

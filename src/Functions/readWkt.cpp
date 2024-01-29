@@ -16,6 +16,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+namespace
+{
 
 template <class DataTypeName, class Geometry, class Serializer, class NameHolder>
 class FunctionReadWKT : public IFunction
@@ -94,6 +96,8 @@ struct ReadWKTMultiPolygonNameHolder
 {
     static constexpr const char * name = "readWKTMultiPolygon";
 };
+
+}
 
 REGISTER_FUNCTION(ReadWKT)
 {

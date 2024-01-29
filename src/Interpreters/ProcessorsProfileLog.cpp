@@ -1,5 +1,6 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 
+#include <base/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -16,10 +17,11 @@
 namespace DB
 {
 
-NamesAndTypesList ProcessorProfileLogElement::getNamesAndTypes()
+ColumnsDescription ProcessorProfileLogElement::getColumnsDescription()
 {
-    return
+    return ColumnsDescription
     {
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
@@ -46,6 +48,7 @@ void ProcessorProfileLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
+    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
@@ -73,12 +76,5 @@ void ProcessorProfileLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(output_bytes);
 }
 
-ProcessorsProfileLog::ProcessorsProfileLog(ContextPtr context_, const String & database_name_,
-        const String & table_name_, const String & storage_def_,
-        size_t flush_interval_milliseconds_)
-  : SystemLog<ProcessorProfileLogElement>(context_, database_name_, table_name_,
-        storage_def_, flush_interval_milliseconds_)
-{
-}
 
 }

@@ -9,6 +9,7 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/named_collections.xml"],
+    user_configs=["configs/users.xml"],
     with_zookeeper=False,
     with_hdfs=True,
 )

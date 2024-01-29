@@ -1,4 +1,5 @@
-#include "MySQLDumpRowInputFormat.h"
+#include <Processors/Formats/Impl/MySQLDumpRowInputFormat.h>
+#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <IO/ReadHelpers.h>
 #include <IO/PeekableReadBuffer.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -303,15 +304,8 @@ static void skipFieldDelimiter(ReadBuffer & in)
     skipWhitespaceIfAny(in);
 }
 
-static void skipEndOfRow(ReadBuffer & in, String & table_name)
+static void skipEndOfInsertQueryIfNeeded(ReadBuffer & in, String & table_name)
 {
-    skipWhitespaceIfAny(in);
-    assertChar(')', in);
-
-    skipWhitespaceIfAny(in);
-    if (!in.eof() && *in.position() == ',')
-        ++in.position();
-
     skipWhitespaceIfAny(in);
     if (!in.eof() && *in.position() == ';')
     {
@@ -321,6 +315,18 @@ static void skipEndOfRow(ReadBuffer & in, String & table_name)
         if (skipToInsertQuery(table_name, in))
             skipToDataInInsertQuery(in);
     }
+}
+
+static void skipEndOfRow(ReadBuffer & in, String & table_name)
+{
+    skipWhitespaceIfAny(in);
+    assertChar(')', in);
+
+    skipWhitespaceIfAny(in);
+    if (!in.eof() && *in.position() == ',')
+        ++in.position();
+
+    skipEndOfInsertQueryIfNeeded(in, table_name);
 }
 
 static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name, NamesAndTypesList & structure_from_create, Names & column_names)
@@ -385,6 +391,19 @@ bool MySQLDumpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
     return true;
 }
 
+size_t MySQLDumpRowInputFormat::countRows(size_t max_block_size)
+{
+    size_t num_rows = 0;
+    while (!in->eof() && num_rows < max_block_size)
+    {
+        ValuesBlockInputFormat::skipToNextRow(in, 1, 0);
+        skipEndOfInsertQueryIfNeeded(*in, table_name);
+        ++num_rows;
+    }
+
+    return num_rows;
+}
+
 bool MySQLDumpRowInputFormat::readField(IColumn & column, size_t column_idx)
 {
     const auto & type = types[column_idx];
@@ -422,7 +441,7 @@ NamesAndTypesList MySQLDumpSchemaReader::readSchema()
     return IRowSchemaReader::readSchema();
 }
 
-DataTypes MySQLDumpSchemaReader::readRowAndGetDataTypes()
+std::optional<DataTypes> MySQLDumpSchemaReader::readRowAndGetDataTypes()
 {
     if (in.eof())
         return {};
@@ -441,6 +460,11 @@ DataTypes MySQLDumpSchemaReader::readRowAndGetDataTypes()
     }
     skipEndOfRow(in, table_name);
     return data_types;
+}
+
+void MySQLDumpSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 void registerInputFormatMySQLDump(FormatFactory & factory)

@@ -168,8 +168,7 @@ QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & qu
 
     if (configuration.is_local)
     {
-        pipeline = executeQuery(query, context_copy, true).pipeline;
-
+        pipeline = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second.pipeline;
         pipeline.convertStructureTo(empty_sample_block.getColumnsWithTypeAndName());
     }
     else
@@ -191,7 +190,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 
     if (configuration.is_local)
     {
-        return readInvalidateQuery(executeQuery(request, context_copy, true).pipeline);
+        return readInvalidateQuery(executeQuery(request, context_copy, QueryFlags{ .internal = true }).second.pipeline);
     }
     else
     {
@@ -217,13 +216,13 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         std::optional<Configuration> configuration;
 
         std::string settings_config_prefix = config_prefix + ".clickhouse";
-        auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix) : nullptr;
+        auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, global_context) : nullptr;
 
         if (named_collection)
         {
             validateNamedCollection(
                 *named_collection, {}, ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>{
-                    "secure", "host", "hostnmae", "port", "user", "username", "password", "quota_key", "name",
+                    "secure", "host", "hostname", "port", "user", "username", "password", "quota_key", "name",
                     "db", "database", "table","query", "where", "invalidate_query", "update_field", "update_lag"});
 
             const auto secure = named_collection->getOrDefault("secure", false);

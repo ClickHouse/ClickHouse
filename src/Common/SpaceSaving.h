@@ -1,6 +1,5 @@
 #pragma once
 
-#include <iostream>
 #include <vector>
 
 #include <boost/range/adaptor/reversed.hpp>
@@ -18,6 +17,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
+
 
 /*
  * Implementation of the Filtered Space-Saving for TopK streaming analysis.
@@ -96,14 +96,20 @@ public:
 
         void write(WriteBuffer & wb) const
         {
-            writeBinary(key, wb);
+            if constexpr (std::is_same_v<TKey, StringRef>)
+                writeBinary(key, wb);
+            else
+                writeBinaryLittleEndian(key, wb);
             writeVarUInt(count, wb);
             writeVarUInt(error, wb);
         }
 
         void read(ReadBuffer & rb)
         {
-            readBinary(key, rb);
+            if constexpr (std::is_same_v<TKey, StringRef>)
+                readBinary(key, rb);
+            else
+                readBinaryLittleEndian(key, rb);
             readVarUInt(count, rb);
             readVarUInt(error, rb);
         }
@@ -321,7 +327,7 @@ protected:
         percolate(ptr);
     }
 
-    // This is equivallent to one step of bubble sort
+    // This is equivalent to one step of bubble sort
     void percolate(Counter * counter)
     {
         while (counter->slot > 0)

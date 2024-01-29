@@ -8,8 +8,16 @@ from itertools import chain
 from enum import Enum
 from hashlib import md5
 from functools import reduce
+import sqlglot
+from sqlglot.expressions import PrimaryKeyColumnConstraint, ColumnDef
 
-from exceptions import Error, ProgramError, ErrorWithParent, DataResultDiffer
+from exceptions import (
+    Error,
+    ProgramError,
+    ErrorWithParent,
+    DataResultDiffer,
+    QueryExecutionError,
+)
 
 
 logger = logging.getLogger("parser")
@@ -129,6 +137,41 @@ class FileBlockBase:
         return result, result_end
 
     @staticmethod
+    def convert_request(sql):
+        if sql.startswith("CREATE TABLE"):
+            result = sqlglot.transpile(sql, read="sqlite", write="clickhouse")[0]
+            pk_token = sqlglot.parse_one(result, read="clickhouse").find(
+                PrimaryKeyColumnConstraint
+            )
+            pk_string = "tuple()"
+            if pk_token is not None:
+                pk_string = str(pk_token.find_ancestor(ColumnDef).args["this"])
+
+            result += " ENGINE = MergeTree() ORDER BY " + pk_string
+            return result
+        elif "SELECT" in sql and "CAST" in sql and "NULL" in sql:
+            # convert `CAST (NULL as INTEGER)` to `CAST (NULL as Nullable(Int32))`
+            try:
+                ast = sqlglot.parse_one(sql, read="sqlite")
+            except sqlglot.errors.ParseError as err:
+                logger.info("cannot parse %s , error is %s", sql, err)
+                return sql
+            cast = ast.find(sqlglot.expressions.Cast)
+            # logger.info("found sql %s && %s && %s", sql, cast.sql(), cast.to.args)
+            if (
+                cast is not None
+                and cast.name == "NULL"
+                and ("nested" not in cast.to.args or not cast.to.args["nested"])
+            ):
+                cast.args["to"] = sqlglot.expressions.DataType.build(
+                    "NULLABLE", expressions=[cast.to]
+                )
+                new_sql = ast.sql("clickhouse")
+                # logger.info("convert from %s to %s", sql, new_sql)
+                return new_sql
+        return sql
+
+    @staticmethod
     def parse_block(parser, start, end):
         file_pos = FileAndPos(parser.get_test_name(), start + 1)
         logger.debug("%s start %s end %s", file_pos, start, end)
@@ -163,6 +206,8 @@ class FileBlockBase:
                 request, last_line = FileBlockBase.__parse_request(
                     parser, line + 1, end
                 )
+                if parser.dbms_name == "ClickHouse":
+                    request = FileBlockBase.convert_request(request)
                 assert last_line == end
                 line = last_line
 
@@ -173,6 +218,8 @@ class FileBlockBase:
                 request, last_line = FileBlockBase.__parse_request(
                     parser, line + 1, end
                 )
+                if parser.dbms_name == "ClickHouse":
+                    request = FileBlockBase.convert_request(request)
                 result_line = last_line
                 line = last_line
                 if line == end:
@@ -319,10 +366,11 @@ class TestFileParser:
 
     DEFAULT_HASH_THRESHOLD = 8
 
-    def __init__(self, stream, test_name, test_file):
+    def __init__(self, stream, test_name, test_file, dbms_name):
         self._stream = stream
         self._test_name = test_name
         self._test_file = test_file
+        self.dbms_name = dbms_name
 
         self._lines = []
         self._raw_tokens = []
@@ -480,6 +528,7 @@ class QueryResult:
         for row in rows:
             res_row = []
             for c, t in zip(row, types):
+                logger.debug(f"Builging row. c:{c} t:{t}")
                 if c is None:
                     res_row.append("NULL")
                     continue
@@ -490,7 +539,18 @@ class QueryResult:
                     else:
                         res_row.append(str(c))
                 elif t == "I":
-                    res_row.append(str(int(c)))
+                    try:
+                        res_row.append(str(int(c)))
+                    except ValueError as ex:
+                        # raise QueryExecutionError(
+                        #     f"Got non-integer result '{c}' for I type."
+                        # )
+                        res_row.append(str(int(0)))
+                    except OverflowError as ex:
+                        raise QueryExecutionError(
+                            f"Got overflowed result '{c}' for I type."
+                        )
+
                 elif t == "R":
                     res_row.append(f"{c:.3f}")
 

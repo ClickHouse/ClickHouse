@@ -24,8 +24,8 @@
                 <value>'.*' || toString(number) || '.'</value>
                 <!-- simple patterns, low distinctness (10 patterns) -->
                 <value>'.*' || toString(number % 10) || '.'</value>
-                <!-- complex patterns, all unique -->
-                <value>'([a-zA-Z][a-zA-Z0-9]*)://([^ /]+)(/[^ ]*)?([^ @]+)@([^ @]+)([0-9][0-9]?)/([0-9][0-9]?)/([0-9][0-9]([0-9][0-9])?)(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9])' || toString(number)</value>
+                <!-- complex patterns, all unique - this is very slow (from 2 to 15 seconds) -->
+                <!-- <value>'([a-zA-Z][a-zA-Z0-9]*)://([^ /]+)(/[^ ]*)?([^ @]+)@([^ @]+)([0-9][0-9]?)/([0-9][0-9]?)/([0-9][0-9]([0-9][0-9])?)(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9])' || toString(number)</value> -->
                 <!-- complex patterns, low distinctness -->
                 <value>'([a-zA-Z][a-zA-Z0-9]*)://([^ /]+)(/[^ ]*)?([^ @]+)@([^ @]+)([0-9][0-9]?)/([0-9][0-9]?)/([0-9][0-9]([0-9][0-9])?)(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9])' || toString(number % 10)</value>
                 <!-- Note: for this benchmark, we are only interested in compilation time, not correctness, evaluation time or the result.

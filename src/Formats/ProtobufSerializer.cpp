@@ -3029,7 +3029,7 @@ namespace
             if (!message_serializer)
             {
                 throw Exception(ErrorCodes::NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS,
-                     "Not found matches between the names of the columns {{}} and the fields {{}} of the message {} in the protobuf schema",
+                     "Not found matches between the names of the columns ({}) and the fields ({}) of the message {} in the protobuf schema",
                      boost::algorithm::join(column_names, ", "), boost::algorithm::join(getFieldNames(message_descriptor), ", "),
                      quoteString(message_descriptor.full_name()));
             }
@@ -3045,7 +3045,7 @@ namespace
             {
                 *root_serializer_ptr = message_serializer.get();
 #if 0
-                LOG_INFO(&Poco::Logger::get("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
+                LOG_INFO(getLogger("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
 #endif
                 return message_serializer;
             }
@@ -3054,7 +3054,7 @@ namespace
                 auto envelope_serializer = std::make_unique<ProtobufSerializerEnvelope>(std::move(message_serializer), reader_or_writer);
                 *root_serializer_ptr = envelope_serializer.get();
 #if 0
-                LOG_INFO(&Poco::Logger::get("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
+                LOG_INFO(getLogger("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
 #endif
                 return envelope_serializer;
             }
@@ -3647,7 +3647,7 @@ namespace
                         if (!message_serializer)
                         {
                             throw Exception(ErrorCodes::NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS,
-                                 "Not found matches between the names of the tuple's elements {{}} and the fields {{}} "
+                                 "Not found matches between the names of the tuple's elements ({}) and the fields ({}) "
                                  "of the message {} in the protobuf schema",
                                  boost::algorithm::join(tuple_data_type.getElementNames(), ", "),
                                  boost::algorithm::join(getFieldNames(*field_descriptor.message_type()), ", "),

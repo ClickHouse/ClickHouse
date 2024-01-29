@@ -19,11 +19,13 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
+    const Statistics & statistics,
     CompressionCodecPtr default_codec_,
     const MergeTreeTransactionPtr & txn,
     bool reset_columns_,
     bool blocks_are_granules_size,
-    const WriteSettings & write_settings_)
+    const WriteSettings & write_settings_,
+    const MergeTreeIndexGranularity & computed_index_granularity)
     : IMergedBlockOutputStream(data_part, metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
     , default_codec(default_codec_)
@@ -47,7 +49,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     data_part->version.setCreationTID(tid, nullptr);
     data_part->storeVersionMetadata();
 
-    writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, writer_settings, {});
+    writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, statistics, default_codec, writer_settings, computed_index_granularity);
 }
 
 /// If data is pre-sorted.
@@ -142,14 +144,18 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 {
     /// Finish write and get checksums.
     MergeTreeData::DataPart::Checksums checksums;
+    NameSet checksums_to_remove;
 
     if (additional_column_checksums)
         checksums = std::move(*additional_column_checksums);
 
     /// Finish columns serialization.
-    writer->fillChecksums(checksums);
+    writer->fillChecksums(checksums, checksums_to_remove);
 
-    LOG_TRACE(&Poco::Logger::get("MergedBlockOutputStream"), "filled checksums {}", new_part->getNameWithState());
+    for (const auto & name : checksums_to_remove)
+        checksums.files.erase(name);
+
+    LOG_TRACE(getLogger("MergedBlockOutputStream"), "filled checksums {}", new_part->getNameWithState());
 
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
         checksums.addFile(
@@ -178,6 +184,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->index = writer->releaseIndexColumns();
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
+    new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
     new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
@@ -201,7 +208,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             auto count_out = new_part->getDataPartStorage().writeFile("count.txt", 4096, write_settings);
             HashingWriteBuffer count_out_hashing(*count_out);
             writeIntText(rows_count, count_out_hashing);
-            count_out_hashing.next();
+            count_out_hashing.finalize();
             checksums.files["count.txt"].file_size = count_out_hashing.count();
             checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
             count_out->preFinalize();
@@ -215,6 +222,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, write_settings);
             HashingWriteBuffer out_hashing(*out);
             writeUUIDText(new_part->uuid, out_hashing);
+            out_hashing.finalize();
             checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
             checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
             out->preFinalize();
@@ -241,7 +249,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             auto count_out = new_part->getDataPartStorage().writeFile("count.txt", 4096, write_settings);
             HashingWriteBuffer count_out_hashing(*count_out);
             writeIntText(rows_count, count_out_hashing);
-            count_out_hashing.next();
+            count_out_hashing.finalize();
             checksums.files["count.txt"].file_size = count_out_hashing.count();
             checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
             count_out->preFinalize();
@@ -255,6 +263,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         auto out = new_part->getDataPartStorage().writeFile("ttl.txt", 4096, write_settings);
         HashingWriteBuffer out_hashing(*out);
         new_part->ttl_infos.write(out_hashing);
+        out_hashing.finalize();
         checksums.files["ttl.txt"].file_size = out_hashing.count();
         checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
         out->preFinalize();
@@ -266,6 +275,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, write_settings);
         HashingWriteBuffer out_hashing(*out);
         new_part->getSerializationInfos().writeJSON(out_hashing);
+        out_hashing.finalize();
         checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
         out->preFinalize();

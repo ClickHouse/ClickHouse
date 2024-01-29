@@ -6,7 +6,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable, List
+from typing import Any, Callable, List, Union
 
 import requests  # type: ignore
 
@@ -14,6 +14,10 @@ import get_robot_token as grt  # we need an updated ROBOT_TOKEN
 from ci_config import CI_CONFIG
 
 DOWNLOAD_RETRIES_COUNT = 5
+
+
+class DownloadException(Exception):
+    pass
 
 
 def get_with_retries(
@@ -47,9 +51,9 @@ def get_gh_api(
     sleep: int = 3,
     **kwargs: Any,
 ) -> requests.Response:
-    """It's a wrapper around get_with_retries that requests GH api w/o auth by
-    default, and falls back to the get_best_robot_token in case of receiving
-    "403 rate limit exceeded" error
+    """
+    Request GH api w/o auth by default, and failover to the get_best_robot_token in case of receiving
+    "403 rate limit exceeded" or "404 not found" error
     It sets auth automatically when ROBOT_TOKEN is already set by get_best_robot_token
     """
 
@@ -67,34 +71,46 @@ def get_gh_api(
     if grt.ROBOT_TOKEN is not None:
         set_auth_header()
 
-    need_retry = False
-    for _ in range(retries):
+    token_is_set = "Authorization" in kwargs.get("headers", {})
+    exc = Exception("A placeholder to satisfy typing and avoid nesting")
+    try_cnt = 0
+    while try_cnt < retries:
+        try_cnt += 1
         try:
-            response = get_with_retries(url, 1, sleep, **kwargs)
+            response = requests.get(url, **kwargs)
             response.raise_for_status()
             return response
-        except requests.HTTPError as exc:
-            if (
-                exc.response.status_code == 403
+        except requests.HTTPError as e:
+            exc = e
+            ratelimit_exceeded = (
+                e.response.status_code == 403
                 and b"rate limit exceeded"
-                in exc.response._content  # pylint:disable=protected-access
-            ):
+                in e.response._content  # pylint:disable=protected-access
+            )
+            try_auth = e.response.status_code == 404
+            if (ratelimit_exceeded or try_auth) and not token_is_set:
                 logging.warning(
                     "Received rate limit exception, setting the auth header and retry"
                 )
                 set_auth_header()
-                need_retry = True
-                break
+                token_is_set = True
+                try_cnt = 0
+                continue
+        except Exception as e:
+            exc = e
 
-    if need_retry:
-        return get_with_retries(url, retries, sleep, **kwargs)
+        if try_cnt < retries:
+            logging.info("Exception '%s' while getting, retry %i", exc, try_cnt)
+            time.sleep(sleep)
+
+    raise exc
 
 
 def get_build_name_for_check(check_name: str) -> str:
-    return CI_CONFIG["tests_config"][check_name]["required_build"]  # type: ignore
+    return CI_CONFIG.test_configs[check_name].required_build
 
 
-def read_build_urls(build_name: str, reports_path: str) -> List[str]:
+def read_build_urls(build_name: str, reports_path: Union[Path, str]) -> List[str]:
     for root, _, files in os.walk(reports_path):
         for f in files:
             if build_name in f:
@@ -140,16 +156,18 @@ def download_build_with_progress(url: str, path: Path) -> None:
                             sys.stdout.write(f"\r[{eq_str}{space_str}] {percent}%")
                             sys.stdout.flush()
             break
-        except Exception:
+        except Exception as e:
             if sys.stdout.isatty():
                 sys.stdout.write("\n")
-            if i + 1 < DOWNLOAD_RETRIES_COUNT:
-                time.sleep(3)
-
             if os.path.exists(path):
                 os.remove(path)
-    else:
-        raise Exception(f"Cannot download dataset from {url}, all retries exceeded")
+
+            if i + 1 < DOWNLOAD_RETRIES_COUNT:
+                time.sleep(3)
+            else:
+                raise DownloadException(
+                    f"Cannot download dataset from {url}, all retries exceeded"
+                ) from e
 
     if sys.stdout.isatty():
         sys.stdout.write("\n")
@@ -174,7 +192,7 @@ def download_builds_filter(
     print(urls)
 
     if not urls:
-        raise Exception("No build URLs found")
+        raise DownloadException("No build URLs found")
 
     download_builds(result_path, urls, filter_fn)
 
@@ -203,4 +221,13 @@ def download_performance_build(check_name, reports_path, result_path):
         reports_path,
         result_path,
         lambda x: x.endswith("performance.tar.zst"),
+    )
+
+
+def download_fuzzers(check_name, reports_path, result_path):
+    download_builds_filter(
+        check_name,
+        reports_path,
+        result_path,
+        lambda x: x.endswith(("_fuzzer", ".dict", ".options", "_seed_corpus.zip")),
     )

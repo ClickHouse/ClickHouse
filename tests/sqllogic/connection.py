@@ -62,6 +62,8 @@ def default_clickhouse_odbc_conn_str():
     return str(
         OdbcConnectingArgs.create_from_kw(
             dsn="ClickHouse DSN (ANSI)",
+            Timeout="300",
+            Url="http://localhost:8123/query?default_format=ODBCDriver2&default_table_engine=MergeTree&union_default_mode=DISTINCT&group_by_use_nulls=1&join_use_nulls=1&allow_create_index_without_type=1&create_index_ignore_unique=1",
         )
     )
 
@@ -246,7 +248,7 @@ class ExecResult:
 
     def as_ok(self, rows=None, description=None):
         if rows is None:
-            self._result = True
+            self._result = []
             return self
         self._result = rows
         self._description = description

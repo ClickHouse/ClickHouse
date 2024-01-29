@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP ROW POLICY IF EXISTS p1_01295, p2_01295, p3_01295, p4_01295, p5_01295, p6_01295, p7_01295, p8_01295, p9_01295, p10_01295 ON db.table;
 DROP ROW POLICY IF EXISTS p2_01295_renamed ON db.table;
 DROP ROW POLICY IF EXISTS p3_01295 ON db.table, db2.table2;

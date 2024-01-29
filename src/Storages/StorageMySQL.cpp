@@ -19,6 +19,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/parseRemoteDescription.h>
+#include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Databases/MySQL/FetchTablesColumnsList.h>
@@ -32,16 +33,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
-}
-
-static String backQuoteMySQL(const String & x)
-{
-    String res(x.size(), '\0');
-    {
-        WriteBufferFromString wb(res);
-        writeBackQuotedStringMySQL(x, wb);
-    }
-    return res;
 }
 
 StorageMySQL::StorageMySQL(
@@ -64,7 +55,7 @@ StorageMySQL::StorageMySQL(
     , on_duplicate_clause{on_duplicate_clause_}
     , mysql_settings(mysql_settings_)
     , pool(std::make_shared<mysqlxx::PoolWithFailover>(pool_))
-    , log(&Poco::Logger::get("StorageMySQL (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageMySQL (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -113,6 +104,7 @@ Pipe StorageMySQL::read(
         column_names_,
         storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::BackticksMySQL,
+        LiteralEscapingStyle::Regular,
         remote_database_name,
         remote_table_name,
         context_);
@@ -252,7 +244,7 @@ private:
 };
 
 
-SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     return std::make_shared<StorageMySQLSink>(
         *this,

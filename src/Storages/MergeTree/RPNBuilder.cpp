@@ -9,11 +9,14 @@
 
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 
+#include <Functions/indexHint.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 
 #include <Storages/KeyDescription.h>
 
@@ -180,6 +183,21 @@ bool RPNBuilderTreeNode::isConstant() const
     }
 }
 
+bool RPNBuilderTreeNode::isSubqueryOrSet() const
+{
+    if (ast_node)
+    {
+        return
+            typeid_cast<const ASTSubquery *>(ast_node) ||
+            typeid_cast<const ASTTableIdentifier *>(ast_node);
+    }
+    else
+    {
+        const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+        return node_without_alias->result_type->getTypeId() == TypeIndex::Set;
+    }
+}
+
 ColumnWithTypeAndName RPNBuilderTreeNode::getConstantColumn() const
 {
     if (!isConstant())
@@ -275,7 +293,7 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
 namespace
 {
 
-ConstSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
+FutureSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
 {
     if (!dag_node->column)
         return {};
@@ -285,28 +303,26 @@ ConstSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
         column = &column_const->getDataColumn();
 
     if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
-    {
-        auto set = column_set->getData();
-
-        if (set && set->isCreated())
-            return set;
-    }
+        return column_set->getData();
 
     return {};
 }
 
 }
 
-ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
+FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
 {
     const auto & prepared_sets = getTreeContext().getPreparedSets();
 
     if (ast_node && prepared_sets)
     {
-        auto prepared_sets_with_same_hash = prepared_sets->getByTreeHash(ast_node->getTreeHash());
-        for (auto & set : prepared_sets_with_same_hash)
-            if (set.isCreated())
-                return set.get();
+        auto key = ast_node->getTreeHash(/*ignore_aliases=*/ true);
+        const auto & sets = prepared_sets->getSetsFromTuple();
+        auto it = sets.find(key);
+        if (it != sets.end() && !it->second.empty())
+            return it->second.at(0);
+
+        return prepared_sets->findSubquery(key);
     }
     else if (dag_node)
     {
@@ -317,66 +333,21 @@ ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
     return {};
 }
 
-ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet(const DataTypes & data_types) const
+FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(const DataTypes & data_types) const
 {
     const auto & prepared_sets = getTreeContext().getPreparedSets();
 
     if (prepared_sets && ast_node)
     {
         if (ast_node->as<ASTSubquery>() || ast_node->as<ASTTableIdentifier>())
-            return prepared_sets->get(PreparedSetKey::forSubquery(*ast_node));
+            return prepared_sets->findSubquery(ast_node->getTreeHash(/*ignore_aliases=*/ true));
 
-        return prepared_sets->get(PreparedSetKey::forLiteral(*ast_node, data_types));
+        return prepared_sets->findTuple(ast_node->getTreeHash(/*ignore_aliases=*/ true), data_types);
     }
     else if (dag_node)
     {
         const auto * node_without_alias = getNodeWithoutAlias(dag_node);
         return tryGetSetFromDAGNode(node_without_alias);
-    }
-
-    return nullptr;
-}
-
-ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
-    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-    const DataTypes & data_types) const
-{
-    const auto & prepared_sets = getTreeContext().getPreparedSets();
-
-    if (prepared_sets && ast_node)
-    {
-        if (ast_node->as<ASTSubquery>() || ast_node->as<ASTTableIdentifier>())
-            return prepared_sets->get(PreparedSetKey::forSubquery(*ast_node));
-
-        /// We have `PreparedSetKey::forLiteral` but it is useless here as we don't have enough information
-        /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
-        /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
-        /// that the types it was prepared with are compatible with the types of the primary key.
-        auto types_match = [&indexes_mapping, &data_types](const SetPtr & candidate_set)
-        {
-            assert(indexes_mapping.size() == data_types.size());
-
-            for (size_t i = 0; i < indexes_mapping.size(); ++i)
-            {
-                if (!candidate_set->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
-                    return false;
-            }
-
-            return true;
-        };
-
-        auto tree_hash = ast_node->getTreeHash();
-        for (const auto & set : prepared_sets->getByTreeHash(tree_hash))
-        {
-            if (set.isCreated() && types_match(set.get()))
-                return set.get();
-        }
-    }
-    else
-    {
-        const auto * node_without_alias = getNodeWithoutAlias(dag_node);
-        if (node_without_alias->column)
-            return tryGetSetFromDAGNode(node_without_alias);
     }
 
     return nullptr;
@@ -421,12 +392,27 @@ size_t RPNBuilderFunctionTreeNode::getArgumentsSize() const
     }
     else
     {
+        // indexHint arguments are stored inside of `FunctionIndexHint` class,
+        // because they are used only for index analysis.
+        if (dag_node->function_base->getName() == "indexHint")
+        {
+            const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(dag_node->function_base.get());
+            const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get());
+            return index_hint->getActions()->getOutputs().size();
+        }
+
         return dag_node->children.size();
     }
 }
 
 RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
 {
+    const size_t total_arguments = getArgumentsSize();
+    if (index >= total_arguments) /// Bug #52632
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "RPNBuilderFunctionTreeNode has {} arguments, attempted to get argument at index {}",
+                total_arguments, index);
+
     if (ast_node)
     {
         const auto * ast_function = assert_cast<const ASTFunction *>(ast_node);
@@ -434,6 +420,15 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
     }
     else
     {
+        // indexHint arguments are stored inside of `FunctionIndexHint` class,
+        // because they are used only for index analysis.
+        if (dag_node->function_base->getName() == "indexHint")
+        {
+            const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(dag_node->function_base.get());
+            const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get());
+            return RPNBuilderTreeNode(index_hint->getActions()->getOutputs()[index], tree_context);
+        }
+
         return RPNBuilderTreeNode(dag_node->children[index], tree_context);
     }
 }

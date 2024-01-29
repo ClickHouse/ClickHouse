@@ -1,10 +1,9 @@
 #pragma once
 
-#include <re2/re2.h>
-
 #include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
+#include <Common/re2.h>
 
 namespace DB
 {

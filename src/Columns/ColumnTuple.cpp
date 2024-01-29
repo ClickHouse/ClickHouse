@@ -1,16 +1,17 @@
 #include <Columns/ColumnTuple.h>
 
-#include <base/sort.h>
-#include <Columns/IColumnImpl.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/IColumnImpl.h>
 #include <Core/Field.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <base/sort.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
+#include <Common/iota.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/Serializations/SerializationInfoTuple.h>
 
 
 namespace DB
@@ -171,7 +172,7 @@ void ColumnTuple::popBack(size_t n)
         column->popBack(n);
 }
 
-StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
 {
     StringRef res(begin, 0);
     for (const auto & column : columns)
@@ -378,8 +379,7 @@ void ColumnTuple::getPermutationImpl(IColumn::PermutationSortDirection direction
 {
     size_t rows = size();
     res.resize(rows);
-    for (size_t i = 0; i < rows; ++i)
-        res[i] = i;
+    iota(res.data(), rows, IColumn::Permutation::value_type(0));
 
     if (limit >= rows)
         limit = 0;
@@ -495,15 +495,15 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     max = max_tuple;
 }
 
-void ColumnTuple::forEachSubcolumn(ColumnCallback callback) const
+void ColumnTuple::forEachSubcolumn(MutableColumnCallback callback)
 {
-    for (const auto & column : columns)
+    for (auto & column : columns)
         callback(column);
 }
 
-void ColumnTuple::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+void ColumnTuple::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
 {
-    for (const auto & column : columns)
+    for (auto & column : columns)
     {
         callback(*column);
         column->forEachSubcolumnRecursively(callback);

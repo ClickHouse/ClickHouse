@@ -57,17 +57,19 @@ public:
 
     void addStorageLimits(const StorageLimitsList & storage_limits);
 
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context*/) const override;
+
     bool supportsTransactions() const override { return true; }
 
     bool ignoreLimits() const override { return select_query_options.ignore_limits; }
 
     bool ignoreQuota() const override { return select_query_options.ignore_quota; }
 
-    /// Set number_of_current_replica and count_participating_replicas in client_info
-    void setProperClientInfo(size_t replica_number, size_t count_participating_replicas);
-
     const Planner & getPlanner() const { return planner; }
+
     Planner & getPlanner() { return planner; }
+
+    const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
 
 private:
     ASTPtr query;

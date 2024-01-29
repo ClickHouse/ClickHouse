@@ -126,7 +126,7 @@ struct FastHash64
         pos2 = reinterpret_cast<const unsigned char*>(pos);
         v = 0;
 
-        switch (len & 7)
+        switch (len & 7) // NOLINT(bugprone-switch-missing-default-case)
         {
             case 7: v ^= static_cast<uint64_t>(pos2[6]) << 48; [[fallthrough]];
             case 6: v ^= static_cast<uint64_t>(pos2[5]) << 40; [[fallthrough]];

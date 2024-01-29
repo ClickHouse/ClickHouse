@@ -8,7 +8,6 @@
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/TableFunctionGenerateRandom.h>
 #include <Functions/FunctionGenerateRandomStructure.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -27,6 +26,36 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
 }
+
+namespace
+{
+
+/* generateRandom([structure, max_array_length, max_string_length, random_seed])
+ * - creates a temporary storage that generates columns with random data
+ */
+class TableFunctionGenerateRandom : public ITableFunction
+{
+public:
+    static constexpr auto name = "generateRandom";
+    std::string getName() const override { return name; }
+    bool hasStaticStructure() const override { return structure != "auto"; }
+
+    bool needStructureHint() const override { return structure == "auto"; }
+    void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
+
+private:
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+    const char * getStorageTypeName() const override { return "GenerateRandom"; }
+
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    String structure = "auto";
+    UInt64 max_string_length = 10;
+    UInt64 max_array_length = 10;
+    std::optional<UInt64> random_seed;
+    ColumnsDescription structure_hint;
+};
 
 void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
@@ -97,7 +126,7 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
     }
 }
 
-ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     if (structure == "auto")
     {
@@ -113,13 +142,15 @@ ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextP
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
-    ColumnsDescription columns = getActualTableStructure(context);
+    ColumnsDescription columns = getActualTableStructure(context, is_insert_query);
     auto res = std::make_shared<StorageGenerateRandom>(
         StorageID(getDatabaseName(), table_name), columns, String{}, max_array_length, max_string_length, random_seed);
     res->startup();
     return res;
+}
+
 }
 
 void registerTableFunctionGenerate(TableFunctionFactory & factory)
@@ -128,5 +159,3 @@ void registerTableFunctionGenerate(TableFunctionFactory & factory)
 }
 
 }
-
-

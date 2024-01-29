@@ -10,12 +10,35 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -mn -q """
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+
 CREATE TABLE t1 (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY y
 AS SELECT sipHash64(number, 't1_x') % 100 AS x, sipHash64(number, 't1_y') % 100 AS y FROM numbers(100);
 
 CREATE TABLE t2 (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY y
 AS SELECT sipHash64(number, 't2_x') % 100 AS x, sipHash64(number, 't2_y') % 100 AS y FROM numbers(100);
 """
+
+# Arguments:
+# - Query result
+# - Processor name
+# - Expected description
+# - Check first occurrence
+function match_description() {
+
+QUERY_RESULT=$1
+PROCESSOR_NAME=$2
+EXPECTED_DESCRIPTION=$3
+CHECK_FIRST_OCCURRENCE=${4:-true}
+
+SED_EXPR="/$PROCESSOR_NAME/{ n; s/^[ \t]*Description: //; p"
+[ $CHECK_FIRST_OCCURRENCE = true ] && SED_EXPR+="; q }" || SED_EXPR+=" }"
+
+DESC=$(sed -n "$SED_EXPR" <<<  "$QUERY_RESULT")
+[[ "$DESC" == "$EXPECTED_DESCRIPTION" ]] && echo "Ok" || echo "Fail: ReadHeadBalancedProcessor description '$DESC' != '$EXPECTED_DESCRIPTION' "
+
+}
 
 # Arguments:
 # - value of max_rows_in_set_to_optimize_join
@@ -37,10 +60,20 @@ RES=$(
 EXPECTED_PIPELINE_STEPS=$4
 RES=$(
     $CLICKHOUSE_CLIENT --max_rows_in_set_to_optimize_join=${PARAM_VALUE} --join_algorithm='full_sorting_merge' \
-                       -q "EXPLAIN PIPELINE SELECT count() FROM t1 ${JOIN_KIND} JOIN t2 ON t1.x = t2.x" \
-                       | grep -o -e ReadHeadBalancedProcessor -e FilterBySetOnTheFlyTransform -e CreatingSetsOnTheFlyTransform | wc -l
+                       -q "EXPLAIN PIPELINE SELECT count() FROM t1 ${JOIN_KIND} JOIN t2 ON t1.x = t2.x"
 )
-[ "$RES" -eq "$EXPECTED_PIPELINE_STEPS" ] && echo "Ok" || echo "Fail: $RES != $EXPECTED_PIPELINE_STEPS"
+
+# Count match
+COUNT=$(echo "$RES" | grep -o -e ReadHeadBalancedProcessor -e FilterBySetOnTheFlyTransform -e CreatingSetsOnTheFlyTransform | wc -l)
+[ "$COUNT" -eq "$EXPECTED_PIPELINE_STEPS" ] && echo "Ok" || echo "Fail: $COUNT != $EXPECTED_PIPELINE_STEPS"
+
+# Description matchers
+if [ "$EXPECTED_PIPELINE_STEPS" -ne 0 ]; then
+    match_description "$RES" 'ReadHeadBalancedProcessor' 'Reads rows from two streams evenly'
+    match_description "$RES" 'FilterBySetOnTheFlyTransform' "Filter rows using other join table side\'s set"
+    match_description "$RES" 'CreatingSetsOnTheFlyTransform' 'Create set and filter Left joined stream
+Create set and filter Right joined stream' false
+fi
 
 }
 

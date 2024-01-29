@@ -6,6 +6,7 @@
 #include <IO/WriteBuffer.h>
 #include <libnuraft/nuraft.hxx>
 #include <Coordination/KeeperContext.h>
+#include <Disks/IDisk.h>
 
 namespace DB
 {
@@ -23,9 +24,10 @@ enum SnapshotVersion : uint8_t
     V3 = 3, /// compress snapshots with ZSTD codec
     V4 = 4, /// add Node size to snapshots
     V5 = 5, /// add ZXID and digest to snapshots
+    V6 = 6, /// remove is_sequential, per node size, data length
 };
 
-static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V5;
+static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V6;
 
 /// What is stored in binary snapshot
 struct SnapshotDeserializationResult
@@ -86,8 +88,14 @@ public:
     uint64_t nodes_digest;
 };
 
+struct SnapshotFileInfo
+{
+    std::string path;
+    DiskPtr disk;
+};
+
 using KeeperStorageSnapshotPtr = std::shared_ptr<KeeperStorageSnapshot>;
-using CreateSnapshotCallback = std::function<std::string(KeeperStorageSnapshotPtr &&)>;
+using CreateSnapshotCallback = std::function<SnapshotFileInfo(KeeperStorageSnapshotPtr &&)>;
 
 
 using SnapshotMetaAndStorage = std::pair<SnapshotMetadataPtr, KeeperStoragePtr>;
@@ -98,7 +106,6 @@ class KeeperSnapshotManager
 {
 public:
     KeeperSnapshotManager(
-        const std::string & snapshots_path_,
         size_t snapshots_to_keep_,
         const KeeperContextPtr & keeper_context_,
         bool compress_snapshots_zstd_ = true,
@@ -112,10 +119,10 @@ public:
     nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot) const;
 
     /// Serialize already compressed snapshot to disk (return path)
-    std::string serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx);
+    SnapshotFileInfo serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx);
 
     /// Serialize snapshot directly to disk
-    std::pair<std::string, std::error_code> serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot);
+    SnapshotFileInfo serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot);
 
     SnapshotDeserializationResult deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
 
@@ -139,30 +146,39 @@ public:
         return 0;
     }
 
-    std::string getLatestSnapshotPath() const
+    SnapshotFileInfo getLatestSnapshotInfo() const
     {
         if (!existing_snapshots.empty())
         {
-            const auto & path = existing_snapshots.at(getLatestSnapshotIndex());
-            std::error_code ec;
-            if (std::filesystem::exists(path, ec))
-                return path;
+            const auto & [path, disk] = existing_snapshots.at(getLatestSnapshotIndex());
+
+            try
+            {
+                if (disk->exists(path))
+                    return {path, disk};
+            }
+            catch (...)
+            {
+            }
         }
-        return "";
+        return {"", nullptr};
     }
 
 private:
     void removeOutdatedSnapshotsIfNeeded();
+    void moveSnapshotsIfNeeded();
+
+    DiskPtr getDisk() const;
+    DiskPtr getLatestSnapshotDisk() const;
 
     /// Checks first 4 buffer bytes to became sure that snapshot compressed with
     /// ZSTD codec.
     static bool isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer);
 
-    const std::string snapshots_path;
     /// How many snapshots to keep before remove
     const size_t snapshots_to_keep;
     /// All existing snapshots in our path (log_index -> path)
-    std::map<uint64_t, std::string> existing_snapshots;
+    std::map<uint64_t, SnapshotFileInfo> existing_snapshots;
     /// Compress snapshots in common ZSTD format instead of custom ClickHouse block LZ4 format
     const bool compress_snapshots_zstd;
     /// Superdigest for deserialization of storage
@@ -171,6 +187,8 @@ private:
     size_t storage_tick_time;
 
     KeeperContextPtr keeper_context;
+
+    LoggerPtr log = getLogger("KeeperSnapshotManager");
 };
 
 /// Keeper create snapshots in background thread. KeeperStateMachine just create

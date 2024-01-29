@@ -105,7 +105,7 @@ def test_quota_from_users_xml():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 [31556952],
                 0,
@@ -252,7 +252,7 @@ def test_simpliest_quota():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[]",
                 0,
@@ -326,7 +326,7 @@ def test_tracking_quota():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[31556952]",
                 0,
@@ -446,7 +446,7 @@ def test_exceed_quota():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[31556952]",
                 0,
@@ -523,7 +523,7 @@ def test_exceed_quota():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[31556952]",
                 0,
@@ -613,7 +613,7 @@ def test_add_remove_interval():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 [31556952],
                 0,
@@ -675,7 +675,7 @@ def test_add_remove_interval():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[31556952,63113904]",
                 0,
@@ -824,7 +824,7 @@ def test_add_remove_interval():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 [31556952],
                 0,
@@ -914,7 +914,7 @@ def test_add_remove_interval():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[]",
                 0,
@@ -986,7 +986,7 @@ def test_add_remove_interval():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 [31556952],
                 0,
@@ -1048,7 +1048,7 @@ def test_add_remove_quota():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 [31556952],
                 0,
@@ -1111,7 +1111,7 @@ def test_add_remove_quota():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[31556952]",
                 0,
@@ -1121,7 +1121,7 @@ def test_add_remove_quota():
             [
                 "myQuota2",
                 "4590510c-4d13-bf21-ec8a-c2187b092e73",
-                "users.xml",
+                "users_xml",
                 "['client_key','user_name']",
                 "[3600,2629746]",
                 0,
@@ -1214,7 +1214,7 @@ def test_add_remove_quota():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[31556952]",
                 0,
@@ -1283,7 +1283,7 @@ def test_add_remove_quota():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[31556952]",
                 0,
@@ -1346,7 +1346,7 @@ def test_reload_users_xml_by_timer():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[31556952]",
                 0,
@@ -1385,7 +1385,7 @@ def test_reload_users_xml_by_timer():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 ["user_name"],
                 "[31556952]",
                 0,
@@ -1554,7 +1554,7 @@ def test_query_inserts():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 [31556952],
                 0,

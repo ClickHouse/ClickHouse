@@ -8,10 +8,11 @@
 #include <Common/SipHash.h>
 #include <Common/safe_cast.h>
 
-#include <boost/algorithm/string/predicate.hpp>
-#include <cassert>
-#include <random>
+#    include <cassert>
+#    include <boost/algorithm/string/predicate.hpp>
 
+#    include <openssl/err.h>
+#    include <openssl/rand.h>
 
 namespace DB
 {
@@ -20,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DATA_ENCRYPTION_ERROR;
+    extern const int OPENSSL_ERROR;
 }
 
 namespace FileEncryption
@@ -95,7 +97,7 @@ namespace
             uint8_t * ciphertext = reinterpret_cast<uint8_t *>(out.position());
             int ciphertext_size = 0;
             if (!EVP_EncryptUpdate(evp_ctx, ciphertext, &ciphertext_size, &in[in_size], static_cast<int>(part_size)))
-                throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to encrypt");
+                throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to encrypt: {}", ERR_get_error());
 
             in_size += part_size;
             if (ciphertext_size)
@@ -118,7 +120,7 @@ namespace
         uint8_t ciphertext[kBlockSize];
         int ciphertext_size = 0;
         if (!EVP_EncryptUpdate(evp_ctx, ciphertext, &ciphertext_size, padded_data, safe_cast<int>(padded_data_size)))
-            throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to encrypt");
+            throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to encrypt: {}", ERR_get_error());
 
         if (!ciphertext_size)
             return 0;
@@ -138,7 +140,7 @@ namespace
         int ciphertext_size = 0;
         if (!EVP_EncryptFinal_ex(evp_ctx,
                                  ciphertext, &ciphertext_size))
-            throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to finalize encrypting");
+            throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to finalize encrypting: {}", ERR_get_error());
         if (ciphertext_size)
             out.write(reinterpret_cast<const char *>(ciphertext), ciphertext_size);
         return ciphertext_size;
@@ -150,7 +152,7 @@ namespace
         uint8_t * plaintext = reinterpret_cast<uint8_t *>(out);
         int plaintext_size = 0;
         if (!EVP_DecryptUpdate(evp_ctx, plaintext, &plaintext_size, in, safe_cast<int>(size)))
-            throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to decrypt");
+            throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to decrypt: {}", ERR_get_error());
         return plaintext_size;
     }
 
@@ -163,7 +165,7 @@ namespace
         uint8_t plaintext[kBlockSize];
         int plaintext_size = 0;
         if (!EVP_DecryptUpdate(evp_ctx, plaintext, &plaintext_size, padded_data, safe_cast<int>(padded_data_size)))
-            throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to decrypt");
+            throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to decrypt: {}", ERR_get_error());
 
         if (!plaintext_size)
             return 0;
@@ -182,7 +184,7 @@ namespace
         uint8_t plaintext[kBlockSize];
         int plaintext_size = 0;
         if (!EVP_DecryptFinal_ex(evp_ctx, plaintext, &plaintext_size))
-            throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to finalize decrypting");
+            throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to finalize decrypting: {}", ERR_get_error());
         if (plaintext_size)
             memcpy(out, plaintext, plaintext_size);
         return plaintext_size;
@@ -260,12 +262,11 @@ void InitVector::write(WriteBuffer & out) const
 
 InitVector InitVector::random()
 {
-    std::random_device rd;
-    std::mt19937 gen{rd()};
-    std::uniform_int_distribution<UInt128::base_type> dis;
     UInt128 counter;
-    for (auto & i : counter.items)
-        i = dis(gen);
+    auto * buf = reinterpret_cast<unsigned char *>(counter.items);
+    auto ret = RAND_bytes(buf, sizeof(counter.items));
+    if (ret != 1)
+        throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "OpenSSL error code: {}", ERR_get_error());
     return InitVector{counter};
 }
 
@@ -290,11 +291,11 @@ void Encryptor::encrypt(const char * data, size_t size, WriteBuffer & out)
     auto * evp_ctx = evp_ctx_ptr.get();
 
     if (!EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr))
-        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to initialize encryption context with cipher");
+        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to initialize encryption context with cipher: {}", ERR_get_error());
 
     if (!EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
                             reinterpret_cast<const uint8_t*>(key.c_str()), reinterpret_cast<const uint8_t*>(current_iv.c_str())))
-        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to set key and IV for encryption");
+        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to set key and IV for encryption: {}", ERR_get_error());
 
     size_t in_size = 0;
     size_t out_size = 0;
@@ -319,7 +320,7 @@ void Encryptor::encrypt(const char * data, size_t size, WriteBuffer & out)
     out_size += encryptFinal(evp_ctx, out);
 
     if (out_size != in_size)
-        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Only part of the data was encrypted");
+        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Only part of the data was encrypted: {} out of {} bytes", out_size, in_size);
     offset += in_size;
 }
 
@@ -334,11 +335,11 @@ void Encryptor::decrypt(const char * data, size_t size, char * out)
     auto * evp_ctx = evp_ctx_ptr.get();
 
     if (!EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr))
-        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to initialize decryption context with cipher");
+        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to initialize decryption context with cipher: {}", ERR_get_error());
 
     if (!EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
                             reinterpret_cast<const uint8_t*>(key.c_str()), reinterpret_cast<const uint8_t*>(current_iv.c_str())))
-        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to set key and IV for decryption");
+        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to set key and IV for decryption: {}", ERR_get_error());
 
     size_t in_size = 0;
     size_t out_size = 0;
@@ -363,7 +364,7 @@ void Encryptor::decrypt(const char * data, size_t size, char * out)
     out_size += decryptFinal(evp_ctx, &out[out_size]);
 
     if (out_size != in_size)
-        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Only part of the data was decrypted");
+        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Only part of the data was decrypted: {} out of {} bytes", out_size, in_size);
     offset += in_size;
 }
 

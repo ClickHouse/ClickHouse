@@ -8,7 +8,7 @@ Contains information about threads that execute queries, for example, thread nam
 To start logging:
 
 1.  Configure parameters in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) section.
-2.  Set [log_query_threads](../../operations/settings/settings.md#settings-log-query-threads) to 1.
+2.  Set [log_query_threads](../../operations/settings/settings.md#log-query-threads) to 1.
 
 The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
@@ -18,6 +18,7 @@ You can use the [log_queries_probability](../../operations/settings/settings.md#
 
 Columns:
 
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the thread has finished execution of the query.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the thread has finished execution of the query.
 - `event_time_microsecinds` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the thread has finished execution of the query with microseconds precision.
@@ -40,11 +41,11 @@ Columns:
     - 0 — Query was initiated by another query for distributed query execution.
 - `user` ([String](../../sql-reference/data-types/string.md)) — Name of the user who initiated the current query.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the query.
-- `address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP address that was used to make the query.
+- `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP address that was used to make the query.
 - `port` ([UInt16](../../sql-reference/data-types/int-uint.md#uint-ranges)) — The client port that was used to make the query.
 - `initial_user` ([String](../../sql-reference/data-types/string.md)) — Name of the user who ran the initial query (for distributed query execution).
 - `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the initial query (for distributed query execution).
-- `initial_address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP address that the parent query was launched from.
+- `initial_address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP address that the parent query was launched from.
 - `initial_port` ([UInt16](../../sql-reference/data-types/int-uint.md#uint-ranges)) — The client port that was used to make the parent query.
 - `interface` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Interface that the query was initiated from. Possible values:
     - 1 — TCP.
@@ -74,6 +75,7 @@ Columns:
 ``` text
 Row 1:
 ──────
+hostname:                      clickhouse.eu-central1.internal
 event_date:                    2020-09-11
 event_time:                    2020-09-11 10:08:17
 event_time_microseconds:       2020-09-11 10:08:17.134042

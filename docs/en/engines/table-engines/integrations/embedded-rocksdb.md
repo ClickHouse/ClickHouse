@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/embedded-rocksdb
-sidebar_position: 9
+sidebar_position: 50
 sidebar_label: EmbeddedRocksDB
 ---
 
@@ -8,7 +8,7 @@ sidebar_label: EmbeddedRocksDB
 
 This engine allows integrating ClickHouse with [rocksdb](http://rocksdb.org/).
 
-## Creating a Table {#table_engine-EmbeddedRocksDB-creating-a-table}
+## Creating a Table {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -85,7 +85,11 @@ You can also change any [rocksdb options](https://github.com/facebook/rocksdb/wi
 </rocksdb>
 ```
 
-## Supported operations {#table_engine-EmbeddedRocksDB-supported-operations}
+By default trivial approximate count optimization is turned off, which might affect the performance `count()` queries. To enable this
+optimization set up `optimize_trivial_approximate_count_query = 1`. Also, this setting affects `system.tables` for EmbeddedRocksDB engine,
+turn on the settings to see approximate values for `total_rows` and `total_bytes`.
+
+## Supported operations {#supported-operations}
 
 ### Inserts
 
@@ -99,7 +103,7 @@ INSERT INTO test VALUES ('some key', 1, 'value', 3.2);
 
 ### Deletes
 
-Rows can be deleted using `DELETE` query or `TRUNCATE`. 
+Rows can be deleted using `DELETE` query or `TRUNCATE`.
 
 ```sql
 DELETE FROM test WHERE key LIKE 'some%' AND v1 > 1;
@@ -208,5 +212,5 @@ ORDER BY key ASC
 ```
 
 ### More information on Joins
-- [`join_algorithm` setting](/docs/en/operations/settings/settings.md#settings-join_algorithm)
+- [`join_algorithm` setting](/docs/en/operations/settings/settings.md#join_algorithm)
 - [JOIN clause](/docs/en/sql-reference/statements/select/join.md)

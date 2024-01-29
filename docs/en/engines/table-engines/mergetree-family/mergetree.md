@@ -6,7 +6,7 @@ sidebar_label:  MergeTree
 
 # MergeTree
 
-The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHouse table engines.
+The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most commonly used and most robust ClickHouse table engines.
 
 Engines in the `MergeTree` family are designed for inserting a very large amount of data into a table. The data is quickly written to the table part by part, then rules are applied for merging the parts in the background. This method is much more efficient than continually rewriting the data in storage during insert.
 
@@ -32,13 +32,15 @@ Main features:
 The [Merge](/docs/en/engines/table-engines/special/merge.md/#merge) engine does not belong to the `*MergeTree` family.
 :::
 
+If you need to update rows frequently, we recommend using the [`ReplacingMergeTree`](/docs/en/engines/table-engines/mergetree-family/replacingmergetree.md) table engine. Using `ALTER TABLE my_table UPDATE` to update rows triggers a mutation, which causes parts to be re-written and uses IO/resources. With `ReplacingMergeTree`, you can simply insert the updated rows and the old rows will be replaced according to the table sorting key.
+
 ## Creating a Table {#table_engine-mergetree-creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTIC(stat1)] [TTL expr1] [PRIMARY KEY] [SETTINGS (name = value, ...)],
+    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [STATISTIC(stat2)] [TTL expr2] [PRIMARY KEY] [SETTINGS (name = value, ...)],
     ...
     INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
     INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
@@ -54,7 +56,7 @@ ORDER BY expr
     [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx' [, ...] ]
     [WHERE conditions]
     [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] ]
-[SETTINGS name=value, ...]
+[SETTINGS name = value, ...]
 ```
 
 For a description of parameters, see the [CREATE query description](/docs/en/sql-reference/statements/create/table.md).
@@ -73,7 +75,7 @@ A tuple of column names or arbitrary expressions. Example: `ORDER BY (CounterID,
 
 ClickHouse uses the sorting key as a primary key if the primary key is not defined explicitly by the `PRIMARY KEY` clause.
 
-Use the `ORDER BY tuple()` syntax, if you do not need sorting. See [Selecting the Primary Key](#selecting-the-primary-key).
+Use the `ORDER BY tuple()` syntax, if you do not need sorting, or set `create_table_empty_primary_key_by_default` to `true` to use the `ORDER BY tuple()` syntax by default. See [Selecting the Primary Key](#selecting-the-primary-key).
 
 #### PARTITION BY
 
@@ -439,41 +441,41 @@ Syntax: `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, 
 - `number_of_hash_functions` — The number of hash functions used in the Bloom filter.
 - `random_seed` — The seed for Bloom filter hash functions.
 
-Users can create [UDF](/docs/en/sql-reference/statements/create/function.md) to estimate the parameters set of `ngrambf_v1`. Query statements are as follows:  
+Users can create [UDF](/docs/en/sql-reference/statements/create/function.md) to estimate the parameters set of `ngrambf_v1`. Query statements are as follows:
 
 ```sql
-CREATE FUNCTION bfEstimateFunctions [ON CLUSTER cluster]   
-AS  
-(total_nubmer_of_all_grams, size_of_bloom_filter_in_bits) -> round((size_of_bloom_filter_in_bits / total_nubmer_of_all_grams) * log(2));   
-  
-CREATE FUNCTION bfEstimateBmSize [ON CLUSTER cluster]   
-AS  
-(total_nubmer_of_all_grams,  probability_of_false_positives) -> ceil((total_nubmer_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));  
-    
-CREATE FUNCTION bfEstimateFalsePositive [ON CLUSTER cluster]  
-AS   
-(total_nubmer_of_all_grams, number_of_hash_functions, size_of_bloom_filter_in_bytes) -> pow(1 - exp(-number_of_hash_functions/ (size_of_bloom_filter_in_bytes / total_nubmer_of_all_grams)), number_of_hash_functions);  
-  
-CREATE FUNCTION bfEstimateGramNumber [ON CLUSTER cluster]   
-AS  
+CREATE FUNCTION bfEstimateFunctions [ON CLUSTER cluster]
+AS
+(total_nubmer_of_all_grams, size_of_bloom_filter_in_bits) -> round((size_of_bloom_filter_in_bits / total_nubmer_of_all_grams) * log(2));
+
+CREATE FUNCTION bfEstimateBmSize [ON CLUSTER cluster]
+AS
+(total_nubmer_of_all_grams,  probability_of_false_positives) -> ceil((total_nubmer_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));
+
+CREATE FUNCTION bfEstimateFalsePositive [ON CLUSTER cluster]
+AS
+(total_nubmer_of_all_grams, number_of_hash_functions, size_of_bloom_filter_in_bytes) -> pow(1 - exp(-number_of_hash_functions/ (size_of_bloom_filter_in_bytes / total_nubmer_of_all_grams)), number_of_hash_functions);
+
+CREATE FUNCTION bfEstimateGramNumber [ON CLUSTER cluster]
+AS
 (number_of_hash_functions, probability_of_false_positives, size_of_bloom_filter_in_bytes) -> ceil(size_of_bloom_filter_in_bytes / (-number_of_hash_functions / log(1 - exp(log(probability_of_false_positives) / number_of_hash_functions))))
 
-```  
+```
 To use those functions,we need to specify two parameter at least.
-For example, if there 4300 ngrams in the granule and we expect false positives to be less than 0.0001. The other parameters can be estimated by executing following queries:   
-  
+For example, if there 4300 ngrams in the granule and we expect false positives to be less than 0.0001. The other parameters can be estimated by executing following queries:
+
 
 ```sql
 --- estimate number of bits in the filter
-SELECT bfEstimateBmSize(4300, 0.0001) / 8 as size_of_bloom_filter_in_bytes;  
+SELECT bfEstimateBmSize(4300, 0.0001) / 8 as size_of_bloom_filter_in_bytes;
 
 ┌─size_of_bloom_filter_in_bytes─┐
 │                         10304 │
 └───────────────────────────────┘
-  
+
 --- estimate number of hash functions
 SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_hash_functions
-  
+
 ┌─number_of_hash_functions─┐
 │                       13 │
 └──────────────────────────┘
@@ -507,7 +509,7 @@ Multiple hypothesis indices can be defined for a single table.
 
 #### Special-purpose
 
-- An experimental index to support approximate nearest neighbor (ANN) search. See [here](annindexes.md) for details.
+- Experimental indexes to support approximate nearest neighbor (ANN) search. See [here](annindexes.md) for details.
 - An experimental inverted index to support full-text search. See [here](invertedindexes.md) for details.
 
 ### Functions Support {#functions-support}
@@ -518,24 +520,25 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 
 | Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | inverted |
 |------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|----------|
-| [equals (=, ==)](/docs/en/sql-reference/functions/comparison-functions.md/#function-equals)                | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
-| [notEquals(!=, &lt;&gt;)](/docs/en/sql-reference/functions/comparison-functions.md/#function-notequals)    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
-| [like](/docs/en/sql-reference/functions/string-search-functions.md/#function-like)                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
-| [notLike](/docs/en/sql-reference/functions/string-search-functions.md/#function-notlike)                   | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
+| [equals (=, ==)](/docs/en/sql-reference/functions/comparison-functions.md/#equals)                         | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
+| [notEquals(!=, &lt;&gt;)](/docs/en/sql-reference/functions/comparison-functions.md/#notequals)             | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
+| [like](/docs/en/sql-reference/functions/string-search-functions.md/#like)                                  | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
+| [notLike](/docs/en/sql-reference/functions/string-search-functions.md/#notlike)                            | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
+| [match](/docs/en/sql-reference/functions/string-search-functions.md/#match)                                | ✗           | ✗      | ✔          | ✔          | ✗            | ✔        |
 | [startsWith](/docs/en/sql-reference/functions/string-functions.md/#startswith)                             | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
 | [endsWith](/docs/en/sql-reference/functions/string-functions.md/#endswith)                                 | ✗           | ✗      | ✔          | ✔          | ✗            | ✔        |
-| [multiSearchAny](/docs/en/sql-reference/functions/string-search-functions.md/#function-multisearchany)     | ✗           | ✗      | ✔          | ✗          | ✗            | ✔        |
-| [in](/docs/en/sql-reference/functions/in-functions#in-functions)                                           | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
-| [notIn](/docs/en/sql-reference/functions/in-functions#in-functions)                                        | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
-| [less (<)](/docs/en/sql-reference/functions/comparison-functions.md/#function-less)                        | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
-| [greater (>)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greater)                  | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
-| [lessOrEquals (<=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-lessorequals)       | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
-| [greaterOrEquals (>=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
-| [empty](/docs/en/sql-reference/functions/array-functions#function-empty)                                   | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
-| [notEmpty](/docs/en/sql-reference/functions/array-functions#function-notempty)                             | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
-| [has](/docs/en/sql-reference/functions/array-functions#function-has)                                       | ✗           | ✗      | ✔          | ✔          | ✔            | ✔        |
-| [hasAny](/docs/en/sql-reference/functions/array-functions#function-hasAny)                                 | ✗           | ✗      | ✗          | ✗          | ✔            | ✗        |
-| [hasAll](/docs/en/sql-reference/functions/array-functions#function-hasAll)                                 | ✗           | ✗      | ✗          | ✗          | ✔            | ✗        |
+| [multiSearchAny](/docs/en/sql-reference/functions/string-search-functions.md/#multisearchany)              | ✗           | ✗      | ✔          | ✗          | ✗            | ✔        |
+| [in](/docs/en/sql-reference/functions/in-functions)                                                        | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
+| [notIn](/docs/en/sql-reference/functions/in-functions)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
+| [less (<)](/docs/en/sql-reference/functions/comparison-functions.md/#less)                                 | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [greater (>)](/docs/en/sql-reference/functions/comparison-functions.md/#greater)                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [lessOrEquals (<=)](/docs/en/sql-reference/functions/comparison-functions.md/#lessorequals)                | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [greaterOrEquals (>=)](/docs/en/sql-reference/functions/comparison-functions.md/#greaterorequals)          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [empty](/docs/en/sql-reference/functions/array-functions/#empty)                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [notEmpty](/docs/en/sql-reference/functions/array-functions/#notempty)                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [has](/docs/en/sql-reference/functions/array-functions/#has)                                               | ✗           | ✗      | ✔          | ✔          | ✔            | ✔        |
+| [hasAny](/docs/en/sql-reference/functions/array-functions/#hasany)                                         | ✗           | ✗      | ✔          | ✔          | ✔            | ✗        |
+| [hasAll](/docs/en/sql-reference/functions/array-functions/#hasall)                                         | ✗           | ✗      | ✗          | ✗          | ✔            | ✗        |
 | hasToken                                                                                                   | ✗           | ✗      | ✗          | ✔          | ✗            | ✔        |
 | hasTokenOrNull                                                                                             | ✗           | ✗      | ✗          | ✔          | ✗            | ✔        |
 | hasTokenCaseInsensitive (*)                                                                                | ✗           | ✗      | ✗          | ✔          | ✗            | ✗        |
@@ -633,7 +636,7 @@ The `TTL` clause can’t be used for key columns.
 #### Creating a table with `TTL`:
 
 ``` sql
-CREATE TABLE example_table
+CREATE TABLE tab
 (
     d DateTime,
     a Int TTL d + INTERVAL 1 MONTH,
@@ -648,7 +651,7 @@ ORDER BY d;
 #### Adding TTL to a column of an existing table
 
 ``` sql
-ALTER TABLE example_table
+ALTER TABLE tab
     MODIFY COLUMN
     c String TTL d + INTERVAL 1 DAY;
 ```
@@ -656,7 +659,7 @@ ALTER TABLE example_table
 #### Altering TTL of the column
 
 ``` sql
-ALTER TABLE example_table
+ALTER TABLE tab
     MODIFY COLUMN
     c String TTL d + INTERVAL 1 MONTH;
 ```
@@ -694,7 +697,7 @@ If a column is not part of the `GROUP BY` expression and is not set explicitly i
 #### Creating a table with `TTL`:
 
 ``` sql
-CREATE TABLE example_table
+CREATE TABLE tab
 (
     d DateTime,
     a Int
@@ -710,7 +713,7 @@ TTL d + INTERVAL 1 MONTH DELETE,
 #### Altering `TTL` of the table:
 
 ``` sql
-ALTER TABLE example_table
+ALTER TABLE tab
     MODIFY TTL d + INTERVAL 1 DAY;
 ```
 
@@ -771,6 +774,17 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 
 - [ttl_only_drop_parts](/docs/en/operations/settings/settings.md/#ttl_only_drop_parts) setting
 
+
+## Disk types
+
+In addition to local block devices, ClickHouse supports these storage types:
+- [`s3` for S3 and MinIO](#table_engine-mergetree-s3)
+- [`gcs` for GCS](/docs/en/integrations/data-ingestion/gcs/index.md/#creating-a-disk)
+- [`blob_storage_disk` for Azure Blob Storage](#table_engine-mergetree-azure-blob-storage)
+- [`hdfs` for HDFS](#hdfs-storage)
+- [`web` for read-only from web](#web-storage)
+- [`cache` for local caching](/docs/en/operations/storing-data.md/#using-local-cache)
+- [`s3_plain` for backups to S3](/docs/en/operations/backup#backuprestore-using-an-s3-disk)
 
 ## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
 
@@ -868,9 +882,10 @@ Tags:
 - `disk` — a disk within a volume.
 - `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
 - `move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved.
-- `prefer_not_to_merge` — Disables merging of data parts on this volume. When this setting is enabled, merging data on this volume is not allowed. This allows controlling how ClickHouse works with slow disks.
-- `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3).
+- `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default (if enabled) if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3). If disabled then already expired data part is written into a default volume and then right after moved to TTL volume.
 - `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
+- `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to a online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
+- `prefer_not_to_merge` — You should not use this setting. Disables merging of data parts on this volume (this is harmful and leads to performance degradation). When this setting is enabled (don't do it), merging data on this volume is not allowed (which is bad). This allows (but you don't need it) controlling (if you want to control something, you're making a mistake) how ClickHouse works with slow disks (but ClickHouse knows better, so please don't use this setting).
 
 Configuration examples:
 
@@ -907,7 +922,6 @@ Configuration examples:
                 </main>
                 <external>
                     <disk>external</disk>
-                    <prefer_not_to_merge>true</prefer_not_to_merge>
                 </external>
             </volumes>
         </small_jbod_with_external_no_merges>
@@ -952,7 +966,16 @@ configuration files; all the settings are in the CREATE/ATTACH query.
 The example uses `type=web`, but any disk type can be configured as dynamic, even Local disk. Local disks require a path argument to be inside the server config parameter `custom_local_disks_base_directory`, which has no default, so set that also when using local disk.
 :::
 
+#### Example dynamic web storage
+
+:::tip
+A [demo dataset](https://github.com/ClickHouse/web-tables-demo) is hosted in GitHub.  To prepare your own tables for web storage see the tool [clickhouse-static-files-uploader](/docs/en/operations/storing-data.md/#storing-data-on-webserver)
+:::
+
+In this `ATTACH TABLE` query the `UUID` provided matches the directory name of the data, and the endpoint is the URL for the raw GitHub content.
+
 ```sql
+# highlight-next-line
 ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
 (
     price UInt32,
@@ -1135,6 +1158,10 @@ Optional parameters:
 - `s3_max_put_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_put_rps`.
 - `s3_max_get_rps` — Maximum GET requests per second rate before throttling. Default value is `0` (unlimited).
 - `s3_max_get_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_get_rps`.
+- `read_resource` — Resource name to be used for [scheduling](/docs/en/operations/workload-scheduling.md) of read requests to this disk. Default value is empty string (IO scheduling is not enabled for this disk).
+- `write_resource` — Resource name to be used for [scheduling](/docs/en/operations/workload-scheduling.md) of write requests to this disk. Default value is empty string (IO scheduling is not enabled for this disk).
+- `key_template` — Define the format with which the object keys are generated. By default, Clickhouse takes `root path` from `endpoint` option and adds random generated suffix. That suffix is a dir with 3 random symbols and a file name with 29 random symbols. With that option you have a full control how to the object keys are generated. Some usage scenarios require having random symbols in the prefix or in the middle of object key. For example: `[a-z]{3}-prefix-random/constant-part/random-middle-[a-z]{3}/random-suffix-[a-z]{29}`. The value is parsed with [`re2`](https://github.com/google/re2/wiki/Syntax). Only some subset of the syntax is supported. Check if your preferred format is supported before using that option. Disk isn't initialized if clickhouse is unable to generate a key by the value of `key_template`. It requires enabled feature flag [storage_metadata_write_full_object_key](/docs/en/operations/settings/settings#storage_metadata_write_full_object_key). It forbids declaring the `root path` in `endpoint` option. It requires definition of the option `key_compatibility_prefix`.
+- `key_compatibility_prefix` — That option is required when option `key_template` is in use. In order to be able to read the objects keys which were stored in the metadata files with the metadata version lower that `VERSION_FULL_OBJECT_KEY`, the previous `root path` from the `endpoint` option should be set here.
 
 ### Configuring the cache
 
@@ -1154,7 +1181,7 @@ These parameters define the cache layer:
 
 Cache parameters:
 - `path` — The path where metadata for the cache is stored.
-- `max_size` — The size (amount of memory) that the cache can grow to.
+- `max_size` — The size (amount of disk space) that the cache can grow to.
 
 :::tip
 There are several other cache parameters that you can use to tune your storage, see [using local cache](/docs/en/operations/storing-data.md/#using-local-cache) for the details.
@@ -1216,7 +1243,6 @@ Configuration markup:
             <account_name>account</account_name>
             <account_key>pass123</account_key>
             <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-            <cache_enabled>true</cache_enabled>
             <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </blob_storage_disk>
@@ -1244,15 +1270,102 @@ Limit parameters (mainly for internal usage):
 
 Other parameters:
 * `metadata_path` - Path on local FS to store metadata files for Blob Storage. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
-* `cache_enabled` - Allows to cache mark and index files on local FS. Default value is `true`.
-* `cache_path` - Path on local FS where to store cached mark and index files. Default value is `/var/lib/clickhouse/disks/<disk_name>/cache/`.
 * `skip_access_check` - If true, disk access checks will not be performed on disk start-up. Default value is `false`.
+* `read_resource` — Resource name to be used for [scheduling](/docs/en/operations/workload-scheduling.md) of read requests to this disk. Default value is empty string (IO scheduling is not enabled for this disk).
+* `write_resource` — Resource name to be used for [scheduling](/docs/en/operations/workload-scheduling.md) of write requests to this disk. Default value is empty string (IO scheduling is not enabled for this disk).
 
 Examples of working configurations can be found in integration tests directory (see e.g. [test_merge_tree_azure_blob_storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) or [test_azure_blob_storage_zero_copy_replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)).
 
-  :::note Zero-copy replication is not ready for production
-  Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
-  :::
+:::note Zero-copy replication is not ready for production
+Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
+:::
+
+## HDFS storage {#hdfs-storage}
+
+In this sample configuration:
+- the disk is of type `hdfs`
+- the data is hosted at `hdfs://hdfs1:9000/clickhouse/`
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <hdfs>
+                <type>hdfs</type>
+                <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
+                <skip_access_check>true</skip_access_check>
+            </hdfs>
+            <hdd>
+                <type>local</type>
+                <path>/</path>
+            </hdd>
+        </disks>
+        <policies>
+            <hdfs>
+                <volumes>
+                    <main>
+                        <disk>hdfs</disk>
+                    </main>
+                    <external>
+                        <disk>hdd</disk>
+                    </external>
+                </volumes>
+            </hdfs>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+## Web storage (read-only) {#web-storage}
+
+Web storage can be used for read-only purposes. An example use is for hosting sample
+data, or for migrating data.
+
+:::tip
+Storage can also be configured temporarily within a query, if a web dataset is not expected
+to be used routinely, see [dynamic storage](#dynamic-storage) and skip editing the
+configuration file.
+:::
+
+In this sample configuration:
+- the disk is of type `web`
+- the data is hosted at `http://nginx:80/test1/`
+- a cache on local storage is used
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <web>
+                <type>web</type>
+                <endpoint>http://nginx:80/test1/</endpoint>
+            </web>
+            <cached_web>
+                <type>cache</type>
+                <disk>web</disk>
+                <path>cached_web_cache/</path>
+                <max_size>100000000</max_size>
+            </cached_web>
+        </disks>
+        <policies>
+            <web>
+                <volumes>
+                    <main>
+                        <disk>web</disk>
+                    </main>
+                </volumes>
+            </web>
+            <cached_web>
+                <volumes>
+                    <main>
+                        <disk>cached_web</disk>
+                    </main>
+                </volumes>
+            </cached_web>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
 
 ## Virtual Columns {#virtual-columns}
 
@@ -1262,3 +1375,73 @@ Examples of working configurations can be found in integration tests directory (
 - `_part_uuid` — Unique part identifier (if enabled MergeTree setting `assign_part_uuids`).
 - `_partition_value` — Values (a tuple) of a `partition by` expression.
 - `_sample_factor` — Sample factor (from the query).
+- `_block_number` — Block number of the row, it is persisted on merges when `allow_experimental_block_number_column` is set to true.
+
+## Column Statistics (Experimental) {#column-statistics}
+
+The statistic declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistic = 1`.
+
+``` sql
+CREATE TABLE tab
+(
+    a Int64 STATISTIC(tdigest),
+    b Float64
+)
+ENGINE = MergeTree
+ORDER BY a
+```
+
+We can also manipulate statistics with `ALTER` statements.
+
+```sql
+ALTER TABLE tab ADD STATISTIC b TYPE tdigest;
+ALTER TABLE tab DROP STATISTIC a TYPE tdigest;
+```
+
+These lightweight statistics aggregate information about distribution of values in columns.
+They can be used for query optimization when we enable `set allow_statistic_optimize = 1`.
+
+#### Available Types of Column Statistics {#available-types-of-column-statistics}
+
+-   `tdigest`
+
+    Stores distribution of values from numeric columns in [TDigest](https://github.com/tdunning/t-digest) sketch.
+
+## Column-level Settings {#column-level-settings}
+
+Certain MergeTree settings can be override at column level:
+
+- `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table.
+- `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark.
+
+Example:
+
+```sql
+CREATE TABLE tab
+(
+    id Int64,
+    document String SETTINGS (min_compress_block_size = 16777216, max_compress_block_size = 16777216)
+)
+ENGINE = MergeTree
+ORDER BY id
+```
+
+Column-level settings can be modified or removed using [ALTER MODIFY COLUMN](/docs/en/sql-reference/statements/alter/column.md), for example:
+
+- Remove `SETTINGS` from column declaration:
+
+```sql
+ALTER TABLE tab MODIFY COLUMN document REMOVE SETTINGS;
+```
+
+- Modify a setting:
+
+```sql
+ALTER TABLE tab MODIFY COLUMN document MODIFY SETTING min_compress_block_size = 8192;
+```
+
+- Reset one or more settings, also removes the setting declaration in the column expression of the table's CREATE query.
+
+```sql
+ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;
+```

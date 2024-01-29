@@ -1,0 +1,4 @@
+<clickhouse>
+    <filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>
+    <custom_cached_disks_base_directory replace="replace">/var/lib/clickhouse/filesystem_caches/</custom_cached_disks_base_directory>
+</clickhouse>

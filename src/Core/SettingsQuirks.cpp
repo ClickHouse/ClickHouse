@@ -1,10 +1,11 @@
+#include <base/defines.h>
 #include <Core/SettingsQuirks.h>
 #include <Core/Settings.h>
 #include <Poco/Environment.h>
 #include <Poco/Platform.h>
 #include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
-#include <cstdlib>
+
 
 namespace
 {
@@ -16,7 +17,7 @@ namespace
 ///
 ///   [1]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=339ddb53d373
 ///   [2]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=0c54a6a44bf3
-bool nestedEpollWorks(Poco::Logger * log)
+bool nestedEpollWorks(LoggerPtr log)
 {
     if (Poco::Environment::os() != POCO_OS_LINUX)
         return true;
@@ -47,7 +48,7 @@ namespace DB
 {
 
 /// Update some settings defaults to avoid some known issues.
-void applySettingsQuirks(Settings & settings, Poco::Logger * log)
+void applySettingsQuirks(Settings & settings, LoggerPtr log)
 {
     if (!nestedEpollWorks(log))
     {

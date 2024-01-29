@@ -31,7 +31,7 @@ namespace ErrorCodes
         message.empty() ? "" : ": " + message);
 }
 
-Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const std::string & root_name, const ASTs & disk_args, ContextPtr context)
+Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context)
 {
     if (disk_args.empty())
         throwBadConfiguration("expected non-empty list of arguments");
@@ -39,8 +39,6 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const std::st
     Poco::AutoPtr<Poco::XML::Document> xml_document(new Poco::XML::Document());
     Poco::AutoPtr<Poco::XML::Element> root(xml_document->createElement("disk"));
     xml_document->appendChild(root);
-    Poco::AutoPtr<Poco::XML::Element> disk_configuration(xml_document->createElement(root_name));
-    root->appendChild(disk_configuration);
 
     for (const auto & arg : disk_args)
     {
@@ -62,7 +60,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const std::st
 
         const std::string & key = key_identifier->name();
         Poco::AutoPtr<Poco::XML::Element> key_element(xml_document->createElement(key));
-        disk_configuration->appendChild(key_element);
+        root->appendChild(key_element);
 
         if (!function_args[1]->as<ASTLiteral>() && !function_args[1]->as<ASTIdentifier>())
             throwBadConfiguration("expected values to be literals or identifiers");
@@ -75,9 +73,9 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const std::st
     return xml_document;
 }
 
-DiskConfigurationPtr getDiskConfigurationFromAST(const std::string & root_name, const ASTs & disk_args, ContextPtr context)
+DiskConfigurationPtr getDiskConfigurationFromAST(const ASTs & disk_args, ContextPtr context)
 {
-    auto xml_document = getDiskConfigurationFromASTImpl(root_name, disk_args, context);
+    auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context);
     Poco::AutoPtr<Poco::Util::XMLConfiguration> conf(new Poco::Util::XMLConfiguration());
     conf->load(xml_document);
     return conf;

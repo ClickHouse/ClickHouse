@@ -1,18 +1,19 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
-#include <Common/assert_cast.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <IO/Operators.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/SipHash.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/AlignedBuffer.h>
-#include <Common/typeid_cast.h>
 #include <Common/Arena.h>
-#include <Common/WeakHash.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/SipHash.h>
+#include <Common/WeakHash.h>
+#include <Common/assert_cast.h>
+#include <Common/iota.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -73,7 +74,7 @@ ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & fu
 
 }
 
-void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_, size_t version_)
+void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_, std::optional<size_t> version_)
 {
     func = func_;
     version = version_;
@@ -524,10 +525,11 @@ void ColumnAggregateFunction::insertDefault()
     pushBackAndCreateState(data, arena, func.get());
 }
 
-StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
+StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin, const UInt8 *) const
 {
     WriteBufferFromArena out(arena, begin);
     func->serialize(data[n], out, version);
+    out.finalize();
     return out.complete();
 }
 
@@ -625,8 +627,7 @@ void ColumnAggregateFunction::getPermutation(PermutationSortDirection /*directio
 {
     size_t s = data.size();
     res.resize(s);
-    for (size_t i = 0; i < s; ++i)
-        res[i] = i;
+    iota(res.data(), s, IColumn::Permutation::value_type(0));
 }
 
 void ColumnAggregateFunction::updatePermutation(PermutationSortDirection, PermutationSortStability,

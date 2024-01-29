@@ -22,19 +22,22 @@ tuple(x, y, …)
 
 A function that allows getting a column from a tuple.
 
-If the second argument is a number `n`, it is the column index, starting from 1. If the second argument is a string `s`, it represents the name of the element. Besides, we can provide the third optional argument, such that when index out of bounds or element for such name does not exist, the default value returned instead of throw exception. The second and third arguments if provided are always must be constant. There is no cost to execute the function.
+If the second argument is a number `index`, it is the column index, starting from 1. If the second argument is a string `name`, it represents the name of the element. Besides, we can provide the third optional argument, such that when index out of bounds or no element exist for the name, the default value returned instead of throwing an exception. The second and third arguments, if provided, must be constants. There is no cost to execute the function.
 
-The function implements the operator `x.n` and `x.s`.
+The function implements operators `x.index` and `x.name`.
 
 **Syntax**
 
 ``` sql
-tupleElement(tuple, n/s [, default_value])
+tupleElement(tuple, index, [, default_value])
+tupleElement(tuple, name, [, default_value])
 ```
 
 ## untuple
 
 Performs syntactic substitution of [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2) elements in the call location.
+
+The names of the result columns are implementation-specific and subject to change. Do not assume specific column names after `untuple`.
 
 **Syntax**
 
@@ -85,8 +88,6 @@ Result:
 │    77 │ kl    │
 └───────┴───────┘
 ```
-
-Note: the names are implementation specific and are subject to change. You should not assume specific names of the columns after application of the `untuple`.
 
 Example of using an `EXCEPT` expression:
 
@@ -170,7 +171,8 @@ Result:
 Can be used with [MinHash](../../sql-reference/functions/hash-functions.md#ngramminhash) functions for detection of semi-duplicate strings:
 
 ``` sql
-SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseInsensitive(string)) as HammingDistance FROM (SELECT 'ClickHouse is a column-oriented database management system for online analytical processing of queries.' AS string);
+SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseInsensitive(string)) AS HammingDistance
+FROM (SELECT 'ClickHouse is a column-oriented database management system for online analytical processing of queries.' AS string);
 ```
 
 Result:
@@ -558,6 +560,29 @@ Result:
 └────────────────────────────┘
 ```
 
+## tupleConcat
+
+Combines tuples passed as arguments.
+
+``` sql
+tupleConcat(tuples)
+```
+
+**Arguments**
+
+- `tuples` – Arbitrary number of arguments of [Tuple](../../sql-reference/data-types/tuple.md) type.
+
+**Example**
+
+``` sql
+SELECT tupleConcat((1, 2), (3, 4), (true, false)) AS res
+```
+
+``` text
+┌─res──────────────────┐
+│ (1,2,3,4,true,false) │
+└──────────────────────┘
+```
 
 ## Distance functions
 

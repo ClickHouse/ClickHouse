@@ -1,5 +1,5 @@
 # docker build -t clickhouse/integration-tests-runner .
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
@@ -47,29 +47,34 @@ ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV DOCKER_CHANNEL stable
+# Unpin the docker version after the release 24.0.3 is released
+# https://github.com/moby/moby/issues/45770#issuecomment-1618255130
 RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
     && add-apt-repository "deb https://download.docker.com/linux/ubuntu $(lsb_release -c -s) ${DOCKER_CHANNEL}" \
     && apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
-        docker-ce \
+        docker-ce='5:23.*' \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
         /tmp/* \
-    && apt-get clean
+    && apt-get clean \
+    && dockerd --version; docker --version
 
-RUN dockerd --version; docker --version
 
 RUN python3 -m pip install --no-cache-dir \
     PyMySQL \
-    aerospike==4.0.0 \
-    avro==1.10.2 \
+    aerospike==11.1.0 \
     asyncio \
+    avro==1.10.2 \
+    azure-storage-blob \
+    boto3 \
     cassandra-driver \
-    confluent-kafka==1.5.0 \
+    confluent-kafka==1.9.2 \
+    delta-spark==2.3.0 \
     dict2xml \
     dicttoxml \
-    docker \
+    docker==6.1.3 \
     docker-compose==1.29.2 \
     grpcio \
     grpcio-tools \
@@ -79,51 +84,60 @@ RUN python3 -m pip install --no-cache-dir \
     minio \
     nats-py \
     protobuf \
-    psycopg2-binary==2.8.6 \
+    psycopg2-binary==2.9.6 \
+    pyhdfs \
     pymongo==3.11.0 \
+    pyspark==3.3.2 \
     pytest \
     pytest-order==1.0.0 \
-    pytest-timeout \
     pytest-random \
-    pytest-xdist \
     pytest-repeat \
+    pytest-timeout \
+    pytest-xdist \
     pytz \
+    pyyaml==5.3.1 \
     redis \
-    tzlocal==2.1 \
-    urllib3 \
     requests-kerberos \
-    pyspark==3.3.2 \
-    delta-spark==2.2.0 \
-    pyhdfs \
-    azure-storage-blob \
-    meilisearch==0.18.3
+    tzlocal==2.1 \
+    retry \
+    bs4 \
+    lxml \
+    urllib3
+# bs4, lxml are for cloud tests, do not delete
+
+# Hudi supports only spark 3.3.*, not 3.4
+RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.3.2/spark-3.3.2-bin-hadoop3.tgz \
+    && tar xzvf spark-3.3.2-bin-hadoop3.tgz -C / \
+    && rm spark-3.3.2-bin-hadoop3.tgz
+
+# download spark and packages
+# if you change packages, don't forget to update them in tests/integration/helpers/cluster.py
+RUN packages="org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,\
+io.delta:delta-core_2.12:2.3.0,\
+org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0" \
+    && /spark-3.3.2-bin-hadoop3/bin/spark-shell --packages "$packages" > /dev/null \
+    && find /root/.ivy2/ -name '*.jar' -exec ln -sf {} /spark-3.3.2-bin-hadoop3/jars/ \;
+
+RUN set -x \
+  && addgroup --system dockremap \
+  && adduser --system dockremap \
+  && adduser dockremap dockremap \
+  && echo 'dockremap:165536:65536' >> /etc/subuid \
+  && echo 'dockremap:165536:65536' >> /etc/subgid
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
 COPY compose/ /compose/
 COPY misc/ /misc/
 
-RUN curl -fsSL -O https://dlcdn.apache.org/spark/spark-3.3.2/spark-3.3.2-bin-hadoop3.tgz \
-    && tar xzvf spark-3.3.2-bin-hadoop3.tgz -C / \
-    && rm spark-3.3.2-bin-hadoop3.tgz
-
-# download spark and packages
-# if you change packages, don't forget to update them in tests/integration/helpers/cluster.py
-RUN echo ":quit" | /spark-3.3.2-bin-hadoop3/bin/spark-shell --packages "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0" > /dev/null
-
-RUN set -x \
-  && addgroup --system dockremap \
-    && adduser --system dockremap \
-  && adduser dockremap dockremap \
-  && echo 'dockremap:165536:65536' >> /etc/subuid \
-    && echo 'dockremap:165536:65536' >> /etc/subgid
 
 # Same options as in test/base/Dockerfile
 # (in case you need to override them in tests)
-ENV TSAN_OPTIONS='halt_on_error=1 history_size=7 memory_limit_mb=46080 second_deadlock_stack=1'
+ENV TSAN_OPTIONS='halt_on_error=1 abort_on_error=1 history_size=7 memory_limit_mb=46080 second_deadlock_stack=1'
 ENV UBSAN_OPTIONS='print_stacktrace=1'
 ENV MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1'
 
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
-CMD ["sh", "-c", "pytest $PYTEST_OPTS"]
+# To pass additional arguments (i.e. list of tests) use PYTEST_ADDOPTS
+CMD ["sh", "-c", "pytest"]

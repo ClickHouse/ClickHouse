@@ -6,7 +6,6 @@
 #include <Common/getRandomASCIIString.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
-#include <IO/SeekAvoidingReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 
@@ -15,11 +14,12 @@
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
+
 namespace CurrentMetrics
 {
     extern const Metric ObjectStorageAzureThreads;
     extern const Metric ObjectStorageAzureThreadsActive;
-
+    extern const Metric ObjectStorageAzureThreadsScheduled;
 }
 
 namespace DB
@@ -46,6 +46,7 @@ public:
         : IObjectStorageIteratorAsync(
             CurrentMetrics::ObjectStorageAzureThreads,
             CurrentMetrics::ObjectStorageAzureThreadsActive,
+            CurrentMetrics::ObjectStorageAzureThreadsScheduled,
             "ListObjectAzure")
         , client(client_)
     {
@@ -57,6 +58,7 @@ public:
 private:
     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
     {
+        batch.clear();
         auto outcome = client->ListBlobs(options);
         auto blob_list_response = client->ListBlobs(options);
         auto blobs_list = blob_list_response.Blobs;
@@ -69,15 +71,15 @@ private:
                     static_cast<uint64_t>(blob.BlobSize),
                     Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
-                            blob.Details.LastModified.time_since_epoch()).count()),
+                            static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
                     {}});
         }
 
-        options.ContinuationToken = blob_list_response.NextPageToken;
-        if (blob_list_response.HasPage())
-            return true;
+        if (!blob_list_response.NextPageToken.HasValue() || blob_list_response.NextPageToken.Value().empty())
+            return false;
 
-        return false;
+        options.ContinuationToken = blob_list_response.NextPageToken;
+        return true;
     }
 
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
@@ -94,17 +96,13 @@ AzureObjectStorage::AzureObjectStorage(
     : name(name_)
     , client(std::move(client_))
     , settings(std::move(settings_))
-    , log(&Poco::Logger::get("AzureObjectStorage"))
+    , log(getLogger("AzureObjectStorage"))
 {
-    data_source_description.type = DataSourceType::AzureBlobStorage;
-    data_source_description.description = client.get()->GetUrl();
-    data_source_description.is_cached = false;
-    data_source_description.is_encrypted = false;
 }
 
-std::string AzureObjectStorage::generateBlobNameForPath(const std::string & /* path */)
+ObjectStorageKey AzureObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
 {
-    return getRandomASCIIString(32);
+    return ObjectStorageKey::createAsRelative(getRandomASCIIString(32));
 }
 
 bool AzureObjectStorage::exists(const StoredObject & object) const
@@ -162,7 +160,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
                     static_cast<uint64_t>(blob.BlobSize),
                     Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
-                            blob.Details.LastModified.time_since_epoch()).count()),
+                            static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
                     {}});
         }
 
@@ -215,27 +213,37 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
             settings_ptr->max_single_read_retries,
             settings_ptr->max_single_download_retries,
             /* use_external_buffer */true,
+            /* restricted_seek */true,
             read_until_position);
     };
 
-    auto reader_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator),
-        objects,
-        disk_read_settings,
-        global_context->getFilesystemCacheLog());
+    switch (read_settings.remote_fs_method)
+    {
+        case RemoteFSReadMethod::read:
+        {
+            return std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(read_buffer_creator),
+                objects,
+                disk_read_settings,
+                global_context->getFilesystemCacheLog(),
+                /* use_external_buffer */false);
 
-    if (disk_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
-    {
-        auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-        return std::make_unique<AsynchronousBoundedReadBuffer>(
-            std::move(reader_impl), reader, disk_read_settings,
-            global_context->getAsyncReadCounters(),
-            global_context->getFilesystemReadPrefetchesLog());
-    }
-    else
-    {
-        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(reader_impl), disk_read_settings);
-        return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings_ptr->min_bytes_for_seek);
+        }
+        case RemoteFSReadMethod::threadpool:
+        {
+            auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(read_buffer_creator),
+                objects,
+                disk_read_settings,
+                global_context->getFilesystemCacheLog(),
+                /* use_external_buffer */true);
+
+            auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+            return std::make_unique<AsynchronousBoundedReadBuffer>(
+                std::move(impl), reader, disk_read_settings,
+                global_context->getAsyncReadCounters(),
+                global_context->getFilesystemReadPrefetchesLog());
+        }
     }
 }
 
@@ -310,18 +318,7 @@ void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     auto client_ptr = client.get();
     for (const auto & object : objects)
     {
-        try
-        {
-            auto delete_info = client_ptr->DeleteBlob(object.remote_path);
-        }
-        catch (const Azure::Storage::StorageException & e)
-        {
-            /// If object doesn't exist...
-            if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
-                return;
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            throw;
-        }
+        removeObjectIfExists(object);
     }
 
 }
@@ -340,13 +337,15 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) c
         for (const auto & [key, value] : properties.Metadata)
             (*result.attributes)[key] = value;
     }
-    result.last_modified.emplace(properties.LastModified.time_since_epoch().count());
+    result.last_modified.emplace(static_cast<std::chrono::system_clock::time_point>(properties.LastModified).time_since_epoch().count());
     return result;
 }
 
 void AzureObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
+    const ReadSettings &,
+    const WriteSettings &,
     std::optional<ObjectAttributes> object_to_attributes)
 {
     auto client_ptr = client.get();

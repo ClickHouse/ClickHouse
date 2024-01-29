@@ -37,8 +37,8 @@ static bool isUnlimitedQuery(const IAST * ast)
     if (!ast)
         return false;
 
-    /// It is KILL QUERY
-    if (ast->as<ASTKillQueryQuery>())
+    /// It is KILL QUERY or an async insert flush query
+    if (ast->as<ASTKillQueryQuery>() || ast->getQueryKind() == IAST::QueryKind::AsyncInsertFlush)
         return true;
 
     /// It is SELECT FROM system.processes
@@ -86,7 +86,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         if (!is_unlimited_query && max_size && processes.size() >= max_size)
         {
             if (queue_max_wait_ms)
-                LOG_WARNING(&Poco::Logger::get("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
+                LOG_WARNING(getLogger("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
             if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms), [&]{ return processes.size() < max_size; }))
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Too many simultaneous queries. Maximum: {}", max_size);
         }
@@ -183,14 +183,11 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         }
 
         /// Check other users running query with our query_id
-        for (const auto & user_process_list : user_to_queries)
+        if (auto query_user = queries_to_user.find(client_info.current_query_id); query_user != queries_to_user.end() && query_user->second != client_info.current_user)
         {
-            if (user_process_list.first == client_info.current_user)
-                continue;
-            if (auto running_query = user_process_list.second.queries.find(client_info.current_query_id); running_query != user_process_list.second.queries.end())
-                throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
-                                "Query with id = {} is already running by user {}",
-                                client_info.current_query_id, user_process_list.first);
+            throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
+                            "Query with id = {} is already running by user {}",
+                            client_info.current_query_id, query_user->second);
         }
 
         auto user_process_list_it = user_to_queries.find(client_info.current_user);
@@ -223,7 +220,10 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             {
                 /// Set up memory profiling
                 thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
+
                 thread_group->memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
+                thread_group->memory_tracker.setSampleMinAllocationSize(settings.memory_profiler_sample_min_allocation_size);
+                thread_group->memory_tracker.setSampleMaxAllocationSize(settings.memory_profiler_sample_max_allocation_size);
                 thread_group->performance_counters.setTraceProfileEvents(settings.trace_profile_events);
             }
 
@@ -246,6 +246,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
                 priorities.insert(static_cast<int>(settings.priority)),
                 std::move(thread_group),
                 query_kind,
+                settings,
                 watch_start_nanoseconds));
 
         increaseQueryKindAmount(query_kind);
@@ -253,8 +254,10 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         res = std::make_shared<Entry>(*this, process_it);
 
         (*process_it)->setUserProcessList(&user_process_list);
+        (*process_it)->setProcessListEntry(res);
 
         user_process_list.queries.emplace(client_info.current_query_id, res->getQueryStatus());
+        queries_to_user.emplace(client_info.current_query_id, client_info.current_user);
 
         /// Track memory usage for all simultaneously running queries from single user.
         user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_user);
@@ -292,7 +295,7 @@ ProcessListEntry::~ProcessListEntry()
     auto user_process_list_it = parent.user_to_queries.find(user);
     if (user_process_list_it == parent.user_to_queries.end())
     {
-        LOG_ERROR(&Poco::Logger::get("ProcessList"), "Logical error: cannot find user in ProcessList");
+        LOG_ERROR(getLogger("ProcessList"), "Logical error: cannot find user in ProcessList");
         std::terminate();
     }
 
@@ -312,12 +315,15 @@ ProcessListEntry::~ProcessListEntry()
     /// Wait for the query if it is in the cancellation right now.
     parent.cancelled_cv.wait(lock.lock, [&]() { return process_list_element_ptr->is_cancelling == false; });
 
+    if (auto query_user = parent.queries_to_user.find(query_id); query_user != parent.queries_to_user.end())
+        parent.queries_to_user.erase(query_user);
+
     /// This removes the memory_tracker of one request.
     parent.processes.erase(it);
 
     if (!found)
     {
-        LOG_ERROR(&Poco::Logger::get("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
+        LOG_ERROR(getLogger("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
         std::terminate();
     }
 
@@ -342,6 +348,7 @@ QueryStatus::QueryStatus(
     QueryPriorities::Handle && priority_handle_,
     ThreadGroupPtr && thread_group_,
     IAST::QueryKind query_kind_,
+    const Settings & query_settings_,
     UInt64 watch_start_nanoseconds)
     : WithContext(context_)
     , query(query_)
@@ -353,9 +360,11 @@ QueryStatus::QueryStatus(
     , query_kind(query_kind_)
     , num_queries_increment(CurrentMetrics::Query)
 {
-    auto settings = getContext()->getSettings();
-    limits.max_execution_time = settings.max_execution_time;
-    overflow_mode = settings.timeout_overflow_mode;
+    /// We have to pass `query_settings_` to this constructor because we can't use `context_->getSettings().max_execution_time` here:
+    /// a QueryStatus is created with `ProcessList::mutex` locked (see ProcessList::insert) and calling `context_->getSettings()`
+    /// would lock the context's lock too, whereas holding two those locks simultaneously is not good.
+    limits.max_execution_time = query_settings_.max_execution_time;
+    overflow_mode = query_settings_.timeout_overflow_mode;
 }
 
 QueryStatus::~QueryStatus()
@@ -473,6 +482,22 @@ void QueryStatus::setUserProcessList(ProcessListForUser * user_process_list_)
 }
 
 
+void QueryStatus::setProcessListEntry(std::weak_ptr<ProcessListEntry> process_list_entry_)
+{
+    /// Synchronization is not required here because this function is only called from ProcessList::insert()
+    /// when `ProcessList::mutex` is locked.
+    if (!process_list_entry.expired() && !process_list_entry_.expired())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Two entries in the process list cannot both use the same query status");
+    process_list_entry = process_list_entry_;
+}
+
+
+std::shared_ptr<ProcessListEntry> QueryStatus::getProcessListEntry() const
+{
+    return process_list_entry.lock();
+}
+
+
 ThrottlerPtr QueryStatus::getUserNetworkThrottler()
 {
     if (!user_process_list)
@@ -518,6 +543,28 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
         elem = tryGetProcessListElement(current_query_id, current_user);
         if (!elem)
             return CancellationCode::NotFound;
+        elem->is_cancelling = true;
+    }
+
+    SCOPE_EXIT({
+        DENY_ALLOCATIONS_IN_SCOPE;
+
+        auto lock = unsafeLock();
+        elem->is_cancelling = false;
+        cancelled_cv.notify_all();
+    });
+
+    return elem->cancelQuery(kill);
+}
+
+
+CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem, bool kill)
+{
+    /// Cancelling the query should be done without the lock.
+    /// So here we first set is_cancelling, and later reset it.
+    /// The ProcessListEntry cannot be destroy if is_cancelling is true.
+    {
+        auto lock = safeLock();
         elem->is_cancelling = true;
     }
 
@@ -583,16 +630,21 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         res.peak_memory_usage = thread_group->memory_tracker.getPeak();
 
         if (get_thread_list)
+        {
             res.thread_ids = thread_group->getInvolvedThreadIds();
-
+            res.peak_threads_usage = thread_group->getPeakThreadsUsage();
+        }
         if (get_profile_events)
             res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
     }
 
-    if (get_settings && getContext())
+    if (get_settings)
     {
-        res.query_settings = std::make_shared<Settings>(getContext()->getSettings());
-        res.current_database = getContext()->getCurrentDatabase();
+        if (auto ctx = context.lock())
+        {
+            res.query_settings = std::make_shared<Settings>(ctx->getSettings());
+            res.current_database = ctx->getCurrentDatabase();
+        }
     }
 
     return res;
@@ -601,12 +653,18 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
 
 ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_events, bool get_settings) const
 {
+    /// We have to copy `processes` first because `process->getInfo()` below can access the context to get the query settings,
+    /// and it's better not to keep the process list's lock while doing that.
+    std::vector<QueryStatusPtr> processes_copy;
+
+    {
+        auto lock = safeLock();
+        processes_copy.assign(processes.begin(), processes.end());
+    }
+
     Info per_query_infos;
-
-    auto lock = safeLock();
-
-    per_query_infos.reserve(processes.size());
-    for (const auto & process : processes)
+    per_query_infos.reserve(processes_copy.size());
+    for (const auto & process : processes_copy)
         per_query_infos.emplace_back(process->getInfo(get_thread_list, get_profile_events, get_settings));
 
     return per_query_infos;

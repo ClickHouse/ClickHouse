@@ -16,8 +16,10 @@ Most `ALTER TABLE` queries modify table settings or data:
 - [INDEX](/docs/en/sql-reference/statements/alter/skipping-index.md)
 - [CONSTRAINT](/docs/en/sql-reference/statements/alter/constraint.md)
 - [TTL](/docs/en/sql-reference/statements/alter/ttl.md)
+- [STATISTIC](/docs/en/sql-reference/statements/alter/statistic.md)
+- [APPLY DELETED MASK](/docs/en/sql-reference/statements/alter/apply-deleted-mask.md)
 
-:::note    
+:::note
 Most `ALTER TABLE` queries are supported only for [\*MergeTree](/docs/en/engines/table-engines/mergetree-family/index.md) tables, as well as [Merge](/docs/en/engines/table-engines/special/merge.md) and [Distributed](/docs/en/engines/table-engines/special/distributed.md).
 :::
 
@@ -35,6 +37,8 @@ These `ALTER` statements modify entities related to role-based access control:
 - [SETTINGS PROFILE](/docs/en/sql-reference/statements/alter/settings-profile.md)
 
 [ALTER TABLE ... MODIFY COMMENT](/docs/en/sql-reference/statements/alter/comment.md) statement adds, modifies, or removes comments to the table, regardless if it was set before or not.
+
+[ALTER NAMED COLLECTION](/docs/en/sql-reference/statements/alter/named-collection.md) statement modifies [Named Collections](/docs/en/operations/named-collections.md).
 
 ## Mutations
 
@@ -56,11 +60,11 @@ For all `ALTER` queries, you can use the [alter_sync](/docs/en/operations/settin
 
 You can specify how long (in seconds) to wait for inactive replicas to execute all `ALTER` queries with the [replication_wait_for_inactive_replica_timeout](/docs/en/operations/settings/settings.md/#replication-wait-for-inactive-replica-timeout) setting.
 
-:::note    
+:::note
 For all `ALTER` queries, if `alter_sync = 2` and some replicas are not active for more than the time, specified in the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
 :::
 
-For `ALTER TABLE ... UPDATE|DELETE` queries the synchronicity is defined by the [mutations_sync](/docs/en/operations/settings/settings.md/#mutations_sync) setting.
+For `ALTER TABLE ... UPDATE|DELETE|MATERIALIZE INDEX|MATERIALIZE PROJECTION|MATERIALIZE COLUMN` queries the synchronicity is defined by the [mutations_sync](/docs/en/operations/settings/settings.md/#mutations_sync) setting.
 
 ## Related content
 

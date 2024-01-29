@@ -336,7 +336,7 @@ private:
 
 
 template <typename Name, template<typename> typename Impl>
-class ExecutableFunctionJSON : public IExecutableFunction, WithContext
+class ExecutableFunctionJSON : public IExecutableFunction
 {
 
 public:
@@ -1053,6 +1053,13 @@ struct JSONExtractTree
 
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
+            if (dest.getDataType() == TypeIndex::LowCardinality)
+            {
+                /// We do not need to handle nullability in that case
+                /// because nested node handles LowCardinality columns and will call proper overload of `insertData`
+                return nested->insertResultToColumn(dest, element);
+            }
+
             ColumnNullable & col_null = assert_cast<ColumnNullable &>(dest);
             if (!nested->insertResultToColumn(col_null.getNestedColumn(), element))
                 return false;

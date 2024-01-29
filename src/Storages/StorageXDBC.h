@@ -19,7 +19,8 @@ namespace DB
 class StorageXDBC : public IStorageURLBase
 {
 public:
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -38,7 +39,7 @@ public:
         ContextPtr context_,
         BridgeHelperPtr bridge_helper_);
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     std::string getName() const override;
 private:
@@ -46,7 +47,7 @@ private:
     std::string remote_database_name;
     std::string remote_table_name;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::string getReadMethod() const override;
 
@@ -68,7 +69,7 @@ private:
 
     Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const override;
 
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns(const ContextPtr &) const override;
 };
 
 }
