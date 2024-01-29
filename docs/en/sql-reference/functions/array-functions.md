@@ -536,9 +536,130 @@ Result:
 
 ## emptyArrayDate, emptyArrayDateTime
 
+## emptyArrayDate
+
+Accepts zero arguments and returns an empty Date array.
+
+**Syntax**
+
+```sql
+emptyArrayDate()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE users (uid Int16, name String, age Int16, userDates Array(Date)) ENGINE=Memory;
+
+INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayDate());
+SELECT * FROM users;
+
+ALTER TABLE users UPDATE userDates = arrayPushBack(userDates, today()) WHERE uid = 1231;
+ALTER TABLE users UPDATE userDates = arrayPushBack(userDates, addDays(today(), 1)) WHERE uid = 1231;
+SELECT * FROM users;
+```
+
+## emptyArrayDateTime
+
+Accepts zero arguments and returns an empty DateTime array.
+
+**Syntax**
+
+```sql
+emptyArrayDateTime()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE users (uid Int16, name String, age Int16, userDates Array(DateTime)) ENGINE=Memory;
+
+INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayDateTime());
+SELECT * FROM users;
+
+ALTER TABLE users UPDATE userDates = arrayPushBack(userDates, now()) WHERE uid = 1231;
+ALTER TABLE users UPDATE userDates = arrayPushBack(userDates, addDays(now(), 1)) WHERE uid = 1231;
+SELECT * FROM users;
+```
+
+Result:
+
+```response
+1231	Alex	33	[]
+1231	Alex	33	['2024-01-29 18:08:01','2024-01-30 18:08:01']
+```
+
 ## emptyArrayString
 
-Accepts zero arguments and returns an empty array of the appropriate type.
+Accepts zero arguments and returns an empty String array.
+
+**Syntax**
+
+```sql
+emptyArrayString()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE users (uid Int16, name String, age Int16, aliases Array(String)) ENGINE=Memory;
+
+INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayString());
+SELECT * FROM users;
+
+ALTER TABLE users UPDATE aliases = arrayPushBack(aliases, 'Al') WHERE uid = 1231;
+ALTER TABLE users UPDATE aliases = arrayPushBack(aliases, 'Little Alex') WHERE uid = 1231;
+SELECT * FROM users;
+```
+
+Result:
+
+```response
+1231	Alex	33	[]
+1231	Alex	33	['Al','Little Alex']
+```
 
 ## emptyArrayToSingle
 
