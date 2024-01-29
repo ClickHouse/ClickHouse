@@ -94,7 +94,7 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
 KeeperDispatcher::KeeperDispatcher()
     : responses_queue(std::numeric_limits<size_t>::max())
     , configuration_and_settings(std::make_shared<KeeperConfigurationAndSettings>())
-    , log(&Poco::Logger::get("KeeperDispatcher"))
+    , log(getLogger("KeeperDispatcher"))
 {}
 
 void KeeperDispatcher::requestThread()
@@ -256,11 +256,11 @@ void KeeperDispatcher::requestThread()
                             if (shutdown_called)
                                 return;
 
-                            auto current_last_committed_idx = our_last_committed_log_idx.load(std::memory_order_relaxed);
+                            auto current_last_committed_idx = keeper_context->lastCommittedIndex();
                             if (current_last_committed_idx >= log_idx)
                                 break;
 
-                            our_last_committed_log_idx.wait(current_last_committed_idx);
+                            keeper_context->waitLastCommittedIndexUpdated(current_last_committed_idx);
                         }
                     }
                 }
@@ -458,8 +458,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                 }
             }
 
-            our_last_committed_log_idx.store(log_idx, std::memory_order_relaxed);
-            our_last_committed_log_idx.notify_all();
+            keeper_context->setLastCommitIndex(log_idx);
         });
 
     try
@@ -504,8 +503,7 @@ void KeeperDispatcher::shutdown()
 
             LOG_DEBUG(log, "Shutting down storage dispatcher");
 
-            our_last_committed_log_idx = std::numeric_limits<uint64_t>::max();
-            our_last_committed_log_idx.notify_all();
+            keeper_context->setLastCommitIndex(std::numeric_limits<uint64_t>::max());
 
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();

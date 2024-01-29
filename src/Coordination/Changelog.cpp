@@ -125,7 +125,7 @@ public:
         , entry_storage(entry_storage_)
         , log_file_settings(log_file_settings_)
         , keeper_context(std::move(keeper_context_))
-        , log(&Poco::Logger::get("Changelog"))
+        , log(getLogger("Changelog"))
     {
     }
 
@@ -476,7 +476,7 @@ private:
 
     KeeperContextPtr keeper_context;
 
-    Poco::Logger * const log;
+    LoggerPtr const log;
 };
 
 struct ChangelogReadResult
@@ -570,7 +570,7 @@ public:
     }
 
     /// start_log_index -- all entries with index < start_log_index will be skipped, but accounted into total_entries_read_from_log
-    ChangelogReadResult readChangelog(LogEntryStorage & entry_storage, uint64_t start_log_index, Poco::Logger * log)
+    ChangelogReadResult readChangelog(LogEntryStorage & entry_storage, uint64_t start_log_index, LoggerPtr log)
     {
         ChangelogReadResult result{};
         result.compressed_log = compression_method != CompressionMethod::None;
@@ -598,11 +598,13 @@ public:
                 if (result.first_read_index == 0)
                     result.first_read_index = record.header.index;
 
+                auto log_size  = read_buf->count() - result.last_position;
+
                 /// Put it into in memory structure
                 entry_storage.addEntryWithLocation(
                     record.header.index,
                     log_entry,
-                    LogLocation{.file_description = changelog_description, .position = static_cast<size_t>(result.last_position)});
+                    LogLocation{.file_description = changelog_description, .position = static_cast<size_t>(result.last_position), .size = log_size});
                 result.last_read_index = record.header.index;
 
                 if (result.total_entries_read_from_log % 50000 == 0)
@@ -634,36 +636,113 @@ private:
     std::unique_ptr<ReadBuffer> read_buf;
 };
 
+LogEntryStorage::LogEntryStorage(const LogFileSettings & log_settings)
+    : latest_logs_cache(log_settings.latest_logs_cache_size_threshold)
+    , commit_logs_cache(log_settings.commit_logs_cache_size_threshold)
+{
+
+}
+
 size_t LogEntryStorage::size() const
 {
     return total_entries;
 }
 
+LogEntryStorage::InMemoryCache::InMemoryCache(size_t size_threshold_)
+    : size_threshold(size_threshold_)
+{}
+
+void LogEntryStorage::InMemoryCache::addEntry(uint64_t index, const LogEntryPtr & log_entry)
+{
+    auto [_, inserted] = cache.emplace(index, log_entry);
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert log with index {} which is already present in cache", index);
+    cache_size += log_entry->get_buf_ptr()->size();
+
+    if (cache.size() == 1)
+    {
+        min_index_in_cache = index;
+        max_index_in_cache = index;
+    }
+    else
+    {
+        max_index_in_cache = index;
+    }
+}
+
+void LogEntryStorage::InMemoryCache::addEntry(IndexToLogEntryNode && node)
+{
+    auto index = node.key();
+    auto entry_size = node.mapped()->get_buf_ptr()->size();
+
+    auto result = cache.insert(std::move(node));
+    if (!result.inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert log with index {} which is already present in cache", index);
+
+    cache_size += entry_size;
+    if (cache.size() == 1)
+    {
+        min_index_in_cache = index;
+        max_index_in_cache = index;
+    }
+    else
+    {
+        max_index_in_cache = index;
+    }
+}
+
+IndexToLogEntryNode LogEntryStorage::InMemoryCache::popOldestEntry()
+{
+    auto node = cache.extract(min_index_in_cache);
+    if (node.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Couldn't find the oldest entry of index {} in logs cache", min_index_in_cache);
+    ++min_index_in_cache;
+    cache_size -= node.mapped()->get_buf_ptr()->size();
+    return node;
+}
+
+LogEntryPtr LogEntryStorage::InMemoryCache::getEntry(uint64_t index) const
+{
+    if (index < min_index_in_cache || index > max_index_in_cache)
+        return nullptr;
+
+    auto it = cache.find(index);
+    if (it == cache.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} missing from cache while it should be present", index);
+
+    return it->second;
+}
+
+bool LogEntryStorage::InMemoryCache::hasSpaceAvailable(size_t log_entry_size) const
+{
+    return cache.empty() || cache_size + log_entry_size < size_threshold;
+}
+
 void LogEntryStorage::addEntry(uint64_t index, const LogEntryPtr & log_entry)
 {
-    logs_cache.insert_or_assign(index, log_entry);
-    if (logs_cache.size() == 1)
-        min_index_in_cache = index;
+    /// we update the cache for added entries on refreshCache call
+    latest_logs_cache.addEntry(index, log_entry);
 
     ++total_entries;
 }
 
 void LogEntryStorage::addEntryWithLocation(uint64_t index, const LogEntryPtr & log_entry, LogLocation log_location)
 {
-    logs_cache.emplace(index, log_entry);
-    logs_location.emplace(index, std::move(log_location));
-    if (logs_cache.size() == 1)
-        min_index_in_cache = index;
-    else if (logs_cache.size() > 1000)
+    auto entry_size = log_entry->get_buf_ptr()->size();
+    while (!latest_logs_cache.hasSpaceAvailable(entry_size))
     {
-        logs_cache.erase(min_index_in_cache);
-        ++min_index_in_cache;
+        auto entry_handle = latest_logs_cache.popOldestEntry();
+        if (commit_logs_cache.max_index_in_cache == entry_handle.key() - 1 && commit_logs_cache.hasSpaceAvailable(entry_handle.mapped()->get_buf_ptr()->size()))
+            commit_logs_cache.addEntry(std::move(entry_handle));
     }
+
+    latest_logs_cache.addEntry(index, log_entry);
+    logs_location.emplace(index, std::move(log_location));
 }
 
 void LogEntryStorage::eraseIf(std::function<bool(size_t)> index_predicate)
 {
-    std::erase_if(logs_cache, [&](const auto & item) { return index_predicate(item.first); });
+    //std::erase_if(logs_cache, [&](const auto & item) { return index_predicate(item.first); });
 }
 
 bool LogEntryStorage::contains(uint64_t index) const
@@ -702,7 +781,7 @@ void LogEntryStorage::clear()
 
 LogEntryPtr LogEntryStorage::getLatestConfigChange() const
 {
-    for (const auto & [_, entry] : logs_cache)
+    for (const auto & [_, entry] : latest_logs_cache.logs_cache)
         if (entry->get_val_type() == nuraft::conf)
             return entry;
     return nullptr;
@@ -813,11 +892,12 @@ LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end
 }
 
 Changelog::Changelog(
-    Poco::Logger * log_, LogFileSettings log_file_settings, FlushSettings flush_settings_, KeeperContextPtr keeper_context_)
+    LoggerPtr log_, LogFileSettings log_file_settings, FlushSettings flush_settings_, KeeperContextPtr keeper_context_)
     : changelogs_detached_dir("detached")
     , rotate_interval(log_file_settings.rotate_interval)
     , compress_logs(log_file_settings.compress_logs)
     , log(log_)
+    , entry_storage(log_file_settings)
     , write_operations(std::numeric_limits<size_t>::max())
     , append_completion_queue(std::numeric_limits<size_t>::max())
     , keeper_context(std::move(keeper_context_))

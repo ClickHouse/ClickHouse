@@ -389,8 +389,7 @@ public:
       */
     static ActionsDAGPtr buildFilterActionsDAG(
         const NodeRawConstPtrs & filter_nodes,
-        const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
-        const ContextPtr & context,
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column = {},
         bool single_output_condition_node = true);
 
     /// Check if `predicate` is a combination of AND functions.

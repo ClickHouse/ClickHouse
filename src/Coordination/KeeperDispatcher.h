@@ -70,7 +70,7 @@ private:
 
     KeeperConfigurationAndSettingsPtr configuration_and_settings;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
@@ -104,8 +104,6 @@ private:
 
 public:
     std::mutex read_request_queue_mutex;
-
-    std::atomic<uint64_t> our_last_committed_log_idx = 0;
 
     /// queue of read requests that can be processed after a request with specific session ID and XID is committed
     std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperStorage::RequestsForSessions>> read_request_queue;

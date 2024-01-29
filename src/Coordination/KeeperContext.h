@@ -3,6 +3,7 @@
 #include <Disks/DiskSelector.h>
 #include <IO/WriteBufferFromString.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <memory>
@@ -68,6 +69,22 @@ public:
 
     void waitLocalLogsPreprocessedOrShutdown();
 
+    uint64_t lastCommittedIndex() const
+    {
+        return last_committed_log_idx.load(std::memory_order_relaxed);
+    }
+
+    void setLastCommitIndex(uint64_t commit_index)
+    {
+        last_committed_log_idx.store(commit_index, std::memory_order_relaxed);
+        last_committed_log_idx.notify_all();
+    }
+
+    void waitLastCommittedIndexUpdated(uint64_t current_last_committed_idx)
+    {
+        last_committed_log_idx.wait(current_last_committed_idx, std::memory_order_relaxed);
+    }
+
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
@@ -113,6 +130,8 @@ private:
     KeeperDispatcher * dispatcher{nullptr};
 
     std::atomic<UInt64> memory_soft_limit = 0;
+
+    std::atomic<UInt64> last_committed_log_idx = 0;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;

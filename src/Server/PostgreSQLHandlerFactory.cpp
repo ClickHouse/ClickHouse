@@ -7,7 +7,7 @@ namespace DB
 
 PostgreSQLHandlerFactory::PostgreSQLHandlerFactory(IServer & server_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
     : server(server_)
-    , log(&Poco::Logger::get("PostgreSQLHandlerFactory"))
+    , log(getLogger("PostgreSQLHandlerFactory"))
     , read_event(read_event_)
     , write_event(write_event_)
 {

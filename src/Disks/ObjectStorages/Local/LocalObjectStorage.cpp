@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 LocalObjectStorage::LocalObjectStorage(String key_prefix_)
     : key_prefix(std::move(key_prefix_))
-    , log(&Poco::Logger::get("LocalObjectStorage"))
+    , log(getLogger("LocalObjectStorage"))
 {
     if (auto block_device_id = tryGetBlockDeviceId("/"); block_device_id.has_value())
         description = *block_device_id;

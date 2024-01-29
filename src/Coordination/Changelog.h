@@ -23,6 +23,7 @@ using LogEntriesPtr = nuraft::ptr<LogEntries>;
 using BufferPtr = nuraft::ptr<nuraft::buffer>;
 
 using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
+using IndexToLogEntryNode = typename IndexToLogEntry::node_type;
 
 enum class ChangelogVersion : uint8_t
 {
@@ -80,6 +81,8 @@ struct LogFileSettings
     uint64_t rotate_interval = 100000;
     uint64_t max_size = 0;
     uint64_t overallocate_size = 0;
+    uint64_t latest_logs_cache_size_threshold = 0;
+    uint64_t commit_logs_cache_size_threshold = 0;
 };
 
 struct FlushSettings
@@ -91,10 +94,13 @@ struct LogLocation
 {
     ChangelogFileDescriptionPtr file_description;
     size_t position;
+    size_t size;
 };
 
 struct LogEntryStorage
 {
+    explicit LogEntryStorage(const LogFileSettings & log_settings);
+
     size_t size() const;
 
     void addEntry(uint64_t index, const LogEntryPtr & log_entry);
@@ -113,11 +119,30 @@ struct LogEntryStorage
 
     LogEntriesPtr getLogEntriesBetween(uint64_t start, uint64_t end) const;
 private:
-    /// Mapping log_id -> log_entry
-    IndexToLogEntry logs_cache;
-    size_t min_index_in_cache = 0;
+    struct InMemoryCache
+    {
+        explicit InMemoryCache(size_t size_threshold_);
+
+        void addEntry(uint64_t index, const LogEntryPtr & log_entry);
+        void addEntry(IndexToLogEntryNode && node);
+        IndexToLogEntryNode popOldestEntry();
+        LogEntryPtr getEntry(uint64_t index) const;
+        bool hasSpaceAvailable(size_t log_entry_size) const;
+
+        /// Mapping log_id -> log_entry
+        IndexToLogEntry cache;
+        size_t cache_size = 0;
+        size_t min_index_in_cache = 0;
+        size_t max_index_in_cache = 0;
+
+        const size_t size_threshold;
+    };
+
+    InMemoryCache latest_logs_cache;
+    InMemoryCache commit_logs_cache;
 
     size_t total_entries = 0;
+
     mutable std::mutex logs_location_mutex;
     std::vector<IndexWithLogLocation> unapplied_indices_with_log_locations;
     std::unordered_map<uint64_t, LogLocation> logs_location;
@@ -131,7 +156,7 @@ class Changelog
 {
 public:
     Changelog(
-        Poco::Logger * log_,
+        LoggerPtr log_,
         LogFileSettings log_file_settings,
         FlushSettings flush_settings,
         KeeperContextPtr keeper_context_);
@@ -222,7 +247,7 @@ private:
     const String changelogs_detached_dir;
     const uint64_t rotate_interval;
     const bool compress_logs;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::mutex writer_mutex;
     /// Current writer for changelog file

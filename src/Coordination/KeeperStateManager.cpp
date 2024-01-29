@@ -227,7 +227,7 @@ KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host,
           keeper_context_))
     , server_state_file_name("state")
     , keeper_context(keeper_context_)
-    , logger(&Poco::Logger::get("KeeperStateManager"))
+    , logger(getLogger("KeeperStateManager"))
 {
     auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
     configuration_wrapper.cluster_config = nuraft::cs_new<nuraft::cluster_config>();
@@ -254,7 +254,10 @@ KeeperStateManager::KeeperStateManager(
               .compress_logs = coordination_settings->compress_logs,
               .rotate_interval = coordination_settings->rotate_log_storage_interval,
               .max_size = coordination_settings->max_log_file_size,
-              .overallocate_size = coordination_settings->log_file_overallocate_size},
+              .overallocate_size = coordination_settings->log_file_overallocate_size,
+              .latest_logs_cache_size_threshold = coordination_settings->latest_logs_cache_size_threshold,
+              .commit_logs_cache_size_threshold = coordination_settings->commit_logs_cache_size_threshold
+          },
           FlushSettings
           {
               .max_flush_batch_size = coordination_settings->max_flush_batch_size,
@@ -262,7 +265,7 @@ KeeperStateManager::KeeperStateManager(
           keeper_context_))
     , server_state_file_name(server_state_file_name_)
     , keeper_context(keeper_context_)
-    , logger(&Poco::Logger::get("KeeperStateManager"))
+    , logger(getLogger("KeeperStateManager"))
 {
 }
 
@@ -495,7 +498,7 @@ ClusterUpdateActions KeeperStateManager::getRaftConfigurationDiff(
             if (old_endpoint != server_config->get_endpoint())
             {
                 LOG_WARNING(
-                    &Poco::Logger::get("RaftConfiguration"),
+                    getLogger("RaftConfiguration"),
                     "Config will be ignored because a server with ID {} is already present in the cluster on a different endpoint ({}). "
                     "The endpoint of the current servers should not be changed. For servers on a new endpoint, please use a new ID.",
                     new_id,
