@@ -33,10 +33,6 @@ namespace ErrorCodes
     extern const int AZURE_BLOB_STORAGE_ERROR;
 }
 
-
-size_t max_single_operation_copy_size = 256 * 1024 * 1024;
-
-
 namespace
 {
     class UploadHelper
@@ -304,7 +300,7 @@ void copyAzureBlobStorageFile(
         auto block_blob_client_dest = dest_client->GetBlockBlobClient(dest_blob);
         auto source_uri = block_blob_client_src.GetUrl();
 
-        if (size < max_single_operation_copy_size)
+        if (size < settings.get()->max_single_part_copy_size)
         {
             block_blob_client_dest.CopyFromUri(source_uri);
         }
