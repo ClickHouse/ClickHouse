@@ -57,16 +57,109 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-
 static const size_t PACKET_HEADER_SIZE = 4;
 static const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
 
-static String showWarningsReplacementQuery(const String & query);
-static String showCountWarningsReplacementQuery(const String & query);
-static String selectEmptyReplacementQuery(const String & query);
-static String showTableStatusReplacementQuery(const String & query);
-static String killConnectionIdReplacementQuery(const String & query);
-static std::optional<String> setSettingReplacementQuery(const String & query, const String & mysql_setting, const String & native_setting);
+static bool checkShouldReplaceQuery(const String & query, const String & prefix)
+{
+    return query.length() >= prefix.length()
+        && std::equal(prefix.begin(), prefix.end(), query.begin(), [](char a, char b) { return std::tolower(a) == std::tolower(b); });
+}
+
+static bool isFederatedServerSetupSetCommand(const String & query)
+{
+    re2::RE2::Options regexp_options;
+    regexp_options.set_case_sensitive(false);
+    static const re2::RE2 expr(
+        "(^(SET NAMES(.*)))"
+        "|(^(SET character_set_results(.*)))"
+        "|(^(SET FOREIGN_KEY_CHECKS(.*)))"
+        "|(^(SET AUTOCOMMIT(.*)))"
+        "|(^(SET sql_mode(.*)))"
+        "|(^(SET @@(.*)))"
+        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))", regexp_options);
+    assert(expr.ok());
+    return re2::RE2::FullMatch(query, expr);
+}
+
+/// Always return an empty set with appropriate column definitions for SHOW WARNINGS queries
+/// See also: https://dev.mysql.com/doc/refman/8.0/en/show-warnings.html
+static String showWarningsReplacementQuery([[maybe_unused]] const String & query)
+{
+    return "SELECT '' AS Level, 0::UInt32 AS Code, '' AS Message WHERE false";
+}
+
+static String showCountWarningsReplacementQuery([[maybe_unused]] const String & query)
+{
+    return "SELECT 0::UInt64 AS `@@session.warning_count`";
+}
+
+/// Replace "[query(such as SHOW VARIABLES...)]" into "".
+static String selectEmptyReplacementQuery(const String & query)
+{
+    std::ignore = query;
+    return "select ''";
+}
+
+/// Replace "SHOW TABLE STATUS LIKE 'xx'" into "SELECT ... FROM system.tables WHERE name LIKE 'xx'".
+static String showTableStatusReplacementQuery(const String & query)
+{
+    const String prefix = "SHOW TABLE STATUS LIKE ";
+    if (query.size() > prefix.size())
+    {
+        String suffix = query.data() + prefix.length();
+        return (
+            "SELECT"
+            " name AS Name,"
+            " engine AS Engine,"
+            " '10' AS Version,"
+            " 'Dynamic' AS Row_format,"
+            " 0 AS Rows,"
+            " 0 AS Avg_row_length,"
+            " 0 AS Data_length,"
+            " 0 AS Max_data_length,"
+            " 0 AS Index_length,"
+            " 0 AS Data_free,"
+            " 'NULL' AS Auto_increment,"
+            " metadata_modification_time AS Create_time,"
+            " metadata_modification_time AS Update_time,"
+            " metadata_modification_time AS Check_time,"
+            " 'utf8_bin' AS Collation,"
+            " 'NULL' AS Checksum,"
+            " '' AS Create_options,"
+            " '' AS Comment"
+            " FROM system.tables"
+            " WHERE name LIKE "
+            + suffix);
+    }
+    return query;
+}
+
+static std::optional<String> setSettingReplacementQuery(const String & query, const String & mysql_setting, const String & clickhouse_setting)
+{
+    const String prefix = "SET " + mysql_setting;
+    // if (query.length() >= prefix.length() && boost::iequals(std::string_view(prefix), std::string_view(query.data(), 3)))
+    if (checkShouldReplaceQuery(query, prefix))
+        return "SET " + clickhouse_setting + String(query.data() + prefix.length());
+    return std::nullopt;
+}
+
+/// Replace "KILL QUERY [connection_id]" into "KILL QUERY WHERE query_id LIKE 'mysql:[connection_id]:xxx'".
+static String killConnectionIdReplacementQuery(const String & query)
+{
+    const String prefix = "KILL QUERY ";
+    if (query.size() > prefix.size())
+    {
+        String suffix = query.data() + prefix.length();
+        static const re2::RE2 expr("^[0-9]");
+        if (re2::RE2::FullMatch(suffix, expr))
+        {
+            String replacement = fmt::format("KILL QUERY WHERE query_id LIKE 'mysql:{}:%'", suffix);
+            return replacement;
+        }
+    }
+    return query;
+}
 
 MySQLHandler::MySQLHandler(
     IServer & server_,
@@ -326,8 +419,6 @@ void MySQLHandler::comPing()
     packet_endpoint->sendPacket(OKPacket(0x0, client_capabilities, 0, 0, 0), true);
 }
 
-static bool isFederatedServerSetupSetCommand(const String & query);
-
 void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
 {
     String query = String(payload.position(), payload.buffer().end());
@@ -347,7 +438,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         // Queries replacements
         for (auto const & [query_to_replace, replacement_fn] : queries_replacements)
         {
-            if (0 == strncasecmp(query_to_replace.c_str(), query.c_str(), query_to_replace.size()))
+            if (checkShouldReplaceQuery(query, query_to_replace))
             {
                 should_replace = true;
                 replacement_query = replacement_fn(query);
@@ -357,9 +448,9 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
 
         // Settings replacements
         if (!should_replace)
-            for (auto const & [mysql_setting, native_setting] : settings_replacements)
+            for (auto const & [mysql_setting, clickhouse_setting] : settings_replacements)
             {
-                const auto replacement_query_opt = setSettingReplacementQuery(query, mysql_setting, native_setting);
+                const auto replacement_query_opt = setSettingReplacementQuery(query, mysql_setting, clickhouse_setting);
                 if (replacement_query_opt.has_value())
                 {
                     should_replace = true;
@@ -367,8 +458,6 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
                     break;
                 }
             }
-
-        ReadBufferFromString replacement(replacement_query);
 
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
@@ -401,7 +490,14 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
             }
         };
 
-        executeQuery(should_replace ? replacement : payload, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
+        if (should_replace)
+        {
+            ReadBufferFromString replacement(replacement_query);
+            executeQuery(replacement, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
+        }
+        else
+            executeQuery(payload, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
+
 
         if (!with_output)
             packet_endpoint->sendPacket(OKPacket(0x00, client_capabilities, affected_rows, 0, 0), true);
@@ -547,99 +643,4 @@ void MySQLHandlerSSL::finishHandshakeSSL(
 }
 
 #endif
-
-static bool isFederatedServerSetupSetCommand(const String & query)
-{
-    re2::RE2::Options regexp_options;
-    regexp_options.set_case_sensitive(false);
-    static const re2::RE2 expr(
-        "(^(SET NAMES(.*)))"
-        "|(^(SET character_set_results(.*)))"
-        "|(^(SET FOREIGN_KEY_CHECKS(.*)))"
-        "|(^(SET AUTOCOMMIT(.*)))"
-        "|(^(SET sql_mode(.*)))"
-        "|(^(SET @@(.*)))"
-        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))", regexp_options);
-    assert(expr.ok());
-    return re2::RE2::FullMatch(query, expr);
-}
-
-/// Always return an empty set with appropriate column definitions for SHOW WARNINGS queries
-/// See also: https://dev.mysql.com/doc/refman/8.0/en/show-warnings.html
-static String showWarningsReplacementQuery([[maybe_unused]] const String & query)
-{
-    return "SELECT '' AS Level, 0::UInt32 AS Code, '' AS Message WHERE false";
-}
-
-static String showCountWarningsReplacementQuery([[maybe_unused]] const String & query)
-{
-    return "SELECT 0::UInt64 AS `@@session.warning_count`";
-}
-
-/// Replace "[query(such as SHOW VARIABLES...)]" into "".
-static String selectEmptyReplacementQuery(const String & query)
-{
-    std::ignore = query;
-    return "select ''";
-}
-
-/// Replace "SHOW TABLE STATUS LIKE 'xx'" into "SELECT ... FROM system.tables WHERE name LIKE 'xx'".
-static String showTableStatusReplacementQuery(const String & query)
-{
-    const String prefix = "SHOW TABLE STATUS LIKE ";
-    if (query.size() > prefix.size())
-    {
-        String suffix = query.data() + prefix.length();
-        return (
-            "SELECT"
-            " name AS Name,"
-            " engine AS Engine,"
-            " '10' AS Version,"
-            " 'Dynamic' AS Row_format,"
-            " 0 AS Rows,"
-            " 0 AS Avg_row_length,"
-            " 0 AS Data_length,"
-            " 0 AS Max_data_length,"
-            " 0 AS Index_length,"
-            " 0 AS Data_free,"
-            " 'NULL' AS Auto_increment,"
-            " metadata_modification_time AS Create_time,"
-            " metadata_modification_time AS Update_time,"
-            " metadata_modification_time AS Check_time,"
-            " 'utf8_bin' AS Collation,"
-            " 'NULL' AS Checksum,"
-            " '' AS Create_options,"
-            " '' AS Comment"
-            " FROM system.tables"
-            " WHERE name LIKE "
-            + suffix);
-    }
-    return query;
-}
-
-static std::optional<String> setSettingReplacementQuery(const String & query, const String & mysql_setting, const String & native_setting)
-{
-    const String prefix = "SET " + mysql_setting;
-    if (0 == strncasecmp(prefix.c_str(), query.c_str(), prefix.size()))
-        return "SET " + native_setting + String(query.data() + prefix.length());
-    return std::nullopt;
-}
-
-/// Replace "KILL QUERY [connection_id]" into "KILL QUERY WHERE query_id LIKE 'mysql:[connection_id]:xxx'".
-static String killConnectionIdReplacementQuery(const String & query)
-{
-    const String prefix = "KILL QUERY ";
-    if (query.size() > prefix.size())
-    {
-        String suffix = query.data() + prefix.length();
-        static const re2::RE2 expr("^[0-9]");
-        if (re2::RE2::FullMatch(suffix, expr))
-        {
-            String replacement = fmt::format("KILL QUERY WHERE query_id LIKE 'mysql:{}:%'", suffix);
-            return replacement;
-        }
-    }
-    return query;
-}
-
 }

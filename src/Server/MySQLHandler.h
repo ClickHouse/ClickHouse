@@ -96,6 +96,7 @@ protected:
     using QueriesReplacements = std::unordered_map<std::string, QueryReplacementFn>;
     QueriesReplacements queries_replacements;
 
+    /// MySQL setting name --> ClickHouse setting name
     using SettingsReplacements = std::unordered_map<std::string, std::string>;
     SettingsReplacements settings_replacements;
 
