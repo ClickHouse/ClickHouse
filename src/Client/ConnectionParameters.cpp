@@ -79,7 +79,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     }
     else
     {
-#if USE_SSL
+#if USE_SSH
         std::string filename = config.getString("ssh-key-file");
         std::string passphrase;
         if (config.has("ssh-key-passphrase"))
