@@ -47,12 +47,10 @@ struct AzureObjectStorageSettings
     size_t max_single_read_retries = 3;
     size_t max_single_download_retries = 3;
     int list_object_keys_size = 1000;
-<<<<<<< HEAD
     size_t min_upload_part_size = 16 * 1024 * 1024;
     size_t max_upload_part_size = 5ULL * 1024 * 1024 * 1024;
     size_t max_single_part_copy_size = 256 * 1024 * 1024;
     bool use_native_copy = false;
-=======
     size_t max_unexpected_write_error_retries = 4;
 >>>>>>> master
 };
