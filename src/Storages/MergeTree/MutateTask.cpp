@@ -1839,10 +1839,14 @@ private:
     std::unique_ptr<PartMergerWriter> part_merger_writer_task{nullptr};
 };
 
-class MutateRecalculateAndDrop : public IExecutableTask
+class ExecutableTaskDropTTLExpiredPartsDecorator : public IExecutableTask
 {
 public:
-    explicit MutateRecalculateAndDrop(MutationContextPtr ctx_) : ctx(ctx_) {}
+    explicit ExecutableTaskDropTTLExpiredPartsDecorator(
+        std::unique_ptr<IExecutableTask> executable_task_,
+        MutationContextPtr ctx_
+    )
+    : executable_task(std::move(executable_task_)), ctx(ctx_) {}
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
@@ -1853,16 +1857,9 @@ public:
     {
         switch (state)
         {
-            case State::NEED_PREPARE:
-            {
-                prepare();
-
-                state = State::NEED_EXECUTE;
-                return true;
-            }
             case State::NEED_EXECUTE:
             {
-                if (recalculate_task->executeStep())
+                if (executable_task->executeStep())
                     return true;
 
                 if (isMaxTTLExpired())
@@ -1882,21 +1879,15 @@ public:
 private:
     enum class State
     {
-        NEED_PREPARE,
         NEED_EXECUTE,
 
         SUCCESS
     };
 
-    State state{State::NEED_PREPARE};
+    State state{State::NEED_EXECUTE};
 
+    std::unique_ptr<IExecutableTask> executable_task;
     MutationContextPtr ctx;
-    std::unique_ptr<MutateSomePartColumnsTask> recalculate_task;
-
-    void prepare()
-    {
-        recalculate_task = std::make_unique<MutateSomePartColumnsTask>(ctx);
-    }
 
     bool isMaxTTLExpired() const
     {
@@ -2178,7 +2169,7 @@ bool MutateTask::prepare()
 
     if (ctx->mutating_pipeline_builder.initialized())
         ctx->execute_ttl_type = MutationHelpers::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
-    
+
     /// All columns from part are changed and may be some more that were missing before in part
     /// TODO We can materialize compact part without copying data
     if (!isWidePart(ctx->source_part) || !isFullPartStorage(ctx->source_part->getDataPartStorage())
@@ -2228,8 +2219,11 @@ bool MutateTask::prepare()
         /// Keeper has to be asked with unlock request to release the references to the blobs
         ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
 
-        if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE && ctx->data->getSettings()->ttl_only_drop_parts)
-            task = std::make_unique<MutateRecalculateAndDrop>(ctx);
+
+        // TODO: Check if this actually makes sense
+        bool drop_empty_parts = !ctx->data->getSettings()->materialize_ttl_recalculate_only;
+        if (drop_empty_parts)
+            task = std::make_unique<ExecutableTaskDropTTLExpiredPartsDecorator>(std::make_unique<MutateSomePartColumnsTask>(ctx), ctx);
         else
             task = std::make_unique<MutateSomePartColumnsTask>(ctx);
     }
