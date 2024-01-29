@@ -2637,6 +2637,7 @@ uuid
 varPop
 varSamp
 variadic
+variantElement
 varint
 varpop
 varsamp

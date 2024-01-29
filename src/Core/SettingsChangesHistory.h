@@ -87,6 +87,8 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
     {"24.1", {{"print_pretty_type_names", false, true, "Better user experience."},
               {"input_format_json_read_bools_as_strings", false, true, "Allow to read bools as strings in JSON formats by default"},
               {"output_format_arrow_use_signed_indexes_for_dictionary", false, true, "Use signed indexes type for Arrow dictionaries by default as it's recommended"},
+              {"allow_experimental_variant_type", false, false, "Add new experimental Variant type"},
+              {"use_variant_as_common_type", false, false, "Allow to use Variant in if/multiIf if there is no common type"},
               {"output_format_arrow_use_64_bit_indexes_for_dictionary", false, false, "Allow to use 64 bit indexes type in Arrow dictionaries"},
               {"parallel_replicas_mark_segment_size", 128, 128, "Add new setting to control segment size in new parallel replicas coordinator implementation"},
               {"ignore_materialized_views_with_dropped_target_table", false, false, "Add new setting to allow to ignore materialized views with dropped target table"},
