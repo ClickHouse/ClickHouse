@@ -444,6 +444,13 @@ void ColumnTuple::reserve(size_t n)
         getColumn(i).reserve(n);
 }
 
+void ColumnTuple::shrinkToFit()
+{
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+        getColumn(i).shrinkToFit();
+}
+
 void ColumnTuple::ensureOwnership()
 {
     const size_t tuple_size = columns.size();

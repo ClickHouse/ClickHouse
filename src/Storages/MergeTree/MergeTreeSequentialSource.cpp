@@ -140,6 +140,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
         if (storage.supportsSubcolumns())
             options.withSubcolumns();
+
         columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
     }
     else
@@ -156,6 +157,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     read_settings.local_fs_method = LocalFSReadMethod::pread;
     if (read_with_direct_io)
         read_settings.direct_io_threshold = 1;
+
     /// Configure throttling
     switch (type)
     {
@@ -224,7 +226,10 @@ try
             for (size_t i = 0; i < num_columns; ++i)
             {
                 if (header.has(it->name))
+                {
+                    columns[i]->assumeMutableRef().shrinkToFit();
                     res_columns.emplace_back(std::move(columns[i]));
+                }
 
                 ++it;
             }

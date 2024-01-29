@@ -5176,6 +5176,95 @@ When set to `false` than all attempts are made with identical timeouts.
 
 Default value: `true`.
 
+## allow_experimental_variant_type {#allow_experimental_variant_type}
+
+Allows creation of experimental [Variant](../../sql-reference/data-types/variant.md).
+
+Default value: `false`.
+
+## use_variant_as_common_type {#use_variant_as_common_type}
+
+Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiif)/[array](../../sql-reference/functions/array-functions.md)/[map](../../sql-reference/functions/tuple-map-functions.md) functions when there is no common type for argument types.
+
+Example:
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT toTypeName(if(number % 2, number, range(number))) as variant_type FROM numbers(1);
+SELECT if(number % 2, number, range(number)) as variant FROM numbers(5);
+```
+
+```text
+┌─variant_type───────────────────┐
+│ Variant(Array(UInt64), UInt64) │
+└────────────────────────────────┘
+┌─variant───┐
+│ []        │
+│ 1         │
+│ [0,1]     │
+│ 3         │
+│ [0,1,2,3] │
+└───────────┘
+```
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT toTypeName(multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) = 2, 'Hello, World!', NULL)) AS variant_type FROM numbers(1);
+SELECT multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) = 2, 'Hello, World!', NULL) AS variant FROM numbers(4);
+```
+
+```text
+─variant_type─────────────────────────┐
+│ Variant(Array(UInt8), String, UInt8) │
+└──────────────────────────────────────┘
+
+┌─variant───────┐
+│ 42            │
+│ [1,2,3]       │
+│ Hello, World! │
+│ ᴺᵁᴸᴸ          │
+└───────────────┘
+```
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT toTypeName(array(range(number), number, 'str_' || toString(number))) as array_of_variants_type from numbers(1);
+SELECT array(range(number), number, 'str_' || toString(number)) as array_of_variants FROM numbers(3);
+```
+
+```text
+┌─array_of_variants_type────────────────────────┐
+│ Array(Variant(Array(UInt64), String, UInt64)) │
+└───────────────────────────────────────────────┘
+
+┌─array_of_variants─┐
+│ [[],0,'str_0']    │
+│ [[0],1,'str_1']   │
+│ [[0,1],2,'str_2'] │
+└───────────────────┘
+```
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT toTypeName(map('a', range(number), 'b', number, 'c', 'str_' || toString(number))) as map_of_variants_type from numbers(1);
+SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as map_of_variants FROM numbers(3);
+```
+
+```text
+┌─map_of_variants_type────────────────────────────────┐
+│ Map(String, Variant(Array(UInt64), String, UInt64)) │
+└─────────────────────────────────────────────────────┘
+
+┌─map_of_variants───────────────┐
+│ {'a':[],'b':0,'c':'str_0'}    │
+│ {'a':[0],'b':1,'c':'str_1'}   │
+│ {'a':[0,1],'b':2,'c':'str_2'} │
+└───────────────────────────────┘
+```
+
+
+Default value: `false`.
+
 ## max_partition_size_to_drop
 
 Restriction on dropping partitions in query time.
