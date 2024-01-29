@@ -470,7 +470,7 @@ ConditionEstimator MergeTreeData::getConditionEstimatorByPredicate(const SelectQ
         {
             auto stats = part->loadStatistics();
             /// TODO: We only have one stats file for every part.
-            for (const auto & stat : stats)
+            for (const auto stat : stats)
                 result.merge(part->info.getPartNameV1(), part->rows_count, stat);
         }
     }
@@ -663,8 +663,8 @@ void MergeTreeData::checkProperties(
 
     for (const auto & col : new_metadata.columns)
     {
-        if (col.stat)
-            MergeTreeStatisticsFactory::instance().validate(*col.stat, col.type);
+        if (!col.stats.empty())
+            MergeTreeStatisticsFactory::instance().validate(col.stats, col.type);
     }
 
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key_);
@@ -3194,7 +3194,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                         new_metadata.getColumns().getPhysical(command.column_name));
 
                     const auto & old_column = old_metadata.getColumns().get(command.column_name);
-                    if (old_column.stat)
+                    if (!old_column.stats.empty())
                     {
                         const auto & new_column = new_metadata.getColumns().get(command.column_name);
                         if (!old_column.type->equals(*new_column.type))
@@ -8290,7 +8290,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
-        Statistics{},
+        std::vector<ColumnStatisticsPtr>{},
         compression_codec, txn);
 
     bool sync_on_insert = settings->fsync_after_insert;

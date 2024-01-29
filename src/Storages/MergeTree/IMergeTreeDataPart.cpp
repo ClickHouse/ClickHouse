@@ -629,13 +629,13 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(bool with_subc
     return *minimum_size_column;
 }
 
-Statistics IMergeTreeDataPart::loadStatistics() const
+std::vector<ColumnStatisticsPtr> IMergeTreeDataPart::loadStatistics() const
 {
     const auto & metadata_snaphost = storage.getInMemoryMetadata();
 
     auto total_statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snaphost.getColumns());
 
-    Statistics result;
+    std::vector<ColumnStatisticsPtr> result;
     for (auto & stat : total_statistics)
     {
         String file_name = stat->getFileName() + STAT_FILE_SUFFIX;

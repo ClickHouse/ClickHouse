@@ -25,7 +25,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
-#include <Parsers/ASTStatisticDeclaration.h>
+#include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/queryToString.h>
@@ -250,10 +250,25 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.statistic_decl = command_ast->statistic_decl;
         command.type = AlterCommand::ADD_STATISTIC;
 
-        const auto & ast_stat_decl = command_ast->statistic_decl->as<ASTStatisticDeclaration &>();
+        const auto & ast_stat_decl = command_ast->statistic_decl->as<ASTStatisticsDeclaration &>();
 
         command.statistic_columns = ast_stat_decl.getColumnNames();
-        command.statistic_type = ast_stat_decl.type;
+        command.statistic_types = ast_stat_decl.getTypeNames();
+        command.if_not_exists = command_ast->if_not_exists;
+
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_STATISTIC)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.statistic_decl = command_ast->statistic_decl;
+        command.type = AlterCommand::MODIFY_STATISTIC;
+
+        const auto & ast_stat_decl = command_ast->statistic_decl->as<ASTStatisticsDeclaration &>();
+
+        command.statistic_columns = ast_stat_decl.getColumnNames();
+        command.statistic_types = ast_stat_decl.getTypeNames();
         command.if_not_exists = command_ast->if_not_exists;
 
         return command;
@@ -321,11 +336,11 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.ast = command_ast->clone();
+        command.statistic_decl = command_ast->statistic_decl;
         command.type = AlterCommand::DROP_STATISTIC;
-        const auto & ast_stat_decl = command_ast->statistic_decl->as<ASTStatisticDeclaration &>();
+        const auto & ast_stat_decl = command_ast->statistic_decl->as<ASTStatisticsDeclaration &>();
 
         command.statistic_columns = ast_stat_decl.getColumnNames();
-        command.statistic_type = ast_stat_decl.type;
         command.if_exists = command_ast->if_exists;
         command.clear = command_ast->clear_statistic;
 
@@ -626,34 +641,48 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         {
             if (!metadata.columns.has(statistic_column_name))
             {
-                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Cannot add statistic {} with type {}: this column is not found", statistic_column_name, statistic_type);
+                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Cannot add statistic for column {}: this column is not found", statistic_column_name);
             }
-            if (!if_exists && metadata.columns.get(statistic_column_name).stat)
-                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Cannot add statistic {} with type {}: statistic on this column with this type already exists", statistic_column_name, statistic_type);
         }
 
-        auto stats = StatisticDescription::getStatisticsFromAST(statistic_decl, metadata.columns);
-        for (auto && stat : stats)
+        auto stats_vec = StatisticsDescription::getStatisticsFromAST(statistic_decl, metadata.columns);
+        for (const auto & stats : stats_vec)
         {
-            metadata.columns.modify(stat.column_name,
-                [&](ColumnDescription & column) { column.stat = std::move(stat); });
+            metadata.columns.modify(stats.column_name,
+                [&](ColumnDescription & column) { column.stats.merge(stats, column, if_not_exists); });
         }
     }
     else if (type == DROP_STATISTIC)
     {
-        for (const auto & stat_column_name : statistic_columns)
+        for (const auto & statistic_column_name : statistic_columns)
         {
-            if (!metadata.columns.has(stat_column_name) || !metadata.columns.get(stat_column_name).stat)
+            if (!metadata.columns.has(statistic_column_name))
             {
                 if (if_exists)
                     return;
-                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Wrong statistic name. Cannot find statistic {} with type {} to drop", backQuote(stat_column_name), statistic_type);
+                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Wrong statistic name. Cannot find statistic {} to drop", backQuote(statistic_column_name));
             }
-            if (!partition && !clear)
+
+            if (!clear && !partition)
+                metadata.columns.modify(statistic_column_name,
+                    [&](ColumnDescription & column) { column.stats.clear(); });
+        }
+    }
+    else if (type == MODIFY_STATISTIC)
+    {
+        for (const auto & statistic_column_name : statistic_columns)
+        {
+            if (!metadata.columns.has(statistic_column_name))
             {
-                metadata.columns.modify(stat_column_name,
-                    [&](ColumnDescription & column) { column.stat = std::nullopt; });
+                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Cannot add statistic for column {}: this column is not found", statistic_column_name);
             }
+        }
+
+        auto stats_vec = StatisticsDescription::getStatisticsFromAST(statistic_decl, metadata.columns);
+        for (const auto & stats : stats_vec)
+        {
+            metadata.columns.modify(stats.column_name,
+                [&](ColumnDescription & column) { column.stats.modify(stats); });
         }
     }
     else if (type == ADD_CONSTRAINT)
@@ -773,8 +802,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                     rename_visitor.visit(column_to_modify.default_desc.expression);
                 if (column_to_modify.ttl)
                     rename_visitor.visit(column_to_modify.ttl);
-                if (column_to_modify.name == column_name && column_to_modify.stat)
-                    column_to_modify.stat->column_name = rename_to;
+                if (column_to_modify.name == column_name && !column_to_modify.stats.empty())
+                    column_to_modify.stats.column_name = rename_to;
             });
         }
         if (metadata.table_ttl.definition_ast)

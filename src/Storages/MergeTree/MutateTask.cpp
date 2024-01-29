@@ -462,16 +462,16 @@ static ExecuteTTLType shouldExecuteTTL(const StorageMetadataPtr & metadata_snaps
     return has_ttl_expression ? ExecuteTTLType::RECALCULATE : ExecuteTTLType::NONE;
 }
 
-static std::set<StatisticPtr> getStatisticsToRecalculate(const StorageMetadataPtr & metadata_snapshot, const NameSet & materialized_stats)
+static std::set<ColumnStatisticsPtr> getStatisticsToRecalculate(const StorageMetadataPtr & metadata_snapshot, const NameSet & materialized_stats)
 {
     const auto & stats_factory = MergeTreeStatisticsFactory::instance();
-    std::set<StatisticPtr> stats_to_recalc;
+    std::set<ColumnStatisticsPtr> stats_to_recalc;
     const auto & columns = metadata_snapshot->getColumns();
     for (const auto & col_desc : columns)
     {
-        if (col_desc.stat && materialized_stats.contains(col_desc.name))
+        if (!col_desc.stats.empty() && materialized_stats.contains(col_desc.name))
         {
-            stats_to_recalc.insert(stats_factory.get(*col_desc.stat));
+            stats_to_recalc.insert(stats_factory.get(col_desc.stats));
         }
     }
     return stats_to_recalc;
@@ -583,7 +583,7 @@ static NameSet collectFilesToSkip(
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
     const String & mrk_extension,
     const std::set<ProjectionDescriptionRawPtr> & projections_to_recalc,
-    const std::set<StatisticPtr> & stats_to_recalc)
+    const std::set<ColumnStatisticsPtr> & stats_to_recalc)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
@@ -939,7 +939,7 @@ struct MutationContext
     IMergeTreeDataPart::MinMaxIndexPtr minmax_idx{nullptr};
 
     std::set<MergeTreeIndexPtr> indices_to_recalc;
-    std::set<StatisticPtr> stats_to_recalc;
+    std::set<ColumnStatisticsPtr> stats_to_recalc;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     MergeTreeData::DataPart::Checksums existing_indices_stats_checksums;
     NameSet files_to_skip;
@@ -1409,16 +1409,16 @@ private:
             }
         }
 
-        Statistics stats_to_rewrite;
+        std::vector<ColumnStatisticsPtr> stats_to_rewrite;
         const auto & columns = ctx->metadata_snapshot->getColumns();
         for (const auto & col : columns)
         {
-            if (!col.stat || removed_stats.contains(col.name))
+            if (col.stats.empty() || removed_stats.contains(col.name))
                 continue;
 
             if (ctx->materialized_statistics.contains(col.name))
             {
-                stats_to_rewrite.push_back(MergeTreeStatisticsFactory::instance().get(*col.stat));
+                stats_to_rewrite.push_back(MergeTreeStatisticsFactory::instance().get(col.stats));
             }
             else
             {
@@ -1771,7 +1771,7 @@ private:
                 ctx->updated_header,
                 ctx->compression_codec,
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
-                Statistics(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
+                std::vector<ColumnStatisticsPtr>(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
                 nullptr,
                 ctx->source_part->index_granularity,
                 &ctx->source_part->index_granularity_info

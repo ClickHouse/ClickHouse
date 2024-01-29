@@ -51,7 +51,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartInMemory::getWriter(
     const NamesAndTypesList &,
     const StorageMetadataPtr &,
     const std::vector<MergeTreeIndexPtr> &,
-    const Statistics &,
+    const std::vector<ColumnStatisticsPtr> &,
     const CompressionCodecPtr &,
     const MergeTreeWriterSettings &,
     const MergeTreeIndexGranularity &)

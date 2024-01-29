@@ -84,7 +84,7 @@ struct ColumnDescription
     String comment;
     ASTPtr codec;
     ASTPtr ttl;
-    std::optional<StatisticDescription> stat;
+    StatisticsDescription stats;
 
     ColumnDescription() = default;
     ColumnDescription(ColumnDescription &&) = default;

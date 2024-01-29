@@ -414,6 +414,17 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserStatisticDeclarationWithoutTypes : public IParserBase
+{
+public:
+    ParserStatisticDeclarationWithoutTypes() = default;
+
+protected:
+    const char * getName() const override { return "statistics declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 class ParserConstraintDeclaration : public IParserBase
 {
 protected:

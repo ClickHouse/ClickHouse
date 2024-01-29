@@ -1,0 +1,29 @@
+CREATE TABLE default.t1\n(\n    `a` Float64 STATISTIC(tdigest),\n    `b` Int64 STATISTIC(tdigest),\n    `c` Int64 STATISTIC(uniq, tdigest),\n    `pk` String\n)\nENGINE = MergeTree\nORDER BY pk\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
+After insert
+SELECT count()
+FROM t1
+PREWHERE (a < 10) AND (c = 0) AND (b < 10)
+SELECT count()
+FROM t1
+PREWHERE (c = 11) AND (a < 10) AND (b < 10)
+After merge
+SELECT count()
+FROM t1
+PREWHERE (a < 10) AND (c = 0) AND (b < 10)
+SELECT count()
+FROM t1
+PREWHERE (c = 11) AND (a < 10) AND (b < 10)
+After modify TDigest
+SELECT count()
+FROM t1
+PREWHERE (a < 10) AND (c = 0) AND (c = 11) AND (b < 10)
+SELECT count()
+FROM t1
+PREWHERE (c < -1) AND (a < 10) AND (b < 10)
+After drop
+SELECT count()
+FROM t1
+PREWHERE (a < 10) AND (c = 0) AND (c = 11) AND (b < 10)
+SELECT count()
+FROM t1
+PREWHERE (a < 10) AND (c < -1) AND (b < 10)

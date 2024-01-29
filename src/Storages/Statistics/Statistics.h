@@ -6,7 +6,6 @@
 
 #include <boost/core/noncopyable.hpp>
 
-#include <AggregateFunctions/QuantileTDigest.h>
 #include <Core/Block.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadBuffer.h>
@@ -23,7 +22,7 @@ namespace DB
 
 class IStatistic;
 using StatisticPtr = std::shared_ptr<IStatistic>;
-using Statistics = std::vector<StatisticPtr>;
+/// using Statistics = std::vector<StatisticPtr>;
 
 /// Statistic contains the distribution of values in a column.
 /// right now we support
@@ -37,6 +36,34 @@ public:
     }
     virtual ~IStatistic() = default;
 
+    virtual void serialize(WriteBuffer & buf) = 0;
+
+    virtual void deserialize(ReadBuffer & buf) = 0;
+
+    virtual void update(const ColumnPtr & column) = 0;
+
+    /// how many rows this statistics contain
+    /// virtual UInt64 count() = 0;
+
+protected:
+
+    StatisticDescription stat;
+
+};
+
+class ColumnStatistics;
+using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
+
+class ColumnStatistics
+{
+    friend class MergeTreeStatisticsFactory;
+    StatisticsDescription stats_desc;
+    std::map<StatisticType, StatisticPtr> stats;
+    UInt64 counter;
+public:
+    explicit ColumnStatistics(const StatisticsDescription & stats_);
+    void serialize(WriteBuffer & buf);
+    void deserialize(ReadBuffer & buf);
     String getFileName() const
     {
         return STAT_FILE_PREFIX + columnName();
@@ -44,21 +71,20 @@ public:
 
     const String & columnName() const
     {
-        return stat.column_name;
+        return stats_desc.column_name;
     }
 
-    virtual void serialize(WriteBuffer & buf) = 0;
+    UInt64 count() const { return counter; }
 
-    virtual void deserialize(ReadBuffer & buf) = 0;
+    void update(const ColumnPtr & column);
 
-    virtual void update(const ColumnPtr & column) = 0;
+    /// void merge(ColumnStatisticsPtr other_column_stats);
 
-    virtual UInt64 count() = 0;
+    Float64 estimateLess(Float64 val) const;
 
-protected:
+    Float64 estimateGreater(Float64 val) const;
 
-    StatisticDescription stat;
-
+    Float64 estimateEqual(Float64 val) const;
 };
 
 class ColumnsDescription;
@@ -68,15 +94,15 @@ class MergeTreeStatisticsFactory : private boost::noncopyable
 public:
     static MergeTreeStatisticsFactory & instance();
 
-    void validate(const StatisticDescription & stat, DataTypePtr data_type) const;
+    void validate(const StatisticsDescription & stats, DataTypePtr data_type) const;
 
-    using Creator = std::function<StatisticPtr(const StatisticDescription & stat)>;
+    using Creator = std::function<StatisticPtr(const StatisticDescription & stat, DataTypePtr data_type)>;
 
     using Validator = std::function<void(const StatisticDescription & stat, DataTypePtr data_type)>;
 
-    StatisticPtr get(const StatisticDescription & stat) const;
+    ColumnStatisticsPtr get(const StatisticsDescription & stat) const;
 
-    Statistics getMany(const ColumnsDescription & columns) const;
+    std::vector<ColumnStatisticsPtr> getMany(const ColumnsDescription & columns) const;
 
     void registerCreator(StatisticType type, Creator creator);
     void registerValidator(StatisticType type, Validator validator);

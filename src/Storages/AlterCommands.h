@@ -40,6 +40,7 @@ struct AlterCommand
         DROP_PROJECTION,
         ADD_STATISTIC,
         DROP_STATISTIC,
+        MODIFY_STATISTIC,
         MODIFY_TTL,
         MODIFY_SETTING,
         RESET_SETTING,
@@ -122,7 +123,7 @@ struct AlterCommand
 
     ASTPtr statistic_decl = nullptr;
     std::vector<String> statistic_columns;
-    String statistic_type;
+    std::vector<String> statistic_types;
 
     /// For MODIFY TTL
     ASTPtr ttl = nullptr;

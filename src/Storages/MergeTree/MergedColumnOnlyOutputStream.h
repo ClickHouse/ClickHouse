@@ -20,7 +20,7 @@ public:
         const Block & header_,
         CompressionCodecPtr default_codec_,
         const MergeTreeIndices & indices_to_recalc_,
-        const Statistics & stats_to_recalc_,
+        const std::vector<ColumnStatisticsPtr> & stats_to_recalc_,
         WrittenOffsetColumns * offset_columns_ = nullptr,
         const MergeTreeIndexGranularity & index_granularity = {},
         const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr);

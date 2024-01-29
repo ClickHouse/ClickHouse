@@ -6,7 +6,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTStatisticDeclaration.h>
+#include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -167,10 +167,10 @@ bool ParserStatisticDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     ParserKeyword s_type("TYPE");
 
     ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
-    ParserIdentifier type_p;
+    ParserList types_p(std::make_unique<ParserDataType>(), std::make_unique<ParserToken>(TokenType::Comma), false);
 
     ASTPtr columns;
-    ASTPtr type;
+    ASTPtr types;
 
     if (!columns_p.parse(pos, columns, expected))
         return false;
@@ -178,12 +178,29 @@ bool ParserStatisticDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     if (!s_type.ignore(pos, expected))
         return false;
 
-    if (!type_p.parse(pos, type, expected))
+    if (!types_p.parse(pos, types, expected))
         return false;
 
-    auto stat = std::make_shared<ASTStatisticDeclaration>();
+    auto stat = std::make_shared<ASTStatisticsDeclaration>();
     stat->set(stat->columns, columns);
-    stat->type = type->as<ASTIdentifier &>().name();
+    stat->set(stat->types, types);
+    node = stat;
+
+    return true;
+}
+
+bool ParserStatisticDeclarationWithoutTypes::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+
+    ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+
+    ASTPtr columns;
+
+    if (!columns_p.parse(pos, columns, expected))
+        return false;
+
+    auto stat = std::make_shared<ASTStatisticsDeclaration>();
+    stat->set(stat->columns, columns);
     node = stat;
 
     return true;

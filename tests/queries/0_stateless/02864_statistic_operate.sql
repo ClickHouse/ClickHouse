@@ -20,7 +20,7 @@ EXPLAIN SYNTAX SELECT count(*) FROM t1 WHERE b < 10 and a < 10;
 SELECT count(*) FROM t1 WHERE b < 10 and a < 10;
 SELECT count(*) FROM t1 WHERE b < NULL and a < '10';
 
-ALTER TABLE t1 DROP STATISTIC a, b TYPE tdigest;
+ALTER TABLE t1 DROP STATISTIC a, b;
 
 SELECT 'After drop statistic';
 EXPLAIN SYNTAX SELECT count(*) FROM t1 WHERE b < 10 and a < 10;
@@ -34,7 +34,7 @@ SELECT 'After add statistic';
 
 SHOW CREATE TABLE t1;
 
-ALTER TABLE t1 MATERIALIZE STATISTIC a, b TYPE tdigest;
+ALTER TABLE t1 MATERIALIZE STATISTIC a, b;
 INSERT INTO t1 select number, -number, generateUUIDv4() FROM system.numbers LIMIT 10000;
 
 SELECT 'After materialize statistic';

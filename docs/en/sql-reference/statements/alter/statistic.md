@@ -8,13 +8,15 @@ sidebar_label: STATISTIC
 
 The following operations are available:
 
--   `ALTER TABLE [db].table ADD STATISTIC (columns list) TYPE type` - Adds statistic description to tables metadata.
+-   `ALTER TABLE [db].table ADD STATISTIC (columns list) TYPE (type list)` - Adds statistic description to tables metadata.
 
--   `ALTER TABLE [db].table DROP STATISTIC (columns list) TYPE type` - Removes statistic description from tables metadata and deletes statistic files from disk.
+-   `ALTER TABLE [db].table MODIFY STATISTIC (columns list) TYPE (type list)` - Modifies statistic description to tables metadata.
 
--   `ALTER TABLE [db].table CLEAR STATISTIC (columns list) TYPE type` - Deletes statistic files from disk.
+-   `ALTER TABLE [db].table DROP STATISTIC (columns list)` - Removes statistic description from tables metadata and deletes statistic files from disk.
 
--   `ALTER TABLE [db.]table MATERIALIZE STATISTIC (columns list) TYPE type` - Rebuilds the statistic for columns. Implemented as a [mutation](../../../sql-reference/statements/alter/index.md#mutations). 
+-   `ALTER TABLE [db].table CLEAR STATISTIC (columns list)` - Deletes statistic files from disk.
+
+-   `ALTER TABLE [db.]table MATERIALIZE STATISTIC (columns list)` - Rebuilds the statistic for columns. Implemented as a [mutation](../../../sql-reference/statements/alter/index.md#mutations). 
 
 The first two commands are lightweight in a sense that they only change metadata or remove files.
 

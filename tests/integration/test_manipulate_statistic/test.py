@@ -56,26 +56,26 @@ def run_test_single_node(started_cluster):
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0", "b", True)
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0", "c", True)
 
-    node1.query("ALTER TABLE test_stat DROP STATISTIC a type tdigest")
+    node1.query("ALTER TABLE test_stat DROP STATISTIC a")
 
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_2", "a", False)
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_2", "b", True)
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_2", "c", True)
 
-    node1.query("ALTER TABLE test_stat CLEAR STATISTIC b, c type tdigest")
+    node1.query("ALTER TABLE test_stat CLEAR STATISTIC b, c")
 
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_3", "a", False)
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_3", "b", False)
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_3", "c", False)
 
-    node1.query("ALTER TABLE test_stat MATERIALIZE STATISTIC b, c type tdigest")
+    node1.query("ALTER TABLE test_stat MATERIALIZE STATISTIC b, c")
 
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_4", "a", False)
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_4", "b", True)
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_4", "c", True)
 
     node1.query("ALTER TABLE test_stat ADD STATISTIC a type tdigest")
-    node1.query("ALTER TABLE test_stat MATERIALIZE STATISTIC a type tdigest")
+    node1.query("ALTER TABLE test_stat MATERIALIZE STATISTIC a")
 
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_5", "a", True)
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_5", "b", True)

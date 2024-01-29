@@ -272,10 +272,10 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         {
             cond.good = cond.viable;
 
-            cond.selectivity = estimator.estimateSelectivity(node);
+            cond.estimated_row_count = estimator.estimateRowCount(node);
 
             if (node.getASTNode() != nullptr)
-                LOG_TEST(log, "Condition {} has selectivity {}", node.getASTNode()->dumpTree(), cond.selectivity);
+                LOG_DEBUG(log, "Condition {} has estimated row count {}", node.getASTNode()->dumpTree(), cond.estimated_row_count);
         }
 
         if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
