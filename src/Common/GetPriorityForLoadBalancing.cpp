@@ -62,7 +62,7 @@ GetPriorityForLoadBalancing::getPriorityFunc(LoadBalancing load_balance, size_t 
 
                 LOG_DEBUG(
                     &Poco::Logger::get(__PRETTY_FUNCTION__),
-                    "local_last_used={} pool_size={} i={} priorty={}",
+                    "local_last_used={} pool_size={} i={} priority={}",
                     local_last_used,
                     pool_size,
                     i,
