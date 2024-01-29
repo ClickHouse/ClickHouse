@@ -397,6 +397,8 @@ def test_evolved_schema(started_cluster, format_version):
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
+    expected_data = instance.query(f"SELECT * FROM {TABLE_NAME} order by a, b")
+
     spark.sql(f"ALTER TABLE {TABLE_NAME} ADD COLUMNS (x bigint)")
     files = upload_directory(
         minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
@@ -404,6 +406,11 @@ def test_evolved_schema(started_cluster, format_version):
 
     error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME}")
     assert "UNSUPPORTED_METHOD" in error
+
+    data = instance.query(
+        f"SELECT * FROM {TABLE_NAME} SETTINGS iceberg_engine_ignore_schema_evolution=1"
+    )
+    assert data == expected_data
 
 
 def test_row_based_deletes(started_cluster):
