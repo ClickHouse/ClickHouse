@@ -1182,7 +1182,10 @@ void IMergeTreeDataPart::loadRowsCount()
             /// Adjust last granule size to match the number of rows in the part in case of fixed index_granularity.
             index_granularity.popMark();
             index_granularity.appendMark(rows_count % index_granularity_info.fixed_index_granularity);
-            chassert(rows_count == index_granularity.getTotalRows());
+            if (rows_count != index_granularity.getTotalRows())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Index granularity total rows in part {} does not match rows_count: {}, instead of {}",
+                    name, index_granularity.getTotalRows(), rows_count);
         }
     };
 
