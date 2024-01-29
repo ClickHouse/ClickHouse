@@ -939,7 +939,8 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 finish_check.py
-          python3 merge_pr.py --check-approved
+          echo "The automerge is disabled"
+          #python3 merge_pr.py --check-approved
 ##############################################################################################
 ############################ SQLLOGIC TEST ###################################################
 ##############################################################################################

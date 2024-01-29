@@ -13,11 +13,13 @@ jobs:
   MergeOnApproval:
     runs-on: [self-hosted, style-checker]
     steps:
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-      - name: Merge approved PR
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 merge_pr.py --check-approved
+      - name: PR merge is disabled
+        run: echo "The automerge is temporary disabled"
+#      # - name: Check out repository code
+#        uses: ClickHouse/checkout@v1
+#        with:
+#          clear-repository: true
+#      - name: Merge approved PR
+#        run: |
+#          cd "$GITHUB_WORKSPACE/tests/ci"
+#          python3 merge_pr.py --check-approved
