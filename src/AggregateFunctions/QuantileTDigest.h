@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cmath>
-#include <iostream>
 #include <Common/Exception.h>
 #include <Common/RadixSort.h>
 #include <Common/PODArray.h>
@@ -341,7 +340,7 @@ public:
         Float64 result = 0;
         for (const auto & c : centroids)
         {
-            std::cerr << "c "<< c.mean << " "<< c.count << std::endl;
+            /// std::cerr << "c "<< c.mean << " "<< c.count << std::endl;
             if (value == c.mean)
                 result += c.count;
         }
