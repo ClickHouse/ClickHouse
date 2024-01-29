@@ -20,7 +20,9 @@ RUN apt-get update \
         pv \
         jq \
         zstd \
-    --yes --no-install-recommends
+        --yes --no-install-recommends \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 RUN pip3 install numpy==1.26.3 scipy==1.12.0 pandas==1.5.3 Jinja2==3.1.3
 

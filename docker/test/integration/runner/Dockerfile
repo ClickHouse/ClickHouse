@@ -37,11 +37,8 @@ RUN apt-get update \
     libkrb5-dev \
     krb5-user \
     g++ \
-    && rm -rf \
-        /var/lib/apt/lists/* \
-        /var/cache/debconf \
-        /tmp/* \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
