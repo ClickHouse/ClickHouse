@@ -904,13 +904,6 @@ public:
     /// Returns a pointer to the Logger with the given name if it
     /// exists, or a null pointer otherwise.
 
-    static bool destroy(const std::string & name);
-    /// Destroys the logger with the specified name. Does nothing
-    /// if the logger is not found.
-    ///
-    /// After a logger has been destroyed, all references to it
-    /// become invalid.
-
     static void shutdown();
     /// Shuts down the logging framework and releases all
     /// Loggers.
@@ -940,8 +933,6 @@ public:
     static const std::string ROOT; /// The name of the root logger ("").
 
 protected:
-    typedef std::map<std::string, Logger *> LoggerMap;
-
     Logger(const std::string & name, Channel * pChannel, int level);
     ~Logger();
 
@@ -962,8 +953,6 @@ private:
     std::string _name;
     Channel * _pChannel;
     std::atomic_int _level;
-
-    static LoggerMap * _pLoggerMap;
 };
 
 
