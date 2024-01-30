@@ -137,8 +137,8 @@ struct GroupArraySortedData
         }
         else
         {
-            bool is_sorted = trySort(values.begin(), values.end(), Comparator());
-            if (!is_sorted)
+            bool try_sort = trySort(values.begin(), values.end(), Comparator());
+            if (!try_sort)
                 RadixSort<RadixSortNumTraits<T>>::executeLSD(values.data(), values.size());
         }
 
@@ -283,8 +283,15 @@ public:
         }
         else
         {
-            for (const auto & element : values)
-                writeBinaryLittleEndian(element, buf);
+            if constexpr (std::endian::native == std::endian::little)
+            {
+                buf.write(reinterpret_cast<const char *>(values.data()), size * sizeof(values[0]));
+            }
+            else
+            {
+                for (const auto & element : values)
+                    writeBinaryLittleEndian(element, buf);
+            }
         }
     }
 
@@ -297,7 +304,7 @@ public:
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size, it should not exceed {}", max_elements);
 
         auto & values = this->data(place).values;
-        values.resize(size, arena);
+        values.resize_exact(size, arena);
 
         if constexpr (std::is_same_v<T, Field>)
         {
@@ -311,8 +318,15 @@ public:
         }
         else
         {
-            for (auto & element : values)
-                readBinaryLittleEndian(element, buf);
+            if constexpr (std::endian::native == std::endian::little)
+            {
+                buf.readStrict(reinterpret_cast<char *>(values.data()), size * sizeof(values[0]));
+            }
+            else
+            {
+                for (auto & element : values)
+                    readBinaryLittleEndian(element, buf);
+            }
         }
     }
 
