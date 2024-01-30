@@ -89,8 +89,7 @@ REGISTER_FUNCTION(VariantType)
 Returns the variant type name for each row of `Variant` column. If row contains NULL, it returns 'None' for it.
 )",
         .syntax{"variantType(variant)"},
-        .arguments{{
-            {"variant", "Variant column"}}},
+        .arguments{{{"variant", "Variant column"}}}
         .examples{{{
             "Example",
             R"(
