@@ -82,6 +82,14 @@ public:
         return res;
     }
 
+    /// Faster streaming rows one-by-one using ReadBufferFromMemoryIterable,
+    /// that can incapsulate multiple rows, so that you don't need to do all
+    /// the preparation for each row.
+    ///
+    /// See:
+    /// - ReadBufferFromMemoryIterable
+    /// - IRowInputFormat
+    virtual bool nextRow() { return false; }
 
     inline void nextIfAtEnd()
     {

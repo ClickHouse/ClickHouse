@@ -1,3 +1,4 @@
+#include <exception>
 #include <Storages/RabbitMQ/RabbitMQSource.h>
 
 #include <Formats/FormatFactory.h>
@@ -134,32 +135,21 @@ Chunk RabbitMQSource::generateImpl()
     auto input_format = FormatFactory::instance().getInput(
         storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
 
-    std::optional<String> exception_message;
+    std::vector<String> exception_messages;
     size_t total_rows = 0;
 
-    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
+    size_t input_format_allow_errors_num = context->getSettingsRef().input_format_allow_errors_num;
+    size_t num_rows_with_errors = 0;
+    auto on_error = [&](std::exception_ptr e)
     {
-        if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+        if (handle_error_mode != StreamingHandleErrorMode::STREAM)
         {
-            exception_message = e.message();
-            for (const auto & column : result_columns)
-            {
-                // We could already push some rows to result_columns
-                // before exception, we need to fix it.
-                auto cur_rows = column->size();
-                if (cur_rows > total_rows)
-                    column->popBack(cur_rows - total_rows);
+            if (input_format_allow_errors_num >= ++num_rows_with_errors)
+                return;
 
-                // All data columns will get default value in case of error.
-                column->insertDefault();
-            }
-
-            return 1;
+            std::rethrow_exception(e);
         }
-        else
-        {
-            throw std::move(e);
-        }
+        exception_messages.emplace_back(getExceptionMessage(e, false));
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
@@ -167,7 +157,7 @@ Chunk RabbitMQSource::generateImpl()
     RabbitMQConsumer::CommitInfo current_commit_info;
     while (true)
     {
-        exception_message.reset();
+        exception_messages.clear();
         size_t new_rows = 0;
 
         if (consumer->hasPendingMessages())
@@ -176,35 +166,34 @@ Chunk RabbitMQSource::generateImpl()
                 new_rows = executor.execute(*buf);
         }
 
-        if (new_rows)
+        if (new_rows || !exception_messages.empty())
         {
             const auto exchange_name = storage.getExchange();
             const auto & message = consumer->currentMessage();
 
-            for (size_t i = 0; i < new_rows; ++i)
+            size_t new_rows_with_errors = new_rows + exception_messages.size();
+            /// FIXME: we can do better, get information from particular message
+            virtual_columns[0]->insertMany(exchange_name, new_rows_with_errors);
+            virtual_columns[1]->insertMany(message.channel_id, new_rows_with_errors);
+            virtual_columns[2]->insertMany(message.delivery_tag, new_rows_with_errors);
+            virtual_columns[3]->insertMany(message.redelivered, new_rows_with_errors);
+            virtual_columns[4]->insertMany(message.message_id, new_rows_with_errors);
+            virtual_columns[5]->insertMany(message.timestamp, new_rows_with_errors);
+
+            if (handle_error_mode == StreamingHandleErrorMode::STREAM)
             {
-                virtual_columns[0]->insert(exchange_name);
-                virtual_columns[1]->insert(message.channel_id);
-                virtual_columns[2]->insert(message.delivery_tag);
-                virtual_columns[3]->insert(message.redelivered);
-                virtual_columns[4]->insert(message.message_id);
-                virtual_columns[5]->insert(message.timestamp);
-                if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+                virtual_columns[6]->insertManyDefaults(new_rows);
+                virtual_columns[7]->insertManyDefaults(new_rows);
+
+                /// FIXME: we can do better, by reusing reason/row from ErrorEntry
+                virtual_columns[6]->insertMany(Field(message.message.data(), message.message.size()), exception_messages.size());
+                for (const auto & exception_message : exception_messages)
                 {
-                    if (exception_message)
-                    {
-                        virtual_columns[6]->insertData(message.message.data(), message.message.size());
-                        virtual_columns[7]->insertData(exception_message->data(), exception_message->size());
-                    }
-                    else
-                    {
-                        virtual_columns[6]->insertDefault();
-                        virtual_columns[7]->insertDefault();
-                    }
+                    virtual_columns[7]->insertData(exception_message.data(), exception_message.size());
                 }
             }
 
-            total_rows += new_rows;
+            total_rows += new_rows_with_errors;
             current_commit_info = {message.delivery_tag, message.channel_id};
         }
         else if (total_rows == 0)
@@ -243,7 +232,17 @@ Chunk RabbitMQSource::generateImpl()
     if (total_rows == 0)
         return {};
 
-    auto result_columns  = executor.getResultColumns();
+    auto result_columns = executor.getResultColumns();
+
+    size_t result_block_rows = result_columns.front()->size();
+    size_t virtual_block_rows = virtual_columns.front()->size();
+    size_t errors = virtual_block_rows - result_block_rows;
+    if (errors)
+    {
+        for (auto & column : result_columns)
+            column->insertManyDefaults(errors);
+    }
+
     for (auto & column : virtual_columns)
         result_columns.push_back(std::move(column));
 

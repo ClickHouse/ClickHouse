@@ -162,6 +162,10 @@ Chunk IRowInputFormat::read()
                 if (!continue_reading)
                     break;
 
+                /// Next time we will read new message
+                if (in->eof())
+                    in->nextRow();
+
                 /// The case when there is no columns. Just count rows.
                 if (columns.empty())
                     ++num_rows;
@@ -169,6 +173,14 @@ Chunk IRowInputFormat::read()
             catch (Exception & e)
             {
                 ++total_rows;
+
+                /// Truncate all columns in block to initial size (remove values, that was appended to only part of columns).
+                for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
+                {
+                    auto & column = columns[column_idx];
+                    if (column->size() > num_rows)
+                        column->popBack(column->size() - num_rows);
+                }
 
                 /// Logic for possible skipping of errors.
 
@@ -201,14 +213,9 @@ Chunk IRowInputFormat::read()
 
                 syncAfterError();
 
-                /// Truncate all columns in block to initial size (remove values, that was appended to only part of columns).
-
-                for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
-                {
-                    auto & column = columns[column_idx];
-                    if (column->size() > num_rows)
-                        column->popBack(column->size() - num_rows);
-                }
+                /// Next time we will read new message
+                /// NOTE: should be done after syncAfterError() since it may try to read some data
+                in->nextRow();
             }
         }
     }

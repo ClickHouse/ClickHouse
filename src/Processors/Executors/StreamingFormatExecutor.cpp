@@ -1,5 +1,32 @@
+#include <exception>
+#include <memory>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Formats/IInputFormatErrorsHandler.h>
+#include <Processors/Formats/IRowInputFormat.h>
+
+namespace
+{
+
+using namespace DB;
+
+class InputFormatErrorsProxy : public IInputFormatErrorsHandler
+{
+public:
+    explicit InputFormatErrorsProxy(const StreamingFormatExecutor::ErrorCallback & on_error_)
+        : on_error(on_error_)
+    {}
+
+    void logError(ErrorEntry) override
+    {
+        on_error(std::current_exception());
+    }
+
+private:
+    const StreamingFormatExecutor::ErrorCallback & on_error;
+};
+
+}
 
 namespace DB
 {
@@ -7,7 +34,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_EXCEPTION;
 }
 
 StreamingFormatExecutor::StreamingFormatExecutor(
@@ -23,6 +49,11 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     , result_columns(header.cloneEmptyColumns())
 {
     connect(format->getPort(), port);
+    format->setErrorsHandler(std::make_shared<InputFormatErrorsProxy>(on_error));
+}
+StreamingFormatExecutor::~StreamingFormatExecutor()
+{
+    format->setErrorsHandler({});
 }
 
 MutableColumns StreamingFormatExecutor::getResultColumns()
@@ -45,9 +76,10 @@ size_t StreamingFormatExecutor::execute(ReadBuffer & buffer)
 
 size_t StreamingFormatExecutor::execute()
 {
+    size_t new_rows = 0;
+
     try
     {
-        size_t new_rows = 0;
         port.setNeeded();
         while (true)
         {
@@ -74,22 +106,16 @@ size_t StreamingFormatExecutor::execute()
             }
         }
     }
-    catch (Exception & e)
+    /// All IRowInputFormat formats handled via InputFormatErrorsProxy, this
+    /// catch handler only for non row-based formats.
+    catch (const Exception & e)
     {
+        if (!isParseError(e.code()))
+            throw;
+
         format->resetParser();
-        return on_error(result_columns, e);
-    }
-    catch (std::exception & e)
-    {
-        format->resetParser();
-        auto exception = Exception(Exception::CreateFromSTDTag{}, e);
-        return on_error(result_columns, exception);
-    }
-    catch (...)
-    {
-        format->resetParser();
-        auto exception = Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknowk exception while executing StreamingFormatExecutor with format {}", format->getName());
-        return on_error(result_columns, exception);
+        on_error(std::current_exception());
+        return new_rows;
     }
 }
 

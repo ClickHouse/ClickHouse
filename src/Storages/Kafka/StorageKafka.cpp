@@ -1,3 +1,4 @@
+#include <limits>
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
 
@@ -337,7 +338,7 @@ StorageKafka::StorageKafka(
 
     if (kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
-        kafka_settings->input_format_allow_errors_num = 0;
+        kafka_settings->input_format_allow_errors_num = std::numeric_limits<UInt64>::max();
         kafka_settings->input_format_allow_errors_ratio = 0;
     }
 

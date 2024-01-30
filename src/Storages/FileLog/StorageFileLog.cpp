@@ -1027,7 +1027,7 @@ NamesAndTypesList StorageFileLog::getVirtuals() const
 
 ContextMutablePtr StorageFileLog::addSettings(ContextPtr local_context) const
 {
-    auto modified_context = Context::createCopy(getContext());
+    auto modified_context = Context::createCopy(local_context);
     Settings settings = modified_context->getSettings();
     settings.input_format_skip_unknown_fields = true;
     settings.input_format_allow_errors_ratio = 0.;

@@ -243,7 +243,7 @@ ContextMutablePtr StorageRabbitMQ::addSettings(ContextPtr local_context) const
     if (rabbitmq_settings->rabbitmq_handle_error_mode == StreamingHandleErrorMode::DEFAULT)
         modified_context->setSetting("input_format_allow_errors_num", rabbitmq_settings->rabbitmq_skip_broken_messages.value);
     else
-        modified_context->setSetting("input_format_allow_errors_num", Field(0));
+        modified_context->setSetting("input_format_allow_errors_num", Field(std::numeric_limits<UInt64>::max()));
 
     /// Since we are reusing the same context for all queries executed simultaneously, we don't want to used shared `analyze_count`
     modified_context->setSetting("max_analyze_depth", Field{0});

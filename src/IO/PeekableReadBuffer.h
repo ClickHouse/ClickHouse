@@ -76,6 +76,8 @@ public:
 
     const ReadBuffer & getSubBuffer() const { return *sub_buf; }
 
+    bool nextRow() override { return sub_buf->nextRow(); }
+
 private:
     bool nextImpl() override;
 

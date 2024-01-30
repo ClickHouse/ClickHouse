@@ -98,44 +98,32 @@ Chunk KafkaSource::generateImpl()
     // otherwise external iteration will reuse that and logic will became even more fuzzy
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
-    auto put_error_to_stream = handle_error_mode == StreamingHandleErrorMode::STREAM;
-
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
         storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
 
-    std::optional<std::string> exception_message;
+    std::vector<std::string> exception_messages;
     size_t total_rows = 0;
     size_t failed_poll_attempts = 0;
 
-    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
+    size_t input_format_allow_errors_num = context->getSettingsRef().input_format_allow_errors_num;
+    size_t num_rows_with_errors = 0;
+    auto on_error = [&](std::exception_ptr exception_ptr)
     {
         ProfileEvents::increment(ProfileEvents::KafkaMessagesFailed);
 
-        if (put_error_to_stream)
+        if (handle_error_mode != StreamingHandleErrorMode::STREAM)
         {
-            exception_message = e.message();
-            for (const auto & column : result_columns)
-            {
-                // read_kafka_message could already push some rows to result_columns
-                // before exception, we need to fix it.
-                auto cur_rows = column->size();
-                if (cur_rows > total_rows)
-                    column->popBack(cur_rows - total_rows);
+            if (input_format_allow_errors_num >= ++num_rows_with_errors)
+                return;
 
-                // all data columns will get default value in case of error
-                column->insertDefault();
-            }
-
-            return 1;
+            if (Exception * e = exception_cast<Exception *>(exception_ptr))
+                e->addMessage("while parsing Kafka message (topic: {}, partition: {}, offset: {})",
+                    consumer->currentTopic(), consumer->currentPartition(), consumer->currentOffset());
+            std::rethrow_exception(exception_ptr);
         }
         else
-        {
-            e.addMessage("while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
-                consumer->currentTopic(), consumer->currentPartition(), consumer->currentOffset());
-            consumer->setExceptionInfo(e.message());
-            throw std::move(e);
-        }
+            exception_messages.emplace_back(getExceptionMessage(exception_ptr, false));
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
@@ -143,14 +131,14 @@ Chunk KafkaSource::generateImpl()
     while (true)
     {
         size_t new_rows = 0;
-        exception_message.reset();
+        exception_messages.clear();
         if (auto buf = consumer->consume())
         {
             ProfileEvents::increment(ProfileEvents::KafkaMessagesRead);
             new_rows = executor.execute(*buf);
         }
 
-        if (new_rows)
+        if (new_rows || !exception_messages.empty())
         {
             // In read_kafka_message(), KafkaConsumer::nextImpl()
             // will be called, that may make something unusable, i.e. clean
@@ -163,6 +151,7 @@ Chunk KafkaSource::generateImpl()
 
             consumer->storeLastReadMessageOffset();
 
+            /// TODO: does this columns requested or not
             auto topic         = consumer->currentTopic();
             auto key           = consumer->currentKey();
             auto offset        = consumer->currentOffset();
@@ -184,42 +173,42 @@ Chunk KafkaSource::generateImpl()
                 }
             }
 
-            for (size_t i = 0; i < new_rows; ++i)
+            size_t new_rows_with_errors = new_rows + exception_messages.size();
+            /// FIXME: get this information from proper message
+            virtual_columns[0]->insertMany(topic, new_rows_with_errors);
+            virtual_columns[1]->insertMany(key, new_rows_with_errors);
+            virtual_columns[2]->insertMany(offset, new_rows_with_errors);
+            virtual_columns[3]->insertMany(partition, new_rows_with_errors);
+            if (timestamp_raw)
             {
-                virtual_columns[0]->insert(topic);
-                virtual_columns[1]->insert(key);
-                virtual_columns[2]->insert(offset);
-                virtual_columns[3]->insert(partition);
-                if (timestamp_raw)
+                auto ts = timestamp_raw->get_timestamp();
+                virtual_columns[4]->insertMany(std::chrono::duration_cast<std::chrono::seconds>(ts).count(), new_rows_with_errors);
+                virtual_columns[5]->insertMany(DecimalField<Decimal64>(std::chrono::duration_cast<std::chrono::milliseconds>(ts).count(),3), new_rows_with_errors);
+            }
+            else
+            {
+                virtual_columns[4]->insertManyDefaults(new_rows_with_errors);
+                virtual_columns[5]->insertManyDefaults(new_rows_with_errors);
+            }
+            virtual_columns[6]->insertMany(headers_names, new_rows_with_errors);
+            virtual_columns[7]->insertMany(headers_values, new_rows_with_errors);
+
+            if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+            {
+                virtual_columns[8]->insertManyDefaults(new_rows);
+                virtual_columns[9]->insertManyDefaults(new_rows);
+
+                /// FIXME: we can do better, by reusing reason/row from ErrorEntry
+                const auto & payload = consumer->currentPayload();
+                virtual_columns[8]->insertMany(Field(reinterpret_cast<const char *>(payload.get_data()), payload.get_size()), exception_messages.size());
+
+                for (const auto & exception_message : exception_messages)
                 {
-                    auto ts = timestamp_raw->get_timestamp();
-                    virtual_columns[4]->insert(std::chrono::duration_cast<std::chrono::seconds>(ts).count());
-                    virtual_columns[5]->insert(DecimalField<Decimal64>(std::chrono::duration_cast<std::chrono::milliseconds>(ts).count(),3));
-                }
-                else
-                {
-                    virtual_columns[4]->insertDefault();
-                    virtual_columns[5]->insertDefault();
-                }
-                virtual_columns[6]->insert(headers_names);
-                virtual_columns[7]->insert(headers_values);
-                if (put_error_to_stream)
-                {
-                    if (exception_message)
-                    {
-                        const auto & payload = consumer->currentPayload();
-                        virtual_columns[8]->insertData(reinterpret_cast<const char *>(payload.get_data()), payload.get_size());
-                        virtual_columns[9]->insertData(exception_message->data(), exception_message->size());
-                    }
-                    else
-                    {
-                        virtual_columns[8]->insertDefault();
-                        virtual_columns[9]->insertDefault();
-                    }
+                    virtual_columns[9]->insertData(exception_message.data(), exception_message.size());
                 }
             }
 
-            total_rows = total_rows + new_rows;
+            total_rows += new_rows_with_errors;
         }
         else if (consumer->polledDataUnusable())
         {
@@ -232,7 +221,7 @@ Chunk KafkaSource::generateImpl()
         else
         {
             // We came here in case of tombstone (or sometimes zero-length) messages, and it is not something abnormal
-            // TODO: it seems like in case of put_error_to_stream=true we may need to process those differently
+            // TODO: it seems like in case of StreamingHandleErrorMode::STREAM we may need to process those differently
             // currently we just skip them with note in logs.
             consumer->storeLastReadMessageOffset();
             LOG_DEBUG(log, "Parsing of message (topic: {}, partition: {}, offset: {}) return no rows.", consumer->currentTopic(), consumer->currentPartition(), consumer->currentOffset());
@@ -267,6 +256,17 @@ Chunk KafkaSource::generateImpl()
 
     auto result_block  = non_virtual_header.cloneWithColumns(executor.getResultColumns());
     auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
+
+    size_t result_block_rows = result_block.rows();
+    size_t virtual_block_rows = virtual_block.rows();
+    size_t errors = virtual_block_rows - result_block_rows;
+    if (errors)
+    {
+        auto result_columns = result_block.mutateColumns();
+        for (auto & column : result_columns)
+            column->insertManyDefaults(errors);
+        result_block.setColumns(std::move(result_columns));
+    }
 
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())
         result_block.insert(column);

@@ -3,7 +3,7 @@
 #include <fmt/ostream.h>
 
 #include <Storages/Kafka/KafkaConsumer.h>
-#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadBufferFromMemoryIterable.h>
 
 #include <Common/logger_useful.h>
 
@@ -38,6 +38,21 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_COMMIT_OFFSET;
+    extern const int LOGICAL_ERROR;
+}
+
+namespace ReadBufferFromMemoryIterableDetails
+{
+
+template <> const char * get_element_data(const cppkafka::Message & element)
+{
+    return reinterpret_cast<const char *>(element.get_payload().get_data());
+}
+template <> size_t get_element_size(const cppkafka::Message & element)
+{
+    return element.get_payload().get_size();
+}
+
 }
 
 using namespace std::chrono_literals;
@@ -429,7 +444,7 @@ ReadBufferPtr KafkaConsumer::consume()
         return nullptr;
 
     if (hasMorePolledMessages())
-        return getNextMessage();
+        return getMessages();
 
     if (intermediate_commit)
         commit();
@@ -520,22 +535,15 @@ ReadBufferPtr KafkaConsumer::consume()
     ProfileEvents::increment(ProfileEvents::KafkaMessagesPolled, messages.size());
 
     stalled_status = NOT_STALLED;
-    return getNextMessage();
+    return getMessages();
 }
 
-ReadBufferPtr KafkaConsumer::getNextMessage()
+ReadBufferPtr KafkaConsumer::getMessages()
 {
     if (current == messages.end())
         return nullptr;
-
-    const auto * data = current->get_payload().get_data();
-    size_t size = current->get_payload().get_size();
-    ++current;
-
-    if (data)
-        return std::make_shared<ReadBufferFromMemory>(data, size);
-
-    return getNextMessage();
+    /// NOTE: we need to return empty messages as-is, since those are tombstones
+    return std::make_shared<ReadBufferFromMemoryIterable<decltype(current)>>(current, messages.cend());
 }
 
 size_t KafkaConsumer::filterMessageErrors()
@@ -574,11 +582,13 @@ void KafkaConsumer::resetIfStopped()
 
 void KafkaConsumer::storeLastReadMessageOffset()
 {
-    if (!isStalled())
-    {
-        consumer->store_offset(*(current - 1));
-        ++offsets_stored;
-    }
+    if (isStalled())
+        return;
+    if (current == messages.begin())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing had been parsed. It is a bug");
+
+    consumer->store_offset(*(current - 1));
+    ++offsets_stored;
 }
 
 void KafkaConsumer::setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace)

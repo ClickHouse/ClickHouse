@@ -1,3 +1,4 @@
+#include <exception>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <Access/Common/AccessFlags.h>
@@ -911,18 +912,12 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
             adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(header, columns, *format, insert_context);
     }
 
-    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
+    auto on_error = [&](std::exception_ptr e)
     {
-        current_exception = e.displayText();
+        current_exception = getExceptionMessage(e, false);
         LOG_ERROR(logger, "Failed parsing for query '{}' with query id {}. {}",
             key.query_str, current_entry->query_id, current_exception);
-
-        for (const auto & column : result_columns)
-            if (column->size() > total_rows)
-                column->popBack(column->size() - total_rows);
-
-        current_entry->finish(std::current_exception());
-        return 0;
+        current_entry->finish(e);
     };
 
     StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));

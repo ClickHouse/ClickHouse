@@ -321,13 +321,13 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
             ["qwertyuiop", "asdfghjkl", "zxcvbnm"],
         )
 
-    expected_result = """avro::Exception: Invalid data file. Magic does not match: : while parsing Kafka message (topic: Avro_parsing_err, partition: 0, offset: 0)\\'|1|1|1|default|kafka_Avro
-Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': (at row 1)\\n: while parsing Kafka message (topic: JSONEachRow_parsing_err, partition:|1|1|1|default|kafka_JSONEachRow
+    expected_result = """Code: 117. DB::Exception: Invalid data file. Magic does not match: : (while reading header): while parsing Kafka message (topic: Avro_parsing_err, partition: 0, offset: 0)|1|1|1|default|kafka_Avro
+Code: 27. DB::Exception: Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': (at row 1) : while parsing Kafka message (topic: JSONEachRow_parsing_err, partition: 0, offset: 0)|1|1|1|default|kafka_JSONEachRow
 """
     # filter out stacktrace in exceptions.text[1] because it is hardly stable enough
     result_system_kafka_consumers = instance.query_with_retry(
         """
-        SELECT substr(exceptions.text[1], 1, 139), length(exceptions.text) > 1 AND length(exceptions.text) < 15, length(exceptions.time) > 1 AND length(exceptions.time) < 15, abs(dateDiff('second', exceptions.time[1], now())) < 40, database, table FROM system.kafka_consumers WHERE table in('kafka_Avro', 'kafka_JSONEachRow') ORDER BY table, assignments.partition_id[1]
+        SELECT replaceRegexpAll(replaceAll(exceptions.text[1], '\n', ' '), ': While executing Kafka.*$', ''), length(exceptions.text) > 1 AND length(exceptions.text) < 15, length(exceptions.time) > 1 AND length(exceptions.time) < 15, abs(dateDiff('second', exceptions.time[1], now())) < 40, database, table FROM system.kafka_consumers WHERE table in('kafka_Avro', 'kafka_JSONEachRow') ORDER BY table, assignments.partition_id[1]
         """,
         retry_count=max_retries,
         sleep_time=1,
@@ -375,11 +375,11 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
 
     kafka_produce(kafka_cluster, "tomv", ['{"key":10, "value":"aaa"}'])
 
-    expected_result = """Code: 6. DB::Exception: Cannot parse string \\'aaa\\' as UInt64: syntax error at begin of string. Note: there are toUInt64OrZero and to|1|1|1|default|kafka1
+    expected_result = """Code: 6. DB::Exception: Cannot parse string \\'aaa\\' as UInt64: syntax error at begin of string.|1|1|1|default|kafka1
 """
     result_system_kafka_consumers = instance.query_with_retry(
         """
-        SELECT substr(exceptions.text[1], 1, 131), length(exceptions.text) > 1 AND length(exceptions.text) < 15, length(exceptions.time) > 1 AND length(exceptions.time) < 15, abs(dateDiff('second', exceptions.time[1], now())) < 40, database, table FROM system.kafka_consumers  WHERE table='kafka1' ORDER BY table, assignments.partition_id[1]
+        SELECT replaceRegexpAll(replaceAll(exceptions.text[1], '\n', ' '), ' Note:.*$', ''), length(exceptions.text) > 1 AND length(exceptions.text) < 15, length(exceptions.time) > 1 AND length(exceptions.time) < 15, abs(dateDiff('second', exceptions.time[1], now())) < 40, database, table FROM system.kafka_consumers  WHERE table='kafka1' ORDER BY table, assignments.partition_id[1]
         """,
         retry_count=max_retries,
         sleep_time=1,

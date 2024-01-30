@@ -414,7 +414,7 @@ def test_kafka_settings_new_syntax(kafka_cluster):
                      kafka_row_delimiter = '\\n',
                      kafka_commit_on_select = 1,
                      kafka_client_id = '{kafka_client_id} test 1234',
-                     kafka_skip_broken_messages = 1;
+                     kafka_skip_broken_messages = 2;
         """
     )
 
@@ -456,8 +456,7 @@ def test_kafka_settings_predefined_macros(kafka_cluster):
                      kafka_format = '{kafka_format_json_each_row}',
                      kafka_row_delimiter = '\\n',
                      kafka_commit_on_select = 1,
-                     kafka_client_id = '{database}_{table} test 1234',
-                     kafka_skip_broken_messages = 1;
+                     kafka_client_id = '{database}_{table} test 1234';
         """
     )
 

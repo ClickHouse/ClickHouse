@@ -1,5 +1,6 @@
 #pragma once
 
+#include <exception>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/ISimpleTransform.h>
 #include <IO/EmptyReadBuffer.h>
@@ -19,13 +20,14 @@ public:
     /// and exception to rethrow it or add context to it.
     /// Should return number of new rows, which are added in callback
     /// to result columns in comparison to previous call of `execute`.
-    using ErrorCallback = std::function<size_t(const MutableColumns &, Exception &)>;
+    using ErrorCallback = std::function<void(std::exception_ptr)>;
 
     StreamingFormatExecutor(
         const Block & header_,
         InputFormatPtr format_,
-        ErrorCallback on_error_ = [](const MutableColumns &, Exception & e) -> size_t { throw std::move(e); },
+        ErrorCallback on_error_ = [](std::exception_ptr e) { std::rethrow_exception(e); },
         SimpleTransformPtr adding_defaults_transform_ = nullptr);
+    ~StreamingFormatExecutor();
 
     /// Returns numbers of new read rows.
     size_t execute();
