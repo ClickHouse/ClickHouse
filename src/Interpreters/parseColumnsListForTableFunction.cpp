@@ -7,6 +7,9 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 
 
 namespace DB
@@ -48,8 +51,7 @@ void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings
 
     if (!settings.allow_suspicious_fixed_string_types)
     {
-        auto basic_type = removeLowCardinalityAndNullable(type);
-        if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(basic_type.get()))
+        if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(type.get()))
         {
             if (fixed_string->getN() > MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS)
                 throw Exception(
@@ -70,6 +72,29 @@ void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings
                 "Cannot create column with type '{}' because experimental Variant type is not allowed. "
                 "Set setting allow_experimental_variant_type = 1 in order to allow it", type->getName());
         }
+    }
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        validateDataType(nullable_type->getNestedType(), settings);
+    }
+    else if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    {
+        validateDataType(lc_type->getDictionaryType(), settings);
+    }
+    else if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        validateDataType(array_type->getNestedType(), settings);
+    }
+    else if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (const auto & element : tuple_type->getElements())
+            validateDataType(element, settings);
+    }
+    else if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        validateDataType(map_type->getKeyType(), settings);
+        validateDataType(map_type->getValueType(), settings);
     }
 }
 
