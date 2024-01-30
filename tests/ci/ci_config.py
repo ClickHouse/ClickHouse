@@ -1136,12 +1136,12 @@ CHECK_DESCRIPTIONS = [
     CheckDescription(
         JobNames.DOCKER_SERVER,
         "The check to build and optionally push the mentioned image to docker hub",
-        lambda x: x.startswith("Docker server")
+        lambda x: x.startswith("Docker server"),
     ),
     CheckDescription(
         JobNames.DOCKER_KEEPER,
         "The check to build and optionally push the mentioned image to docker hub",
-        lambda x: x.startswith("Docker keeper")
+        lambda x: x.startswith("Docker keeper"),
     ),
     CheckDescription(
         "Docs Check", "Builds and tests the documentation", lambda x: x == "Docs Check"
