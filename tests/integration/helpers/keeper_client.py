@@ -16,7 +16,7 @@ class KeeperClient:
     def __init__(self, cluster: ClickHouseCluster, instance):
         self.cluster = cluster
         self.instance = instance
-        self.hosts = [["fdb","/etc/foundationdb/fdb.cluster"]]
+        self.hosts = [["fdb", "4501"]]
 
     def query(self, query: str):
         args = [
@@ -27,7 +27,13 @@ class KeeperClient:
         ]
 
         if self.cluster.with_foundationdb:
-            args += ["--fdb", "--fdb-cluster", self.cluster.foundationdb_cluster, "--fdb-prefix", "fdbkeeper"]
+            args += [
+                "--fdb",
+                "--fdb-cluster",
+                self.cluster.foundationdb_cluster,
+                "--fdb-prefix",
+                "fdbkeeper",
+            ]
         elif self.cluster.with_zookeeper:
             args += [
                 "--host",
@@ -82,8 +88,8 @@ class KeeperClient:
         return self.query(f"set {path} {quote_string(value)}")
 
     def get(self, path):
-        #TODO: need to return the state
-        return self.query(f"get {path}")[:-1].encode('utf-8'), None
+        # TODO: Need to return the state
+        return self.query(f"get {path}")[:-1].encode("utf-8"), None
 
     def stop(self):
         return

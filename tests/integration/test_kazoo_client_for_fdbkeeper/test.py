@@ -49,4 +49,4 @@ def test_basic_ops(started_cluster):
         zk.set("/test/a", "aaa")
     zk.set("/test", "ccc")
     zk.set("/test", b"1234")
-    assert zk.get("/test") == (b'1234', None)
+    assert zk.get("/test") == (b"1234", None)
