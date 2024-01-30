@@ -603,7 +603,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterProjectionsCalculationMicroseconds);
             projection_block = projection.calculate(block, context);
-            LOG_DEBUG(log, "Spent {} ms calculating projection {} for the part {}", watch.elapsed(), projection.name, new_data_part->name);
+            LOG_DEBUG(log, "Spent {} ms calculating projection {} for the part {}", watch.elapsed() / 1000, projection.name, new_data_part->name);
         }
 
         if (projection_block.rows())

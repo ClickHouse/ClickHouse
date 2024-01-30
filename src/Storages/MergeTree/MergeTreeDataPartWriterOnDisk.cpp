@@ -396,7 +396,6 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
 
             index_build_us += watch.elapsed<Microseconds>();
         }
-        // clang-format off
         LOG_DEBUG(log, "Spent {} ms calculating index {} for the part {}", index_build_us / 1000, skip_indices[i]->index.name, data_part->name);
     }
 }
