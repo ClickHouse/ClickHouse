@@ -967,7 +967,7 @@ def test_union_schema_inference_mode(cluster):
         f"desc azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference*.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') settings schema_inference_mode='union', describe_compact_output=1 format TSV",
         expect_error="true",
     )
-    assert "Cannot extract table structure" in error
+    assert "CANNOT_EXTRACT_TABLE_STRUCTURE" in error
 
 
 def test_schema_inference_cache(cluster):
