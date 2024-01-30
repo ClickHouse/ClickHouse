@@ -118,8 +118,9 @@ namespace DB
 void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
 {
     attach<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
-    attach<StorageSystemNumbers>(context, system_database, "numbers", "Generates all natural numbers, starting from 0 (to 2^64 - 1, and then again) in sorted order.", false);
-    attach<StorageSystemNumbers>(context, system_database, "numbers_mt", "Multithreaded version of `system.numbers`. Numbers order is not guaranteed.", true);
+    attach<StorageSystemNumbers>(context, system_database, "numbers", "Generates all natural numbers, starting from 0 (to 2^64 - 1, and then again) in sorted order.", false, "number");
+    attach<StorageSystemNumbers>(context, system_database, "numbers_mt", "Multithreaded version of `system.numbers`. Numbers order is not guaranteed.", true, "number");
+    // attach<StorageSystemNumbers>(context, system_database, "generate_series", "Multithreaded version of `system.numbers`. Numbers order is not guaranteed.", false, "generate_series");
     attach<StorageSystemZeros>(context, system_database, "zeros", "Produces unlimited number of non-materialized zeros.", false);
     attach<StorageSystemZeros>(context, system_database, "zeros_mt", "Multithreaded version of system.zeros.", true);
     attach<StorageSystemDatabases>(context, system_database, "databases", "Lists all databases of the current server.");

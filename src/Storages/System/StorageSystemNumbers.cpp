@@ -11,15 +11,16 @@
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
 
-StorageSystemNumbers::StorageSystemNumbers(const StorageID & table_id, bool multithreaded_, std::optional<UInt64> limit_, UInt64 offset_)
-    : IStorage(table_id), multithreaded(multithreaded_), limit(limit_), offset(offset_)
+StorageSystemNumbers::StorageSystemNumbers(const StorageID & table_id, bool multithreaded_, const std::string& column_name_, std::optional<UInt64> limit_, UInt64 offset_, UInt64 step_)
+    : IStorage(table_id), multithreaded(multithreaded_), limit(limit_), offset(offset_), column_name(column_name_), step(step_)
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
+    storage_metadata.setColumns(ColumnsDescription({{column_name_, std::make_shared<DataTypeUInt64>()}}));
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -33,6 +34,7 @@ void StorageSystemNumbers::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    // LOG_DEBUG(&Poco::Logger::get("Reading from SystemNumbers"), "Limit : {}", limit.value());
     query_plan.addStep(std::make_unique<ReadFromSystemNumbersStep>(
         column_names, shared_from_this(), storage_snapshot, query_info, std::move(context), max_block_size, num_streams));
 }
