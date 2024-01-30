@@ -44,9 +44,7 @@ def test_reload_auxiliary_zookeepers(start_cluster):
         </zookeeper2>
     </auxiliary_zookeepers>
 </clickhouse>"""
-    node.replace_config(
-        "/etc/clickhouse-server/conf.d/fdb_config.xml", new_config
-    )
+    node.replace_config("/etc/clickhouse-server/conf.d/fdb_config.xml", new_config)
 
     node.query("SYSTEM RELOAD CONFIG")
 
@@ -65,9 +63,7 @@ def test_reload_auxiliary_zookeepers(start_cluster):
         <fdb_cluster>/etc/foundationdb/fdb.cluster</fdb_cluster>
     </zookeeper>
 </clickhouse>"""
-    node.replace_config(
-        "/etc/clickhouse-server/conf.d/fdb_config.xml", new_config
-    )
+    node.replace_config("/etc/clickhouse-server/conf.d/fdb_config.xml", new_config)
     node.query("SYSTEM RELOAD CONFIG")
     time.sleep(5)
 
