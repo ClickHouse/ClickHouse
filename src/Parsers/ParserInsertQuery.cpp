@@ -46,6 +46,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserFunction table_function_p{false};
     ParserStringLiteral infile_name_p;
+    // TODO: take a look
     ParserExpressionWithOptionalAlias exp_elem_p(false);
 
     /// create ASTPtr variables (result of parsing will be put in them).
