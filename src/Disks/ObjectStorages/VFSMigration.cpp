@@ -50,6 +50,8 @@ void VFSMigration::migrate() const
         for (auto it = db->getTablesIterator(ctx); it->isValid(); it->next())
             if (StoragePtr table_ptr = it->table()) // Lazy tables may return nullptr
                 migrateTable(std::move(table_ptr), *ctx);
+
+    LOG_INFO(log, "Migrated {}", disk.getName());
 }
 
 void VFSMigration::migrateTable(StoragePtr table_ptr, const Context & ctx) const
@@ -113,6 +115,7 @@ void VFSMigration::migrateTable(StoragePtr table_ptr, const Context & ctx) const
             }
 
     disk.zookeeper()->create(disk.traits.log_item, item.serialize(), zkutil::CreateMode::PersistentSequential);
+    LOG_INFO(log, "Migrated {}", table_ptr->getName());
 }
 
 bool VFSMigration::fromZeroCopy(IStorage & table, zkutil::ZooKeeper & zookeeper) const

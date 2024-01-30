@@ -27,7 +27,7 @@ VFSLogItem VFSLogItem::parse(std::string_view str)
         checkChar(' ', buf);
         readIntTextUnsafe(pair.second, buf);
         checkChar('\n', buf);
-        out.emplace(std::move(pair));
+        out.emplace(std::exchange(pair, {}));
     }
     return out;
 }
