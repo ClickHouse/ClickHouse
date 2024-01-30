@@ -4,7 +4,7 @@
 
 #include <base/types.h>
 #include <base/sort.h>
-#include <base/getFQDNOrHostName.cpp>
+#include <base/getFQDNOrHostName.h>
 #include "Common/Logger.h"
 #include "Common/Priority.h"
 #include <Common/logger_useful.h>

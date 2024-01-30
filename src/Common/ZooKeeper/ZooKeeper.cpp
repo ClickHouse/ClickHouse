@@ -115,7 +115,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
 ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::string config_name_, bool reload_load_balancer_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
     : config_name(config_name_), zk_log(std::move(zk_log_))
 {
-    if (reload_load_balancer_)
+    if (reload_load_balancer_ && args_.implementation == "zookeeper")
         Coordination::ZooKeeperLoadBalancer::instance(config_name).init(args_, zk_log);
     init(args_);
 }
@@ -126,7 +126,8 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 {
     auto zk_args = ZooKeeperArgs(config, config_name);
     // When we invoke this constructor, it implies the configuration has changed, therefore we should reload configuration to load balancer as well.
-    Coordination::ZooKeeperLoadBalancer::instance(config_name).init(zk_args, zk_log);
+    if (zk_args.implementation == "zookeeper")
+        Coordination::ZooKeeperLoadBalancer::instance(config_name).init(zk_args, zk_log);
     init(zk_args);
 }
 
@@ -1259,7 +1260,8 @@ void ZooKeeper::finalize(const String & reason)
 void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
 {
     zk_log = std::move(zk_log_);
-    Coordination::ZooKeeperLoadBalancer::instance(config_name).setZooKeeperLog(zk_log);
+    if (args.implementation == "zookeeper")
+        Coordination::ZooKeeperLoadBalancer::instance(config_name).setZooKeeperLog(zk_log);
     if (auto * zk = dynamic_cast<Coordination::ZooKeeper *>(impl.get()))
         zk->setZooKeeperLog(zk_log);
 }
