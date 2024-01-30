@@ -1,7 +1,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Storages/MergeTree/ZooKeeperRetries.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -13,6 +12,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
