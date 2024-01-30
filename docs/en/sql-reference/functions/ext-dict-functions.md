@@ -481,44 +481,34 @@ SELECT dictGetAll('regexp_dict', 'tag', 'foobarbaz', 2);
 └──────────────────────────────────────────────────┘
 ```
 
-## Other Functions
+## dictGetInt8
 
-ClickHouse supports specialized functions that convert dictionary attribute values to a specific data type regardless of the dictionary configuration.
+## dictGetInt16
 
-Functions:
+## dictGetInt32
 
-- `dictGetInt8`, `dictGetInt16`, `dictGetInt32`, `dictGetInt64`
-- `dictGetUInt8`, `dictGetUInt16`, `dictGetUInt32`, `dictGetUInt64`
-- `dictGetFloat32`, `dictGetFloat64`
-- `dictGetDate`
-- `dictGetDateTime`
-- `dictGetUUID`
-- `dictGetString`
-- `dictGetIPv4`, `dictGetIPv6`
+## dictGetInt64
 
-All these functions have the `OrDefault` modification. For example, `dictGetDateOrDefault`.
+## dictGetUInt8
 
-Syntax:
+## dictGetUInt16
 
-``` sql
-dictGet[Type]('dict_name', 'attr_name', id_expr)
-dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
-```
+## dictGetUInt32
 
-**Arguments**
+## dictGetUInt64
 
-- `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
-- `attr_name` — Name of the column of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
-- `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md) or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
-- `default_value_expr` — Value returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning the value in the data type configured for the `attr_name` attribute.
+## dictGetFloat32
 
-**Returned value**
+## dictGetFloat64
 
-- If ClickHouse parses the attribute successfully in the [attribute’s data type](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
+## dictGetDate
 
-- If there is no requested `id_expr` in the dictionary then:
+## dictGetDateTime
 
-        - `dictGet[Type]` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
-        - `dictGet[Type]OrDefault` returns the value passed as the `default_value_expr` parameter.
+## dictGetUUID
 
-ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
+## dictGetString
+
+## dictGetIPv4
+
+## dictGetIPv6
