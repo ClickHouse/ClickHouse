@@ -4,7 +4,9 @@
 #include <Common/HashTable/HashSet.h>
 #include <bit>
 #include "ColumnsCommon.h"
-
+#ifdef USE_ISAL
+#include "mem_routines.h"
+#endif
 
 namespace DB
 {
@@ -110,6 +112,9 @@ bool memoryIsByte(const void * data, size_t start, size_t end, uint8_t byte)
 
 bool memoryIsZero(const void * data, size_t start, size_t end)
 {
+#ifdef ENABLE_ISAL_LIBRARY
+    return isal_zero_detect(data, end - start);
+#endif
     return memoryIsByte(data, start, end, 0x0);
 }
 

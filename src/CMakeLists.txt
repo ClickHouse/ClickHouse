@@ -354,6 +354,11 @@ if (TARGET ch_contrib::fiu)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::fiu)
 endif()
 
+if (TARGET ch_contrib::isal)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-reserved-macro-identifier")
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::isal)
+endif()
+
 if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
 endif()
