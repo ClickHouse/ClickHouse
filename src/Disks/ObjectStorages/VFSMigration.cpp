@@ -43,7 +43,7 @@ VFSMigration::VFSMigration(DiskObjectStorageVFS & disk_, ContextWeakPtr ctx)
 
 void VFSMigration::migrate() const
 {
-    LOG_INFO(log, "Migrating {}", disk.getName());
+    LOG_INFO(log, "Migrating disk {}", disk.getName());
     auto ctx = getContext();
 
     for (const auto & [_, db] : DatabaseCatalog::instance().getDatabases())
@@ -51,12 +51,12 @@ void VFSMigration::migrate() const
             if (StoragePtr table_ptr = it->table()) // Lazy tables may return nullptr
                 migrateTable(std::move(table_ptr), *ctx);
 
-    LOG_INFO(log, "Migrated {}", disk.getName());
+    LOG_INFO(log, "Migrated disk {}", disk.getName());
 }
 
 void VFSMigration::migrateTable(StoragePtr table_ptr, const Context & ctx) const
 {
-    LOG_INFO(log, "Migrating {}", table_ptr->getName());
+    LOG_INFO(log, "Migrating table {}", table_ptr->getName());
 
     auto * const table_casted_ptr = dynamic_cast<MergeTreeData *>(table_ptr.get());
     if (!table_casted_ptr)
@@ -101,6 +101,7 @@ void VFSMigration::migrateTable(StoragePtr table_ptr, const Context & ctx) const
     VFSLogItem item; // TODO myrrc batch in 1MB sizes (may be done on VFSTransaction side by @mkmkme)
 
     // TODO myrrc replace with streaming mode, parallelize
+    // Common/AsyncLoader.h
     const auto path = fs::path(disk.getPath()) / table.getRelativeDataPath();
     LOG_DEBUG(log, "Will iterate {}", path);
     for (const auto & entry : fs::recursive_directory_iterator{path})
@@ -115,7 +116,7 @@ void VFSMigration::migrateTable(StoragePtr table_ptr, const Context & ctx) const
             }
 
     disk.zookeeper()->create(disk.traits.log_item, item.serialize(), zkutil::CreateMode::PersistentSequential);
-    LOG_INFO(log, "Migrated {}", table_ptr->getName());
+    LOG_INFO(log, "Migrated table {}", table_ptr->getName());
 }
 
 bool VFSMigration::fromZeroCopy(IStorage & table, zkutil::ZooKeeper & zookeeper) const
