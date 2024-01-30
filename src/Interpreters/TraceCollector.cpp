@@ -65,7 +65,7 @@ TraceCollector::~TraceCollector()
     if (thread.joinable())
         thread.join();
     else
-        LOG_ERROR(&Poco::Logger::get("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
+        LOG_ERROR(getLogger("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
 }
 
 

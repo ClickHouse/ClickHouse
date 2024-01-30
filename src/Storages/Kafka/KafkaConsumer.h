@@ -62,7 +62,7 @@ public:
     };
 
     KafkaConsumer(
-        Poco::Logger * log_,
+        LoggerPtr log_,
         size_t max_batch_size,
         size_t poll_timeout_,
         bool intermediate_commit_,
@@ -150,7 +150,7 @@ private:
     std::string rdkafka_stat;
 
     ConsumerPtr consumer;
-    Poco::Logger * log;
+    LoggerPtr log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
     size_t offsets_stored = 0;

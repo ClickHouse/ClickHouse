@@ -11,6 +11,8 @@ Keys:
 - `--query` — Format queries of any length and complexity.
 - `--hilite` — Add syntax highlight with ANSI terminal escape sequences.
 - `--oneline` — Format in single line.
+- `--max_line_length` — Format in single line queries with length less than specified.
+- `--comments` — Keep comments in the output.
 - `--quiet` or `-q` — Just check syntax, no output on success.
 - `--multiquery` or `-n` — Allow multiple queries in the same file.
 - `--obfuscate` — Obfuscate instead of formatting.

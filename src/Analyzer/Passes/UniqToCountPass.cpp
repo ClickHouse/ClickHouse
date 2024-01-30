@@ -1,4 +1,4 @@
-#include "UniqToCountPass.h"
+#include <Analyzer/Passes/UniqToCountPass.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>

@@ -58,7 +58,7 @@ public:
             NestedPools nested_pools_,
             time_t decrease_error_period_,
             size_t max_error_cap_,
-            Poco::Logger * log_)
+            LoggerPtr log_)
         : nested_pools(std::move(nested_pools_))
         , decrease_error_period(decrease_error_period_)
         , max_error_cap(max_error_cap_)
@@ -124,7 +124,9 @@ public:
             size_t max_ignored_errors,
             bool fallback_to_stale_replicas,
             const TryGetEntryFunc & try_get_entry,
-            const GetPriorityFunc & get_priority = GetPriorityFunc());
+            const GetPriorityFunc & get_priority);
+
+    size_t getPoolSize() const { return nested_pools.size(); }
 
 protected:
 
@@ -147,7 +149,7 @@ protected:
         return std::make_tuple(shared_pool_states, nested_pools, last_error_decrease_time);
     }
 
-    NestedPools nested_pools;
+    const NestedPools nested_pools;
 
     const time_t decrease_error_period;
     const size_t max_error_cap;
@@ -157,7 +159,7 @@ protected:
     /// The time when error counts were last decreased.
     time_t last_error_decrease_time = 0;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 
