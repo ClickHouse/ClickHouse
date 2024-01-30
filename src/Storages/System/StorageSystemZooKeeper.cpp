@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <Storages/MergeTree/ZooKeeperRetries.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -424,32 +425,6 @@ void ReadFromSystemZooKeeper::applyFilters()
     paths = extractPath(getFilterNodes().nodes, context, context->getSettingsRef().allow_unrestricted_reads_from_keeper);
 }
 
-/// Executes a request to Keeper and retries it in case of expired sessions and disconnects
-template <typename Result, typename Operation>
-static Result runWithReconnects(Operation && operation, ContextPtr context, QueryStatusPtr query_status)
-{
-    constexpr int max_retries = 20; /// Limit retries by some reasonable number to avoid infinite loops
-    for (int attempt = 0; ; ++attempt)
-    {
-        if (query_status)
-            query_status->checkTimeLimit();
-
-        zkutil::ZooKeeperPtr keeper = context->getZooKeeper();
-
-        try
-        {
-            return operation(keeper);
-        }
-        catch (const Coordination::Exception & e)
-        {
-            if (!Coordination::isHardwareError(e.code) ||
-                attempt >= max_retries ||
-                e.code == Coordination::Error::ZOPERATIONTIMEOUT)
-                throw;
-        }
-    }
-}
-
 void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
 {
     QueryStatusPtr query_status = context->getProcessListElement();
@@ -499,9 +474,10 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
             paths_to_list.emplace_back(task.path_corrected);
             list_tasks.emplace_back(std::move(task));
         }
-        auto list_responses = runWithReconnects<zkutil::ZooKeeper::MultiTryGetChildrenResponse>(
-            [&paths_to_list](zkutil::ZooKeeperPtr zookeeper) { return zookeeper->tryGetChildren(paths_to_list); },
-            context, query_status);
+
+        zkutil::ZooKeeper::MultiTryGetChildrenResponse list_responses;
+        ZooKeeperRetriesControl("", nullptr, ZooKeeperRetriesInfo(20, 1, 1000), query_status).retryLoop(
+            [&]() { list_responses = context->getZooKeeper()->tryGetChildren(paths_to_list); });
 
         struct GetTask
         {
@@ -545,9 +521,9 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
             }
         }
 
-        auto get_responses = runWithReconnects<zkutil::ZooKeeper::MultiTryGetResponse>(
-            [&paths_to_get](zkutil::ZooKeeperPtr zookeeper) { return zookeeper->tryGet(paths_to_get); },
-            context, query_status);
+        zkutil::ZooKeeper::MultiTryGetResponse get_responses;
+        ZooKeeperRetriesControl("", nullptr, ZooKeeperRetriesInfo(20, 1, 1000), query_status).retryLoop(
+            [&]() { get_responses = context->getZooKeeper()->tryGet(paths_to_get); });
 
         for (size_t i = 0, size = get_tasks.size(); i < size; ++i)
         {
