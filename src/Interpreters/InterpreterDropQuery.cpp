@@ -487,9 +487,9 @@ void InterpreterDropQuery::extendQueryLogElemImpl(DB::QueryLogElement & elem, co
     if (drop.database_and_tables)
     {
         auto & list = drop.database_and_tables->as<ASTExpressionList &>();
-        for (auto it = list.children.begin(); it != list.children.end(); ++it)
+        for (auto & child : list.children)
         {
-            auto identifier = dynamic_pointer_cast<ASTIdentifier>(*it);
+            auto identifier = dynamic_pointer_cast<ASTIdentifier>(child);
             if (identifier->name_parts.size() == 2)
             {
                 auto quoted_database = backQuoteIfNeed(identifier->name_parts[0]);
