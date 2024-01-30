@@ -98,6 +98,10 @@ EmbeddedRocksDBBulkSink::~EmbeddedRocksDBBulkSink()
 void EmbeddedRocksDBBulkSink::consume(Chunk chunk)
 {
     auto rows = chunk.getNumRows();
+
+    if (rows == 0) /// TODO: squashing if rows are too small
+        return;
+
     const auto columns = chunk.detachColumns();
 
     /// Convert chunk to rocksdb key-value pairs
