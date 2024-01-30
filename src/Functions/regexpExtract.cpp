@@ -137,7 +137,7 @@ private:
         if (index < 0 || index >= capture + 1)
             throw Exception(
                 ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE,
-                "Index value {} is out of range of regexp pattern '{}' in function {}, should be in [0, {})",
+                "Index value {} for regexp pattern `{}` in function {} is out-of-range, should be in [0, {})",
                 index,
                 pattern,
                 getName(),
@@ -189,7 +189,7 @@ private:
             if (index < 0 || index >= capture + 1)
                 throw Exception(
                     ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE,
-                    "Index value {} is out of range of regexp pattern '{}' in function {}, should be in [0, {})",
+                    "Index value {} for regexp pattern `{}` in function {} is out-of-range, should be in [0, {})",
                     index,
                     pattern,
                     getName(),
@@ -234,7 +234,7 @@ private:
             if (index < 0 || index >= capture + 1)
                 throw Exception(
                     ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE,
-                    "Index value {} is out of range of regexp pattern '{}' in function {}, should be in [0, {})",
+                    "Index value {} for regexp pattern `{}` in function {} is out-of-range, should be in [0, {})",
                     index,
                     pattern,
                     getName(),
