@@ -72,7 +72,7 @@ private:
         std::vector <const unsigned char*> str_in;
 
         explicit FsstParams(const unsigned char* start, UInt32 size) {
-            for (UInt32 i = 0; i < size; ++i) {
+            for (UInt32 i = 0; i <= size; ++i) {
                 if (start[i] == '\0') {
                     ++n;
                 }
@@ -80,7 +80,7 @@ private:
             len_in.reserve(n);
             str_in.reserve(n);
             str_in.push_back(start);
-            for (UInt32 i = 0; i < size; ++i) {
+            for (UInt32 i = 0; i <= size; ++i) {
                 if (start[i] == '\0') {
                     len_in.push_back(start + i - str_in.back());
                     str_in.push_back(start + i + 1);
