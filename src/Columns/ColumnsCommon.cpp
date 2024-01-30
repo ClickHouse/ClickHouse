@@ -4,7 +4,8 @@
 #include <Common/HashTable/HashSet.h>
 #include <bit>
 #include "ColumnsCommon.h"
-#ifdef USE_ISAL
+
+#if USE_ISAL
 #include "mem_routines.h"
 #endif
 
