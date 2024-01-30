@@ -984,7 +984,7 @@ private:
             try
             {
                 Poco::URI url(base_url, base_url.getPath() + "/schemas/ids/" + std::to_string(id));
-                LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Fetching schema id = {} from url {}", id, url.toString());
+                LOG_TRACE((getLogger("AvroConfluentRowInputFormat")), "Fetching schema id = {} from url {}", id, url.toString());
 
                 /// One second for connect/send/receive. Just in case.
                 auto timeouts = ConnectionTimeouts()
@@ -1029,7 +1029,7 @@ private:
                 markSessionForReuse(session);
 
                 auto schema = json_body->getValue<std::string>("schema");
-                LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Successfully fetched schema id = {}\n{}", id, schema);
+                LOG_TRACE((getLogger("AvroConfluentRowInputFormat")), "Successfully fetched schema id = {}\n{}", id, schema);
                 return avro::compileJsonSchemaFromString(schema);
             }
             catch (const Exception &)

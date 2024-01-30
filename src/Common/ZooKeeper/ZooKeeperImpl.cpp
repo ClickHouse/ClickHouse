@@ -342,7 +342,7 @@ ZooKeeper::ZooKeeper(
     std::shared_ptr<ZooKeeperLog> zk_log_)
     : args(args_)
 {
-    log = &Poco::Logger::get("ZooKeeperClient");
+    log = getLogger("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
 
     if (!args.chroot.empty())

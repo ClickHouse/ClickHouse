@@ -105,7 +105,7 @@ public:
         if (const auto hint = cache->get(params.key))
         {
             LOG_TRACE(
-                &Poco::Logger::get("Aggregator"),
+                getLogger("Aggregator"),
                 "An entry for key={} found in cache: sum_of_sizes={}, median_size={}",
                 params.key,
                 hint->sum_of_sizes,
@@ -129,7 +129,7 @@ public:
             || hint->median_size < median_size)
         {
             LOG_TRACE(
-                &Poco::Logger::get("Aggregator"),
+                getLogger("Aggregator"),
                 "Statistics updated for key={}: new sum_of_sizes={}, median_size={}",
                 params.key,
                 sum_of_sizes,
@@ -229,7 +229,7 @@ void initDataVariantsWithSizeHint(
                 /// But we will also work with the big (i.e. not so cache friendly) HT from the beginning which may result in a slight slowdown.
                 /// So let's just do nothing.
                 LOG_TRACE(
-                    &Poco::Logger::get("Aggregator"),
+                    getLogger("Aggregator"),
                     "No space were preallocated in hash tables because 'max_size_to_preallocate_for_aggregation' has too small value: {}, "
                     "should be at least {}",
                     stats_collecting_params.max_size_to_preallocate_for_aggregation,

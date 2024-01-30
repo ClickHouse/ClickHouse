@@ -1,0 +1,142 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    val String
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: toString, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: toString, function_type: ordinary, result_type: String
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  FUNCTION id: 6, function_name: plus, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 2
+                        COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
+                        CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+      FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE_FUNCTION id: 9, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 12, nodes: 1
+          CONSTANT id: 13, constant_value: UInt64_2, constant_value_type: UInt8
+  GROUP BY
+    LIST id: 14, nodes: 1
+      FUNCTION id: 6, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 7, nodes: 2
+            COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
+            CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 15, nodes: 1
+      SORT id: 16, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 2, function_name: toString, function_type: ordinary, result_type: String
+            ARGUMENTS
+              LIST id: 3, nodes: 1
+                FUNCTION id: 4, function_name: toString, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 5, nodes: 1
+                      FUNCTION id: 6, function_name: plus, function_type: ordinary, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 7, nodes: 2
+                            COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
+                            CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+1	1
+2	1
+QUERY id: 0
+  PROJECTION COLUMNS
+    val String
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: toString, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: toString, function_type: ordinary, result_type: String
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  FUNCTION id: 6, function_name: plus, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 2
+                        COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
+                        CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+      FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE_FUNCTION id: 9, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 12, nodes: 1
+          CONSTANT id: 13, constant_value: UInt64_2, constant_value_type: UInt8
+  GROUP BY
+    LIST id: 14, nodes: 1
+      FUNCTION id: 6, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 7, nodes: 2
+            COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
+            CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 15, nodes: 1
+      SORT id: 16, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 2, function_name: toString, function_type: ordinary, result_type: String
+            ARGUMENTS
+              LIST id: 3, nodes: 1
+                FUNCTION id: 4, function_name: toString, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 5, nodes: 1
+                      FUNCTION id: 6, function_name: plus, function_type: ordinary, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 7, nodes: 2
+                            COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
+                            CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+CHECK WITH TOTALS
+QUERY id: 0, is_group_by_with_totals: 1
+  PROJECTION COLUMNS
+    val String
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: toString, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: toString, function_type: ordinary, result_type: String
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  FUNCTION id: 6, function_name: plus, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 2
+                        COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
+                        CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+      FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE_FUNCTION id: 9, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 12, nodes: 1
+          CONSTANT id: 13, constant_value: UInt64_2, constant_value_type: UInt8
+  GROUP BY
+    LIST id: 14, nodes: 1
+      FUNCTION id: 6, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 7, nodes: 2
+            COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
+            CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 15, nodes: 1
+      SORT id: 16, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 2, function_name: toString, function_type: ordinary, result_type: String
+            ARGUMENTS
+              LIST id: 3, nodes: 1
+                FUNCTION id: 4, function_name: toString, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 5, nodes: 1
+                      FUNCTION id: 6, function_name: plus, function_type: ordinary, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 7, nodes: 2
+                            COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
+                            CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+1	1
+2	1
+
+0	2

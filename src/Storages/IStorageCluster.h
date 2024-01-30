@@ -19,7 +19,7 @@ public:
     IStorageCluster(
         const String & cluster_name_,
         const StorageID & table_id_,
-        Poco::Logger * log_,
+        LoggerPtr log_,
         bool structure_argument_was_provided_);
 
     void read(
@@ -46,7 +46,7 @@ protected:
     virtual void addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context) = 0;
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
     String cluster_name;
     bool structure_argument_was_provided;
 };

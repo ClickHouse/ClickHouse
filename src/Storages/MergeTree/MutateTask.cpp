@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeIndexInverted.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/ProfileEventsScope.h>
 
@@ -61,7 +62,7 @@ static void splitAndModifyMutationCommands(
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     auto part_columns = part->getColumnsDescription();
 
@@ -674,15 +675,25 @@ static NameToNameVector collectFilesForRenames(
     {
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
-            if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx2"))
+            static const std::array<String, 2> suffixes = {".idx2", ".idx"};
+            static const std::array<String, 4> gin_suffixes = {".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"}; /// .gin_* is inverted index
+
+            for (const auto & suffix : suffixes)
             {
-                add_rename(INDEX_FILE_PREFIX + command.column_name + ".idx2", "");
-                add_rename(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
+                const String filename = INDEX_FILE_PREFIX + command.column_name + suffix;
+                const String filename_mrk = INDEX_FILE_PREFIX + command.column_name + mrk_extension;
+
+                if (source_part->checksums.has(filename))
+                {
+                    add_rename(filename, "");
+                    add_rename(filename_mrk, "");
+                }
             }
-            else if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx"))
+            for (const auto & gin_suffix : gin_suffixes)
             {
-                add_rename(INDEX_FILE_PREFIX + command.column_name + ".idx", "");
-                add_rename(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
+                const String filename = INDEX_FILE_PREFIX + command.column_name + gin_suffix;
+                if (source_part->checksums.has(filename))
+                    add_rename(filename, "");
             }
         }
         else if (command.type == MutationCommand::Type::DROP_PROJECTION)
@@ -896,7 +907,7 @@ struct MutationContext
     TableLockHolder * holder;
     MergeListEntry * mutate_entry;
 
-    Poco::Logger * log{&Poco::Logger::get("MutateTask")};
+    LoggerPtr log{getLogger("MutateTask")};
 
     FutureMergedMutatedPartPtr future_part;
     MergeTreeData::DataPartPtr source_part;
@@ -975,7 +986,7 @@ public:
         , projection(projection_)
         , block_num(block_num_)
         , ctx(ctx_)
-        , log(&Poco::Logger::get("MergeProjectionPartsTask"))
+        , log(getLogger("MergeProjectionPartsTask"))
         {
             LOG_DEBUG(log, "Selected {} projection_parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
             level_parts[current_level] = std::move(parts);
@@ -1079,7 +1090,7 @@ private:
     size_t & block_num;
     MutationContextPtr ctx;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::map<size_t, MergeTreeData::MutableDataPartsVector> level_parts;
     size_t current_level = 0;
@@ -1921,7 +1932,7 @@ static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const
     if (!part_column)
         return false;
 
-    /// For ALTER MODIFY COLUMN from 'Type' to 'Nullable(Type)' we can skip mutatation and
+    /// For ALTER MODIFY COLUMN from 'Type' to 'Nullable(Type)' we can skip mutation and
     /// apply only metadata conversion. But it doesn't work for custom serialization.
     const auto * to_nullable = typeid_cast<const DataTypeNullable *>(command.data_type.get());
     if (!to_nullable)
@@ -1937,6 +1948,20 @@ static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const
     return true;
 }
 
+static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const MutationCommand & command)
+{
+    if (command.type != MutationCommand::READ_COLUMN)
+        return false;
+
+    auto part_column = part->tryGetColumn(command.column_name);
+    if (!part_column)
+        return false;
+
+    /// For ALTER MODIFY COLUMN with Variant extension (like 'Variant(T1, T2)' to 'Variant(T1, T2, T3, ...)')
+    /// we can skip mutation and apply only metadata conversion.
+    return isVariantExtension(part_column->type, command.data_type);
+}
+
 static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const MutationCommand & command, const ContextPtr & context)
 {
     if (command.partition)
@@ -1950,6 +1975,9 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
         return true;
 
     if (canSkipConversionToNullable(part, command))
+        return true;
+
+    if (canSkipConversionToVariant(part, command))
         return true;
 
     return false;
