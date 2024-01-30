@@ -1719,7 +1719,7 @@ public:
                         }
                     }
                     else if constexpr (((IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>) ||
-                        (IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>)) && !(is_div_int || is_div_int_or_zero))
+                        (IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>)))
                     {
                         if constexpr ((is_div_int || is_div_int_or_zero) && IsDataTypeDecimal<LeftDataType>)
                         {
@@ -1760,7 +1760,7 @@ public:
                     }
                     else if constexpr (IsDataTypeDecimal<RightDataType>)
                     {
-                        if constexpr ((is_div_int || is_div_int_or_zero) && IsIntegral<LeftDataType>)
+                        if constexpr ((is_div_int || is_div_int_or_zero) && IsIntegralOrExtended<LeftDataType>)
                             type_res = std::make_shared<LeftDataType>();
                         else if constexpr (is_div_int || is_div_int_or_zero)
                         {
