@@ -903,6 +903,54 @@ void QueryFuzzer::notifyQueryFailed(ASTPtr ast)
         remove_fuzzed_table(insert->getTable());
 }
 
+ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
+{
+    auto * l = child->as<ASTLiteral>();
+    chassert(l);
+    auto type = l->value.getType();
+    if (type == Field::Types::Which::String && fuzz_rand() % 7 == 0)
+    {
+        String value = l->value.get<String>();
+        child = makeASTFunction(
+            "toFixedString", std::make_shared<ASTLiteral>(value), std::make_shared<ASTLiteral>(static_cast<UInt64>(value.size())));
+    }
+
+    if (fuzz_rand() % 11 == 0)
+    {
+        String value = l->value.get<String>();
+        child = makeASTFunction("toNullable", child);
+    }
+
+    if (fuzz_rand() % 11 == 0)
+    {
+        String value = l->value.get<String>();
+        child = makeASTFunction("toLowCardinality", child);
+    }
+
+    if (fuzz_rand() % 11 == 0)
+    {
+        String value = l->value.get<String>();
+        child = makeASTFunction("materialize", child);
+    }
+
+    return child;
+}
+
+
+void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
+{
+    for (size_t i = 0; i < expr_list.children.size(); i++)
+    {
+        if (auto * literal = typeid_cast<ASTLiteral *>(expr_list.children[i].get()))
+        {
+            if (fuzz_rand() % 13 == 0)
+                expr_list.children[i] = fuzzLiteralUnderExpressionList(expr_list.children[i]);
+        }
+        else
+            fuzz(expr_list.children[i]);
+    }
+}
+
 void QueryFuzzer::fuzz(ASTs & asts)
 {
     for (auto & ast : asts)
@@ -989,7 +1037,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * expr_list = typeid_cast<ASTExpressionList *>(ast.get()))
     {
-        fuzz(expr_list->children);
+        fuzzExpressionList(*expr_list);
     }
     else if (auto * order_by_element = typeid_cast<ASTOrderByElement *>(ast.get()))
     {
@@ -1108,7 +1156,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     /*
      * The time to fuzz the settings has not yet come.
-     * Apparently we don't have any infractructure to validate the values of
+     * Apparently we don't have any infrastructure to validate the values of
      * the settings, and the first query with max_block_size = -1 breaks
      * because of overflows here and there.
      *//*
@@ -1131,9 +1179,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         // are ASTPtr -- this is redundant ownership, but hides the error if the
         // child field is replaced. Others can be ASTLiteral * or the like, which
         // leads to segfault if the pointed-to AST is replaced.
-        // Replacing children is safe in case of ASTExpressionList. In a more
-        // general case, we can change the value of ASTLiteral, which is what we
-        // do here.
+        // Replacing children is safe in case of ASTExpressionList (done in fuzzExpressionList). In a more
+        // general case, we can change the value of ASTLiteral, which is what we do here
         if (fuzz_rand() % 11 == 0)
         {
             literal->value = fuzzField(literal->value);
