@@ -2,7 +2,7 @@
 import logging
 import os.path as p
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, ArgumentTypeError
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Literal, Optional, Set, Tuple, Union
 
 from git_helper import TWEAK, Git, get_tags, git_runner, removeprefix
 
@@ -120,6 +120,7 @@ class ClickHouseVersion:
 
     @property
     def githash(self) -> str:
+        "returns the CURRENT git SHA1"
         if self._git is not None:
             return self._git.sha
         return "0000000000000000000000000000000000000000"
@@ -137,6 +138,11 @@ class ClickHouseVersion:
         return ".".join(
             (str(self.major), str(self.minor), str(self.patch), str(self.tweak))
         )
+
+    @property
+    def is_lts(self) -> bool:
+        """our X.3 and X.8 are LTS"""
+        return self.minor % 5 == 3
 
     def as_dict(self) -> VERSIONS:
         return {
@@ -180,6 +186,21 @@ class ClickHouseVersion:
 
     def __le__(self, other: "ClickHouseVersion") -> bool:
         return self == other or self < other
+
+    def __hash__(self):
+        return hash(self.__repr__)
+
+    def __str__(self):
+        return f"{self.string}"
+
+    def __repr__(self):
+        return (
+            f"<ClickHouseVersion({self.major},{self.minor},{self.patch},{self.tweak},"
+            f"'{self.description}')>"
+        )
+
+
+ClickHouseVersions = List[ClickHouseVersion]
 
 
 class VersionType:
@@ -267,7 +288,7 @@ def version_arg(version: str) -> ClickHouseVersion:
     raise ArgumentTypeError(f"version {version} does not match tag of plain version")
 
 
-def get_tagged_versions() -> List[ClickHouseVersion]:
+def get_tagged_versions() -> ClickHouseVersions:
     versions = []
     for tag in get_tags():
         try:
@@ -276,6 +297,40 @@ def get_tagged_versions() -> List[ClickHouseVersion]:
         except Exception:
             continue
     return sorted(versions)
+
+
+def get_supported_versions(
+    versions: Optional[Iterable[ClickHouseVersion]] = None,
+) -> Set[ClickHouseVersion]:
+    supported_stable = set()  # type: Set[ClickHouseVersion]
+    supported_lts = set()  # type: Set[ClickHouseVersion]
+    if versions:
+        versions = list(versions)
+    else:
+        # checks that repo is not shallow in background
+        versions = get_tagged_versions()
+    versions.sort()
+    versions.reverse()
+    for version in versions:
+        if len(supported_stable) < 3:
+            if not {
+                sv
+                for sv in supported_stable
+                if version.major == sv.major and version.minor == sv.minor
+            }:
+                supported_stable.add(version)
+        if (version.description == VersionType.LTS or version.is_lts) and len(
+            supported_lts
+        ) < 2:
+            if not {
+                sv
+                for sv in supported_lts
+                if version.major == sv.major and version.minor == sv.minor
+            }:
+                supported_lts.add(version)
+        if len(supported_stable) == 3 and len(supported_lts) == 2:
+            break
+    return supported_lts.union(supported_stable)
 
 
 def update_cmake_version(

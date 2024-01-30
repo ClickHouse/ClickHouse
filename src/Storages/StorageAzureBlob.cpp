@@ -707,7 +707,7 @@ private:
 
 void ReadFromAzureBlob::applyFilters()
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -1121,7 +1121,7 @@ Chunk StorageAzureBlobSource::generate()
     return {};
 }
 
-void StorageAzureBlobSource::addNumRowsToCache(const DB::String & path, size_t num_rows)
+void StorageAzureBlobSource::addNumRowsToCache(const String & path, size_t num_rows)
 {
     String source = fs::path(connection_url) / container / path;
     auto cache_key = getKeyForSchemaCache(source, format, format_settings, getContext());

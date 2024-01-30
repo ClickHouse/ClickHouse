@@ -125,13 +125,13 @@ std::shared_ptr<TSystemLog> createSystemLog(
 {
     if (!config.has(config_prefix))
     {
-        LOG_DEBUG(&Poco::Logger::get("SystemLog"),
+        LOG_DEBUG(getLogger("SystemLog"),
                 "Not creating {}.{} since corresponding section '{}' is missing from config",
                 default_database_name, default_table_name, config_prefix);
 
         return {};
     }
-    LOG_DEBUG(&Poco::Logger::get("SystemLog"),
+    LOG_DEBUG(getLogger("SystemLog"),
               "Creating {}.{} from {}", default_database_name, default_table_name, config_prefix);
 
     SystemLogSettings log_settings;
@@ -143,7 +143,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     {
         /// System tables must be loaded before other tables, but loading order is undefined for all databases except `system`
         LOG_ERROR(
-            &Poco::Logger::get("SystemLog"),
+            getLogger("SystemLog"),
             "Custom database name for a system table specified in config."
             " Table `{}` will be created in `system` database instead of `{}`",
             log_settings.queue_settings.table,
@@ -395,7 +395,7 @@ SystemLog<LogElement>::SystemLog(
     std::shared_ptr<SystemLogQueue<LogElement>> queue_)
     : Base(settings_.queue_settings, queue_)
     , WithContext(context_)
-    , log(&Poco::Logger::get("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
+    , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
     , storage_def(settings_.engine)
     , create_query(serializeAST(*getCreateTableQuery()))
@@ -491,9 +491,9 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         prepareTable();
 
         ColumnsWithTypeAndName log_element_columns;
-        auto log_element_names_and_types = LogElement::getNamesAndTypes();
+        auto log_element_names_and_types = LogElement::getColumnsDescription();
 
-        for (const auto & name_and_type : log_element_names_and_types)
+        for (const auto & name_and_type : log_element_names_and_types.getAll())
             log_element_columns.emplace_back(name_and_type.type, name_and_type.name);
 
         Block block(std::move(log_element_columns));
@@ -635,22 +635,11 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     create->setTable(table_id.table_name);
 
     auto new_columns_list = std::make_shared<ASTColumns>();
+    auto ordinary_columns = LogElement::getColumnsDescription();
+    auto alias_columns = LogElement::getNamesAndAliases();
+    ordinary_columns.setAliases(alias_columns);
 
-    if (const char * custom_column_list = LogElement::getCustomColumnList())
-    {
-        ParserColumnDeclarationList parser;
-        const Settings & settings = getContext()->getSettingsRef();
-
-        ASTPtr columns_list_raw = parseQuery(parser, custom_column_list, "columns declaration list", settings.max_query_size, settings.max_parser_depth);
-        new_columns_list->set(new_columns_list->columns, columns_list_raw);
-    }
-    else
-    {
-        auto ordinary_columns = LogElement::getNamesAndTypes();
-        auto alias_columns = LogElement::getNamesAndAliases();
-
-        new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns));
-    }
+    new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns));
 
     create->set(create->columns_list, new_columns_list);
 
@@ -671,7 +660,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     if (endsWith(engine.name, "MergeTree"))
     {
         auto storage_settings = std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
-        storage_settings->loadFromQuery(*create->storage, getContext());
+        storage_settings->loadFromQuery(*create->storage, getContext(), false);
     }
 
     return create;

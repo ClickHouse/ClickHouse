@@ -329,7 +329,7 @@ StorageDistributed::StorageDistributed(
     , remote_database(remote_database_)
     , remote_table(remote_table_)
     , remote_table_function_ptr(remote_table_function_ptr_)
-    , log(&Poco::Logger::get("StorageDistributed (" + id_.table_name + ")"))
+    , log(getLogger("StorageDistributed (" + id_.table_name + ")"))
     , owned_cluster(std::move(owned_cluster_))
     , cluster_name(getContext()->getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
@@ -1102,7 +1102,7 @@ static ActionsDAGPtr getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
     if (!source)
         return nullptr;
 
-    return ActionsDAG::buildFilterActionsDAG(source->getFilterNodes().nodes, {}, context);
+    return ActionsDAG::buildFilterActionsDAG(source->getFilterNodes().nodes);
 }
 
 
@@ -1140,22 +1140,20 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
 
-    /// Here we take addresses from destination cluster and assume source table exists on these nodes
-    for (const auto & replicas : getCluster()->getShardsAddresses())
-    {
-        /// There will be only one replica, because we consider each replica as a shard
-        for (const auto & node : replicas)
-        {
-            auto connection = std::make_shared<Connection>(
-                node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, ssh::SSHKey(), node.quota_key, node.cluster, node.cluster_secret,
-                "ParallelInsertSelectInititiator",
-                node.compression,
-                node.secure
-            );
+    const auto & current_settings = query_context->getSettingsRef();
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
+    /// Here we take addresses from destination cluster and assume source table exists on these nodes
+    for (const auto & replicas : getCluster()->getShardsInfo())
+    {
+        /// Skip unavailable hosts if necessary
+        auto try_results = replicas.pool->getMany(timeouts, current_settings, PoolMode::GET_MANY, /*async_callback*/ {}, /*skip_unavailable_endpoints*/ true);
+
+        /// There will be only one replica, because we consider each replica as a shard
+        for (const auto & try_result : try_results)
+        {
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                connection,
+                std::vector<IConnectionPool::Entry>{try_result},
                 new_query_str,
                 Block{},
                 query_context,
@@ -1599,7 +1597,7 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
     if (nodes.empty())
         return nullptr;
 
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes, {}, local_context);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes);
 
     size_t limit = local_context->getSettingsRef().optimize_skip_unused_shards_limit;
     if (!limit || limit > SSIZE_MAX)
