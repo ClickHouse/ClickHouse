@@ -15,6 +15,7 @@ DNSCacheUpdater::DNSCacheUpdater(ContextPtr context_, Int32 update_period_second
     , pool(getContext()->getSchedulePool())
 {
     task_handle = pool.createTask("DNSCacheUpdater", [this]{ run(); });
+    update_scheduled_time = nullptr;
 }
 
 void DNSCacheUpdater::run()
@@ -41,12 +42,17 @@ void DNSCacheUpdater::run()
       * - add natural randomization on huge clusters - avoid sending all requests at the same moment of time from different servers.
       */
     task_handle->scheduleAfter(static_cast<size_t>(update_period_seconds) * 1000);
+    update_scheduled_time = &std::chrono::system_clock::now().operator+=(std::chrono::seconds(update_period_seconds));
 }
 
 void DNSCacheUpdater::start()
 {
     LOG_INFO(getLogger("DNSCacheUpdater"), "Update period {} seconds", update_period_seconds);
     task_handle->activateAndSchedule();
+}
+
+std::chrono::system_clock::time_point* DNSCacheUpdater::getUpdateScheduledTime() {
+    return update_scheduled_time;
 }
 
 DNSCacheUpdater::~DNSCacheUpdater()
