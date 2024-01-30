@@ -214,7 +214,7 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
-DDSketch
+DD
 Decrypted
 Deduplicate
 Deduplication
@@ -2136,7 +2136,7 @@ quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
 quantileddsketch
-quantileDDSketch
+quantileDD
 quartile
 queryID
 queryString
