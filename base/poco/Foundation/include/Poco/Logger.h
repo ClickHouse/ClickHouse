@@ -22,6 +22,10 @@
 #include <cstddef>
 #include <map>
 #include <vector>
+
+#include <boost/math/special_functions/fpclassify.hpp>
+#include <boost/smart_ptr/intrusive_ptr.hpp>
+
 #include "Poco/Channel.h"
 #include "Poco/Format.h"
 #include "Poco/Foundation.h"
@@ -34,7 +38,7 @@ namespace Poco
 
 class Exception;
 class Logger;
-using LoggerPtr = std::shared_ptr<Logger>;
+using LoggerPtr = boost::intrusive_ptr<Logger>;
 
 class Foundation_API Logger : public Channel
 /// Logger is a special Channel that acts as the main
@@ -871,7 +875,7 @@ public:
     /// If the Logger does not yet exist, it is created, based
     /// on its parent logger.
 
-    static LoggerPtr getShared(const std::string & name);
+    static LoggerPtr getShared(const std::string & name, bool should_be_owned_by_shared_ptr_if_created = true);
     /// Returns a shared pointer to the Logger with the given name.
     /// If the Logger does not yet exist, it is created, based
     /// on its parent logger.
@@ -949,6 +953,9 @@ private:
     static std::pair<LoggerMapIterator, bool> add(Logger * pLogger);
     static std::optional<LoggerMapIterator> find(const std::string & name);
     static Logger * findRawPtr(const std::string & name);
+
+    friend void intrusive_ptr_add_ref(Logger * ptr);
+    friend void intrusive_ptr_release(Logger * ptr);
 
     Logger();
     Logger(const Logger &);

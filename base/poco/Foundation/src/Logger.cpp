@@ -302,38 +302,9 @@ void Logger::formatDump(std::string& message, const void* buffer, std::size_t le
 namespace
 {
 
-struct LoggerDeleter
-{
-	void operator()(Poco::Logger * logger)
-	{
-		std::lock_guard<std::mutex> lock(getLoggerMutex());
-
-		/// If logger infrastructure is destroyed just decrement logger reference count
-		if (!_pLoggerMap)
-		{
-			logger->release();
-			return;
-		}
-
-		auto it = _pLoggerMap->find(logger->name());
-		assert(it != _pLoggerMap->end());
-
-		/** If reference count is 1, this means this shared pointer owns logger
-		  * and need destroy it.
-		  */
-		size_t reference_count_before_release = logger->release();
-		if (reference_count_before_release == 1)
-		{
-			assert(it->second.owned_by_shared_ptr);
-			_pLoggerMap->erase(it);
-		}
-	}
-};
-
-
 inline LoggerPtr makeLoggerPtr(Logger & logger)
 {
-	return std::shared_ptr<Logger>(&logger, LoggerDeleter());
+	return LoggerPtr(&logger, false /*add_ref*/);
 }
 
 }
@@ -359,7 +330,7 @@ Logger& Logger::get(const std::string& name)
 }
 
 
-LoggerPtr Logger::getShared(const std::string & name)
+LoggerPtr Logger::getShared(const std::string & name, bool should_be_owned_by_shared_ptr_if_created)
 {
 	std::lock_guard<std::mutex> lock(getLoggerMutex());
 	auto [it, inserted] = unsafeGet(name);
@@ -367,7 +338,7 @@ LoggerPtr Logger::getShared(const std::string & name)
 	/** If during `unsafeGet` logger was created, then this shared pointer owns it.
 	  * If logger was already created, then this shared pointer does not own it.
 	  */
-	if (inserted)
+	if (inserted && should_be_owned_by_shared_ptr_if_created)
 	{
 		it->second.owned_by_shared_ptr = true;
 	}
@@ -491,6 +462,43 @@ Logger * Logger::findRawPtr(const std::string & name)
 	return (*optional_it)->second.logger;
 }
 
+
+void intrusive_ptr_add_ref(Logger * ptr)
+{
+	ptr->duplicate();
+}
+
+
+void intrusive_ptr_release(Logger * ptr)
+{
+	size_t reference_count_before = ptr->_counter.fetch_sub(1, std::memory_order_acq_rel);
+	if (reference_count_before != 1)
+		return;
+
+	{
+		std::lock_guard<std::mutex> lock(getLoggerMutex());
+
+		/// It is possible that during release other thread created logger
+		if (ptr->_counter.load(std::memory_order_relaxed) > 0)
+			return;
+
+		if (_pLoggerMap)
+		{
+			auto it = _pLoggerMap->find(ptr->name());
+			assert(it != _pLoggerMap->end());
+
+			/** If reference count is 0, this means this intrusive pointer owns logger
+			  * and need destroy it.
+			  */
+			assert(it->second.owned_by_shared_ptr);
+			_pLoggerMap->erase(it);
+		}
+	}
+
+	delete ptr;
+}
+
+
 void Logger::names(std::vector<std::string>& names)
 {
 	std::lock_guard<std::mutex> lock(getLoggerMutex());
@@ -505,12 +513,14 @@ void Logger::names(std::vector<std::string>& names)
 	}
 }
 
+
 std::pair<Logger::LoggerMapIterator, bool> Logger::unsafeCreate(const std::string & name, Channel * pChannel, int level)
 {
 	if (find(name)) throw ExistsException();
 	Logger* pLogger = new Logger(name, pChannel, level);
 	return add(pLogger);
 }
+
 
 Logger& Logger::parent(const std::string& name)
 {
