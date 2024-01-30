@@ -55,7 +55,7 @@ void HDFSBuilderWrapper::loadFromConfig(
             need_kinit = true;
             hadoop_kerberos_keytab = config.getString(key_path);
             #else // USE_KRB5
-            LOG_WARNING(&Poco::Logger::get("HDFSClient"), "hadoop_kerberos_keytab parameter is ignored because ClickHouse was built without support of krb5 library.");
+            LOG_WARNING(getLogger("HDFSClient"), "hadoop_kerberos_keytab parameter is ignored because ClickHouse was built without support of krb5 library.");
             #endif // USE_KRB5
             continue;
         }
@@ -66,7 +66,7 @@ void HDFSBuilderWrapper::loadFromConfig(
             hadoop_kerberos_principal = config.getString(key_path);
             hdfsBuilderSetPrincipal(hdfs_builder, hadoop_kerberos_principal.c_str());
             #else // USE_KRB5
-            LOG_WARNING(&Poco::Logger::get("HDFSClient"), "hadoop_kerberos_principal parameter is ignored because ClickHouse was built without support of krb5 library.");
+            LOG_WARNING(getLogger("HDFSClient"), "hadoop_kerberos_principal parameter is ignored because ClickHouse was built without support of krb5 library.");
             #endif // USE_KRB5
             continue;
         }
@@ -81,7 +81,7 @@ void HDFSBuilderWrapper::loadFromConfig(
             hadoop_security_kerberos_ticket_cache_path = config.getString(key_path);
             // standard param - pass further
             #else // USE_KRB5
-            LOG_WARNING(&Poco::Logger::get("HDFSClient"), "hadoop.security.kerberos.ticket.cache.path parameter is ignored because ClickHouse was built without support of krb5 library.");
+            LOG_WARNING(getLogger("HDFSClient"), "hadoop.security.kerberos.ticket.cache.path parameter is ignored because ClickHouse was built without support of krb5 library.");
             #endif // USE_KRB5
         }
 
@@ -95,7 +95,7 @@ void HDFSBuilderWrapper::loadFromConfig(
 #if USE_KRB5
 void HDFSBuilderWrapper::runKinit()
 {
-    LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "Running KerberosInit");
+    LOG_DEBUG(getLogger("HDFSClient"), "Running KerberosInit");
     try
     {
         kerberosInit(hadoop_kerberos_keytab,hadoop_kerberos_principal,hadoop_security_kerberos_ticket_cache_path);
@@ -104,7 +104,7 @@ void HDFSBuilderWrapper::runKinit()
     {
         throw Exception(ErrorCodes::KERBEROS_ERROR, "KerberosInit failure: {}", getExceptionMessage(e, false));
     }
-    LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "Finished KerberosInit");
+    LOG_DEBUG(getLogger("HDFSClient"), "Finished KerberosInit");
 }
 #endif // USE_KRB5
 

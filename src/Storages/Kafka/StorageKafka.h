@@ -20,6 +20,7 @@ namespace DB
 {
 
 class StorageSystemKafkaConsumers;
+class ReadFromStorageKafka;
 
 struct StorageKafkaInterceptors;
 
@@ -48,7 +49,8 @@ public:
     void startup() override;
     void shutdown(bool is_drop) override;
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -86,6 +88,8 @@ public:
     SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), consumers};  }
 
 private:
+    friend class ReadFromStorageKafka;
+
     // Configuration and state
     std::unique_ptr<KafkaSettings> kafka_settings;
     Macros::MacroExpansionInfo macros_info;
@@ -97,7 +101,7 @@ private:
     const size_t max_rows_per_message;
     const String schema_name;
     const size_t num_consumers; /// total number of consumers
-    Poco::Logger * log;
+    LoggerPtr log;
     const bool intermediate_commit;
     const SettingsChanges settings_adjustments;
 

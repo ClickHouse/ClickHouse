@@ -62,7 +62,7 @@ namespace ErrorCodes
     extern const int ABORTED;
 }
 
-static Block adoptBlock(const Block & header, const Block & block, Poco::Logger * log)
+static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log)
 {
     if (blocksHaveEqualStructure(header, block))
         return block;
@@ -84,7 +84,7 @@ static Block adoptBlock(const Block & header, const Block & block, Poco::Logger 
 }
 
 
-static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & block, size_t repeats, Poco::Logger * log)
+static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & block, size_t repeats, LoggerPtr log)
 {
     Block adopted_block = adoptBlock(executor.getHeader(), block, log);
     for (size_t i = 0; i < repeats; ++i)
@@ -126,7 +126,7 @@ DistributedSink::DistributedSink(
     , insert_timeout(insert_timeout_)
     , main_table(main_table_)
     , columns_to_send(columns_to_send_.begin(), columns_to_send_.end())
-    , log(&Poco::Logger::get("DistributedSink"))
+    , log(getLogger("DistributedSink"))
 {
     const auto & settings = context->getSettingsRef();
     if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)

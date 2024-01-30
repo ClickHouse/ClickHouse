@@ -34,7 +34,7 @@ private:
     const CoordinationMode coordination_mode;
     RangesInDataPartsDescription buffered_ranges;
     bool no_more_tasks_available{false};
-    Poco::Logger * log = &Poco::Logger::get("MergeTreeReadPoolParallelReplicas");
+    LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicas");
 };
 
 }

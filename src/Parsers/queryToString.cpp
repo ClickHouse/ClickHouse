@@ -3,6 +3,11 @@
 
 namespace DB
 {
+    String queryToStringNullable(const ASTPtr & query)
+    {
+        return query ? queryToString(query) : "";
+    }
+
     String queryToString(const ASTPtr & query)
     {
         return queryToString(*query);

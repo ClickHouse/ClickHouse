@@ -399,7 +399,7 @@ public:
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
 
 private:
-    template<bool> friend class NotJoinedHash;
+    friend class NotJoinedHash;
 
     friend class JoinSource;
 
@@ -446,7 +446,7 @@ private:
     /// Several instances can be created, for example, in GraceHashJoin to handle different buckets
     String instance_log_id;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Should be set via setLock to protect hash table from modification from StorageJoin
     /// If set HashJoin instance is not available for modification (addBlockToJoin)

@@ -15,7 +15,7 @@
 namespace DB
 {
 
-NamesAndTypesList OpenTelemetrySpanLogElement::getNamesAndTypes()
+ColumnsDescription OpenTelemetrySpanLogElement::getColumnsDescription()
 {
     auto span_kind_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -30,7 +30,8 @@ NamesAndTypesList OpenTelemetrySpanLogElement::getNamesAndTypes()
 
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
-    return {
+    return ColumnsDescription
+    {
         {"hostname", low_cardinality_string},
         {"trace_id", std::make_shared<DataTypeUUID>()},
         {"span_id", std::make_shared<DataTypeUInt64>()},

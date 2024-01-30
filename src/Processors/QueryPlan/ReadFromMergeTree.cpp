@@ -21,6 +21,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
+#include <Processors/Transforms/SelectByIndicesTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexAnnoy.h>
@@ -39,6 +40,7 @@
 #include <Common/JSONBuilder.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
+#include "Processors/QueryPlan/IQueryPlanStep.h"
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 
@@ -136,7 +138,7 @@ static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
 
 /// build sort description for output stream
 static void updateSortDescriptionForOutputStream(
-    DataStream & output_stream, const Names & sorting_key_columns, const int sort_direction, InputOrderInfoPtr input_order_info, PrewhereInfoPtr prewhere_info)
+    DataStream & output_stream, const Names & sorting_key_columns, const int sort_direction, InputOrderInfoPtr input_order_info, PrewhereInfoPtr prewhere_info, bool enable_vertical_final)
 {
     /// Updating sort description can be done after PREWHERE actions are applied to the header.
     /// Aftert PREWHERE actions are applied, column names in header can differ from storage column names due to aliases
@@ -183,7 +185,7 @@ static void updateSortDescriptionForOutputStream(
 
     if (!sort_description.empty())
     {
-        if (input_order_info)
+        if (input_order_info && !enable_vertical_final)
         {
             output_stream.sort_scope = DataStream::SortScope::Stream;
             const size_t used_prefix_of_sorting_key_size = input_order_info->used_prefix_of_sorting_key_size;
@@ -245,7 +247,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     size_t num_streams_,
     bool sample_factor_column_queried_,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
-    Poco::Logger * log_,
+    LoggerPtr log_,
     AnalysisResultPtr analyzed_result_ptr_,
     bool enable_parallel_reading)
     : SourceStepWithFilter(DataStream{.header = MergeTreeSelectProcessor::transformHeader(
@@ -272,7 +274,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     , requested_num_streams(num_streams_)
     , sample_factor_column_queried(sample_factor_column_queried_)
     , max_block_numbers_to_read(std::move(max_block_numbers_to_read_))
-    , log(log_)
+    , log(std::move(log_))
     , analyzed_result_ptr(analyzed_result_ptr_)
     , is_parallel_reading_from_replicas(enable_parallel_reading)
 {
@@ -310,13 +312,15 @@ ReadFromMergeTree::ReadFromMergeTree(
 
     /// Add explicit description.
     setStepDescription(data.getStorageID().getFullNameNotQuoted());
+    enable_vertical_final = query_info.isFinal() && context->getSettingsRef().enable_vertical_final && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
 
     updateSortDescriptionForOutputStream(
         *output_stream,
         storage_snapshot->getMetadataForQuery()->getSortingKeyColumns(),
         getSortDirection(),
         query_info.input_order_info,
-        prewhere_info);
+        prewhere_info,
+        enable_vertical_final);
 }
 
 
@@ -1000,7 +1004,9 @@ static void addMergingFinal(
     const SortDescription & sort_description,
     MergeTreeData::MergingParams merging_params,
     Names partition_key_columns,
-    size_t max_block_size_rows)
+    size_t max_block_size_rows,
+    bool enable_vertical_final,
+    bool can_merge_final_indices_to_next_step_filter)
 {
     const auto & header = pipe.getHeader();
     size_t num_outputs = pipe.numOutputPorts();
@@ -1029,7 +1035,7 @@ static void addMergingFinal(
 
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty());
+                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty(), enable_vertical_final);
 
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingTransform>(header, num_outputs,
@@ -1044,6 +1050,9 @@ static void addMergingFinal(
     };
 
     pipe.addTransform(get_merging_processor());
+    if (enable_vertical_final && !can_merge_final_indices_to_next_step_filter)
+        pipe.addSimpleTransform([](const Block & header_)
+                                { return std::make_shared<SelectByIndicesTransform>(header_); });
 }
 
 bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
@@ -1084,7 +1093,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 {
     const auto & settings = context->getSettingsRef();
     const auto & data_settings = data.getSettings();
-
     PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
 
     assert(num_streams == requested_num_streams);
@@ -1220,7 +1228,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 sort_description,
                 data.merging_params,
                 partition_key_columns,
-                block_size.max_block_size_rows);
+                block_size.max_block_size_rows,
+                enable_vertical_final,
+                query_info.has_filters_and_no_array_join_before_filter);
 
         merging_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
     }
@@ -1313,7 +1323,7 @@ static ActionsDAGPtr buildFilterDAG(
         }
     }
 
-    return ActionsDAG::buildFilterActionsDAG(nodes, node_name_to_input_node_column, context);
+    return ActionsDAG::buildFilterActionsDAG(nodes, node_name_to_input_node_column);
 }
 
 static void buildIndexes(
@@ -1466,7 +1476,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const MergeTreeData & data,
     const Names & real_column_names,
     bool sample_factor_column_queried,
-    Poco::Logger * log,
+    LoggerPtr log,
     std::optional<Indexes> & indexes)
 {
     auto updated_query_info_with_filter_dag = query_info;
@@ -1498,7 +1508,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     const MergeTreeData & data,
     const Names & real_column_names,
     bool sample_factor_column_queried,
-    Poco::Logger * log,
+    LoggerPtr log,
     std::optional<Indexes> & indexes)
 {
     AnalysisResult result;
@@ -1664,6 +1674,10 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         output_stream->sort_scope = DataStream::SortScope::Stream;
     }
 
+    /// All *InOrder optimization rely on an assumption that output stream is sorted, but vertical FINAL breaks this rule
+    /// Let prefer in-order optimization over vertical FINAL for now
+    enable_vertical_final = false;
+
     return true;
 }
 
@@ -1688,7 +1702,8 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
         storage_snapshot->getMetadataForQuery()->getSortingKeyColumns(),
         getSortDirection(),
         query_info.input_order_info,
-        prewhere_info);
+        prewhere_info,
+        enable_vertical_final);
 }
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()

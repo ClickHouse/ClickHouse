@@ -47,7 +47,7 @@ const auto DRAIN_TIMEOUT_MS = 5000ms;
 
 
 KafkaConsumer::KafkaConsumer(
-    Poco::Logger * log_,
+    LoggerPtr log_,
     size_t max_batch_size,
     size_t poll_timeout_,
     bool intermediate_commit_,

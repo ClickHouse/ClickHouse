@@ -716,6 +716,7 @@ void RemoteQueryExecutor::sendExternalTables()
         limits.mode = LimitsMode::LIMITS_TOTAL;
         limits.speed_limits.max_execution_time = settings.max_execution_time;
         limits.timeout_overflow_mode = settings.timeout_overflow_mode;
+        limits.speed_limits.max_estimated_execution_time = settings.max_estimated_execution_time;
 
         for (size_t i = 0; i < count; ++i)
         {
