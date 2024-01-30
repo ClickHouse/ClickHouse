@@ -192,6 +192,20 @@ ColumnsDescription StorageSnapshot::getDescriptionForColumns(const Names & colum
     return res;
 }
 
+StreamSubscriptionPtr StorageSnapshot::getStreamSubscription() const
+{
+    if (stream_subscription)
+    {
+        LOG_DEBUG(&Poco::Logger::get("StorageSnapshot"), "extracting prepared subscription from snapshot");
+        return stream_subscription;
+    }
+
+    LOG_DEBUG(&Poco::Logger::get("StorageSnapshot"), "subscription is not synchronized with snapshot");
+
+    /// not synchronized with snapshot
+    return storage.subscribeForChanges();
+}
+
 namespace
 {
     using DenseHashSet = google::dense_hash_set<StringRef, StringRefHash>;

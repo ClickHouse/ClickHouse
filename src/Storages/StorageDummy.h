@@ -22,7 +22,9 @@ public:
     bool supportsDynamicSubcolumns() const override { return true; }
     bool canMoveConditionsToPrewhere() const override { return false; }
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
+    using IStorage::getStorageSnapshot;
+    StorageSnapshotPtr getStorageSnapshot(
+        const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/, const StorageSnapshotSettings& /*additional_settings*/) const override
     {
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns);
     }

@@ -17,6 +17,7 @@ struct MergeTreeSink::DelayedChunk
 {
     struct Partition
     {
+        BlockWithPartition block_with_partition;
         MergeTreeDataWriter::TemporaryPart temp_part;
         UInt64 elapsed_ns;
         String block_dedup_token;
@@ -129,6 +130,7 @@ void MergeTreeSink::consume(Chunk chunk)
 
         partitions.emplace_back(MergeTreeSink::DelayedChunk::Partition
         {
+            .block_with_partition = std::move(current_block),
             .temp_part = std::move(temp_part),
             .elapsed_ns = elapsed_ns,
             .block_dedup_token = std::move(block_dedup_token),
@@ -180,6 +182,10 @@ void MergeTreeSink::finishDelayedChunk()
 
             added = storage.renameTempPartAndAdd(part, transaction, lock);
             transaction.commit(&lock);
+
+            /// if block is added: push current_block to all subscribers under the same lock as commit
+            if (added)
+                storage.subscription_manager.pushToAll(std::move(partition.block_with_partition.block));
         }
 
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added

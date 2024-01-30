@@ -228,5 +228,8 @@ struct SelectQueryInfo
     std::vector<UInt8> columns_mask;
 
     bool isFinal() const;
+
+    bool isStream() const;
+
 };
 }

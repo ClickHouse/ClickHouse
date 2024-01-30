@@ -26,10 +26,10 @@ TableNode::TableNode(StoragePtr storage_, TableLockHolder storage_lock_, Storage
 {
 }
 
-TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
+TableNode::TableNode(StoragePtr storage_, const ContextPtr & context, const StorageSnapshotSettings & additional_settings)
     : TableNode(storage_,
         storage_->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout),
-        storage_->getStorageSnapshot(storage_->getInMemoryMetadataPtr(), context))
+        storage_->getStorageSnapshot(storage_->getInMemoryMetadataPtr(), context, additional_settings))
 {
 }
 

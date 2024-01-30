@@ -31,6 +31,9 @@ public:
     /// QueryPipeline has single port. Totals or extremes ports are not counted.
     bool has_single_port = false;
 
+    /// True if data stream is infinite. Streaming Query
+    bool is_infinite = false;
+
     /// Sorting scope. Please keep the mutual order (more strong mode should have greater value).
     enum class SortScope
     {
@@ -52,6 +55,7 @@ public:
     bool hasEqualPropertiesWith(const DataStream & other) const
     {
         return has_single_port == other.has_single_port
+            && is_infinite == other.is_infinite
             && sort_description == other.sort_description
             && (sort_description.empty() || sort_scope == other.sort_scope);
     }
@@ -80,6 +84,7 @@ public:
     ///   or pipeline should be completed otherwise.
     virtual QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) = 0;
 
+    bool isInputInfinite() const;
     const DataStreams & getInputStreams() const { return input_streams; }
 
     bool hasOutputStream() const { return output_stream.has_value(); }

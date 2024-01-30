@@ -23,6 +23,8 @@ DataStream ITransformingStep::createOutputStream(
     output_stream.has_single_port = stream_traits.returns_single_stream
                                      || (input_stream.has_single_port && stream_traits.preserves_number_of_streams);
 
+    output_stream.is_infinite = input_stream.is_infinite;
+
     if (stream_traits.preserves_sorting)
     {
         output_stream.sort_description = input_stream.sort_description;

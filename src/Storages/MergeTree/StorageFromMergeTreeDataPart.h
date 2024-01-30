@@ -45,8 +45,9 @@ public:
 
     String getName() const override { return "FromMergeTreeDataPart"; }
 
+    using IStorage::getStorageSnapshot;
     StorageSnapshotPtr getStorageSnapshot(
-        const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
+        const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/, const StorageSnapshotSettings & /*additional_settings*/) const override
     {
         const auto & storage_columns = metadata_snapshot->getColumns();
         if (!hasDynamicSubcolumns(storage_columns))

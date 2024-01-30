@@ -267,6 +267,8 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
 
     if (table_expression_modifiers)
     {
+        result_table_expression->stream = table_expression_modifiers->hasStream();
+
         result_table_expression->final = table_expression_modifiers->hasFinal();
 
         const auto & sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();

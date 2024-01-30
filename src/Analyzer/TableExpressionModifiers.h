@@ -15,9 +15,11 @@ public:
     using Rational = ASTSampleRatio::Rational;
 
     TableExpressionModifiers(bool has_final_,
+        bool has_stream_,
         std::optional<Rational> sample_size_ratio_,
         std::optional<Rational> sample_offset_ratio_)
         : has_final(has_final_)
+        , has_stream(has_stream_)
         , sample_size_ratio(sample_size_ratio_)
         , sample_offset_ratio(sample_offset_ratio_)
     {}
@@ -26,6 +28,12 @@ public:
     bool hasFinal() const
     {
         return has_final;
+    }
+
+    /// Returns true if stream is specified, false otherwise
+    bool hasStream() const
+    {
+        return has_stream;
     }
 
     /// Set has final value
@@ -69,13 +77,14 @@ public:
 
 private:
     bool has_final = false;
+    bool has_stream = false;
     std::optional<Rational> sample_size_ratio;
     std::optional<Rational> sample_offset_ratio;
 };
 
 inline bool operator==(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)
 {
-    return lhs.hasFinal() == rhs.hasFinal() && lhs.getSampleSizeRatio() == rhs.getSampleSizeRatio() && lhs.getSampleOffsetRatio() == rhs.getSampleOffsetRatio();
+    return lhs.hasFinal() == rhs.hasFinal() && lhs.hasStream() == rhs.hasStream() && lhs.getSampleSizeRatio() == rhs.getSampleSizeRatio() && lhs.getSampleOffsetRatio() == rhs.getSampleOffsetRatio();
 }
 
 inline bool operator!=(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)
