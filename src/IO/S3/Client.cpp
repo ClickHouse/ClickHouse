@@ -3,7 +3,6 @@
 #if USE_AWS_S3
 
 #include <aws/core/client/CoreErrors.h>
-#include <aws/core/client/DefaultRetryStrategy.h>
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
@@ -15,7 +14,6 @@
 
 #include <Poco/Net/NetException.h>
 
-#include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/PocoHTTPClientFactory.h>
 #include <IO/S3/AWSLogger.h>
@@ -29,6 +27,7 @@
 
 #include <base/sleep.h>
 
+#include <algorithm>
 
 namespace ProfileEvents
 {
@@ -37,6 +36,9 @@ namespace ProfileEvents
 
     extern const Event DiskS3WriteRequestsErrors;
     extern const Event DiskS3ReadRequestsErrors;
+
+    extern const Event S3Clients;
+    extern const Event TinyS3Clients;
 }
 
 namespace DB
@@ -46,6 +48,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_REDIRECTS;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace S3
@@ -103,6 +106,19 @@ void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_c
     assert_cast<const Client::RetryStrategy &>(*client_config.retryStrategy);
 }
 
+void validateCredentials(const Aws::Auth::AWSCredentials& auth_credentials)
+{
+    if (auth_credentials.GetAWSAccessKeyId().empty())
+    {
+        return;
+    }
+    /// Follow https://docs.aws.amazon.com/IAM/latest/APIReference/API_AccessKey.html
+    if (!std::all_of(auth_credentials.GetAWSAccessKeyId().begin(), auth_credentials.GetAWSAccessKeyId().end(), isWordCharASCII))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Access key id has an invalid character");
+    }
+}
+
 void addAdditionalAMZHeadersToCanonicalHeadersList(
     Aws::AmazonWebServiceRequest & request,
     const HTTPHeaderEntries & extra_headers
@@ -128,6 +144,7 @@ std::unique_ptr<Client> Client::create(
     const ClientSettings & client_settings)
 {
     verifyClientConfiguration(client_configuration);
+    validateCredentials(credentials_provider->GetAWSCredentials());
     return std::unique_ptr<Client>(
         new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, client_settings));
 }
@@ -167,7 +184,7 @@ Client::Client(
     , client_settings(client_settings_)
     , max_redirects(max_redirects_)
     , sse_kms_config(std::move(sse_kms_config_))
-    , log(&Poco::Logger::get("S3Client"))
+    , log(getLogger("S3Client"))
 {
     auto * endpoint_provider = dynamic_cast<Aws::S3::Endpoint::S3DefaultEpProviderBase *>(accessEndpointProvider().get());
     endpoint_provider->GetBuiltInParameters().GetParameter("Region").GetString(explicit_region);
@@ -199,6 +216,8 @@ Client::Client(
 
     cache = std::make_shared<ClientCache>();
     ClientCacheRegistry::instance().registerClient(cache);
+
+    ProfileEvents::increment(ProfileEvents::S3Clients);
 }
 
 Client::Client(
@@ -215,10 +234,26 @@ Client::Client(
     , provider_type(other.provider_type)
     , max_redirects(other.max_redirects)
     , sse_kms_config(other.sse_kms_config)
-    , log(&Poco::Logger::get("S3Client"))
+    , log(getLogger("S3Client"))
 {
     cache = std::make_shared<ClientCache>(*other.cache);
     ClientCacheRegistry::instance().registerClient(cache);
+
+    ProfileEvents::increment(ProfileEvents::TinyS3Clients);
+}
+
+
+Client::~Client()
+{
+    try
+    {
+        ClientCacheRegistry::instance().unregisterClient(cache.get());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+        throw;
+    }
 }
 
 Aws::Auth::AWSCredentials Client::getCredentials() const
@@ -670,9 +705,9 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
     if (api_mode == ApiMode::GCS)
     {
         /// some GCS requests don't like S3 specific headers that the client sets
+        /// all "x-amz-*" headers have to be either converted or deleted
+        /// note that "amz-sdk-invocation-id" and "amz-sdk-request" are preserved
         httpRequest->DeleteHeader("x-amz-api-version");
-        httpRequest->DeleteHeader("amz-sdk-invocation-id");
-        httpRequest->DeleteHeader("amz-sdk-request");
     }
 }
 
@@ -819,7 +854,7 @@ void ClientCacheRegistry::clearCacheForAll()
         }
         else
         {
-            LOG_INFO(&Poco::Logger::get("ClientCacheRegistry"), "Deleting leftover S3 client cache");
+            LOG_INFO(getLogger("ClientCacheRegistry"), "Deleting leftover S3 client cache");
             it = client_caches.erase(it);
         }
     }
