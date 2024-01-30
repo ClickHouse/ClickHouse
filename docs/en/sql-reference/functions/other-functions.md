@@ -2869,6 +2869,51 @@ SELECT v, variantElement(v, 'String'), variantElement(v, 'UInt64'), variantEleme
 └───────────────┴─────────────────────────────┴─────────────────────────────┴────────────────────────────────────┘
 ```
 
+## variantType
+
+Returns the variant type name for each row of `Variant` column. If row contains NULL, it returns `'None'` for it.
+
+**Syntax**
+
+```sql
+variantType(variant)
+```
+
+**Arguments**
+
+- `variant` — Variant column. [Variant](../../sql-reference/data-types/variant.md).
+
+**Returned value**
+
+- Enum8 column with variant type name for each row.
+
+**Example**
+
+```sql
+CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+SELECT variantType(v) FROM test;
+```
+
+```text
+┌─variantType(v)─┐
+│ None           │
+│ UInt64         │
+│ String         │
+│ Array(UInt64)  │
+└────────────────┘
+```
+
+```sql
+SELECT toTypeName(variantType(v)) FROM test LIMIT 1;
+```
+
+```text
+┌─toTypeName(variantType(v))──────────────────────────────────────────┐
+│ Enum8('None' = -1, 'Array(UInt64)' = 0, 'String' = 1, 'UInt64' = 2) │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
 ## minSampleSizeConversion
 
 Calculates minimum required sample size for an A/B test comparing conversions (proportions) in two samples.
