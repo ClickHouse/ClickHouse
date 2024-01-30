@@ -21,7 +21,6 @@ private:
 
     void run() const;
     bool skipRun(size_t batch_size, Logpointer start, Logpointer end) const;
-    void tryWriteSnapshotForZero() const;
     void updateSnapshotWithLogEntries(Logpointer start, Logpointer end) const;
     Logpointer reconcile(Logpointer start, Logpointer end, Exception && e) const;
     VFSLogItem getBatch(Logpointer start, Logpointer end) const;

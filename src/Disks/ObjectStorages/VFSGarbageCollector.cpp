@@ -30,27 +30,16 @@ extern const int LOGICAL_ERROR;
 VFSGarbageCollector::VFSGarbageCollector(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool)
     : storage(storage_), log(getLogger(fmt::format("VFSGC({})", storage_.getName())))
 {
-    auto create_parents = [&] { storage.zookeeper()->createAncestors(storage.traits.gc_lock_path); };
-    create_parents();
     LOG_INFO(log, "GC started");
 
     *static_cast<BackgroundSchedulePoolTaskHolder *>(this) = pool.createTask(
         log->name(),
-        [this, create_parents]
+        [this]
         {
             settings = storage.settings.get(); // update each run to capture new settings
             try
             {
                 run();
-            }
-            catch (const Coordination::Exception & e)
-            {
-                tryLogCurrentException(log, __PRETTY_FUNCTION__);
-                if (e.code == Coordination::Error::ZNONODE)
-                {
-                    LOG_ERROR(log, "Got no node error, will try to recreate VFS tree");
-                    create_parents();
-                }
             }
             catch (...)
             {
@@ -69,10 +58,16 @@ void VFSGarbageCollector::run() const
     Stopwatch stop_watch;
 
     using enum Coordination::Error;
-    if (auto code = storage.zookeeper()->tryCreate(storage.traits.gc_lock_path, "", EPHEMERAL); code == ZNODEEXISTS)
+    const String & lock_path = storage.traits.gc_lock_path;
+    if (const auto code = storage.zookeeper()->tryCreate(lock_path, "", EPHEMERAL); code == ZNODEEXISTS)
     {
         LOG_DEBUG(log, "Failed to acquire lock, sleeping");
         return;
+    }
+    else if (code == ZNONODE)
+    {
+        LOG_ERROR(log, "{} not found, will recreate ZooKeeper nodes", storage.traits.gc_lock_path);
+        return storage.createNodes();
     }
     else if (code != ZOK)
         throw Coordination::Exception(code);
@@ -85,7 +80,7 @@ void VFSGarbageCollector::run() const
         else
         {
             ProfileEvents::increment(skip_run ? ProfileEvents::VFSGcRunsSkipped : ProfileEvents::VFSGcRunsException);
-            storage.zookeeper()->remove(storage.traits.gc_lock_path);
+            storage.zookeeper()->remove(lock_path);
         };
         ProfileEvents::increment(ProfileEvents::VFSGcTotalMicroseconds, stop_watch.elapsedMicroseconds());
     });
@@ -110,8 +105,6 @@ void VFSGarbageCollector::run() const
 
     if ((skip_run = skipRun(batch_size, start, end)))
         return;
-    if (start == 0)
-        tryWriteSnapshotForZero();
 
     LOG_DEBUG(log, "Processing range [{};{}]", start, end);
     updateSnapshotWithLogEntries(start, end);
@@ -152,16 +145,6 @@ bool VFSGarbageCollector::skipRun(size_t batch_size, Logpointer start, Logpointe
     return delta < wait_ms;
 }
 
-void VFSGarbageCollector::tryWriteSnapshotForZero() const
-{
-    const StoredObject object = getSnapshotObject(0);
-    if (storage.object_storage->exists(object))
-        return;
-    LOG_DEBUG(log, "Didn't find snapshot before start, writing empty file");
-    auto buf = storage.object_storage->writeObject(object, WriteMode::Rewrite);
-    Lz4DeflatingWriteBuffer{std::move(buf), settings->snapshot_lz4_compression_level}.finalize();
-}
-
 void VFSGarbageCollector::updateSnapshotWithLogEntries(Logpointer start, Logpointer end) const
 {
     IObjectStorage & object_storage = *storage.object_storage;
@@ -186,8 +169,8 @@ void VFSGarbageCollector::updateSnapshotWithLogEntries(Logpointer start, Logpoin
         const Logpointer new_start = reconcile(start_regarding_zero, end, std::move(e));
         if (new_start == end)
             return;
-        // TODO myrrc Here, we remove only one of snapshots. What if there were multiple candidates, shouldn't we
-        // remove all of them?
+        // TODO myrrc if there are multiple candidates, shouldn't we remove all of them?
+        LOG_DEBUG(log, "Selected snapshot {} as best candidate", new_start);
         populate_old_snapshot(new_start);
     }
 
@@ -214,12 +197,10 @@ void VFSGarbageCollector::updateSnapshotWithLogEntries(Logpointer start, Logpoin
     object_storage.removeObjects(obsolete);
 }
 
-// Conditional [[noreturn]] doesn't exist
-#pragma clang diagnostic ignored "-Wmissing-noreturn"
+#pragma clang diagnostic ignored "-Wmissing-noreturn" // Conditional [[noreturn]] doesn't exist
 static void check404(std::exception & e)
 {
-    // TODO myrrc this works only for s3 and azure
-    if (false)
+    if (false) // TODO myrrc this works only for s3 and azure
     {
     }
 #if USE_AWS_S3
@@ -244,35 +225,46 @@ constexpr std::string_view SNAPSHOTS_PATH = "/snapshots";
 Logpointer VFSGarbageCollector::reconcile(Logpointer start, Logpointer end, Exception && e) const
 {
     check404(e);
-    LOG_WARNING(log, "Snapshot for {} not found", start);
+    const bool starting = start == 0;
+    if (!starting)
+        LOG_WARNING(log, "Snapshot for {} not found", start);
 
-    const fs::path snapshots_folder = storage.getMetadataObject(SNAPSHOTS_PATH).remote_path;
+    const fs::path snapshots_path = storage.getMetadataObject(SNAPSHOTS_PATH).remote_path;
     RelativePathsWithMetadata snapshots;
-    if (storage.object_storage->listObjects(snapshots_folder, snapshots, 5); snapshots.empty())
+    constexpr int max_candidates = 5;
+    storage.object_storage->listObjects(snapshots_path, snapshots, max_candidates);
+    if (const bool empty = snapshots.empty(); empty && starting)
     {
-        e.addMessage("Did not find any snapshots in {}", snapshots_folder);
+        LOG_DEBUG(log, "Didn't find snapshot before start, writing empty file");
+        const StoredObject object = getSnapshotObject(0);
+        auto buf = storage.object_storage->writeObject(object, WriteMode::Rewrite);
+        Lz4DeflatingWriteBuffer{std::move(buf), settings->snapshot_lz4_compression_level}.finalize();
+        return 0;
+    }
+    else if (empty)
+    {
+        e.addMessage("Did not find any snapshots in {}", snapshots_path);
         throw std::move(e);
     }
 
     std::vector<Logpointer> candidates;
     auto parse = [&](const RelativePathWithMetadata & obj)
-    { return parseFromString<Logpointer>(fs::path(obj.relative_path).lexically_relative(snapshots_folder).string()); };
+    { return parseFromString<Logpointer>(fs::path(obj.relative_path).lexically_relative(snapshots_path).string()); };
     std::ranges::transform(std::move(snapshots), std::back_inserter(candidates), std::move(parse));
     std::ranges::sort(candidates);
     LOG_DEBUG(log, "Got snapshot candidates: [{}]", fmt::join(candidates, ", "));
 
-    if (std::ranges::count(candidates, end) > 0)
+    if (const auto it = std::ranges::find(candidates, end); it != candidates.end())
     {
-        LOG_INFO(log, "Found leftover from previous GC run, discarding this batch");
+        LOG_INFO(log, "Found leftover from previous GC run, discarding batch [{};{}]", start, end);
         return end;
     }
 
-    // First GC run after Zookeeper lost without backups (thus sequential counter reset) but we have snapshot
-    if (const Logpointer greatest_end = *candidates.rbegin(); start == 0 && greatest_end > 0)
-    {
-        LOG_INFO(log, "batch start = 0 but found snapshot with {}, using it", greatest_end);
+    // First run after Zookeeper loss without backups (~ node sequential counter reset) but we have snapshot
+    if (const Logpointer greatest_end = *candidates.rbegin(); starting && greatest_end > 0)
         return greatest_end;
-    }
+    else if (const auto it = std::ranges::lower_bound(candidates, start); it != candidates.begin())
+        return it == candidates.end() ? greatest_end : *std::prev(it);
 
     // TODO myrrc add more heuristics. Current approach may be too conservative
     throw std::move(e);

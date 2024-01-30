@@ -1,14 +1,14 @@
 <clickhouse>
     <storage_configuration>
         <disks>
-            <already>
+            <reconcile>
                 <type>s3</type>
                 <allow_vfs>true</allow_vfs>
                 <vfs_gc_sleep_ms>5000</vfs_gc_sleep_ms>
                 <endpoint>http://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
-            </already>
+            </reconcile>
             <reacquire>
                 <type>s3</type>
                 <allow_vfs>true</allow_vfs>

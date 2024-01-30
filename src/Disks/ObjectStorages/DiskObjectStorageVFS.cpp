@@ -32,7 +32,7 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS supports only 's3' or 'azure_blob_storage' disk type");
     if (send_metadata)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS doesn't support send_metadata");
-    zookeeper()->createAncestors(traits.log_item);
+    createNodes();
 
     log = getLogger(fmt::format("DiskVFS({})", name));
 }
@@ -48,6 +48,13 @@ DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
         Context::getGlobalContextInstance()->getConfigRef(),
         config_prefix,
         enable_gc);
+}
+
+void DiskObjectStorageVFS::createNodes() const
+{
+    auto zk = zookeeper();
+    zk->createAncestors(traits.gc_lock_path);
+    zk->createAncestors(traits.log_item);
 }
 
 void DiskObjectStorageVFS::startupImpl(ContextPtr context)
@@ -195,7 +202,7 @@ void DiskObjectStorageVFS::uploadMetadata(std::string_view remote_to, const Stri
     buf->finalize();
 }
 
-ZooKeeperWithFaultInjectionPtr DiskObjectStorageVFS::zookeeper()
+ZooKeeperWithFaultInjectionPtr DiskObjectStorageVFS::zookeeper() const
 {
     const auto settings_ref = settings.get();
     return ZooKeeperWithFaultInjection::createInstance(

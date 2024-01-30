@@ -33,7 +33,6 @@ public:
 
     bool lock(std::string_view path, bool block) override;
     void unlock(std::string_view path) override;
-
     bool tryDownloadMetadata(std::string_view remote_from, const String & to);
     void uploadMetadata(std::string_view remote_to, const String & from);
 
@@ -52,9 +51,9 @@ private:
     const VFSTraits traits;
     MultiVersion<VFSSettings> settings;
 
-    ZooKeeperWithFaultInjection::Ptr zookeeper();
-
+    ZooKeeperWithFaultInjection::Ptr zookeeper() const;
     DiskTransactionPtr createObjectStorageTransaction() final;
+    void createNodes() const;
     String lockPathToFullPath(std::string_view path) const;
     std::string_view getMetadataObjectPrefix() const;
     StoredObject getMetadataObject(std::string_view remote) const;

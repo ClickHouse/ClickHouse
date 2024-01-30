@@ -48,36 +48,46 @@ def test_session_breaks(started_cluster):
 
     node.query("INSERT INTO test VALUES (2)")
     assert int(node.query("SELECT count() FROM test")) == 2
+    node.query("DROP TABLE test")
 
 
-def test_reconciliation(started_cluster):
+def test_reconcile(started_cluster):
     node: ClickHouseInstance = started_cluster.instances["node"]
-    while int(node.count_in_log("VFSGC(already): Removed lock for")) < 1:
+    while int(node.count_in_log("VFSGC(reconcile): Removed lock for")) < 1:
         time.sleep(0.3)
 
     # Already processed log batch
 
     zk: KazooClient = started_cluster.get_kazoo_client("zoo1")
-    assert zk.get_children("/vfs_log/already/ops") == []
+    disk_prefix: str = "/vfs_log/reconcile"
+    assert zk.get_children(f"{disk_prefix}/ops") == []
     for i in range(11, 15):  # snapshot for 10 doesn't exist
-        zk.create(f"/vfs_log/already/ops/log-00000000{i}", b"")
+        zk.create(f"{disk_prefix}/ops/log-00000000{i}", b"")
 
     started_cluster.minio_client.put_object(
         started_cluster.minio_bucket,
-        "data/vfs/already/snapshots/14",  # last written log item is 14
+        "data/vfs/reconcile/snapshots/14",  # last written log item is 14
         io.StringIO(""),
         0,
     )
 
     time.sleep(5)
     assert int(node.count_in_log("Found leftover from previous GC run")) == 1
-    assert zk.get_children("/vfs_log/already/ops") == []
+    assert zk.get_children(f"{disk_prefix}/ops") == []
 
-    # Zookeeper full loss (node counter resets, but snapshot present)
+    # Zookeeper full loss -- node counter resets but snapshot present
 
-    zk.delete("/vfs_log/already", recursive=True)
-    zk.create(f"/vfs_log/already/ops/log-", b"", sequence=True, makepath=True)
+    zk.delete(disk_prefix, recursive=True)
+    for i in range(5):  # we have leftover snapshot 1 and 14 but not 0
+        zk.create(f"{disk_prefix}/ops/log-", b"", sequence=True, makepath=True)
     time.sleep(11)  # GC will fail, reschedule, and then succeed
-    assert int(node.count_in_log("but found snapshot with 14, using it")) == 1
+    assert int(node.count_in_log("Selected snapshot 14 as best candidate")) == 1
+
+    # Log part loss -- select best snapshot from past
+
+    for i in range(11, 15):  # we have snapshot for 1 and 4
+        zk.create(f"{disk_prefix}/ops/log-00000000{i}", b"")
+    time.sleep(6)
+    assert int(node.count_in_log("Selected snapshot 4 as best candidate")) == 1
 
     zk.stop()
