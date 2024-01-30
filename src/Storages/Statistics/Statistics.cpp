@@ -37,7 +37,7 @@ ColumnStatistics::ColumnStatistics(const StatisticsDescription & stats_desc_)
 void ColumnStatistics::update(const ColumnPtr & column)
 {
     counter += column->size();
-    for (auto iter : stats)
+    for (const auto & iter : stats)
     {
         iter.second->update(column);
     }
@@ -139,9 +139,11 @@ void TDigestValidator(const StatisticDescription &, DataTypePtr data_type)
         throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "TDigest does not support type {}", data_type->getName());
 }
 
-void UniqValidator(const StatisticDescription &, DataTypePtr)
+void UniqValidator(const StatisticDescription &, DataTypePtr data_type)
 {
-    /// TODO(hanfei): check something
+    data_type = removeNullable(data_type);
+    if (!data_type->isValueRepresentedByNumber())
+        throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Uniq does not support type {}", data_type->getName());
 }
 
 StatisticPtr UniqCreator(const StatisticDescription & stat, DataTypePtr data_type)

@@ -13,9 +13,9 @@ class UniqStatistic : public IStatistic
     std::unique_ptr<Arena> arena;
     AggregateFunctionPtr uniq_collector;
     AggregateDataPtr data;
-    Int64 result;
+    UInt64 result;
 public:
-    explicit UniqStatistic(const StatisticDescription & stat_, DataTypePtr data_type) : IStatistic(stat_), result(-1)
+    explicit UniqStatistic(const StatisticDescription & stat_, DataTypePtr data_type) : IStatistic(stat_), result(0)
     {
         arena = std::make_unique<Arena>();
         AggregateFunctionProperties property;
@@ -30,13 +30,13 @@ public:
         uniq_collector->destroy(data);
     }
 
-    Int64 getCardinality()
+    UInt64 getCardinality()
     {
-        if (result < 0)
+        if (!result)
         {
-            auto column = DataTypeInt64().createColumn();
+            auto column = DataTypeUInt64().createColumn();
             uniq_collector->insertResultInto(data, *column, nullptr);
-            result = column->getInt(0);
+            result = column->getUInt(0);
         }
         return result;
     }

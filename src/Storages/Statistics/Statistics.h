@@ -27,6 +27,7 @@ using StatisticPtr = std::shared_ptr<IStatistic>;
 /// Statistic contains the distribution of values in a column.
 /// right now we support
 /// - tdigest
+/// - uniq(hyperloglog)
 class IStatistic
 {
 public:
@@ -41,9 +42,6 @@ public:
     virtual void deserialize(ReadBuffer & buf) = 0;
 
     virtual void update(const ColumnPtr & column) = 0;
-
-    /// how many rows this statistics contain
-    /// virtual UInt64 count() = 0;
 
 protected:
 
