@@ -190,6 +190,8 @@ private:
     void initStatistics();
 
     virtual void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) = 0;
+
+    LoggerPtr log;
 };
 
 }
