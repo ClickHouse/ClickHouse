@@ -916,22 +916,13 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
     }
 
     if (fuzz_rand() % 11 == 0)
-    {
-        String value = l->value.get<String>();
         child = makeASTFunction("toNullable", child);
-    }
 
     if (fuzz_rand() % 11 == 0)
-    {
-        String value = l->value.get<String>();
         child = makeASTFunction("toLowCardinality", child);
-    }
 
     if (fuzz_rand() % 11 == 0)
-    {
-        String value = l->value.get<String>();
         child = makeASTFunction("materialize", child);
-    }
 
     return child;
 }
@@ -939,15 +930,15 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
 
 void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
 {
-    for (size_t i = 0; i < expr_list.children.size(); i++)
+    for (auto & child : expr_list.children)
     {
-        if (auto * literal = typeid_cast<ASTLiteral *>(expr_list.children[i].get()))
+        if (auto * literal = typeid_cast<ASTLiteral *>(child.get()))
         {
             if (fuzz_rand() % 13 == 0)
-                expr_list.children[i] = fuzzLiteralUnderExpressionList(expr_list.children[i]);
+                child = fuzzLiteralUnderExpressionList(child);
         }
         else
-            fuzz(expr_list.children[i]);
+            fuzz(child);
     }
 }
 
