@@ -1,5 +1,7 @@
 if (APPLE OR SANITIZE STREQUAL "memory")
-    # llvm-tblgen, that is used during LLVM build, doesn't work with MSAN.
+    # llvm-tblgen, that is used during LLVM build, will throw MSAN errors when running (breaking the build)
+    # TODO: Retest when upgrading LLVM or build only llvm-tblgen without sanitizers
+    set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
     set (ENABLE_DWARF_PARSER_DEFAULT OFF)
 else()
     set (ENABLE_EMBEDDED_COMPILER_DEFAULT ${ENABLE_LIBRARIES})
