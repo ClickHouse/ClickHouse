@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2657 
+personal_ws-1.1 en 2657
 AArch
 ACLs
 ALTERs
@@ -2060,7 +2060,6 @@ prebuild
 prebuilt
 preemptable
 preferServerCiphers
-prefertch
 prefetch
 prefetchsize
 preloaded
