@@ -182,8 +182,8 @@ int main(int argc, char ** argv)
     }
 
     std::string method = std::string(argv[1]);
-    uint64_t elements = std::atol(argv[2]);
-    uint64_t max_elements = std::atol(argv[3]);
+    uint64_t elements = std::atol(argv[2]); /// NOLINT
+    uint64_t max_elements = std::atol(argv[3]); /// NOLINT
 
     std::cerr << "Method " << method << " elements " << elements << " max elements " << max_elements << '\n';
 

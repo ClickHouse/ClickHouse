@@ -132,9 +132,15 @@ struct GroupArraySortedData
     ALWAYS_INLINE void sortAndLimit(size_t max_elements, Arena * arena)
     {
         if constexpr (is_value_generic_field)
+        {
             ::sort(values.begin(), values.end(), Comparator());
+        }
         else
-            RadixSort<RadixSortNumTraits<T>>::executeLSD(values.data(), values.size());
+        {
+            bool is_sorted = trySort(values.begin(), values.end(), Comparator());
+            if (!is_sorted)
+                RadixSort<RadixSortNumTraits<T>>::executeLSD(values.data(), values.size());
+        }
 
         if (values.size() > max_elements)
             values.resize(max_elements, arena);
