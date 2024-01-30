@@ -861,7 +861,7 @@ class IColumn;
     M(UInt64, cache_warmer_threads, 4, "Only available in ClickHouse Cloud", 0) \
     M(Int64, ignore_cold_parts_seconds, 0, "Only available in ClickHouse Cloud", 0) \
     M(Int64, prefer_warmed_unmerged_parts_seconds, 0, "Only available in ClickHouse Cloud", 0) \
-    M(Bool, enable_order_by_all, true, "Enable sorting expression ORDER BY ALL.", 0)\
+    M(Bool, enable_order_by_all, true, "Enable sorting expression ORDER BY ALL.", 0) \
     M(Bool, enable_adaptive_aggregation_method, true, "Enable adaptive aggregation method. It could speed up aggregation with low cardinality aggregation keys.", 0) \
     M(Bool, iceberg_engine_ignore_schema_evolution, false, "Ignore schema evolution in Iceberg table engine and read all data using latest schema saved on table creation. Note that it can lead to incorrect result", 0) \
 
