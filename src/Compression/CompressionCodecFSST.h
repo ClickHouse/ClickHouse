@@ -2,6 +2,7 @@
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <double-conversion/utils.h>
+#include "base/defines.h"
 #include "base/types.h"
 #include "fsst12.h"
 
@@ -37,11 +38,14 @@ protected:
         fsst_encoder_t *encoder = fsst_create(params.n, params.len_in.data(),
                     const_cast<unsigned char**>(params.str_in.data()), 1);
         std::cerr << "bebra " << "3" << std::endl;
+
+        std::cerr << *(uint64_t*)encoder << " version" << std::endl;
+
         auto header_size = fsst_export(encoder, reinterpret_cast<unsigned char*>(dest));
         std::cerr << "bebra " << "4" << std::endl;
-        lenOut.reserve(params.n);
+        lenOut.resize(params.n);
         std::cerr << "bebra " << "5" << std::endl;
-        strOut.reserve(params.n);
+        strOut.resize(params.n);
         std::cerr << "bebra " << "6" << std::endl;
 
         std::cerr << params.n << std::endl;
@@ -49,15 +53,15 @@ protected:
             std::cerr << el << std::endl;
         }
 
-        auto compressed_count = fsst_compress(encoder, params.n, params.len_in.data(),
-            const_cast<unsigned char**>(params.str_in.data()),
-            source_size + FSST_MAXHEADER - header_size + 100000, reinterpret_cast<unsigned char*>(dest + header_size),
-            lenOut.data(), strOut.data());
+        // auto compressed_count = fsst_compress(encoder, params.n, params.len_in.data(),
+        //     const_cast<unsigned char**>(params.str_in.data()),
+        //     source_size + FSST_MAXHEADER - header_size + 100000, reinterpret_cast<unsigned char*>(dest + header_size),
+        //     lenOut.data(), strOut.data());
         std::cerr << "bebra " << "7" << std::endl;
-        if (compressed_count < params.n) {
-        std::cerr << "bebra " << "8" << std::endl;
-            throw std::runtime_error("FSST compression failed");
-        }
+        // if (compressed_count < params.n) {
+        // std::cerr << "bebra " << "8" << std::endl;
+        //     throw std::runtime_error("FSST compression failed");
+        // }
         std::cerr << "bebra " << "9" << std::endl;
         auto compressed_size = lenOut.back() + (strOut.back() - reinterpret_cast<const unsigned char*>(source));
         std::cerr << "bebra " << "10" << std::endl;
@@ -71,10 +75,11 @@ protected:
         unsigned char* mutable_source = const_cast<unsigned char*>(reinterpret_cast<const unsigned char*>(source));
 
         auto header_len = fsst_import(&decoder, mutable_source);
-        auto uncompressed_len = fsst_decompress(&decoder, source_size,
-            mutable_source + header_len, uncompressed_size,
-            reinterpret_cast<unsigned char*>(dest));
-        ASSERT(uncompressed_len == uncompressed_size)
+        std::cerr << decoder.version << " " << header_len << std::endl;
+        // auto uncompressed_len = fsst_decompress(&decoder, source_size,
+        //     mutable_source + header_len, uncompressed_size,
+        //     reinterpret_cast<unsigned char*>(dest));
+        UNUSED(source_size, dest, uncompressed_size);
     }
 
     bool isCompression() const override { return true; }

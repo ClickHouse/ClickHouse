@@ -1308,14 +1308,18 @@ TEST(FSSTTest, CompressDecompress)
 {
 
     char some_source[] = "sadf asdfjojsd asijdfojas dsjf asodf aosdjf\0";
-    std::string some_dest(strlen(some_source) * 10, '3');
-    char* bebra = new char(strlen(some_source) * 10);
+    char* bebra = new char[strlen(some_source) * 10];
+    bebra[8 * strlen(some_source)] = '\0';
 
     auto fsst_codec = CompressionCodecFactory::instance().get("FSST", {});
     std::cerr << static_cast<size_t>(fsst_codec->getMethodByte()) << std::endl;
 
     fsst_codec->compress(some_source, static_cast<UInt32>(strlen(some_source)), bebra);
-    std::cerr << some_dest;
+    std::cerr << bebra;
+
+    char* out = new char[strlen(some_source) * 10];
+    fsst_codec->decompress(bebra, static_cast<UInt32>(8 * strlen(some_source)), out);
+    std::cerr << out;
 }
 
 }
