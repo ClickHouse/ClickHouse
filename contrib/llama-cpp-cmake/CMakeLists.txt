@@ -1,7 +1,7 @@
 set(LLAMA_CPP_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llama-cpp")
 set(LLAMA_CPP_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/llama-cpp")
 
-set(GGML_SRCS 
+set(GGML_SRCS
     "${LLAMA_CPP_SOURCE_DIR}/ggml.c"
     "${LLAMA_CPP_SOURCE_DIR}/ggml-alloc.c"
     "${LLAMA_CPP_SOURCE_DIR}/ggml-backend.c"
@@ -14,10 +14,10 @@ set(GGML_HDRS
     "${LLAMA_CPP_SOURCE_DIR}/ggml-quants.h"
 )
 
-set(LLAMA_SRCS 
+set(LLAMA_SRCS
     "${LLAMA_CPP_SOURCE_DIR}/llama.cpp"
 )
-set(LLAMA_HDRS 
+set(LLAMA_HDRS
     "${LLAMA_CPP_SOURCE_DIR}/llama.h"
 )
 
@@ -57,7 +57,7 @@ elseif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "ppc64le")
 endif()
 
 #
-# Posix conformance -- data types, macros and functions related to 
+# Posix conformance -- data types, macros and functions related to
 # controlling CPU affinity and memory allocation
 #
 
