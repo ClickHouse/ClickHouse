@@ -4,28 +4,18 @@ import argparse
 import logging
 import os
 import sys
-import atexit
 import zipfile
 from pathlib import Path
 from typing import List
-
-from github import Github
 
 from build_download_helper import download_fuzzers
 from clickhouse_helper import (
     CiLogsCredentials,
 )
-from commit_status_helper import (
-    RerunHelper,
-    get_commit,
-    update_mergeable_check,
-)
 from docker_images_helper import DockerImage, pull_image, get_docker_image
 
 from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
-from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResults
 
 from stopwatch import Stopwatch
 
@@ -116,28 +106,16 @@ def main():
     check_name = args.check_name
     kill_timeout = args.kill_timeout
 
-    gh = Github(get_best_robot_token(), per_page=100)
     pr_info = PRInfo()
-    commit = get_commit(gh, pr_info.sha)
-    atexit.register(update_mergeable_check, commit, pr_info, check_name)
 
     temp_path.mkdir(parents=True, exist_ok=True)
 
     if "RUN_BY_HASH_NUM" in os.environ:
         run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
         run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
-        check_name_with_group = (
-            check_name + f" [{run_by_hash_num + 1}/{run_by_hash_total}]"
-        )
     else:
         run_by_hash_num = 0
         run_by_hash_total = 0
-        check_name_with_group = check_name
-
-    rerun_helper = RerunHelper(commit, check_name_with_group)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
 
     docker_image = pull_image(get_docker_image("clickhouse/libfuzzer"))
 

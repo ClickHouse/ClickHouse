@@ -186,7 +186,7 @@ public:
 
     void setMainTable(StorageID main_table_) { main_table = std::move(main_table_); }
 
-    void setLogger(Poco::Logger * logger) { log = logger; }
+    void setLogger(LoggerPtr logger) { log = logger; }
 
     const Block & getHeader() const { return header; }
 
@@ -283,7 +283,7 @@ private:
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
 
-    Poco::Logger * log = nullptr;
+    LoggerPtr log = nullptr;
 
     GetPriorityForLoadBalancing::Func priority_func;
 

@@ -892,12 +892,14 @@ def test_kafka_formats(kafka_cluster):
 """
 
     expected_rows_count = raw_expected.count("\n")
-    instance.query_with_retry(
+    result_checker = lambda res: res.count("\n") == expected_rows_count
+    res = instance.query_with_retry(
         f"SELECT * FROM test.kafka_{list(all_formats.keys())[-1]}_mv;",
         retry_count=30,
         sleep_time=1,
-        check_callback=lambda res: res.count("\n") == expected_rows_count,
+        check_callback=result_checker,
     )
+    assert result_checker(res)
 
     for format_name, format_opts in list(all_formats.items()):
         logging.debug(("Checking {}".format(format_name)))
@@ -3808,12 +3810,14 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
 """
 
     expected_rows_count = raw_expected.count("\n")
-    instance.query_with_retry(
+    result_checker = lambda res: res.count("\n") == expected_rows_count
+    res = instance.query_with_retry(
         f"SELECT * FROM test.kafka_data_{list(all_formats.keys())[-1]}_mv;",
         retry_count=30,
         sleep_time=1,
-        check_callback=lambda res: res.count("\n") == expected_rows_count,
+        check_callback=result_checker,
     )
+    assert result_checker(res)
 
     for format_name, format_opts in list(all_formats.items()):
         logging.debug(f"Checking {format_name}")
@@ -4446,7 +4450,7 @@ def test_block_based_formats_1(kafka_cluster):
                      kafka_group_name = '{topic}',
                      kafka_format = 'PrettySpace';
 
-        INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0;
+        INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0, output_format_pretty_color=1;
     """
     )
 
@@ -4929,6 +4933,89 @@ def test_formats_errors(kafka_cluster):
         kafka_delete_topic(admin_client, format_name)
         instance.query(f"DROP TABLE test.{table_name}")
         instance.query("DROP TABLE test.view")
+
+
+def test_multiple_read_in_materialized_views(kafka_cluster, max_retries=15):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    topic = "multiple_read_from_mv"
+    kafka_create_topic(admin_client, topic)
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.kafka_multiple_read_input;
+        DROP TABLE IF EXISTS test.kafka_multiple_read_table;
+        DROP TABLE IF EXISTS test.kafka_multiple_read_mv;
+
+        CREATE TABLE test.kafka_multiple_read_input (id Int64)
+        ENGINE = Kafka
+        SETTINGS
+            kafka_broker_list = 'kafka1:19092',
+            kafka_topic_list = '{topic}',
+            kafka_group_name = '{topic}',
+            kafka_format = 'JSONEachRow';
+
+        CREATE TABLE test.kafka_multiple_read_table (id Int64)
+        ENGINE = MergeTree
+        ORDER BY id;
+
+
+        CREATE MATERIALIZED VIEW IF NOT EXISTS test.kafka_multiple_read_mv TO test.kafka_multiple_read_table AS
+        SELECT id
+        FROM test.kafka_multiple_read_input
+        WHERE id NOT IN (
+            SELECT id
+            FROM test.kafka_multiple_read_table
+            WHERE id IN (
+                SELECT id
+                FROM test.kafka_multiple_read_input
+            )
+        );
+        """
+    )
+
+    kafka_produce(
+        kafka_cluster, topic, [json.dumps({"id": 42}), json.dumps({"id": 43})]
+    )
+
+    expected_result = "42\n43\n"
+    res = instance.query_with_retry(
+        f"SELECT id FROM test.kafka_multiple_read_table ORDER BY id",
+        retry_count=30,
+        sleep_time=0.5,
+        check_callback=lambda res: res == expected_result,
+    )
+    assert res == expected_result
+
+    # Verify that the query deduplicates the records as it meant to be
+    messages = []
+    for i in range(0, 10):
+        messages.append(json.dumps({"id": 42}))
+        messages.append(json.dumps({"id": 43}))
+
+    messages.append(json.dumps({"id": 44}))
+
+    kafka_produce(kafka_cluster, topic, messages)
+
+    expected_result = "42\n43\n44\n"
+    res = instance.query_with_retry(
+        f"SELECT id FROM test.kafka_multiple_read_table ORDER BY id",
+        retry_count=30,
+        sleep_time=0.5,
+        check_callback=lambda res: res == expected_result,
+    )
+    assert res == expected_result
+
+    kafka_delete_topic(admin_client, topic)
+    instance.query(
+        f"""
+        DROP TABLE test.kafka_multiple_read_input;
+        DROP TABLE test.kafka_multiple_read_table;
+        DROP TABLE test.kafka_multiple_read_mv;
+        """
+    )
 
 
 if __name__ == "__main__":

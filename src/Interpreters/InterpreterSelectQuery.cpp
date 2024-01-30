@@ -381,7 +381,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     : IInterpreterUnionOrSelectQuery(options_.modify_inplace ? query_ptr_ : query_ptr_->clone(), context_, options_)
     , storage(storage_)
     , input_pipe(std::move(input_pipe_))
-    , log(&Poco::Logger::get("InterpreterSelectQuery"))
+    , log(getLogger("InterpreterSelectQuery"))
     , metadata_snapshot(metadata_snapshot_)
     , prepared_sets(prepared_sets_)
 {
@@ -1572,7 +1572,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     executeLimitBy(query_plan);
                 }
 
-                if (query.limitLength())
+                if (query.limitLength() && !query.limitBy())
                     executePreLimit(query_plan, true);
             }
         };
@@ -2329,7 +2329,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_paralle
             filter_nodes.push_back(&analysis_result.before_where->findInOutputs(analysis_result.where_column_name));
         }
 
-        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes, {}, context);
+        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes);
         if (!filter_actions_dag)
             return {};
 
@@ -2536,6 +2536,10 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         query_info.storage_limits = std::make_shared<StorageLimitsList>(storage_limits);
         query_info.settings_limit_offset_done = options.settings_limit_offset_done;
+        /// Possible filters: row-security, additional filter, replica filter (before array join), where (after array join)
+        query_info.has_filters_and_no_array_join_before_filter = row_policy_filter || additional_filter_info
+            || parallel_replicas_custom_filter_info
+            || (analysis_result.hasWhere() && !analysis_result.before_where->hasArrayJoin() && !analysis_result.array_join);
         storage->read(query_plan, required_columns, storage_snapshot, query_info, context, processing_stage, max_block_size, max_streams);
 
         if (context->hasQueryContext() && !options.is_internal)
@@ -2877,7 +2881,15 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         // has suitable sorting. Also don't create sort steps when there are no
         // columns to sort by, because the sort nodes are confused by this. It
         // happens in case of `over ()`.
-        if (!window.full_sort_description.empty() && (i == 0 || !sortIsPrefix(window, *windows_sorted[i - 1])))
+        // Even if full_sort_description of both windows match, in case of different
+        // partitioning we need to add a SortingStep to reshuffle data in the streams.
+        bool need_sort = !window.full_sort_description.empty();
+        if (need_sort && i != 0)
+        {
+            need_sort = !sortIsPrefix(window, *windows_sorted[i - 1])
+                        || (settings.max_threads != 1 && window.partition_by.size() != windows_sorted[i - 1]->partition_by.size());
+        }
+        if (need_sort)
         {
             SortingStep::Settings sort_settings(*context);
 

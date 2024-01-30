@@ -9,7 +9,7 @@
 
 
 using StringKey8 = UInt64;
-using StringKey16 = DB::UInt128;
+using StringKey16 = UInt128;
 struct StringKey24
 {
     UInt64 a;
@@ -69,6 +69,28 @@ struct StringHashTableHash
         res = _mm_crc32_u64(res, key.a);
         res = _mm_crc32_u64(res, key.b);
         res = _mm_crc32_u64(res, key.c);
+        return res;
+    }
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+    size_t ALWAYS_INLINE operator()(StringKey8 key) const
+    {
+        size_t res = -1ULL;
+        res = __crc32cd(static_cast<UInt32>(res), key);
+        return res;
+    }
+    size_t ALWAYS_INLINE operator()(StringKey16 key) const
+    {
+        size_t res = -1ULL;
+        res = __crc32cd(static_cast<UInt32>(res), key.items[0]);
+        res = __crc32cd(static_cast<UInt32>(res), key.items[1]);
+        return res;
+    }
+    size_t ALWAYS_INLINE operator()(StringKey24 key) const
+    {
+        size_t res = -1ULL;
+        res = __crc32cd(static_cast<UInt32>(res), key.a);
+        res = __crc32cd(static_cast<UInt32>(res), key.b);
+        res = __crc32cd(static_cast<UInt32>(res), key.c);
         return res;
     }
 #elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__

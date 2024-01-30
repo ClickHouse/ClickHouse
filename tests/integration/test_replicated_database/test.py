@@ -338,6 +338,8 @@ def test_alter_drop_part(started_cluster, engine):
     main_node.query(f"INSERT INTO {database}.alter_drop_part VALUES (123)")
     if engine == "MergeTree":
         dummy_node.query(f"INSERT INTO {database}.alter_drop_part VALUES (456)")
+    else:
+        main_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part PULL")
     main_node.query(f"ALTER TABLE {database}.alter_drop_part DROP PART '{part_name}'")
     assert main_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
     if engine == "ReplicatedMergeTree":
@@ -1077,7 +1079,7 @@ def test_startup_without_zk(started_cluster):
         err = main_node.query_and_get_error(
             "CREATE DATABASE startup ENGINE = Replicated('/clickhouse/databases/startup', 'shard1', 'replica1');"
         )
-        assert "ZooKeeper" in err
+        assert "ZooKeeper" in err or "Coordination::Exception" in err
     main_node.query(
         "CREATE DATABASE startup ENGINE = Replicated('/clickhouse/databases/startup', 'shard1', 'replica1');"
     )
@@ -1396,3 +1398,47 @@ def test_modify_comment(started_cluster):
 
     main_node.query("DROP DATABASE modify_comment_db SYNC")
     dummy_node.query("DROP DATABASE modify_comment_db SYNC")
+
+
+def test_table_metadata_corruption(started_cluster):
+    main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
+    dummy_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
+
+    main_node.query(
+        "CREATE DATABASE table_metadata_corruption ENGINE = Replicated('/clickhouse/databases/table_metadata_corruption', 'shard1', 'replica1');"
+    )
+    dummy_node.query(
+        "CREATE DATABASE table_metadata_corruption ENGINE = Replicated('/clickhouse/databases/table_metadata_corruption', 'shard1', 'replica2');"
+    )
+
+    create_some_tables("table_metadata_corruption")
+
+    main_node.query("SYSTEM SYNC DATABASE REPLICA table_metadata_corruption")
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA table_metadata_corruption")
+
+    # Server should handle this by throwing an exception during table loading, which should lead to server shutdown
+    corrupt = "sed --follow-symlinks -i 's/ReplicatedMergeTree/CorruptedMergeTree/' /var/lib/clickhouse/metadata/table_metadata_corruption/rmt1.sql"
+
+    print(f"Corrupting metadata using `{corrupt}`")
+    dummy_node.stop_clickhouse(kill=True)
+    dummy_node.exec_in_container(["bash", "-c", corrupt])
+
+    query = (
+        "SELECT name, uuid, create_table_query FROM system.tables WHERE database='table_metadata_corruption' AND name NOT LIKE '.inner_id.%' "
+        "ORDER BY name SETTINGS show_table_uuid_in_table_create_query_if_not_nil=1"
+    )
+    expected = main_node.query(query)
+
+    # We expect clickhouse server to shutdown without LOGICAL_ERRORs or deadlocks
+    dummy_node.start_clickhouse(expected_to_fail=True)
+    assert not dummy_node.contains_in_log("LOGICAL_ERROR")
+
+    fix_corrupt = "sed --follow-symlinks -i 's/CorruptedMergeTree/ReplicatedMergeTree/' /var/lib/clickhouse/metadata/table_metadata_corruption/rmt1.sql"
+    print(f"Fix corrupted metadata using `{fix_corrupt}`")
+    dummy_node.exec_in_container(["bash", "-c", fix_corrupt])
+
+    dummy_node.start_clickhouse()
+    assert_eq_with_retry(dummy_node, query, expected)
+
+    main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
+    dummy_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
