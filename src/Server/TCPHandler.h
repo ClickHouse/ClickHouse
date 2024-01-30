@@ -224,7 +224,7 @@ private:
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 
     /// It is the name of the server that will be sent to the client.
-    String server_display_name;
+    String host_name;
 
     void runImpl();
 
