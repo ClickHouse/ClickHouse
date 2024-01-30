@@ -17,6 +17,7 @@
 INCBIN(resource_play_html, SOURCE_DIR "/programs/server/play.html");
 INCBIN(resource_dashboard_html, SOURCE_DIR "/programs/server/dashboard.html");
 INCBIN(resource_uplot_js, SOURCE_DIR "/programs/server/js/uplot.js");
+INCBIN(resource_lz_string_js, SOURCE_DIR "/programs/server/js/lz-string.js");
 INCBIN(resource_binary_html, SOURCE_DIR "/programs/server/binary.html");
 
 
@@ -59,6 +60,9 @@ void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerR
         static re2::RE2 uplot_url = R"(https://[^\s"'`]+u[Pp]lot[^\s"'`]*\.js)";
         RE2::Replace(&html, uplot_url, "/js/uplot.js");
 
+        static re2::RE2 lz_string_url = R"(https://[^\s"'`]+lz-string[^\s"'`]*\.js)";
+        RE2::Replace(&html, lz_string_url, "/js/lz-string.js");
+
         WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout).write(html);
     }
     else if (request.getURI().starts_with("/binary"))
@@ -70,6 +74,11 @@ void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerR
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
         WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout).write(reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize);
+    }
+    else if (request.getURI() == "/js/lz-string.js")
+    {
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
+        WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout).write(reinterpret_cast<const char *>(gresource_lz_string_jsData), gresource_lz_string_jsSize);
     }
     else
     {

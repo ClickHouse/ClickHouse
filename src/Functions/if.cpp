@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnVector.h>
@@ -14,6 +15,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/MaskOperations.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -22,6 +24,8 @@
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/FunctionIfBase.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/Context.h>
+
 #include <Functions/FunctionFactory.h>
 #include <type_traits>
 
@@ -258,9 +262,16 @@ class FunctionIf : public FunctionIfBase
 {
 public:
     static constexpr auto name = "if";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIf>(); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionIf>(context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type);
+    }
+
+    explicit FunctionIf(bool use_variant_when_no_common_type_ = false) : FunctionIfBase(), use_variant_when_no_common_type(use_variant_when_no_common_type_) {}
 
 private:
+    bool use_variant_when_no_common_type = false;
+
     template <typename T0, typename T1>
     static UInt32 decimalScale(const ColumnsWithTypeAndName & arguments [[maybe_unused]])
     {
@@ -669,13 +680,17 @@ private:
     }
 
     static ColumnPtr executeGeneric(
-        const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
+        const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, size_t input_rows_count, bool use_variant_when_no_common_type)
     {
         /// Convert both columns to the common type (if needed).
         const ColumnWithTypeAndName & arg1 = arguments[1];
         const ColumnWithTypeAndName & arg2 = arguments[2];
 
-        DataTypePtr common_type = getLeastSupertype(DataTypes{arg1.type, arg2.type});
+        DataTypePtr common_type;
+        if (use_variant_when_no_common_type)
+            common_type = getLeastSupertypeOrVariant(DataTypes{arg1.type, arg2.type});
+        else
+            common_type = getLeastSupertype(DataTypes{arg1.type, arg2.type});
 
         ColumnPtr col_then = castColumn(arg1, common_type);
         ColumnPtr col_else = castColumn(arg2, common_type);
@@ -850,6 +865,10 @@ private:
 
     ColumnPtr executeForNullableThenElse(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
+        /// If result type is Variant, we don't need to remove Nullable.
+        if (isVariant(result_type))
+            return nullptr;
+
         const ColumnWithTypeAndName & arg_cond = arguments[0];
         const ColumnWithTypeAndName & arg_then = arguments[1];
         const ColumnWithTypeAndName & arg_else = arguments[2];
@@ -955,6 +974,11 @@ private:
                     assert_cast<ColumnNullable &>(*result_column).applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
                     return result_column;
                 }
+                else if (auto * variant_column = typeid_cast<ColumnVariant *>(result_column.get()))
+                {
+                    variant_column->applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column).getData());
+                    return result_column;
+                }
                 else
                     return ColumnNullable::create(materializeColumnIfConst(result_column), arg_cond.column);
             }
@@ -991,6 +1015,11 @@ private:
                 if (isColumnNullable(*result_column))
                 {
                     assert_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
+                    return result_column;
+                }
+                else if (auto * variant_column = typeid_cast<ColumnVariant *>(result_column.get()))
+                {
+                    variant_column->applyNegatedNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column).getData());
                     return result_column;
                 }
                 else
@@ -1082,6 +1111,9 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument (condition) of function if. "
                 "Must be UInt8.", arguments[0]->getName());
 
+        if (use_variant_when_no_common_type)
+            return getLeastSupertypeOrVariant(DataTypes{arguments[1], arguments[2]});
+
         return getLeastSupertype(DataTypes{arguments[1], arguments[2]});
     }
 
@@ -1165,7 +1197,7 @@ public:
             || (res = executeGenericArray(cond_col, arguments, result_type))
             || (res = executeTuple(arguments, result_type, input_rows_count))))
         {
-            return executeGeneric(cond_col, arguments, input_rows_count);
+            return executeGeneric(cond_col, arguments, input_rows_count, use_variant_when_no_common_type);
         }
 
         return res;

@@ -1,6 +1,7 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/HashTable/Hash.h>
@@ -130,7 +131,7 @@ StringRef ColumnSparse::getDataAt(size_t n) const
 
 ColumnPtr ColumnSparse::convertToFullColumnIfSparse() const
 {
-    return values->createWithOffsets(getOffsetsData(), (*values)[0], _size, /*shift=*/ 1);
+    return values->createWithOffsets(getOffsetsData(), *createColumnConst(values, 0), _size, /*shift=*/ 1);
 }
 
 void ColumnSparse::insertSingleValue(const Inserter & inserter)

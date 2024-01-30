@@ -588,7 +588,15 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
     ctx->rows_sources_read_buf->seek(0, 0);
-    auto transform = std::make_unique<ColumnGathererTransform>(pipe.getHeader(), pipe.numOutputPorts(), *ctx->rows_sources_read_buf);
+
+    const auto data_settings = global_ctx->data->getSettings();
+    auto transform = std::make_unique<ColumnGathererTransform>(
+        pipe.getHeader(),
+        pipe.numOutputPorts(),
+        *ctx->rows_sources_read_buf,
+        data_settings->merge_max_block_size,
+        data_settings->merge_max_block_size_bytes);
+
     pipe.addTransform(std::move(transform));
 
     ctx->column_parts_pipeline = QueryPipeline(std::move(pipe));
