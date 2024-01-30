@@ -31,6 +31,8 @@
 #include <cstdlib>
 #include <string>
 
+#include <iostream>
+
 
 namespace
 {
@@ -91,6 +93,14 @@ bool shouldTrackAllocation(Float64 probability, void * ptr)
 
 }
 
+void AllocationTrace::updateThreadStatusOnAlloc(size_t size) const
+{
+    if (!DB::current_thread) [[unlikely]]
+        return;
+    DB::current_thread->alloc_bytes += size;
+    DB::current_thread->alloc_calls += 1;
+}
+
 void AllocationTrace::onAllocImpl(void * ptr, size_t size) const
 {
     if (sample_probability < 1 && !shouldTrackAllocation(sample_probability, ptr))
@@ -98,6 +108,14 @@ void AllocationTrace::onAllocImpl(void * ptr, size_t size) const
 
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
     DB::TraceSender::send(DB::TraceType::MemorySample, StackTrace(), {.size = Int64(size), .ptr = ptr});
+}
+
+void AllocationTrace::updateThreadStatusOnFree(size_t size) const
+{
+    if (!DB::current_thread) [[unlikely]]
+        return;
+    DB::current_thread->free_bytes += size;
+    DB::current_thread->free_calls += 1;
 }
 
 void AllocationTrace::onFreeImpl(void * ptr, size_t size) const
@@ -250,6 +268,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     auto metric_loaded = metric.load(std::memory_order_relaxed);
     if (metric_loaded != CurrentMetrics::end() && size)
         CurrentMetrics::add(metric_loaded, size);
+    
 
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);

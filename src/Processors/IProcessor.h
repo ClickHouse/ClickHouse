@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
+#include <mutex>
 #include <Processors/Port.h>
 #include <Common/Stopwatch.h>
 
@@ -311,29 +313,68 @@ public:
     uint64_t getInputWaitElapsedUs() const { return input_wait_elapsed_us; }
     uint64_t getOutputWaitElapsedUs() const { return output_wait_elapsed_us; }
 
+    struct ProcessorMemStats
+    {
+        uint64_t alloc_bytes = 0;
+        uint64_t alloc_calls = 0;
+        uint64_t free_bytes = 0;
+        uint64_t free_calls = 0;
+        int64_t peek_usage = 0;
+    };
+
+    struct ProcessorPortStats
+    {
+        size_t rows = 0;
+        size_t bytes = 0;
+        size_t allocated_bytes = 0;
+        size_t blocks = 0;
+    };
+
     struct ProcessorDataStats
     {
+        /*
         size_t input_rows = 0;
         size_t input_bytes = 0;
+        size_t input_allocated_bytes = 0;
+        size_t input_blocks = 0;
         size_t output_rows = 0;
         size_t output_bytes = 0;
+        size_t output_allocated_bytes = 0;
+        size_t output_blocks = 0;
+        */
+
+        ProcessorPortStats input;
+        ProcessorPortStats output;
+
+
+        ProcessorMemStats mem_stats;
     };
 
     ProcessorDataStats getProcessorDataStats() const
     {
         ProcessorDataStats stats;
-
+        #if 0
         for (const auto & input : inputs)
         {
             stats.input_rows += input.rows;
             stats.input_bytes += input.bytes;
+            stats.input_allocated_bytes += input.allocated_bytes;
+            stats.input_blocks += input.blocks;
         }
 
         for (const auto & output : outputs)
         {
             stats.output_rows += output.rows;
             stats.output_bytes += output.bytes;
+            stats.output_allocated_bytes += output.allocated_bytes;
+            stats.output_blocks += output.blocks;
         }
+        #else
+        getInputPortStats(stats.input );
+        getOutputPortStats(stats.output);
+        #endif
+
+        stats.mem_stats = mem_stats;
 
         return stats;
     }
@@ -352,6 +393,26 @@ public:
         const StorageLimitsList & limits;
     };
 
+    void traceMemoryStats(const ProcessorMemStats & new_mem_stats)
+    {
+        if (!new_mem_stats.alloc_bytes && !new_mem_stats.free_bytes)
+            return;
+        std::lock_guard lock(mem_stats_mutex);
+        mem_stats.alloc_bytes += new_mem_stats.alloc_bytes;
+        mem_stats.alloc_calls += new_mem_stats.alloc_calls;
+        mem_stats.free_bytes += new_mem_stats.free_bytes;
+        mem_stats.free_calls += new_mem_stats.free_calls;
+        ProcessorPortStats input_port_stats;
+        getInputPortStats(input_port_stats);
+        ProcessorPortStats output_port_stats;
+        getOutputPortStats(output_port_stats);
+        auto alloc_bytes = static_cast<int64_t>(mem_stats.alloc_bytes + input_port_stats.allocated_bytes);
+        auto free_bytes = static_cast<int64_t>(mem_stats.free_bytes + output_port_stats.allocated_bytes);
+        /// free_bytes could be large then alloc_bytes, since the memory could be allocated in other threads
+        /// in this processor.
+        mem_stats.peek_usage = std::max(mem_stats.peek_usage, alloc_bytes - free_bytes);
+    }
+
     /// Set limits for current storage.
     /// Different limits may be applied to different storages, we need to keep it per processor.
     /// This method is need to be override only for sources.
@@ -368,6 +429,7 @@ public:
 
 protected:
     virtual void onCancel() {}
+    const ProcessorMemStats & getMemoryStats() { return mem_stats; }
 
 private:
     /// For:
@@ -388,11 +450,35 @@ private:
     uint64_t input_wait_elapsed_us = 0;
     Stopwatch output_wait_watch;
     uint64_t output_wait_elapsed_us = 0;
+    std::mutex mem_stats_mutex;
+    ProcessorMemStats mem_stats;
 
     size_t stream_number = NO_STREAM;
 
     IQueryPlanStep * query_plan_step = nullptr;
     size_t query_plan_step_group = 0;
+
+    void getInputPortStats(ProcessorPortStats & stats) const
+    {
+        for (const auto & input : inputs)
+        {
+            stats.rows += input.rows;
+            stats.bytes += input.bytes;
+            stats.allocated_bytes += input.allocated_bytes;
+            stats.blocks += input.blocks;
+        }
+    }
+
+    void getOutputPortStats(ProcessorPortStats & stats) const
+    {
+        for (const auto & output : outputs)
+        {
+            stats.rows += output.rows;
+            stats.bytes += output.bytes;
+            stats.allocated_bytes += output.allocated_bytes;
+            stats.blocks += output.blocks;
+        }
+    }
 };
 
 

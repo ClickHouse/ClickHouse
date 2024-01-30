@@ -451,11 +451,19 @@ void logQueryFinish(
                     processor_elem.output_wait_elapsed_us = static_cast<UInt32>(processor->getOutputWaitElapsedUs());
 
                     auto stats = processor->getProcessorDataStats();
-                    processor_elem.input_rows = stats.input_rows;
-                    processor_elem.input_bytes = stats.input_bytes;
-                    processor_elem.output_rows = stats.output_rows;
-                    processor_elem.output_bytes = stats.output_bytes;
-
+                    processor_elem.input_rows = stats.input.rows;
+                    processor_elem.input_bytes = stats.input.bytes;
+                    processor_elem.output_rows = stats.output.rows;
+                    processor_elem.output_bytes = stats.output.bytes;
+                    processor_elem.input_blocks = stats.input.blocks;
+                    processor_elem.input_allocated_bytes = stats.input.allocated_bytes;
+                    processor_elem.output_blocks = stats.output.blocks;
+                    processor_elem.output_allocated_bytes = stats.output.allocated_bytes;
+                    processor_elem.alloc_bytes = stats.mem_stats.alloc_bytes;
+                    processor_elem.alloc_calls = stats.mem_stats.alloc_calls;
+                    processor_elem.free_bytes = stats.mem_stats.free_bytes;
+                    processor_elem.free_calls = stats.mem_stats.free_calls;
+                    processor_elem.peak_memory_usage = stats.mem_stats.peek_usage;
                     processors_profile_log->add(processor_elem);
                 }
             }

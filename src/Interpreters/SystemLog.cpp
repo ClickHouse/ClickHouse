@@ -552,6 +552,8 @@ void SystemLog<LogElement>::prepareTable()
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty CREATE QUERY for {}", backQuoteIfNeed(table_id.table_name));
         }
 
+        LOG_ERROR(&Poco::Logger::get("SystemLog"), "xxx create query:{}\n{}", old_create_query, create_query);
+
         if (old_create_query != create_query)
         {
             /// TODO: Handle altering comment, because otherwise all table will be renamed.
@@ -663,6 +665,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
         storage_settings->loadFromQuery(*create->storage, getContext(), false);
     }
 
+    LOG_ERROR(&Poco::Logger::get("SystemLog"), "xxx get create query:{}", serializeAST(*create));
     return create;
 }
 

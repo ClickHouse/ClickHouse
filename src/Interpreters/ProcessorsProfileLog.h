@@ -32,9 +32,19 @@ struct ProcessorProfileLogElement
     UInt32 output_wait_elapsed_us{};
 
     size_t input_rows{};
+    size_t input_blocks{};
     size_t input_bytes{};
+    size_t input_allocated_bytes{};
     size_t output_rows{};
+    size_t output_blocks{};
     size_t output_bytes{};
+    size_t output_allocated_bytes{};
+
+    size_t alloc_bytes{};
+    size_t alloc_calls{};
+    size_t free_bytes{};
+    size_t free_calls{};
+    Int64 peak_memory_usage{};
 
     static std::string name() { return "ProcessorsProfileLog"; }
     static ColumnsDescription getColumnsDescription();
