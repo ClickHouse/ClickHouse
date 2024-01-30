@@ -121,20 +121,20 @@ def main():
     compressed_server_log_path = workspace_path / "server.log.zst"
     if compressed_server_log_path.exists():
         paths["server.log.zst"] = compressed_server_log_path
-
-    # The script can fail before the invocation of `zstd`, but we are still interested in its log:
-
-    not_compressed_server_log_path = workspace_path / "server.log"
-    if not_compressed_server_log_path.exists():
-        paths["server.log"] = not_compressed_server_log_path
+    else:
+        # The script can fail before the invocation of `zstd`, but we are still interested in its log:
+        not_compressed_server_log_path = workspace_path / "server.log"
+        if not_compressed_server_log_path.exists():
+            paths["server.log"] = not_compressed_server_log_path
 
     # Same idea but with the fuzzer log
     compressed_fuzzer_log_path = workspace_path / "fuzzer.log.zst"
     if compressed_fuzzer_log_path.exists():
         paths["fuzzer.log.zst"] = compressed_fuzzer_log_path
-    not_compressed_fuzzer_log_path = workspace_path / "fuzzer.log"
-    if not_compressed_fuzzer_log_path.exists():
-        paths["fuzzer.log"] = not_compressed_fuzzer_log_path
+    else:
+        not_compressed_fuzzer_log_path = workspace_path / "fuzzer.log"
+        if not_compressed_fuzzer_log_path.exists():
+            paths["fuzzer.log"] = not_compressed_fuzzer_log_path
 
     # Try to get status message saved by the fuzzer
     try:
