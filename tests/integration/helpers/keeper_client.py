@@ -49,7 +49,7 @@ class KeeperClient:
         command = CommandRequest(args, stdin="")
         ans, err = command.get_answer_and_error()
         if err:
-            if err.startswith("Node exists"):
+            if err.__contains__("Node exists"):
                 raise NodeExistsError()
             elif err.startswith("Coordination error: No node"):
                 raise NoNodeError()
