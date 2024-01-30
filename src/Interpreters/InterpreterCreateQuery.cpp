@@ -716,7 +716,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     setEngine(create);
 
     /// We have to check access rights again (in case engine was changed).
-    if (create.storage)
+    if (create.storage && create.storage->engine)
     {
         auto source_access_type = StorageFactory::instance().getSourceAccessType(create.storage->engine->name);
         if (source_access_type != AccessType::NONE)
@@ -954,6 +954,20 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
                         "because fixed string with size > {} is suspicious. "
                         "Set setting allow_suspicious_fixed_string_types = 1 in order to allow it",
                         name, type->getName(), MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
+            }
+        }
+    }
+    if (!create.attach && !settings.allow_experimental_variant_type)
+    {
+        for (const auto & [name, type] : properties.columns.getAllPhysical())
+        {
+            if (isVariant(type))
+            {
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Cannot create table with column '{}' which type is '{}' "
+                        "because experimental Variant type is not allowed. "
+                        "Set setting allow_experimental_variant_type = 1 in order to allow it",
+                        name, type->getName());
             }
         }
     }
@@ -1214,7 +1228,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
     else if (create.attach && !create.attach_short_syntax && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
     {
-        auto * log = &Poco::Logger::get("InterpreterCreateQuery");
+        auto log = getLogger("InterpreterCreateQuery");
         LOG_WARNING(log, "ATTACH TABLE query with full table definition is not recommended: "
                          "use either ATTACH TABLE {}; to attach existing table "
                          "or CREATE TABLE {} <table definition>; to create new table "
@@ -1421,8 +1435,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             interpreter.execute();
         }
         else
-            throw Exception(storage_already_exists_error_code,
-                "{} {}.{} already exists", storage_name, backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+        {
+            if (database->getTable(create.getTable(), getContext())->isDictionary())
+                throw Exception(ErrorCodes::DICTIONARY_ALREADY_EXISTS,
+                                "Dictionary {}.{} already exists", backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+            else
+                throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+                                "Table {}.{} already exists", backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+        }
     }
     else if (!create.attach)
     {
@@ -1455,7 +1475,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             /// so the existing directory probably contains some leftovers from previous unsuccessful attempts to create the table
 
             fs::path trash_path = fs::path{getContext()->getPath()} / "trash" / data_path / getHexUIntLowercase(thread_local_rng());
-            LOG_WARNING(&Poco::Logger::get("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
+            LOG_WARNING(getLogger("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
                         Poco::toLower(storage_name), String(data_path), trash_path);
             fs::create_directories(trash_path.parent_path());
             renameNoReplace(full_data_path, trash_path);

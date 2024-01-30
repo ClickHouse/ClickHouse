@@ -15,6 +15,7 @@
 #include <Common/Priority.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Common/Logger.h>
 
 
 namespace Poco { class Logger; }
@@ -40,7 +41,7 @@ using LoadTaskPtr = std::shared_ptr<LoadTask>;
 using LoadTaskPtrs = std::vector<LoadTaskPtr>;
 class AsyncLoader;
 
-void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch);
+void logAboutProgress(LoggerPtr log, size_t processed, size_t total, AtomicStopwatch & watch);
 
 // Execution status of a load job.
 enum class LoadStatus
@@ -197,10 +198,6 @@ public:
     // Remove all jobs of this task from AsyncLoader.
     void remove();
 
-    // Do not track jobs in this task.
-    // WARNING: Jobs will never be removed() and are going to be stored as finished jobs until ~AsyncLoader().
-    void detach();
-
     // Return the final jobs in this tasks. This job subset should be used as `dependencies` for dependent jobs or tasks:
     //   auto load_task = loadSomethingAsync(async_loader, load_after_task.goals(), something);
     const LoadJobSet & goals() const { return goal_jobs.empty() ? jobs : goal_jobs; }
@@ -332,7 +329,6 @@ private:
 public:
     AsyncLoader(std::vector<PoolInitializer> pool_initializers, bool log_failures_, bool log_progress_);
 
-    // Stops AsyncLoader before destruction
     // WARNING: all tasks instances should be destructed before associated AsyncLoader.
     ~AsyncLoader();
 
@@ -419,7 +415,7 @@ private:
     // Logging
     const bool log_failures; // Worker should log all exceptions caught from job functions.
     const bool log_progress; // Periodically log total progress
-    Poco::Logger * log;
+    LoggerPtr log;
 
     mutable std::mutex mutex; // Guards all the fields below.
     bool is_running = true;

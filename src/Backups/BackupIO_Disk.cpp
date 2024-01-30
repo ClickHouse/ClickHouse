@@ -9,7 +9,7 @@ namespace DB
 {
 
 BackupReaderDisk::BackupReaderDisk(const DiskPtr & disk_, const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
-    : BackupReaderDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupReaderDisk"))
+    : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderDisk"))
     , disk(disk_)
     , root_path(root_path_)
     , data_source_description(disk->getDataSourceDescription())
@@ -57,7 +57,7 @@ void BackupReaderDisk::copyFileToDisk(const String & path_in_backup, size_t file
 
 
 BackupWriterDisk::BackupWriterDisk(const DiskPtr & disk_, const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
-    : BackupWriterDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupWriterDisk"))
+    : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterDisk"))
     , disk(disk_)
     , root_path(root_path_)
     , data_source_description(disk->getDataSourceDescription())

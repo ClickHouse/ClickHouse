@@ -234,7 +234,7 @@ void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dis
             }
             else
             {
-                auto * log = &Poco::Logger::get("FourLetterCommandFactory");
+                auto log = getLogger("FourLetterCommandFactory");
                 LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
             }
         }
