@@ -49,5 +49,10 @@
   "test_replicated_merge_tree_with_auxiliary_zookeepers/test.py::test_path_ambiguity",
   "test_fetch_partition_with_outdated_parts/test.py::test_fetch_part_from_allowed_zookeeper",
   "test_reload_auxiliary_zookeepers/test.py::test_reload_auxiliary_zookeepers",
-  ""
+  "test_zookeeper_config_load_balancing/test.py::test_first_or_random",
+  "test_zookeeper_config_load_balancing/test.py::test_in_order",
+  "test_zookeeper_config_load_balancing/test.py::test_nearest_hostname",
+  "test_zookeeper_config_load_balancing/test.py::test_hostname_levenshtein_distance",
+  "test_zookeeper_config_load_balancing/test.py::test_round_robin",
+  "test_zookeeper_fallback_session/test.py::test_fallback_session"
 ]
