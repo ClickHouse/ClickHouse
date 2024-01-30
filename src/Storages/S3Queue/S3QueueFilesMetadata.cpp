@@ -160,11 +160,7 @@ void S3QueueFilesMetadata::deactivateCleanupTask()
 
 zkutil::ZooKeeperPtr S3QueueFilesMetadata::getZooKeeper() const
 {
-    if (!zookeeper || zookeeper->expired())
-    {
-        zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
-    }
-    return zookeeper;
+    return Context::getGlobalContextInstance()->getZooKeeper();
 }
 
 S3QueueFilesMetadata::FileStatusPtr S3QueueFilesMetadata::getFileStatus(const std::string & path)
@@ -318,7 +314,7 @@ size_t S3QueueFilesMetadata::getIdForProcessingThread(size_t thread_id, size_t s
 
 size_t S3QueueFilesMetadata::getProcessingIdForPath(const std::string & path) const
 {
-    return sipHash64(path.data(), path.size()) % getProcessingIdsNum();
+    return sipHash64(path) % getProcessingIdsNum();
 }
 
 S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAsProcessing(const std::string & path)

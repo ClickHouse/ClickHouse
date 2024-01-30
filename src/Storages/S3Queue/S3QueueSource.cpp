@@ -100,7 +100,7 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
                     {
                         if (metadata->isProcessingIdBelongsToShard(processing_id_for_key, current_shard))
                         {
-                            LOG_TEST(log, "Putting key {} into queue of shard {} (total: {})",
+                            LOG_TEST(log, "Putting key {} into queue of processor {} (total: {})",
                                      val->key, processing_id_for_key, sharded_keys.size());
 
                             if (auto it = sharded_keys.find(idx); it != sharded_keys.end())

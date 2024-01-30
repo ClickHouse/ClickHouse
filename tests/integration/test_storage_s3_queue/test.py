@@ -1209,6 +1209,12 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
         shard_nodes = zk.get_children(f"{keeper_path}/shards/")
         assert len(shard_nodes) == shards_num
 
+    node.restart_clickhouse()
+    time.sleep(10)
+    assert (
+        get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
+    ) == total_rows
+
 
 def test_settings_check(started_cluster):
     node = started_cluster.instances["instance"]
@@ -1218,8 +1224,6 @@ def test_settings_check(started_cluster):
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     mode = "ordered"
-
-    node.restart_clickhouse()
 
     create_table(
         started_cluster,
@@ -1271,7 +1275,9 @@ def test_settings_check(started_cluster):
     assert "s3queue_current_shard_num = 0" in node.query(
         f"SHOW CREATE TABLE {table_name}"
     )
+
     node.restart_clickhouse()
+
     assert "s3queue_current_shard_num = 0" in node.query(
         f"SHOW CREATE TABLE {table_name}"
     )

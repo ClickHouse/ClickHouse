@@ -129,7 +129,6 @@ private:
     const fs::path zookeeper_cleanup_lock_path;
 
     LoggerPtr log;
-    mutable zkutil::ZooKeeperPtr zookeeper;
 
     std::atomic_bool shutdown = false;
     BackgroundSchedulePool::TaskHolder task;
