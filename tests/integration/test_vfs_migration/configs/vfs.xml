@@ -1,0 +1,11 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <allow_vfs>true</allow_vfs>
+                <vfs_migrate>true</vfs_migrate>
+                <vfs_gc_sleep_ms>2000</vfs_gc_sleep_ms>
+            </s3>
+        </disks>
+    </storage_configuration>
+</clickhouse>
