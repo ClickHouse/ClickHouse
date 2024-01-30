@@ -18,6 +18,7 @@
 #include <rocksdb/options.h>
 #include <rocksdb/status.h>
 #include <rocksdb/utilities/db_ttl.h>
+#include <Common/SipHash.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -81,8 +82,10 @@ EmbeddedRocksDBBulkSink::EmbeddedRocksDBBulkSink(
     }
     serializations = getHeader().getSerializations();
     /// If max_insert_threads > 1 we may have multiple EmbeddedRocksDBBulkSink and getContext()->getCurrentQueryId() is not guarantee to
-    /// to have a distinct path
-    insert_directory_queue = fs::path(storage.getDataPaths()[0]) / (getContext()->getCurrentQueryId() + "-" + getRandomASCIIString(8));
+    /// to have a distinct path. Also we cannot use query id as directory name here, because it could be defined by user and not suitable
+    /// for directory name
+    auto base_directory_name = sipHash128String(getContext()->getCurrentQueryId());
+    insert_directory_queue = fs::path(storage.getDataPaths()[0]) / (base_directory_name + "-" + getRandomASCIIString(8));
     fs::create_directory(insert_directory_queue);
 }
 
