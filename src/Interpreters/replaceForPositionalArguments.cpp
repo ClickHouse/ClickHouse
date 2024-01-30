@@ -47,7 +47,7 @@ bool replaceForPositionalArguments(ASTPtr & argument, const ASTSelectQuery * sel
             if (static_cast<size_t>(std::abs(value)) > columns.size())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Negtive positional argument number {} is out of bounds. Expected in range [-{}, -1]",
+                    "Negative positional argument number {} is out of bounds. Expected in range [-{}, -1]",
                     value,
                     columns.size());
             pos = columns.size() + value + 1;
