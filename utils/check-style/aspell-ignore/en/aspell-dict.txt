@@ -2016,7 +2016,6 @@ pcre
 performant
 perl
 persistency
-personal_ws-1.1 en 2657 
 phpclickhouse
 pipelining
 plaintext
