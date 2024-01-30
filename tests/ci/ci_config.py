@@ -213,6 +213,12 @@ class BuildConfig:
                     "./programs",
                     "./packages",
                     "./docker/packager/packager",
+                    "./rust",
+                    # FIXME: This is a WA to rebuild the CH and recreate the Performance.tar.zst artifact
+                    # when there are changes in performance test scripts.
+                    # Due to the current design of the perf test we need to rebuild CH when the performance test changes,
+                    # otherwise the changes will not be visible in the PerformanceTest job in CI
+                    "./tests/performance",
                 ],
                 exclude_files=[".md"],
                 docker=["clickhouse/binary-builder"],
@@ -534,7 +540,7 @@ class CiConfig:
 
     @classmethod
     def is_docs_job(cls, job: str) -> bool:
-        return job != JobNames.DOCS_CHECK
+        return job == JobNames.DOCS_CHECK
 
     def validate(self) -> None:
         errors = []

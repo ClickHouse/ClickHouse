@@ -45,10 +45,7 @@ struct ChangelogDirTest
     bool drop;
     explicit ChangelogDirTest(std::string path_, bool drop_ = true) : path(path_), drop(drop_)
     {
-        if (fs::exists(path))
-        {
-            EXPECT_TRUE(false) << "Path " << path << " already exists, remove it to run test";
-        }
+        EXPECT_FALSE(fs::exists(path)) << "Path " << path << " already exists, remove it to run test";
         fs::create_directory(path);
     }
 
@@ -69,7 +66,7 @@ class CoordinationTest : public ::testing::TestWithParam<CompressionParam>
 {
 protected:
     DB::KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true);
-    Poco::Logger * log{&Poco::Logger::get("CoordinationTest")};
+    LoggerPtr log{getLogger("CoordinationTest")};
 
     void SetUp() override
     {
@@ -1104,7 +1101,7 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
 }
 
 /// Truncating only some entries from the end
-/// For compressed logs we have no reliable way of knowing how many log entries were lost 
+/// For compressed logs we have no reliable way of knowing how many log entries were lost
 /// after we truncate some bytes from the end
 TEST_F(CoordinationTest, ChangelogTestReadAfterBrokenTruncate3)
 {
@@ -1367,11 +1364,11 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     auto itr = map_snp.begin();
     EXPECT_EQ(itr->key, "/hello");
     EXPECT_EQ(itr->value, 7);
-    EXPECT_EQ(itr->active_in_map, false);
+    EXPECT_EQ(itr->isActiveInMap(), false);
     itr = std::next(itr);
     EXPECT_EQ(itr->key, "/hello");
     EXPECT_EQ(itr->value, 554);
-    EXPECT_EQ(itr->active_in_map, true);
+    EXPECT_EQ(itr->isActiveInMap(), true);
     itr = std::next(itr);
     EXPECT_EQ(itr, map_snp.end());
     for (int i = 0; i < 5; ++i)
@@ -1387,7 +1384,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     {
         EXPECT_EQ(itr->key, "/hello" + std::to_string(i));
         EXPECT_EQ(itr->value, i);
-        EXPECT_EQ(itr->active_in_map, true);
+        EXPECT_EQ(itr->isActiveInMap(), true);
         itr = std::next(itr);
     }
 
@@ -1401,7 +1398,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     {
         EXPECT_EQ(itr->key, "/hello" + std::to_string(i));
         EXPECT_EQ(itr->value, i);
-        EXPECT_EQ(itr->active_in_map, i != 3 && i != 2);
+        EXPECT_EQ(itr->isActiveInMap(), i != 3 && i != 2);
         itr = std::next(itr);
     }
     map_snp.clearOutdatedNodes();
@@ -1411,19 +1408,19 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     itr = map_snp.begin();
     EXPECT_EQ(itr->key, "/hello");
     EXPECT_EQ(itr->value, 554);
-    EXPECT_EQ(itr->active_in_map, true);
+    EXPECT_EQ(itr->isActiveInMap(), true);
     itr = std::next(itr);
     EXPECT_EQ(itr->key, "/hello0");
     EXPECT_EQ(itr->value, 0);
-    EXPECT_EQ(itr->active_in_map, true);
+    EXPECT_EQ(itr->isActiveInMap(), true);
     itr = std::next(itr);
     EXPECT_EQ(itr->key, "/hello1");
     EXPECT_EQ(itr->value, 1);
-    EXPECT_EQ(itr->active_in_map, true);
+    EXPECT_EQ(itr->isActiveInMap(), true);
     itr = std::next(itr);
     EXPECT_EQ(itr->key, "/hello4");
     EXPECT_EQ(itr->value, 4);
-    EXPECT_EQ(itr->active_in_map, true);
+    EXPECT_EQ(itr->isActiveInMap(), true);
     itr = std::next(itr);
     EXPECT_EQ(itr, map_snp.end());
     map_snp.disableSnapshotMode();
@@ -1804,7 +1801,7 @@ void testLogAndStateMachine(
                 = [&snapshot_created](bool & ret, nuraft::ptr<std::exception> & /*exception*/)
             {
                 snapshot_created = ret;
-                LOG_INFO(&Poco::Logger::get("CoordinationTest"), "Snapshot finished");
+                LOG_INFO(getLogger("CoordinationTest"), "Snapshot finished");
             };
 
             state_machine->create_snapshot(s, when_done);
