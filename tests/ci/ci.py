@@ -268,11 +268,11 @@ def _check_and_update_for_early_style_check(run_config: dict) -> None:
     jobs_to_do = run_config.get("jobs_data", {}).get("jobs_to_do", [])
     docker_to_build = run_config.get("docker_data", {}).get("missing_multi", [])
     if (
-        "Style check" in jobs_to_do
+        JobNames.STYLE_CHECK in jobs_to_do
         and docker_to_build
         and "clickhouse/style-test" not in docker_to_build
     ):
-        index = jobs_to_do.index("Style check")
+        index = jobs_to_do.index(JobNames.STYLE_CHECK)
         jobs_to_do[index] = "Style check early"
 
 

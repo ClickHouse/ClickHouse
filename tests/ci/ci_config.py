@@ -1231,10 +1231,10 @@ CHECK_DESCRIPTIONS = [
         lambda x: x.startswith("Stress test ("),
     ),
     CheckDescription(
-        "Style Check",
+        JobNames.STYLE_CHECK,
         "Runs a set of checks to keep the code style clean. If some of tests failed, "
         "see the related log from the report",
-        lambda x: x == "Style Check",
+        lambda x: x == JobNames.STYLE_CHECK,
     ),
     CheckDescription(
         "Unit tests",
