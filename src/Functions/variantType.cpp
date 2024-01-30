@@ -88,9 +88,9 @@ REGISTER_FUNCTION(VariantType)
         .description = R"(
 Returns the variant type name for each row of `Variant` column. If row contains NULL, it returns 'None' for it.
 )",
-        .syntax{"variantType(variant)"},
-        .arguments{{{"variant", "Variant column"}}}
-        .examples{{{
+        .syntax = {"variantType(variant)"},
+        .arguments = {{"variant", "Variant column"}},
+        .examples = {{{
             "Example",
             R"(
 CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
