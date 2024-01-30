@@ -20,11 +20,13 @@ public:
         setCodecDescription("FSST");
     }
 
-    uint8_t getMethodByte() const override;
+    uint8_t getMethodByte() const override {
+        return static_cast<uint8_t>(CompressionMethodByte::FSST);
+    }
 
-    UInt32 getAdditionalSizeAtTheEndOfBuffer() const override;
-
-    void updateHash(SipHash & hash) const override;
+    void updateHash(SipHash & hash) const override {
+        getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    }
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override {
@@ -61,7 +63,7 @@ protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return true; }
 
-    void RebuildSymbolTable();
+    // void RebuildSymbolTable();
 
 private:
     mutable std::vector<size_t> lenOut;

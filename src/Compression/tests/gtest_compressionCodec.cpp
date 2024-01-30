@@ -1304,6 +1304,7 @@ TEST(LZ4Test, DecompressMalformedInput)
     ASSERT_THROW(codec->decompress(source, source_size, memory.data()), Exception);
 
     auto fsst_codec = CompressionCodecFactory::instance().get("FSST", {});
+    std::cerr << static_cast<size_t>(fsst_codec->getMethodByte()) << std::endl;
     UNUSED(fsst_codec);
 }
 
