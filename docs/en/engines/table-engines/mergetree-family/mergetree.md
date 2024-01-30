@@ -1433,4 +1433,3 @@ ALTER TABLE tab MODIFY COLUMN document MODIFY SETTING min_compress_block_size = 
 ```sql
 ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;
 ```
->>>>>>> master

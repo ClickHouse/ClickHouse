@@ -30,7 +30,7 @@ public:
         uniq_collector->destroy(data);
     }
 
-    Int64 getNDV()
+    Int64 getCardinality()
     {
         if (result < 0)
         {

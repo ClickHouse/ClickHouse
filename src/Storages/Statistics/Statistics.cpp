@@ -60,8 +60,7 @@ Float64 ColumnStatistics::estimateEqual(Float64 val) const
     if (stats.contains(Uniq) && stats.contains(TDigest))
     {
         auto uniq_static = std::static_pointer_cast<UniqStatistic>(stats.at(Uniq));
-        Int64 ndv = uniq_static->getNDV();
-        if (ndv < 2048)
+        if (uniq_static->getCardinality() < 2048)
         {
             auto tdigest_static = std::static_pointer_cast<TDigestStatistic>(stats.at(TDigest));
             return tdigest_static->estimateEqual(val);
