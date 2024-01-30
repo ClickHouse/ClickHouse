@@ -329,10 +329,9 @@ public:
         if constexpr (dictionary_get_function_type != DictionaryGetFunctionType::getOrDefault)
             return false;
 
-        settings.enable_lazy_execution_for_first_argument = false;
+        settings.arguments_with_disabled_lazy_execution.insert({0, 1, 2});
         settings.enable_lazy_execution_for_common_descendants_of_arguments = false;
         settings.force_enable_lazy_execution = false;
-        settings.enable_lazy_execution_for_third_argument = false;
         return true;
     }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }

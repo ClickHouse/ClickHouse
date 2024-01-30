@@ -244,9 +244,11 @@ public:
 
     struct ShortCircuitSettings
     {
-        /// Should we enable lazy execution for the first argument of short-circuit function?
-        /// Example: if(cond, then, else), we don't need to execute cond lazily.
-        bool enable_lazy_execution_for_first_argument;
+        /// Should we enable lazy execution for the nth argument of short-circuit function?
+        /// Example 1st argument: if(cond, then, else), we don't need to execute cond lazily.
+        /// Example other arguments: 1st, 2nd, 3rd argument of dictGetOrDefault should always be calculated.
+        std::unordered_set<size_t> arguments_with_disabled_lazy_execution;
+
         /// Should we enable lazy execution for functions, that are common descendants of
         /// different short-circuit function arguments?
         /// Example 1: if (cond, expr1(..., expr, ...), expr2(..., expr, ...)), we don't need
@@ -258,9 +260,6 @@ public:
         /// Example: toTypeName(expr), even if expr contains functions that are not suitable for
         /// lazy execution (because of their simplicity), we shouldn't execute them at all.
         bool force_enable_lazy_execution;
-        /// Currently only useful for dictGetOrDefault, the 3rd argument of it should always be
-        /// calculated, so set it to false in dictGetOrDefault, while true in other cases.
-        bool enable_lazy_execution_for_third_argument = true;
     };
 
     /** Function is called "short-circuit" if it's arguments can be evaluated lazily
