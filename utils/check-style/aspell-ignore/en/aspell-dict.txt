@@ -2638,6 +2638,7 @@ varPop
 varSamp
 variadic
 variantElement
+variantType
 varint
 varpop
 varsamp
