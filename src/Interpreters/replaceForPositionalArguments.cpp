@@ -10,7 +10,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 bool replaceForPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_query, ASTSelectQuery::Expression expression)
@@ -39,7 +40,18 @@ bool replaceForPositionalArguments(ASTPtr & argument, const ASTSelectQuery * sel
     else if (which == Field::Types::Int64)
     {
         auto value = ast_literal->value.get<Int64>();
-        pos = value > 0 ? value : columns.size() + value + 1;
+        if (value > 0)
+            pos = value;
+        else
+        {
+            if (static_cast<size_t>(std::abs(value)) > columns.size())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Negtive positional argument number {} is out of bounds. Expected in range [-{}, -1]",
+                    value,
+                    columns.size());
+            pos = columns.size() + value + 1;
+        }
     }
     else
     {
@@ -47,8 +59,7 @@ bool replaceForPositionalArguments(ASTPtr & argument, const ASTSelectQuery * sel
     }
 
     if (!pos || pos > columns.size())
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Positional argument out of bounds: {} (expected in range [1, {}]", pos, columns.size());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional argument out of bounds: {} (expected in range [1, {}]", pos, columns.size());
 
     const auto & column = columns[--pos];
     if (typeid_cast<const ASTIdentifier *>(column.get()) || typeid_cast<const ASTLiteral *>(column.get()))

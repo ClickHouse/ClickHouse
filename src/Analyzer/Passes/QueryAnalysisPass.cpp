@@ -2170,7 +2170,19 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
         else // Int64
         {
             auto value = constant_node->getValue().get<Int64>();
-            pos = value > 0 ? value : projection_nodes.size() + value + 1;
+            if (value > 0)
+                pos = value;
+            else
+            {
+                if (static_cast<size_t>(std::abs(value)) > projection_nodes.size())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Negtive positional argument number {} is out of bounds. Expected in range [-{}, -1]. In scope {}",
+                        value,
+                        projection_nodes.size(),
+                        scope.scope_node->formatASTForErrorMessage());
+                pos = projection_nodes.size() + value + 1;
+            }
         }
 
         if (!pos || pos > projection_nodes.size())
