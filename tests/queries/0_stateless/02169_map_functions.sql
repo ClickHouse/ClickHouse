@@ -49,7 +49,7 @@ SELECT DISTINCT mapUpdate(m1, m2) FROM numbers (100000);
 SELECT mapApply(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT mapApply((x, y) -> (x), map(1, 0, 2, 0)); -- { serverError BAD_ARGUMENTS }
 SELECT mapApply((x, y) -> ('x'), map(1, 0, 2, 0)); -- { serverError BAD_ARGUMENTS }
-SELECT mapApply((x) -> (x, x), map(1, 0, 2, 0)); -- { serverError BAD_ARGUMENTS }
+SELECT mapApply((x) -> (x, x), map(1, 0, 2, 0));
 SELECT mapApply((x, y) -> (x, 1, 2), map(1, 0, 2, 0)); -- { serverError BAD_ARGUMENTS }
 SELECT mapApply((x, y) -> (x, x + 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT mapApply(map(1, 0, 2, 0), (x, y) -> (x, x + 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
