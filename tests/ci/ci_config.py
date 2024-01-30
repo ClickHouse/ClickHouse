@@ -1144,7 +1144,9 @@ CHECK_DESCRIPTIONS = [
         lambda x: x.startswith("Docker keeper"),
     ),
     CheckDescription(
-        "Docs Check", "Builds and tests the documentation", lambda x: x == "Docs Check"
+        JobNames.DOCS_CHECK,
+        "Builds and tests the documentation",
+        lambda x: x == JobNames.DOCS_CHECK,
     ),
     CheckDescription(
         JobNames.FAST_TEST,

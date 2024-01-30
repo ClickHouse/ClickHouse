@@ -10,7 +10,16 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 import docker_images_helper
-from ci_config import CI_CONFIG, Labels
+import upload_result_helper
+from build_check import get_release_or_pr
+from ci_config import CI_CONFIG, JobNames, Labels
+from clickhouse_helper import (
+    CiLogsCredentials,
+    ClickHouseHelper,
+    get_instance_id,
+    get_instance_type,
+    prepare_tests_results_for_clickhouse,
+)
 from commit_status_helper import (
     CommitStatusData,
     RerunHelper,
@@ -36,15 +45,6 @@ from github import Github
 from pr_info import PRInfo
 from report import SUCCESS, BuildResult, JobReport
 from s3_helper import S3Helper
-from clickhouse_helper import (
-    CiLogsCredentials,
-    ClickHouseHelper,
-    get_instance_id,
-    get_instance_type,
-    prepare_tests_results_for_clickhouse,
-)
-from build_check import get_release_or_pr
-import upload_result_helper
 from version_helper import get_version_from_repo
 
 
@@ -277,7 +277,7 @@ def _check_and_update_for_early_style_check(run_config: dict) -> None:
 
 
 def _update_config_for_docs_only(run_config: dict) -> None:
-    DOCS_CHECK_JOBS = ["Docs check", "Style check"]
+    DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
     print(f"NOTE: Will keep only docs related jobs: [{DOCS_CHECK_JOBS}]")
     jobs_to_do = run_config.get("jobs_data", {}).get("jobs_to_do", [])
     run_config["jobs_data"]["jobs_to_do"] = [
@@ -893,7 +893,7 @@ def main() -> int:
             CI_CONFIG.get_digest_config("package_release")
         )
         docs_digest = job_digester.get_job_digest(
-            CI_CONFIG.get_digest_config("Docs check")
+            CI_CONFIG.get_digest_config(JobNames.DOCS_CHECK)
         )
         jobs_data = (
             _configure_jobs(
