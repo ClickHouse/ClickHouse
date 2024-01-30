@@ -2703,3 +2703,6 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+iTerm
+shortkeys
+Shortkeys
