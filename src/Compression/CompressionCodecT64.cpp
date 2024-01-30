@@ -168,6 +168,7 @@ TypeIndex baseType(TypeIndex type_idx)
             return TypeIndex::Int16;
         case TypeIndex::Int32:
         case TypeIndex::Decimal32:
+        case TypeIndex::Date32:
             return TypeIndex::Int32;
         case TypeIndex::Int64:
         case TypeIndex::Decimal64:
@@ -180,8 +181,6 @@ TypeIndex baseType(TypeIndex type_idx)
         case TypeIndex::Enum16:
         case TypeIndex::Date:
             return TypeIndex::UInt16;
-        case TypeIndex::Date32:
-            return TypeIndex::Int32;
         case TypeIndex::UInt32:
         case TypeIndex::DateTime:
         case TypeIndex::IPv4:
