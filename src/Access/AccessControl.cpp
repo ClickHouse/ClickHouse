@@ -565,19 +565,31 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
     // Then user_id is not generated, and the authentication quota will always be nullptr.
     auto authentication_quota = getAuthenticationQuota(credentials.getUserName(), address, forwarded_address);
     if (authentication_quota)
-        authentication_quota->checkExceeded(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS);
+    {
+        /// Reserve a single try from the quota to check whether we have another authentication try.
+        /// This is required for correct behavior in this situation:
+        /// User has 1 login failures quota.
+        /// * At the first login with an invalid password: Increase the quota counter. 1 (used) > 1 (max) is false.
+        ///   Then try to authenticate the user and throw an AUTHENTICATION_FAILED error.
+        /// * In case of the second try: increase quota counter, 2 (used) > 1 (max), then throw QUOTA_EXCEED
+        ///   and don't let the user authenticate.
+        ///
+        /// The authentication failures counter will be reset after successful authentication.
+        authentication_quota->used(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS, 1);
+    }
 
-    AuthResult auth_result;
     try
     {
-        auth_result = MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, allow_no_password,
-                                                          allow_plaintext_password);
+        const auto auth_result = MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, allow_no_password,
+                                                                     allow_plaintext_password);
+        if (authentication_quota)
+            authentication_quota->reset(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS);
+
+        return auth_result;
     }
     catch (...)
     {
         tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed");
-        if (authentication_quota)
-            authentication_quota->used(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS, 1, true);
 
         WriteBufferFromOwnString message;
         message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name.";
@@ -597,11 +609,6 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
                                             "{}: Authentication failed: password is incorrect, or there is no user with such name.{}"},
                         ErrorCodes::AUTHENTICATION_FAILED);
     }
-
-    if (authentication_quota)
-        authentication_quota->reset(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS);
-
-    return auth_result;
 }
 
 void AccessControl::restoreFromBackup(RestorerFromBackup & restorer)
