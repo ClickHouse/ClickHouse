@@ -9,6 +9,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <vector>
+#include <iostream>
 
 namespace DB
 {
@@ -30,22 +31,38 @@ public:
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override {
+        std::cerr << "bebra " << "1" << std::endl;
         FsstParams params = FsstParams(reinterpret_cast<const unsigned char*>(source), source_size);
+        std::cerr << "bebra " << "2" << std::endl;
         fsst_encoder_t *encoder = fsst_create(params.n, params.len_in.data(),
                     const_cast<unsigned char**>(params.str_in.data()), 1);
+        std::cerr << "bebra " << "3" << std::endl;
         auto header_size = fsst_export(encoder, reinterpret_cast<unsigned char*>(dest));
-
+        std::cerr << "bebra " << "4" << std::endl;
         lenOut.reserve(params.n);
+        std::cerr << "bebra " << "5" << std::endl;
         strOut.reserve(params.n);
+        std::cerr << "bebra " << "6" << std::endl;
+
+        std::cerr << params.n << std::endl;
+        for (auto el: params.len_in) {
+            std::cerr << el << std::endl;
+        }
+
         auto compressed_count = fsst_compress(encoder, params.n, params.len_in.data(),
             const_cast<unsigned char**>(params.str_in.data()),
-            source_size + FSST_MAXHEADER - header_size, reinterpret_cast<unsigned char*>(dest + header_size),
+            source_size + FSST_MAXHEADER - header_size + 100000, reinterpret_cast<unsigned char*>(dest + header_size),
             lenOut.data(), strOut.data());
+        std::cerr << "bebra " << "7" << std::endl;
         if (compressed_count < params.n) {
+        std::cerr << "bebra " << "8" << std::endl;
             throw std::runtime_error("FSST compression failed");
         }
+        std::cerr << "bebra " << "9" << std::endl;
         auto compressed_size = lenOut.back() + (strOut.back() - reinterpret_cast<const unsigned char*>(source));
+        std::cerr << "bebra " << "10" << std::endl;
         fsst_destroy(encoder);
+        std::cerr << "bebra " << "11" << std::endl;
         return static_cast<UInt32>(header_size) + static_cast<UInt32>(compressed_size);
     }
 
@@ -69,7 +86,7 @@ private:
     mutable std::vector<size_t> lenOut;
     mutable std::vector<unsigned char*> strOut;
     struct FsstParams {
-        size_t n;
+        size_t n{0};
         std::vector <size_t> len_in;
         std::vector <const unsigned char*> str_in;
 
@@ -84,7 +101,7 @@ private:
             str_in.push_back(start);
             for (UInt32 i = 0; i <= size; ++i) {
                 if (start[i] == '\0') {
-                    len_in.push_back(start + i - str_in.back());
+                    len_in.push_back(i + str_in.back() - start);
                     str_in.push_back(start + i + 1);
                 }
             }

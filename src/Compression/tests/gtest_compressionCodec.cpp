@@ -1302,10 +1302,20 @@ TEST(LZ4Test, DecompressMalformedInput)
 
     auto codec = CompressionCodecFactory::instance().get("LZ4", {});
     ASSERT_THROW(codec->decompress(source, source_size, memory.data()), Exception);
+}
+
+TEST(FSSTTest, CompressDecompress)
+{
+
+    char some_source[] = "sadf asdfjojsd asijdfojas dsjf asodf aosdjf\0";
+    std::string some_dest(strlen(some_source) * 10, '3');
+    char* bebra = new char(strlen(some_source) * 10);
 
     auto fsst_codec = CompressionCodecFactory::instance().get("FSST", {});
     std::cerr << static_cast<size_t>(fsst_codec->getMethodByte()) << std::endl;
-    UNUSED(fsst_codec);
+
+    fsst_codec->compress(some_source, static_cast<UInt32>(strlen(some_source)), bebra);
+    std::cerr << some_dest;
 }
 
 }
