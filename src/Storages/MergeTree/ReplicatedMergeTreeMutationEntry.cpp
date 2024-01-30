@@ -29,7 +29,10 @@ void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
 
     out << "alter version: ";
     out << alter_version;
+    out << "\n";
 
+    out << "max postpone time: ";
+    out << max_postpone_time;
 }
 
 void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
@@ -58,6 +61,9 @@ void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
     commands.readText(in);
     if (checkString("\nalter version: ", in))
         in >> alter_version;
+    if (checkString("\nmax postpone time: ", in))
+        in >> max_postpone_time;
+
 }
 
 String ReplicatedMergeTreeMutationEntry::toString() const

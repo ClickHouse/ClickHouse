@@ -563,12 +563,19 @@ public:
     /// We should not drop part in this case, because replication queue may stuck without that part.
     bool partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, String & out_reason) const;
 
+
+    struct DesiredMutationDescription
+    {
+        Int64 mutation_version;
+        int32_t alter_version;
+        size_t max_postpone_time;
+    };
     /// Return nonempty optional of desired mutation version and alter version.
     /// If we have no alter (modify/drop) mutations in mutations queue, than we return biggest possible
     /// mutation version (and -1 as alter version). In other case, we return biggest mutation version with
     /// smallest alter version. This required, because we have to execute alter mutations sequentially and
     /// don't glue them together. Alter is rare operation, so it shouldn't affect performance.
-    std::optional<std::pair<Int64, int>> getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const;
+    std::optional<DesiredMutationDescription> getDesiredMutationDescription(const MergeTreeData::DataPartPtr & part) const;
 
     bool isMutationFinished(const std::string & znode_name, const std::map<String, int64_t> & block_numbers,
                             std::unordered_set<String> & checked_partitions_cache) const;

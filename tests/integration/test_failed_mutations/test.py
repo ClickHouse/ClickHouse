@@ -12,7 +12,7 @@ cluster = ClickHouseCluster(__file__)
 node_with_backoff = cluster.add_instance(
     "node_with_backoff",
     macros={"cluster": "test_cluster"},
-    main_configs=["configs/config.d/backoff_mutation_policy.xml"],
+    user_configs=["configs/users.d/backoff_mutation_policy.xml"],
     with_zookeeper=True,
 )
 
@@ -20,6 +20,7 @@ node_no_backoff = cluster.add_instance(
     "node_no_backoff",
     macros={"cluster": "test_cluster"},
     with_zookeeper=True,
+    stay_alive=True,
 )
 
 REPLICATED_POSPONE_MUTATION_LOG = (
@@ -94,13 +95,13 @@ def test_exponential_backoff_with_merge_tree(started_cluster, node, found_in_log
 def test_exponential_backoff_with_replicated_tree(started_cluster):
     prepare_cluster(True)
 
-    node_no_backoff.query(
+    node_with_backoff.query(
         "ALTER TABLE test_mutations DELETE WHERE x IN (SELECT x  FROM notexist_table) SETTINGS allow_nondeterministic_mutations=1"
     )
 
-    time.sleep(5)
-    assert node_no_backoff.contains_in_log(REPLICATED_POSPONE_MUTATION_LOG) == False
-    assert node_with_backoff.contains_in_log(REPLICATED_POSPONE_MUTATION_LOG) == True
+    time.sleep(20)
+    assert node_no_backoff.contains_in_log(REPLICATED_POSPONE_MUTATION_LOG)
+    assert node_with_backoff.contains_in_log(REPLICATED_POSPONE_MUTATION_LOG)
 
 
 @pytest.mark.parametrize(
@@ -112,7 +113,6 @@ def test_exponential_backoff_with_replicated_tree(started_cluster):
 def test_exponential_backoff_create_dependent_table(started_cluster, node):
     prepare_cluster(False)
 
-    node.query("INSERT INTO test_mutations SELECT * FROM system.numbers LIMIT 10")
     # Executing incorrect mutation.
     node.query(
         "ALTER TABLE test_mutations DELETE WHERE x IN (SELECT x  FROM dep_table) SETTINGS allow_nondeterministic_mutations=1"
@@ -123,3 +123,33 @@ def test_exponential_backoff_create_dependent_table(started_cluster, node):
 
     time.sleep(5)
     assert node.query("SELECT count() FROM system.mutations WHERE is_done=0") == "0\n"
+
+
+@pytest.mark.parametrize(
+    ("replicated_table"),
+    [
+        (False),
+        (True),
+    ],
+)
+def test_backoff_throught_sql_and_restart(started_cluster, replicated_table):
+    prepare_cluster(replicated_table)
+    node = node_no_backoff
+
+    node.query("INSERT INTO test_mutations SELECT * FROM system.numbers LIMIT 10")
+
+    # Executing incorrect mutation.
+    node.query(
+        "ALTER TABLE test_mutations DELETE WHERE x IN (SELECT x  FROM dep_table) SETTINGS allow_nondeterministic_mutations=1, max_postpone_time_for_failed_mutations=60000"
+    )
+    time.sleep(5)
+    assert node.contains_in_log(
+        REPLICATED_POSPONE_MUTATION_LOG if replicated_table else POSPONE_MUTATION_LOG
+    )
+    node.restart_clickhouse()
+    node.rotate_logs()
+    time.sleep(5)
+    # After the restart should keep the postpone value.
+    assert node.contains_in_log(
+        REPLICATED_POSPONE_MUTATION_LOG if replicated_table else POSPONE_MUTATION_LOG
+    )

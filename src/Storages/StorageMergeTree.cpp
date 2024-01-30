@@ -502,7 +502,8 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings(),
+                                     query_context->getSettings().max_postpone_time_for_failed_mutations);
         version = increment.get();
         entry.commit(version);
         String mutation_id = entry.file_name;
@@ -525,6 +526,8 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
 
     Int64 sources_data_version = result_part->parts.at(0)->info.getDataVersion();
     Int64 result_data_version = result_part->part_info.getDataVersion();
+    auto & failed_part = result_part->parts.at(0);
+
     if (sources_data_version != result_data_version)
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
@@ -534,7 +537,6 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
             MergeTreeMutationEntry & entry = it->second;
-            auto & failed_part = result_part->parts.at(0);
             if (is_successful)
             {
                 if (!entry.latest_failed_part.empty() && result_part->part_info.contains(entry.latest_failed_part_info))
@@ -543,7 +545,8 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
                     entry.latest_failed_part_info = MergeTreePartInfo();
                     entry.latest_fail_time = 0;
                     entry.latest_fail_reason.clear();
-                    mutation_backoff_policy.removePartFromFailed(failed_part->name);
+                    if (static_cast<UInt64>(result_part->part_info.mutation) == it->first)
+                        mutation_backoff_policy.removePartFromFailed(failed_part->name);
                 }
             }
             else
@@ -552,7 +555,11 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
                 entry.latest_failed_part_info = failed_part->info;
                 entry.latest_fail_time = time(nullptr);
                 entry.latest_fail_reason = exception_message;
-                mutation_backoff_policy.addPartMutationFailure(failed_part->name, sources_data_version + 1);
+
+                if (static_cast<UInt64>(result_part->part_info.mutation) == it->first)
+                {
+                    mutation_backoff_policy.addPartMutationFailure(failed_part->name, it->first, entry.max_postpone_time);
+                }
             }
         }
     }
@@ -1181,7 +1188,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
     CurrentlyMergingPartsTaggerPtr tagger;
 
-    bool exist_posponed_failed_part = false;
+    bool exist_postponed_failed_part = false;
     auto mutations_end_it = current_mutations_by_version.end();
     for (const auto & part : getDataPartsVectorForInternalUsage())
     {
@@ -1208,7 +1215,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
         if (!mutation_backoff_policy.partCanBeMutated(part->name))
         {
-            exist_posponed_failed_part = true;
+            exist_postponed_failed_part = true;
             LOG_DEBUG(log, "According to exponential backoff policy, do not perform mutations for the part {} yet. Put it aside.", part->name);
             continue;
         }
@@ -1319,7 +1326,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands, txn);
         }
     }
-    if (exist_posponed_failed_part)
+    if (exist_postponed_failed_part)
     {
         std::lock_guard lock(mutation_wait_mutex);
         mutation_wait_event.notify_all();

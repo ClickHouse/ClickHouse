@@ -754,7 +754,9 @@ private:
         const UUID & new_part_uuid,
         Int64 mutation_version,
         int32_t alter_version,
-        int32_t log_version);
+        int32_t log_version,
+        size_t max_postpone_time = 0
+      );
 
     /** Returns an empty string if no one has a part.
       */

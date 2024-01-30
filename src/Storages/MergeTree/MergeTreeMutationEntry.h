@@ -23,6 +23,7 @@ struct MergeTreeMutationEntry
     String file_name;
     bool is_temp = false;
 
+    size_t max_postpone_time;
     UInt64 block_number = 0;
 
     String latest_failed_part;
@@ -38,7 +39,7 @@ struct MergeTreeMutationEntry
 
     /// Create a new entry and write it to a temporary file.
     MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number,
-                           const TransactionID & tid_, const WriteSettings & settings);
+                           const TransactionID & tid_, const WriteSettings & settings, size_t max_postpone_time);
     MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
     MergeTreeMutationEntry(MergeTreeMutationEntry &&) = default;
 

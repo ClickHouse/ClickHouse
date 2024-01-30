@@ -48,13 +48,14 @@ UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
 }
 
 MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number,
-                                               const TransactionID & tid_, const WriteSettings & settings)
+                                               const TransactionID & tid_, const WriteSettings & settings, size_t max_postpone_time_)
     : create_time(time(nullptr))
     , commands(std::move(commands_))
     , disk(std::move(disk_))
     , path_prefix(path_prefix_)
     , file_name("tmp_mutation_" + toString(tmp_number) + ".txt")
     , is_temp(true)
+    , max_postpone_time(max_postpone_time_)
     , tid(tid_)
 {
     try
@@ -65,6 +66,10 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
         *out << "commands: ";
         commands.writeText(*out, /* with_pure_metadata_commands = */ false);
         *out << "\n";
+        *out << "max postpone time: ";
+        *out << max_postpone_time;
+        *out << "\n";
+
         if (tid.isPrehistoric())
         {
             csn = Tx::PrehistoricCSN;
@@ -135,6 +140,11 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     *buf >> "commands: ";
     commands.readText(*buf);
     *buf >> "\n";
+
+    if (!buf->eof() && checkStringWithPositionSaving("max postpone time: ", *buf))
+    {
+        *buf >> "max postpone time: " >> max_postpone_time >> "\n";
+    }
 
     if (buf->eof())
     {

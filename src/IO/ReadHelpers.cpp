@@ -104,6 +104,22 @@ bool checkString(const char * s, ReadBuffer & buf)
     return true;
 }
 
+bool checkStringWithPositionSaving(const char * s, ReadBuffer & buf)
+{
+    auto initial_position = buf.position();
+    for (; *s; ++s)
+    {
+        if (buf.eof() || *buf.position() != *s)
+        {
+            buf.position() = initial_position;
+            return false;
+        }
+        ++buf.position();
+    }
+    buf.position() = initial_position;
+    return true;
+}
+
 
 bool checkStringCaseInsensitive(const char * s, ReadBuffer & buf)
 {
