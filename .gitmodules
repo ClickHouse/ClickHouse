@@ -360,3 +360,6 @@
 [submodule "contrib/sqids-cpp"]
 	path = contrib/sqids-cpp
 	url = https://github.com/sqids/sqids-cpp.git
+[submodule "contrib/llama-cpp"]
+	path = contrib/llama-cpp
+	url = https://github.com/ggerganov/llama.cpp.git
