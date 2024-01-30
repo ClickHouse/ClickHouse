@@ -39,7 +39,7 @@ public:
 
 protected:
     FDBDatabase * db = nullptr;
-    LoggerPtr * log = getLogger("GTestFDBAsyncTrx");
+    LoggerPtr log = getLogger("GTestFDBAsyncTrx");
 
     FDBTransaction * newTrx()
     {
