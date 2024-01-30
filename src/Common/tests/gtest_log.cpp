@@ -15,7 +15,7 @@ TEST(Logger, Log)
 {
     Poco::Logger::root().setLevel("none");
     Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
-    Poco::Logger * log = &Poco::Logger::get("Log");
+    LoggerPtr log = getLogger("Log");
 
     /// This test checks that we don't pass this string to fmtlib, because it is the only argument.
     EXPECT_NO_THROW(LOG_INFO(log, fmt::runtime("Hello {} World")));
@@ -27,12 +27,11 @@ TEST(Logger, TestLog)
 
         std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         auto my_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(oss));
-        auto * log = &Poco::Logger::create("TestLogger", my_channel.get());
+        auto log = createLogger("TestLogger", my_channel.get());
         log->setLevel("test");
         LOG_TEST(log, "Hello World");
 
         EXPECT_EQ(oss.str(), "Hello World\n");
-        Poco::Logger::destroy("TestLogger");
     }
 
     {   /// Test logs invisible for other levels
@@ -40,13 +39,11 @@ TEST(Logger, TestLog)
         {
             std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             auto my_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(oss));
-            auto * log = &Poco::Logger::create(std::string{level} + "_Logger", my_channel.get());
+            auto log = createLogger(std::string{level} + "_Logger", my_channel.get());
             log->setLevel(level);
             LOG_TEST(log, "Hello World");
 
             EXPECT_EQ(oss.str(), "");
-
-            Poco::Logger::destroy(std::string{level} + "_Logger");
         }
     }
 
@@ -84,7 +81,7 @@ TEST(Logger, SideEffects)
 {
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     auto my_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(oss));
-    auto * log = &Poco::Logger::create("Logger", my_channel.get());
+    auto log = createLogger("Logger", my_channel.get());
     log->setLevel("trace");
 
     /// Ensure that parameters are evaluated only once

@@ -255,13 +255,13 @@ public:
     /** Remove a specific replica from zookeeper.
      */
     static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
-                            Poco::Logger * logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
+                            LoggerPtr logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
 
-    void dropReplica(const String & drop_zookeeper_path, const String & drop_replica, Poco::Logger * logger);
+    void dropReplica(const String & drop_zookeeper_path, const String & drop_replica, LoggerPtr logger);
 
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
-                                              const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger);
+                                              const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, LoggerPtr logger);
 
     /// Schedules job to execute in background pool (merge, mutate, drop range and so on)
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
@@ -308,7 +308,7 @@ public:
         const std::string & disk_type,
         const ZooKeeperWithFaultInjectionPtr & zookeeper_,
         const MergeTreeSettings & settings,
-        Poco::Logger * logger,
+        LoggerPtr logger,
         const String & zookeeper_path_old,
         MergeTreeDataFormatVersion data_format_version);
 
@@ -316,7 +316,7 @@ public:
     MutableDataPartPtr tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
 
     /// Get best replica having this partition on a same type remote disk
-    String getSharedDataReplica(const IMergeTreeDataPart & part, DataSourceType data_source_type) const;
+    String getSharedDataReplica(const IMergeTreeDataPart & part, const DataSourceDescription & data_source_description) const;
 
     inline const String & getReplicaName() const { return replica_name; }
 
@@ -775,7 +775,7 @@ private:
     String findReplicaHavingCoveringPart(LogEntry & entry, bool active);
     bool findReplicaHavingCoveringPart(const String & part_name, bool active);
     String findReplicaHavingCoveringPartImplLowLevel(LogEntry * entry, const String & part_name, String & found_part_name, bool active);
-    static std::set<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, Poco::Logger * log_);
+    static std::set<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, LoggerPtr log_);
 
     /** Download the specified part from the specified replica.
       * If `to_detached`, the part is placed in the `detached` directory.

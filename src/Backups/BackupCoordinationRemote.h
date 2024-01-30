@@ -30,7 +30,8 @@ public:
         const Strings & all_hosts_,
         const String & current_host_,
         bool plain_backup_,
-        bool is_internal_);
+        bool is_internal_,
+        QueryStatusPtr process_list_element_);
 
     ~BackupCoordinationRemote() override;
 
@@ -101,7 +102,7 @@ private:
     const size_t current_host_index;
     const bool plain_backup;
     const bool is_internal;
-    Poco::Logger * const log;
+    LoggerPtr const log;
 
     /// The order of these two fields matters, because stage_sync holds a reference to with_retries object
     mutable WithRetries with_retries;

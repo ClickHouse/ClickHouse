@@ -37,7 +37,7 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
     zookeeper_path = storage.zookeeper_path;
     replica_path = storage.replica_path;
     logger_name = storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeQueue)";
-    log = &Poco::Logger::get(logger_name);
+    log = getLogger(logger_name);
 }
 
 
@@ -2158,7 +2158,7 @@ LocalMergePredicate::LocalMergePredicate(ReplicatedMergeTreeQueue & queue_)
 
 template<typename VirtualPartsT, typename MutationsStateT>
 CommittingBlocks BaseMergePredicate<VirtualPartsT, MutationsStateT>::getCommittingBlocks(
-    zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, Poco::Logger * log_)
+    zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, LoggerPtr log_)
 {
     CommittingBlocks committing_blocks;
 

@@ -42,7 +42,7 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     const Settings & settings,
     const StorageID & main_table,
     ASTPtr additional_filter_ast,
-    Poco::Logger * log,
+    LoggerPtr log,
     const DistributedSettings * distributed_settings)
 {
     Settings new_settings = settings;
@@ -202,7 +202,7 @@ void executeQuery(
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
     SelectStreamFactory & stream_factory,
-    Poco::Logger * log,
+    LoggerPtr log,
     const ASTPtr & query_ast,
     ContextPtr context,
     const SelectQueryInfo & query_info,
@@ -322,7 +322,6 @@ void executeQuery(
 
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
-    const StorageID & main_table,
     SelectStreamFactory & stream_factory,
     const ASTPtr & query_ast,
     ContextPtr context,
@@ -348,14 +347,14 @@ void executeQueryWithParallelReplicas(
         if (settings.use_hedged_requests.changed)
         {
             LOG_WARNING(
-                &Poco::Logger::get("executeQueryWithParallelReplicas"),
+                getLogger("executeQueryWithParallelReplicas"),
                 "Setting 'use_hedged_requests' explicitly with enabled 'allow_experimental_parallel_reading_from_replicas' has no effect. "
                 "Hedged connections are not used for parallel reading from replicas");
         }
         else
         {
             LOG_INFO(
-                &Poco::Logger::get("executeQueryWithParallelReplicas"),
+                getLogger("executeQueryWithParallelReplicas"),
                 "Disabling 'use_hedged_requests' in favor of 'allow_experimental_parallel_reading_from_replicas'. Hedged connections are "
                 "not used for parallel reading from replicas");
         }
@@ -391,7 +390,7 @@ void executeQueryWithParallelReplicas(
 
         chassert(shard_count == not_optimized_cluster->getShardsAddresses().size());
 
-        LOG_DEBUG(&Poco::Logger::get("executeQueryWithParallelReplicas"), "Parallel replicas query in shard scope: shard_num={} cluster={}",
+        LOG_DEBUG(getLogger("executeQueryWithParallelReplicas"), "Parallel replicas query in shard scope: shard_num={} cluster={}",
                   shard_num, not_optimized_cluster->getName());
 
         // get cluster for shard specified by shard_num
@@ -414,12 +413,11 @@ void executeQueryWithParallelReplicas(
         std::move(coordinator),
         stream_factory.header,
         stream_factory.processed_stage,
-        main_table,
         new_context,
         getThrottler(new_context),
         std::move(scalars),
         std::move(external_tables),
-        &Poco::Logger::get("ReadFromParallelRemoteReplicasStep"),
+        getLogger("ReadFromParallelRemoteReplicasStep"),
         std::move(storage_limits));
 
     query_plan.addStep(std::move(read_from_remote));

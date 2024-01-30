@@ -93,7 +93,7 @@ private:
     const fs::path zookeeper_failed_path;
     const fs::path zookeeper_cleanup_lock_path;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::atomic_bool shutdown = false;
     BackgroundSchedulePool::TaskHolder task;
@@ -169,7 +169,7 @@ private:
     std::string zk_node_path;
     std::string processing_id;
     bool removed = false;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }
