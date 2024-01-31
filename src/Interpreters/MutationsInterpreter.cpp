@@ -857,8 +857,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
             }
             else if (metadata_snapshot->hasRowsTTL()
-                 || metadata_snapshot->hasAnyRowsWhereTTL()
-                 || metadata_snapshot->hasAnyGroupByTTL())
+                     || metadata_snapshot->hasAnyRowsWhereTTL()
+                     || metadata_snapshot->hasAnyGroupByTTL())
             {
                 for (const auto & column : all_columns)
                     dependencies.emplace(column.name, ColumnDependency::TTL_TARGET);
