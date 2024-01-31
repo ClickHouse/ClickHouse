@@ -1,10 +1,8 @@
 #pragma once
 
 #include <Storages/CheckResults.h>
-#include <Common/Logger.h>
 #include <map>
 #include <base/types.h>
-#include <memory>
 #include <mutex>
 
 namespace Poco { class Logger; }
@@ -85,7 +83,7 @@ private:
     size_t getRealFileSize(const String & path_) const;
 
     const DiskPtr disk;
-    const LoggerPtr log;
+    const Poco::Logger * log;
 
     String files_info_path;
     std::map<String, size_t> map;

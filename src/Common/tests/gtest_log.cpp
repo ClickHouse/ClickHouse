@@ -15,7 +15,7 @@ TEST(Logger, Log)
 {
     Poco::Logger::root().setLevel("none");
     Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
-    LoggerPtr log = getLogger("Log");
+    Poco::Logger * log = &Poco::Logger::get("Log");
 
     /// This test checks that we don't pass this string to fmtlib, because it is the only argument.
     EXPECT_NO_THROW(LOG_INFO(log, fmt::runtime("Hello {} World")));
@@ -27,7 +27,7 @@ TEST(Logger, TestLog)
 
         std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         auto my_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(oss));
-        auto log = createLogger("TestLogger", my_channel.get());
+        auto * log = &Poco::Logger::create("TestLogger", my_channel.get());
         log->setLevel("test");
         LOG_TEST(log, "Hello World");
 
@@ -40,7 +40,7 @@ TEST(Logger, TestLog)
         {
             std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             auto my_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(oss));
-            auto log = createLogger(std::string{level} + "_Logger", my_channel.get());
+            auto * log = &Poco::Logger::create(std::string{level} + "_Logger", my_channel.get());
             log->setLevel(level);
             LOG_TEST(log, "Hello World");
 
@@ -84,7 +84,7 @@ TEST(Logger, SideEffects)
 {
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     auto my_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(oss));
-    auto log = createLogger("Logger", my_channel.get());
+    auto * log = &Poco::Logger::create("Logger", my_channel.get());
     log->setLevel("trace");
 
     /// Ensure that parameters are evaluated only once

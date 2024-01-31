@@ -19,8 +19,7 @@ namespace DB
 class StorageXDBC : public IStorageURLBase
 {
 public:
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -47,7 +46,7 @@ private:
     std::string remote_database_name;
     std::string remote_table_name;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     std::string getReadMethod() const override;
 

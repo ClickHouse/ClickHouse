@@ -48,7 +48,7 @@ protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 
 private:
-    LoggerPtr log;
+    Poco::Logger * log;
 
     Tables listTables(const FilterByNameFunction & filter_by_name) const;
 };

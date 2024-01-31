@@ -215,7 +215,7 @@ void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const Planne
         if (!read_from_dummy)
             continue;
 
-        auto filter_actions = ActionsDAG::buildFilterActionsDAG(read_from_dummy->getFilterNodes().nodes);
+        auto filter_actions = ActionsDAG::buildFilterActionsDAG(read_from_dummy->getFilterNodes().nodes, {}, query_context);
         auto & table_expression_data = dummy_storage_to_table_expression_data.at(&read_from_dummy->getStorage());
         table_expression_data->setFilterActions(std::move(filter_actions));
     }
@@ -257,9 +257,8 @@ public:
             && !query_node.isGroupByWithTotals() && !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
         aggregation_with_rollup_or_cube_or_grouping_sets = query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() ||
             query_node.isGroupByWithGroupingSets();
-        aggregation_should_produce_results_in_order_of_bucket_number
-            = query_processing_info.getToStage() == QueryProcessingStage::WithMergeableState
-            && (settings.distributed_aggregation_memory_efficient || settings.enable_memory_bound_merging_of_aggregation_results);
+        aggregation_should_produce_results_in_order_of_bucket_number = query_processing_info.getToStage() == QueryProcessingStage::WithMergeableState &&
+            settings.distributed_aggregation_memory_efficient;
 
         query_has_array_join_in_join_tree = queryHasArrayJoinInJoinTree(query_tree);
         query_has_with_totals_in_any_subquery_in_join_tree = queryHasWithTotalsInAnySubqueryInJoinTree(query_tree);
@@ -1066,7 +1065,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         Planner subquery_planner(
             query_tree,
             subquery_options,
-            std::make_shared<GlobalPlannerContext>()); //planner_context->getGlobalPlannerContext());
+            planner_context->getGlobalPlannerContext());
         subquery_planner.buildQueryPlanIfNeeded();
 
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
@@ -1196,7 +1195,7 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_plan.isInitialized())
         return;
 
-    LOG_TRACE(getLogger("Planner"), "Query {} to stage {}{}",
+    LOG_TRACE(&Poco::Logger::get("Planner"), "Query {} to stage {}{}",
         query_tree->formatConvertedASTForErrorMessage(),
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
@@ -1355,7 +1354,7 @@ void Planner::buildPlanForQueryNode()
 
             auto & mutable_context = planner_context->getMutableQueryContext();
             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas to execute a query with IN with subquery");
+            LOG_DEBUG(&Poco::Logger::get("Planner"), "Disabling parallel replicas to execute a query with IN with subquery");
         }
     }
 
@@ -1382,7 +1381,7 @@ void Planner::buildPlanForQueryNode()
                 else
                 {
                     LOG_DEBUG(
-                        getLogger("Planner"),
+                        &Poco::Logger::get("Planner"),
                         "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
                     auto & mutable_context = planner_context->getMutableQueryContext();
                     mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
@@ -1391,7 +1390,7 @@ void Planner::buildPlanForQueryNode()
         }
     }
 
-    if (!settings.parallel_replicas_custom_key.value.empty())
+    if (query_context->canUseTaskBasedParallelReplicas() || !settings.parallel_replicas_custom_key.value.empty())
     {
         /// Check support for JOIN for parallel replicas with custom key
         if (planner_context->getTableExpressionNodeToData().size() > 1)
@@ -1401,7 +1400,7 @@ void Planner::buildPlanForQueryNode()
             else
             {
                 LOG_DEBUG(
-                    getLogger("Planner"),
+                    &Poco::Logger::get("Planner"),
                     "JOINs are not supported with parallel replicas. Query will be executed without using them.");
 
                 auto & mutable_context = planner_context->getMutableQueryContext();
@@ -1422,7 +1421,7 @@ void Planner::buildPlanForQueryNode()
     query_plan = std::move(join_tree_query_plan.query_plan);
     used_row_policies = std::move(join_tree_query_plan.used_row_policies);
 
-    LOG_TRACE(getLogger("Planner"), "Query {} from stage {} to stage {}{}",
+    LOG_TRACE(&Poco::Logger::get("Planner"), "Query {} from stage {} to stage {}{}",
         query_tree->formatConvertedASTForErrorMessage(),
         QueryProcessingStage::toString(from_stage),
         QueryProcessingStage::toString(select_query_options.to_stage),

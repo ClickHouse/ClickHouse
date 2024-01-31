@@ -4450,7 +4450,7 @@ def test_block_based_formats_1(kafka_cluster):
                      kafka_group_name = '{topic}',
                      kafka_format = 'PrettySpace';
 
-        INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0, output_format_pretty_color=1;
+        INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0;
     """
     )
 
@@ -5007,15 +5007,6 @@ def test_multiple_read_in_materialized_views(kafka_cluster, max_retries=15):
         check_callback=lambda res: res == expected_result,
     )
     assert res == expected_result
-
-    kafka_delete_topic(admin_client, topic)
-    instance.query(
-        f"""
-        DROP TABLE test.kafka_multiple_read_input;
-        DROP TABLE test.kafka_multiple_read_table;
-        DROP TABLE test.kafka_multiple_read_mv;
-        """
-    )
 
 
 if __name__ == "__main__":

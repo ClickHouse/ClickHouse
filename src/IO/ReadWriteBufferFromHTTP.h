@@ -109,7 +109,7 @@ namespace detail
         bool http_skip_not_found_url;
 
         ReadSettings settings;
-        LoggerPtr log;
+        Poco::Logger * log;
 
         ProxyConfiguration proxy_config;
 

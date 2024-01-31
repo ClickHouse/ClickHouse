@@ -79,7 +79,7 @@ DDLWorker::DDLWorker(
     const CurrentMetrics::Metric * max_entry_metric_,
     const CurrentMetrics::Metric * max_pushed_entry_metric_)
     : context(Context::createCopy(context_))
-    , log(getLogger(logger_name))
+    , log(&Poco::Logger::get(logger_name))
     , pool_size(pool_size_)
     , max_entry_metric(max_entry_metric_)
     , max_pushed_entry_metric(max_pushed_entry_metric_)
@@ -106,9 +106,6 @@ DDLWorker::DDLWorker(
         task_max_lifetime = config->getUInt64(prefix + ".task_max_lifetime", static_cast<UInt64>(task_max_lifetime));
         cleanup_delay_period = config->getUInt64(prefix + ".cleanup_delay_period", static_cast<UInt64>(cleanup_delay_period));
         max_tasks_in_queue = std::max<UInt64>(1, config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
-
-        if (config->has(prefix + ".host_name"))
-            config_host_name = config->getString(prefix + ".host_name");
 
         if (config->has(prefix + ".profile"))
             context->setSetting("profile", config->getString(prefix + ".profile"));
@@ -217,7 +214,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     /// Stage 2: resolve host_id and check if we should execute query or not
     /// Multiple clusters can use single DDL queue path in ZooKeeper,
     /// So we should skip task if we cannot find current host in cluster hosts list.
-    if (!task->findCurrentHostID(context, log, zookeeper, config_host_name))
+    if (!task->findCurrentHostID(context, log, zookeeper))
     {
         out_reason = "There is no a local address in host list";
         return add_to_skip_set();

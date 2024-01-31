@@ -14,22 +14,21 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemUserProcesses::getColumnsDescription()
+NamesAndTypesList StorageSystemUserProcesses::getNamesAndTypes()
 {
-    auto description = ColumnsDescription
-    {
+    return {
         {"user", std::make_shared<DataTypeString>()},
         {"memory_usage", std::make_shared<DataTypeInt64>()},
         {"peak_memory_usage", std::make_shared<DataTypeInt64>()},
         {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
     };
+}
 
-    description.setAliases({
+NamesAndAliases StorageSystemUserProcesses::getNamesAndAliases()
+{
+    return {
         {"ProfileEvents.Names", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}, "mapKeys(ProfileEvents)"},
-        {"ProfileEvents.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())}, "mapValues(ProfileEvents)"}
-    });
-
-    return description;
+        {"ProfileEvents.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())}, "mapValues(ProfileEvents)"}};
 }
 
 void StorageSystemUserProcesses::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const

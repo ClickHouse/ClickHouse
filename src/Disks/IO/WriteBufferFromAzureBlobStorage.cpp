@@ -6,7 +6,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
-#include <Common/Scheduler/ResourceGuard.h>
+#include <IO/ResourceGuard.h>
 
 
 namespace ProfileEvents
@@ -27,7 +27,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     size_t buf_size_,
     const WriteSettings & write_settings_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
-    , log(getLogger("WriteBufferFromAzureBlobStorage"))
+    , log(&Poco::Logger::get("WriteBufferFromAzureBlobStorage"))
     , max_single_part_upload_size(max_single_part_upload_size_)
     , blob_path(blob_path_)
     , write_settings(write_settings_)

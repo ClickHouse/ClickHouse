@@ -300,7 +300,7 @@ static void enablePerfEvent(int event_fd)
 {
     if (ioctl(event_fd, PERF_EVENT_IOC_ENABLE, 0))
     {
-        LOG_WARNING(getLogger("PerfEvents"),
+        LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Can't enable perf event with file descriptor {}: '{}' ({})",
             event_fd, errnoToString(), errno);
     }
@@ -310,7 +310,7 @@ static void disablePerfEvent(int event_fd)
 {
     if (ioctl(event_fd, PERF_EVENT_IOC_DISABLE, 0))
     {
-        LOG_WARNING(getLogger("PerfEvents"),
+        LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Can't disable perf event with file descriptor {}: '{}' ({})",
             event_fd, errnoToString(), errno);
     }
@@ -320,7 +320,7 @@ static void releasePerfEvent(int event_fd)
 {
     if (close(event_fd))
     {
-        LOG_WARNING(getLogger("PerfEvents"),
+        LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Can't close perf event file descriptor {}: {} ({})",
             event_fd, errnoToString(), errno);
     }
@@ -333,12 +333,12 @@ static bool validatePerfEventDescriptor(int & fd)
 
     if (errno == EBADF)
     {
-        LOG_WARNING(getLogger("PerfEvents"),
+        LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Event descriptor {} was closed from the outside; reopening", fd);
     }
     else
     {
-        LOG_WARNING(getLogger("PerfEvents"),
+        LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Error while checking availability of event descriptor {}: {} ({})",
             fd, errnoToString(), errno);
 
@@ -416,7 +416,7 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
     bool has_cap_sys_admin = hasLinuxCapability(CAP_SYS_ADMIN);
     if (perf_event_paranoid >= 3 && !has_cap_sys_admin)
     {
-        LOG_WARNING(getLogger("PerfEvents"),
+        LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Not enough permissions to record perf events: "
             "perf_event_paranoid = {} and CAP_SYS_ADMIN = 0",
             perf_event_paranoid);
@@ -444,7 +444,7 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
             // ENOENT means that the event is not supported. Don't log it, because
             // this is called for each thread and would be too verbose. Log other
             // error codes because they might signify an error.
-            LOG_WARNING(getLogger("PerfEvents"),
+            LOG_WARNING(&Poco::Logger::get("PerfEvents"),
                 "Failed to open perf event {} (event_type={}, event_config={}): "
                 "'{}' ({})", event_info.settings_name, event_info.event_type,
                 event_info.event_config, errnoToString(), errno);
@@ -484,7 +484,7 @@ std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string
         }
         else
         {
-            LOG_ERROR(getLogger("PerfEvents"),
+            LOG_ERROR(&Poco::Logger::get("PerfEvents"),
                 "Unknown perf event name '{}' specified in settings", event_name);
         }
     }
@@ -531,7 +531,7 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
 
         if (bytes_read != bytes_to_read)
         {
-            LOG_WARNING(getLogger("PerfEvents"),
+            LOG_WARNING(&Poco::Logger::get("PerfEvents"),
                 "Can't read event value from file descriptor {}: '{}' ({})",
                 fd, errnoToString(), errno);
             current_values[i] = {};

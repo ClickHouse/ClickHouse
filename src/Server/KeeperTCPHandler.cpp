@@ -220,7 +220,7 @@ KeeperTCPHandler::KeeperTCPHandler(
     Poco::Timespan send_timeout_,
     const Poco::Net::StreamSocket & socket_)
     : Poco::Net::TCPServerConnection(socket_)
-    , log(getLogger("KeeperTCPHandler"))
+    , log(&Poco::Logger::get("KeeperTCPHandler"))
     , keeper_dispatcher(keeper_dispatcher_)
     , operation_timeout(
           0,

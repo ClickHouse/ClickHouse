@@ -45,7 +45,7 @@ private:
     void execWithRetry(std::function<void()> func, size_t num_tries, size_t cost = 0);
     void uploadBlock(const char * data, size_t size);
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     const size_t max_single_part_upload_size;
     const std::string blob_path;

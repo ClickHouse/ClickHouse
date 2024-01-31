@@ -36,16 +36,6 @@ public:
     {
     }
 
-    /// There is no copy constructor because only one MultiVersion should own the same object.
-    MultiVersion(MultiVersion && src) { *this = std::move(src); }
-
-    MultiVersion & operator=(MultiVersion && src)
-    {
-        if (this != &src)
-            std::atomic_store(&current_version, std::atomic_exchange(&src.current_version, Version{}));
-        return *this;
-    }
-
     /// Obtain current version for read-only usage. Returns shared_ptr, that manages lifetime of version.
     Version get() const
     {

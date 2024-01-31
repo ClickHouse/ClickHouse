@@ -59,7 +59,7 @@ private:
     using SourceRegistry = std::unordered_map<std::string, Creator>;
     SourceRegistry registered_sources;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

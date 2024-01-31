@@ -302,11 +302,9 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
         ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(
             header,
             "Parquet",
-            CHColumnToArrowColumn::Settings
-            {
-                .output_string_as_string = format_settings.parquet.output_string_as_string,
-                .output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array
-            });
+            false,
+            format_settings.parquet.output_string_as_string,
+            format_settings.parquet.output_fixed_string_as_fixed_byte_array);
     }
 
     ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunks, columns_num);

@@ -55,7 +55,7 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     , prefetch_buffer(chooseBufferSizeForRemoteReading(read_settings, impl->getFileSize()))
     , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
     , current_reader_id(getRandomASCIIString(8))
-    , log(getLogger("AsynchronousBoundedReadBuffer"))
+    , log(&Poco::Logger::get("AsynchronousBoundedReadBuffer"))
     , async_read_counters(async_read_counters_)
     , prefetches_log(prefetches_log_)
 {

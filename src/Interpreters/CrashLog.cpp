@@ -19,9 +19,9 @@ namespace DB
 std::weak_ptr<CrashLog> CrashLog::crash_log;
 
 
-ColumnsDescription CrashLogElement::getColumnsDescription()
+NamesAndTypesList CrashLogElement::getNamesAndTypes()
 {
-    return ColumnsDescription
+    return
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
