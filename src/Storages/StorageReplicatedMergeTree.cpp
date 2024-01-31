@@ -9112,7 +9112,7 @@ zkutil::EphemeralNodeHolderPtr StorageReplicatedMergeTree::lockSharedDataTempora
 bool StorageReplicatedMergeTree::lockSharedPart(std::string_view part_name, bool block) const
 {
     using enum Coordination::Error;
-    const String lock_path_full = fmt::format("{}_{}", getTableSharedID(), part_name);
+    const String lock_path_full = fmt::format("/{}_{}", getTableSharedID(), part_name);
     const auto mode = zkutil::CreateMode::Ephemeral;
     ZooKeeperWithFaultInjection zookeeper{getZooKeeper()};
 
@@ -9136,7 +9136,7 @@ bool StorageReplicatedMergeTree::lockSharedPart(std::string_view part_name, bool
 
 void StorageReplicatedMergeTree::unlockSharedPart(std::string_view part_name) const
 {
-    const String lock_path_full = fmt::format("{}_{}", getTableSharedID(), part_name);
+    const String lock_path_full = fmt::format("/{}_{}", getTableSharedID(), part_name);
     LOG_TRACE(log, "Removing lock for {} (zk path {})", part_name, lock_path_full);
     ZooKeeperWithFaultInjection{getZooKeeper()}.remove(lock_path_full);
 }

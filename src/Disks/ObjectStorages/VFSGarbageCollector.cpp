@@ -58,15 +58,15 @@ void VFSGarbageCollector::run() const
     Stopwatch stop_watch;
 
     using enum Coordination::Error;
-    const String & lock_path = storage.traits.gc_lock_path;
-    if (const auto code = storage.zookeeper()->tryCreate(lock_path, "", EPHEMERAL); code == ZNODEEXISTS)
+    const String & gc_lock = storage.nodes.gc_lock;
+    if (const auto code = storage.zookeeper()->tryCreate(gc_lock, "", EPHEMERAL); code == ZNODEEXISTS)
     {
         LOG_DEBUG(log, "Failed to acquire lock, sleeping");
         return;
     }
     else if (code == ZNONODE)
     {
-        LOG_ERROR(log, "{} not found, will recreate ZooKeeper nodes", storage.traits.gc_lock_path);
+        LOG_ERROR(log, "{} not found, will recreate ZooKeeper nodes", gc_lock);
         return storage.createNodes();
     }
     else if (code != ZOK)
@@ -80,12 +80,12 @@ void VFSGarbageCollector::run() const
         else
         {
             ProfileEvents::increment(skip_run ? ProfileEvents::VFSGcRunsSkipped : ProfileEvents::VFSGcRunsException);
-            storage.zookeeper()->remove(lock_path);
+            storage.zookeeper()->remove(gc_lock);
         };
         ProfileEvents::increment(ProfileEvents::VFSGcTotalMicroseconds, stop_watch.elapsedMicroseconds());
     });
 
-    Strings log_items_batch = storage.zookeeper()->getChildren(storage.traits.log_base_node);
+    Strings log_items_batch = storage.zookeeper()->getChildren(storage.nodes.log_base);
     const size_t batch_size = log_items_batch.size();
     if ((skip_run = log_items_batch.empty()))
     {
@@ -263,9 +263,8 @@ Logpointer VFSGarbageCollector::reconcile(Logpointer start, Logpointer end, std:
         return end;
     }
 
-    // First run after Zookeeper loss without backups (~ node sequential counter reset) but we have snapshot
     if (const Logpointer greatest_end = *candidates.rbegin(); starting && greatest_end > 0)
-        return greatest_end;
+        return greatest_end; // First run after Zookeeper base node loss
     else if (const auto it = std::ranges::lower_bound(candidates, start); it != candidates.begin())
         return it == candidates.end() ? greatest_end : *std::prev(it);
 
@@ -298,7 +297,7 @@ void VFSGarbageCollector::removeBatch(Logpointer start, Logpointer end) const
     Coordination::Requests requests(log_batch_length + 1);
     for (size_t i = 0; i < log_batch_length; ++i)
         requests[i] = zkutil::makeRemoveRequest(getNode(start + i), 0);
-    requests[log_batch_length] = zkutil::makeRemoveRequest(storage.traits.gc_lock_path, 0);
+    requests[log_batch_length] = zkutil::makeRemoveRequest(storage.nodes.gc_lock, 0);
 
     storage.zookeeper()->multi(requests);
 }
@@ -306,7 +305,7 @@ void VFSGarbageCollector::removeBatch(Logpointer start, Logpointer end) const
 String VFSGarbageCollector::getNode(Logpointer ptr) const
 {
     // Zookeeper's sequential node is 10 digits with padding zeros
-    return fmt::format("{}{:010}", storage.traits.log_item, ptr);
+    return fmt::format("{}{:010}", storage.nodes.log_item, ptr);
 }
 
 StoredObject VFSGarbageCollector::getSnapshotObject(Logpointer ptr) const

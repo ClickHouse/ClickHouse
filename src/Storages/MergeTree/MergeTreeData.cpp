@@ -7790,14 +7790,15 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             }
             else /// Ordinary move as it should be
             {
-                if (!lockSharedPart(moving_part.part->name, wait_for_move_if_zero_copy))
+                const bool vfs = disk->isObjectStorageVFS();
+                if (vfs && !lockSharedPart(moving_part.part->name, wait_for_move_if_zero_copy))
                 {
                     write_part_log({});
                     LOG_DEBUG(log, "Move contention, rescheduling");
                     // TODO myrrc reschedule time hint regarding part size
                     return MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy;
                 }
-                SCOPE_EXIT(unlockSharedPart(moving_part.part->name));
+                SCOPE_EXIT(if (vfs) unlockSharedPart(moving_part.part->name));
 
                 cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings);
                 parts_mover.swapClonedPart(cloned_part);

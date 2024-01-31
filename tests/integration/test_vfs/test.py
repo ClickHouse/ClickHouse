@@ -59,7 +59,7 @@ def test_reconcile(started_cluster):
     # Already processed log batch
 
     zk: KazooClient = started_cluster.get_kazoo_client("zoo1")
-    disk_prefix: str = "/vfs_log/reconcile"
+    disk_prefix: str = "/vfs/reconcile"
     assert zk.get_children(f"{disk_prefix}/ops") == []
     for i in range(11, 15):  # snapshot for 10 doesn't exist
         zk.create(f"{disk_prefix}/ops/log-00000000{i}", b"")

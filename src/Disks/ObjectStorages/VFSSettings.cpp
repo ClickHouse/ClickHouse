@@ -8,12 +8,11 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
-VFSTraits::VFSTraits(std::string_view disk_vfs_id)
-    : base_node(fmt::format("/vfs_log/{}", disk_vfs_id))
-    , locks_node(base_node + "/locks")
-    , log_base_node(base_node + "/ops")
-    , log_item(log_base_node + "/log-")
-    , gc_lock_path(locks_node + "/gc_lock")
+VFSNodes::VFSNodes(std::string_view disk_vfs_id)
+    : base(fmt::format("/vfs/{}", disk_vfs_id))
+    , log_base(base + "/ops")
+    , log_item(log_base + "/log-")
+    , gc_lock(base + "/gc_lock")
 {
 }
 

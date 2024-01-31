@@ -46,13 +46,12 @@ private:
 
     const bool enable_gc; // In certain conditions we don't want a GC e.g. when running from clickhouse-disks
     const ObjectStorageType object_storage_type;
-    const VFSTraits traits;
+    const VFSNodes nodes;
     MultiVersion<VFSSettings> settings;
 
     ZooKeeperWithFaultInjection::Ptr zookeeper() const;
     DiskTransactionPtr createObjectStorageTransaction() final;
     void createNodes() const;
-    String lockPathToFullPath(std::string_view path) const;
     std::string_view getMetadataObjectPrefix() const;
     StoredObject getMetadataObject(std::string_view remote) const;
 };

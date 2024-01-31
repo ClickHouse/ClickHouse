@@ -5,15 +5,14 @@
 
 namespace DB
 {
-struct VFSTraits
+struct VFSNodes
 {
-    explicit VFSTraits(std::string_view disk_vfs_id);
+    explicit VFSNodes(std::string_view disk_vfs_id);
 
-    String base_node;
-    String locks_node;
-    String log_base_node;
+    String base;
+    String log_base;
     String log_item;
-    String gc_lock_path;
+    String gc_lock;
 };
 
 struct VFSSettings

@@ -26,7 +26,7 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
     : DiskObjectStorage(name_, object_key_prefix_, std::move(metadata_storage_), std::move(object_storage_), config, config_prefix)
     , enable_gc(enable_gc_)
     , object_storage_type(object_storage->getType())
-    , traits(VFSTraits{name}) // TODO myrrc disk_vfs_id = disk_name implies disk name consistency across replicas
+    , nodes(VFSNodes{name}) // TODO myrrc disk_vfs_id = disk_name implies disk name consistency across replicas
     , settings(MultiVersion<VFSSettings>{std::make_unique<VFSSettings>(config, config_prefix)})
 {
     if (object_storage_type != ObjectStorageType::S3 && object_storage_type != ObjectStorageType::Azure)
@@ -53,9 +53,7 @@ DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
 
 void DiskObjectStorageVFS::createNodes() const
 {
-    auto zk = zookeeper();
-    zk->createAncestors(traits.gc_lock_path);
-    zk->createAncestors(traits.log_item);
+    zookeeper()->createAncestors(nodes.log_item);
 }
 
 void DiskObjectStorageVFS::startupImpl(ContextPtr context)
@@ -201,13 +199,6 @@ ZooKeeperWithFaultInjectionPtr DiskObjectStorageVFS::zookeeper() const
 DiskTransactionPtr DiskObjectStorageVFS::createObjectStorageTransaction()
 {
     return std::make_shared<DiskObjectStorageVFSTransaction>(*this);
-}
-
-String DiskObjectStorageVFS::lockPathToFullPath(std::string_view path) const
-{
-    String lock_path{path};
-    std::ranges::replace(lock_path, '/', '_');
-    return fs::path(traits.locks_node) / lock_path;
 }
 
 std::string_view DiskObjectStorageVFS::getMetadataObjectPrefix() const

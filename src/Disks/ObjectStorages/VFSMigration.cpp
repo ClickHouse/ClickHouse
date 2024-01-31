@@ -115,7 +115,7 @@ void VFSMigration::migrateTable(StoragePtr table_ptr, const Context & ctx) const
                     it->second += links;
             }
 
-    disk.zookeeper()->create(disk.traits.log_item, item.serialize(), zkutil::CreateMode::PersistentSequential);
+    disk.zookeeper()->create(disk.nodes.log_item, item.serialize(), zkutil::CreateMode::PersistentSequential);
     LOG_INFO(log, "Migrated table {}", table_ptr->getName());
 }
 
