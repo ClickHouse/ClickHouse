@@ -99,6 +99,7 @@ def started_cluster():
             main_configs=[
                 "configs/s3queue_log.xml",
             ],
+            stay_alive=True,
         )
 
         logging.info("Starting cluster...")
@@ -1332,4 +1333,59 @@ def test_processed_file_setting(started_cluster, processing_threads):
             break
         time.sleep(1)
 
+    assert expected_rows == get_count()
+
+
+@pytest.mark.parametrize("processing_threads", [1, 5])
+def test_processed_file_setting_distributed(started_cluster, processing_threads):
+    node = started_cluster.instances["instance"]
+    node_2 = started_cluster.instances["instance2"]
+    table_name = f"test_processed_file_setting_distributed_{processing_threads}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    for instance in [node, node_2]:
+        create_table(
+            started_cluster,
+            instance,
+            table_name,
+            "ordered",
+            files_path,
+            additional_settings={
+                "keeper_path": keeper_path,
+                "s3queue_processing_threads_num": processing_threads,
+                "s3queue_last_processed_path": f"{files_path}/test_5.csv",
+                "s3queue_total_shards_num": 2,
+            },
+        )
+
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    for instance in [node, node_2]:
+        create_mv(instance, table_name, dst_table_name)
+
+    def get_count():
+        query = f"SELECT count() FROM {dst_table_name}"
+        return int(node.query(query)) + int(node_2.query(query))
+
+    expected_rows = 4
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count()
+
+    for instance in [node, node_2]:
+        instance.restart_clickhouse()
+
+    time.sleep(10)
+    expected_rows = 4
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
     assert expected_rows == get_count()
