@@ -579,6 +579,8 @@ public:
 
     uint64_t getSessionTimeoutMS() const { return args.session_timeout_ms; }
 
+    uint64_t getOperationTimeoutMS() const { return args.operation_timeout_ms; }
+
     void setServerCompletelyStarted();
 
     Int8 getConnectedHostIdx() const;

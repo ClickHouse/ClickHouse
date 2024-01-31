@@ -3205,18 +3205,22 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
     std::vector<zkutil::ZooKeeper::FutureCreate> futures;
     futures.reserve(mimic_entries.size() + copy_entries.size());
+    auto zookeeper_ops_timeout = std::chrono::milliseconds(zookeeper->getOperationTimeoutMS());
     for (auto & [entry, future] : mimic_entries)
     {
         if (future.valid())
         {
-            try
+            /// Not throwing exception because entry->create_time is optional field
+            if (future.wait_for(zookeeper_ops_timeout) == std::future_status::ready)
             {
-                /// Keeper may have exception here, we ignore it because `create_time` is optional
-                entry->create_time = future.get().stat.ctime / 1000;
+                auto response = future.get();
+                Coordination::Error code = response.error;
+                if (code == Coordination::Error::ZOK)
+                    entry->create_time = response.stat.ctime / 1000;
             }
-            catch(const std::exception & e)
+            else
             {
-                LOG_ERROR(log, "Error while trying get to get create time for {} : {}", entry->toString(), e.what());
+                zookeeper->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Exists, fs::path(replica_path) / "parts" / entry->new_part_name));
             }
         }
         LOG_TEST(log, "Enqueueing {} for fetch", entry->new_part_name);
@@ -3230,7 +3234,21 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     }
 
     for (auto & future : futures)
-        future.get();
+    {
+        String path = fs::path(replica_path) / "queue/queue-";
+        if (future.wait_for(zookeeper_ops_timeout) == std::future_status::ready)
+        {
+            auto response = future.get();
+            Coordination::Error code = response.error;
+            if (code == Coordination::Error::ZOK)
+                throw zkutil::KeeperException::fromPath(code, path);
+        }
+        else
+        {
+            zookeeper->finalize(fmt::format("Operation timeout on {}", Coordination::OpNum::Create, path));
+            throw zkutil::KeeperException::fromPath(Coordination::Error::ZOPERATIONTIMEOUT, path);
+        }
+    }
 
 
     LOG_DEBUG(log, "Copied {} queue entries, {} entries ignored", total_entries_to_copy, source_queue.size() - total_entries_to_copy);
