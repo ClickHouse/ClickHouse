@@ -3240,7 +3240,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         {
             auto response = future.get();
             Coordination::Error code = response.error;
-            if (code == Coordination::Error::ZOK)
+            if (code != Coordination::Error::ZOK)
                 throw zkutil::KeeperException::fromPath(code, path);
         }
         else
