@@ -3,6 +3,7 @@
 #include <base/getPageSize.h>
 
 #include <fstream>
+#include <sstream>
 #include <stdexcept>
 
 #include <unistd.h>
@@ -16,18 +17,59 @@
 namespace
 {
 
-std::optional<uint64_t> getCgroupsV2MemoryLimit(const std::string & setting)
+std::optional<uint64_t> getCgroupsV2MemoryLimit()
 {
 #if defined(OS_LINUX)
-    std::filesystem::path default_cgroups_mount = "/sys/fs/cgroup";
-    std::ifstream file(default_cgroups_mount / setting);
-    if (!file.is_open())
+    const std::filesystem::path default_cgroups_mount = "/sys/fs/cgroup";
+
+    /// This file exists iff the host has cgroups v2 enabled.
+    std::ifstream controllers_file(default_cgroups_mount / "cgroup.controllers");
+    if (!controllers_file.is_open())
         return {};
-    uint64_t value;
-    if (file >> value)
-        return {value};
-    else
-        return {}; /// e.g. the cgroups default "max"
+
+    /// We also need the memory controller enabled
+    std::stringstream controllers_buf;
+    controllers_buf << controllers_file.rdbuf();
+    std::string controllers = controllers_buf.str();
+    if (controllers.find("memory") == std::string::npos)
+        return {};
+
+    /// Identify the cgroup the process belongs to
+    std::ifstream cgroup_name_file("/proc/self/cgroup");
+    if (!cgroup_name_file.is_open())
+        return {};
+
+    std::stringstream cgroup_name_buf;
+    cgroup_name_buf << cgroup_name_file.rdbuf();
+    std::string cgroup_name = cgroup_name_buf.str();
+    if (!cgroup_name.empty() && cgroup_name.back() == '\n')
+        cgroup_name.pop_back(); /// remove trailing newline, if any
+    /// cgroups v2 will show a single line with prefix "0::/"
+    /// - https://book.hacktricks.xyz/linux-hardening/privilege-escalation/docker-security/cgroups
+    const std::string v2_prefix = "0::/";
+    if (cgroup_name.find('\n') != std::string::npos || !cgroup_name.starts_with(v2_prefix))
+        return {};
+    cgroup_name = cgroup_name.substr(v2_prefix.length());
+
+    std::filesystem::path current_cgroup = cgroup_name.empty() ? default_cgroups_mount : (default_cgroups_mount / cgroup_name);
+
+    /// Open the bottom-most nested memory limit setting file. If there is no such file at the current
+    /// level, try again at the parent level as memory settings are inherited.
+    while (current_cgroup != default_cgroups_mount.parent_path())
+    {
+        std::ifstream setting_file(current_cgroup / "memory.max");
+        if (setting_file.is_open())
+        {
+            uint64_t value;
+            if (setting_file >> value)
+                return {value};
+            else
+                return {}; /// e.g. the cgroups default "max"
+        }
+        current_cgroup = current_cgroup.parent_path();
+    }
+
+    return {};
 #else
     return {};
 #endif
@@ -52,8 +94,7 @@ uint64_t getMemoryAmountOrZero()
 
     /// Respect the memory limit set by cgroups v2.
     /// Cgroups v1 is dead since many years and its limits are not considered for simplicity.
-
-    auto limit = getCgroupsV2MemoryLimit("memory.max");
+    auto limit = getCgroupsV2MemoryLimit();
     if (limit.has_value() && *limit < memory_amount)
          memory_amount = *limit;
 
