@@ -13,6 +13,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -429,6 +430,29 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
 {
     QueryStatusPtr query_status = context->getProcessListElement();
 
+    const auto & settings = context->getSettingsRef();
+    /// Use insert settings for now in order not to introduce new settings.
+    /// Hopefully insert settings will also be unified and replaced with some generic retry settings.
+    ZooKeeperRetriesInfo retries_seetings(
+        settings.insert_keeper_max_retries,
+        settings.insert_keeper_retry_initial_backoff_ms,
+        settings.insert_keeper_retry_max_backoff_ms);
+
+    ZooKeeperWithFaultInjection::Ptr zookeeper;
+    /// Handles reconnects when needed
+    auto get_zookeeper = [&] ()
+    {
+        if (!zookeeper || zookeeper->expired())
+        {
+            zookeeper = ZooKeeperWithFaultInjection::createInstance(
+                settings.insert_keeper_fault_injection_probability,
+                settings.insert_keeper_fault_injection_seed,
+                context->getZooKeeper(),
+                "", nullptr);
+        }
+        return zookeeper;
+    };
+
     if (paths.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "SELECT from system.zookeeper table must contain condition like path = 'path' "
@@ -476,8 +500,8 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
         }
 
         zkutil::ZooKeeper::MultiTryGetChildrenResponse list_responses;
-        ZooKeeperRetriesControl("", nullptr, ZooKeeperRetriesInfo(20, 1, 1000), query_status).retryLoop(
-            [&]() { list_responses = context->getZooKeeper()->tryGetChildren(paths_to_list); });
+        ZooKeeperRetriesControl("", nullptr, retries_seetings, query_status).retryLoop(
+            [&]() { list_responses = get_zookeeper()->tryGetChildren(paths_to_list); });
 
         struct GetTask
         {
@@ -522,8 +546,8 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
         }
 
         zkutil::ZooKeeper::MultiTryGetResponse get_responses;
-        ZooKeeperRetriesControl("", nullptr, ZooKeeperRetriesInfo(20, 1, 1000), query_status).retryLoop(
-            [&]() { get_responses = context->getZooKeeper()->tryGet(paths_to_get); });
+        ZooKeeperRetriesControl("", nullptr, retries_seetings, query_status).retryLoop(
+            [&]() { get_responses = get_zookeeper()->tryGet(paths_to_get); });
 
         for (size_t i = 0, size = get_tasks.size(); i < size; ++i)
         {
