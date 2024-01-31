@@ -25,8 +25,6 @@
 #include <Functions/FunctionFactory.h>
 #include <type_traits>
 
-#pragma clang diagnostic ignored "-Wundefined-reinterpret-cast"
-
 namespace DB
 {
 namespace ErrorCodes
@@ -59,7 +57,11 @@ concept is_native_int_or_decimal_v
     auto mask = static_cast<UIntType>(static_cast<IntType>(vc) - 1); \
     auto new_a = static_cast<ResultType>(va); \
     auto new_b = static_cast<ResultType>(vb); \
-    auto tmp = (~mask & (*reinterpret_cast<UIntType *>(&new_a))) | (mask & (*reinterpret_cast<UIntType *>(&new_b))); \
+    UIntType uint_a; \
+    std::memcpy(&uint_a, &new_a, sizeof(UIntType)); \
+    UIntType uint_b; \
+    std::memcpy(&uint_b, &new_b, sizeof(UIntType)); \
+    UIntType tmp = (~mask & uint_a) | (mask & uint_b); \
     (vr) = *(reinterpret_cast<ResultType *>(&tmp));
 
 template <typename ArrayCond, typename ArrayA, typename ArrayB, typename ArrayResult, typename ResultType>
@@ -220,12 +222,18 @@ template <typename ArrayCond, typename A, typename B, typename ArrayResult, type
 inline void fillConstantConstant(const ArrayCond & cond, A a, B b, ArrayResult & res)
 {
     size_t size = cond.size();
+
+    /// Int8(alias type of uint8_t) has special aliasing properties that prevents compiler from auto-vectorizing for below codes, refer to https://gist.github.com/alexei-zaripov/dcc14c78819c5f1354afe8b70932007c
+    ///
+    /// for (size_t i = 0; i < size; ++i)
+    ///     res[i] = cond[i] ? static_cast<Int8>(a) : static_cast<Int8>(b);
+    ///
+    /// Therefore, we manually optimize it by avoiding branch miss when ResultType is Int8. Other types like (U)Int128|256 or Decimal128/256 also benefit from this optimization.
     if constexpr (std::is_same_v<ResultType, Int8> || is_over_big_int<ResultType>)
     {
         alignas(64) const ResultType ab[2] = {static_cast<ResultType>(a), static_cast<ResultType>(b)};
         for (size_t i = 0; i < size; ++i)
         {
-            /// Introduce memory access to avoid branch miss
             res[i] = ab[!cond[i]];
         }
     }
