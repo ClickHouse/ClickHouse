@@ -777,9 +777,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         auto output_buffer_getter = [disk](
             IDataPartStorage & part_storage, const String & file_name, size_t file_size)
         {
-            // TODO myrrc Alternative is altering WriteSettings but this also is a bad solution
-            auto path = fs::path(part_storage.getFullPath()) / (file_name + ":vfs");
-            return disk->writeFile(path, std::min<UInt64>(file_size, DBMS_DEFAULT_BUFFER_SIZE), {});
+            return disk->writeFile(
+                fs::path(part_storage.getFullPath()) / file_name,
+                std::min<UInt64>(file_size, DBMS_DEFAULT_BUFFER_SIZE),
+                WriteMode::Rewrite,
+                {.vfs_is_metadata_file = true});
         };
 
         return

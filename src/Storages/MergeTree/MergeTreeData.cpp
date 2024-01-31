@@ -7790,7 +7790,7 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
                 // TODO myrrc revisit whether blocking wait on a Zookeeper lock is the best we can imagine
                 //  If we can remove wait_for_move_if_zero_copy, lock acquisition code can be moved to
                 //  MergeTreePartsMover.
-                const String move_lock = fs::path(getTableSharedID()) / moving_part.part->name / "move";
+                const String move_lock = fs::path(getTableSharedID()) / moving_part.part->name;
                 if (!disk->lock(move_lock, wait_for_move_if_zero_copy))
                 {
                     write_part_log({});

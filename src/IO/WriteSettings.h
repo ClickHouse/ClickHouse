@@ -25,6 +25,7 @@ struct WriteSettings
 
     /// Monitoring
     bool for_object_storage = false; // to choose which profile events should be incremented
+    bool vfs_is_metadata_file = false;
 
     bool operator==(const WriteSettings & other) const = default;
 };

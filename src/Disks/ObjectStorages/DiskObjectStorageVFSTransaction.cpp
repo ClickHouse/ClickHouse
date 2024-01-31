@@ -120,30 +120,26 @@ void DiskObjectStorageVFSTransaction::removeSharedFiles(const RemoveBatchRequest
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeFile(
     const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings, bool autocommit)
 {
-    const bool is_metadata_file_for_vfs = path.ends_with(":vfs");
-    const String path_without_tag = is_metadata_file_for_vfs ? path.substr(0, path.size() - 4) : path;
-
-    if (is_metadata_file_for_vfs) // We got this file from other replica, need to load it on local metadata disk
+    if (settings.vfs_is_metadata_file)
     {
         LOG_TRACE(disk.log, "writeFile(vfs_metadata=true)");
         chassert(autocommit);
         // TODO myrrc research whether there's any optimal way except for writing file and immediately
         // reading it back
         return std::make_unique<WriteBufferWithFinalizeCallback>(
-            std::make_unique<WriteBufferFromFile>(path_without_tag, buf_size),
-            [tx = shared_from_this(), path_without_tag](size_t)
+            std::make_unique<WriteBufferFromFile>(path, buf_size),
+            [tx = shared_from_this(), path](size_t)
             {
-                tx->addStoredObjectsOp(tx->metadata_storage.getStorageObjects(path_without_tag), {});
+                tx->addStoredObjectsOp(tx->metadata_storage.getStorageObjects(path), {});
                 tx->commit();
             },
             "");
     }
 
-    StoredObjects currently_existing_blobs
-        = metadata_storage.exists(path_without_tag) ? metadata_storage.getStorageObjects(path_without_tag) : StoredObjects{};
+    StoredObjects currently_existing_blobs = metadata_storage.exists(path) ? metadata_storage.getStorageObjects(path) : StoredObjects{};
     StoredObject blob;
 
-    auto buffer = writeFileOps(path_without_tag, buf_size, mode, settings, autocommit, blob);
+    auto buffer = writeFileOps(path, buf_size, mode, settings, autocommit, blob);
     addStoredObjectsOp({std::move(blob)}, std::move(currently_existing_blobs));
     return buffer;
 }
