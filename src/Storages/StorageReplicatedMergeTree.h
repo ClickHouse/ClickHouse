@@ -266,6 +266,9 @@ public:
     /// Schedules job to execute in background pool (merge, mutate, drop range and so on)
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
+    /// Get the maximum number of concurrent fetch tasks
+    size_t getFetchPoolSizeLimit(const ReplicatedMergeTreeLogEntry & entry) const;
+
     /// Checks that fetches are not disabled with action blocker and pool for fetches
     /// is not overloaded
     bool canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const;

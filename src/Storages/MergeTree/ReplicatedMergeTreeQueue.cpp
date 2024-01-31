@@ -15,6 +15,11 @@
 
 #include <ranges>
 
+namespace CurrentMetrics
+{
+    extern const Metric BackgroundFetchesPoolTask;
+}
+
 namespace DB
 {
 
@@ -1289,14 +1294,17 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
     /// Optimization: if local table already contains the part, it's likely that replica already has it.
     /// Only additional step is to check if the part is in zookeeper then we can remove the log entry.
-    if (entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART || entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::MUTATE_PART)
+    if (entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
     {
         auto existing_part = data.getPartIfExists(entry.new_part_name, {MergeTreeDataPartState::PreActive});
 
-        if (!existing_part)
+        if (!existing_part || existing_part->was_removed_as_broken)
             existing_part = data.getActiveContainingPart(entry.new_part_name);
+        auto fetches_pool_size_limit = storage.getFetchPoolSizeLimit(entry);
+        size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundFetchesPoolTask].load(std::memory_order_relaxed);
 
-        if (existing_part)
+        if (existing_part && !existing_part->was_removed_as_broken && busy_threads_in_pool < fetches_pool_size_limit
+            && !storage.fetcher.blocker.isCancelled())
             return true;
     }
 

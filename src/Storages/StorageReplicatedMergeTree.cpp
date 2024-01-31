@@ -3611,6 +3611,20 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
     }
 }
 
+size_t StorageReplicatedMergeTree::getFetchPoolSizeLimit(const ReplicatedMergeTreeLogEntry & entry) const
+{
+    auto replicated_fetches_pool_size = getContext()->getFetchesExecutor()->getMaxTasksCount();
+    auto replicated_fetches_pool_threads= getContext()->getFetchesExecutor()->getMaxThreads();
+    size_t reserved_for_priority = static_cast<size_t>(getContext()->getServerSettings().reserve_fetch_queue_slot_for_sync_replica_ratio * replicated_fetches_pool_size);
+
+    /// We only allow priority slots in queue, not priority threads, so number of priority slots cannot exceeds number of waiting queue slots
+    reserved_for_priority = std::min(reserved_for_priority, replicated_fetches_pool_size - replicated_fetches_pool_threads);
+
+    /// If the entry has living priority tag, we could use priority slots
+    return entry.hasPriority() ? replicated_fetches_pool_size : replicated_fetches_pool_size - reserved_for_priority;
+
+}
+
 
 bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const
 {
@@ -3620,15 +3634,8 @@ bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEnt
         return false;
     }
 
-    auto replicated_fetches_pool_size = getContext()->getFetchesExecutor()->getMaxTasksCount();
-    auto replicated_fetches_pool_threads= getContext()->getFetchesExecutor()->getMaxThreads();
-    size_t reserved_for_priority = static_cast<size_t>(getContext()->getServerSettings().reserve_fetch_queue_slot_for_sync_replica_ratio * replicated_fetches_pool_size);
+    auto fetches_pool_size_limit = getFetchPoolSizeLimit(entry);
     size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundFetchesPoolTask].load(std::memory_order_relaxed);
-
-    /// We only allow priority slots in queue, not priority threads, so number of priority slots cannot exceeds number of waiting queue slots
-    reserved_for_priority = std::min(reserved_for_priority, replicated_fetches_pool_size - replicated_fetches_pool_threads);
-    /// If the entry has living priority tag, we could use priority slots
-    auto fetches_pool_size_limit = entry.hasPriority() ? replicated_fetches_pool_size : replicated_fetches_pool_size - reserved_for_priority;
 
     if (busy_threads_in_pool >= fetches_pool_size_limit)
     {
