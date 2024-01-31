@@ -23,7 +23,6 @@
 #include <map>
 #include <vector>
 
-#include <boost/math/special_functions/fpclassify.hpp>
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
 #include "Poco/Channel.h"
