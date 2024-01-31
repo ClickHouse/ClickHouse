@@ -1286,6 +1286,20 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     MergeTreeData & data,
     std::unique_lock<std::mutex> & state_lock) const
 {
+
+    /// Optimization: if local table already contains the part, it's likely that replica already has it.
+    /// Only additional step is to check if the part is in zookeeper then we can remove the log entry.
+    if (entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART || entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::MUTATE_PART)
+    {
+        auto existing_part = data.getPartIfExists(entry.new_part_name, {MergeTreeDataPartState::PreActive});
+
+        if (!existing_part)
+            existing_part = data.getActiveContainingPart(entry.new_part_name);
+
+        if (existing_part)
+            return true;
+    }
+
     /// If our entry produce part which is already covered by
     /// some other entry which is currently executing, then we can postpone this entry.
     for (const String & new_part_name : entry.getVirtualPartNames(format_version))
