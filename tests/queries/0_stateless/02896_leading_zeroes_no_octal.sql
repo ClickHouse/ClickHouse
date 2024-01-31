@@ -62,9 +62,9 @@ INSERT INTO t_leading_zeroes_f VALUES (2005, '0100', 0100, 100, 'Octal like, int
 INSERT INTO t_leading_zeroes_f VALUES (2006, '0000000000100', 0000000000100, 100, 'Octal like, interpret as decimal, multiple leading zeroes');
 
 -- Float negative zero is machine/context dependent
---INSERT INTO t_leading_zeroes_f VALUES (2010, '-0', -0, 0, 'Single zero negative');
---INSERT INTO t_leading_zeroes_f VALUES (2011, '-00', -00, 0, 'Double zero negative');
---INSERT INTO t_leading_zeroes_f VALUES (2012, '-000000000000000', -000000000000000, 0, 'Mutliple redundant zeroes negative');
+-- INSERT INTO t_leading_zeroes_f VALUES (2010, '-0', -0, 0, 'Single zero negative');
+-- INSERT INTO t_leading_zeroes_f VALUES (2011, '-00', -00, 0, 'Double zero negative');
+-- INSERT INTO t_leading_zeroes_f VALUES (2012, '-000000000000000', -000000000000000, 0, 'Mutliple redundant zeroes negative');
 INSERT INTO t_leading_zeroes_f VALUES (2013, '-01', -01, -1, 'Octal like, interpret as decimal negative');
 INSERT INTO t_leading_zeroes_f VALUES (2014, '-08', -08, -8, 'Octal like, interpret as decimal negative');
 INSERT INTO t_leading_zeroes_f VALUES (2015, '-0100', -0100, -100, 'Octal like, interpret as decimal negative');
