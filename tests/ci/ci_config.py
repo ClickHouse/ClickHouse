@@ -67,20 +67,36 @@ class BuildConfig:
     sparse_checkout: bool = False
     comment: str = ""
     static_binary_name: str = ""
-    job_config: JobConfig = JobConfig(
-        digest=DigestConfig(
-            include_paths=[
-                "./src",
-                "./contrib/*-cmake",
-                "./cmake",
-                "./base",
-                "./programs",
-                "./packages",
-            ],
-            exclude_files=[".md"],
-            docker=["clickhouse/binary-builder"],
-            git_submodules=True,
-        ),
+    job_config: JobConfig = field(
+        default_factory=lambda: JobConfig(
+            digest=DigestConfig(
+                include_paths=[
+                    "./src",
+                    "./contrib/*-cmake",
+                    "./contrib/consistent-hashing",
+                    "./contrib/murmurhash",
+                    "./contrib/libfarmhash",
+                    "./contrib/pdqsort",
+                    "./contrib/cityhash102",
+                    "./contrib/sparse-checkout",
+                    "./contrib/libmetrohash",
+                    "./contrib/update-submodules.sh",
+                    "./contrib/CMakeLists.txt",
+                    "./CMakeLists.txt",
+                    "./PreLoad.cmake",
+                    "./cmake",
+                    "./base",
+                    "./programs",
+                    "./packages",
+                    "./docker/packager/packager",
+                    "./rust",
+                ],
+                exclude_files=[".md"],
+                docker=["clickhouse/binary-builder"],
+                git_submodules=True,
+            ),
+            run_command="build_check.py $BUILD_NAME",
+        )
     )
 
     def export_env(self, export: bool = False) -> str:
