@@ -164,7 +164,7 @@ void VFSGarbageCollector::updateSnapshotWithLogEntries(Logpointer start, Logpoin
         populate_old_snapshot(start_regarding_zero);
         old_snapshot_buf->eof(); // throws if file not found
     }
-    catch (Exception & e)
+    catch (std::exception & e)
     {
         const Logpointer new_start = reconcile(start_regarding_zero, end, std::move(e));
         if (new_start == end)
@@ -198,8 +198,9 @@ void VFSGarbageCollector::updateSnapshotWithLogEntries(Logpointer start, Logpoin
 }
 
 #pragma clang diagnostic ignored "-Wmissing-noreturn" // Conditional [[noreturn]] doesn't exist
-static void check404(std::exception & e)
+static void check404(Poco::Logger * const log, std::exception & e)
 {
+    LOG_DEBUG(log, "Checking snapshot read exception {}", e.what());
     if (false) // TODO myrrc this works only for s3 and azure
     {
     }
@@ -222,9 +223,10 @@ static void check404(std::exception & e)
 }
 
 constexpr std::string_view SNAPSHOTS_PATH = "/snapshots";
-Logpointer VFSGarbageCollector::reconcile(Logpointer start, Logpointer end, Exception && e) const
+// Better approach would be to pass Exception && e, but Azure StorageException doesn't derive from it
+Logpointer VFSGarbageCollector::reconcile(Logpointer start, Logpointer end, std::exception && e) const
 {
-    check404(e);
+    check404(log.get(), e);
     const bool starting = start == 0;
     if (!starting)
         LOG_WARNING(log, "Snapshot for {} not found", start);
@@ -233,6 +235,7 @@ Logpointer VFSGarbageCollector::reconcile(Logpointer start, Logpointer end, Exce
     RelativePathsWithMetadata snapshots;
     constexpr int max_candidates = 5;
     storage.object_storage->listObjects(snapshots_path, snapshots, max_candidates);
+
     if (const bool empty = snapshots.empty(); empty && starting)
     {
         LOG_DEBUG(log, "Didn't find snapshot before start, writing empty file");
@@ -243,8 +246,8 @@ Logpointer VFSGarbageCollector::reconcile(Logpointer start, Logpointer end, Exce
     }
     else if (empty)
     {
-        e.addMessage("Did not find any snapshots in {}", snapshots_path);
-        throw std::move(e);
+        LOG_ERROR(log, "Didn't find any snapshots in {}", snapshots_path);
+        throw e;
     }
 
     std::vector<Logpointer> candidates;
@@ -252,7 +255,7 @@ Logpointer VFSGarbageCollector::reconcile(Logpointer start, Logpointer end, Exce
     { return parseFromString<Logpointer>(fs::path(obj.relative_path).lexically_relative(snapshots_path).string()); };
     std::ranges::transform(std::move(snapshots), std::back_inserter(candidates), std::move(parse));
     std::ranges::sort(candidates);
-    LOG_DEBUG(log, "Got snapshot candidates: [{}]", fmt::join(candidates, ", "));
+    LOG_DEBUG(log, "Snapshot candidates: [{}]", fmt::join(candidates, ", "));
 
     if (const auto it = std::ranges::find(candidates, end); it != candidates.end())
     {
@@ -266,8 +269,7 @@ Logpointer VFSGarbageCollector::reconcile(Logpointer start, Logpointer end, Exce
     else if (const auto it = std::ranges::lower_bound(candidates, start); it != candidates.begin())
         return it == candidates.end() ? greatest_end : *std::prev(it);
 
-    // TODO myrrc add more heuristics. Current approach may be too conservative
-    throw std::move(e);
+    throw e; // TODO myrrc add more heuristics. Current approach may be too conservative
 }
 
 VFSLogItem VFSGarbageCollector::getBatch(Logpointer start, Logpointer end) const

@@ -22,7 +22,7 @@ private:
     void run() const;
     bool skipRun(size_t batch_size, Logpointer start, Logpointer end) const;
     void updateSnapshotWithLogEntries(Logpointer start, Logpointer end) const;
-    Logpointer reconcile(Logpointer start, Logpointer end, Exception && e) const;
+    Logpointer reconcile(Logpointer start, Logpointer end, std::exception && e) const;
     VFSLogItem getBatch(Logpointer start, Logpointer end) const;
     void removeBatch(Logpointer start, Logpointer end) const;
     String getNode(Logpointer ptr) const;
