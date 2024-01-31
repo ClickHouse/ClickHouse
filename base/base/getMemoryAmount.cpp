@@ -93,10 +93,24 @@ uint64_t getMemoryAmountOrZero()
     uint64_t memory_amount = num_pages * page_size;
 
     /// Respect the memory limit set by cgroups v2.
-    /// Cgroups v1 is dead since many years and its limits are not considered for simplicity.
-    auto limit = getCgroupsV2MemoryLimit();
-    if (limit.has_value() && *limit < memory_amount)
-         memory_amount = *limit;
+    auto limit_v2 = getCgroupsV2MemoryLimit();
+    if (limit_v2.has_value() && *limit_v2 < memory_amount)
+         memory_amount = *limit_v2;
+    else
+    {
+        /// Cgroups v1 were replaced by v2 in 2015. The only reason we keep supporting v1 is that the transition to v2
+        /// has been slow. Caveat : Hierarchical groups as in v2 are not supported for v1, the location of the memory
+        /// limit (virtual) file is hard-coded.
+        /// TODO: check at the end of 2024 if we can get rid of v1.
+        std::ifstream limit_file_v1("/sys/fs/cgroup/memory/memory.limit_in_bytes");
+        if (limit_file_v1.is_open())
+        {
+            uint64_t limit_v1;
+            if (limit_file_v1 >> limit_v1)
+                if (limit_v1 < memory_amount)
+                    memory_amount = limit_v1;
+        }
+    }
 
     return memory_amount;
 }
