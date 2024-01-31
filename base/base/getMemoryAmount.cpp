@@ -1,7 +1,9 @@
-#include <stdexcept>
-#include <fstream>
 #include <base/getMemoryAmount.h>
+
 #include <base/getPageSize.h>
+
+#include <fstream>
+#include <stdexcept>
 
 #include <unistd.h>
 #include <sys/types.h>
@@ -27,10 +29,11 @@ uint64_t getMemoryAmountOrZero()
     uint64_t memory_amount = num_pages * page_size;
 
 #if defined(OS_LINUX)
-    // Try to lookup at the Cgroup limit
+    /// Limit the memory amount by limits set by cgroups
+    std::filesystem::path default_cgroups_mount = "/sys/fs/cgroup";
 
-    // CGroups v2
-    std::ifstream cgroupv2_limit("/sys/fs/cgroup/memory.max");
+    /// cgroups v2
+    std::ifstream cgroupv2_limit(default_cgroups_mount / "memory.max");
     if (cgroupv2_limit.is_open())
     {
         uint64_t memory_limit = 0;
@@ -40,8 +43,8 @@ uint64_t getMemoryAmountOrZero()
     }
     else
     {
-        // CGroups v1
-        std::ifstream cgroup_limit("/sys/fs/cgroup/memory/memory.limit_in_bytes");
+        /// cgroups v1
+        std::ifstream cgroup_limit(default_cgroups_mount / "memory/memory.limit_in_bytes");
         if (cgroup_limit.is_open())
         {
             uint64_t memory_limit = 0; // in case of read error
