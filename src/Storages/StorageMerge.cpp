@@ -54,7 +54,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <base/defines.h>
 #include <base/range.h>
-#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
@@ -636,7 +635,6 @@ bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr replacemen
     {
         auto current = stack.back();
         stack.pop_back();
-        LOG_DEBUG(&Poco::Logger::get("hasUnknownColumn"), "Expression: {}", current->formatASTForErrorMessage());
 
         switch (current->getNodeType())
         {
@@ -668,8 +666,6 @@ QueryTreeNodePtr removeJoin(
     QueryTreeNodePtr original_table_expression,
     QueryTreeNodePtr replacement_table_expression)
 {
-    LOG_DEBUG(&Poco::Logger::get("removeJoin"), "Entered the function");
-
     auto * query_node = query->as<QueryNode>();
     auto join_tree = query_node->getJoinTree();
     auto modified_query = query_node->cloneAndReplace(original_table_expression, replacement_table_expression);
@@ -694,7 +690,6 @@ QueryTreeNodePtr removeJoin(
         auto projection_columns = modified_query_node->getProjectionColumns();
         for (size_t i = 0; i < projection.size();)
         {
-            LOG_DEBUG(&Poco::Logger::get("removeJoin"), "Processing: {}", i);
             if (hasUnknownColumn(projection[i], replacement_table_expression))
             {
                 projection.erase(projection.begin() + i);
@@ -706,8 +701,6 @@ QueryTreeNodePtr removeJoin(
 
         query_node->resolveProjectionColumns(std::move(projection_columns));
     }
-
-    LOG_DEBUG(&Poco::Logger::get("removeJoin"), "Result:\n{}", modified_query->dumpTree());
 
     return modified_query;
 }
@@ -721,7 +714,6 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
     Names & column_names_as_aliases,
     Aliases & aliases) const
 {
-    LOG_DEBUG(&Poco::Logger::get("getModifiedQueryInfo"), "Procesing query");
     const auto & [database_name, storage, storage_lock, table_name] = storage_with_lock_and_name;
     const StorageID current_storage_id = storage->getStorageID();
 
