@@ -79,7 +79,7 @@ public:
                         min_percentile = p_min / 100;
                     else
                         throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS, "The third argumet of function {} must be in range [2.0, 98.0]", getName());
+                            ErrorCodes::BAD_ARGUMENTS, "The third argument of function {} must be in range [2.0, 98.0]", getName());
                 }
 
                 if (arguments.size() > 3)
@@ -89,7 +89,7 @@ public:
                         max_percentile = p_max / 100;
                     else
                         throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS, "The fourth argumet of function {} must be in range [2.0, 98.0]", getName());
+                            ErrorCodes::BAD_ARGUMENTS, "The fourth argument of function {} must be in range [2.0, 98.0]", getName());
                 }
             }
             else if (kind == "tukey")
@@ -109,7 +109,7 @@ public:
             if (k_val >= 0.0)
                 K = k_val;
             else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The fifth argumet of function {} must be a positive number", getName());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The fifth argument of function {} must be a positive number", getName());
         }
 
         ColumnPtr col_res;
