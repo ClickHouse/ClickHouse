@@ -137,9 +137,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
             zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
         const bool zerocopy_lock_already_acquired = is_zerocopy
             && (!zero_copy_lock || !zero_copy_lock->isLocked());
-
-        const String vfs_lock_path = fs::path(storage.getTableSharedID()) / entry.new_part_name;
-        const bool vfs_lock_already_acquired = is_vfs && !disk->lock(vfs_lock_path, false);
+        const bool vfs_lock_already_acquired = is_vfs && !storage.lockSharedPart(entry.new_part_name, false);
 
         if (zerocopy_lock_already_acquired || vfs_lock_already_acquired)
         {
@@ -168,7 +166,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
             /// In case of DROP_RANGE on fast replica and stale replica we can have some failed select queries in case of zero copy replication.
             if (zero_copy_lock)
                 zero_copy_lock->lock->unlock();
-            disk->unlock(vfs_lock_path);
+            storage.unlockSharedPart(entry.new_part_name);
 
             LOG_DEBUG(log, "We took zero copy lock, but mutation of part {} finished by some other replica, will release lock and download mutated part to avoid data duplication", entry.new_part_name);
             return PrepareResult{
@@ -257,8 +255,7 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
         LOG_DEBUG(log, "Removing zero-copy lock");
         zero_copy_lock->lock->unlock();
     }
-    const String lock_path = fs::path(storage.getTableSharedID()) / entry.new_part_name;
-    new_part->storage.getDisks()[0]->unlock(lock_path);
+    storage.unlockSharedPart(entry.new_part_name);
 
     /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
          * This is not a problem, because in this case the entry will remain in the queue, and we will try again.

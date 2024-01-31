@@ -393,10 +393,6 @@ public:
     /// Required for remote disk to ensure that replica has access to data written by other node
     virtual bool checkUniqueId(const String & id) const { return exists(id); }
 
-    // Assure exclusive access to some remote "path" (needn't be an existent one).
-    virtual bool lock(std::string_view path, bool block);
-    virtual void unlock(std::string_view path);
-
     /// Invoked on partitions freeze query.
     virtual void onFreeze(const String &) { }
 

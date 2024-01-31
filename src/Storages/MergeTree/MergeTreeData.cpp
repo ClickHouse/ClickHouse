@@ -7618,6 +7618,9 @@ bool MergeTreeData::areBackgroundMovesNeeded() const
     return policy->getVolumes().size() == 1 && policy->getVolumes()[0]->getDisks().size() > 1;
 }
 
+bool MergeTreeData::lockSharedPart(std::string_view, bool) const { return true; }
+void MergeTreeData::unlockSharedPart(std::string_view) const {}
+
 std::future<MovePartsOutcome> MergeTreeData::movePartsToSpace(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool async)
 {
     auto finish_move_promise = std::make_shared<std::promise<MovePartsOutcome>>();
@@ -7787,22 +7790,17 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             }
             else /// Ordinary move as it should be
             {
-                // TODO myrrc revisit whether blocking wait on a Zookeeper lock is the best we can imagine
-                //  If we can remove wait_for_move_if_zero_copy, lock acquisition code can be moved to
-                //  MergeTreePartsMover.
-                const String move_lock = fs::path(getTableSharedID()) / moving_part.part->name;
-                if (!disk->lock(move_lock, wait_for_move_if_zero_copy))
+                if (!lockSharedPart(moving_part.part->name, wait_for_move_if_zero_copy))
                 {
                     write_part_log({});
                     LOG_DEBUG(log, "Move contention, rescheduling");
                     // TODO myrrc reschedule time hint regarding part size
                     return MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy;
                 }
+                SCOPE_EXIT(unlockSharedPart(moving_part.part->name));
 
                 cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings);
                 parts_mover.swapClonedPart(cloned_part);
-
-                disk->unlock(move_lock);
             }
             write_part_log({});
         }

@@ -1033,6 +1033,9 @@ public:
     bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee);
     bool areBackgroundMovesNeeded() const;
 
+    // TODO myrrc clash with zerocopy-only [un]lockSharedData. Rename to lockSharedPartVFS or so
+    virtual bool lockSharedPart(std::string_view part_name, bool block) const;
+    virtual void unlockSharedPart(std::string_view part_name) const;
 
     /// Lock part in zookeeper for shared data in several nodes
     /// Overridden in StorageReplicatedMergeTree

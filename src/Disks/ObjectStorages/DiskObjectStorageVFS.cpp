@@ -118,35 +118,6 @@ String DiskObjectStorageVFS::getStructure() const
     return fmt::format("DiskObjectStorageVFS-{}({})", getName(), object_storage->getName());
 }
 
-bool DiskObjectStorageVFS::lock(std::string_view path, bool block)
-{
-    using enum Coordination::Error;
-    const String lock_path_full = lockPathToFullPath(path);
-    const auto mode = zkutil::CreateMode::Ephemeral;
-
-    LOG_TRACE(log, "Creating lock {} (zk path {}), block={}", path, lock_path_full, block);
-
-    do // TODO myrrc some stop condition e.g. when we are shutting down
-    {
-        if (block)
-            zookeeper()->waitForDisappear(lock_path_full);
-        const auto code = zookeeper()->tryCreate(lock_path_full, "", mode);
-        if (code == ZOK)
-            return true;
-        if (code == ZNODEEXISTS && !block)
-            return false;
-        if (code != ZNODEEXISTS)
-            throw Coordination::Exception(code, "While trying to create lock {}", code);
-    } while (true);
-}
-
-void DiskObjectStorageVFS::unlock(std::string_view path)
-{
-    const String lock_path_full = lockPathToFullPath(path);
-    LOG_TRACE(log, "Removing lock {} (zk path {})", path, lock_path_full);
-    zookeeper()->remove(lock_path_full);
-}
-
 bool DiskObjectStorageVFS::tryDownloadMetadata(std::string_view remote_from, const String & to)
 {
     auto buf = object_storage->readObject(getMetadataObject(remote_from));

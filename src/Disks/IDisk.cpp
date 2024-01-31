@@ -183,9 +183,6 @@ void IDisk::truncateFile(const String &, size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
-bool IDisk::lock(std::string_view, bool) { return true; }
-void IDisk::unlock(std::string_view) {}
-
 SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
 {
     return nullptr;

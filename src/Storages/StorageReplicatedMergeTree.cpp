@@ -9109,6 +9109,38 @@ zkutil::EphemeralNodeHolderPtr StorageReplicatedMergeTree::lockSharedDataTempora
     return zkutil::EphemeralNodeHolder::existing(zookeeper_node, *zookeeper);
 }
 
+bool StorageReplicatedMergeTree::lockSharedPart(std::string_view part_name, bool block) const
+{
+    using enum Coordination::Error;
+    const String lock_path_full = fmt::format("{}_{}", getTableSharedID(), part_name);
+    const auto mode = zkutil::CreateMode::Ephemeral;
+    ZooKeeperWithFaultInjection zookeeper{getZooKeeper()};
+
+    LOG_TRACE(log, "Creating lock for {} (zk path {}), block={}", part_name, lock_path_full, block);
+
+    int attempts = 5;
+    do
+    {
+        if (block)
+            zookeeper.waitForDisappear(lock_path_full);
+        const auto code = zookeeper.tryCreate(lock_path_full, "", mode);
+        if (code == ZOK)
+            return true;
+        if (code == ZNODEEXISTS && !block)
+            return false;
+        if (code != ZNODEEXISTS)
+            throw Coordination::Exception(code, "While trying to create lock {}", lock_path_full);
+    } while (attempts-- > 0);
+    throw Exception(ErrorCodes::NOT_FOUND_NODE, "All attempts failed while trying to create lock {}", lock_path_full);
+}
+
+void StorageReplicatedMergeTree::unlockSharedPart(std::string_view part_name) const
+{
+    const String lock_path_full = fmt::format("{}_{}", getTableSharedID(), part_name);
+    LOG_TRACE(log, "Removing lock for {} (zk path {})", part_name, lock_path_full);
+    ZooKeeperWithFaultInjection{getZooKeeper()}.remove(lock_path_full);
+}
+
 void StorageReplicatedMergeTree::lockSharedData(
     const IMergeTreeDataPart & part,
     bool replace_existing_lock,

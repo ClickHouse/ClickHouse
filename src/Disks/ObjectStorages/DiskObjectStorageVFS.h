@@ -31,8 +31,6 @@ public:
     DiskObjectStoragePtr createDiskObjectStorage() override;
     String getStructure() const override;
 
-    bool lock(std::string_view path, bool block) override;
-    void unlock(std::string_view path) override;
     bool tryDownloadMetadata(std::string_view remote_from, const String & to);
     void uploadMetadata(std::string_view remote_to, const String & from);
 
