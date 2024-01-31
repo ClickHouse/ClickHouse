@@ -155,10 +155,6 @@ StorageS3Queue::StorageS3Queue(
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
     task = getContext()->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });
 
-    /// Get metadata manager from S3QueueMetadataFactory,
-    /// it will increase the ref count for the metadata object.
-    /// The ref count is decreased when StorageS3Queue::drop() method is called.
-    files_metadata = S3QueueMetadataFactory::instance().getOrCreate(zk_path, *s3queue_settings);
     try
     {
         createOrCheckMetadata(storage_metadata);
@@ -168,6 +164,11 @@ StorageS3Queue::StorageS3Queue(
         S3QueueMetadataFactory::instance().remove(zk_path);
         throw;
     }
+
+    /// Get metadata manager from S3QueueMetadataFactory,
+    /// it will increase the ref count for the metadata object.
+    /// The ref count is decreased when StorageS3Queue::drop() method is called.
+    files_metadata = S3QueueMetadataFactory::instance().getOrCreate(zk_path, *s3queue_settings);
 
     if (files_metadata->isShardedProcessing())
     {
@@ -180,6 +181,10 @@ StorageS3Queue::StorageS3Queue(
         {
             files_metadata->registerNewShard(s3queue_settings->s3queue_current_shard_num);
         }
+    }
+    if (s3queue_settings->mode == S3QueueMode::ORDERED && !s3queue_settings->s3queue_last_processed_path.value.empty())
+    {
+        files_metadata->setFileProcessed(s3queue_settings->s3queue_last_processed_path.value, s3queue_settings->s3queue_current_shard_num);
     }
 }
 
