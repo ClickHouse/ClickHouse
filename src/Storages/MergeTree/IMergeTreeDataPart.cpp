@@ -81,7 +81,6 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Par
     auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
     size_t minmax_idx_size = minmax_column_types.size();
 
-    hyperrectangle.clear();
     hyperrectangle.reserve(minmax_idx_size);
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
@@ -103,39 +102,6 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Par
         hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
     initialized = true;
-}
-
-Block IMergeTreeDataPart::MinMaxIndex::getBlock(const MergeTreeData & data) const
-{
-    if (!initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to get block from uninitialized MinMax index.");
-
-    Block block;
-
-    const auto metadata_snapshot = data.getInMemoryMetadataPtr();
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
-
-    const auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
-    const auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
-    const auto minmax_idx_size = minmax_column_types.size();
-
-    for (size_t i = 0; i < minmax_idx_size; ++i)
-    {
-        const auto & data_type = minmax_column_types[i];
-        const auto & column_name = minmax_column_names[i];
-
-        const auto column = data_type->createColumn();
-
-        const auto min_val = hyperrectangle.at(i).left;
-        const auto max_val = hyperrectangle.at(i).right;
-
-        column->insert(min_val);
-        column->insert(max_val);
-
-        block.insert(ColumnWithTypeAndName(column->getPtr(), data_type, column_name));
-    }
-
-    return block;
 }
 
 IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
@@ -219,7 +185,8 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 
     if (!initialized)
     {
-        *this = other;
+        hyperrectangle = other.hyperrectangle;
+        initialized = true;
     }
     else
     {
@@ -1175,7 +1142,6 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         {
             assertEOF(*buf);
             bytes_on_disk = checksums.getTotalSizeOnDisk();
-            bytes_uncompressed_on_disk = checksums.getTotalSizeUncompressedOnDisk();
         }
         else
             bytes_on_disk = getDataPartStorage().calculateTotalSizeOnDisk();
@@ -1193,7 +1159,6 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         writeChecksums(checksums, {});
 
         bytes_on_disk = checksums.getTotalSizeOnDisk();
-        bytes_uncompressed_on_disk = checksums.getTotalSizeUncompressedOnDisk();
     }
 }
 
@@ -1696,7 +1661,7 @@ try
 
     metadata_manager->deleteAll(true);
     metadata_manager->assertAllDeleted(true);
-    getDataPartStorage().rename(to.parent_path(), to.filename(), storage.log.load(), remove_new_dir_if_exists, fsync_dir);
+    getDataPartStorage().rename(to.parent_path(), to.filename(), storage.log, remove_new_dir_if_exists, fsync_dir);
     metadata_manager->updateAll(true);
 
     auto new_projection_root_path = to.string();
@@ -1791,7 +1756,7 @@ void IMergeTreeDataPart::remove()
     }
 
     bool is_temporary_part = is_temp || state == MergeTreeDataPartState::Temporary;
-    getDataPartStorage().remove(std::move(can_remove_callback), checksums, projection_checksums, is_temporary_part, storage.log.load());
+    getDataPartStorage().remove(std::move(can_remove_callback), checksums, projection_checksums, is_temporary_part, storage.log);
 }
 
 std::optional<String> IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached, bool broken) const
@@ -1808,7 +1773,7 @@ std::optional<String> IMergeTreeDataPart::getRelativePathForPrefix(const String 
     if (detached && parent_part)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot detach projection");
 
-    return getDataPartStorage().getRelativePathForPrefix(storage.log.load(), prefix, detached, broken);
+    return getDataPartStorage().getRelativePathForPrefix(storage.log, prefix, detached, broken);
 }
 
 std::optional<String> IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix, bool broken) const
@@ -1874,7 +1839,7 @@ MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not clone data part {} to empty directory.", name);
 
     String path_to_clone = fs::path(storage.relative_data_path) / directory_name / "";
-    return getDataPartStorage().clonePart(path_to_clone, getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, storage.log.load(), cancellation_hook);
+    return getDataPartStorage().clonePart(path_to_clone, getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, storage.log, cancellation_hook);
 }
 
 UInt64 IMergeTreeDataPart::getIndexSizeFromFile() const

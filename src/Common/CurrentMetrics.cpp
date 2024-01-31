@@ -87,7 +87,7 @@
     M(MarksLoaderThreads, "Number of threads in thread pool for loading marks.") \
     M(MarksLoaderThreadsActive, "Number of threads in the thread pool for loading marks running a task.") \
     M(MarksLoaderThreadsScheduled, "Number of queued or active jobs in the thread pool for loading marks.") \
-    M(IOPrefetchThreads, "Number of threads in the IO prefetch thread pool.") \
+    M(IOPrefetchThreads, "Number of threads in the IO prefertch thread pool.") \
     M(IOPrefetchThreadsActive, "Number of threads in the IO prefetch thread pool running a task.") \
     M(IOPrefetchThreadsScheduled, "Number of queued or active jobs in the IO prefetch thread pool.") \
     M(IOWriterThreads, "Number of threads in the IO writer thread pool.") \
@@ -212,8 +212,6 @@
     M(PartsCommitted, "Deprecated. See PartsActive.") \
     M(PartsPreActive, "The part is in data_parts, but not used for SELECTs.") \
     M(PartsActive, "Active data part, used by current and upcoming SELECTs.") \
-    M(AttachedDatabase, "Active database, used by current and upcoming SELECTs.") \
-    M(AttachedTable, "Active table, used by current and upcoming SELECTs.") \
     M(PartsOutdated, "Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.") \
     M(PartsDeleting, "Not active data part with identity refcounter, it is deleting right now by a cleaner.") \
     M(PartsDeleteOnDestroy, "Part was moved to another disk and should be deleted in own destructor.") \
@@ -242,7 +240,7 @@
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
-    M(S3Requests, "S3 requests count") \
+    M(S3Requests, "S3 requests") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequets, "Number of outstanding requests") \
     M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \
@@ -253,15 +251,12 @@
     M(MergeTreeAllRangesAnnouncementsSent, "The current number of announcement being sent in flight from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
     M(CreatedTimersInQueryProfiler, "Number of Created thread local timers in QueryProfiler") \
     M(ActiveTimersInQueryProfiler, "Number of Active thread local timers in QueryProfiler") \
-    M(RefreshableViews, "Number materialized views with periodic refreshing (REFRESH)") \
-    M(RefreshingViews, "Number of materialized views currently executing a refresh") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
 #else
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M)
 #endif
-
 
 namespace CurrentMetrics
 {

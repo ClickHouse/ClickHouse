@@ -150,7 +150,7 @@ public:
 
     /** Create ColumnConst for corresponding type, with specified size and value.
       */
-    virtual ColumnPtr createColumnConst(size_t size, const Field & field) const;
+    ColumnPtr createColumnConst(size_t size, const Field & field) const;
     ColumnPtr createColumnConstWithDefaultValue(size_t size) const;
 
     /** Get default value of data type.
@@ -412,8 +412,6 @@ struct WhichDataType
     constexpr bool isSimple() const  { return isInt() || isUInt() || isFloat() || isString(); }
 
     constexpr bool isLowCardinality() const { return idx == TypeIndex::LowCardinality; }
-
-    constexpr bool isVariant() const { return idx == TypeIndex::Variant; }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
@@ -442,8 +440,6 @@ template <typename T> inline bool isFloat(const T & data_type) { return WhichDat
 template <typename T> inline bool isNativeNumber(const T & data_type) { return WhichDataType(data_type).isNativeNumber(); }
 template <typename T> inline bool isNumber(const T & data_type) { return WhichDataType(data_type).isNumber(); }
 
-template <typename T> inline bool isEnum8(const T & data_type) { return WhichDataType(data_type).isEnum8(); }
-template <typename T> inline bool isEnum16(const T & data_type) { return WhichDataType(data_type).isEnum16(); }
 template <typename T> inline bool isEnum(const T & data_type) { return WhichDataType(data_type).isEnum(); }
 
 template <typename T> inline bool isDate(const T & data_type) { return WhichDataType(data_type).isDate(); }
@@ -466,7 +462,6 @@ template <typename T> inline bool isTuple(const T & data_type) { return WhichDat
 template <typename T> inline bool isMap(const T & data_type) {return WhichDataType(data_type).isMap(); }
 template <typename T> inline bool isInterval(const T & data_type) {return WhichDataType(data_type).isInterval(); }
 template <typename T> inline bool isObject(const T & data_type) { return WhichDataType(data_type).isObject(); }
-template <typename T> inline bool isVariant(const T & data_type) { return WhichDataType(data_type).isVariant(); }
 
 template <typename T> inline bool isNothing(const T & data_type) { return WhichDataType(data_type).isNothing(); }
 

@@ -174,7 +174,7 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         || sigaddset(&sig_set, SIGINT)
         || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
     {
-        throw DB::ErrnoException(DB::ErrorCodes::CANNOT_BLOCK_SIGNAL, "Cannot block signal");
+        DB::throwFromErrno("Cannot block signal.", DB::ErrorCodes::CANNOT_BLOCK_SIGNAL);
     }
 
     while (true)

@@ -42,7 +42,7 @@ public:
 
     IRowInputFormat(Block header, ReadBuffer & in_, Params params_);
 
-    Chunk read() override;
+    Chunk generate() override;
 
     void resetParser() override;
 
@@ -79,11 +79,9 @@ protected:
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
-    size_t getRowNum() const { return total_rows; }
+    size_t getTotalRows() const { return total_rows; }
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
-
-    void setRowsReadBefore(size_t rows) override { total_rows = rows; }
 
     Serializations serializations;
 

@@ -2,21 +2,34 @@
 
 import csv
 import logging
-import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import List, Tuple
 
-from build_download_helper import download_all_deb_packages
-from clickhouse_helper import CiLogsCredentials
+from github import Github
 
-from docker_images_helper import DockerImage, pull_image, get_docker_image
-from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
+from build_download_helper import download_all_deb_packages
+from clickhouse_helper import (
+    CiLogsCredentials,
+    ClickHouseHelper,
+    prepare_tests_results_for_clickhouse,
+)
+from commit_status_helper import (
+    RerunHelper,
+    get_commit,
+    post_commit_status,
+    format_description,
+)
+from docker_pull_helper import DockerImage, get_image_with_version
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
+from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import JobReport, TestResult, TestResults, read_test_results
+from report import TestResult, TestResults, read_test_results
+from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from upload_result_helper import upload_results
 
 
 def get_additional_envs() -> List[str]:
@@ -113,19 +126,24 @@ def run_stress_test(docker_image_name: str) -> None:
 
     stopwatch = Stopwatch()
     temp_path = Path(TEMP_PATH)
-    reports_path = Path(REPORT_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
     repo_path = Path(REPO_COPY)
     repo_tests_path = repo_path / "tests"
+    reports_path = Path(REPORTS_PATH)
 
-    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
-    assert (
-        check_name
-    ), "Check name must be provided as an input arg or in CHECK_NAME env"
+    check_name = sys.argv[1]
 
     pr_info = PRInfo()
 
-    docker_image = pull_image(get_docker_image(docker_image_name))
+    gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
+
+    rerun_helper = RerunHelper(commit, check_name)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
+
+    docker_image = get_image_with_version(reports_path, docker_image_name)
 
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
@@ -172,6 +190,7 @@ def run_stress_test(docker_image_name: str) -> None:
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
     ci_logs_credentials.clean_ci_logs_from_credentials(run_log_path)
 
+    s3_helper = S3Helper()
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path, run_log_path
     )
@@ -179,16 +198,32 @@ def run_stress_test(docker_image_name: str) -> None:
     if timeout_expired:
         test_results.append(TestResult.create_check_timeout_expired(timeout))
         state = "failure"
-        description = test_results[-1].name
+        description = format_description(test_results[-1].name)
 
-    JobReport(
-        description=description,
-        test_results=test_results,
-        status=state,
-        start_time=stopwatch.start_time_str,
-        duration=stopwatch.duration_seconds,
-        additional_files=additional_logs,
-    ).dump()
+    ch_helper = ClickHouseHelper()
+
+    report_url = upload_results(
+        s3_helper,
+        pr_info.number,
+        pr_info.sha,
+        test_results,
+        additional_logs,
+        check_name,
+    )
+    print(f"::notice ::Report url: {report_url}")
+
+    post_commit_status(commit, state, report_url, description, check_name, pr_info)
+
+    prepared_events = prepare_tests_results_for_clickhouse(
+        pr_info,
+        test_results,
+        state,
+        stopwatch.duration_seconds,
+        stopwatch.start_time_str,
+        report_url,
+        check_name,
+    )
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     if state == "failure":
         sys.exit(1)

@@ -493,7 +493,7 @@ catch (const DB::Exception & e)
 
 ``` cpp
 if (0 != close(fd))
-    throw ErrnoException(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file {}", file_name);
+    throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
 ```
 
 `assert` не используются.

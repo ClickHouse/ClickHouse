@@ -209,7 +209,7 @@ StorageLiveView::StorageLiveView(
     live_view_context = Context::createCopy(getContext());
     live_view_context->makeQueryContext();
 
-    log = getLogger("StorageLiveView (" + table_id_.database_name + "." + table_id_.table_name + ")");
+    log = &Poco::Logger::get("StorageLiveView (" + table_id_.database_name + "." + table_id_.table_name + ")");
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);

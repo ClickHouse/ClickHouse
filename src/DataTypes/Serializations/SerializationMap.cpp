@@ -115,11 +115,9 @@ void SerializationMap::serializeTextImpl(
     writeChar('}', ostr);
 }
 
-template <typename ReturnType, typename Reader>
-ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader) const
+template <typename Reader>
+void SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader) const
 {
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
     auto & column_map = assert_cast<ColumnMap &>(column);
 
     auto & nested_array = column_map.getNestedColumn();
@@ -130,21 +128,7 @@ ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & 
     auto & value_column = nested_tuple.getColumn(1);
 
     size_t size = 0;
-    if constexpr (throw_exception)
-        assertChar('{', istr);
-    else if (!checkChar('{', istr))
-        return ReturnType(false);
-
-    auto on_error_no_throw = [&]()
-    {
-        if (size)
-        {
-            nested_tuple.getColumnPtr(0) = key_column.cut(0, offsets.back());
-            nested_tuple.getColumnPtr(1) = value_column.cut(0, offsets.back());
-        }
-
-        return ReturnType(false);
-    };
+    assertChar('{', istr);
 
     try
     {
@@ -154,15 +138,9 @@ ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & 
             if (!first)
             {
                 if (*istr.position() == ',')
-                {
                     ++istr.position();
-                }
                 else
-                {
-                    if constexpr (throw_exception)
-                        throw Exception(ErrorCodes::CANNOT_READ_MAP_FROM_TEXT, "Cannot read Map from text");
-                    return on_error_no_throw();
-                }
+                    throw Exception(ErrorCodes::CANNOT_READ_MAP_FROM_TEXT, "Cannot read Map from text");
             }
 
             first = false;
@@ -172,32 +150,19 @@ ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & 
             if (*istr.position() == '}')
                 break;
 
-            if constexpr (throw_exception)
-                reader(istr, key, key_column);
-            else if (!reader(istr, key, key_column))
-                return on_error_no_throw();
-
+            reader(istr, key, key_column);
             ++size;
 
             skipWhitespaceIfAny(istr);
-            if constexpr (throw_exception)
-                assertChar(':', istr);
-            else if (!checkChar(':', istr))
-                return on_error_no_throw();
+            assertChar(':', istr);
             skipWhitespaceIfAny(istr);
 
-            if constexpr (throw_exception)
-                reader(istr, value, value_column);
-            else if (!reader(istr, value, value_column))
-                return on_error_no_throw();
+            reader(istr, value, value_column);
 
             skipWhitespaceIfAny(istr);
         }
 
-        if constexpr (throw_exception)
-            assertChar('}', istr);
-        else if (!checkChar('}', istr))
-            return on_error_no_throw();
+        assertChar('}', istr);
     }
     catch (...)
     {
@@ -206,14 +171,10 @@ ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & 
             nested_tuple.getColumnPtr(0) = key_column.cut(0, offsets.back());
             nested_tuple.getColumnPtr(1) = value_column.cut(0, offsets.back());
         }
-
-        if constexpr (throw_exception)
-            throw;
-        return ReturnType(false);
+        throw;
     }
 
     offsets.push_back(offsets.back() + size);
-    return ReturnType(true);
 }
 
 void SerializationMap::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -231,36 +192,14 @@ void SerializationMap::deserializeText(IColumn & column, ReadBuffer & istr, cons
     deserializeTextImpl(column, istr,
         [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
         {
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(subcolumn, buf, settings, subcolumn_serialization);
+            if (settings.null_as_default)
+                SerializationNullable::deserializeTextQuotedImpl(subcolumn, buf, settings, subcolumn_serialization);
             else
                 subcolumn_serialization->deserializeTextQuoted(subcolumn, buf, settings);
         });
 
     if (whole && !istr.eof())
         throwUnexpectedDataAfterParsedValue(column, istr, settings, "Map");
-}
-
-bool SerializationMap::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
-{
-    auto reader = [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
-    {
-        if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
-            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(subcolumn, buf, settings, subcolumn_serialization);
-        return subcolumn_serialization->tryDeserializeTextQuoted(subcolumn, buf, settings);
-    };
-
-    auto ok = deserializeTextImpl<bool>(column, istr, reader);
-    if (!ok)
-        return false;
-
-    if (whole && !istr.eof())
-    {
-        column.popBack(1);
-        return false;
-    }
-
-    return true;
 }
 
 void SerializationMap::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -321,23 +260,11 @@ void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, 
     deserializeTextImpl(column, istr,
         [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
         {
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization);
+            if (settings.null_as_default)
+                SerializationNullable::deserializeTextJSONImpl(subcolumn, buf, settings, subcolumn_serialization);
             else
                 subcolumn_serialization->deserializeTextJSON(subcolumn, buf, settings);
         });
-}
-
-bool SerializationMap::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    auto reader = [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
-    {
-        if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
-            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization);
-        return subcolumn_serialization->tryDeserializeTextJSON(subcolumn, buf, settings);
-    };
-
-    return deserializeTextImpl<bool>(column, istr, reader);
 }
 
 void SerializationMap::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -379,15 +306,6 @@ void SerializationMap::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
     readCSV(s, istr, settings.csv);
     ReadBufferFromString rb(s);
     deserializeText(column, rb, settings, true);
-}
-
-bool SerializationMap::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    String s;
-    if (!tryReadCSV(s, istr, settings.csv))
-        return false;
-    ReadBufferFromString rb(s);
-    return tryDeserializeText(column, rb, settings, true);
 }
 
 void SerializationMap::enumerateStreams(

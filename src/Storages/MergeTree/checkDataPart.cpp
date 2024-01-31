@@ -338,17 +338,17 @@ IMergeTreeDataPart::Checksums checkDataPart(
             throw;
 
         LOG_DEBUG(
-            getLogger("checkDataPart"),
+            &Poco::Logger::get("checkDataPart"),
             "Will drop cache for data part {} and will check it once again", data_part->name);
 
-        auto & cache = *FileCacheFactory::instance().getByName(*cache_name)->cache;
+        auto & cache = *FileCacheFactory::instance().getByName(*cache_name).cache;
         for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
         {
             auto file_name = it->name();
             if (!data_part_storage.isDirectory(file_name))
             {
                 auto remote_path = data_part_storage.getRemotePath(file_name);
-                cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
+                cache.removePathIfExists(remote_path);
             }
         }
 

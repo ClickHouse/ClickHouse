@@ -39,7 +39,7 @@ ISystemLog::~ISystemLog() = default;
 
 template <typename LogElement>
 SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settings_)
-    : log(getLogger("SystemLogQueue (" + settings_.database + "." +settings_.table + ")"))
+    : log(&Poco::Logger::get("SystemLogQueue (" + settings_.database + "." +settings_.table + ")"))
     , settings(settings_)
 
 {
@@ -188,9 +188,6 @@ typename SystemLogQueue<LogElement>::Index SystemLogQueue<LogElement>::pop(std::
                                                                            bool & should_prepare_tables_anyway,
                                                                            bool & exit_this_thread)
 {
-    /// Call dtors and deallocate strings without holding the global lock
-    output.resize(0);
-
     std::unique_lock lock(mutex);
     flush_event.wait_for(lock,
         std::chrono::milliseconds(settings.flush_interval_milliseconds),
@@ -203,6 +200,7 @@ typename SystemLogQueue<LogElement>::Index SystemLogQueue<LogElement>::pop(std::
     queue_front_index += queue.size();
     // Swap with existing array from previous flush, to save memory
     // allocations.
+    output.resize(0);
     queue.swap(output);
 
     should_prepare_tables_anyway = is_force_prepare_tables;

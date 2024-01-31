@@ -73,7 +73,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_IDENTIFIER;
-    extern const int UNEXPECTED_EXPRESSION;
 }
 
 namespace
@@ -642,13 +641,13 @@ bool tryJoinOnConst(TableJoin & analyzed_join, const ASTPtr & on_expression, Con
         if (eval_const_res.value())
         {
             /// JOIN ON 1 == 1
-            LOG_DEBUG(getLogger("TreeRewriter"), "Join on constant executed as cross join");
+            LOG_DEBUG(&Poco::Logger::get("TreeRewriter"), "Join on constant executed as cross join");
             analyzed_join.resetToCross();
         }
         else
         {
             /// JOIN ON 1 != 1
-            LOG_DEBUG(getLogger("TreeRewriter"), "Join on constant executed as empty join");
+            LOG_DEBUG(&Poco::Logger::get("TreeRewriter"), "Join on constant executed as empty join");
             analyzed_join.resetKeys();
         }
         return true;
@@ -775,37 +774,6 @@ void expandGroupByAll(ASTSelectQuery * select_query)
         recursivelyCollectMaxOrdinaryExpressions(expr, *group_expression_list);
 
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_expression_list);
-}
-
-void expandOrderByAll(ASTSelectQuery * select_query)
-{
-    auto * all_elem = select_query->orderBy()->children[0]->as<ASTOrderByElement>();
-    if (!all_elem)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not order by asts.");
-
-    auto order_expression_list = std::make_shared<ASTExpressionList>();
-
-    for (const auto & expr : select_query->select()->children)
-    {
-        if (auto * identifier = expr->as<ASTIdentifier>(); identifier != nullptr)
-            if (Poco::toUpper(identifier->name()) == "ALL" || Poco::toUpper(identifier->alias) == "ALL")
-                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
-                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
-
-        if (auto * function = expr->as<ASTFunction>(); function != nullptr)
-            if (Poco::toUpper(function->alias) == "ALL")
-                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
-                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
-
-        auto elem = std::make_shared<ASTOrderByElement>();
-        elem->direction = all_elem->direction;
-        elem->nulls_direction = all_elem->nulls_direction;
-        elem->nulls_direction_was_explicitly_specified = all_elem->nulls_direction_was_explicitly_specified;
-        elem->children.push_back(expr);
-        order_expression_list->children.push_back(elem);
-    }
-
-    select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_expression_list);
 }
 
 ASTs getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
@@ -995,12 +963,13 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
 /// Calculate which columns are required to execute the expression.
 /// Then, delete all other columns from the list of available columns.
 /// After execution, columns will only contain the list of columns needed to read from the table.
-bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select, bool no_throw)
+bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select, bool visit_index_hint, bool no_throw)
 {
     /// We calculate required_source_columns with source_columns modifications and swap them on exit
     required_source_columns = source_columns;
 
     RequiredSourceColumnsVisitor::Data columns_context;
+    columns_context.visit_index_hint = visit_index_hint;
     RequiredSourceColumnsVisitor(columns_context).visit(query);
 
     NameSet source_column_names;
@@ -1323,10 +1292,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (select_query->group_by_all)
         expandGroupByAll(select_query);
 
-    // expand ORDER BY ALL
-    if (settings.enable_order_by_all && select_query->order_by_all)
-        expandOrderByAll(select_query);
-
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
     /// Must be after 'normalizeTree' (after expanding aliases, for aliases not get lost)
@@ -1384,7 +1349,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     result.window_function_asts = getWindowFunctions(query, *select_query);
     result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
 
-    result.collectUsedColumns(query, true);
+    result.collectUsedColumns(query, true, settings.query_plan_optimize_primary_key);
 
     if (!result.missed_subcolumns.empty())
     {
@@ -1421,7 +1386,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             result.aggregates = getAggregates(query, *select_query);
             result.window_function_asts = getWindowFunctions(query, *select_query);
             result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
-            result.collectUsedColumns(query, true);
+            result.collectUsedColumns(query, true, settings.query_plan_optimize_primary_key);
         }
     }
 
@@ -1498,7 +1463,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     else
         assertNoAggregates(query, "in wrong place");
 
-    bool is_ok = result.collectUsedColumns(query, false, no_throw);
+    bool is_ok = result.collectUsedColumns(query, false, settings.query_plan_optimize_primary_key, no_throw);
     if (!is_ok)
         return {};
 

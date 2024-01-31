@@ -5,8 +5,6 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/logger_useful.h>
 
-#include <memory>
-
 namespace DB
 {
 
@@ -17,31 +15,29 @@ namespace ErrorCodes
 
 struct ZooKeeperRetriesInfo
 {
-    ZooKeeperRetriesInfo(UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
-        : max_retries(max_retries_), initial_backoff_ms(std::min(initial_backoff_ms_, max_backoff_ms_)), max_backoff_ms(max_backoff_ms_)
+    ZooKeeperRetriesInfo() = default;
+    ZooKeeperRetriesInfo(std::string name_, Poco::Logger * logger_, UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
+        : name(std::move(name_))
+        , logger(logger_)
+        , max_retries(max_retries_)
+        , curr_backoff_ms(std::min(initial_backoff_ms_, max_backoff_ms_))
+        , max_backoff_ms(max_backoff_ms_)
     {
     }
 
-    UInt64 max_retries;
-    UInt64 initial_backoff_ms;
-    UInt64 max_backoff_ms;
+    std::string name;
+    Poco::Logger * logger = nullptr;
+    UInt64 max_retries = 0;
+    UInt64 curr_backoff_ms = 0;
+    UInt64 max_backoff_ms = 0;
+    UInt64 retry_count = 0;
 };
 
 class ZooKeeperRetriesControl
 {
 public:
-    ZooKeeperRetriesControl(std::string name_, LoggerPtr logger_, ZooKeeperRetriesInfo retries_info_, QueryStatusPtr elem)
-        : name(std::move(name_)), logger(logger_), retries_info(retries_info_), process_list_element(elem)
-    {
-    }
-
-    ZooKeeperRetriesControl(const ZooKeeperRetriesControl & other)
-        : name(other.name)
-        , logger(other.logger)
-        , retries_info(other.retries_info)
-        , total_failures(other.total_failures)
-        , process_list_element(other.process_list_element)
-        , current_backoff_ms(other.current_backoff_ms)
+    ZooKeeperRetriesControl(std::string name_, ZooKeeperRetriesInfo & retries_info_, QueryStatusPtr elem)
+        : name(std::move(name_)), retries_info(retries_info_), process_list_element(elem)
     {
     }
 
@@ -50,7 +46,7 @@ public:
         retryLoop(f, []() {});
     }
 
-    /// retryLoop() executes f() until it succeeds/max_retries is reached/non-retryable error is encountered
+    /// retryLoop() executes f() until it succeeds/max_retries is reached/non-retrialable error is encountered
     ///
     /// the callable f() can provide feedback in terms of errors in two ways:
     /// 1. throw KeeperException exception:
@@ -60,17 +56,10 @@ public:
     ///     The idea is that if the caller has some semantics on top of non-hardware keeper errors,
     ///     then it can provide feedback to retries controller via user errors
     ///
-    /// It is possible to use it multiple times (it will share nº of errors over the total amount of calls)
-    /// Each retryLoop is independent and it will execute f at least once
     void retryLoop(auto && f, auto && iteration_cleanup)
     {
-        current_iteration = 0;
-        current_backoff_ms = retries_info.initial_backoff_ms;
-
-        while (current_iteration == 0 || canTry())
+        while (canTry())
         {
-            /// reset the flag, it will be set to false in case of error
-            iteration_succeeded = true;
             try
             {
                 f();
@@ -90,7 +79,6 @@ public:
                 iteration_cleanup();
                 throw;
             }
-            current_iteration++;
         }
     }
 
@@ -112,13 +100,15 @@ public:
         return false;
     }
 
-    void setUserError(std::exception_ptr exception, int code, const std::string & message)
+    void setUserError(std::exception_ptr exception, int code, std::string message)
     {
-        if (logger)
-            LOG_TRACE(logger, "ZooKeeperRetriesControl: {}: setUserError: error={} message={}", name, code, message);
+        if (retries_info.logger)
+            LOG_TRACE(
+                retries_info.logger, "ZooKeeperRetriesControl: {}/{}: setUserError: error={} message={}", retries_info.name, name, code, message);
 
-        if (iteration_succeeded)
-            total_failures++;
+        /// if current iteration is already failed, keep initial error
+        if (!iteration_succeeded)
+            return;
 
         iteration_succeeded = false;
         user_error.code = code;
@@ -127,18 +117,32 @@ public:
         keeper_error = KeeperError{};
     }
 
-    void setUserError(const Exception & exception)
+    template <typename... Args>
+    void setUserError(std::exception_ptr exception, int code, fmt::format_string<Args...> fmt, Args &&... args)
     {
-        setUserError(std::make_exception_ptr(exception), exception.code(), exception.message());
+        setUserError(exception, code, fmt::format(fmt, std::forward<Args>(args)...));
+    }
+
+    void setUserError(int code, std::string message)
+    {
+        setUserError(std::make_exception_ptr(Exception::createDeprecated(message, code)), code, message);
+    }
+
+    template <typename... Args>
+    void setUserError(int code, fmt::format_string<Args...> fmt, Args &&... args)
+    {
+        setUserError(code, fmt::format(fmt, std::forward<Args>(args)...));
     }
 
     void setKeeperError(std::exception_ptr exception, Coordination::Error code, std::string message)
     {
-        if (logger)
-            LOG_TRACE(logger, "ZooKeeperRetriesControl: {}: setKeeperError: error={} message={}", name, code, message);
+        if (retries_info.logger)
+            LOG_TRACE(
+                retries_info.logger, "ZooKeeperRetriesControl: {}/{}: setKeeperError: error={} message={}", retries_info.name, name, code, message);
 
-        if (iteration_succeeded)
-            total_failures++;
+        /// if current iteration is already failed, keep initial error
+        if (!iteration_succeeded)
+            return;
 
         iteration_succeeded = false;
         keeper_error.code = code;
@@ -147,20 +151,35 @@ public:
         user_error = UserError{};
     }
 
+    template <typename... Args>
+    void setKeeperError(std::exception_ptr exception, Coordination::Error code, fmt::format_string<Args...> fmt, Args &&... args)
+    {
+        setKeeperError(exception, code, fmt::format(fmt, std::forward<Args>(args)...));
+    }
+
+    void setKeeperError(Coordination::Error code, std::string message)
+    {
+        setKeeperError(std::make_exception_ptr(zkutil::KeeperException::createDeprecated(message, code)), code, message);
+    }
+
+    template <typename... Args>
+    void setKeeperError(Coordination::Error code, fmt::format_string<Args...> fmt, Args &&... args)
+    {
+        setKeeperError(code, fmt::format(fmt, std::forward<Args>(args)...));
+    }
+
     void stopRetries() { stop_retries = true; }
 
-    bool isLastRetry() const { return total_failures >= retries_info.max_retries; }
+    void requestUnconditionalRetry() { unconditional_retry = true; }
 
-    bool isRetry() const { return current_iteration > 0; }
+    bool isLastRetry() const { return retries_info.retry_count >= retries_info.max_retries; }
 
-    const std::string & getLastKeeperErrorMessage() const { return keeper_error.message; }
+    bool isRetry() const { return retries_info.retry_count > 0; }
+
+    Coordination::Error getLastKeeperErrorCode() const { return keeper_error.code; }
 
     /// action will be called only once and only after latest failed retry
     void actionAfterLastFailedRetry(std::function<void()> f) { action_after_last_failed_retry = std::move(f); }
-
-    const std::string & getName() const { return name; }
-
-    LoggerPtr getLogger() const { return logger; }
 
 private:
     struct KeeperError
@@ -180,42 +199,59 @@ private:
 
     bool canTry()
     {
+        ++iteration_count;
+        /// first iteration is ordinary execution, no further checks needed
+        if (0 == iteration_count)
+            return true;
+
+        if (process_list_element && !process_list_element->checkTimeLimitSoft())
+            return false;
+
+        if (unconditional_retry)
+        {
+            unconditional_retry = false;
+            return true;
+        }
+
+        /// iteration succeeded -> no need to retry
         if (iteration_succeeded)
         {
-            if (logger && total_failures > 0)
+            /// avoid unnecessary logs, - print something only in case of retries
+            if (retries_info.logger && iteration_count > 1)
                 LOG_DEBUG(
-                    logger,
-                    "ZooKeeperRetriesControl: {}: succeeded after: Iterations={} Total keeper failures={}/{}",
+                    retries_info.logger,
+                    "ZooKeeperRetriesControl: {}/{}: succeeded after: iterations={} total_retries={}",
+                    retries_info.name,
                     name,
-                    current_iteration,
-                    total_failures,
-                    retries_info.max_retries);
+                    iteration_count,
+                    retries_info.retry_count);
             return false;
         }
 
         if (stop_retries)
         {
-            action_after_last_failed_retry();
             logLastError("stop retries on request");
-            throwIfError();
-            return false;
-        }
-
-        if (total_failures > retries_info.max_retries)
-        {
             action_after_last_failed_retry();
-            logLastError("retry limit is reached");
             throwIfError();
             return false;
         }
 
-        if (process_list_element && !process_list_element->checkTimeLimitSoft())
+        if (retries_info.retry_count >= retries_info.max_retries)
+        {
+            logLastError("retry limit is reached");
+            action_after_last_failed_retry();
+            throwIfError();
             return false;
+        }
 
         /// retries
+        ++retries_info.retry_count;
         logLastError("will retry due to error");
-        sleepForMilliseconds(current_backoff_ms);
-        current_backoff_ms = std::min(current_backoff_ms * 2, retries_info.max_backoff_ms);
+        sleepForMilliseconds(retries_info.curr_backoff_ms);
+        retries_info.curr_backoff_ms = std::min(retries_info.curr_backoff_ms * 2, retries_info.max_backoff_ms);
+
+        /// reset the flag, it will be set to false in case of error
+        iteration_succeeded = true;
 
         return true;
     }
@@ -229,52 +265,49 @@ private:
             std::rethrow_exception(keeper_error.exception);
     }
 
-    void logLastError(const std::string_view & header)
+    void logLastError(std::string_view header)
     {
-        if (!logger)
-            return;
         if (user_error.code == ErrorCodes::OK)
         {
-            LOG_DEBUG(
-                logger,
-                "ZooKeeperRetriesControl: {}: {}: retry_count={}/{} timeout={}ms error={} message={}",
-                name,
-                header,
-                current_iteration,
-                retries_info.max_retries,
-                current_backoff_ms,
-                keeper_error.code,
-                keeper_error.message);
+            if (retries_info.logger)
+                LOG_DEBUG(
+                    retries_info.logger,
+                    "ZooKeeperRetriesControl: {}/{}: {}: retry_count={} timeout={}ms error={} message={}",
+                    retries_info.name,
+                    name,
+                    header,
+                    retries_info.retry_count,
+                    retries_info.curr_backoff_ms,
+                    keeper_error.code,
+                    keeper_error.message);
         }
         else
         {
-            LOG_DEBUG(
-                logger,
-                "ZooKeeperRetriesControl: {}: {}: retry_count={}/{} timeout={}ms error={} message={}",
-                name,
-                header,
-                current_iteration,
-                retries_info.max_retries,
-                current_backoff_ms,
-                user_error.code,
-                user_error.message);
+            if (retries_info.logger)
+                LOG_DEBUG(
+                    retries_info.logger,
+                    "ZooKeeperRetriesControl: {}/{}: {}: retry_count={} timeout={}ms error={} message={}",
+                    retries_info.name,
+                    name,
+                    header,
+                    retries_info.retry_count,
+                    retries_info.curr_backoff_ms,
+                    user_error.code,
+                    user_error.message);
         }
     }
 
 
     std::string name;
-    LoggerPtr logger = nullptr;
-    ZooKeeperRetriesInfo retries_info;
-    UInt64 total_failures = 0;
+    ZooKeeperRetriesInfo & retries_info;
+    Int64 iteration_count = -1;
     UserError user_error;
     KeeperError keeper_error;
     std::function<void()> action_after_last_failed_retry = []() {};
+    bool unconditional_retry = false;
     bool iteration_succeeded = true;
     bool stop_retries = false;
     QueryStatusPtr process_list_element;
-
-    UInt64 current_iteration = 0;
-    UInt64 current_backoff_ms = 0;
 };
 
 }

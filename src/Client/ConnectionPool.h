@@ -64,7 +64,7 @@ public:
             Protocol::Secure secure_,
             Priority priority_ = Priority{1})
        : Base(max_connections_,
-        getLogger("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
+        &Poco::Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
         host(host_),
         port(port_),
         default_database(default_database_),

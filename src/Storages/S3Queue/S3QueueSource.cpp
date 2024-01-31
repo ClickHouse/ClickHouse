@@ -60,7 +60,7 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next()
 
         if (shutdown_called)
         {
-            LOG_TEST(getLogger("StorageS3QueueSource"), "Shutdown was called, stopping file iterator");
+            LOG_TEST(&Poco::Logger::get("StorageS3QueueSource"), "Shutdown was called, stopping file iterator");
             return {};
         }
 
@@ -91,7 +91,7 @@ StorageS3QueueSource::StorageS3QueueSource(
     const std::atomic<bool> & table_is_being_dropped_,
     std::shared_ptr<S3QueueLog> s3_queue_log_,
     const StorageID & storage_id_,
-    LoggerPtr log_)
+    Poco::Logger * log_)
     : ISource(header_)
     , WithContext(context_)
     , name(std::move(name_))

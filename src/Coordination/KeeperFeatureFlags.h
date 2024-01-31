@@ -32,7 +32,7 @@ public:
     void enableFeatureFlag(KeeperFeatureFlag feature);
     void disableFeatureFlag(KeeperFeatureFlag feature);
 
-    void logFlags(LoggerPtr log) const;
+    void logFlags(Poco::Logger * log) const;
 private:
     std::string feature_flags;
 };

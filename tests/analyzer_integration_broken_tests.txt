@@ -1,6 +1,7 @@
 test_access_for_functions/test.py::test_access_rights_for_function
 test_build_sets_from_multiple_threads/test.py::test_set
 test_concurrent_backups_s3/test.py::test_concurrent_backups
+test_dictionaries_update_and_reload/test.py::test_reload_after_fail_in_cache_dictionary
 test_distributed_backward_compatability/test.py::test_distributed_in_tuple
 test_distributed_type_object/test.py::test_distributed_type_object
 test_executable_table_function/test.py::test_executable_function_input_python

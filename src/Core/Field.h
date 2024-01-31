@@ -7,15 +7,14 @@
 #include <type_traits>
 #include <functional>
 
-#include <Core/CompareHelper.h>
-#include <Core/DecimalFunctions.h>
-#include <Core/Defines.h>
-#include <Core/Types.h>
-#include <Core/UUID.h>
-#include <base/DayNum.h>
-#include <base/IPv4andIPv6.h>
-#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/Exception.h>
+#include <Common/AllocatorWithMemoryTracking.h>
+#include <Core/Types.h>
+#include <Core/Defines.h>
+#include <Core/DecimalFunctions.h>
+#include <Core/UUID.h>
+#include <base/IPv4andIPv6.h>
+#include <base/DayNum.h>
 
 namespace DB
 {
@@ -123,7 +122,7 @@ struct CustomType
     bool isSecret() const { return impl->isSecret(); }
     const char * getTypeName() const { return impl->getTypeName(); }
     String toString(bool show_secrets = true) const { return impl->toString(show_secrets); }
-    const CustomTypeImpl & getImpl() const { return *impl; }
+    const CustomTypeImpl & getImpl() { return *impl; }
 
     bool operator < (const CustomType & rhs) const { return *impl < *rhs.impl; }
     bool operator <= (const CustomType & rhs) const { return *impl <= *rhs.impl; }
@@ -293,7 +292,7 @@ concept not_field_or_bool_or_stringlike
 /** 32 is enough. Round number is used for alignment and for better arithmetic inside std::vector.
   * NOTE: Actually, sizeof(std::string) is 32 when using libc++, so Field is 40 bytes.
   */
-static constexpr auto DBMS_MIN_FIELD_SIZE = 32;
+#define DBMS_MIN_FIELD_SIZE 32
 
 
 /** Discriminated union of several types.
@@ -306,7 +305,6 @@ static constexpr auto DBMS_MIN_FIELD_SIZE = 32;
   */
 class Field
 {
-    static constexpr int nan_direction_hint = 1; // When comparing Floats NaN are considered to be larger than all numbers
 public:
     struct Types
     {
@@ -510,8 +508,7 @@ public:
             case Types::UUID:    return get<UUID>()    < rhs.get<UUID>();
             case Types::IPv4:    return get<IPv4>()    < rhs.get<IPv4>();
             case Types::IPv6:    return get<IPv6>()    < rhs.get<IPv6>();
-            case Types::Float64:
-                return FloatCompareHelper<Float64>::less(get<Float64>(), rhs.get<Float64>(), nan_direction_hint);
+            case Types::Float64: return get<Float64>() < rhs.get<Float64>();
             case Types::String:  return get<String>()  < rhs.get<String>();
             case Types::Array:   return get<Array>()   < rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   < rhs.get<Tuple>();
@@ -553,13 +550,7 @@ public:
             case Types::UUID:    return get<UUID>().toUnderType() <= rhs.get<UUID>().toUnderType();
             case Types::IPv4:    return get<IPv4>()    <= rhs.get<IPv4>();
             case Types::IPv6:    return get<IPv6>()    <= rhs.get<IPv6>();
-            case Types::Float64:
-            {
-                Float64 f1 = get<Float64>();
-                Float64 f2 = get<Float64>();
-                return FloatCompareHelper<Float64>::less(f1, f2, nan_direction_hint)
-                    || FloatCompareHelper<Float64>::equals(f1, f2, nan_direction_hint);
-            }
+            case Types::Float64: return get<Float64>() <= rhs.get<Float64>();
             case Types::String:  return get<String>()  <= rhs.get<String>();
             case Types::Array:   return get<Array>()   <= rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   <= rhs.get<Tuple>();
@@ -595,7 +586,10 @@ public:
             case Types::UInt64: return get<UInt64>() == rhs.get<UInt64>();
             case Types::Int64:   return get<Int64>() == rhs.get<Int64>();
             case Types::Float64:
-                return FloatCompareHelper<Float64>::equals(get<Float64>(), rhs.get<Float64>(), nan_direction_hint);
+            {
+                // Compare as UInt64 so that NaNs compare as equal.
+                return std::bit_cast<UInt64>(get<Float64>()) == std::bit_cast<UInt64>(rhs.get<Float64>());
+            }
             case Types::UUID:    return get<UUID>()    == rhs.get<UUID>();
             case Types::IPv4:    return get<IPv4>()    == rhs.get<IPv4>();
             case Types::IPv6:    return get<IPv6>()    == rhs.get<IPv6>();

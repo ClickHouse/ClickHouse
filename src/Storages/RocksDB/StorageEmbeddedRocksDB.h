@@ -69,6 +69,12 @@ public:
         ContextPtr context) override;
 
     bool supportsParallelInsert() const override { return true; }
+    bool supportsIndexForIn() const override { return true; }
+    bool mayBenefitFromIndexForIn(
+        const ASTPtr & node, ContextPtr /*query_context*/, const StorageMetadataPtr & /*metadata_snapshot*/) const override
+    {
+        return node->getColumnName() == primary_key;
+    }
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {rocksdb_dir}; }

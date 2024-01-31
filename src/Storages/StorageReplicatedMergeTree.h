@@ -163,9 +163,8 @@ public:
         size_t num_streams) override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const override;
+    std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
-    std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
@@ -200,6 +199,8 @@ public:
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
+    bool supportsIndexForIn() const override { return true; }
+
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
@@ -208,7 +209,7 @@ public:
 
     /// Wait till replication queue's current last entry is processed or till size becomes 0
     /// If timeout is exceeded returns false
-    bool waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode, std::unordered_set<String> source_replicas);
+    bool waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode);
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
     void getStatus(ReplicatedTableStatus & res, bool with_zk_fields = true);
@@ -255,13 +256,13 @@ public:
     /** Remove a specific replica from zookeeper.
      */
     static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
-                            LoggerPtr logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
+                            Poco::Logger * logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
 
-    void dropReplica(const String & drop_zookeeper_path, const String & drop_replica, LoggerPtr logger);
+    void dropReplica(const String & drop_zookeeper_path, const String & drop_replica, Poco::Logger * logger);
 
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
-                                              const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, LoggerPtr logger);
+                                              const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger);
 
     /// Schedules job to execute in background pool (merge, mutate, drop range and so on)
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
@@ -308,7 +309,7 @@ public:
         const std::string & disk_type,
         const ZooKeeperWithFaultInjectionPtr & zookeeper_,
         const MergeTreeSettings & settings,
-        LoggerPtr logger,
+        Poco::Logger * logger,
         const String & zookeeper_path_old,
         MergeTreeDataFormatVersion data_format_version);
 
@@ -316,7 +317,7 @@ public:
     MutableDataPartPtr tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
 
     /// Get best replica having this partition on a same type remote disk
-    String getSharedDataReplica(const IMergeTreeDataPart & part, const DataSourceDescription & data_source_description) const;
+    String getSharedDataReplica(const IMergeTreeDataPart & part, DataSourceType data_source_type) const;
 
     inline const String & getReplicaName() const { return replica_name; }
 
@@ -561,6 +562,7 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr local_context,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams);
 
@@ -570,6 +572,7 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr local_context,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams);
 
@@ -579,7 +582,9 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr local_context,
-        QueryProcessingStage::Enum processed_stage);
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t num_streams);
 
     template <class Func>
     void foreachActiveParts(Func && func, bool select_sequential_consistency) const;
@@ -756,6 +761,10 @@ private:
         int32_t alter_version,
         int32_t log_version);
 
+    /// Exchange parts.
+
+    ConnectionTimeouts getFetchPartHTTPTimeouts(ContextPtr context);
+
     /** Returns an empty string if no one has a part.
       */
     String findReplicaHavingPart(const String & part_name, bool active);
@@ -773,7 +782,7 @@ private:
     String findReplicaHavingCoveringPart(LogEntry & entry, bool active);
     bool findReplicaHavingCoveringPart(const String & part_name, bool active);
     String findReplicaHavingCoveringPartImplLowLevel(LogEntry * entry, const String & part_name, String & found_part_name, bool active);
-    static std::set<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, LoggerPtr log_);
+    static std::set<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, Poco::Logger * log_);
 
     /** Download the specified part from the specified replica.
       * If `to_detached`, the part is placed in the `detached` directory.

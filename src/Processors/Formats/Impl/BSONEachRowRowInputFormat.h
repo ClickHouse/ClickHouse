@@ -57,6 +57,9 @@ public:
     void resetParser() override;
 
 private:
+    void readPrefix() override { }
+    void readSuffix() override { }
+
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;

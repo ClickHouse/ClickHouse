@@ -36,9 +36,6 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/toOneLineQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/PRQL/ParserPRQLQuery.h>
-#include <Parsers/Kusto/parseKQLQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -79,6 +76,10 @@
 #include <memory>
 #include <random>
 
+#include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/PRQL/ParserPRQLQuery.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
+
 namespace ProfileEvents
 {
     extern const Event FailedQuery;
@@ -102,7 +103,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int INCORRECT_DATA;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -120,7 +120,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
 {
     if (internal)
     {
-        LOG_DEBUG(getLogger("executeQuery"), "(internal) {} (stage: {})", toOneLineQuery(query), QueryProcessingStage::toString(stage));
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(internal) {} (stage: {})", toOneLineQuery(query), QueryProcessingStage::toString(stage));
     }
     else
     {
@@ -143,7 +143,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
         if (auto txn = context->getCurrentTransaction())
             transaction_info = fmt::format(" (TID: {}, TIDH: {})", txn->tid, txn->tid.getHash());
 
-        LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{} {} (stage: {})",
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}){}{} {} (stage: {})",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
@@ -154,7 +154,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
 
         if (client_info.client_trace_context.trace_id != UUID())
         {
-            LOG_TRACE(getLogger("executeQuery"),
+            LOG_TRACE(&Poco::Logger::get("executeQuery"),
                 "OpenTelemetry traceparent '{}'",
                 client_info.client_trace_context.composeTraceparentHeader());
         }
@@ -208,9 +208,9 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
             elem.stack_trace);
 
     if (log_error)
-        LOG_ERROR(getLogger("executeQuery"), message);
+        LOG_ERROR(&Poco::Logger::get("executeQuery"), message);
     else
-        LOG_INFO(getLogger("executeQuery"), message);
+        LOG_INFO(&Poco::Logger::get("executeQuery"), message);
 }
 
 static void
@@ -258,7 +258,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
     element.query_views.insert(access_info.views.begin(), access_info.views.end());
 
-    const auto factories_info = context_ptr->getQueryFactoriesInfo();
+    const auto & factories_info = context_ptr->getQueryFactoriesInfo();
     element.used_aggregate_functions = factories_info.aggregate_functions;
     element.used_aggregate_function_combinators = factories_info.aggregate_function_combinators;
     element.used_database_engines = factories_info.database_engines;
@@ -299,7 +299,7 @@ QueryLogElement logQueryStart(
     elem.query = query_for_logging;
     if (settings.log_formatted_queries)
         elem.formatted_query = queryToString(query_ast);
-    elem.normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+    elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
     elem.query_kind = query_ast->getQueryKind();
 
     elem.client_info = context->getClientInfo();
@@ -397,7 +397,7 @@ void logQueryFinish(
             double elapsed_seconds = static_cast<double>(info.elapsed_microseconds) / 1000000.0;
             double rows_per_second = static_cast<double>(elem.read_rows) / elapsed_seconds;
             LOG_DEBUG(
-                getLogger("executeQuery"),
+                &Poco::Logger::get("executeQuery"),
                 "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
                 elem.read_rows,
                 ReadableSize(elem.read_bytes),
@@ -573,7 +573,7 @@ void logExceptionBeforeStart(
 
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
-    elem.normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+    elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
 
     // Log query_kind if ast is valid
     if (ast)
@@ -661,7 +661,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     /// we still have enough span logs for the execution of external queries.
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span = internal ? nullptr : std::make_shared<OpenTelemetry::SpanHolder>("query");
     if (query_span && query_span->trace_id != UUID{})
-        LOG_TRACE(getLogger("executeQuery"), "Query span trace_id for opentelemetry log: {}", query_span->trace_id);
+        LOG_TRACE(&Poco::Logger::get("executeQuery"), "Query span trace_id for opentelemetry log: {}", query_span->trace_id);
 
     auto query_start_time = std::chrono::system_clock::now();
 
@@ -710,7 +710,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     {
         if (settings.dialect == Dialect::kusto && !internal)
         {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Kusto dialect is disabled until these two bugs will be fixed: https://github.com/ClickHouse/ClickHouse/issues/59037 and https://github.com/ClickHouse/ClickHouse/issues/59036");
+            ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
+
+            /// TODO: parser should fail early when max_query_size limit is reached.
+            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
         else if (settings.dialect == Dialect::prql && !internal)
         {
@@ -923,7 +926,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         bool async_insert = false;
         auto * queue = context->getAsynchronousInsertQueue();
-        auto logger = getLogger("executeQuery");
+        auto * logger = &Poco::Logger::get("executeQuery");
 
         if (insert_query && async_insert_enabled)
         {
@@ -1008,7 +1011,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (can_use_query_cache && settings.enable_reads_from_query_cache)
                 {
-                    QueryCache::Key key(ast, context->getUserID(), context->getCurrentRoles());
+                    QueryCache::Key key(ast, context->getUserName());
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1041,7 +1044,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     }
                 }
 
-                interpreter = InterpreterFactory::instance().get(ast, context, SelectQueryOptions(stage).setInternal(internal));
+                interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
                 const auto & query_settings = context->getSettingsRef();
                 if (context->getCurrentTransaction() && query_settings.throw_on_unsupported_query_inside_transaction)
@@ -1121,15 +1124,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         {
                             QueryCache::Key key(
                                 ast, res.pipeline.getHeader(),
-                                context->getUserID(), context->getCurrentRoles(),
-                                settings.query_cache_share_between_users,
+                                context->getUserName(), settings.query_cache_share_between_users,
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
                                 settings.query_cache_compress_entries);
 
                             const size_t num_query_runs = query_cache->recordQueryRun(key);
                             if (num_query_runs <= settings.query_cache_min_query_runs)
                             {
-                                LOG_TRACE(getLogger("QueryCache"),
+                                LOG_TRACE(&Poco::Logger::get("QueryCache"),
                                         "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
                                         num_query_runs, settings.query_cache_min_query_runs);
                             }
@@ -1385,7 +1387,7 @@ void executeQuery(
             catch (const DB::Exception & e)
             {
                 /// Ignore this exception and report the original one
-                LOG_WARNING(getLogger("executeQuery"), getExceptionMessageAndPattern(e, true));
+                LOG_WARNING(&Poco::Logger::get("executeQuery"), getExceptionMessageAndPattern(e, true));
             }
         }
     };
@@ -1433,12 +1435,11 @@ void executeQuery(
                     const auto & compression_method_node = ast_query_with_output->compression->as<ASTLiteral &>();
                     compression_method = compression_method_node.value.safeGet<std::string>();
                 }
-                const auto & settings = context->getSettingsRef();
+
                 compressed_buffer = wrapWriteBufferWithCompressionMethod(
                     std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
                     chooseCompressionMethod(out_file, compression_method),
-                    /* compression level = */ static_cast<int>(settings.output_format_compression_level),
-                    /* zstd_window_log = */ static_cast<int>(settings.output_format_compression_zstd_window_log)
+                    /* compression level = */ 3
                 );
             }
 

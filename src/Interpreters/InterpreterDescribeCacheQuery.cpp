@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDescribeCacheQuery.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -43,8 +42,8 @@ BlockIO InterpreterDescribeCacheQuery::execute()
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     auto cache_data = FileCacheFactory::instance().getByName(ast.cache_name);
-    auto settings = cache_data->getSettings();
-    const auto & cache = cache_data->cache;
+    const auto & settings = cache_data.settings;
+    const auto & cache = cache_data.cache;
 
     size_t i = 0;
     res_columns[i++]->insert(settings.max_size);
@@ -67,15 +66,6 @@ BlockIO InterpreterDescribeCacheQuery::execute()
     res.pipeline = QueryPipeline(std::move(source));
 
     return res;
-}
-
-void registerInterpreterDescribeCacheQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterDescribeCacheQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterDescribeCacheQuery", create_fn);
 }
 
 }

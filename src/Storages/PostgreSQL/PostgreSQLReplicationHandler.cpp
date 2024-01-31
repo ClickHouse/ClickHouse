@@ -128,7 +128,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const MaterializedPostgreSQLSettings & replication_settings,
     bool is_materialized_postgresql_database_)
     : WithContext(context_->getGlobalContext())
-    , log(getLogger("PostgreSQLReplicationHandler"))
+    , log(&Poco::Logger::get("PostgreSQLReplicationHandler"))
     , is_attach(is_attach_)
     , postgres_database(postgres_database_)
     , postgres_schema(replication_settings.materialized_postgresql_schema)
@@ -337,7 +337,6 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             dropReplicationSlot(tx);
 
         initial_sync();
-        LOG_DEBUG(log, "Loaded {} tables", nested_storages.size());
     }
     /// Synchronization and initial load already took place - do not create any new tables, just fetch StoragePtr's
     /// and pass them to replication consumer.
@@ -415,18 +414,16 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
     tx->exec(query_str);
 
-    auto table_structure = fetchTableStructure(*tx, table_name);
-    if (!table_structure->physical_columns)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No table attributes");
-
-    auto table_attributes = table_structure->physical_columns->attributes;
-
     /// Load from snapshot, which will show table state before creation of replication slot.
     /// Already connected to needed database, no need to add it to query.
     auto quoted_name = doubleQuoteWithSchema(table_name);
     query_str = fmt::format("SELECT * FROM ONLY {}", quoted_name);
-
     LOG_DEBUG(log, "Loading PostgreSQL table {}.{}", postgres_database, quoted_name);
+
+    auto table_structure = fetchTableStructure(*tx, table_name);
+    if (!table_structure->physical_columns)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No table attributes");
+    auto table_attributes = table_structure->physical_columns->attributes;
 
     auto table_override = tryGetTableOverride(current_database_name, table_name);
     materialized_storage->createNestedIfNeeded(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
@@ -452,9 +449,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
 
     materialized_storage->set(nested_storage);
     auto nested_table_id = nested_storage->getStorageID();
-
-    LOG_DEBUG(log, "Loaded table {}.{} (uuid: {})",
-              nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid));
+    LOG_DEBUG(log, "Loaded table {}.{} (uuid: {})", nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid));
 
     return StorageInfo(nested_storage, std::move(table_attributes));
 }
@@ -719,9 +714,11 @@ void PostgreSQLReplicationHandler::shutdownFinal()
                 dropReplicationSlot(tx, /* temporary */false);
         });
     }
-    catch (...)
+    catch (Exception & e)
     {
-        LOG_ERROR(log, "Failed to drop replication slot: {}. It must be dropped manually. Error: {}", replication_slot, getCurrentExceptionMessage(true));
+        e.addMessage("while dropping replication slot: {}", replication_slot);
+        LOG_ERROR(log, "Failed to drop replication slot: {}. It must be dropped manually.", replication_slot);
+        throw;
     }
 }
 

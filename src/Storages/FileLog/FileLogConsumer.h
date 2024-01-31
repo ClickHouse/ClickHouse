@@ -42,7 +42,7 @@ private:
 
     BufferStatus buffer_status = BufferStatus::INIT;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     StorageFileLog & storage;
 

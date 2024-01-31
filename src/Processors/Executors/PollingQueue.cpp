@@ -25,7 +25,7 @@ namespace ErrorCodes
 PollingQueue::PollingQueue()
 {
     if (-1 == pipe2(pipe_fd, O_NONBLOCK))
-        throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create pipe");
+        throwFromErrno("Cannot create pipe", ErrorCodes::CANNOT_OPEN_FILE);
 
     epoll.add(pipe_fd[0], pipe_fd);
 }
@@ -111,7 +111,7 @@ void PollingQueue::finish()
             break;
 
         if (errno != EINTR)
-            throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot write to pipe");
+            throwFromErrno("Cannot write to pipe", ErrorCodes::CANNOT_READ_FROM_SOCKET);
     }
 }
 

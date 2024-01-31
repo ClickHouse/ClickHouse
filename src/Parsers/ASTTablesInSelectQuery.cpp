@@ -211,9 +211,6 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
         case JoinKind::Comma:
             settings.ostr << ",";
             break;
-        case JoinKind::Paste:
-            settings.ostr << "PASTE JOIN";
-            break;
     }
 
     settings.ostr << (settings.hilite ? hilite_none : "");
