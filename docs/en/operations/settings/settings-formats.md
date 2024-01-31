@@ -823,7 +823,13 @@ Default value: `0`.
 
 ### output_format_tsv_crlf_end_of_line {#output_format_tsv_crlf_end_of_line}
 
-Use DOC/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
+Use DOS/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
+
+Disabled by default.
+
+### input_format_tsv_crlf_end_of_line {#input_format_tsv_crlf_end_of_line}
+
+Use DOS/Windows-style line separator (CRLF) for TSV input files instead of Unix style (LF).
 
 Disabled by default.
 
