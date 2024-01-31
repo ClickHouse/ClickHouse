@@ -7,51 +7,28 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/MaskOperations.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
-<<<<<<< HEAD
-#include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/NumberTraits.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnVariant.h>
-#include <Columns/MaskOperations.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <Functions/IFunction.h>
-=======
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
->>>>>>> 83434321f39... opt if when input type is map
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionIfBase.h>
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/castColumn.h>
-<<<<<<< HEAD
 #include <Interpreters/Context.h>
-
-#include <Functions/FunctionFactory.h>
-#include <type_traits>
-=======
+#include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
->>>>>>> 83434321f39... opt if when input type is map
 
 namespace DB
 {
