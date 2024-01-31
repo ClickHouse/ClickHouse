@@ -386,16 +386,47 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     return query_tree_to_modify;
 }
 
-class RewriteJoinToGlobalJoinVisitor : public InDepthQueryTreeVisitor<RewriteJoinToGlobalJoinVisitor>
+class CollectStoragesVisitor : public InDepthQueryTreeVisitor<CollectStoragesVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitor<RewriteJoinToGlobalJoinVisitor>;
+    using Base = InDepthQueryTreeVisitor<CollectStoragesVisitor>;
     using Base::Base;
 
     void visitImpl(QueryTreeNodePtr & node)
     {
+        if (auto * table_node = node->as<TableNode>())
+            storages.push_back(table_node->getStorage());
+    }
+
+    std::vector<StoragePtr> storages;
+};
+
+class RewriteJoinToGlobalJoinVisitor : public InDepthQueryTreeVisitorWithContext<RewriteJoinToGlobalJoinVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<RewriteJoinToGlobalJoinVisitor>;
+    using Base::Base;
+
+    static bool allStoragesAreMergeTree(QueryTreeNodePtr & node)
+    {
+        CollectStoragesVisitor collect_storages;
+        collect_storages.visit(node);
+        for (const auto & storage : collect_storages.storages)
+            if (!storage->isMergeTree())
+                return false;
+
+        return true;
+    }
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
         if (auto * join_node = node->as<JoinNode>())
-            join_node->setLocality(JoinLocality::Global);
+        {
+            bool prefer_local_join = getContext()->getSettingsRef().parallel_replicas_prefer_local_join;
+            bool should_use_global_join = !prefer_local_join || !allStoragesAreMergeTree(join_node->getRightTableExpression());
+            if (should_use_global_join)
+                join_node->setLocality(JoinLocality::Global);
+        }
     }
 
     static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
@@ -408,9 +439,9 @@ public:
     }
 };
 
-void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify)
+void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr context)
 {
-    RewriteJoinToGlobalJoinVisitor visitor;
+    RewriteJoinToGlobalJoinVisitor visitor(context);
     visitor.visit(query_tree_to_modify);
 }
 

@@ -6,6 +6,7 @@ namespace DB
 {
 
 class QueryNode;
+class TableNode;
 
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
@@ -13,6 +14,7 @@ using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 struct SelectQueryOptions;
 
 const QueryNode * findParallelReplicasQuery(const QueryTreeNodePtr & query_tree_node, SelectQueryOptions & select_query_options);
+const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, SelectQueryOptions & select_query_options);
 
 struct JoinTreeQueryPlan;
 

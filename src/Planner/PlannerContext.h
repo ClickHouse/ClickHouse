@@ -20,12 +20,14 @@ namespace DB
   */
 
 class QueryNode;
+class TableNode;
 
 class GlobalPlannerContext
 {
 public:
-    explicit GlobalPlannerContext(const QueryNode * parallel_replicas_node_)
+    explicit GlobalPlannerContext(const QueryNode * parallel_replicas_node_, const TableNode * parallel_replicas_table_)
         : parallel_replicas_node(parallel_replicas_node_)
+        , parallel_replicas_table(parallel_replicas_table_)
     {
     }
 
@@ -45,6 +47,7 @@ public:
     bool hasColumnIdentifier(const ColumnIdentifier & column_identifier);
 
     const QueryNode * const parallel_replicas_node = nullptr;
+    const TableNode * const parallel_replicas_table = nullptr;
 
 private:
     std::unordered_set<ColumnIdentifier> column_identifiers;

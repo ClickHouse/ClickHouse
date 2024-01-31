@@ -267,7 +267,7 @@ const QueryNode * findParallelReplicasQuery(const QueryTreeNodePtr & query_tree_
 
     SelectQueryOptions options;
     //options.only_analyze = true;
-    Planner planner(updated_query_tree, options, std::make_shared<GlobalPlannerContext>(nullptr));
+    Planner planner(updated_query_tree, options, std::make_shared<GlobalPlannerContext>(nullptr, nullptr));
     planner.buildQueryPlanIfNeeded();
 
     // WriteBufferFromOwnString buf;
@@ -303,6 +303,94 @@ const QueryNode * findParallelReplicasQuery(const QueryTreeNodePtr & query_tree_
     return res;
 }
 
+static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node)
+{
+    while (query_tree_node)
+    {
+        auto join_tree_node_type = query_tree_node->getNodeType();
+
+        switch (join_tree_node_type)
+        {
+            case QueryTreeNodeType::TABLE:
+            {
+                const auto & table_node = query_tree_node->as<TableNode &>();
+                const auto & storage = table_node.getStorage();
+                if (std::dynamic_pointer_cast<MergeTreeData>(storage) || typeid_cast<const StorageDummy *>(storage.get()))
+                    return &table_node;
+
+                return {};
+            }
+            case QueryTreeNodeType::TABLE_FUNCTION:
+            {
+                return {};
+            }
+            case QueryTreeNodeType::QUERY:
+            {
+                const auto & query_node_to_process = query_tree_node->as<QueryNode &>();
+                query_tree_node = query_node_to_process.getJoinTree().get();
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                const auto & union_node = query_tree_node->as<UnionNode &>();
+                const auto & union_queries = union_node.getQueries().getNodes();
+
+                if (union_queries.empty())
+                    return {};
+
+                query_tree_node = union_queries.front().get();
+                break;
+            }
+            case QueryTreeNodeType::ARRAY_JOIN:
+            {
+                const auto & array_join_node = query_tree_node->as<ArrayJoinNode &>();
+                query_tree_node = array_join_node.getTableExpression().get();
+                break;
+            }
+            case QueryTreeNodeType::JOIN:
+            {
+                const auto & join_node = query_tree_node->as<JoinNode &>();
+                if (const auto * res = findTableForParallelReplicas(join_node.getLeftTableExpression().get()))
+                    return res;
+
+                query_tree_node = join_node.getRightTableExpression().get();
+                break;
+            }
+            default:
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Unexpected node type for table expression. "
+                                "Expected table, table function, query, union, join or array join. Actual {}",
+                                query_tree_node->getNodeTypeName());
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, SelectQueryOptions & select_query_options)
+{
+    if (select_query_options.only_analyze)
+        return nullptr;
+
+    auto * query_node = query_tree_node->as<QueryNode>();
+    auto * union_node = query_tree_node->as<UnionNode>();
+
+    if (!query_node && !union_node)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Expected QUERY or UNION node. Actual {}",
+            query_tree_node->formatASTForErrorMessage());
+
+    auto context = query_node ? query_node->getContext() : union_node->getContext();
+    // const auto & settings = context->getSettingsRef();
+
+    if (!context->canUseParallelReplicasOnFollower())
+        return nullptr;
+
+    return findTableForParallelReplicas(query_tree_node.get());
+}
+
 static void removeCTEs(ASTPtr & ast)
 {
     std::stack<IAST *> stack;
@@ -336,7 +424,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     Block initial_header = InterpreterSelectQueryAnalyzer::getSampleBlock(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
-    rewriteJoinToGlobalJoin(modified_query_tree);
+    rewriteJoinToGlobalJoin(modified_query_tree, context);
     // std::cerr << "buildQueryPlanForParallelReplicas 1 " << modified_query_tree->dumpTree() << std::endl;
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree);
     // std::cerr << "buildQueryPlanForParallelReplicas 2 " << modified_query_tree->dumpTree() << std::endl;
