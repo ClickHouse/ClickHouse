@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 
 namespace Poco
@@ -20,11 +20,13 @@ class CachedObjectStorage final : public IObjectStorage
 public:
     CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachePtr cache_, const FileCacheSettings & cache_settings_, const String & cache_config_name_);
 
-    DataSourceDescription getDataSourceDescription() const override;
-
     std::string getName() const override { return fmt::format("CachedObjectStorage-{}({})", cache_config_name, object_storage->getName()); }
 
+    ObjectStorageType getType() const override { return object_storage->getType(); }
+
     std::string getCommonKeyPrefix() const override { return object_storage->getCommonKeyPrefix(); }
+
+    std::string getDescription() const override { return object_storage->getDescription(); }
 
     bool exists(const StoredObject & object) const override;
 
@@ -119,7 +121,7 @@ public:
     static bool canUseReadThroughCache(const ReadSettings & settings);
 
 private:
-    FileCache::Key getCacheKey(const std::string & path) const;
+    FileCacheKey getCacheKey(const std::string & path) const;
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 
@@ -127,7 +129,7 @@ private:
     FileCachePtr cache;
     FileCacheSettings cache_settings;
     std::string cache_config_name;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

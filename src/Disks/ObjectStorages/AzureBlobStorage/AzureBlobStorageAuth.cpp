@@ -7,6 +7,7 @@
 #include <optional>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Interpreters/Context.h>
 
 using namespace Azure::Storage::Blobs;
 
@@ -109,8 +110,6 @@ std::unique_ptr<T> getAzureBlobStorageClientWithAuth(
     std::string connection_str;
     if (config.has(config_prefix + ".connection_string"))
         connection_str = config.getString(config_prefix + ".connection_string");
-    else if (config.has(config_prefix + ".endpoint"))
-        connection_str = config.getString(config_prefix + ".endpoint");
 
     if (!connection_str.empty())
         return getClientWithConnectionString<T>(connection_str, container_name);
@@ -134,14 +133,15 @@ std::unique_ptr<BlobContainerClient> getAzureBlobContainerClient(
 {
     auto endpoint = processAzureBlobStorageEndpoint(config, config_prefix);
     auto container_name = endpoint.container_name;
-    auto final_url = endpoint.storage_account_url
-        + (endpoint.storage_account_url.back() == '/' ? "" : "/")
-        + container_name;
+    auto final_url = container_name.empty()
+        ? endpoint.storage_account_url
+        : (std::filesystem::path(endpoint.storage_account_url) / container_name).string();
 
     if (endpoint.container_already_exists.value_or(false))
         return getAzureBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
 
-    auto blob_service_client = getAzureBlobStorageClientWithAuth<BlobServiceClient>(endpoint.storage_account_url, container_name, config, config_prefix);
+    auto blob_service_client = getAzureBlobStorageClientWithAuth<BlobServiceClient>(
+        endpoint.storage_account_url, container_name, config, config_prefix);
 
     try
     {
@@ -158,14 +158,15 @@ std::unique_ptr<BlobContainerClient> getAzureBlobContainerClient(
     }
 }
 
-std::unique_ptr<AzureObjectStorageSettings> getAzureBlobStorageSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr /*context*/)
+std::unique_ptr<AzureObjectStorageSettings> getAzureBlobStorageSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     return std::make_unique<AzureObjectStorageSettings>(
         config.getUInt64(config_prefix + ".max_single_part_upload_size", 100 * 1024 * 1024),
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getInt(config_prefix + ".max_single_read_retries", 3),
         config.getInt(config_prefix + ".max_single_download_retries", 3),
-        config.getInt(config_prefix + ".list_object_keys_size", 1000)
+        config.getInt(config_prefix + ".list_object_keys_size", 1000),
+        config.getUInt64(config_prefix + ".max_unexpected_write_error_retries", context->getSettings().azure_max_unexpected_write_error_retries)
     );
 }
 

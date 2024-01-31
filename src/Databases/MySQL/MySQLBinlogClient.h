@@ -48,7 +48,7 @@ private:
     std::vector<BinlogEventsDispatcherPtr> dispatchers;
     String binlog_checksum;
     mutable std::mutex mutex;
-    Poco::Logger * logger = nullptr;
+    LoggerPtr logger = nullptr;
     int dispatchers_count = 0;
 };
 

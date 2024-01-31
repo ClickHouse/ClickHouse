@@ -93,7 +93,7 @@ void deserializeACLMap(Storage & storage, ReadBuffer & in)
 }
 
 template<typename Storage>
-int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, Poco::Logger * log)
+int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log)
 {
     int64_t max_zxid = 0;
     std::string path;
@@ -123,7 +123,6 @@ int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, Poco::Logger 
         Coordination::read(node.stat.pzxid, in);
         if (!path.empty())
         {
-            node.stat.dataLength = static_cast<Int32>(node.getData().length());
             node.seq_num = node.stat.cversion;
             storage.container.insertOrReplace(path, node);
 
@@ -151,7 +150,7 @@ int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, Poco::Logger 
 }
 
 template<typename Storage>
-void deserializeKeeperStorageFromSnapshot(Storage & storage, const std::string & snapshot_path, Poco::Logger * log)
+void deserializeKeeperStorageFromSnapshot(Storage & storage, const std::string & snapshot_path, LoggerPtr log)
 {
     LOG_INFO(log, "Deserializing storage snapshot {}", snapshot_path);
     int64_t zxid = getZxidFromName(snapshot_path);
@@ -190,10 +189,10 @@ void deserializeKeeperStorageFromSnapshot(Storage & storage, const std::string &
     LOG_INFO(log, "Finished, snapshot ZXID {}", storage.zxid);
 }
 
-namespace fs = std::filesystem;
+/// namespace fs = std::filesystem;
 
 template<typename Storage>
-void deserializeKeeperStorageFromSnapshotsDir(Storage & storage, const std::string & path, Poco::Logger * log)
+void deserializeKeeperStorageFromSnapshotsDir(Storage & storage, const std::string & path, LoggerPtr log)
 {
     std::map<int64_t, std::string> existing_snapshots;
     for (const auto & p : fs::directory_iterator(path))
@@ -481,7 +480,7 @@ bool hasErrorsInMultiRequest(Coordination::ZooKeeperRequestPtr request)
 }
 
 template<typename Storage>
-bool deserializeTxn(Storage & storage, ReadBuffer & in, Poco::Logger * /*log*/)
+bool deserializeTxn(Storage & storage, ReadBuffer & in, LoggerPtr /*log*/)
 {
     int64_t checksum;
     Coordination::read(checksum, in);
@@ -537,7 +536,7 @@ bool deserializeTxn(Storage & storage, ReadBuffer & in, Poco::Logger * /*log*/)
 }
 
 template<typename Storage>
-void deserializeLogAndApplyToStorage(Storage & storage, const std::string & log_path, Poco::Logger * log)
+void deserializeLogAndApplyToStorage(Storage & storage, const std::string & log_path, LoggerPtr log)
 {
     ReadBufferFromFile reader(log_path);
 
@@ -562,7 +561,7 @@ void deserializeLogAndApplyToStorage(Storage & storage, const std::string & log_
 }
 
 template<typename Storage>
-void deserializeLogsAndApplyToStorage(Storage & storage, const std::string & path, Poco::Logger * log)
+void deserializeLogsAndApplyToStorage(Storage & storage, const std::string & path, LoggerPtr log)
 {
     std::map<int64_t, std::string> existing_logs;
     for (const auto & p : fs::directory_iterator(path))
@@ -597,9 +596,9 @@ void deserializeLogsAndApplyToStorage(Storage & storage, const std::string & pat
     }
 }
 
-template void deserializeKeeperStorageFromSnapshot<KeeperMemoryStorage>(KeeperMemoryStorage & storage, const std::string & snapshot_path, Poco::Logger * log);
-template void deserializeKeeperStorageFromSnapshotsDir<KeeperMemoryStorage>(KeeperMemoryStorage & storage, const std::string & path, Poco::Logger * log);
-template void deserializeLogAndApplyToStorage<KeeperMemoryStorage>(KeeperMemoryStorage & storage, const std::string & log_path, Poco::Logger * log);
-template void deserializeLogsAndApplyToStorage<KeeperMemoryStorage>(KeeperMemoryStorage & storage, const std::string & path, Poco::Logger * log);
+template void deserializeKeeperStorageFromSnapshot<KeeperMemoryStorage>(KeeperMemoryStorage & storage, const std::string & snapshot_path, LoggerPtr log);
+template void deserializeKeeperStorageFromSnapshotsDir<KeeperMemoryStorage>(KeeperMemoryStorage & storage, const std::string & path, LoggerPtr log);
+template void deserializeLogAndApplyToStorage<KeeperMemoryStorage>(KeeperMemoryStorage & storage, const std::string & log_path, LoggerPtr log);
+template void deserializeLogsAndApplyToStorage<KeeperMemoryStorage>(KeeperMemoryStorage & storage, const std::string & path, LoggerPtr log);
 
 }

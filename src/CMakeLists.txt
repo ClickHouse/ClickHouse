@@ -83,10 +83,11 @@ add_subdirectory (Formats)
 
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
+add_headers_and_sources(clickhouse_common_io Common/Scheduler)
+add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes)
 add_headers_and_sources(clickhouse_common_io Common/SSH)
 add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/Archives)
-add_headers_and_sources(clickhouse_common_io IO/Resource)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
@@ -294,12 +295,14 @@ if (TARGET ch_contrib::gwp_asan)
 endif()
 
 # Otherwise it will slow down stack traces printing too much.
-set_source_files_properties(
-        Common/Elf.cpp
-        Common/Dwarf.cpp
-        Common/SymbolIndex.cpp
-        Common/ThreadFuzzer.cpp
-        PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE_FLAGS}")
+if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
+    set_source_files_properties(
+            Common/Elf.cpp
+            Common/Dwarf.cpp
+            Common/SymbolIndex.cpp
+            Common/ThreadFuzzer.cpp
+            PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE_FLAGS}")
+endif()
 
 target_link_libraries (clickhouse_common_io
         PRIVATE

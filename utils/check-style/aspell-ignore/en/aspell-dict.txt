@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2657 
+personal_ws-1.1 en 2657
 AArch
 ACLs
 ALTERs
@@ -214,6 +214,7 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
+DD
 Decrypted
 Deduplicate
 Deduplication
@@ -1108,6 +1109,7 @@ arrayRotateLeft
 arrayRotateRight
 arrayShiftLeft
 arrayShiftRight
+arrayShingles
 arraySlice
 arraySort
 arraySplit
@@ -2058,7 +2060,6 @@ prebuild
 prebuilt
 preemptable
 preferServerCiphers
-prefertch
 prefetch
 prefetchsize
 preloaded
@@ -2134,6 +2135,8 @@ quantiletdigest
 quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
+quantileddsketch
+quantileDD
 quartile
 queryID
 queryString
@@ -2319,6 +2322,7 @@ sqlinsert
 sqlite
 sqrt
 src
+srcReplicas
 stacktrace
 stacktraces
 startsWith
@@ -2632,6 +2636,7 @@ uuid
 varPop
 varSamp
 variadic
+variantElement
 varint
 varpop
 varsamp
@@ -2698,4 +2703,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-srcReplicas

@@ -53,7 +53,7 @@ IKeeperStateMachine::IKeeperStateMachine(
     , snapshots_queue(snapshots_queue_)
     , min_request_size_to_cache(coordination_settings_->min_request_size_for_cache)
     , last_committed_idx(0)
-    , log(&Poco::Logger::get("KeeperStateMachine"))
+    , log(getLogger("KeeperStateMachine"))
     , superdigest(superdigest_)
     , keeper_context(keeper_context_)
     , snapshot_manager_s3(snapshot_manager_s3_)
@@ -165,7 +165,7 @@ void assertDigest(
     if (!KeeperStorageBase::checkDigest(first, second))
     {
         LOG_FATAL(
-            &Poco::Logger::get("KeeperStateMachine"),
+            getLogger("KeeperStateMachine"),
             "Digest for nodes is not matching after {} request of type '{}'.\nExpected digest - {}, actual digest - {} (digest "
             "{}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
             committing ? "committing" : "preprocessing",
@@ -189,7 +189,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log
 
     /// Don't preprocess anything until the first commit when we will manually pre_commit and commit
     /// all needed logs
-    if (!keeper_context->local_logs_preprocessed)
+    if (!keeper_context->localLogsPreprocessed())
         return result;
 
     auto request_for_session = parseRequest(data, /*final=*/false);
@@ -420,7 +420,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
 
     request_for_session->log_idx = log_idx;
 
-    if (!keeper_context->local_logs_preprocessed && !preprocess(*request_for_session))
+    if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session))
         return nullptr;
 
     auto try_push = [this](const KeeperStorageBase::ResponseForSession& response)
@@ -539,7 +539,7 @@ void IKeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nura
 void IKeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
 {
     /// Don't rollback anything until the first commit because nothing was preprocessed
-    if (!keeper_context->local_logs_preprocessed)
+    if (!keeper_context->localLogsPreprocessed())
         return;
 
     auto request_for_session = parseRequest(data, true);
@@ -711,7 +711,7 @@ void KeeperStateMachine<Storage>::save_logical_snp_obj(
     }
 }
 
-static int bufferFromFile(Poco::Logger * log, const std::string & path, nuraft::ptr<nuraft::buffer> & data_out)
+static int bufferFromFile(LoggerPtr log, const std::string & path, nuraft::ptr<nuraft::buffer> & data_out)
 {
     if (path.empty() || !std::filesystem::exists(path))
     {

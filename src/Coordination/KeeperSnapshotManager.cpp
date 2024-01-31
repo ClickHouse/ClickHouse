@@ -75,7 +75,10 @@ namespace
 
         /// Serialize ACL
         writeBinary(node.acl_id, out);
-        writeBinary(node.is_sequental, out);
+        /// Write is_sequential for backwards compatibility
+        if (version < SnapshotVersion::V6)
+            writeBinary(false, out);
+
         /// Serialize stat
         writeBinary(node.stat.czxid, out);
         writeBinary(node.stat.mzxid, out);
@@ -85,16 +88,15 @@ namespace
         writeBinary(node.stat.cversion, out);
         writeBinary(node.stat.aversion, out);
         writeBinary(node.stat.ephemeralOwner, out);
-        writeBinary(node.stat.dataLength, out);
+        if (version < SnapshotVersion::V6)
+            writeBinary(static_cast<int32_t>(node.getData().size()), out);
         writeBinary(node.stat.numChildren, out);
         writeBinary(node.stat.pzxid, out);
 
         writeBinary(node.seq_num, out);
 
-        if (version >= SnapshotVersion::V4)
-        {
-            writeBinary(node.size_bytes, out);
-        }
+        if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
+            writeBinary(node.sizeInBytes(), out);
     }
 
     template<typename Node>
@@ -131,7 +133,11 @@ namespace
 
         acl_map.addUsage(node.acl_id);
 
-        readBinary(node.is_sequental, in);
+        if (version < SnapshotVersion::V6)
+        {
+            bool is_sequential = false;
+            readBinary(is_sequential, in);
+        }
 
         /// Deserialize stat
         readBinary(node.stat.czxid, in);
@@ -142,14 +148,19 @@ namespace
         readBinary(node.stat.cversion, in);
         readBinary(node.stat.aversion, in);
         readBinary(node.stat.ephemeralOwner, in);
-        readBinary(node.stat.dataLength, in);
+        if (version < SnapshotVersion::V6)
+        {
+            int32_t data_length = 0;
+            readBinary(data_length, in);
+        }
         readBinary(node.stat.numChildren, in);
         readBinary(node.stat.pzxid, in);
         readBinary(node.seq_num, in);
 
-        if (version >= SnapshotVersion::V4)
+        if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
         {
-            readBinary(node.size_bytes, in);
+            uint64_t size_bytes = 0;
+            readBinary(size_bytes, in);
         }
     }
 
@@ -358,7 +369,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
 
     const auto is_node_empty = [](const auto & node)
     {
-        return node.getData().empty() && node.stat == Coordination::Stat{};
+        return node.getData().empty() && node.stat == typename Storage::Node::Stat{};
     };
 
     for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
@@ -376,7 +387,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         {
             if (keeper_context->ignoreSystemPathOnStartup() || keeper_context->getServerState() != KeeperContext::Phase::INIT)
             {
-                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
+                LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
                 continue;
             }
             else
@@ -392,7 +403,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
             {
                 if (keeper_context->ignoreSystemPathOnStartup() || keeper_context->getServerState() != KeeperContext::Phase::INIT)
                 {
-                    LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
+                    LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
                     node = typename Storage::Node{};
                 }
                 else
@@ -402,9 +413,6 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                         "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
                         error_msg);
             }
-
-            // we always ignore the written size for this node
-            node.recalculateSize();
         }
 
         storage.container.insertOrReplace(path, node);
@@ -419,12 +427,9 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     {
         for (const auto & itr : storage.container)
         {
-            if (itr.key != "/")
-            {
-                auto parent_path = parentNodePath(itr.key);
-                storage.container.updateValue(
-                    parent_path, [version, path = itr.key](typename Storage::Node & value) { value.addChild(getBaseNodeName(path), /*update_size*/ version < SnapshotVersion::V4); });
-            }
+            auto parent_path = parentNodePath(itr.key);
+            storage.container.updateValue(
+                parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(getBaseNodeName(path)); });
         }
 
         for (const auto & itr : storage.container)
@@ -433,15 +438,15 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
             {
                 if (itr.value.stat.numChildren != static_cast<int32_t>(itr.value.getChildren().size()))
                 {
-    #ifdef NDEBUG
+#ifdef NDEBUG
                     /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
-                    LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
+                    LOG_ERROR(getLogger("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
                                 " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
-    #else
+#else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
                                     " is different from actual children size {} for node {}",
                                     itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
-    #endif
+#endif
                 }
             }
         }
@@ -597,7 +602,7 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
 
             if (!inserted)
                 LOG_WARNING(
-                    &Poco::Logger::get("KeeperSnapshotManager"),
+                    getLogger("KeeperSnapshotManager"),
                     "Found another snapshots with last log idx {}, will use snapshot from disk {}",
                     snapshot_up_to,
                     disk->getName());
