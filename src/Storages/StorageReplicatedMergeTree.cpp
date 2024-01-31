@@ -3628,7 +3628,7 @@ bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEnt
     /// We only allow priority slots in queue, not priority threads, so number of priority slots cannot exceeds number of waiting queue slots
     reserved_for_priority = std::min(reserved_for_priority, replicated_fetches_pool_size - replicated_fetches_pool_threads);
     /// If the entry has living priority tag, we could use priority slots
-    auto fetches_pool_size_limit = entry.priority_tag.expired() ? replicated_fetches_pool_size - reserved_for_priority : replicated_fetches_pool_size;
+    auto fetches_pool_size_limit = entry.hasPriority() ? replicated_fetches_pool_size : replicated_fetches_pool_size - reserved_for_priority;
 
     if (busy_threads_in_pool >= fetches_pool_size_limit)
     {

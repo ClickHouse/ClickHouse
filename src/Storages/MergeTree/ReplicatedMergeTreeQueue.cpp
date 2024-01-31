@@ -2689,8 +2689,7 @@ ReplicatedMergeTreeQueue::SubscriberHandler ReplicatedMergeTreeQueue::addSubscri
 
             if (need_wait_for_entry)
             {
-                out_entry_priority_tags.emplace_back(std::make_shared<LogEntryPriorityTag>());
-                entry->priority_tag = out_entry_priority_tags.back();
+                out_entry_priority_tags.push_back(entry->priority_tag);
                 out_entry_names.insert(entry->znode_name);
             }
         }
