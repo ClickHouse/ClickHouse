@@ -107,6 +107,9 @@ public:
     /// tables which depend on the tables which depend on the tables without dependencies, and so on.
     std::vector<StorageID> getTablesSortedByDependency() const;
 
+    /// TODO
+    std::map<size_t, std::vector<StorageID>> getTablesSortedByDependencyWithLevels() const;
+
     /// Outputs information about this graph as a bunch of logging messages.
     void log() const;
 
