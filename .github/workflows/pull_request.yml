@@ -104,7 +104,7 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Fast tests
+      test_name: Fast test
       runner_type: builder
       data: ${{ needs.RunConfig.outputs.data }}
       run_command: |
