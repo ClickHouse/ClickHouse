@@ -271,6 +271,9 @@ public:
       *
       * Default implementation just calls getColumnOrDefault multiple times.
       * Subclasses can provide custom more efficient implementation.
+      *
+      * default_mask filled with 1 means we have the value right now, 0 means
+      * default value would be used, later with lazy execution.
       */
     virtual Columns getColumnsOrDefaultShortCircuit(
         const Strings & attribute_names,

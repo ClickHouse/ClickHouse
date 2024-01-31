@@ -298,9 +298,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsOrDefaultShortCircuit(
 
     {
         const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
-        auto pmask = std::make_shared<IColumn::Filter>(std::move(default_mask));
-        result_of_fetch_from_storage = cache_storage_ptr->fetchColumnsForKeys(keys, request, pmask);
-        default_mask = std::move(*pmask);
+        result_of_fetch_from_storage = cache_storage_ptr->fetchColumnsForKeys(keys, request, &default_mask);
     }
 
     size_t found_keys_size = result_of_fetch_from_storage.found_keys_size;
@@ -331,14 +329,12 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsOrDefaultShortCircuit(
         else
         {
             /// Reorder result from storage to requested keys indexes
-            auto pmask = std::make_shared<IColumn::Filter>(std::move(default_mask));
             MutableColumns aggregated_columns = aggregateColumnsInOrderOfKeys(
                 keys,
                 request,
                 fetched_columns_from_storage,
                 key_index_to_state_from_storage,
-                pmask);
-            default_mask = std::move(*pmask);
+                &default_mask);
 
             return request.filterRequestedColumns(aggregated_columns);
         }
@@ -361,14 +357,12 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsOrDefaultShortCircuit(
         else
         {
             /// Reorder result from storage to requested keys indexes
-            auto pmask = std::make_shared<IColumn::Filter>(std::move(default_mask));
             MutableColumns aggregated_columns = aggregateColumnsInOrderOfKeys(
                 keys,
                 request,
                 fetched_columns_from_storage,
                 key_index_to_state_from_storage,
-                pmask);
-            default_mask = std::move(*pmask);
+                &default_mask);
 
             return request.filterRequestedColumns(aggregated_columns);
         }
@@ -384,7 +378,6 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsOrDefaultShortCircuit(
         fetched_columns_during_update = std::move(update_unit->fetched_columns_during_update);
     }
 
-    auto pmask = std::make_shared<IColumn::Filter>(std::move(default_mask));
     MutableColumns aggregated_columns = aggregateColumns(
         keys,
         request,
@@ -392,8 +385,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsOrDefaultShortCircuit(
         key_index_to_state_from_storage,
         fetched_columns_during_update,
         requested_keys_to_fetched_columns_during_update_index,
-        pmask);
-    default_mask = std::move(*pmask);
+        &default_mask);
 
     return request.filterRequestedColumns(aggregated_columns);
 }
@@ -548,7 +540,7 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumnsInOrderOfKe
     const DictionaryStorageFetchRequest & request,
     const MutableColumns & fetched_columns,
     const PaddedPODArray<KeyState> & key_index_to_state,
-    std::shared_ptr<IColumn::Filter> default_mask) const
+    IColumn::Filter * default_mask) const
 {
     MutableColumns aggregated_columns = request.makeAttributesResultColumns();
 
@@ -598,7 +590,7 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
         const PaddedPODArray<KeyState> & key_index_to_fetched_columns_from_storage_result,
         const MutableColumns & fetched_columns_during_update,
         const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index,
-        std::shared_ptr<IColumn::Filter> default_mask) const
+        IColumn::Filter * default_mask) const
 {
     /**
     * Aggregation of columns fetched from storage and from source during update.

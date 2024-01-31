@@ -82,7 +82,7 @@ public:
     virtual SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
         const DictionaryStorageFetchRequest & fetch_request,
-        std::shared_ptr<IColumn::Filter> default_mask = nullptr) = 0;
+        IColumn::Filter * default_mask = nullptr) = 0;
 
     /// Fetch columns for keys, this method is not write thread safe
     virtual void insertColumnsForKeys(const PaddedPODArray<UInt64> & keys, Columns columns) = 0;
@@ -100,7 +100,7 @@ public:
     virtual ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<StringRef> & keys,
         const DictionaryStorageFetchRequest & column_fetch_requests,
-        std::shared_ptr<IColumn::Filter> default_mask = nullptr) = 0;
+        IColumn::Filter * default_mask = nullptr) = 0;
 
     /// Fetch columns for keys, this method is not write thread safe
     virtual void insertColumnsForKeys(const PaddedPODArray<StringRef> & keys, Columns columns) = 0;

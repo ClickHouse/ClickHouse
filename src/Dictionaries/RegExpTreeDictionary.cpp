@@ -439,8 +439,7 @@ public:
     constexpr bool collecting() const { return collect_values_limit != std::nullopt; }
 
     // Add a name-value pair to the collection if there's space
-    void add(const String & attr_name, Field field,
-        std::shared_ptr<std::unordered_set<String>> defaults = nullptr)
+    void add(const String & attr_name, Field field, std::unordered_set<String> * defaults = nullptr)
     {
         if (collect_values_limit)
         {
@@ -463,8 +462,7 @@ public:
     }
 
     // Just occupy a space
-    void addDefault(const String & attr_name,
-        std::shared_ptr<std::unordered_set<String>> defaults)
+    void addDefault(const String & attr_name, std::unordered_set<String> * defaults)
     {
         assert (!collect_values_limit);
         if (!this->contains(attr_name) && !defaults->contains(attr_name))
@@ -475,8 +473,7 @@ public:
     }
 
     // Checks if no more values can be added for a given attribute
-    inline bool full(const String & attr_name,
-        std::shared_ptr<std::unordered_set<String>> defaults = nullptr) const
+    inline bool full(const String & attr_name, std::unordered_set<String> * defaults = nullptr) const
     {
         if (collect_values_limit)
         {
@@ -571,7 +568,7 @@ bool RegExpTreeDictionary::setAttributesShortCircuit(
     const String & data,
     std::unordered_set<UInt64> & visited_nodes,
     const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-    std::shared_ptr<std::unordered_set<String>> defaults) const
+    std::unordered_set<String> * defaults) const
 {
     if (visited_nodes.contains(id))
         return attributes_to_set.attributesFull() == attributes.size();
@@ -910,7 +907,7 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchShortCircuit(
 
         String str = String(reinterpret_cast<const char *>(keys_data.data()) + offset, length);
 
-        std::shared_ptr<std::unordered_set<String>> defaults = std::make_shared<std::unordered_set<String>>();
+        std::unordered_set<String> defaults;
 
         for (auto item : match_result.matched_idx_sorted_list)
         {
@@ -919,7 +916,7 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchShortCircuit(
                 continue;
             if (visited_nodes.contains(id))
                 continue;
-            if (setAttributesShortCircuit(id, attributes_to_set, str, visited_nodes, attributes, defaults))
+            if (setAttributesShortCircuit(id, attributes_to_set, str, visited_nodes, attributes, &defaults))
                 break;
         }
 

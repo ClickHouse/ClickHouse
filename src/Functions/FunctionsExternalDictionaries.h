@@ -615,7 +615,7 @@ public:
 private:
 
     std::pair<ColumnPtr, ColumnPtr> getDefaultsShortCircuit(
-        IColumn::Filter & default_mask,
+        IColumn::Filter && default_mask,
         const DataTypePtr & result_type,
         const ColumnWithTypeAndName & last_argument) const
     {
@@ -630,14 +630,11 @@ private:
         ColumnWithTypeAndName column_before_cast = last_argument;
         maskedExecute(column_before_cast, mask, mask_info);
 
-        default_mask = std::move(mask);
-
         ColumnWithTypeAndName column_to_cast = {
             column_before_cast.column->convertToFullColumnIfConst(),
             column_before_cast.type,
             column_before_cast.name};
         auto casted = IColumn::mutate(castColumnAccurate(column_to_cast, result_type));
-        casted->expand(default_mask, false);
         return {std::move(casted), mask_col_res};
     }
 
@@ -645,26 +642,22 @@ private:
         ColumnPtr & result_column,
         ColumnPtr defaults_column,
         ColumnPtr mask_column,
-        IColumn::Filter & inverted_mask,
         const DataTypePtr & result_type) const
     {
-        auto mut_lhs = IColumn::mutate(std::move(result_column));
-        mut_lhs->expand(inverted_mask, true);
-
         auto if_func = FunctionFactory::instance().get("if", helper.getContext());
         ColumnsWithTypeAndName if_args =
         {
             {mask_column, std::make_shared<DataTypeUInt8>(), {}},
-            {std::move(mut_lhs), result_type, {}},
+            {result_column, result_type, {}},
             {defaults_column, result_type, {}},
         };
 
-        auto rows = inverted_mask.size();
+        auto rows = mask_column->size();
         result_column = if_func->build(if_args)->execute(if_args, result_type, rows);
     }
 
 #ifdef ABORT_ON_LOGICAL_ERROR
-    static void validateShortCircuitResult(const ColumnPtr & column, const IColumn::Filter & filter)
+    void validateShortCircuitResult(const ColumnPtr & column, const IColumn::Filter & filter) const
     {
         size_t expected_size = countBytesInFilter(filter);
         size_t col_size = column->size();
@@ -711,7 +704,7 @@ private:
 #endif
 
                 auto [defaults_column, mask_column] =
-                    getDefaultsShortCircuit(default_mask, result_type, last_argument);
+                    getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument);
 
                 const auto & tuple_defaults = assert_cast<const ColumnTuple &>(*defaults_column);
                 const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);
@@ -722,7 +715,6 @@ private:
                         result_columns[col],
                         tuple_defaults.getColumnPtr(col),
                         mask_column,
-                        default_mask,
                         result_tuple_type.getElements()[col]);
                 }
             }
@@ -752,9 +744,9 @@ private:
 #endif
 
                 auto [defaults_column, mask_column] =
-                    getDefaultsShortCircuit(default_mask, result_type, last_argument);
+                    getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument);
 
-                restoreShortCircuitColumn(result, defaults_column, mask_column, default_mask, result_type);
+                restoreShortCircuitColumn(result, defaults_column, mask_column, result_type);
             }
             else
             {
