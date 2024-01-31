@@ -945,7 +945,7 @@ protected:
     static std::string format(const std::string & fmt, int argc, std::string argv[]);
 
 private:
-    static std::pair<Logger::LoggerMapIterator, bool> unsafeGet(const std::string & name);
+    static std::pair<Logger::LoggerMapIterator, bool> unsafeGet(const std::string & name, bool get_shared);
     static Logger * unsafeGetRawPtr(const std::string & name);
     static std::pair<LoggerMapIterator, bool> unsafeCreate(const std::string & name, Channel * pChannel, int level = Message::PRIO_INFORMATION);
     static Logger & parent(const std::string & name);
