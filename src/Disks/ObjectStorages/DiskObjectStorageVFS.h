@@ -51,7 +51,6 @@ private:
 
     ZooKeeperWithFaultInjection::Ptr zookeeper() const;
     DiskTransactionPtr createObjectStorageTransaction() final;
-    void createNodes() const;
     std::string_view getMetadataObjectPrefix() const;
     StoredObject getMetadataObject(std::string_view remote) const;
 };

@@ -33,7 +33,7 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS supports 's3' or 'azure_blob_storage' disk type");
     if (send_metadata)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS doesn't support send_metadata");
-    createNodes();
+    zookeeper()->createAncestors(nodes.log_item);
 
     log = getLogger(fmt::format("DiskVFS({})", name));
 }
@@ -49,11 +49,6 @@ DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
         Context::getGlobalContextInstance()->getConfigRef(),
         config_prefix,
         enable_gc);
-}
-
-void DiskObjectStorageVFS::createNodes() const
-{
-    zookeeper()->createAncestors(nodes.log_item);
 }
 
 void DiskObjectStorageVFS::startupImpl(ContextPtr context)

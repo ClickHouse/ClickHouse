@@ -67,7 +67,7 @@ void VFSGarbageCollector::run() const
     else if (code == ZNONODE)
     {
         LOG_ERROR(log, "{} not found, will recreate ZooKeeper nodes", gc_lock);
-        return storage.createNodes();
+        return storage.zookeeper()->createAncestors(storage.nodes.log_item);
     }
     else if (code != ZOK)
         throw Coordination::Exception(code);
@@ -205,14 +205,14 @@ static void check404(Poco::Logger * const log, std::exception & e)
     {
     }
 #if USE_AWS_S3
-    else if (auto * e_s3 = typeid_cast<S3Exception *>(&e))
+    else if (auto * e_s3 = dynamic_cast<S3Exception *>(&e))
     {
         if (e_s3->getS3ErrorCode() != Aws::S3::S3Errors::NO_SUCH_KEY)
             throw e;
     }
 #endif
 #if USE_AZURE_BLOB_STORAGE
-    else if (auto * e_azure = typeid_cast<Azure::Storage::StorageException *>(&e))
+    else if (auto * e_azure = dynamic_cast<Azure::Storage::StorageException *>(&e))
     {
         if (e_azure->StatusCode != Azure::Core::Http::HttpStatusCode::NotFound)
             throw e;
@@ -234,6 +234,7 @@ Logpointer VFSGarbageCollector::reconcile(Logpointer start, Logpointer end, std:
     const fs::path snapshots_path = storage.getMetadataObject(SNAPSHOTS_PATH).remote_path;
     RelativePathsWithMetadata snapshots;
     constexpr int max_candidates = 5;
+    // TODO myrrc this breaks in random moment for Azure blob storage
     storage.object_storage->listObjects(snapshots_path, snapshots, max_candidates);
 
     if (const bool empty = snapshots.empty(); empty && starting)
