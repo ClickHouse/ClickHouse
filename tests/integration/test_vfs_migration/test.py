@@ -23,7 +23,7 @@ def started_cluster(request):
                 with_zookeeper=True,
                 with_minio=True,
                 macros={"replica": f"node{i}"},
-                stay_alive=True
+                stay_alive=True,
             )
         cluster.start()
 
