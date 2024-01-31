@@ -3,15 +3,20 @@ import json
 import logging
 import os
 from typing import Dict, List, Set, Union
+from urllib.parse import quote
 
+# isort: off
+# for some reason this line moves to the end
 from unidiff import PatchSet  # type: ignore
+
+# isort: on
 
 from build_download_helper import get_gh_api
 from env_helper import (
-    GITHUB_REPOSITORY,
-    GITHUB_SERVER_URL,
-    GITHUB_RUN_URL,
     GITHUB_EVENT_PATH,
+    GITHUB_REPOSITORY,
+    GITHUB_RUN_URL,
+    GITHUB_SERVER_URL,
 )
 
 FORCE_TESTS_LABEL = "force tests"
@@ -295,9 +300,10 @@ class PRInfo:
 
     @staticmethod
     def compare_url(first: str, second: str) -> str:
+        """the first and second are URL encoded to not fail on '#' and other symbols"""
         return (
             "https://api.github.com/repos/"
-            f"{GITHUB_REPOSITORY}/compare/{first}...{second}"
+            f"{GITHUB_REPOSITORY}/compare/{quote(first)}...{quote(second)}"
         )
 
     def fetch_changed_files(self):
