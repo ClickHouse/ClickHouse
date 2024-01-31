@@ -21,10 +21,9 @@ public:
     using ConsumerPtr = std::shared_ptr<MaterializedPostgreSQLConsumer>;
 
     PostgreSQLReplicationHandler(
+            const String & replication_identifier,
             const String & postgres_database_,
-            const String & postgres_table_,
-            const String & clickhouse_database_,
-            const String & clickhouse_uuid_,
+            const String & current_database_name_,
             const postgres::ConnectionInfo & connection_info_,
             ContextPtr context_,
             bool is_attach_,
@@ -102,7 +101,7 @@ private:
 
     void assertInitialized() const;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     /// If it is not attach, i.e. a create query, then if publication already exists - always drop it.
     bool is_attach;
@@ -129,11 +128,10 @@ private:
     /// This is possible to allow replicating tables from multiple schemas in the same MaterializedPostgreSQL database engine.
     mutable bool schema_as_a_part_of_table_name = false;
 
-    const bool user_managed_slot;
-    const String user_provided_snapshot;
-    const String replication_slot;
-    const String tmp_replication_slot;
-    const String publication_name;
+    bool user_managed_slot = true;
+    String user_provided_snapshot;
+
+    String replication_slot, publication_name;
 
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
     ConsumerPtr consumer;

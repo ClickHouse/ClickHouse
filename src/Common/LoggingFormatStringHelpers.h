@@ -8,7 +8,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
 #include <base/EnumReflection.h>
-#include <Common/Logger.h>
+
 
 struct PreformattedMessage;
 consteval void formatStringCheckArgsNumImpl(std::string_view str, size_t nargs);
@@ -106,8 +106,8 @@ template <typename T> constexpr std::string_view tryGetStaticFormatString(T && x
             /// Most likely it was a string literal.
             /// Unfortunately, there's no good way to check if something is a string literal.
             /// But fmtlib requires a format string to be compile-time constant unless fmt::runtime is used.
-            static_assert(std::is_nothrow_convertible_v<T, const char * const>);
-            static_assert(!std::is_pointer_v<T>);
+            static_assert(std::is_nothrow_convertible<T, const char * const>::value);
+            static_assert(!std::is_pointer<T>::value);
             return std::string_view(x);
         }
     }
@@ -127,8 +127,8 @@ template<> struct ConstexprIfsAreNotIfdefs<true>
     {
         /// See tryGetStaticFormatString(...)
         static_assert(!std::is_same_v<std::string, std::decay_t<T>>);
-        static_assert(std::is_nothrow_convertible_v<T, const char * const>);
-        static_assert(!std::is_pointer_v<T>);
+        static_assert(std::is_nothrow_convertible<T, const char * const>::value);
+        static_assert(!std::is_pointer<T>::value);
         return std::string_view(x);
     }
 
@@ -203,10 +203,10 @@ class LogFrequencyLimiterIml
     static time_t last_cleanup;
     static std::mutex mutex;
 
-    LoggerPtr logger;
+    Poco::Logger * logger;
     time_t min_interval_s;
 public:
-    LogFrequencyLimiterIml(LoggerPtr logger_, time_t min_interval_s_) : logger(std::move(logger_)), min_interval_s(min_interval_s_) {}
+    LogFrequencyLimiterIml(Poco::Logger * logger_, time_t min_interval_s_) : logger(logger_), min_interval_s(min_interval_s_) {}
 
     LogFrequencyLimiterIml & operator -> () { return *this; }
     bool is(Poco::Message::Priority priority) { return logger->is(priority); }
@@ -218,7 +218,7 @@ public:
     /// Clears messages that were logged last time more than too_old_threshold_s seconds ago
     static void cleanup(time_t too_old_threshold_s = 600);
 
-    LoggerPtr getLogger() { return logger; }
+    Poco::Logger * getLogger() { return logger; }
 };
 
 /// This wrapper helps to avoid too noisy log messages from similar objects.
@@ -240,11 +240,11 @@ class LogSeriesLimiter
         return records;
     }
 
-    LoggerPtr logger = nullptr;
+    Poco::Logger * logger = nullptr;
     bool accepted = false;
     String debug_message;
 public:
-    LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, time_t interval_s_);
+    LogSeriesLimiter(Poco::Logger * logger_, size_t allowed_count_, time_t interval_s_);
 
     LogSeriesLimiter & operator -> () { return *this; }
     bool is(Poco::Message::Priority priority) { return logger->is(priority); }
@@ -253,18 +253,18 @@ public:
 
     void log(Poco::Message & message);
 
-    LoggerPtr getLogger() { return logger; }
+    Poco::Logger * getLogger() { return logger; }
 };
 
 /// This wrapper is useful to save formatted message into a String before sending it to a logger
 class LogToStrImpl
 {
     String & out_str;
-    LoggerPtr logger;
+    Poco::Logger * logger;
     std::unique_ptr<LogFrequencyLimiterIml> maybe_nested;
     bool propagate_to_actual_log = true;
 public:
-    LogToStrImpl(String & out_str_, LoggerPtr logger_) : out_str(out_str_), logger(std::move(logger_)) {}
+    LogToStrImpl(String & out_str_, Poco::Logger * logger_) : out_str(out_str_), logger(logger_) {}
     LogToStrImpl(String & out_str_, std::unique_ptr<LogFrequencyLimiterIml> && maybe_nested_)
         : out_str(out_str_), logger(maybe_nested_->getLogger()), maybe_nested(std::move(maybe_nested_)) {}
     LogToStrImpl & operator -> () { return *this; }

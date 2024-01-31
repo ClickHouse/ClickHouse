@@ -9,6 +9,7 @@
 #include <Poco/Timestamp.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Core/Defines.h>
+#include <Common/Exception.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <IO/copyData.h>
@@ -16,7 +17,6 @@
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/DiskType.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Common/ObjectStorageKey.h>
 #include <Disks/WriteMode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
@@ -35,7 +35,7 @@ using ObjectAttributes = std::map<std::string, std::string>;
 
 struct ObjectMetadata
 {
-    uint64_t size_bytes = 0;
+    uint64_t size_bytes;
     std::optional<Poco::Timestamp> last_modified;
     std::optional<ObjectAttributes> attributes;
 };
@@ -43,31 +43,16 @@ struct ObjectMetadata
 struct RelativePathWithMetadata
 {
     String relative_path;
-    ObjectMetadata metadata;
+    ObjectMetadata metadata{};
 
     RelativePathWithMetadata() = default;
 
-    RelativePathWithMetadata(String relative_path_, ObjectMetadata metadata_)
-        : relative_path(std::move(relative_path_))
-        , metadata(std::move(metadata_))
-    {}
-};
-
-struct ObjectKeyWithMetadata
-{
-    ObjectStorageKey key;
-    ObjectMetadata metadata;
-
-    ObjectKeyWithMetadata() = default;
-
-    ObjectKeyWithMetadata(ObjectStorageKey key_, ObjectMetadata metadata_)
-        : key(std::move(key_))
-        , metadata(std::move(metadata_))
+    RelativePathWithMetadata(const String & relative_path_, const ObjectMetadata & metadata_)
+        : relative_path(relative_path_), metadata(metadata_)
     {}
 };
 
 using RelativePathsWithMetadata = std::vector<RelativePathWithMetadata>;
-using ObjectKeysWithMetadata = std::vector<ObjectKeyWithMetadata>;
 
 class IObjectStorageIterator;
 using ObjectStorageIteratorPtr = std::shared_ptr<IObjectStorageIterator>;
@@ -80,13 +65,9 @@ class IObjectStorage
 public:
     IObjectStorage() = default;
 
+    virtual DataSourceDescription getDataSourceDescription() const = 0;
+
     virtual std::string getName() const = 0;
-
-    virtual ObjectStorageType getType() const = 0;
-
-    virtual std::string getCommonKeyPrefix() const = 0;
-
-    virtual std::string getDescription() const = 0;
 
     /// Object exists or not
     virtual bool exists(const StoredObject & object) const = 0;
@@ -150,8 +131,6 @@ public:
     virtual void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) = 0;
 
     /// Copy object to another instance of object storage
@@ -160,8 +139,6 @@ public:
     virtual void copyObjectToAnotherObjectStorage( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings,
         IObjectStorage & object_storage_to,
         std::optional<ObjectAttributes> object_to_attributes = {});
 
@@ -195,7 +172,7 @@ public:
 
     /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.
-    virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path) const = 0;
+    virtual std::string generateBlobNameForPath(const std::string & path);
 
     /// Get unique id for passed absolute path in object storage.
     virtual std::string getUniqueId(const std::string & path) const { return path; }
@@ -209,6 +186,10 @@ public:
     virtual bool isWriteOnce() const { return false; }
 
     virtual bool supportParallelWrite() const { return false; }
+
+    virtual ReadSettings getAdjustedSettingsFromMetadataFile(const ReadSettings & settings, const std::string & /* path */) const { return settings; }
+
+    virtual WriteSettings getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & /* path */) const { return settings; }
 
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
 

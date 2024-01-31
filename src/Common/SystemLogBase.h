@@ -27,12 +27,9 @@
     M(ZooKeeperLogElement) \
     M(ProcessorProfileLogElement) \
     M(TextLogElement) \
-    M(S3QueueLogElement) \
     M(FilesystemCacheLogElement) \
     M(FilesystemReadPrefetchesLogElement) \
-    M(AsynchronousInsertLogElement) \
-    M(BackupLogElement) \
-    M(BlobStorageLogElement)
+    M(AsynchronousInsertLogElement)
 
 namespace Poco
 {
@@ -121,7 +118,7 @@ private:
     /// Data shared between callers of add()/flush()/shutdown(), and the saving thread
     std::mutex mutex;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     // Queue is bounded. But its size is quite large to not block in all normal cases.
     std::vector<LogElement> queue;

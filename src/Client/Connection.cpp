@@ -35,7 +35,7 @@
 #include <pcg_random.hpp>
 #include <base/scope_guard.h>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 #include "config.h"
 
 #if USE_SSL
@@ -67,7 +67,6 @@ Connection::~Connection() = default;
 Connection::Connection(const String & host_, UInt16 port_,
     const String & default_database_,
     const String & user_, const String & password_,
-    const ssh::SSHKey & ssh_private_key_,
     const String & quota_key_,
     const String & cluster_,
     const String & cluster_secret_,
@@ -75,9 +74,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     Protocol::Compression compression_,
     Protocol::Secure secure_)
     : host(host_), port(port_), default_database(default_database_)
-    , user(user_), password(password_)
-    , ssh_private_key(ssh_private_key_)
-    , quota_key(quota_key_)
+    , user(user_), password(password_), quota_key(quota_key_)
     , cluster(cluster_)
     , cluster_secret(cluster_secret_)
     , client_name(client_name_)
@@ -192,7 +189,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         sendHello();
         receiveHello(timeouts.handshake_timeout);
-
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             sendAddendum();
 
@@ -259,17 +255,6 @@ void Connection::disconnect()
 }
 
 
-String Connection::packStringForSshSign(String challenge)
-{
-    String message;
-    message.append(std::to_string(DBMS_TCP_PROTOCOL_VERSION));
-    message.append(default_database);
-    message.append(user);
-    message.append(challenge);
-    return message;
-}
-
-
 void Connection::sendHello()
 {
     /** Disallow control characters in user controlled parameters
@@ -296,7 +281,7 @@ void Connection::sendHello()
                         "Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters");
 
     writeVarUInt(Protocol::Client::Hello, *out);
-    writeStringBinary(std::string(VERSION_NAME) + " " + client_name, *out);
+    writeStringBinary((VERSION_NAME " ") + client_name, *out);
     writeVarUInt(VERSION_MAJOR, *out);
     writeVarUInt(VERSION_MINOR, *out);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
@@ -306,7 +291,7 @@ void Connection::sendHello()
     /// (NOTE we do not check for DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET, since we cannot ignore inter-server secret if it was requested)
     if (!cluster_secret.empty())
     {
-        writeStringBinary(EncodedUserInfo::USER_INTERSERVER_MARKER, *out);
+        writeStringBinary(USER_INTERSERVER_MARKER, *out);
         writeStringBinary("" /* password */, *out);
 
 #if USE_SSL
@@ -316,16 +301,6 @@ void Connection::sendHello()
                         "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
 #endif
     }
-#if USE_SSH
-    /// Just inform server that we will authenticate using SSH keys.
-    else if (!ssh_private_key.isEmpty())
-    {
-        writeStringBinary(fmt::format("{}{}", EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER, user), *out);
-        writeStringBinary(password, *out);
-
-        performHandshakeForSSHAuth();
-    }
-#endif
     else
     {
         writeStringBinary(user, *out);
@@ -341,41 +316,6 @@ void Connection::sendAddendum()
     if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
         writeStringBinary(quota_key, *out);
     out->next();
-}
-
-
-void Connection::performHandshakeForSSHAuth()
-{
-#if USE_SSH
-    String challenge;
-    {
-        writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
-        out->next();
-        UInt64 packet_type = 0;
-        if (in->eof())
-            throw Poco::Net::NetException("Connection reset by peer");
-
-        readVarUInt(packet_type, *in);
-        if (packet_type == Protocol::Server::SSHChallenge)
-        {
-            readStringBinary(challenge, *in);
-        }
-        else if (packet_type == Protocol::Server::Exception)
-            receiveException()->rethrow();
-        else
-        {
-            /// Close connection, to not stay in unsynchronised state.
-            disconnect();
-            throwUnexpectedPacket(packet_type, "SSHChallenge or Exception");
-        }
-    }
-
-    writeVarUInt(Protocol::Client::SSHChallengeResponse, *out);
-    String to_sign = packStringForSshSign(challenge);
-    String signature = ssh_private_key.signString(to_sign);
-    writeStringBinary(signature, *out);
-    out->next();
-#endif
 }
 
 
@@ -651,13 +591,7 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        CompressionCodecFactory::instance().validateCodec(
-            method,
-            level,
-            !settings->allow_suspicious_codecs,
-            settings->allow_experimental_codecs,
-            settings->enable_deflate_qpl_codec,
-            settings->enable_zstd_qat_codec);
+        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs, settings->enable_deflate_qpl_codec);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
@@ -1079,8 +1013,8 @@ Packet Connection::receivePacket()
             case Protocol::Server::ReadTaskRequest:
                 return res;
 
-            case Protocol::Server::MergeTreeAllRangesAnnouncement:
-                res.announcement = receiveInitialParallelReadAnnouncement();
+            case Protocol::Server::MergeTreeAllRangesAnnounecement:
+                res.announcement = receiveInitialParallelReadAnnounecement();
                 return res;
 
             case Protocol::Server::MergeTreeReadTaskRequest:
@@ -1247,7 +1181,7 @@ ParallelReadRequest Connection::receiveParallelReadRequest() const
     return ParallelReadRequest::deserialize(*in);
 }
 
-InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement() const
+InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnounecement() const
 {
     return InitialAllRangesAnnouncement::deserialize(*in);
 }
@@ -1268,7 +1202,6 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         parameters.default_database,
         parameters.user,
         parameters.password,
-        parameters.ssh_private_key,
         parameters.quota_key,
         "", /* cluster */
         "", /* cluster_secret */

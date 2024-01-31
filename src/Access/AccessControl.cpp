@@ -24,11 +24,12 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/defines.h>
 #include <IO/Operators.h>
-#include <Common/re2.h>
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
+#include <re2/re2.h>
 #include <filesystem>
 #include <mutex>
+
 
 namespace DB
 {
@@ -47,7 +48,7 @@ namespace
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_path,
         const std::string & users_config_path,
-        LoggerPtr log)
+        Poco::Logger * log)
     {
         if (config.getBool("skip_check_for_incorrect_settings", false))
             return;
@@ -559,7 +560,7 @@ AccessChangesNotifier & AccessControl::getChangesNotifier()
 }
 
 
-AuthResult AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const
+UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const
 {
     try
     {

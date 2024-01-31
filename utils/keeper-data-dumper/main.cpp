@@ -31,7 +31,7 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
             ", czxid: " << value.stat.czxid <<
             ", mzxid: " << value.stat.mzxid <<
             ", numChildren: " << value.stat.numChildren <<
-            ", dataLength: " << value.getData().size() <<
+            ", dataLength: " << value.stat.dataLength <<
             "}" << std::endl;
         std::cout << "\tData: " << storage.container.getValue(key).getData() << std::endl;
 
@@ -74,9 +74,7 @@ int main(int argc, char *argv[])
     LOG_INFO(logger, "Last committed index: {}", last_commited_index);
 
     DB::KeeperLogStore changelog(
-        LogFileSettings{.force_sync = true, .compress_logs = settings->compress_logs, .rotate_interval = 10000000},
-        FlushSettings(),
-        keeper_context);
+        LogFileSettings{.force_sync = true, .compress_logs = settings->compress_logs, .rotate_interval = 10000000}, keeper_context);
     changelog.init(last_commited_index, 10000000000UL); /// collect all logs
     if (changelog.size() == 0)
         LOG_INFO(logger, "Changelog empty");

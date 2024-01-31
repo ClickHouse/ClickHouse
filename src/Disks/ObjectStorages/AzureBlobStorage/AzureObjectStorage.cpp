@@ -14,12 +14,11 @@
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
-
 namespace CurrentMetrics
 {
     extern const Metric ObjectStorageAzureThreads;
     extern const Metric ObjectStorageAzureThreadsActive;
-    extern const Metric ObjectStorageAzureThreadsScheduled;
+
 }
 
 namespace DB
@@ -46,7 +45,6 @@ public:
         : IObjectStorageIteratorAsync(
             CurrentMetrics::ObjectStorageAzureThreads,
             CurrentMetrics::ObjectStorageAzureThreadsActive,
-            CurrentMetrics::ObjectStorageAzureThreadsScheduled,
             "ListObjectAzure")
         , client(client_)
     {
@@ -96,13 +94,17 @@ AzureObjectStorage::AzureObjectStorage(
     : name(name_)
     , client(std::move(client_))
     , settings(std::move(settings_))
-    , log(getLogger("AzureObjectStorage"))
+    , log(&Poco::Logger::get("AzureObjectStorage"))
 {
+    data_source_description.type = DataSourceType::AzureBlobStorage;
+    data_source_description.description = client.get()->GetUrl();
+    data_source_description.is_cached = false;
+    data_source_description.is_encrypted = false;
 }
 
-ObjectStorageKey AzureObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
+std::string AzureObjectStorage::generateBlobNameForPath(const std::string & /* path */)
 {
-    return ObjectStorageKey::createAsRelative(getRandomASCIIString(32));
+    return getRandomASCIIString(32);
 }
 
 bool AzureObjectStorage::exists(const StoredObject & object) const
@@ -264,7 +266,6 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
         client.get(),
         object.remote_path,
         settings.get()->max_single_part_upload_size,
-        settings.get()->max_unexpected_write_error_retries,
         buf_size,
         patchSettings(write_settings));
 }
@@ -319,7 +320,18 @@ void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     auto client_ptr = client.get();
     for (const auto & object : objects)
     {
-        removeObjectIfExists(object);
+        try
+        {
+            auto delete_info = client_ptr->DeleteBlob(object.remote_path);
+        }
+        catch (const Azure::Storage::StorageException & e)
+        {
+            /// If object doesn't exist...
+            if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+                return;
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            throw;
+        }
     }
 
 }
@@ -345,8 +357,6 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) c
 void AzureObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
-    const ReadSettings &,
-    const WriteSettings &,
     std::optional<ObjectAttributes> object_to_attributes)
 {
     auto client_ptr = client.get();

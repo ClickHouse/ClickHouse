@@ -1,23 +1,34 @@
 # -*- coding: utf-8 -*-
+import hashlib
 import logging
 import re
 import shutil
 import time
 from multiprocessing.dummy import Pool
 from pathlib import Path
-from typing import Any, List, Union
+from typing import List, Union
 
 import boto3  # type: ignore
 import botocore  # type: ignore
-from compress_files import compress_file_fast
+
 from env_helper import (
-    CI,
-    RUNNER_TEMP,
-    S3_BUILDS_BUCKET,
-    S3_DOWNLOAD,
     S3_TEST_REPORTS_BUCKET,
+    S3_BUILDS_BUCKET,
+    RUNNER_TEMP,
+    CI,
     S3_URL,
+    S3_DOWNLOAD,
 )
+from compress_files import compress_file_fast
+
+
+def _md5(fname):
+    hash_md5 = hashlib.md5()
+    with open(fname, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    logging.debug("MD5 for %s is %s", fname, hash_md5.hexdigest())
+    return hash_md5.hexdigest()
 
 
 def _flatten_list(lst):
@@ -33,14 +44,11 @@ def _flatten_list(lst):
 class S3Helper:
     max_pool_size = 100
 
-    def __init__(self, client: Any = None, endpoint: str = S3_URL):
-        self.host = endpoint
-        if client is not None:
-            self.client = client
-            return
+    def __init__(self):
         config = botocore.config.Config(max_pool_connections=self.max_pool_size)
-        session = boto3.session.Session(region_name="us-east-1")
-        self.client = session.client("s3", endpoint_url=endpoint, config=config)
+        self.session = boto3.session.Session(region_name="us-east-1")
+        self.client = self.session.client("s3", endpoint_url=S3_URL, config=config)
+        self.host = S3_URL
 
     def _upload_file_to_s3(
         self, bucket_name: str, file_path: Path, s3_path: str
@@ -119,40 +127,6 @@ class S3Helper:
 
         return S3Helper.copy_file_to_local(S3_BUILDS_BUCKET, file_path, s3_path)
 
-    def upload_file(
-        self, bucket: str, file_path: Union[Path, str], s3_path: Union[Path, str]
-    ) -> str:
-        return self._upload_file_to_s3(bucket, Path(file_path), str(s3_path))
-
-    def download_file(
-        self, bucket: str, s3_path: str, local_file_path: Union[Path, str]
-    ) -> None:
-        if Path(local_file_path).is_dir():
-            local_file_path = Path(local_file_path) / s3_path.split("/")[-1]
-        try:
-            self.client.download_file(bucket, s3_path, local_file_path)
-        except botocore.exceptions.ClientError as e:
-            if e.response and e.response["ResponseMetadata"]["HTTPStatusCode"] == 404:
-                assert False, f"No such object [s3://{S3_BUILDS_BUCKET}/{s3_path}]"
-
-    def download_files(
-        self,
-        bucket: str,
-        s3_path: str,
-        file_suffix: str,
-        local_directory: Union[Path, str],
-    ) -> List[str]:
-        local_directory = Path(local_directory)
-        local_directory.mkdir(parents=True, exist_ok=True)
-        objects = self.list_prefix_non_recursive(s3_path)
-        res = []
-        for obj in objects:
-            if obj.endswith(file_suffix):
-                local_file_path = local_directory
-                self.download_file(bucket, obj, local_file_path)
-                res.append(obj.split("/")[-1])
-        return res
-
     def fast_parallel_upload_dir(
         self, dir_path: Path, s3_dir_path: str, bucket_name: str
     ) -> List[str]:
@@ -201,7 +175,6 @@ class S3Helper:
                     t = time.time()
             except Exception as ex:
                 logging.critical("Failed to upload file, expcetion %s", ex)
-                return ""
             return self.s3_url(bucket_name, s3_path)
 
         p = Pool(self.max_pool_size)
@@ -312,18 +285,6 @@ class S3Helper:
         if "Contents" in objects:
             for obj in objects["Contents"]:
                 result.append(obj["Key"])
-
-        return result
-
-    def list_prefix_non_recursive(
-        self, s3_prefix_path: str, bucket: str = S3_BUILDS_BUCKET
-    ) -> List[str]:
-        objects = self.client.list_objects_v2(Bucket=bucket, Prefix=s3_prefix_path)
-        result = []
-        if "Contents" in objects:
-            for obj in objects["Contents"]:
-                if "/" not in obj["Key"][len(s3_prefix_path) + 1 :]:
-                    result.append(obj["Key"])
 
         return result
 

@@ -19,17 +19,12 @@
 #include <memory>
 #include <utility>
 
-
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
 
 template <typename Point>
 class FunctionPolygonsEquals : public IFunction
@@ -108,10 +103,10 @@ public:
     }
 };
 
+
 template <>
 const char * FunctionPolygonsEquals<CartesianPoint>::name = "polygonsEqualsCartesian";
 
-}
 
 REGISTER_FUNCTION(PolygonsEquals)
 {

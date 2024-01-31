@@ -8,7 +8,6 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
 #include <Common/atomicRename.h>
-#include <Common/formatReadable.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/loadLocalDiskConfig.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -106,7 +105,7 @@ public:
             if (disk->reserved_bytes < size)
             {
                 disk->reserved_bytes = 0;
-                LOG_ERROR(getLogger("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
+                LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
             }
             else
             {
@@ -114,7 +113,7 @@ public:
             }
 
             if (disk->reservation_count == 0)
-                LOG_ERROR(getLogger("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
+                LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
             else
                 --disk->reservation_count;
         }
@@ -360,21 +359,21 @@ void DiskLocal::removeFile(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
     if (0 != unlink(fs_path.c_str()))
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, fs_path, "Cannot unlink file {}", fs_path);
+        throwFromErrnoWithPath("Cannot unlink file " + fs_path.string(), fs_path, ErrorCodes::CANNOT_UNLINK);
 }
 
 void DiskLocal::removeFileIfExists(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
     if (0 != unlink(fs_path.c_str()) && errno != ENOENT)
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, fs_path, "Cannot unlink file {}", fs_path);
+        throwFromErrnoWithPath("Cannot unlink file " + fs_path.string(), fs_path, ErrorCodes::CANNOT_UNLINK);
 }
 
 void DiskLocal::removeDirectory(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
     if (0 != rmdir(fs_path.c_str()))
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, fs_path, "Cannot remove directory {}", fs_path);
+        throwFromErrnoWithPath("Cannot rmdir " + fs_path.string(), fs_path, ErrorCodes::CANNOT_RMDIR);
 }
 
 void DiskLocal::removeRecursive(const String & path)
@@ -413,7 +412,7 @@ void DiskLocal::truncateFile(const String & path, size_t size)
 {
     int res = truncate((fs::path(disk_path) / path).string().data(), size);
     if (-1 == res)
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot truncate {}", path);
+        throwFromErrnoWithPath("Cannot truncate file " + path, path, ErrorCodes::CANNOT_TRUNCATE_FILE);
 }
 
 void DiskLocal::createFile(const String & path)
@@ -433,19 +432,12 @@ bool inline isSameDiskType(const IDisk & one, const IDisk & another)
     return typeid(one) == typeid(another);
 }
 
-void DiskLocal::copyDirectoryContent(
-    const String & from_dir,
-    const std::shared_ptr<IDisk> & to_disk,
-    const String & to_dir,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook)
+void DiskLocal::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
 {
-    /// If throttling was configured we cannot use copying directly.
-    if (isSameDiskType(*this, *to_disk) && !read_settings.local_throttler && !write_settings.local_throttler)
+    if (isSameDiskType(*this, *to_disk))
         fs::copy(fs::path(disk_path) / from_dir, fs::path(to_disk->getPath()) / to_dir, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
     else
-        IDisk::copyDirectoryContent(from_dir, to_disk, to_dir, read_settings, write_settings, cancellation_hook);
+        IDisk::copyDirectoryContent(from_dir, to_disk, to_dir);
 }
 
 SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
@@ -475,7 +467,7 @@ DiskLocal::DiskLocal(const String & name_, const String & path_, UInt64 keep_fre
     : IDisk(name_, config, config_prefix)
     , disk_path(path_)
     , keep_free_space_bytes(keep_free_space_bytes_)
-    , logger(getLogger("DiskLocal"))
+    , logger(&Poco::Logger::get("DiskLocal"))
     , data_source_description(getLocalDataSourceDescription(disk_path))
 {
 }
@@ -494,7 +486,7 @@ DiskLocal::DiskLocal(const String & name_, const String & path_)
     : IDisk(name_)
     , disk_path(path_)
     , keep_free_space_bytes(0)
-    , logger(getLogger("DiskLocal"))
+    , logger(&Poco::Logger::get("DiskLocal"))
     , data_source_description(getLocalDataSourceDescription(disk_path))
 {
 }
@@ -710,7 +702,7 @@ struct stat DiskLocal::stat(const String & path) const
     auto full_path = fs::path(disk_path) / path;
     if (::stat(full_path.string().c_str(), &st) == 0)
         return st;
-    DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot stat file: {}", path);
+    DB::throwFromErrnoWithPath("Cannot stat file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
 }
 
 void DiskLocal::chmod(const String & path, mode_t mode)
@@ -718,7 +710,7 @@ void DiskLocal::chmod(const String & path, mode_t mode)
     auto full_path = fs::path(disk_path) / path;
     if (::chmod(full_path.string().c_str(), mode) == 0)
         return;
-    DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot chmod file: {}", path);
+    DB::throwFromErrnoWithPath("Cannot chmod file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
 
 void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
@@ -728,8 +720,7 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         ContextPtr context,
-        const DisksMap & map,
-        bool, bool) -> DiskPtr
+        const DisksMap & map) -> DiskPtr
     {
         String path;
         UInt64 keep_free_space_bytes;

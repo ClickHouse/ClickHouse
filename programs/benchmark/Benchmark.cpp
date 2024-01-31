@@ -4,7 +4,6 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
-#include <optional>
 #include <random>
 #include <string_view>
 #include <pcg_random.hpp>
@@ -29,12 +28,11 @@
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
-#include <Common/Config/ConfigProcessor.h>
-#include <Common/Config/getClientConfigPath.h>
+#include <Common/Config/configReadClient.h>
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ErrorCodes.h>
+#include <filesystem>
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -45,7 +43,6 @@ namespace CurrentMetrics
 {
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
-    extern const Metric LocalThreadScheduled;
 }
 
 namespace DB
@@ -107,7 +104,7 @@ public:
         settings(settings_),
         shared_context(Context::createShared()),
         global_context(Context::createGlobal(shared_context.get())),
-        pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, concurrency)
+        pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, concurrency)
     {
         const auto secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
         size_t connections_cnt = std::max(ports_.size(), hosts_.size());
@@ -159,17 +156,7 @@ public:
         if (home_path_cstr)
             home_path = home_path_cstr;
 
-        std::optional<std::string> config_path;
-        if (config().has("config-file"))
-            config_path.emplace(config().getString("config-file"));
-        else
-            config_path = getClientConfigPath(home_path);
-        if (config_path.has_value())
-        {
-            ConfigProcessor config_processor(*config_path);
-            auto loaded_config = config_processor.loadConfig();
-            config().add(loaded_config.configuration);
-        }
+        configReadClient(config(), home_path);
     }
 
     int main(const std::vector<std::string> &) override
@@ -404,7 +391,7 @@ private:
             || sigaddset(&sig_set, SIGINT)
             || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
         {
-            throw ErrnoException(ErrorCodes::CANNOT_BLOCK_SIGNAL, "Cannot block signal");
+            throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
         }
 
         while (true)

@@ -469,7 +469,7 @@ void BaseSettings<TTraits>::write(WriteBuffer & out, SettingsWriteFormat format)
 {
     const auto & accessor = Traits::Accessor::instance();
 
-    for (const auto & field : *this)
+    for (auto field : *this)
     {
         bool is_custom = field.isCustom();
         bool is_important = !is_custom && accessor.isImportant(field.index);
