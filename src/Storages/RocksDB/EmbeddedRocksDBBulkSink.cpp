@@ -41,6 +41,7 @@ static const IColumn::Permutation & getAscendingPermutation(const IColumn & colu
     return perm;
 }
 
+/// Build SST file from key-value pairs
 static rocksdb::Status buildSSTFile(const String & path, const ColumnString & keys, const ColumnString & values, const std::optional<IColumn::Permutation> & perm_ = {})
 {
     /// rocksdb::SstFileWriter requires keys to be sorted in ascending order
@@ -80,7 +81,10 @@ EmbeddedRocksDBBulkSink::EmbeddedRocksDBBulkSink(
             break;
         ++primary_key_pos;
     }
+
     serializations = getHeader().getSerializations();
+    min_block_size_rows = std::max(storage.getSettings().bulk_insert_block_size, getContext()->getSettingsRef().min_insert_block_size_rows);
+
     /// If max_insert_threads > 1 we may have multiple EmbeddedRocksDBBulkSink and getContext()->getCurrentQueryId() is not guarantee to
     /// to have a distinct path. Also we cannot use query id as directory name here, because it could be defined by user and not suitable
     /// for directory name
@@ -95,16 +99,59 @@ EmbeddedRocksDBBulkSink::~EmbeddedRocksDBBulkSink()
         fs::remove_all(insert_directory_queue);
 }
 
-void EmbeddedRocksDBBulkSink::consume(Chunk chunk)
+std::vector<Chunk> EmbeddedRocksDBBulkSink::squash(Chunk chunk)
 {
-    auto rows = chunk.getNumRows();
+    /// End of input stream
+    if (chunk.getNumRows() == 0)
+    {
+        if (chunks.empty())
+            return {};
+        std::vector<Chunk> to_return;
+        std::swap(to_return, chunks);
+        return to_return;
+    }
 
-    if (rows == 0) /// TODO: squashing if rows are too small
-        return;
+    /// Just read block is already enough.
+    if (isEnoughSize(chunk))
+    {
+        /// If no accumulated data, return just read block.
+        if (chunks.empty())
+        {
+            chunks.emplace_back(std::move(chunk));
+            return {};
+        }
 
-    const auto columns = chunk.detachColumns();
+        /// Return accumulated data (maybe it has small size) and place new block to accumulated data.
+        std::vector<Chunk> to_return;
+        std::swap(to_return, chunks);
+        chunks.emplace_back(std::move(chunk));
+        return to_return;
+    }
 
-    /// Convert chunk to rocksdb key-value pairs
+    /// Accumulated block is already enough.
+    if (isEnoughSize(chunks))
+    {
+        /// Return accumulated data and place new block to accumulated data.
+        std::vector<Chunk> to_return;
+        std::swap(to_return, chunks);
+        chunks.emplace_back(std::move(chunk));
+        return to_return;
+    }
+
+    chunks.emplace_back(std::move(chunk));
+    if (isEnoughSize(chunks))
+    {
+        std::vector<Chunk> to_return;
+        std::swap(to_return, chunks);
+        return to_return;
+    }
+
+    /// Squashed block is not ready.
+    return {};
+}
+
+std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::serializeChunks(const std::vector<Chunk> & input_chunks) const
+{
     auto serialized_key_column = ColumnString::create();
     auto serialized_value_column = ColumnString::create();
 
@@ -113,27 +160,39 @@ void EmbeddedRocksDBBulkSink::consume(Chunk chunk)
         auto & serialized_key_offsets = serialized_key_column->getOffsets();
         auto & serialized_value_data = serialized_value_column->getChars();
         auto & serialized_value_offsets = serialized_value_column->getOffsets();
-
-        serialized_key_offsets.reserve(rows);
-        serialized_value_offsets.reserve(rows);
         WriteBufferFromVector<ColumnString::Chars> writer_key(serialized_key_data);
         WriteBufferFromVector<ColumnString::Chars> writer_value(serialized_value_data);
 
-        for (size_t i = 0; i < rows; ++i)
+        for (const auto & chunk : input_chunks)
         {
-            for (size_t idx = 0; idx < columns.size(); ++idx)
-                serializations[idx]->serializeBinary(*columns[idx], i, idx == primary_key_pos ? writer_key : writer_value, {});
-            writeChar('\0', writer_key);
-            writeChar('\0', writer_value);
-            serialized_key_offsets.emplace_back(writer_key.count());
-            serialized_value_offsets.emplace_back(writer_value.count());
+            const auto & columns = chunk.getColumns();
+            auto rows = chunk.getNumRows();
+            for (size_t i = 0; i < rows; ++i)
+            {
+                for (size_t idx = 0; idx < columns.size(); ++idx)
+                    serializations[idx]->serializeBinary(*columns[idx], i, idx == primary_key_pos ? writer_key : writer_value, {});
+                writeChar('\0', writer_key);
+                writeChar('\0', writer_value);
+                serialized_key_offsets.emplace_back(writer_key.count());
+                serialized_value_offsets.emplace_back(writer_value.count());
+            }
         }
 
         writer_key.finalize();
         writer_value.finalize();
     }
 
-    /// Build SST file from key-value pairs
+    return {std::move(serialized_key_column), std::move(serialized_value_column)};
+}
+
+void EmbeddedRocksDBBulkSink::consume(Chunk chunk_)
+{
+    std::vector<Chunk> to_written = squash(std::move(chunk_));
+
+    if (to_written.empty())
+        return;
+
+    auto [serialized_key_column, serialized_value_column] = serializeChunks(to_written);
     auto path = getTemporarySSTFilePath();
     if (auto status = buildSSTFile(path, *serialized_key_column, *serialized_value_column); !status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
@@ -148,9 +207,29 @@ void EmbeddedRocksDBBulkSink::consume(Chunk chunk)
         fs::remove(path);
 }
 
+void EmbeddedRocksDBBulkSink::onFinish()
+{
+    /// If there is any data left, write it.
+    if (!chunks.empty())
+        consume({});
+}
+
+
 String EmbeddedRocksDBBulkSink::getTemporarySSTFilePath()
 {
     return fs::path(insert_directory_queue) / (toString(file_counter++) + ".sst");
 }
 
+bool EmbeddedRocksDBBulkSink::isEnoughSize(const std::vector<Chunk> & input_chunks) const
+{
+    size_t total_rows = 0;
+    for (const auto & chunk : input_chunks)
+        total_rows += chunk.getNumRows();
+    return total_rows >= min_block_size_rows;
+}
+
+bool EmbeddedRocksDBBulkSink::isEnoughSize(const Chunk & chunk) const
+{
+    return chunk.getNumRows() >= min_block_size_rows;
+}
 }

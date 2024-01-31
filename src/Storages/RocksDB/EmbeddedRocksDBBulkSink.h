@@ -9,7 +9,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadPool.h>
 #include <Columns/ColumnString.h>
-#include <IO/WriteBufferFromVector.h>
+#include <Processors/Chunk.h>
 
 
 namespace DB
@@ -35,17 +35,32 @@ public:
 
     void consume(Chunk chunk) override;
 
+    void onFinish() override;
+
     String getName() const override { return "EmbeddedRocksDBBulkSink"; }
 
 private:
     /// Get a unique path to write temporary SST file
     String getTemporarySSTFilePath();
 
-    std::atomic_size_t file_counter = 0;
+    /// Squash chunks to a minimum size
+    std::vector<Chunk> squash(Chunk chunk);
+    bool isEnoughSize(const std::vector<Chunk> & input_chunks) const;
+    bool isEnoughSize(const Chunk & chunk) const;
+    /// Serialize chunks to rocksdb key-value pairs
+    std::pair<ColumnString::Ptr, ColumnString::Ptr> serializeChunks(const std::vector<Chunk> & input_chunks) const;
+
     StorageEmbeddedRocksDB & storage;
     StorageMetadataPtr metadata_snapshot;
     size_t primary_key_pos = 0;
     Serializations serializations;
+
+    /// For squashing chunks
+    std::vector<Chunk> chunks;
+    size_t min_block_size_rows = 0;
+
+    /// For writing SST files
+    std::atomic_size_t file_counter = 0;
     String insert_directory_queue;
 };
 
