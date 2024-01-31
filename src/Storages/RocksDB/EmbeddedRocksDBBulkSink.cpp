@@ -200,17 +200,17 @@ void EmbeddedRocksDBBulkSink::consume(Chunk chunk_)
 
     auto [serialized_key_column, serialized_value_column] = serializeChunks(to_written);
     auto sst_file_path = getTemporarySSTFilePath();
-    if (auto status = buildSSTFile(path, *serialized_key_column, *serialized_value_column); !status.ok())
+    if (auto status = buildSSTFile(sst_file_path, *serialized_key_column, *serialized_value_column); !status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 
     /// Ingest the SST file
     rocksdb::IngestExternalFileOptions ingest_options;
     ingest_options.move_files = true; /// The temporary file is on the same disk, so move (or hardlink) file will be faster than copy
-    if (auto status = storage.rocksdb_ptr->IngestExternalFile({path}, ingest_options); !status.ok())
+    if (auto status = storage.rocksdb_ptr->IngestExternalFile({sst_file_path}, ingest_options); !status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 
-    if (fs::exists(path))
-        fs::remove(path);
+    if (fs::exists(sst_file_path))
+        fs::remove(sst_file_path);
 }
 
 void EmbeddedRocksDBBulkSink::onFinish()
@@ -219,7 +219,6 @@ void EmbeddedRocksDBBulkSink::onFinish()
     if (!chunks.empty())
         consume({});
 }
-
 
 String EmbeddedRocksDBBulkSink::getTemporarySSTFilePath()
 {

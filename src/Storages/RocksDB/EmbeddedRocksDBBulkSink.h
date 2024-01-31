@@ -14,6 +14,7 @@
 
 namespace DB
 {
+namespace fs = std::filesystem;
 
 class StorageEmbeddedRocksDB;
 class EmbeddedRocksDBBulkSink;

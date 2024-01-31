@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <Common/MultiVersion.h>
 #include <Common/SharedMutex.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <rocksdb/status.h>
@@ -37,7 +38,7 @@ public:
         const StorageInMemoryMetadata & metadata,
         LoadingStrictnessLevel mode,
         ContextPtr context_,
-        RocksDBSettings settings_,
+        std::unique_ptr<RocksDBSettings> settings_,
         const String & primary_key_,
         Int32 ttl_ = 0,
         String rocksdb_dir_ = "",
@@ -63,6 +64,7 @@ public:
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
     void mutate(const MutationCommands &, ContextPtr) override;
     void drop() override;
+    void alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder &) override;
 
     bool optimize(
         const ASTPtr & query,
@@ -103,12 +105,16 @@ public:
 
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
-    const RocksDBSettings & getSettings() const { return settings; }
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const override;
 
-    void setSettings(RocksDBSettings settings_) { settings = std::move(settings_); }
+    const RocksDBSettings & getSettings() const { return *storage_settings.get(); }
+
+    void setSettings(std::unique_ptr<RocksDBSettings> && settings_) { storage_settings.set(std::move(settings_)); }
 
 private:
-    RocksDBSettings settings;
+    SinkToStoragePtr getSink(ContextPtr context, const StorageMetadataPtr & metadata_snapshot);
+
+    MultiVersion<RocksDBSettings> storage_settings;
     const String primary_key;
     using RocksDBPtr = std::unique_ptr<rocksdb::DB>;
     RocksDBPtr rocksdb_ptr;

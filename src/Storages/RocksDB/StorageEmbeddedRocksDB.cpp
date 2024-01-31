@@ -27,6 +27,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/RocksDB/RocksDBSettings.h>
 #include <IO/SharedThreadPools.h>
 #include <Disks/DiskLocal.h>
@@ -179,7 +180,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         const StorageInMemoryMetadata & metadata_,
         LoadingStrictnessLevel mode,
         ContextPtr context_,
-        RocksDBSettings settings_,
+        std::unique_ptr<RocksDBSettings> settings_,
         const String & primary_key_,
         Int32 ttl_,
         String rocksdb_dir_,
@@ -629,8 +630,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB must require one column in primary key");
     }
-    RocksDBSettings settings;
-    settings.loadFromQuery(*args.storage_def, args.getContext());
+    auto settings = std::make_unique<RocksDBSettings>();
+    settings->loadFromQuery(*args.storage_def, args.getContext());
+    if (args.storage_def->settings)
+        metadata.settings_changes = args.storage_def->settings->ptr();
+    else
+    {
+        /// A workaround because embedded rocksdb doesn't have default immutable settings
+        /// But InterpreterAlterQuery requires settings_changes to be set to run ALTER MODIFY
+        /// SETTING queries. So we just add a setting with its default value.
+        auto settings_changes = std::make_shared<ASTSetQuery>();
+        settings_changes->is_standalone = false;
+        settings_changes->changes.insertSetting("optimize_for_bulk_insert", settings->optimize_for_bulk_insert.value);
+        metadata.settings_changes = settings_changes;
+    }
     return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.mode, args.getContext(), std::move(settings), primary_key_names[0], ttl, std::move(rocksdb_dir), read_only);
 }
 
@@ -746,6 +759,22 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(const Settings & /*sett
     return estimated_bytes;
 }
 
+void StorageEmbeddedRocksDB::alter(
+    const AlterCommands & params,
+    ContextPtr query_context,
+    AlterLockHolder & holder)
+{
+    IStorage::alter(params, query_context, holder);
+    auto new_metadata = getInMemoryMetadataPtr();
+    if (new_metadata->settings_changes)
+    {
+        const auto & settings_changes = new_metadata->settings_changes->as<const ASTSetQuery &>();
+        auto new_settings = std::make_unique<RocksDBSettings>();
+        new_settings->applyChanges(settings_changes.changes);
+        setSettings(std::move(new_settings));
+    }
+}
+
 void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
@@ -757,4 +786,12 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 
     factory.registerStorage("EmbeddedRocksDB", create, features);
 }
+
+void StorageEmbeddedRocksDB::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const
+{
+    for (const auto & command : commands)
+        if (!command.isCommentAlter() && !command.isSettingsAlter())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
+}
+
 }
