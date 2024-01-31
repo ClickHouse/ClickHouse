@@ -181,7 +181,20 @@ PoolWithFailoverBase<TNestedPool>::getShuffledPools(
     std::vector<ShuffledPool> shuffled_pools;
     shuffled_pools.reserve(nested_pools.size());
     for (size_t i = 0; i < nested_pools.size(); ++i)
+    {
+        const PoolState & state = pool_states[i];
+        LOG_DEBUG(
+            &Poco::Logger::get(__PRETTY_FUNCTION__),
+            "ShuffledPool: address={} pool_state=({},{},{},{},{})",
+            nested_pools[i].get()->getAddress(),
+            state.error_count,
+            state.slowdown_count,
+            state.config_priority,
+            state.priority,
+            state.random);
+
         shuffled_pools.push_back(ShuffledPool{nested_pools[i].get(), &pool_states[i], i, /* error_count = */ 0, /* slowdown_count = */ 0});
+    }
 
     ::sort(
         shuffled_pools.begin(), shuffled_pools.end(),
