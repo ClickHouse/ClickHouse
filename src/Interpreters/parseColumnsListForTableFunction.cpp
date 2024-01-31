@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeMap.h>
 
 
@@ -95,6 +96,11 @@ void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings
     {
         validateDataType(map_type->getKeyType(), settings);
         validateDataType(map_type->getValueType(), settings);
+    }
+    else if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
+    {
+        for (const auto & variant : variant_type->getVariants())
+            validateDataType(variant, settings);
     }
 }
 

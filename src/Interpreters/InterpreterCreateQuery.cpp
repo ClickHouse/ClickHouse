@@ -50,6 +50,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/GinFilter.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <Access/Common/AccessRightsElement.h>
 
@@ -910,66 +911,13 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
     const auto & settings = getContext()->getSettingsRef();
 
-    /// Check low cardinality types in creating table if it was not allowed in setting
-    if (!create.attach && !settings.allow_suspicious_low_cardinality_types && !create.is_materialized_view)
+    /// If it's not attach and not materialized view to existing table,
+    /// we need to validate data types (check for experimental or suspicious types).
+    if (!create.attach && !create.is_materialized_view)
     {
+        DataTypeValidationSettings validation_settings(settings);
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
-        {
-            if (const auto * current_type_ptr = typeid_cast<const DataTypeLowCardinality *>(name_and_type_pair.type.get()))
-            {
-                if (!isStringOrFixedString(*removeNullable(current_type_ptr->getDictionaryType())))
-                    throw Exception(ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY,
-                                    "Creating columns of type {} is prohibited by default "
-                                    "due to expected negative impact on performance. "
-                                    "It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting.",
-                                    current_type_ptr->getName());
-            }
-        }
-    }
-
-    if (!create.attach && !settings.allow_experimental_object_type)
-    {
-        for (const auto & [name, type] : properties.columns.getAllPhysical())
-        {
-            if (type->hasDynamicSubcolumns())
-            {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create table with column '{}' which type is '{}' "
-                    "because experimental Object type is not allowed. "
-                    "Set setting allow_experimental_object_type = 1 in order to allow it",
-                    name, type->getName());
-            }
-        }
-    }
-    if (!create.attach && !settings.allow_suspicious_fixed_string_types)
-    {
-        for (const auto & [name, type] : properties.columns.getAllPhysical())
-        {
-            auto basic_type = removeLowCardinalityAndNullable(type);
-            if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(basic_type.get()))
-            {
-                if (fixed_string->getN() > MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS)
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                        "Cannot create table with column '{}' which type is '{}' "
-                        "because fixed string with size > {} is suspicious. "
-                        "Set setting allow_suspicious_fixed_string_types = 1 in order to allow it",
-                        name, type->getName(), MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
-            }
-        }
-    }
-    if (!create.attach && !settings.allow_experimental_variant_type)
-    {
-        for (const auto & [name, type] : properties.columns.getAllPhysical())
-        {
-            if (isVariant(type))
-            {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                        "Cannot create table with column '{}' which type is '{}' "
-                        "because experimental Variant type is not allowed. "
-                        "Set setting allow_experimental_variant_type = 1 in order to allow it",
-                        name, type->getName());
-            }
-        }
+            validateDataType(name_and_type_pair.type, validation_settings);
     }
 }
 
