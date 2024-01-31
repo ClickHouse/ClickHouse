@@ -6,7 +6,7 @@ sidebar_label: Time Series
 
 # Time Series Functions
 
-Below functions are used for time series analysis.
+Below functions are used for series data analysis.
 
 ## seriesOutliersDetectTukey
 
@@ -16,16 +16,27 @@ Detects a possible anomaly in series using [Tukey Fences](https://en.wikipedia.o
 
 ``` sql
 seriesOutliersDetectTukey(series);
+seriesOutliersDetectTukey(series, kind, min_percentile, max_percentile, K);
 ```
 
 **Arguments**
 
-- `series` - An array of numeric values
+- `series` - An array of numeric values.
+- `kind` - Kind of algorithm to use. Supported values are 'tukey' for standard tukey and 'ctukey' for custom tukey algorithm. The default is 'ctukey'.
+- `min_percentile` - The minimum percentile to be used to calculate inter-quantile range(IQR). The value must be in range [2,98]. The default is 10. This value is only supported for 'ctukey'.
+- `max_percentile` - The maximum percentile to be used to calculate inter-quantile range(IQR). The value must be in range [2,98]. The default is 90. This value is only supported for 'ctukey'.
+- `K` - Non-negative constant value to detect mild or stronger outliers. The default value is 1.5
+
+At least four data points are required in `series` to detect outliers.
+
+Default quantile range:
+- `tukey` - 25%/75%
+- `ctukey` - 10%/90%
 
 **Returned value**
 
-- Returns an array of the same length where each value represents a modified Z-score of possible anomaly of corresponding element in the series.
-- A value greater than 3 or lesser than -3 indicates a possible anomaly.
+- Returns an array of the same length where each value represents score of possible anomaly of corresponding element in the series.
+- A non-zero score indicates a possible anomaly.
 
 Type: [Array](../../sql-reference/data-types/array.md).
 
@@ -34,34 +45,34 @@ Type: [Array](../../sql-reference/data-types/array.md).
 Query:
 
 ``` sql
-seriesOutliersDetectTukey([-3,2.4,15,3.9,5,6,4.5,5.2,3,4,5,16,7,5,5,4]) AS print_0;
+SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4, 5, 12, 45, 12, 3, 3, 4, 5, 6]) AS print_0;
 ```
 
 Result:
 
 ``` text
-┌───────────print_0──────────────────────────────────────────────────────────────────┐
-│[-2.7121212121212137,0,4.196969696969699,0,0,0,0,0,0,0,0,4.803030303030305,0,0,0,0] │
-└────────────────────────────────────────────────────────────────────────────────────┘
+┌───────────print_0───────────────────┐
+│[0,0,0,0,0,0,0,0,0,10.5,0,0,0,0,0,0] │
+└─────────────────────────────────────┘
 ```
 
 Query:
 
 ``` sql
-seriesOutliersDetectTukey(arrayMap(x -> sin(x / 10), range(30))) AS print_0;
+SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4.50, 5, 12, 45, 12, 3.40, 3, 4, 5, 6], 'ctukey', 20, 80, 1.5) AS print_0;
 ```
 
 Result:
 
 ``` text
-┌───────────print_0────────────────────────────────────────────┐
-│[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] │
-└──────────────────────────────────────────────────────────────┘
+┌─print_0────────────────────────────┐
+│ [0,0,0,0,0,0,0,0,0,12,0,0,0,0,0,0] │
+└────────────────────────────────────┘
 ```
 
 ## seriesPeriodDetectFFT
 
-Finds the period of the given time series data using FFT
+Finds the period of the given series data data using FFT
 FFT - [Fast Fourier transform](https://en.wikipedia.org/wiki/Fast_Fourier_transform)
 
 **Syntax**
@@ -76,7 +87,7 @@ seriesPeriodDetectFFT(series);
 
 **Returned value**
 
-- A real value equal to the period of time series
+- A real value equal to the period of series data
 - Returns NAN when number of data points are less than four.
 
 Type: [Float64](../../sql-reference/data-types/float.md).
@@ -111,7 +122,7 @@ Result:
 
 ## seriesDecomposeSTL
 
-Decomposes a time series using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component. 
+Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component. 
 
 **Syntax**
 
