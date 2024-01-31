@@ -87,7 +87,7 @@
     M(MarksLoaderThreads, "Number of threads in thread pool for loading marks.") \
     M(MarksLoaderThreadsActive, "Number of threads in the thread pool for loading marks running a task.") \
     M(MarksLoaderThreadsScheduled, "Number of queued or active jobs in the thread pool for loading marks.") \
-    M(IOPrefetchThreads, "Number of threads in the IO prefertch thread pool.") \
+    M(IOPrefetchThreads, "Number of threads in the IO prefetch thread pool.") \
     M(IOPrefetchThreadsActive, "Number of threads in the IO prefetch thread pool running a task.") \
     M(IOPrefetchThreadsScheduled, "Number of queued or active jobs in the IO prefetch thread pool.") \
     M(IOWriterThreads, "Number of threads in the IO writer thread pool.") \

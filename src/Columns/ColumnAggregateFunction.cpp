@@ -337,7 +337,7 @@ ColumnPtr ColumnAggregateFunction::indexImpl(const PaddedPODArray<Type> & indexe
     assert(limit <= indexes.size());
     auto res = createView();
 
-    res->data.resize(limit);
+    res->data.resize_exact(limit);
     for (size_t i = 0; i < limit; ++i)
         res->data[i] = data[indexes[i]];
 
@@ -626,7 +626,7 @@ void ColumnAggregateFunction::getPermutation(PermutationSortDirection /*directio
                                             size_t /*limit*/, int /*nan_direction_hint*/, IColumn::Permutation & res) const
 {
     size_t s = data.size();
-    res.resize(s);
+    res.resize_exact(s);
     iota(res.data(), s, IColumn::Permutation::value_type(0));
 }
 
