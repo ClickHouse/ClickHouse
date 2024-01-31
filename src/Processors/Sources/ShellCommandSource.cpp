@@ -3,7 +3,6 @@
 #include <poll.h>
 
 #include <Common/Stopwatch.h>
-#include <Common/logger_useful.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -13,7 +12,6 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Interpreters/Context.h>
-#include <boost/circular_buffer.hpp>
 
 
 namespace DB
@@ -23,10 +21,10 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
-    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
     extern const int CANNOT_FCNTL;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int CANNOT_POLL;
+    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
 }
 
 static bool tryMakeFdNonBlocking(int fd)
@@ -44,7 +42,7 @@ static void makeFdNonBlocking(int fd)
 {
     bool result = tryMakeFdNonBlocking(fd);
     if (!result)
-        throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot set non-blocking mode of pipe");
+        throwFromErrno("Cannot set non-blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
 }
 
 static bool tryMakeFdBlocking(int fd)
@@ -63,22 +61,27 @@ static void makeFdBlocking(int fd)
 {
     bool result = tryMakeFdBlocking(fd);
     if (!result)
-        throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot set blocking mode of pipe");
+        throwFromErrno("Cannot set blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
 }
 
-static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_milliseconds)
+static bool pollFd(int fd, size_t timeout_milliseconds, int events)
 {
+    pollfd pfd;
+    pfd.fd = fd;
+    pfd.events = events;
+    pfd.revents = 0;
+
     int res;
 
     while (true)
     {
         Stopwatch watch;
-        res = poll(pfds, static_cast<nfds_t>(num), static_cast<int>(timeout_milliseconds));
+        res = poll(&pfd, 1, static_cast<int>(timeout_milliseconds));
 
         if (res < 0)
         {
             if (errno != EINTR)
-                throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot poll");
+                throwFromErrno("Cannot poll", ErrorCodes::CANNOT_POLL);
 
             const auto elapsed = watch.elapsedMilliseconds();
             if (timeout_milliseconds <= elapsed)
@@ -91,44 +94,17 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
         }
     }
 
-    return res;
-}
-
-static bool pollFd(int fd, size_t timeout_milliseconds, int events)
-{
-    pollfd pfd;
-    pfd.fd = fd;
-    pfd.events = events;
-    pfd.revents = 0;
-
-    return pollWithTimeout(&pfd, 1, timeout_milliseconds) > 0;
+    return res > 0;
 }
 
 class TimeoutReadBufferFromFileDescriptor : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
-    explicit TimeoutReadBufferFromFileDescriptor(
-        int stdout_fd_,
-        int stderr_fd_,
-        size_t timeout_milliseconds_,
-        ExternalCommandStderrReaction stderr_reaction_)
-        : stdout_fd(stdout_fd_)
-        , stderr_fd(stderr_fd_)
+    explicit TimeoutReadBufferFromFileDescriptor(int fd_, size_t timeout_milliseconds_)
+        : fd(fd_)
         , timeout_milliseconds(timeout_milliseconds_)
-        , stderr_reaction(stderr_reaction_)
     {
-        makeFdNonBlocking(stdout_fd);
-        makeFdNonBlocking(stderr_fd);
-
-        pfds[0].fd = stdout_fd;
-        pfds[0].events = POLLIN;
-        pfds[1].fd = stderr_fd;
-        pfds[1].events = POLLIN;
-
-        if (stderr_reaction == ExternalCommandStderrReaction::NONE)
-            num_pfds = 1;
-        else
-            num_pfds = 2;
+        makeFdNonBlocking(fd);
     }
 
     bool nextImpl() override
@@ -137,54 +113,19 @@ public:
 
         while (!bytes_read)
         {
-            pfds[0].revents = 0;
-            pfds[1].revents = 0;
-            size_t num_events = pollWithTimeout(pfds, num_pfds, timeout_milliseconds);
-            if (0 == num_events)
+            if (!pollFd(fd, timeout_milliseconds, POLLIN))
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe read timeout exceeded {} milliseconds", timeout_milliseconds);
 
-            bool has_stdout = pfds[0].revents > 0;
-            bool has_stderr = pfds[1].revents > 0;
+            ssize_t res = ::read(fd, internal_buffer.begin(), internal_buffer.size());
 
-            if (has_stderr)
-            {
-                if (stderr_read_buf == nullptr)
-                    stderr_read_buf.reset(new char[BUFFER_SIZE]);
-                ssize_t res = ::read(stderr_fd, stderr_read_buf.get(), BUFFER_SIZE);
-                if (res > 0)
-                {
-                    std::string_view str(stderr_read_buf.get(), res);
-                    if (stderr_reaction == ExternalCommandStderrReaction::THROW)
-                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Executable generates stderr: {}", str);
-                    else if (stderr_reaction == ExternalCommandStderrReaction::LOG)
-                        LOG_WARNING(
-                            getLogger("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
-                    else if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST)
-                    {
-                        res = std::min(ssize_t(stderr_result_buf.reserve()), res);
-                        if (res > 0)
-                            stderr_result_buf.insert(stderr_result_buf.end(), str.begin(), str.begin() + res);
-                    }
-                    else if (stderr_reaction == ExternalCommandStderrReaction::LOG_LAST)
-                    {
-                        stderr_result_buf.insert(stderr_result_buf.end(), str.begin(), str.begin() + res);
-                    }
-                }
-            }
+            if (-1 == res && errno != EINTR)
+                throwFromErrno("Cannot read from pipe", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
 
-            if (has_stdout)
-            {
-                ssize_t res = ::read(stdout_fd, internal_buffer.begin(), internal_buffer.size());
+            if (res == 0)
+                break;
 
-                if (-1 == res && errno != EINTR)
-                    throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from pipe");
-
-                if (res == 0)
-                    break;
-
-                if (res > 0)
-                    bytes_read += res;
-            }
+            if (res > 0)
+                bytes_read += res;
         }
 
         if (bytes_read > 0)
@@ -202,46 +143,25 @@ public:
 
     void reset() const
     {
-        makeFdBlocking(stdout_fd);
-        makeFdBlocking(stderr_fd);
+        makeFdBlocking(fd);
     }
 
     ~TimeoutReadBufferFromFileDescriptor() override
     {
-        tryMakeFdBlocking(stdout_fd);
-        tryMakeFdBlocking(stderr_fd);
-
-        if (!stderr_result_buf.empty())
-        {
-            String stderr_result;
-            stderr_result.reserve(stderr_result_buf.size());
-            stderr_result.append(stderr_result_buf.begin(), stderr_result_buf.end());
-            LOG_WARNING(
-                getLogger("ShellCommandSource"),
-                "Executable generates stderr at the {}: {}",
-                stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST ? "beginning" : "end",
-                stderr_result);
-        }
+        tryMakeFdBlocking(fd);
     }
 
 private:
-    int stdout_fd;
-    int stderr_fd;
+    int fd;
     size_t timeout_milliseconds;
-    ExternalCommandStderrReaction stderr_reaction;
-
-    static constexpr size_t BUFFER_SIZE = 4_KiB;
-    pollfd pfds[2];
-    size_t num_pfds;
-    std::unique_ptr<char[]> stderr_read_buf;
-    boost::circular_buffer_space_optimized<char> stderr_result_buf{BUFFER_SIZE};
 };
 
 class TimeoutWriteBufferFromFileDescriptor : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     explicit TimeoutWriteBufferFromFileDescriptor(int fd_, size_t timeout_milliseconds_)
-        : fd(fd_), timeout_milliseconds(timeout_milliseconds_)
+        : fd(fd_)
+        , timeout_milliseconds(timeout_milliseconds_)
     {
         makeFdNonBlocking(fd);
     }
@@ -261,7 +181,7 @@ public:
             ssize_t res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
 
             if ((-1 == res || 0 == res) && errno != EINTR)
-                throw ErrnoException(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Cannot write into pipe");
+                throwFromErrno("Cannot write into pipe", ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
 
             if (res > 0)
                 bytes_written += res;
@@ -328,8 +248,6 @@ namespace
             ContextPtr context_,
             const std::string & format_,
             size_t command_read_timeout_milliseconds,
-            ExternalCommandStderrReaction stderr_reaction,
-            bool check_exit_code_,
             const Block & sample_block_,
             std::unique_ptr<ShellCommand> && command_,
             std::vector<SendDataTask> && send_data_tasks = {},
@@ -342,69 +260,51 @@ namespace
             , sample_block(sample_block_)
             , command(std::move(command_))
             , configuration(configuration_)
-            , timeout_command_out(command->out.getFD(), command->err.getFD(), command_read_timeout_milliseconds, stderr_reaction)
+            , timeout_command_out(command->out.getFD(), command_read_timeout_milliseconds)
             , command_holder(std::move(command_holder_))
             , process_pool(process_pool_)
-            , check_exit_code(check_exit_code_)
         {
-            try
+            for (auto && send_data_task : send_data_tasks)
             {
-                for (auto && send_data_task : send_data_tasks)
+                send_data_threads.emplace_back([task = std::move(send_data_task), this]()
                 {
-                    send_data_threads.emplace_back([task = std::move(send_data_task), this]() mutable
+                    try
                     {
-                        try
-                        {
-                            task();
-                        }
-                        catch (...)
-                        {
-                            std::lock_guard lock(send_data_lock);
-                            exception_during_send_data = std::current_exception();
-
-                            /// task should be reset inside catch block or else it breaks d'tor
-                            /// invariants such as in ~WriteBuffer.
-                            task = {};
-                        }
-                    });
-                }
-                size_t max_block_size = configuration.max_block_size;
-
-                if (configuration.read_fixed_number_of_rows)
-                {
-                    /** Currently parallel parsing input format cannot read exactly max_block_size rows from input,
-                    * so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
-                    */
-                    auto context_for_reading = Context::createCopy(context);
-                    context_for_reading->setSetting("input_format_parallel_parsing", false);
-                    context = context_for_reading;
-
-                    if (configuration.read_number_of_rows_from_process_output)
-                    {
-                        /// Initialize executor in generate
-                        return;
+                        task();
                     }
+                    catch (...)
+                    {
+                        std::lock_guard lock(send_data_lock);
+                        exception_during_send_data = std::current_exception();
+                    }
+                });
+            }
 
-                    max_block_size = configuration.number_of_rows_to_read;
+            size_t max_block_size = configuration.max_block_size;
+
+            if (configuration.read_fixed_number_of_rows)
+            {
+                /** Currently parallel parsing input format cannot read exactly max_block_size rows from input,
+                  * so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
+                  */
+                auto context_for_reading = Context::createCopy(context);
+                context_for_reading->setSetting("input_format_parallel_parsing", false);
+                context = context_for_reading;
+
+                if (configuration.read_number_of_rows_from_process_output)
+                {
+                    /// Initialize executor in generate
+                    return;
                 }
 
-                pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, sample_block, max_block_size)));
-                executor = std::make_unique<PullingPipelineExecutor>(pipeline);
+                max_block_size = configuration.number_of_rows_to_read;
             }
-            catch (...)
-            {
-                cleanup();
-                throw;
-            }
+
+            pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, sample_block, max_block_size)));
+            executor = std::make_unique<PullingPipelineExecutor>(pipeline);
         }
 
         ~ShellCommandSource() override
-        {
-            cleanup();
-        }
-
-    protected:
-        void cleanup()
         {
             for (auto & thread : send_data_threads)
                 if (thread.joinable())
@@ -423,6 +323,8 @@ namespace
                 process_pool->returnObject(std::move(command_holder));
             }
         }
+
+    protected:
 
         Chunk generate() override
         {
@@ -473,21 +375,6 @@ namespace
                     if (thread.joinable())
                         thread.join();
 
-                if (check_exit_code)
-                {
-                    if (process_pool)
-                    {
-                        bool valid_command
-                            = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
-
-                        // We can only wait for pooled commands when they are invalid.
-                        if (!valid_command)
-                            command->wait();
-                    }
-                    else
-                        command->wait();
-                }
-
                 rethrowExceptionDuringSendDataIfNeeded();
             }
 
@@ -521,8 +408,6 @@ namespace
 
         ShellCommandHolderPtr command_holder;
         std::shared_ptr<ProcessPool> process_pool;
-
-        bool check_exit_code = false;
 
         QueryPipeline pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
@@ -645,8 +530,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         }
 
         int write_buffer_fd = write_buffer->getFD();
-        auto timeout_write_buffer
-            = std::make_shared<TimeoutWriteBufferFromFileDescriptor>(write_buffer_fd, configuration.command_write_timeout_milliseconds);
+        auto timeout_write_buffer = std::make_shared<TimeoutWriteBufferFromFileDescriptor>(write_buffer_fd, configuration.command_write_timeout_milliseconds);
 
         input_pipes[i].resize(1);
 
@@ -666,11 +550,11 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             CompletedPipelineExecutor executor(*pipeline);
             executor.execute();
 
-            timeout_write_buffer->finalize();
-            timeout_write_buffer->reset();
-
             if (!is_executable_pool)
             {
+                timeout_write_buffer->next();
+                timeout_write_buffer->reset();
+
                 write_buffer->close();
             }
         };
@@ -682,8 +566,6 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         context,
         configuration.format,
         configuration.command_read_timeout_milliseconds,
-        configuration.stderr_reaction,
-        configuration.check_exit_code,
         std::move(sample_block),
         std::move(process),
         std::move(tasks),

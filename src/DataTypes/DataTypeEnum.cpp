@@ -36,6 +36,7 @@ const char * DataTypeEnum<Type>::getFamilyName() const
     return EnumName<FieldType>::value;
 }
 
+
 template <typename Type>
 std::string DataTypeEnum<Type>::generateName(const Values & values)
 {
@@ -170,7 +171,7 @@ bool DataTypeEnum<Type>::contains(const IDataType & rhs) const
 template <typename Type>
 SerializationPtr DataTypeEnum<Type>::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationEnum<Type>>(std::static_pointer_cast<const DataTypeEnum<Type>>(shared_from_this()));
+    return std::make_shared<SerializationEnum<Type>>(this->getValues());
 }
 
 

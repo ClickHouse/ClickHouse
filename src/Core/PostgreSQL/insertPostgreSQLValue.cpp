@@ -24,7 +24,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -37,7 +36,7 @@ void insertDefaultPostgreSQLValue(IColumn & column, const IColumn & sample_colum
 void insertPostgreSQLValue(
         IColumn & column, std::string_view value,
         const ExternalResultDescription::ValueType type, const DataTypePtr data_type,
-        const std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t idx)
+        std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t idx)
 {
     switch (type)
     {
@@ -126,8 +125,8 @@ void insertPostgreSQLValue(
             pqxx::array_parser parser{value};
             std::pair<pqxx::array_parser::juncture, std::string> parsed = parser.get_next();
 
-            size_t dimension = 0, max_dimension = 0, expected_dimensions = array_info.at(idx).num_dimensions;
-            const auto parse_value = array_info.at(idx).pqxx_parser;
+            size_t dimension = 0, max_dimension = 0, expected_dimensions = array_info[idx].num_dimensions;
+            const auto parse_value = array_info[idx].pqxx_parser;
             std::vector<Row> dimensions(expected_dimensions + 1);
 
             while (parsed.first != pqxx::array_parser::juncture::done)
@@ -139,7 +138,7 @@ void insertPostgreSQLValue(
                     dimensions[dimension].emplace_back(parse_value(parsed.second));
 
                 else if (parsed.first == pqxx::array_parser::juncture::null_value)
-                    dimensions[dimension].emplace_back(array_info.at(idx).default_value);
+                    dimensions[dimension].emplace_back(array_info[idx].default_value);
 
                 else if (parsed.first == pqxx::array_parser::juncture::row_end)
                 {
@@ -163,8 +162,6 @@ void insertPostgreSQLValue(
             assert_cast<ColumnArray &>(column).insert(Array(dimensions[1].begin(), dimensions[1].end()));
             break;
         }
-        default:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported value type");
     }
 }
 
@@ -205,8 +202,6 @@ void preparePostgreSQLArrayInfo(
         parser = [](std::string & field) -> Field { return pqxx::from_string<float>(field); };
     else if (which.isFloat64())
         parser = [](std::string & field) -> Field { return pqxx::from_string<double>(field); };
-    else if (which.isUUID())
-        parser = [](std::string & field) -> Field { return parse<UUID>(field); };
     else if (which.isString() || which.isFixedString())
         parser = [](std::string & field) -> Field { return field; };
     else if (which.isDate())

@@ -9,7 +9,6 @@ RUN apt-get update \
         expect \
         file \
         lsof \
-        odbcinst \
         psmisc \
         python3 \
         python3-lxml \
@@ -18,11 +17,10 @@ RUN apt-get update \
         python3-termcolor \
         unixodbc \
         pv \
-        jq \
         zstd \
     --yes --no-install-recommends
 
-RUN pip3 install numpy==1.26.3 scipy==1.12.0 pandas==1.5.3 Jinja2==3.1.3
+RUN pip3 install numpy scipy pandas Jinja2
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
 
@@ -31,13 +29,9 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && cp /tmp/clickhouse-odbc-tmp/lib64/*.so /usr/local/lib/ \
   && odbcinst -i -d -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbcinst.ini.sample \
   && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
-  && rm -rf /tmp/clickhouse-odbc-tmp \
-  && mkdir -p /var/lib/clickhouse \
-  && chmod 777 /var/lib/clickhouse
+  && rm -rf /tmp/clickhouse-odbc-tmp
 
-# chmod 777 to make the container user independent
-
-ENV TZ=Europe/Amsterdam
+ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV COMMIT_SHA=''

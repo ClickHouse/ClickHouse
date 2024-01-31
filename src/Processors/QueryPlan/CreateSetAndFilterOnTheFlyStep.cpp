@@ -4,7 +4,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
-#include <Common/logger_useful.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Processors/IProcessor.h>
@@ -105,7 +104,7 @@ CreateSetAndFilterOnTheFlyStep::CreateSetAndFilterOnTheFlyStep(
     : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , column_names(column_names_)
     , max_rows_in_set(max_rows_in_set_)
-    , own_set(std::make_shared<SetWithState>(SizeLimits(max_rows_in_set, 0, OverflowMode::BREAK), 0, true))
+    , own_set(std::make_shared<SetWithState>(SizeLimits(max_rows_in_set, 0, OverflowMode::BREAK), false, true))
     , filtering_set(nullptr)
     , crosswise_connection(crosswise_connection_)
     , position(position_)
@@ -141,7 +140,7 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
         /// Add balancing transform
         auto idx = position == JoinTableSide::Left ? PingPongProcessor::First : PingPongProcessor::Second;
         auto stream_balancer = std::make_shared<ReadHeadBalancedProcessor>(input_header, num_ports, max_rows_in_set, idx);
-        stream_balancer->setDescription("Reads rows from two streams evenly");
+        stream_balancer->setDescription(getStepDescription());
 
         /// Regular inputs just bypass data for respective ports
         connectAllInputs(ports, stream_balancer->getInputs(), num_ports);
@@ -163,7 +162,7 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
         {
             auto & port = *output_it++;
             auto transform = std::make_shared<FilterBySetOnTheFlyTransform>(port.getHeader(), column_names, filtering_set);
-            transform->setDescription("Filter rows using other join table side's set");
+            transform->setDescription(this->getStepDescription());
             connect(port, transform->getInputPort());
             result_transforms.emplace_back(std::move(transform));
         }
@@ -201,9 +200,5 @@ void CreateSetAndFilterOnTheFlyStep::updateOutputStream()
     output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
 }
 
-bool CreateSetAndFilterOnTheFlyStep::isColumnPartOfSetKey(const String & column_name) const
-{
-    return std::find(column_names.begin(), column_names.end(), column_name) != column_names.end();
-}
 
 }

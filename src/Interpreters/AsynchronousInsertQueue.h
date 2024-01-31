@@ -1,16 +1,10 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Core/Settings.h>
 #include <Parsers/IAST_fwd.h>
-#include <Poco/Logger.h>
-#include <Common/CurrentThread.h>
-#include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ThreadPool.h>
-#include <Processors/Chunk.h>
-
+#include <Core/Settings.h>
+#include <Poco/Logger.h>
 #include <future>
-#include <variant>
 
 namespace DB
 {
@@ -22,7 +16,7 @@ class AsynchronousInsertQueue : public WithContext
 public:
     using Milliseconds = std::chrono::milliseconds;
 
-    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_);
+    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_);
     ~AsynchronousInsertQueue();
 
     struct PushResult
@@ -41,23 +35,9 @@ public:
         /// Read buffer that contains extracted
         /// from query data in case of too much data.
         std::unique_ptr<ReadBuffer> insert_data_buffer;
-
-        /// Block that contains received by Native
-        /// protocol data in case of too much data.
-        Block insert_block;
     };
 
-    enum class DataKind
-    {
-        Parsed = 0,
-        Preprocessed = 1,
-    };
-
-    /// Force flush the whole queue.
-    void flushAll();
-
-    PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
-    PushResult pushQueryWithBlock(ASTPtr query, Block block, ContextPtr query_context);
+    PushResult push(ASTPtr query, ContextPtr query_context);
     size_t getPoolSize() const { return pool_size; }
 
 private:
@@ -67,55 +47,16 @@ private:
     public:
         ASTPtr query;
         String query_str;
-        std::optional<UUID> user_id;
-        std::vector<UUID> current_roles;
         Settings settings;
-
-        DataKind data_kind;
         UInt128 hash;
 
-        InsertQuery(
-            const ASTPtr & query_,
-            const std::optional<UUID> & user_id_,
-            const std::vector<UUID> & current_roles_,
-            const Settings & settings_,
-            DataKind data_kind_);
-
-        InsertQuery(const InsertQuery & other) { *this = other; }
+        InsertQuery(const ASTPtr & query_, const Settings & settings_);
+        InsertQuery(const InsertQuery & other);
         InsertQuery & operator=(const InsertQuery & other);
         bool operator==(const InsertQuery & other) const;
 
     private:
-        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, setting_changes); }
-
-        std::vector<SettingChange> setting_changes;
-    };
-
-    struct DataChunk : public std::variant<String, Block>
-    {
-        using std::variant<String, Block>::variant;
-
-        size_t byteSize() const
-        {
-            return std::visit([]<typename T>(const T & arg)
-            {
-                if constexpr (std::is_same_v<T, Block>)
-                    return arg.bytes();
-                else
-                    return arg.size();
-            }, *this);
-        }
-
-        DataKind getDataKind() const
-        {
-            if (std::holds_alternative<Block>(*this))
-                return DataKind::Preprocessed;
-            else
-                return DataKind::Parsed;
-        }
-
-        const String * asString() const { return std::get_if<String>(this); }
-        const Block * asBlock() const { return std::get_if<Block>(this); }
+        UInt128 calculateHash() const;
     };
 
     struct InsertData
@@ -123,19 +64,11 @@ private:
         struct Entry
         {
         public:
-            DataChunk chunk;
+            const String bytes;
             const String query_id;
-            const String async_dedup_token;
-            const String format;
-            MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
 
-            Entry(
-                DataChunk && chunk_,
-                String && query_id_,
-                const String & async_dedup_token_,
-                const String & format_,
-                MemoryTracker * user_memory_tracker_);
+            Entry(String && bytes_, String && query_id_);
 
             void finish(std::exception_ptr exception_ = nullptr);
             std::future<void> getFuture() { return promise.get_future(); }
@@ -146,23 +79,12 @@ private:
             std::atomic_bool finished = false;
         };
 
-        ~InsertData()
-        {
-            auto it = entries.begin();
-            // Entries must be destroyed in context of user who runs async insert.
-            // Each entry in the list may correspond to a different user,
-            // so we need to switch current thread's MemoryTracker parent on each iteration.
-            while (it != entries.end())
-            {
-                MemoryTrackerSwitcher switcher((*it)->user_memory_tracker);
-                it = entries.erase(it);
-            }
-        }
-
         using EntryPtr = std::shared_ptr<Entry>;
 
         std::list<EntryPtr> entries;
+
         size_t size_in_bytes = 0;
+        size_t query_number = 0;
     };
 
     using InsertDataPtr = std::unique_ptr<InsertData>;
@@ -190,8 +112,6 @@ private:
     };
 
     const size_t pool_size;
-    const bool flush_on_shutdown;
-
     std::vector<QueueShard> queue_shards;
 
     /// Logic and events behind queue are as follows:
@@ -203,10 +123,6 @@ private:
     /// (async_insert_max_data_size setting). If so, then again we dump the data.
 
     std::atomic<bool> shutdown{false};
-    std::atomic<bool> flush_stopped{false};
-
-    /// A mutex that prevents concurrent forced flushes of queue.
-    mutable std::mutex flush_mutex;
 
     /// Dump the data only inside this pool.
     ThreadPool pool;
@@ -214,32 +130,12 @@ private:
     /// Uses async_insert_busy_timeout_ms and processBatchDeadlines()
     std::vector<ThreadFromGlobalPool> dump_by_first_update_threads;
 
-    LoggerPtr log = getLogger("AsynchronousInsertQueue");
-
-    PushResult pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context);
-    void preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context);
+    Poco::Logger * log = &Poco::Logger::get("AsynchronousInsertQueue");
 
     void processBatchDeadlines(size_t shard_num);
     void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
 
     static void processData(InsertQuery key, InsertDataPtr data, ContextPtr global_context);
-
-    template <typename LogFunc>
-    static Chunk processEntriesWithParsing(
-        const InsertQuery & key,
-        const std::list<InsertData::EntryPtr> & entries,
-        const Block & header,
-        const ContextPtr & insert_context,
-        const LoggerPtr logger,
-        LogFunc && add_to_async_insert_log);
-
-    template <typename LogFunc>
-    static Chunk processPreprocessedEntries(
-        const InsertQuery & key,
-        const std::list<InsertData::EntryPtr> & entries,
-        const Block & header,
-        const ContextPtr & insert_context,
-        LogFunc && add_to_async_insert_log);
 
     template <typename E>
     static void finishWithException(const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception);

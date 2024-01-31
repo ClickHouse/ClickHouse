@@ -73,7 +73,7 @@ void StorageExternalDistributed::read(
     if (plans.empty())
     {
         auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
     }
 
     if (plans.size() == 1)
@@ -170,7 +170,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                     POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
                     settings.postgresql_connection_pool_auto_close_connection);
                 shards.insert(std::make_shared<StoragePostgreSQL>(
-                    args.table_id, std::move(pool), configuration.table, args.columns, args.constraints, String{}, context));
+                                  args.table_id, std::move(pool), configuration.table, args.columns, args.constraints, String{}));
             }
         }
 #endif

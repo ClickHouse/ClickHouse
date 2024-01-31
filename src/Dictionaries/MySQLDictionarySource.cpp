@@ -71,7 +71,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
         MySQLSettings mysql_settings;
 
         std::optional<MySQLDictionarySource::Configuration> dictionary_configuration;
-        auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, global_context) : nullptr;
+        auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix) : nullptr;
         if (named_collection)
         {
             auto allowed_arguments{dictionary_allowed_keys};
@@ -173,7 +173,7 @@ MySQLDictionarySource::MySQLDictionarySource(
     mysqlxx::PoolWithFailoverPtr pool_,
     const Block & sample_block_,
     const StreamSettings & settings_)
-    : log(getLogger("MySQLDictionarySource"))
+    : log(&Poco::Logger::get("MySQLDictionarySource"))
     , update_time(std::chrono::system_clock::from_time_t(0))
     , dict_struct(dict_struct_)
     , configuration(configuration_)
@@ -187,7 +187,7 @@ MySQLDictionarySource::MySQLDictionarySource(
 
 /// copy-constructor is provided in order to support cloneability
 MySQLDictionarySource::MySQLDictionarySource(const MySQLDictionarySource & other)
-    : log(getLogger("MySQLDictionarySource"))
+    : log(&Poco::Logger::get("MySQLDictionarySource"))
     , update_time(other.update_time)
     , dict_struct(other.dict_struct)
     , configuration(other.configuration)

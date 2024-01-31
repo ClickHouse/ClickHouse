@@ -7,14 +7,12 @@
 #include <DataTypes/IDataType.h>
 #include <Core/Names.h>
 #include <Core/Types.h>
+#include <Processors/QueryPlan/FilterStep.h>
 
 namespace DB
 {
 
 class ASTFunction;
-
-class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 struct WindowFunctionDescription
 {

@@ -229,23 +229,23 @@ void parseMatchNode(UInt64 parent_id, UInt64 & id, const YAML::Node & node, Resu
     {
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Yaml match rule must contain key {}", key_name);
     }
-    for (const auto & [key, node_] : match)
+    for (const auto & [key, node] : match)
     {
         if (key == key_name)
         {
-            if (!node_.IsScalar())
+            if (!node.IsScalar())
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "`{}` should be a String", key_name);
 
-            attributes_to_insert.reg_exp = node_.as<String>();
+            attributes_to_insert.reg_exp = node.as<String>();
         }
         else if (structure.hasAttribute(key))
         {
             attributes_to_insert.keys.push_back(key);
-            attributes_to_insert.values.push_back(node_.as<String>());
+            attributes_to_insert.values.push_back(node.as<String>());
         }
-        else if (node_.IsSequence())
+        else if (node.IsSequence())
         {
-            parseMatchList(attributes_to_insert.id, id, node_, result, key_name, structure);
+            parseMatchList(attributes_to_insert.id, id, node, result, key_name, structure);
         }
         /// unknown attributes.
     }
@@ -284,7 +284,7 @@ Block parseYAMLAsRegExpTree(const YAML::Node & node, const String & key_name, co
 
 YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(
     const String & filepath_, const DictionaryStructure & dict_struct, ContextPtr context_, bool created_from_ddl)
-    : filepath(filepath_), structure(dict_struct), context(context_), logger(getLogger(kYAMLRegExpTreeDictionarySource))
+    : filepath(filepath_), structure(dict_struct), context(context_), logger(&Poco::Logger::get(kYAMLRegExpTreeDictionarySource))
 {
     key_name = (*structure.key)[0].name;
 

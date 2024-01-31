@@ -2,7 +2,6 @@
 
 #include <Common/NamePrompter.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
@@ -15,6 +14,8 @@ namespace DB
 {
 
 class Context;
+class ASTCreateQuery;
+class ASTStorage;
 struct StorageID;
 
 
@@ -22,7 +23,7 @@ struct StorageID;
   * In 'columns' Nested data structures must be flattened.
   * You should subsequently call IStorage::startup method to work with table.
   */
-class StorageFactory : private boost::noncopyable, public IHints<>
+class StorageFactory : private boost::noncopyable, public IHints<1, StorageFactory>
 {
 public:
 
@@ -31,7 +32,6 @@ public:
     struct Arguments
     {
         const String & engine_name;
-        /// Mutable to allow replacing constant expressions with literals, and other transformations.
         ASTs & engine_args;
         ASTStorage * storage_def;
         const ASTCreateQuery & query;

@@ -21,8 +21,6 @@ using DatabasePtr = std::shared_ptr<IDatabase>;
 class AccessRestorerFromBackup;
 struct IAccessEntity;
 using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
-class QueryStatus;
-using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
 
 /// Restores the definition of databases and tables and prepares tasks to restore the data of the tables.
@@ -76,10 +74,9 @@ private:
     std::shared_ptr<IRestoreCoordination> restore_coordination;
     BackupPtr backup;
     ContextMutablePtr context;
-    QueryStatusPtr process_list_element;
     std::chrono::milliseconds on_cluster_first_sync_timeout;
     std::chrono::milliseconds create_table_timeout;
-    LoggerPtr log;
+    Poco::Logger * log;
 
     Strings all_hosts;
     DDLRenamingMap renaming_map;
@@ -98,8 +95,6 @@ private:
     void createDatabase(const String & database_name) const;
     void checkDatabase(const String & database_name);
 
-    void applyCustomStoragePolicy(ASTPtr query_ptr);
-
     void removeUnresolvedDependencies();
     void createTables();
     void createTable(const QualifiedTableName & table_name);
@@ -109,9 +104,6 @@ private:
     DataRestoreTasks getDataRestoreTasks();
 
     void setStage(const String & new_stage, const String & message = "");
-
-    /// Throws an exception if the RESTORE query was cancelled.
-    void checkIsQueryCancelled() const;
 
     struct DatabaseInfo
     {

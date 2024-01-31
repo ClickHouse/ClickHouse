@@ -2,10 +2,7 @@
 
 #if USE_AWS_S3
 
-#include <Core/SettingsEnums.h>
-#include <Common/logger_useful.h>
 #include <aws/core/utils/logging/LogLevel.h>
-#include <Poco/Logger.h>
 
 namespace
 {
@@ -41,7 +38,7 @@ AWSLogger::AWSLogger(bool enable_s3_requests_logging_)
     : enable_s3_requests_logging(enable_s3_requests_logging_)
 {
     for (auto [tag, name] : S3_LOGGER_TAG_NAMES)
-        tag_loggers[tag] = getLogger(name);
+        tag_loggers[tag] = &Poco::Logger::get(name);
 
     default_logger = tag_loggers[S3_LOGGER_TAG_NAMES[0][0]];
 }

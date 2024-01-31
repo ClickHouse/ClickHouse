@@ -11,6 +11,13 @@ RUN apt-get update -y \
         npm \
     && apt-get clean
 
-COPY create.sql /
+COPY s3downloader /s3downloader
+
+ENV S3_URL="https://clickhouse-datasets.s3.amazonaws.com"
+ENV DATASETS="hits visits"
+
+RUN npm install -g azurite
+RUN npm install tslib
+
 COPY run.sh /
 CMD ["/bin/bash", "/run.sh"]

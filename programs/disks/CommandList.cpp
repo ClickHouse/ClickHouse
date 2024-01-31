@@ -17,10 +17,11 @@ public:
     {
         command_name = "list";
         command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
-        description = "List files at path[s]";
+        description = "List files (the default disk is used by default)\nPath should be in format './' or './path' or 'path'";
         usage = "list [OPTION]... <PATH>...";
         command_option_description->add_options()
-            ("recursive", "recursively list all directories");
+            ("recursive", "recursively list all directories")
+            ;
     }
 
     void processOptions(
@@ -33,7 +34,7 @@ public:
 
     void execute(
         const std::vector<String> & command_arguments,
-        std::shared_ptr<DiskSelector> & disk_selector,
+        DB::ContextMutablePtr & global_context,
         Poco::Util::LayeredConfiguration & config) override
     {
         if (command_arguments.size() != 1)
@@ -46,7 +47,7 @@ public:
 
         const String & path =  command_arguments[0];
 
-        DiskPtr disk = disk_selector->get(disk_name);
+        DiskPtr disk = global_context->getDisk(disk_name);
 
         String relative_path = validatePathAndGetAsRelative(path);
 

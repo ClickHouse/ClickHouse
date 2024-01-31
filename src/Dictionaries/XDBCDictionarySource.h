@@ -76,7 +76,7 @@ private:
 
     QueryPipeline loadFromQuery(const Poco::URI & url, const Block & required_sample_block, const std::string & query) const;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;

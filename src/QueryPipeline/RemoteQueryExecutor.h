@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <Common/TimerDescriptor.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <sys/types.h>
 
 
@@ -28,8 +29,6 @@ using ProfileInfoCallback = std::function<void(const ProfileInfo & info)>;
 
 class RemoteQueryExecutorReadContext;
 
-class ParallelReplicasReadingCoordinator;
-
 /// This is the same type as StorageS3Source::IteratorWrapper
 using TaskIterator = std::function<String()>;
 
@@ -47,10 +46,9 @@ public:
     /// decide whether to deny or to accept that request.
     struct Extension
     {
-        std::shared_ptr<TaskIterator> task_iterator = nullptr;
-        std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator = nullptr;
-        std::optional<IConnections::ReplicaInfo> replica_info = {};
-        GetPriorityForLoadBalancing::Func priority_func;
+        std::shared_ptr<TaskIterator> task_iterator;
+        std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator;
+        std::optional<IConnections::ReplicaInfo> replica_info;
     };
 
     /// Takes already set connection.
@@ -77,15 +75,9 @@ public:
     /// Takes a pool and gets one or several connections from it.
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
-        const String & query_,
-        const Block & header_,
-        ContextPtr context_,
-        const ThrottlerPtr & throttler = nullptr,
-        const Scalars & scalars_ = Scalars(),
-        const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-        std::optional<Extension> extension_ = std::nullopt,
-        GetPriorityForLoadBalancing::Func priority_func = {});
+        const String & query_, const Block & header_, ContextPtr context_,
+        const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
 
     ~RemoteQueryExecutor();
 
@@ -96,14 +88,10 @@ public:
     ///                     (for which this code was written in general).
     ///                     But clickhouse-benchmark uses the same code,
     ///                     and it should pass INITIAL_QUERY.
-    void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
-    void sendQueryUnlocked(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
-
-    int sendQueryAsync();
+    void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY);
 
     /// Query is resent to a replica, the query itself can be modified.
-    bool resent_query { false };
-    bool recreate_read_context { false };
+    std::atomic<bool> resent_query { false };
 
     struct ReadResult
     {
@@ -157,25 +145,26 @@ public:
     ReadResult read();
 
     /// Async variant of read. Returns ready block or file descriptor which may be used for polling.
-    ReadResult readAsync();
+    /// ReadContext is an internal read state. Pass empty ptr first time, reuse created one for every call.
+    ReadResult read(std::unique_ptr<ReadContext> & read_context);
 
     /// Receive all remain packets and finish query.
     /// It should be cancelled after read returned empty block.
-    void finish();
+    void finish(std::unique_ptr<ReadContext> * read_context = nullptr);
 
     /// Cancel query execution. Sends Cancel packet and ignore others.
     /// This method may be called from separate thread.
-    void cancel();
+    void cancel(std::unique_ptr<ReadContext> * read_context = nullptr);
 
     /// Get totals and extremes if any.
     Block getTotals() { return std::move(totals); }
     Block getExtremes() { return std::move(extremes); }
 
     /// Set callback for progress. It will be called on Progress packet.
-    void setProgressCallback(ProgressCallback callback);
+    void setProgressCallback(ProgressCallback callback) { progress_callback = std::move(callback); }
 
     /// Set callback for profile info. It will be called on ProfileInfo packet.
-    void setProfileInfoCallback(ProfileInfoCallback callback);
+    void setProfileInfoCallback(ProfileInfoCallback callback) { profile_info_callback = std::move(callback); }
 
     /// Set the query_id. For now, used by performance test to later find the query
     /// in the server query_log. Must be called before sending the query to the server.
@@ -186,34 +175,22 @@ public:
 
     void setMainTable(StorageID main_table_) { main_table = std::move(main_table_); }
 
-    void setLogger(LoggerPtr logger) { log = logger; }
+    void setLogger(Poco::Logger * logger) { log = logger; }
 
     const Block & getHeader() const { return header; }
 
-    IConnections & getConnections() { return *connections; }
-
-    bool needToSkipUnavailableShard() const { return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size()); }
-
-    bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
-
 private:
     RemoteQueryExecutor(
-        const String & query_,
-        const Block & header_,
-        ContextPtr context_,
-        const Scalars & scalars_,
-        const Tables & external_tables_,
-        QueryProcessingStage::Enum stage_,
-        std::optional<Extension> extension_,
-        GetPriorityForLoadBalancing::Func priority_func = {});
+        const String & query_, const Block & header_, ContextPtr context_,
+        const Scalars & scalars_, const Tables & external_tables_,
+        QueryProcessingStage::Enum stage_, std::optional<Extension> extension_);
 
     Block header;
     Block totals;
     Block extremes;
 
-    std::function<std::unique_ptr<IConnections>(AsyncCallback)> create_connections;
+    std::function<std::unique_ptr<IConnections>()> create_connections;
     std::unique_ptr<IConnections> connections;
-    std::unique_ptr<ReadContext> read_context;
 
     const String query;
     String query_id;
@@ -227,10 +204,10 @@ private:
     /// Temporary tables needed to be sent to remote servers
     Tables external_tables;
     QueryProcessingStage::Enum stage;
-
-    std::optional<Extension> extension;
     /// Initiator identifier for distributed task processing
     std::shared_ptr<TaskIterator> task_iterator;
+
+    std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator;
 
     /// This is needed only for parallel reading from replicas, because
     /// we create a RemoteQueryExecutor per replica and have to store additional info
@@ -243,49 +220,48 @@ private:
     std::mutex external_tables_mutex;
 
     /// Connections to replicas are established, but no queries are sent yet
-    bool established = false;
+    std::atomic<bool> established { false };
 
     /// Query is sent (used before getting first block)
-    bool sent_query { false };
+    std::atomic<bool> sent_query { false };
 
     /** All data from all replicas are received, before EndOfStream packet.
       * To prevent desynchronization, if not all data is read before object
       * destruction, it's required to send cancel query request to replicas and
       * read all packets before EndOfStream
       */
-    bool finished = false;
+    std::atomic<bool> finished { false };
 
     /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:
       * - data size is already satisfactory (when using LIMIT, for example)
       * - an exception was thrown from client side
       */
-    bool was_cancelled = false;
+    std::atomic<bool> was_cancelled { false };
     std::mutex was_cancelled_mutex;
 
     /** An exception from replica was received. No need in receiving more packets or
       * requesting to cancel query execution
       */
-    bool got_exception_from_replica = false;
+    std::atomic<bool> got_exception_from_replica { false };
 
     /** Unknown packet was received from replica. No need in receiving more packets or
       * requesting to cancel query execution
       */
-    bool got_unknown_packet_from_replica = false;
+    std::atomic<bool> got_unknown_packet_from_replica { false };
 
     /** Got duplicated uuids from replica
       */
-    bool got_duplicated_part_uuids = false;
+    std::atomic<bool> got_duplicated_part_uuids{ false };
 
     /// Parts uuids, collected from remote replicas
+    std::mutex duplicated_part_uuids_mutex;
     std::vector<UUID> duplicated_part_uuids;
 
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
 
-    LoggerPtr log = nullptr;
-
-    GetPriorityForLoadBalancing::Func priority_func;
+    Poco::Logger * log = nullptr;
 
     /// Send all scalars to remote servers
     void sendScalars();
@@ -300,15 +276,14 @@ private:
     void processReadTaskRequest();
 
     void processMergeTreeReadTaskRequest(ParallelReadRequest request);
-    void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);
+    void processMergeTreeInitialReadAnnounecement(InitialAllRangesAnnouncement announcement);
 
     /// Cancel query and restart it with info about duplicate UUIDs
     /// only for `allow_experimental_query_deduplication`.
-    ReadResult restartQueryWithoutDuplicatedUUIDs();
+    ReadResult restartQueryWithoutDuplicatedUUIDs(std::unique_ptr<ReadContext> * read_context = nullptr);
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
-    void cancelUnlocked();
-    void tryCancel(const char * reason);
+    void tryCancel(const char * reason, std::unique_ptr<ReadContext> * read_context);
 
     /// Returns true if query was sent
     bool isQueryPending() const;

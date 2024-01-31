@@ -18,7 +18,7 @@ namespace DB
 
 KafkaProducer::KafkaProducer(
     ProducerPtr producer_, const std::string & topic_, std::chrono::milliseconds poll_timeout, std::atomic<bool> & shutdown_called_, const Block & header)
-    : IMessageProducer(getLogger("KafkaProducer"))
+    : IMessageProducer(&Poco::Logger::get("KafkaProducer"))
     , producer(producer_)
     , topic(topic_)
     , timeout(poll_timeout)
@@ -27,7 +27,7 @@ KafkaProducer::KafkaProducer(
     if (header.has("_key"))
     {
         auto column_index = header.getPositionByName("_key");
-        const auto & column_info = header.getByPosition(column_index);
+        auto column_info = header.getByPosition(column_index);
         if (isString(column_info.type))
             key_column_index = column_index;
         // else ? (not sure it's a good place to report smth to user)
@@ -36,7 +36,7 @@ KafkaProducer::KafkaProducer(
     if (header.has("_timestamp"))
     {
         auto column_index = header.getPositionByName("_timestamp");
-        const auto & column_info = header.getByPosition(column_index);
+        auto column_info = header.getByPosition(column_index);
         if (isDateTime(column_info.type))
             timestamp_column_index = column_index;
     }
@@ -52,8 +52,8 @@ void KafkaProducer::produce(const String & message, size_t rows_in_message, cons
     if (key_column_index)
     {
         const auto & key_column = assert_cast<const ColumnString &>(*columns[key_column_index.value()]);
-        const auto key_data = key_column.getDataAt(last_row);
-        builder.key(cppkafka::Buffer(key_data.data, key_data.size));
+        const auto key_data = key_column.getDataAt(last_row).toString();
+        builder.key(cppkafka::Buffer(key_data.data(), key_data.size()));
     }
 
     if (timestamp_column_index)

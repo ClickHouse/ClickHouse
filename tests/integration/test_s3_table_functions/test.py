@@ -11,9 +11,6 @@ node = cluster.add_instance(
     main_configs=[
         "configs/config.d/minio.xml",
     ],
-    user_configs=[
-        "configs/users.d/users.xml",
-    ],
     with_minio=True,
 )
 
@@ -47,7 +44,7 @@ def test_s3_table_functions(started_cluster):
         """
             INSERT INTO FUNCTION s3
                 (
-                    nc_s3,
+                    nc_s3, 
                     filename = 'test_file.tsv.gz',
                     format = 'TSV',
                     structure = 'number UInt64',
@@ -63,7 +60,7 @@ def test_s3_table_functions(started_cluster):
             """
             SELECT count(*) FROM s3
             (
-                nc_s3,
+                nc_s3, 
                 filename = 'test_file.tsv.gz',
                 format = 'TSV',
                 structure = 'number UInt64',
@@ -88,7 +85,7 @@ def test_s3_table_functions_timeouts(started_cluster):
                 """
                 INSERT INTO FUNCTION s3
                     (
-                        nc_s3,
+                        nc_s3, 
                         filename = 'test_file.tsv.gz',
                         format = 'TSV',
                         structure = 'number UInt64',

@@ -7,7 +7,6 @@
 
 #include <base/argsToConfig.h>
 #include <base/safeExit.h>
-#include <base/scope_guard.h>
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Common/DateLUT.h>
@@ -15,6 +14,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
@@ -33,9 +33,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
-#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ASTDropQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -45,8 +43,6 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/PRQL/ParserPRQLQuery.h>
-#include <Parsers/Kusto/parseKQLQuery.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -69,16 +65,14 @@
 #include <Storages/ColumnsDescription.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
-#include <boost/algorithm/string/replace.hpp>
 #include <iostream>
 #include <filesystem>
-#include <limits>
 #include <map>
-#include <memory>
 #include <unordered_map>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 #include "config.h"
+
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -91,6 +85,14 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+static const NameSet exit_strings
+{
+    "exit", "quit", "logout", "учше", "йгше", "дщпщге",
+    "exit;", "quit;", "logout;", "учшеж", "йгшеж", "дщпщгеж",
+    "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
+};
+
 
 namespace ErrorCodes
 {
@@ -105,10 +107,6 @@ namespace ErrorCodes
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_OPEN_FILE;
-    extern const int FILE_ALREADY_EXISTS;
-    extern const int USER_SESSION_LIMIT_EXCEEDED;
-    extern const int NOT_IMPLEMENTED;
-    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
 }
 
 }
@@ -236,7 +234,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 
             dst_array_current_time[dst_row] = src_array_current_time[src_row];
 
-            switch (static_cast<ProfileEvents::Type>(dst_array_type[dst_row]))
+            switch (dst_array_type[dst_row])
             {
                 case ProfileEvents::Type::INCREMENT:
                     dst_array_value[dst_row] += src_array_value[src_row];
@@ -284,7 +282,7 @@ public:
     static Int32 cancelled_status() { return exit_after_signals.load(); }
 };
 
-/// This signal handler is set for SIGINT and SIGQUIT.
+/// This signal handler is set only for SIGINT.
 void interruptSignalHandler(int signum)
 {
     if (QueryInterruptHandler::try_stop())
@@ -318,14 +316,11 @@ void ClientBase::setupSignalHandler()
     sigemptyset(&new_act.sa_mask);
 #else
     if (sigemptyset(&new_act.sa_mask))
-        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
+        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 #endif
 
     if (sigaction(SIGINT, &new_act, nullptr))
-        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
-
-    if (sigaction(SIGQUIT, &new_act, nullptr))
-        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
+        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 }
 
 
@@ -344,18 +339,13 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
 
     if (dialect == Dialect::kusto)
         parser = std::make_unique<ParserKQLStatement>(end, global_context->getSettings().allow_settings_after_format_in_insert);
-    else if (dialect == Dialect::prql)
-        parser = std::make_unique<ParserPRQLQuery>(max_length, settings.max_parser_depth);
     else
         parser = std::make_unique<ParserQuery>(end, global_context->getSettings().allow_settings_after_format_in_insert);
 
     if (is_interactive || ignore_error)
     {
         String message;
-        if (dialect == Dialect::kusto)
-            res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
-        else
-            res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
         if (!res)
         {
@@ -365,10 +355,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     }
     else
     {
-        if (dialect == Dialect::kusto)
-            res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
-        else
-            res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
     }
 
     if (is_interactive)
@@ -376,7 +363,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
         std::cout << std::endl;
         WriteBufferFromOStream res_buf(std::cout, 4096);
         formatAST(*res, res_buf);
-        res_buf.finalize();
+        res_buf.next();
         std::cout << std::endl << std::endl;
     }
 
@@ -540,19 +527,11 @@ try
         }
 
         WriteBuffer * out_buf = nullptr;
+        String pager = config().getString("pager", "");
         if (!pager.empty())
         {
             if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
-                throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
-            /// We need to reset signals that had been installed in the
-            /// setupSignalHandler() since terminal will send signals to both
-            /// processes and so signals will be delivered to the
-            /// clickhouse-client/local as well, which will be terminated when
-            /// signal will be delivered second time.
-            if (SIG_ERR == signal(SIGINT, SIG_IGN))
-                throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGINT");
-            if (SIG_ERR == signal(SIGQUIT, SIG_IGN))
-                throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
+                throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
             ShellCommand::Config config(pager);
             config.pipe_stdin_only = true;
@@ -593,21 +572,19 @@ try
                 if (query_with_output->compression_level)
                 {
                     const auto & compression_level_node = query_with_output->compression_level->as<ASTLiteral &>();
-                    compression_level_node.value.tryGet<UInt64>(compression_level);
+                    bool res = compression_level_node.value.tryGet<UInt64>(compression_level);
+                    auto range = getCompressionLevelRange(compression_method);
+
+                    if (!res || compression_level < range.first || compression_level > range.second)
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid compression level, must be positive integer in range {}-{}",
+                            range.first,
+                            range.second);
                 }
 
-                auto flags = O_WRONLY | O_EXCL;
-
-                auto file_exists = fs::exists(out_file);
-                if (file_exists && query_with_output->is_outfile_append)
-                    flags |= O_APPEND;
-                else if (file_exists && query_with_output->is_outfile_truncate)
-                    flags |= O_TRUNC;
-                else
-                    flags |= O_CREAT;
-
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
-                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags),
+                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
                     compression_method,
                     static_cast<int>(compression_level)
                 );
@@ -698,31 +675,7 @@ void ClientBase::initLogsOutputStream()
     }
 }
 
-void ClientBase::adjustSettings()
-{
-    Settings settings = global_context->getSettings();
-
-    /// NOTE: Do not forget to set changed=false to avoid sending it to the server (to avoid breakage read only profiles)
-
-    /// In case of multi-query we allow data after semicolon since it will be
-    /// parsed by the client and interpreted as new query
-    if (is_multiquery && !global_context->getSettingsRef().input_format_values_allow_data_after_semicolon.changed)
-    {
-        settings.input_format_values_allow_data_after_semicolon = true;
-        settings.input_format_values_allow_data_after_semicolon.changed = false;
-    }
-
-    /// If pager is specified then output_format_pretty_max_rows is ignored, this should be handled by pager.
-    if (!pager.empty() && !global_context->getSettingsRef().output_format_pretty_max_rows.changed)
-    {
-        settings.output_format_pretty_max_rows = std::numeric_limits<UInt64>::max();
-        settings.output_format_pretty_max_rows.changed = false;
-    }
-
-    global_context->setSettings(settings);
-}
-
-void ClientBase::initTTYBuffer(ProgressOption progress)
+void ClientBase::initTtyBuffer(ProgressOption progress)
 {
     if (tty_buf)
         return;
@@ -888,9 +841,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
         visitor.visit(parsed_query);
 
         /// Get new query after substitutions.
-        if (visitor.getNumberOfReplacedParameters())
-            query = serializeAST(*parsed_query);
-        chassert(!query.empty());
+        query = serializeAST(*parsed_query);
     }
 
     if (allow_merge_tree_settings && parsed_query->as<ASTCreateQuery>())
@@ -906,67 +857,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             }
 
             query = serializeAST(*parsed_query);
-        }
-    }
-
-    // Run some local checks to make sure queries into output file will work before sending to server.
-    if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
-    {
-        String out_file;
-        if (query_with_output->out_file)
-        {
-            const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
-            out_file = out_file_node.value.safeGet<std::string>();
-
-            std::string compression_method_string;
-
-            if (query_with_output->compression)
-            {
-                const auto & compression_method_node = query_with_output->compression->as<ASTLiteral &>();
-                compression_method_string = compression_method_node.value.safeGet<std::string>();
-            }
-
-            CompressionMethod compression_method = chooseCompressionMethod(out_file, compression_method_string);
-            UInt64 compression_level = 3;
-
-            if (query_with_output->is_outfile_append && query_with_output->is_outfile_truncate)
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot use INTO OUTFILE with APPEND and TRUNCATE simultaneously.");
-            }
-
-            if (query_with_output->is_outfile_append && compression_method != CompressionMethod::None)
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot append to compressed file. Please use uncompressed file or remove APPEND keyword.");
-            }
-
-            if (query_with_output->compression_level)
-            {
-                const auto & compression_level_node = query_with_output->compression_level->as<ASTLiteral &>();
-                bool res = compression_level_node.value.tryGet<UInt64>(compression_level);
-                auto range = getCompressionLevelRange(compression_method);
-
-                if (!res || compression_level < range.first || compression_level > range.second)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Invalid compression level, must be positive integer in range {}-{}",
-                        range.first,
-                        range.second);
-            }
-
-            if (fs::exists(out_file))
-            {
-                if (!query_with_output->is_outfile_append && !query_with_output->is_outfile_truncate)
-                {
-                    throw Exception(
-                        ErrorCodes::FILE_ALREADY_EXISTS,
-                        "File {} exists, consider using APPEND or TRUNCATE.",
-                        out_file);
-                }
-            }
         }
     }
 
@@ -994,6 +884,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
             if (send_external_tables)
                 sendExternalTables(parsed_query);
+
             receiveResult(parsed_query, signals_before_stop, settings.partial_result_on_first_cancel);
 
             break;
@@ -1081,9 +972,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
         }
         catch (const LocalFormatError &)
         {
-            /// Remember the first exception.
-            if (!local_format_error)
-                local_format_error = std::current_exception();
+            local_format_error = std::current_exception();
             connection->sendCancel();
         }
     }
@@ -1147,10 +1036,6 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
             onProfileEvents(packet.block);
             return true;
 
-        case Protocol::Server::TimezoneUpdate:
-            onTimezoneUpdate(packet.server_timezone);
-            return true;
-
         default:
             throw Exception(
                 ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}", packet.type, connection->getDescription());
@@ -1173,11 +1058,6 @@ void ClientBase::onProgress(const Progress & value)
         progress_indication.writeProgress(*tty_buf);
 }
 
-void ClientBase::onTimezoneUpdate(const String & tz)
-{
-    global_context->setSetting("session_timezone", tz);
-}
-
 
 void ClientBase::onEndOfStream()
 {
@@ -1190,18 +1070,7 @@ void ClientBase::onEndOfStream()
         bool is_running = false;
         output_format->setStartTime(
             clock_gettime_ns(CLOCK_MONOTONIC) - static_cast<UInt64>(progress_indication.elapsedSeconds() * 1000000000), is_running);
-
-        try
-        {
-            output_format->finalize();
-        }
-        catch (...)
-        {
-            /// Format should be reset to make it work for subsequent query
-            /// (otherwise it will throw again in resetOutput())
-            output_format.reset();
-            throw;
-        }
+        output_format->finalize();
     }
 
     resetOutput();
@@ -1252,8 +1121,6 @@ void ClientBase::onProfileEvents(Block & block)
                 thread_times[host_name].system_ms = value;
             else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
                 thread_times[host_name].memory_usage = value;
-            else if (event_name == MemoryTracker::PEAK_USAGE_EVENT_NAME)
-                thread_times[host_name].peak_memory_usage = value;
         }
         progress_indication.updateThreadEventData(thread_times);
 
@@ -1286,39 +1153,27 @@ void ClientBase::onProfileEvents(Block & block)
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
-    /// Order is important: format, compression, file
-
     if (output_format)
         output_format->finalize();
     output_format.reset();
-
     logs_out_stream.reset();
-
-    if (out_file_buf)
-    {
-        out_file_buf->finalize();
-        out_file_buf.reset();
-    }
 
     if (pager_cmd)
     {
         pager_cmd->in.close();
         pager_cmd->wait();
-
-        if (SIG_ERR == signal(SIGPIPE, SIG_DFL))
-            throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
-        if (SIG_ERR == signal(SIGINT, SIG_DFL))
-            throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGINT");
-        if (SIG_ERR == signal(SIGQUIT, SIG_DFL))
-            throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
-
-        setupSignalHandler();
     }
     pager_cmd = nullptr;
 
+    if (out_file_buf)
+    {
+        out_file_buf->next();
+        out_file_buf.reset();
+    }
+
     if (out_logs_buf)
     {
-        out_logs_buf->finalize();
+        out_logs_buf->next();
         out_logs_buf.reset();
     }
 
@@ -1351,13 +1206,9 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 columns_description = ColumnsDescription::parse(packet.multistring_message[1]);
                 return receiveSampleBlock(out, columns_description, parsed_query);
 
-            case Protocol::Server::TimezoneUpdate:
-                onTimezoneUpdate(packet.server_timezone);
-                break;
-
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                    "Unexpected packet from server (expected Data, Exception, Log or TimezoneUpdate, got {})",
+                    "Unexpected packet from server (expected Data, Exception or Log, got {})",
                     String(Protocol::Server::toString(packet.type)));
         }
     }
@@ -1378,31 +1229,6 @@ void ClientBase::setInsertionTable(const ASTInsertQuery & insert_query)
 }
 
 
-void ClientBase::addMultiquery(std::string_view query, Arguments & common_arguments) const
-{
-    common_arguments.emplace_back("--multiquery");
-    common_arguments.emplace_back("-q");
-    common_arguments.emplace_back(query);
-}
-
-namespace
-{
-bool isStdinNotEmptyAndValid(ReadBufferFromFileDescriptor & std_in)
-{
-    try
-    {
-        return !std_in.eof();
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR)
-            return false;
-        throw;
-    }
-}
-}
-
-
 void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
     auto query = query_to_execute;
@@ -1414,14 +1240,12 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         visitor.visit(parsed_query);
 
         /// Get new query after substitutions.
-        if (visitor.getNumberOfReplacedParameters())
-            query = serializeAST(*parsed_query);
-        chassert(!query.empty());
+        query = serializeAST(*parsed_query);
     }
 
     /// Process the query that requires transferring data blocks to the server.
-    const auto & parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
-    if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && !isStdinNotEmptyAndValid(std_in))))
+    const auto parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
+    if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
     {
         const auto & settings = global_context->getSettingsRef();
         if (settings.throw_if_no_data_to_insert)
@@ -1478,7 +1302,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!parsed_insert_query)
         return;
 
-    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(std_in);
+    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
 
     if (need_render_progress)
     {
@@ -1511,26 +1335,14 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             current_format = FormatFactory::instance().getFormatFromFileName(in_file, true);
 
         /// Create temporary storage file, to support globs and parallel reading
-        /// StorageFile doesn't support ephemeral/materialized/alias columns.
-        /// We should change ephemeral columns to ordinary and ignore materialized/alias columns.
-        ColumnsDescription columns_for_storage_file;
-        for (const auto & [name, _] : columns_description_for_query.getInsertable())
-        {
-            ColumnDescription column = columns_description_for_query.get(name);
-            column.default_desc.kind = ColumnDefaultKind::Default;
-            columns_for_storage_file.add(std::move(column));
-        }
-
         StorageFile::CommonArguments args{
             WithContext(global_context),
             parsed_insert_query->table_id,
             current_format,
             getFormatSettings(global_context),
             compression_method,
-            columns_for_storage_file,
+            columns_description_for_query,
             ConstraintsDescription{},
-            String{},
-            {},
             String{},
         };
         StoragePtr storage = std::make_shared<StorageFile>(in_file, global_context->getUserFilesPath(), args);
@@ -1561,7 +1373,8 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             sendDataFromPipe(
                 std::move(pipe),
                 parsed_query,
-                have_data_in_stdin);
+                have_data_in_stdin
+            );
         }
         catch (Exception & e)
         {
@@ -1701,9 +1514,7 @@ void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
 {
     auto packet_type = connection->checkPacket(0);
 
-    while (packet_type && (*packet_type == Protocol::Server::Log
-            || *packet_type == Protocol::Server::ProfileEvents
-            || *packet_type == Protocol::Server::TimezoneUpdate))
+    while (packet_type && (*packet_type == Protocol::Server::Log || *packet_type == Protocol::Server::ProfileEvents))
     {
         receiveAndProcessPacket(parsed_query, false);
         packet_type = connection->checkPacket(0);
@@ -1738,10 +1549,6 @@ bool ClientBase::receiveEndOfQuery()
 
             case Protocol::Server::ProfileEvents:
                 onProfileEvents(packet.block);
-                break;
-
-            case Protocol::Server::TimezoneUpdate:
-                onTimezoneUpdate(packet.server_timezone);
                 break;
 
             default:
@@ -1797,25 +1604,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     {
         const auto * logs_level_field = set_query->changes.tryGet(std::string_view{"send_logs_level"});
         if (logs_level_field)
-        {
-            auto logs_level = logs_level_field->safeGet<String>();
-            /// Check that setting value is correct before updating logger level.
-            SettingFieldLogsLevelTraits::fromString(logs_level);
-            updateLoggerLevel(logs_level);
-        }
+            updateLoggerLevel(logs_level_field->safeGet<String>());
     }
 
     if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
     {
-        if (!create_user_query->attach && create_user_query->auth_data)
+        if (!create_user_query->attach && create_user_query->temporary_password_for_checks)
         {
-            if (const auto * auth_data = create_user_query->auth_data->as<ASTAuthenticationData>())
-            {
-                auto password = auth_data->getPassword();
-
-                if (password)
-                    global_context->getAccessControl().checkPasswordComplexityRules(*password);
-            }
+            global_context->getAccessControl().checkPasswordComplexityRules(create_user_query->temporary_password_for_checks.value());
+            create_user_query->temporary_password_for_checks.reset();
         }
     }
 
@@ -1870,20 +1667,10 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
-        bool is_async_insert_with_inlined_data = global_context->getSettingsRef().async_insert && insert && insert->hasInlinedData();
-
-        if (is_async_insert_with_inlined_data)
-        {
-            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(std_in);
-            bool have_external_data = have_data_in_stdin || insert->infile;
-
-            if (have_external_data)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Processing async inserts with both inlined and external data (from stdin or infile) is not supported");
-        }
+        bool is_async_insert = global_context->getSettingsRef().async_insert && insert && insert->hasInlinedData();
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert_with_inlined_data)
+        if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert)
         {
             if (input_function && insert->format.empty())
                 throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
@@ -1919,7 +1706,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         }
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {
-            const String & new_database = use_query->getDatabase();
+            const String & new_database = use_query->database;
             /// If the client initiates the reconnection, it takes the settings from the config.
             config().setString("database", new_database);
             /// If the connection initiates the reconnection, it uses its variable.
@@ -1941,10 +1728,9 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     if (is_interactive)
     {
-        std::cout << std::endl;
-        if (!server_exception || processed_rows != 0)
-            std::cout << processed_rows << " row" << (processed_rows == 1 ? "" : "s") << " in set. ";
-        std::cout << "Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
+        std::cout << std::endl
+            << processed_rows << " row" << (processed_rows == 1 ? "" : "s")
+            << " in set. Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
         progress_indication.writeFinalProgress();
         std::cout << std::endl << std::endl;
     }
@@ -2064,6 +1850,9 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 {
     bool echo_query = echo_queries;
 
+    /// Test tags are started with "--" so they are interpreted as comments anyway.
+    /// But if the echo is enabled we have to remove the test tags from `all_queries_text`
+    /// because we don't want test tags to be echoed.
     {
         /// disable logs if expects errors
         TestHint test_hint(all_queries_text);
@@ -2071,9 +1860,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             processTextAsSingleQuery("SET send_logs_level = 'fatal'");
     }
 
-    /// Test tags are started with "--" so they are interpreted as comments anyway.
-    /// But if the echo is enabled we have to remove the test tags from `all_queries_text`
-    /// because we don't want test tags to be echoed.
     size_t test_tags_length = getTestTagsLength(all_queries_text);
 
     /// Several queries separated by ';'.
@@ -2416,37 +2202,25 @@ void ClientBase::runInteractive()
         catch (const ErrnoException & e)
         {
             if (e.getErrno() != EEXIST)
-            {
-                std::cerr << getCurrentExceptionMessage(false) << '\n';
-            }
+                throw;
         }
     }
 
     LineReader::Patterns query_extenders = {"\\"};
     LineReader::Patterns query_delimiters = {";", "\\G", "\\G;"};
-    char word_break_characters[] = " \t\v\f\a\b\r\n`~!@#$%^&*()-=+[{]}\\|;:'\",<.>/?";
 
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_t highlight_callback{};
     if (config().getBool("highlight", true))
         highlight_callback = highlight;
 
-    ReplxxLineReader lr(
-        *suggest,
-        history_file,
-        config().has("multiline"),
-        query_extenders,
-        query_delimiters,
-        word_break_characters,
-        highlight_callback);
+    ReplxxLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters, highlight_callback);
 #else
-    LineReader lr(
-        history_file,
-        config().has("multiline"),
-        query_extenders,
-        query_delimiters,
-        word_break_characters);
+    LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
 #endif
+
+    /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
+    lr.enableBracketedPaste();
 
     static const std::initializer_list<std::pair<String, String>> backslash_aliases =
         {
@@ -2465,18 +2239,7 @@ void ClientBase::runInteractive()
 
     do
     {
-        String input;
-        {
-            /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
-            /// But keep it disabled outside of query input, because it breaks password input
-            /// (e.g. if we need to reconnect and show a password prompt).
-            /// (Alternatively, we could make the password input ignore the control sequences.)
-            lr.enableBracketedPaste();
-            SCOPE_EXIT({ lr.disableBracketedPaste(); });
-
-            input = lr.readLine(prompt(), ":-] ");
-        }
-
+        auto input = lr.readLine(prompt(), ":-] ");
         if (input.empty())
             break;
 
@@ -2516,13 +2279,6 @@ void ClientBase::runInteractive()
                 input  = last_input;
                 break;
             }
-        }
-
-        if (suggest && suggest->getLastError() == ErrorCodes::USER_SESSION_LIMIT_EXCEEDED)
-        {
-            // If a separate connection loading suggestions failed to open a new session,
-            // use the main session to receive them.
-            suggest->load(*connection, connection_parameters.timeouts, config().getInt("suggestion_limit"));
         }
 
         try
@@ -2566,14 +2322,6 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
     ReadBufferFromFile in(file_name);
     readStringUntilEOF(queries_from_file, in);
 
-    if (!has_log_comment)
-    {
-        Settings settings = global_context->getSettings();
-        /// NOTE: cannot use even weakly_canonical() since it fails for /dev/stdin due to resolving of "pipe:[X]"
-        settings.log_comment = fs::absolute(fs::path(file_name));
-        global_context->setSettings(settings);
-    }
-
     return executeMultiQuery(queries_from_file);
 }
 
@@ -2598,34 +2346,23 @@ void ClientBase::runNonInteractive()
         return;
     }
 
-    if (!queries.empty())
+    String text;
+    if (config().has("query"))
     {
-        for (const auto & query : queries)
-        {
-            if (query_fuzzer_runs)
-            {
-                if (!processWithFuzzing(query))
-                    return;
-            }
-            else
-            {
-                if (!processQueryText(query))
-                    return;
-            }
-        }
+        text += config().getRawString("query"); /// Poco configuration should not process substitutions in form of ${...} inside query.
     }
     else
     {
         /// If 'query' parameter is not set, read a query from stdin.
         /// The query is read entirely into memory (streaming is disabled).
         ReadBufferFromFileDescriptor in(STDIN_FILENO);
-        String text;
         readStringUntilEOF(text, in);
-        if (query_fuzzer_runs)
-            processWithFuzzing(text);
-        else
-            processQueryText(text);
     }
+
+    if (query_fuzzer_runs)
+        processWithFuzzing(text);
+    else
+        processQueryText(text);
 }
 
 
@@ -2641,7 +2378,7 @@ void ClientBase::clearTerminal()
 
 void ClientBase::showClientVersion()
 {
-    std::cout << VERSION_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
+    std::cout << DBMS_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
 }
 
 namespace
@@ -2656,54 +2393,6 @@ struct TransparentStringHash
     {
         return std::hash<std::string_view>{}(txt);
     }
-};
-
-/*
- * This functor is used to parse command line arguments and replace dashes with underscores,
- * allowing options to be specified using either dashes or underscores.
- */
-class OptionsAliasParser
-{
-public:
-    explicit OptionsAliasParser(const boost::program_options::options_description& options)
-    {
-        options_names.reserve(options.options().size());
-        for (const auto& option : options.options())
-            options_names.insert(option->long_name());
-    }
-
-    /*
-     * Parses arguments by replacing dashes with underscores, and matches the resulting name with known options
-     * Implements boost::program_options::ext_parser logic
-     */
-    std::pair<std::string, std::string> operator()(const std::string& token) const
-    {
-        if (token.find("--") != 0)
-            return {};
-        std::string arg = token.substr(2);
-
-        // divide token by '=' to separate key and value if options style=long_allow_adjacent
-        auto pos_eq = arg.find('=');
-        std::string key = arg.substr(0, pos_eq);
-
-        if (options_names.contains(key))
-            // option does not require any changes, because it is already correct
-            return {};
-
-        std::replace(key.begin(), key.end(), '-', '_');
-        if (!options_names.contains(key))
-            // after replacing '-' with '_' argument is still unknown
-            return {};
-
-        std::string value;
-        if (pos_eq != std::string::npos && pos_eq < arg.size())
-            value = arg.substr(pos_eq + 1);
-
-        return {key, value};
-    }
-
-private:
-    std::unordered_set<std::string> options_names;
 };
 
 }
@@ -2756,10 +2445,7 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
     }
 
     /// Parse main commandline options.
-    auto parser = po::command_line_parser(arguments)
-                      .options(options_description.main_description.value())
-                      .extra_parser(OptionsAliasParser(options_description.main_description.value()))
-                      .allow_unregistered();
+    auto parser = po::command_line_parser(arguments).options(options_description.main_description.value()).allow_unregistered();
     po::parsed_options parsed = parser.run();
 
     /// Check unrecognized options without positional options.
@@ -2774,8 +2460,9 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
         throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
     }
 
-    /// Check positional options.
-    if (std::ranges::count_if(parsed.options, [](const auto & op){ return !op.unregistered && op.string_key.empty() && !op.original_tokens[0].starts_with("--"); }) > 1)
+    /// Check positional options (options after ' -- ', ex: clickhouse-client -- <options>).
+    unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
+    if (unrecognized_options.size() > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional options are not supported.");
 
     po::store(parsed, options);
@@ -2794,25 +2481,13 @@ void ClientBase::init(int argc, char ** argv)
     stderr_is_a_tty = isatty(STDERR_FILENO);
     terminal_width = getTerminalWidth();
 
+    Arguments common_arguments{""}; /// 0th argument is ignored.
     std::vector<Arguments> external_tables_arguments;
-    Arguments common_arguments = {""}; /// 0th argument is ignored.
     std::vector<Arguments> hosts_and_ports_arguments;
 
     readArguments(argc, argv, common_arguments, external_tables_arguments, hosts_and_ports_arguments);
 
-    /// Support for Unicode dashes
-    /// Interpret Unicode dashes as default double-hyphen
-    for (auto & arg : common_arguments)
-    {
-        // replace em-dash(U+2014)
-        boost::replace_all(arg, "—", "--");
-        // replace en-dash(U+2013)
-        boost::replace_all(arg, "–", "--");
-        // replace mathematical minus(U+2212)
-        boost::replace_all(arg, "−", "--");
-    }
-
-
+    po::variables_map options;
     OptionsDescription options_description;
     options_description.main_description.emplace(createOptionsDescription("Main options", terminal_width));
 
@@ -2823,18 +2498,15 @@ void ClientBase::init(int argc, char ** argv)
         ("version-clean", "print version in machine-readable format and exit")
 
         ("config-file,C", po::value<std::string>(), "config-file path")
-
-        ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(query; can be specified multiple times (--query "SELECT 1" --query "SELECT 2"...))")
-        ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
-        ("multiquery,n", "If specified, multiple queries separated by semicolons can be listed after --query. For convenience, it is also possible to omit --query and pass the queries directly after --multiquery.")
-        ("multiline,m", "If specified, allow multiline queries (do not send the query on Enter)")
+        ("queries-file", po::value<std::vector<std::string>>()->multitoken(),
+            "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
         ("database,d", po::value<std::string>(), "database")
-        ("query_kind", po::value<std::string>()->default_value("initial_query"), "One of initial_query/secondary_query/no_query")
-        ("query_id", po::value<std::string>(), "query_id")
-
         ("history_file", po::value<std::string>(), "path to history file")
 
+        ("query,q", po::value<std::string>(), "query")
         ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
+        ("query_kind", po::value<std::string>()->default_value("initial_query"), "One of initial_query/secondary_query/no_query")
+        ("query_id", po::value<std::string>(), "query_id")
         ("progress", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::DEFAULT, "default"), "Print progress of queries execution - to TTY: tty|on|1|true|yes; to STDERR non-interactive mode: err; OFF: off|0|false|no; DEFAULT - interactive to TTY, non-interactive is off")
 
         ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
@@ -2846,7 +2518,11 @@ void ClientBase::init(int argc, char ** argv)
         ("log-level", po::value<std::string>(), "log level")
         ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
 
-        ("suggestion_limit", po::value<int>()->default_value(10000), "Suggestion limit for how many databases, tables and columns to fetch.")
+        ("multiline,m", "multiline")
+        ("multiquery,n", "multiquery")
+
+        ("suggestion_limit", po::value<int>()->default_value(10000),
+            "Suggestion limit for how many databases, tables and columns to fetch.")
 
         ("format,f", po::value<std::string>(), "default output format")
         ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
@@ -2861,7 +2537,7 @@ void ClientBase::init(int argc, char ** argv)
 
         ("interactive", "Process queries-file or --query query and start interactive mode")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
-        ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
+        ("max_memory_usage_in_client", po::value<int>(), "Set memory limit in client/local server")
     ;
 
     addOptions(options_description);
@@ -2884,7 +2560,6 @@ void ClientBase::init(int argc, char ** argv)
         std::transform(external_options.begin(), external_options.end(), std::back_inserter(cmd_options), getter);
     }
 
-    po::variables_map options;
     parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
@@ -2912,7 +2587,7 @@ void ClientBase::init(int argc, char ** argv)
     if (options.count("time"))
         print_time_to_stderr = true;
     if (options.count("query"))
-        queries = options["query"].as<std::vector<std::string>>();
+        config().setString("query", options["query"].as<std::string>());
     if (options.count("query_id"))
         config().setString("query_id", options["query_id"].as<std::string>());
     if (options.count("database"))
@@ -2985,28 +2660,17 @@ void ClientBase::init(int argc, char ** argv)
     profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 
     processOptions(options_description, options, external_tables_arguments, hosts_and_ports_arguments);
-    {
-        std::unordered_set<std::string> alias_names;
-        alias_names.reserve(options_description.main_description->options().size());
-        for (const auto& option : options_description.main_description->options())
-            alias_names.insert(option->long_name());
-        argsToConfig(common_arguments, config(), 100, &alias_names);
-    }
-
+    argsToConfig(common_arguments, config(), 100);
     clearPasswordFromCommandLine(argc, argv);
 
     /// Limit on total memory usage
-    std::string max_client_memory_usage = config().getString("max_memory_usage_in_client", "0" /*default value*/);
-    if (max_client_memory_usage != "0")
+    size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
+    if (max_client_memory_usage != 0)
     {
-        UInt64 max_client_memory_usage_int = parseWithSizeSuffix<UInt64>(max_client_memory_usage.c_str(), max_client_memory_usage.length());
-
-        total_memory_tracker.setHardLimit(max_client_memory_usage_int);
+        total_memory_tracker.setHardLimit(max_client_memory_usage);
         total_memory_tracker.setDescription("(total)");
         total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
     }
-
-    has_log_comment = config().has("log_comment");
 }
 
 }

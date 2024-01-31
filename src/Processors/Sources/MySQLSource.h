@@ -50,7 +50,7 @@ protected:
         mysqlxx::UseQueryResult result;
     };
 
-    LoggerPtr log;
+    Poco::Logger * log;
     std::unique_ptr<Connection> connection;
 
     const std::unique_ptr<StreamSettings> settings;

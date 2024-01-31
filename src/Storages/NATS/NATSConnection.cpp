@@ -13,7 +13,7 @@ static const auto RETRIES_MAX = 20;
 static const auto CONNECTED_TO_BUFFER_SIZE = 256;
 
 
-NATSConnectionManager::NATSConnectionManager(const NATSConfiguration & configuration_, LoggerPtr log_)
+NATSConnectionManager::NATSConnectionManager(const NATSConfiguration & configuration_, Poco::Logger * log_)
     : configuration(configuration_)
     , log(log_)
     , event_handler(loop.getLoop(), log)
@@ -115,8 +115,8 @@ void NATSConnectionManager::connectImpl()
     }
     natsOptions_SetMaxReconnect(options, configuration.max_reconnect);
     natsOptions_SetReconnectWait(options, configuration.reconnect_wait);
-    natsOptions_SetDisconnectedCB(options, disconnectedCallback, log.get());
-    natsOptions_SetReconnectedCB(options, reconnectedCallback, log.get());
+    natsOptions_SetDisconnectedCB(options, disconnectedCallback, log);
+    natsOptions_SetReconnectedCB(options, reconnectedCallback, log);
     natsStatus status;
     {
         auto lock = event_handler.setThreadLocalLoop();
