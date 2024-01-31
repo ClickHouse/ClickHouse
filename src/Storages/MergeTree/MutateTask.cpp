@@ -2265,8 +2265,8 @@ bool MutateTask::prepare()
 
 
         // TODO: Check if this actually makes sense
-        bool drop_empty_parts = !ctx->data->getSettings()->materialize_ttl_recalculate_only;
-        if (drop_empty_parts)
+        bool drop_expired_parts = !ctx->data->getSettings()->materialize_ttl_recalculate_only;
+        if (drop_expired_parts)
             task = std::make_unique<ExecutableTaskDropTTLExpiredPartsDecorator>(std::make_unique<MutateSomePartColumnsTask>(ctx), ctx);
         else
             task = std::make_unique<MutateSomePartColumnsTask>(ctx);
