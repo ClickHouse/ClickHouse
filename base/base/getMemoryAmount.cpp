@@ -13,6 +13,28 @@
 #endif
 
 
+namespace
+{
+
+std::optional<uint64_t> getCgroupsMemoryLimit(const std::string & setting)
+{
+#if defined(OS_LINUX)
+    std::filesystem::path default_cgroups_mount = "/sys/fs/cgroup";
+    std::ifstream file(default_cgroups_mount / setting);
+    if (!file.is_open())
+        return {};
+    uint64_t value;
+    if (file >> value)
+        return {value};
+    else
+        return {}; /// e.g. the cgroups default "max"
+#else
+    return {};
+#endif
+}
+
+}
+
 /** Returns the size of physical memory (RAM) in bytes.
   * Returns 0 on unsupported platform
   */
@@ -28,35 +50,20 @@ uint64_t getMemoryAmountOrZero()
 
     uint64_t memory_amount = num_pages * page_size;
 
-#if defined(OS_LINUX)
-    /// Limit the memory amount by limits set by cgroups
-    std::filesystem::path default_cgroups_mount = "/sys/fs/cgroup";
+    /// Respect the memory limit set by cgroups
 
     /// cgroups v2
-    std::ifstream cgroupv2_limit(default_cgroups_mount / "memory.max");
-    if (cgroupv2_limit.is_open())
-    {
-        uint64_t memory_limit = 0;
-        cgroupv2_limit >> memory_limit;
-        if (memory_limit > 0 && memory_limit < memory_amount)
-            memory_amount = memory_limit;
-    }
+    auto limit_v2 = getCgroupsMemoryLimit("memory.max");
+    if (limit_v2.has_value() && *limit_v2 < memory_amount)
+         memory_amount = *limit_v2;
     else
     {
-        /// cgroups v1
-        std::ifstream cgroup_limit(default_cgroups_mount / "memory/memory.limit_in_bytes");
-        if (cgroup_limit.is_open())
-        {
-            uint64_t memory_limit = 0; // in case of read error
-            cgroup_limit >> memory_limit;
-            if (memory_limit > 0 && memory_limit < memory_amount)
-                memory_amount = memory_limit;
-        }
+        auto limit_v1 = getCgroupsMemoryLimit("memory/memory.limit_in_bytes");
+        if (limit_v1.has_value() && *limit_v1 < memory_amount)
+             memory_amount = *limit_v1;
     }
-#endif
 
     return memory_amount;
-
 }
 
 
