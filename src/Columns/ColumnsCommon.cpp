@@ -113,8 +113,8 @@ bool memoryIsByte(const void * data, size_t start, size_t end, uint8_t byte)
 
 bool memoryIsZero(const void * data, size_t start, size_t end)
 {
-#ifdef ENABLE_ISAL_LIBRARY
-    return isal_zero_detect(data, end - start);
+#if USE_ISAL
+    return isal_zero_detect(data, end - start) == 0;
 #endif
     return memoryIsByte(data, start, end, 0x0);
 }
