@@ -16,7 +16,7 @@
 namespace
 {
 
-std::optional<uint64_t> getCgroupsMemoryLimit(const std::string & setting)
+std::optional<uint64_t> getCgroupsV2MemoryLimit(const std::string & setting)
 {
 #if defined(OS_LINUX)
     std::filesystem::path default_cgroups_mount = "/sys/fs/cgroup";
@@ -50,18 +50,12 @@ uint64_t getMemoryAmountOrZero()
 
     uint64_t memory_amount = num_pages * page_size;
 
-    /// Respect the memory limit set by cgroups
+    /// Respect the memory limit set by cgroups v2.
+    /// Cgroups v1 is dead since many years and its limits are not considered for simplicity.
 
-    /// cgroups v2
-    auto limit_v2 = getCgroupsMemoryLimit("memory.max");
-    if (limit_v2.has_value() && *limit_v2 < memory_amount)
-         memory_amount = *limit_v2;
-    else
-    {
-        auto limit_v1 = getCgroupsMemoryLimit("memory/memory.limit_in_bytes");
-        if (limit_v1.has_value() && *limit_v1 < memory_amount)
-             memory_amount = *limit_v1;
-    }
+    auto limit = getCgroupsV2MemoryLimit("memory.max");
+    if (limit.has_value() && *limit < memory_amount)
+         memory_amount = *limit;
 
     return memory_amount;
 }
