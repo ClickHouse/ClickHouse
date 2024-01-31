@@ -66,8 +66,8 @@ double sphere_metric_lut[METRIC_LUT_SIZE + 1]; /// sphere metric, unitless: the 
 double sphere_metric_meters_lut[METRIC_LUT_SIZE + 1]; /// sphere metric: the distance in meters for one degree across longitude depending on latitude
 double wgs84_metric_meters_lut[2 * (METRIC_LUT_SIZE + 1)]; /// ellipsoid metric: the distance in meters across one degree latitude/longitude depending on latitude
 
-
-inline double sqr(double v)
+template <typename T>
+inline T sqr(T v)
 {
     return v * v;
 }
@@ -98,33 +98,37 @@ void geodistInit()
     }
 }
 
-inline NO_SANITIZE_UNDEFINED size_t doubleToIndex(double x)
+template <typename T>
+inline NO_SANITIZE_UNDEFINED size_t doubleToIndex(T x)
 {
     /// Implementation specific behaviour on overflow or infinite value.
     return static_cast<size_t>(x);
 }
 
-inline double geodistDegDiff(double f)
+template <typename T>
+inline T geodistDegDiff(T f)
 {
-    f = std::abs(f);
+    f = abs(f);
     if (f > 180)
         f = 360 - f;
     return f;
 }
 
-inline double geodistFastCos(double x)
+template <typename T>
+inline T geodistFastCos(T x)
 {
-    double y = std::abs(x) * (COS_LUT_SIZE_F / PI / 2.0f);
-    size_t i = doubleToIndex(y);
+    T y = abs(x) * (COS_LUT_SIZE_F / static_cast<T>(PI) / 2.0f);
+    size_t i = doubleToIndex<T>(y);
     y -= i;
     i &= (COS_LUT_SIZE - 1);
     return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
 }
 
-inline double geodistFastSin(double x)
+template <typename T>
+inline T geodistFastSin(T x)
 {
-    double y = std::abs(x) * (COS_LUT_SIZE_F / PI / 2.0f);
-    size_t i = doubleToIndex(y);
+    T y = abs(x) * (COS_LUT_SIZE_F / static_cast<T>(PI) / 2.0f);
+    size_t i = doubleToIndex<T>(y);
     y -= i;
     i = (i - COS_LUT_SIZE / 4) & (COS_LUT_SIZE - 1); // cos(x - pi / 2) = sin(x), costable / 4 = pi / 2
     return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
@@ -132,19 +136,20 @@ inline double geodistFastSin(double x)
 
 /// fast implementation of asin(sqrt(x))
 /// max error in floats 0.00369%, in doubles 0.00072%
-inline double geodistFastAsinSqrt(double x)
+template <typename T>
+inline T geodistFastAsinSqrt(T x)
 {
     if (x < 0.122f)
     {
         // distance under 4546 km, Taylor error under 0.00072%
-        double y = sqrt(x);
+        T y = sqrt(x);
         return y + x * y * 0.166666666666666f + x * x * y * 0.075f + x * x * x * y * 0.044642857142857f;
     }
     if (x < 0.948f)
     {
         // distance under 17083 km, 512-entry LUT error under 0.00072%
         x *= ASIN_SQRT_LUT_SIZE;
-        size_t i = doubleToIndex(x);
+        size_t i = doubleToIndex<T>(x);
         return asin_sqrt_lut[i] + (asin_sqrt_lut[i + 1] - asin_sqrt_lut[i]) * (x - i);
     }
     return asin(sqrt(x)); // distance over 17083 km, just compute exact
@@ -165,11 +170,11 @@ DECLARE_MULTITARGET_CODE(
 namespace
 {
 
-template <Method method>
-double distance(double lon1deg, double lat1deg, double lon2deg, double lat2deg)
+template <Method method, typename T>
+T distance(T lon1deg, T lat1deg, T lon2deg, T lat2deg)
 {
-    double lat_diff = geodistDegDiff(lat1deg - lat2deg);
-    double lon_diff = geodistDegDiff(lon1deg - lon2deg);
+    T lat_diff = geodistDegDiff<T>(lat1deg - lat2deg);
+    T lon_diff = geodistDegDiff<T>(lon1deg - lon2deg);
 
     if (lon_diff < 13)
     {
@@ -181,35 +186,35 @@ double distance(double lon1deg, double lat1deg, double lon2deg, double lat2deg)
         ///  (Remember how a plane flies from Amsterdam to New York)
         /// But if longitude is close but latitude is different enough, there is no difference between meridian and great circle line.
 
-        double latitude_midpoint = (lat1deg + lat2deg + 180) * METRIC_LUT_SIZE / 360; // [-90, 90] degrees -> [0, METRIC_LUT_SIZE] indexes
-        size_t latitude_midpoint_index = doubleToIndex(latitude_midpoint) & (METRIC_LUT_SIZE - 1);
+        T latitude_midpoint = (lat1deg + lat2deg + 180) * METRIC_LUT_SIZE / 360; // [-90, 90] degrees -> [0, METRIC_LUT_SIZE] indexes
+        size_t latitude_midpoint_index = doubleToIndex<T>(latitude_midpoint) & (METRIC_LUT_SIZE - 1);
 
         /// This is linear interpolation between two table items at index "latitude_midpoint_index" and "latitude_midpoint_index + 1".
 
-        double k_lat{};
-        double k_lon{};
+        T k_lat{};
+        T k_lon{};
 
         if constexpr (method == Method::SPHERE_DEGREES)
         {
             k_lat = 1;
 
-            k_lon = sphere_metric_lut[latitude_midpoint_index]
-                + (sphere_metric_lut[latitude_midpoint_index + 1] - sphere_metric_lut[latitude_midpoint_index]) * (latitude_midpoint - latitude_midpoint_index);
+            k_lon = static_cast<T>(sphere_metric_lut[latitude_midpoint_index]
+                + (sphere_metric_lut[latitude_midpoint_index + 1] - sphere_metric_lut[latitude_midpoint_index]) * (latitude_midpoint - latitude_midpoint_index));
         }
         else if constexpr (method == Method::SPHERE_METERS)
         {
-            k_lat = sqr(EARTH_DIAMETER * PI / 360.0f);
+            k_lat = sqr<T>(EARTH_DIAMETER * PI / 360.0f);
 
-            k_lon = sphere_metric_meters_lut[latitude_midpoint_index]
-                + (sphere_metric_meters_lut[latitude_midpoint_index + 1] - sphere_metric_meters_lut[latitude_midpoint_index]) * (latitude_midpoint - latitude_midpoint_index);
+            k_lon = static_cast<T>(sphere_metric_meters_lut[latitude_midpoint_index]
+                + (sphere_metric_meters_lut[latitude_midpoint_index + 1] - sphere_metric_meters_lut[latitude_midpoint_index]) * (latitude_midpoint - latitude_midpoint_index));
         }
         else if constexpr (method == Method::WGS84_METERS)
         {
-            k_lat = wgs84_metric_meters_lut[latitude_midpoint_index * 2]
-                + (wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2] - wgs84_metric_meters_lut[latitude_midpoint_index * 2]) * (latitude_midpoint - latitude_midpoint_index);
+            k_lat = static_cast<T>(wgs84_metric_meters_lut[latitude_midpoint_index * 2]
+                + (wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2] - wgs84_metric_meters_lut[latitude_midpoint_index * 2]) * (latitude_midpoint - latitude_midpoint_index));
 
-            k_lon = wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]
-                + (wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2 + 1] - wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]) * (latitude_midpoint - latitude_midpoint_index);
+            k_lon = static_cast<T>(wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]
+                + (wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2 + 1] - wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]) * (latitude_midpoint - latitude_midpoint_index));
         }
 
         /// Metric on a tangent plane: it differs from Euclidean metric only by scale of coordinates.
@@ -219,13 +224,13 @@ double distance(double lon1deg, double lat1deg, double lon2deg, double lat2deg)
     {
         // points too far away; use haversine
 
-        double a = sqr(geodistFastSin(lat_diff * RAD_IN_DEG_HALF))
-            + geodistFastCos(lat1deg * RAD_IN_DEG) * geodistFastCos(lat2deg * RAD_IN_DEG) * sqr(geodistFastSin(lon_diff * RAD_IN_DEG_HALF));
+        T a = sqr<T>(geodistFastSin(lat_diff * RAD_IN_DEG_HALF))
+            + geodistFastCos<T>(lat1deg * RAD_IN_DEG) * geodistFastCos<T>(lat2deg * RAD_IN_DEG) * sqr<T>(geodistFastSin<T>(lon_diff * RAD_IN_DEG_HALF));
 
         if constexpr (method == Method::SPHERE_DEGREES)
-            return (360.0f / PI) * geodistFastAsinSqrt(a);
+            return (360.0f / static_cast<T>(PI)) * geodistFastAsinSqrt<T>(a);
         else
-            return EARTH_DIAMETER * geodistFastAsinSqrt(a);
+            return static_cast<T>(EARTH_DIAMETER) * geodistFastAsinSqrt<T>(a);
     }
 }
 
@@ -281,7 +286,7 @@ private:
 
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
-            dst_data[row_num] = distance<method>(
+            dst_data[row_num] = distance<method, double>(
                 col_lon1->getData()[row_num], col_lat1->getData()[row_num],
                 col_lon2->getData()[row_num], col_lat2->getData()[row_num]);
         }
