@@ -151,9 +151,7 @@ protected:
     void runCleanupThread();
 
     ContextMutablePtr context;
-    LoggerPtr log;
-
-    std::optional<std::string> config_host_name; /// host_name from config
+    Poco::Logger * log;
 
     std::string host_fqdn;      /// current host domain name
     std::string host_fqdn_id;   /// host_name:port

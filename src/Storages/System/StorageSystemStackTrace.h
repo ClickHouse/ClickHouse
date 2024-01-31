@@ -38,7 +38,7 @@ public:
     bool isSystemStorage() const override { return true; }
 
 protected:
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

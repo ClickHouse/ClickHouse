@@ -123,7 +123,7 @@ private:
 
     mutable std::shared_timed_mutex rwlock;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

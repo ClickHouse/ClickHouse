@@ -67,7 +67,7 @@ XDBCDictionarySource::XDBCDictionarySource(
     ContextPtr context_,
     const BridgeHelperPtr bridge_)
     : WithContext(context_->getGlobalContext())
-    , log(getLogger(bridge_->getName() + "DictionarySource"))
+    , log(&Poco::Logger::get(bridge_->getName() + "DictionarySource"))
     , update_time(std::chrono::system_clock::from_time_t(0))
     , dict_struct(dict_struct_)
     , configuration(configuration_)
@@ -86,7 +86,7 @@ XDBCDictionarySource::XDBCDictionarySource(
 /// copy-constructor is provided in order to support cloneability
 XDBCDictionarySource::XDBCDictionarySource(const XDBCDictionarySource & other)
     : WithContext(other.getContext())
-    , log(getLogger(other.bridge_helper->getName() + "DictionarySource"))
+    , log(&Poco::Logger::get(other.bridge_helper->getName() + "DictionarySource"))
     , update_time(other.update_time)
     , dict_struct(other.dict_struct)
     , configuration(other.configuration)

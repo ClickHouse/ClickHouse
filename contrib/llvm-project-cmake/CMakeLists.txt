@@ -1,6 +1,5 @@
-if (APPLE OR SANITIZE STREQUAL "memory")
-    # llvm-tblgen, that is used during LLVM build, will throw MSAN errors when running (breaking the build)
-    # TODO: Retest when upgrading LLVM or build only llvm-tblgen without sanitizers
+if (APPLE OR SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "memory")
+    # llvm-tblgen, that is used during LLVM build, doesn't work with UBSan.
     set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
     set (ENABLE_DWARF_PARSER_DEFAULT OFF)
 else()

@@ -97,7 +97,7 @@ This feature is deprecated and will be removed in the future.
 
 For your convenience, the old documentation is located [here](https://pastila.nl/?00f32652/fdf07272a7b54bda7e13b919264e449f.md)
 
-## Refreshable Materialized View [Experimental] {#refreshable-materialized-view}
+## Refreshable Materialized View {#refreshable-materialized-view}
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name
@@ -120,8 +120,7 @@ Differences from regular non-refreshable materialized views:
 
 :::note
 Refreshable materialized views are a work in progress. Setting `allow_experimental_refreshable_materialized_view = 1` is required for creating one. Current limitations:
- * not compatible with Replicated database or table engines
- * It is not supported in ClickHouse Cloud
+ * not compatible with Replicated database or table engines,
  * require [Atomic database engine](../../../engines/database-engines/atomic.md),
  * no retries for failed refresh - we just skip to the next scheduled refresh time,
  * no limit on number of concurrent refreshes.

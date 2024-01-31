@@ -34,8 +34,6 @@ static struct InitFiu
 
 #define APPLY_FOR_FAILPOINTS(ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE) \
     ONCE(replicated_merge_tree_commit_zk_fail_after_op) \
-    ONCE(replicated_queue_fail_next_entry) \
-    REGULAR(replicated_queue_unfail_entries) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(use_delayed_remote_source) \

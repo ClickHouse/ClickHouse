@@ -27,14 +27,13 @@ namespace DB
 {
 
 
-ColumnsDescription StorageSystemRocksDB::getColumnsDescription()
+NamesAndTypesList StorageSystemRocksDB::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"database", std::make_shared<DataTypeString>(), "Database name."},
-        {"table", std::make_shared<DataTypeString>(), "Name of the table with StorageEmbeddedRocksDB engine."},
-        {"name", std::make_shared<DataTypeString>(), "Metric name."},
-        {"value", std::make_shared<DataTypeUInt64>(), "Metric value."},
+    return {
+        { "database",              std::make_shared<DataTypeString>() },
+        { "table",                 std::make_shared<DataTypeString>() },
+        { "name",                  std::make_shared<DataTypeString>() },
+        { "value",                 std::make_shared<DataTypeUInt64>() },
     };
 }
 

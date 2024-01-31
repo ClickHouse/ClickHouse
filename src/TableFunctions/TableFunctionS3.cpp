@@ -67,10 +67,22 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
     else
     {
 
-        size_t count = StorageURL::evalArgsAndCollectHeaders(args, configuration.headers_from_ast, context);
+        auto * header_it = StorageURL::collectHeaders(args, configuration.headers_from_ast, context);
+        if (header_it != args.end())
+            args.erase(header_it);
 
-        if (count == 0 || count > 7)
+        if (args.empty() || args.size() > 7)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
+
+        for (auto & arg : args)
+            arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+
+        /// Size -> argument indexes
+        static std::unordered_map<size_t, std::unordered_map<std::string_view, size_t>> size_to_args
+        {
+            {1, {{}}},
+            {7, {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}}}
+        };
 
         std::unordered_map<std::string_view, size_t> args_to_idx;
 
@@ -80,7 +92,7 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
         /// - s3(source, format)
         /// - s3(source, NOSIGN)
         /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN or not.
-        if (count == 2)
+        if (args.size() == 2)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
@@ -90,10 +102,10 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
         }
         /// For 3 arguments we support 3 possible variants:
         /// - s3(source, format, structure)
-        /// - s3(source, access_key_id, secret_access_key)
+        /// - s3(source, access_key_id, access_key_id)
         /// - s3(source, NOSIGN, format)
         /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
-        else if (count == 3)
+        else if (args.size() == 3)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/access_key_id/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
@@ -108,11 +120,11 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
         }
         /// For 4 arguments we support 4 possible variants:
         /// - s3(source, format, structure, compression_method),
-        /// - s3(source, access_key_id, secret_access_key, format),
-        /// - s3(source, access_key_id, secret_access_key, session_token)
+        /// - s3(source, access_key_id, access_key_id, format),
+        /// - s3(source, access_key_id, access_key_id, session_token)
         /// - s3(source, NOSIGN, format, structure)
         /// We can distinguish them by looking at the 2-nd and 4-th argument: check if it's a format name or not.
-        else if (count == 4)
+        else if (args.size() == 4)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/access_key_id/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
@@ -138,12 +150,12 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
             }
         }
         /// For 5 arguments we support 3 possible variants:
-        /// - s3(source, access_key_id, secret_access_key, format, structure)
-        /// - s3(source, access_key_id, secret_access_key, session_token, format)
+        /// - s3(source, access_key_id, access_key_id, format, structure)
+        /// - s3(source, access_key_id, access_key_id, session_token, format)
         /// - s3(source, NOSIGN, format, structure, compression_method)
         /// We can distinguish them by looking at the 2-nd argument: check if it's a NOSIGN keyword name or no,
         /// and by the 4-th argument, check if it's a format name or not
-        else if (count == 5)
+        else if (args.size() == 5)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "NOSIGN/access_key_id");
             if (boost::iequals(second_arg, "NOSIGN"))
@@ -165,10 +177,10 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
             }
         }
         // For 6 arguments we support 2 possible variants:
-        /// - s3(source, access_key_id, secret_access_key, format, structure, compression_method)
-        /// - s3(source, access_key_id, secret_access_key, session_token, format, structure)
+        /// - s3(source, access_key_id, access_key_id, format, structure, compression_method)
+        /// - s3(source, access_key_id, access_key_id, session_token, format, structure)
         /// We can distinguish them by looking at the 4-th argument: check if it's a format name or not
-        else if (count == 6)
+        else if (args.size() == 6)
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
             if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
@@ -180,9 +192,9 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
                 args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}};
             }
         }
-        else if (count == 7)
+        else
         {
-            args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}};
+            args_to_idx = size_to_args[args.size()];
         }
 
         /// This argument is always the first
@@ -250,16 +262,24 @@ void TableFunctionS3::addColumnsStructureToArguments(ASTs & args, const String &
     }
     else
     {
+        /// If arguments contain headers, just remove it and add to the end of arguments later
+        /// (header argument can be at any position).
         HTTPHeaderEntries tmp_headers;
-        size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, context);
+        auto * headers_it = StorageURL::collectHeaders(args, tmp_headers, context);
+        ASTPtr headers_ast;
+        if (headers_it != args.end())
+        {
+            headers_ast = *headers_it;
+            args.erase(headers_it);
+        }
 
-        if (count == 0 || count > getMaxNumberOfArguments())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function, got {}", getMaxNumberOfArguments(), count);
+        if (args.empty() || args.size() > getMaxNumberOfArguments())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function, got {}", getMaxNumberOfArguments(), args.size());
 
         auto structure_literal = std::make_shared<ASTLiteral>(structure);
 
         /// s3(s3_url)
-        if (count == 1)
+        if (args.size() == 1)
         {
             /// Add format=auto before structure argument.
             args.push_back(std::make_shared<ASTLiteral>("auto"));
@@ -267,7 +287,7 @@ void TableFunctionS3::addColumnsStructureToArguments(ASTs & args, const String &
         }
         /// s3(s3_url, format) or s3(s3_url, NOSIGN)
         /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN or not.
-        else if (count == 2)
+        else if (args.size() == 2)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
             /// If there is NOSIGN, add format=auto before structure.
@@ -276,10 +296,10 @@ void TableFunctionS3::addColumnsStructureToArguments(ASTs & args, const String &
             args.push_back(structure_literal);
         }
         /// s3(source, format, structure) or
-        /// s3(source, access_key_id, secret_access_key) or
+        /// s3(source, access_key_id, access_key_id) or
         /// s3(source, NOSIGN, format)
         /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN, format name or neither.
-        else if (count == 3)
+        else if (args.size() == 3)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
@@ -288,7 +308,7 @@ void TableFunctionS3::addColumnsStructureToArguments(ASTs & args, const String &
             }
             else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
             {
-                args[count - 1] = structure_literal;
+                args.back() = structure_literal;
             }
             else
             {
@@ -298,45 +318,48 @@ void TableFunctionS3::addColumnsStructureToArguments(ASTs & args, const String &
             }
         }
         /// s3(source, format, structure, compression_method) or
-        /// s3(source, access_key_id, secret_access_key, format) or
+        /// s3(source, access_key_id, access_key_id, format) or
         /// s3(source, NOSIGN, format, structure)
         /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN, format name or neither.
-        else if (count == 4)
+        else if (args.size() == 4)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
             {
-                args[count - 1] = structure_literal;
+                args.back() = structure_literal;
             }
             else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
             {
-                args[count - 2] = structure_literal;
+                args[args.size() - 2] = structure_literal;
             }
             else
             {
                 args.push_back(structure_literal);
             }
         }
-        /// s3(source, access_key_id, secret_access_key, format, structure) or
+        /// s3(source, access_key_id, access_key_id, format, structure) or
         /// s3(source, NOSIGN, format, structure, compression_method)
         /// We can distinguish them by looking at the 2-nd argument: check if it's a NOSIGN keyword name or not.
-        else if (count == 5)
+        else if (args.size() == 5)
         {
             auto sedond_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
             if (boost::iequals(sedond_arg, "NOSIGN"))
             {
-                args[count - 2] = structure_literal;
+                args[args.size() - 2] = structure_literal;
             }
             else
             {
-                args[count - 1] = structure_literal;
+                args.back() = structure_literal;
             }
         }
-        /// s3(source, access_key_id, secret_access_key, format, structure, compression)
-        else if (count == 6)
+        /// s3(source, access_key_id, access_key_id, format, structure, compression)
+        else if (args.size() == 6)
         {
-            args[count - 2] = structure_literal;
+            args[args.size() - 2] = structure_literal;
         }
+
+        if (headers_ast)
+            args.push_back(headers_ast);
     }
 }
 

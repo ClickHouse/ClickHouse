@@ -250,7 +250,7 @@ bool ParserTableAsStringLiteralIdentifier::parseImpl(Pos & pos, ASTPtr & node, E
     ReadBufferFromMemory in(pos->begin, pos->size());
     String s;
 
-    if (!tryReadQuotedString(s, in))
+    if (!tryReadQuotedStringInto(s, in))
     {
         expected.add(pos, "string literal");
         return false;
@@ -1451,7 +1451,6 @@ const char * ParserAlias::restricted_keywords[] =
     "ASOF",
     "BETWEEN",
     "CROSS",
-    "PASTE",
     "FINAL",
     "FORMAT",
     "FROM",

@@ -60,14 +60,8 @@
         /// If it is hosted on server, assume that it is the address of ClickHouse.
         if (location.protocol != 'file:') {
             host = location.origin;
+            user = 'default';
             add_http_cors_header = false;
-        }
-
-        if (window.location.search) {
-            const params = new URLSearchParams(window.location.search);
-            if (params.has('host')) { host = params.get('host'); }
-            if (params.has('user')) { user = params.get('user'); }
-            if (params.has('password')) { password = params.get('password'); }
         }
 
         let map = L.map('space', {

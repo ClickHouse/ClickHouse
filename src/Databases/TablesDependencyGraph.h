@@ -163,7 +163,7 @@ private:
     mutable bool levels_calculated = false;
 
     const String name_for_logging;
-    mutable LoggerPtr logger = nullptr;
+    mutable Poco::Logger * logger = nullptr;
 
     Node * findNode(const StorageID & table_id) const;
     Node * addOrUpdateNode(const StorageID & table_id);
@@ -175,7 +175,7 @@ private:
     void setNeedRecalculateLevels() const;
     const NodesSortedByLevel & getNodesSortedByLevel() const;
 
-    LoggerPtr getLogger() const;
+    Poco::Logger * getLogger() const;
 };
 
 }

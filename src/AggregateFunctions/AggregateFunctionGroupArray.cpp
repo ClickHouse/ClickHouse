@@ -440,7 +440,7 @@ struct GroupArrayNodeGeneral : public GroupArrayNodeBase<GroupArrayNodeGeneral>
         return node;
     }
 
-    void insertInto(IColumn & column) { std::ignore = column.deserializeAndInsertFromArena(data()); }
+    void insertInto(IColumn & column) { column.deserializeAndInsertFromArena(data()); }
 };
 
 template <typename Node, bool has_sampler>

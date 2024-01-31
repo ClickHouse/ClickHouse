@@ -219,11 +219,8 @@ public:
     virtual void waitTableStarted(const String & /*name*/) const {}
 
     /// Waits for the database to be started up, i.e. task returned by `startupDatabaseAsync()` is done
-    virtual void waitDatabaseStarted() const {}
-
-    /// Cancels all load and startup tasks and waits for currently running tasks to finish.
-    /// Should be used during shutdown to (1) prevent race with startup, (2) stop any not yet started task and (3) avoid exceptions if startup failed
-    virtual void stopLoading() {}
+    /// NOTE: `no_throw` wait should be used during shutdown to (1) prevent race with startup and (2) avoid exceptions if startup failed
+    virtual void waitDatabaseStarted(bool /*no_throw*/) const {}
 
     /// Check the existence of the table in memory (attached).
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;

@@ -46,10 +46,10 @@ namespace ErrorCodes
 IcebergMetadata::IcebergMetadata(
     const StorageS3::Configuration & configuration_,
     DB::ContextPtr context_,
-    Int32 metadata_version_,
-    Int32 format_version_,
-    String manifest_list_file_,
-    Int32 current_schema_id_,
+    DB::Int32 metadata_version_,
+    DB::Int32 format_version_,
+    DB::String manifest_list_file_,
+    DB::Int32 current_schema_id_,
     DB::NamesAndTypesList schema_)
     : WithContext(context_)
     , configuration(configuration_)
@@ -58,7 +58,7 @@ IcebergMetadata::IcebergMetadata(
     , manifest_list_file(std::move(manifest_list_file_))
     , current_schema_id(current_schema_id_)
     , schema(std::move(schema_))
-    , log(getLogger("IcebergMetadata"))
+    , log(&Poco::Logger::get("IcebergMetadata"))
 {
 }
 
@@ -375,7 +375,7 @@ std::pair<Int32, String> getMetadataFileAndVersion(const StorageS3::Configuratio
 std::unique_ptr<IcebergMetadata> parseIcebergMetadata(const StorageS3::Configuration & configuration, ContextPtr context_)
 {
     const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(configuration);
-    LOG_DEBUG(getLogger("IcebergMetadata"), "Parse metadata {}", metadata_file_path);
+    LOG_DEBUG(&Poco::Logger::get("IcebergMetadata"), "Parse metadata {}", metadata_file_path);
     auto buf = S3DataLakeMetadataReadHelper::createReadBuffer(metadata_file_path, context_, configuration);
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
@@ -596,10 +596,9 @@ Strings IcebergMetadata::getDataFiles()
             const auto status = status_int_column->getInt(i);
             const auto data_path = std::string(file_path_string_column->getDataAt(i).toView());
             const auto pos = data_path.find(configuration.url.key);
+            const auto file_path = data_path.substr(pos);
             if (pos == std::string::npos)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", configuration.url.key, data_path);
-
-            const auto file_path = data_path.substr(pos);
 
             if (ManifestEntryStatus(status) == ManifestEntryStatus::DELETED)
             {

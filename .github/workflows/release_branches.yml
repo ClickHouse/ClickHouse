@@ -153,26 +153,19 @@ jobs:
 ############################################################################################
 ##################################### Docker images  #######################################
 ############################################################################################
-  DockerServerImage:
+  DockerServerImages:
     needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Docker server image
+      test_name: Docker server and keeper images
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
+      checkout_depth: 0
       run_command: |
+        cd "$GITHUB_WORKSPACE/tests/ci"
         python3 docker_server.py --release-type head --no-push \
           --image-repo clickhouse/clickhouse-server --image-path docker/server --allow-build-reuse
-  DockerKeeperImage:
-    needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Docker keeper image
-      runner_type: style-checker
-      data: ${{ needs.RunConfig.outputs.data }}
-      run_command: |
         python3 docker_server.py --release-type head --no-push \
           --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper --allow-build-reuse
 ############################################################################################
@@ -463,8 +456,7 @@ jobs:
   FinishCheck:
     if: ${{ !failure() && !cancelled() }}
     needs:
-      - DockerServerImage
-      - DockerKeeperImage
+      - DockerServerImages
       - BuilderReport
       - BuilderSpecialReport
       - MarkReleaseReady

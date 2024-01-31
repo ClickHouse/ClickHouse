@@ -70,15 +70,13 @@ public:
         size_t index;
     };
 
-    HedgedConnections(
-        const ConnectionPoolWithFailoverPtr & pool_,
-        ContextPtr context_,
-        const ConnectionTimeouts & timeouts_,
-        const ThrottlerPtr & throttler,
-        PoolMode pool_mode,
-        std::shared_ptr<QualifiedTableName> table_to_check_ = nullptr,
-        AsyncCallback async_callback = {},
-        GetPriorityForLoadBalancing::Func priority_func = {});
+    HedgedConnections(const ConnectionPoolWithFailoverPtr & pool_,
+                      ContextPtr context_,
+                      const ConnectionTimeouts & timeouts_,
+                      const ThrottlerPtr & throttler,
+                      PoolMode pool_mode,
+                      std::shared_ptr<QualifiedTableName> table_to_check_ = nullptr,
+                      AsyncCallback async_callback = {});
 
     void sendScalarsData(Scalars & data) override;
 

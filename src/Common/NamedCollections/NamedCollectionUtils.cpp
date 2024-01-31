@@ -135,7 +135,7 @@ public:
             else
             {
                 LOG_WARNING(
-                    getLogger("NamedCollectionsLoadFromSQL"),
+                    &Poco::Logger::get("NamedCollectionsLoadFromSQL"),
                     "Unexpected file {} in named collections directory",
                     current_path.filename().string());
             }
@@ -345,7 +345,7 @@ void loadFromConfigUnlocked(const Poco::Util::AbstractConfiguration & config, st
 {
     auto named_collections = LoadFromConfig(config).getAll();
     LOG_TRACE(
-        getLogger("NamedCollectionsUtils"),
+        &Poco::Logger::get("NamedCollectionsUtils"),
         "Loaded {} collections from config", named_collections.size());
 
     NamedCollectionFactory::instance().add(std::move(named_collections));
@@ -372,7 +372,7 @@ void loadFromSQLUnlocked(ContextPtr context, std::unique_lock<std::mutex> &)
 {
     auto named_collections = LoadFromSQL(context).getAll();
     LOG_TRACE(
-        getLogger("NamedCollectionsUtils"),
+        &Poco::Logger::get("NamedCollectionsUtils"),
         "Loaded {} collections from SQL", named_collections.size());
 
     NamedCollectionFactory::instance().add(std::move(named_collections));

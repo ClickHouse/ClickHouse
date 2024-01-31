@@ -202,7 +202,7 @@ public:
     void removeConnection(Connection * connection);
 
 protected:
-    LoggerPtr log = getLogger("mysqlxx::Pool");
+    Poco::Logger * log = &Poco::Logger::get("mysqlxx::Pool");
 
     /// Number of MySQL connections which are created at launch.
     unsigned default_connections;

@@ -1,11 +1,9 @@
-#include <Core/MySQL/MySQLUtils.h>
-
-#include <Common/assert_cast.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsDateTime.h>
-#include <Core/DecimalFunctions.h>
-#include <DataTypes/IDataType.h>
-#include <base/types.h>
+#include "Common/assert_cast.h"
+#include "Columns/ColumnNullable.h"
+#include "Columns/ColumnsDateTime.h"
+#include "Core/DecimalFunctions.h"
+#include "DataTypes/IDataType.h"
+#include "base/types.h"
 
 namespace DB
 {

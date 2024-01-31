@@ -5,7 +5,6 @@
 #include <Common/NamedCollections/NamedCollections.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <IO/ReadHelpers.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -75,9 +74,6 @@ void FileCacheSettings::loadImpl(FuncHas has, FuncGetUInt get_uint, FuncGetStrin
 
     if (has("slru_size_ratio"))
         slru_size_ratio = get_double("slru_size_ratio");
-
-    if (has("write_cache_per_user_id_directory"))
-        slru_size_ratio = get_uint("write_cache_per_user_id_directory");
 }
 
 void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)

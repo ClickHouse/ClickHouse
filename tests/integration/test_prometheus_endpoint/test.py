@@ -40,8 +40,6 @@ def get_and_check_metrics(retries):
             response = requests.get(
                 "http://{host}:{port}/metrics".format(host=node.ip_address, port=8001),
                 allow_redirects=False,
-                # less then default keep-alive timeout (10 seconds)
-                timeout=5,
             )
 
             if response.status_code != 200:

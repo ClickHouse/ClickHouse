@@ -269,7 +269,7 @@ private:
 
     Statistic stat;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 class MergeJoinTransform final : public IMergingTransform<MergeJoinAlgorithm>
@@ -289,7 +289,7 @@ public:
 protected:
     void onFinish() override;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

@@ -227,20 +227,19 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
     visitor.visit(query_node);
 }
 
-class GroupingFunctionsResolveVisitor : public InDepthQueryTreeVisitorWithContext<GroupingFunctionsResolveVisitor>
+class GroupingFunctionsResolveVisitor : public InDepthQueryTreeVisitor<GroupingFunctionsResolveVisitor>
 {
-    using Base = InDepthQueryTreeVisitorWithContext<GroupingFunctionsResolveVisitor>;
 public:
     explicit GroupingFunctionsResolveVisitor(ContextPtr context_)
-        : Base(std::move(context_))
+        : context(std::move(context_))
     {}
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         if (node->getNodeType() != QueryTreeNodeType::QUERY)
             return;
 
-        resolveGroupingFunctions(node, getContext());
+        resolveGroupingFunctions(node, context);
     }
 
 private:

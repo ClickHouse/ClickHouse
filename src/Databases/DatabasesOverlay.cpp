@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 DatabasesOverlay::DatabasesOverlay(const String & name_, ContextPtr context_)
-    : IDatabase(name_), WithContext(context_->getGlobalContext()), log(getLogger("DatabaseOverlay(" + name_ + ")"))
+    : IDatabase(name_), WithContext(context_->getGlobalContext()), log(&Poco::Logger::get("DatabaseOverlay(" + name_ + ")"))
 {
 }
 
