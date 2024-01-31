@@ -1,16 +1,25 @@
 #pragma once
 
-#include <city.h>
-#include <Disks/IDisk.h>
-#include <IO/CompressionMethod.h>
-#include <IO/HashingWriteBuffer.h>
-#include <IO/WriteBufferFromFile.h>
-#include <base/defines.h>
-#include <libnuraft/nuraft.hxx>
-#include <libnuraft/raft_server.hxx>
+#include <libnuraft/ptr.hxx>
+#include <Common/ThreadPool_fwd.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/ThreadPool.h>
-#include <Coordination/KeeperContext.h>
+
+#include <map>
+#include <unordered_set>
+
+namespace nuraft
+{
+    struct log_entry;
+    struct buffer;
+    struct raft_server;
+}
+
+namespace Poco
+{
+    class Logger;
+}
+
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 namespace DB
 {
@@ -22,8 +31,11 @@ using LogEntries = std::vector<LogEntryPtr>;
 using LogEntriesPtr = nuraft::ptr<LogEntries>;
 using BufferPtr = nuraft::ptr<nuraft::buffer>;
 
-using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
-using IndexToLogEntryNode = typename IndexToLogEntry::node_type;
+struct KeeperLogInfo;
+class KeeperContext;
+using KeeperContextPtr = std::shared_ptr<KeeperContext>;
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
 
 enum class ChangelogVersion : uint8_t
 {
@@ -97,19 +109,37 @@ struct LogLocation
     size_t size;
 };
 
+struct CacheEntry
+{
+    explicit CacheEntry(LogEntryPtr entry_);
+
+    LogEntryPtr entry = nullptr;
+    std::atomic<bool> is_prefetched = false;
+    mutable std::mutex entry_mutex;
+    mutable std::condition_variable entry_prefetched_cv;
+    std::exception_ptr exception;
+};
+
+using IndexToCacheEntry = std::unordered_map<uint64_t, CacheEntry>;
+using IndexToCacheEntryNode = typename IndexToCacheEntry::node_type;
+
+
 struct LogEntryStorage
 {
-    explicit LogEntryStorage(const LogFileSettings & log_settings);
+    explicit LogEntryStorage(const LogFileSettings & log_settings, KeeperContextPtr keeper_context_);
 
-    size_t size() const;
+    ~LogEntryStorage();
 
     void addEntry(uint64_t index, const LogEntryPtr & log_entry);
     void addEntryWithLocation(uint64_t index, const LogEntryPtr & log_entry, LogLocation log_location);
-    void eraseIf(std::function<bool(size_t)> index_predicate);
+    void cleanUpTo(uint64_t index);
+    void cleanAfter(uint64_t index);
     bool contains(uint64_t index) const;
     LogEntryPtr getEntry(uint64_t index) const;
     void clear();
     LogEntryPtr getLatestConfigChange() const;
+
+    void cacheFirstLog(uint64_t first_index);
 
     using IndexWithLogLocation = std::pair<uint64_t, LogLocation>;
 
@@ -118,19 +148,40 @@ struct LogEntryStorage
     void refreshCache();
 
     LogEntriesPtr getLogEntriesBetween(uint64_t start, uint64_t end) const;
+
+    void getKeeperLogInfo(KeeperLogInfo & log_info) const;
+
+    bool isConfLog(uint64_t index) const;
+    
+    void shutdown();
 private:
+    void prefetchCommitLogs();
+
+    void startCommitLogsPrefetch(uint64_t last_committed_index) const;
+
+    bool shouldMoveLogToCommitCache(uint64_t index, size_t log_entry_size);
+
     struct InMemoryCache
     {
         explicit InMemoryCache(size_t size_threshold_);
 
-        void addEntry(uint64_t index, const LogEntryPtr & log_entry);
-        void addEntry(IndexToLogEntryNode && node);
-        IndexToLogEntryNode popOldestEntry();
+        void addEntry(uint64_t index, LogEntryPtr log_entry);
+        void addEntry(IndexToCacheEntryNode && node);
+        void addPrefetchedEntry(uint64_t index, size_t size);
+        void setPrefetchedEntry(uint64_t index, LogEntryPtr log_entry, std::exception_ptr exception);
+        void updateStatsWithNewEntry(uint64_t index, size_t size);
+        IndexToCacheEntryNode popOldestEntry();
+        bool containsEntry(uint64_t index) const;
         LogEntryPtr getEntry(uint64_t index) const;
+        void cleanUpTo(uint64_t index);
+        void cleanAfter(uint64_t index);
+        bool empty() const;
+        size_t numberOfEntries() const;
         bool hasSpaceAvailable(size_t log_entry_size) const;
+        void clear();
 
         /// Mapping log_id -> log_entry
-        IndexToLogEntry cache;
+        IndexToCacheEntry cache;
         size_t cache_size = 0;
         size_t min_index_in_cache = 0;
         size_t max_index_in_cache = 0;
@@ -139,14 +190,44 @@ private:
     };
 
     InMemoryCache latest_logs_cache;
-    InMemoryCache commit_logs_cache;
+    mutable InMemoryCache commit_logs_cache;
 
-    size_t total_entries = 0;
+    LogEntryPtr latest_config;
+    uint64_t latest_config_index = 0;
+
+    LogEntryPtr first_log_entry;
+    uint64_t first_log_index = 0;
+
+    std::unique_ptr<ThreadFromGlobalPool> commit_logs_prefetcher;
+
+    struct FileReadInfo
+    {
+        ChangelogFileDescriptionPtr file_description;
+        size_t position;
+        size_t count;
+    };
+
+    struct PrefetchInfo
+    {
+        std::vector<FileReadInfo> file_infos;
+        std::pair<size_t, size_t> commit_prefetch_index_range;
+        std::atomic<bool> cancel;
+        std::atomic<bool> done = false;
+    };
+
+    mutable ConcurrentBoundedQueue<std::shared_ptr<PrefetchInfo>> prefetch_queue;
+    mutable std::shared_ptr<PrefetchInfo> current_prefetch_info;
 
     mutable std::mutex logs_location_mutex;
     std::vector<IndexWithLogLocation> unapplied_indices_with_log_locations;
     std::unordered_map<uint64_t, LogLocation> logs_location;
     size_t max_index_with_location = 0;
+
+    std::unordered_set<uint64_t> conf_logs_indices;
+
+    bool is_shutdown = false;
+    KeeperContextPtr keeper_context;
+    LoggerPtr log;
 };
 
 /// Simplest changelog with files rotation.
@@ -190,13 +271,15 @@ public:
     LogEntriesPtr getLogEntriesBetween(uint64_t start_index, uint64_t end_index);
 
     /// Return entry at position index
-    LogEntryPtr entryAt(uint64_t index);
+    LogEntryPtr entryAt(uint64_t index) const;
 
     /// Serialize entries from index into buffer
     BufferPtr serializeEntriesToBuffer(uint64_t index, int32_t count);
 
     /// Apply entries from buffer overriding existing entries
     void applyEntriesFromBuffer(uint64_t index, nuraft::buffer & buffer);
+
+    bool isConfLog(uint64_t index) const;
 
     /// Fsync latest log to disk and flush buffer
     bool flush();
@@ -205,7 +288,7 @@ public:
 
     void shutdown();
 
-    uint64_t size() const { return entry_storage.size(); }
+    uint64_t size() const { return max_log_id - min_log_id + 1; }
 
     uint64_t lastDurableIndex() const
     {
@@ -216,6 +299,8 @@ public:
     void setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_server_);
 
     bool isInitialized() const;
+
+    void getKeeperLogInfo(KeeperLogInfo & log_info) const;
 
     /// Fsync log to disk
     ~Changelog();
@@ -255,6 +340,8 @@ private:
 
     LogEntryStorage entry_storage;
 
+    std::unordered_set<uint64_t> conf_logs_indices;
+
     /// Start log_id which exists in all "active" logs
     /// min_log_id + 1 == max_log_id means empty log storage for NuRaft
     uint64_t min_log_id = 0;
@@ -262,7 +349,7 @@ private:
     /// For compaction, queue of delete not used logs
     /// 128 is enough, even if log is not removed, it's not a problem
     ConcurrentBoundedQueue<std::pair<std::string, DiskPtr>> log_files_to_delete_queue{128};
-    ThreadFromGlobalPool clean_log_thread;
+    std::unique_ptr<ThreadFromGlobalPool> clean_log_thread;
 
     struct AppendLog
     {
@@ -280,7 +367,7 @@ private:
 
     void writeThread();
 
-    ThreadFromGlobalPool write_thread;
+    std::unique_ptr<ThreadFromGlobalPool> write_thread;
     ConcurrentBoundedQueue<WriteOperation> write_operations;
 
     /// Append log completion callback tries to acquire NuRaft's global lock
@@ -289,7 +376,7 @@ private:
     /// For those reasons we call the completion callback in a different thread
     void appendCompletionThread();
 
-    ThreadFromGlobalPool append_completion_thread;
+    std::unique_ptr<ThreadFromGlobalPool> append_completion_thread;
     ConcurrentBoundedQueue<bool> append_completion_queue;
 
     // last_durable_index needs to be exposed through const getter so we make mutex mutable

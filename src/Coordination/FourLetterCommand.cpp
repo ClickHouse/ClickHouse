@@ -561,6 +561,12 @@ String LogInfoCommand::run()
     append("leader_committed_log_idx", log_info.leader_committed_log_idx);
     append("target_committed_log_idx", log_info.target_committed_log_idx);
     append("last_snapshot_idx", log_info.last_snapshot_idx);
+
+    append("latest_logs_cache_entries", log_info.latest_logs_cache_entries);
+    append("latest_logs_cache_size", log_info.latest_logs_cache_size);
+
+    append("commit_logs_cache_entries", log_info.commit_logs_cache_entries);
+    append("commit_logs_cache_size", log_info.commit_logs_cache_size);
     return ret.str();
 }
 

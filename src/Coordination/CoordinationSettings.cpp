@@ -34,6 +34,11 @@ void CoordinationSettings::loadFromConfig(const String & config_elem, const Poco
             e.addMessage("in Coordination settings config");
         throw;
     }
+
+    /// for backwards compatibility we set max_requests_append_size to max_requests_batch_size
+    /// if max_requests_append_size was not changed
+    if (!max_requests_append_size.changed)
+        max_requests_append_size = max_requests_batch_size;
 }
 
 

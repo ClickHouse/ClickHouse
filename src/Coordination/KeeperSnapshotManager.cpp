@@ -594,7 +594,7 @@ KeeperSnapshotManager::KeeperSnapshotManager(
 
             if (!inserted)
                 LOG_WARNING(
-                    getLogger("KeeperSnapshotManager"),
+                    log,
                     "Found another snapshots with last log idx {}, will use snapshot from disk {}",
                     snapshot_up_to,
                     disk->getName());
@@ -602,6 +602,9 @@ KeeperSnapshotManager::KeeperSnapshotManager(
 
         for (const auto & [name, path] : incomplete_files)
             disk->removeFile(path);
+
+        if (snapshot_files.empty())
+            LOG_TRACE(log, "No snapshots were found on {}", disk->getName());
 
         read_disks.insert(disk);
     };

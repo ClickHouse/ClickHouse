@@ -1,6 +1,7 @@
 #include <Coordination/Defines.h>
 #include <Coordination/KeeperServer.h>
 
+#include "Coordination/KeeperLogStore.h"
 #include "config.h"
 
 #include <chrono>
@@ -134,7 +135,7 @@ KeeperServer::KeeperServer(
         snapshots_queue_,
         coordination_settings,
         keeper_context,
-        config.getBool("keeper_server.upload_snapshot_on_exit", true) ? &snapshot_manager_s3 : nullptr,
+        config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
         commit_callback,
         checkAndGetSuperdigest(configuration_and_settings_->super_digest));
 
@@ -332,7 +333,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     params.auto_forwarding_req_timeout_
         = getValueOrMaxInt32AndLogWarning(coordination_settings->operation_timeout_ms.totalMilliseconds() * 2, "operation_timeout_ms", log);
     params.max_append_size_
-        = getValueOrMaxInt32AndLogWarning(coordination_settings->max_requests_batch_size, "max_requests_batch_size", log);
+        = getValueOrMaxInt32AndLogWarning(coordination_settings->max_requests_append_size, "max_requests_append_size", log);
 
     params.return_method_ = nuraft::raft_params::async_handler;
 
@@ -427,6 +428,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 {
     state_machine->init();
 
+    keeper_context->setLastCommitIndex(state_machine->last_commit_index());
     state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings->reserved_log_items);
 
     auto log_store = state_manager->load_log_store();
@@ -1125,14 +1127,12 @@ KeeperLogInfo KeeperServer::getKeeperLogInfo()
     auto log_store = state_manager->load_log_store();
     if (log_store)
     {
-        log_info.first_log_idx = log_store->start_index();
-        log_info.first_log_term = log_store->term_at(log_info.first_log_idx);
+        const auto & keeper_log_storage = static_cast<const KeeperLogStore &>(*log_store);
+        keeper_log_storage.getKeeperLogInfo(log_info);
     }
 
     if (raft_instance)
     {
-        log_info.last_log_idx = raft_instance->get_last_log_idx();
-        log_info.last_log_term = raft_instance->get_last_log_term();
         log_info.last_committed_log_idx = raft_instance->get_committed_log_idx();
         log_info.leader_committed_log_idx = raft_instance->get_leader_committed_log_idx();
         log_info.target_committed_log_idx = raft_instance->get_target_committed_log_idx();
