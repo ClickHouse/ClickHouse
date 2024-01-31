@@ -42,43 +42,43 @@ SET allow_experimental_analyzer = 1;
 SELECT b, a FROM order_by_all ORDER BY ALL NULLS FIRST;
 SELECT b, a FROM order_by_all ORDER BY ALL NULLS LAST;
 
-SELECT '-- what happens if some column "all" already exists?';
+SELECT '-- "ALL" in ORDER BY is case-insensitive';
+
+SET allow_experimental_analyzer = 0;
+SELECT a, b FROM order_by_all ORDER BY ALL;
+SELECT a, b FROM order_by_all ORDER BY all;
+
+SET allow_experimental_analyzer = 1;
+SELECT a, b FROM order_by_all ORDER BY ALL;
+SELECT a, b FROM order_by_all ORDER BY all;
+
+SELECT '-- If "all" (case-insensitive) appears in the SELECT clause, throw an error because of ambiguity';
 
 -- columns
 
 SET allow_experimental_analyzer = 0;
-SELECT a, b, all FROM order_by_all ORDER BY all;  -- { serverError UNEXPECTED_EXPRESSION }
 SELECT a, b, all FROM order_by_all ORDER BY ALL;  -- { serverError UNEXPECTED_EXPRESSION }
-SELECT a, b, all FROM order_by_all ORDER BY all SETTINGS enable_order_by_all = false;
 
 SET allow_experimental_analyzer = 1;
-SELECT a, b, all FROM order_by_all ORDER BY all;  -- { serverError UNEXPECTED_EXPRESSION }
 SELECT a, b, all FROM order_by_all ORDER BY ALL;  -- { serverError UNEXPECTED_EXPRESSION }
-SELECT a, b, all FROM order_by_all ORDER BY all SETTINGS enable_order_by_all = false;
 
 -- column aliases
 
 SET allow_experimental_analyzer = 0;
-SELECT a, b AS all FROM order_by_all ORDER BY all;  -- { serverError UNEXPECTED_EXPRESSION }
 SELECT a, b AS all FROM order_by_all ORDER BY ALL;  -- { serverError UNEXPECTED_EXPRESSION }
-SELECT a, b AS all FROM order_by_all ORDER BY all SETTINGS enable_order_by_all = false;
 
 SET allow_experimental_analyzer = 1;
-SELECT a, b AS all FROM order_by_all ORDER BY all;  -- { serverError UNEXPECTED_EXPRESSION }
 SELECT a, b AS all FROM order_by_all ORDER BY ALL;  -- { serverError UNEXPECTED_EXPRESSION }
-SELECT a, b AS all FROM order_by_all ORDER BY all SETTINGS enable_order_by_all = false;
 
 -- expressions
 
 SET allow_experimental_analyzer = 0;
-SELECT format('{} {}', a, b) AS all FROM order_by_all ORDER BY all;  -- { serverError UNEXPECTED_EXPRESSION }
 SELECT format('{} {}', a, b) AS all FROM order_by_all ORDER BY ALL;  -- { serverError UNEXPECTED_EXPRESSION }
-SELECT format('{} {}', a, b) AS all FROM order_by_all ORDER BY all SETTINGS enable_order_by_all = false;
 
 SET allow_experimental_analyzer = 1;
-SELECT format('{} {}', a, b) AS all FROM order_by_all ORDER BY all;  -- { serverError UNEXPECTED_EXPRESSION }
 SELECT format('{} {}', a, b) AS all FROM order_by_all ORDER BY ALL;  -- { serverError UNEXPECTED_EXPRESSION }
-SELECT format('{} {}', a, b) AS all FROM order_by_all ORDER BY all SETTINGS enable_order_by_all = false;
+
+SELECT '-- If ORDER BY contains "ALL" plus other columns, then "ALL" loses its special meaning';
 
 SET allow_experimental_analyzer = 0;
 SELECT a, b, all FROM order_by_all ORDER BY all, a;
@@ -88,7 +88,7 @@ SELECT a, b, all FROM order_by_all ORDER BY all, a;
 
 DROP TABLE order_by_all;
 
-SELECT '-- test SELECT * ORDER BY ALL with no "all" column in the SELECT clause';
+SELECT '-- test SELECT * ORDER BY ALL (only works if the SELECT column contains no "all" column)';
 
 CREATE TABLE order_by_all
 (
@@ -96,7 +96,7 @@ CREATE TABLE order_by_all
     b Nullable(Int32),
     c UInt64,
 )
-    ENGINE = Memory;
+ENGINE = Memory;
 
 INSERT INTO order_by_all VALUES ('B', 3, 10), ('C', NULL, 40), ('D', 1, 20), ('A', 2, 30);
 

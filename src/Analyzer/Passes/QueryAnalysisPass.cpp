@@ -1214,7 +1214,7 @@ private:
 
     static void expandGroupByAll(QueryNode & query_tree_node_typed);
 
-    void expandOrderByAll(QueryNode & query_tree_node_typed, const Settings & settings);
+    void expandOrderByAll(QueryNode & query_tree_node_typed);
 
     static std::string
     rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
@@ -2334,9 +2334,9 @@ void QueryAnalyzer::expandGroupByAll(QueryNode & query_tree_node_typed)
     query_tree_node_typed.setIsGroupByAll(false);
 }
 
-void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Settings & settings)
+void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed)
 {
-    if (!settings.enable_order_by_all || !query_tree_node_typed.isOrderByAll())
+    if (!query_tree_node_typed.isOrderByAll())
         return;
 
     auto * all_node = query_tree_node_typed.getOrderBy().getNodes()[0]->as<SortNode>();
@@ -7369,7 +7369,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         if (settings.enable_positional_arguments)
             replaceNodesWithPositionalArguments(query_node_typed.getOrderByNode(), query_node_typed.getProjection().getNodes(), scope);
 
-        expandOrderByAll(query_node_typed, settings);
+        expandOrderByAll(query_node_typed);
         resolveSortNodeList(query_node_typed.getOrderByNode(), scope);
     }
 

@@ -49,15 +49,14 @@ A	2
 2	A
 3	B
 \N	C
--- what happens if some column "all" already exists?
-B	3	10
-D	1	20
-A	2	30
-C	\N	40
-B	3	10
-D	1	20
-A	2	30
-C	\N	40
+-- "ALL" in ORDER BY is case-insensitive
+A	2
+B	3
+C	\N
+D	1
+A	2
+B	3
+C	\N
 D	1
 A	2
 B	3
@@ -66,14 +65,9 @@ D	1
 A	2
 B	3
 C	\N
-A 2
-B 3
-D 1
-\N
-A 2
-B 3
-D 1
-\N
+D	1
+-- If "all" (case-insensitive) appears in the SELECT clause, throw an error because of ambiguity
+-- If ORDER BY contains "ALL" plus other columns, then "ALL" loses its special meaning
 B	3	10
 D	1	20
 A	2	30
@@ -82,7 +76,7 @@ B	3	10
 D	1	20
 A	2	30
 C	\N	40
--- test SELECT * ORDER BY ALL with no "all" column in the SELECT clause
+-- test SELECT * ORDER BY ALL (only works if the SELECT column contains no "all" column)
 A	2	30
 B	3	10
 C	\N	40

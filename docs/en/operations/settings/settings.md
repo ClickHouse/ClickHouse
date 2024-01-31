@@ -4192,41 +4192,6 @@ Result:
 └─────┴─────┴───────┘
 ```
 
-## enable_order_by_all {#enable-order-by-all}
-
-Enables or disables sorting by `ALL` columns, i.e. [ORDER BY](../../sql-reference/statements/select/order-by.md)
-
-Possible values:
-
-- 0 — Disable ORDER BY ALL.
-- 1 — Enable ORDER BY ALL.
-
-Default value: `1`.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE TAB(C1 Int, C2 Int, ALL Int) ENGINE=Memory();
-
-INSERT INTO TAB VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
-
-SELECT * FROM TAB ORDER BY ALL; -- returns an error that ALL is ambiguous
-
-SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all;
-```
-
-Result:
-
-```text
-┌─C1─┬─C2─┬─ALL─┐
-│ 20 │ 20 │  10 │
-│ 30 │ 10 │  20 │
-│ 10 │ 20 │  30 │
-└────┴────┴─────┘
-```
-
 ## splitby_max_substrings_includes_remaining_string {#splitby_max_substrings_includes_remaining_string}
 
 Controls whether function [splitBy*()](../../sql-reference/functions/splitting-merging-functions.md) with argument `max_substrings` > 0 will include the remaining string in the last element of the result array.
