@@ -58,7 +58,7 @@ private:
     double size_ratio;
     LRUFileCachePriority protected_queue;
     LRUFileCachePriority probationary_queue;
-    Poco::Logger * log = &Poco::Logger::get("SLRUFileCachePriority");
+    LoggerPtr log = getLogger("SLRUFileCachePriority");
 
     void increasePriority(SLRUIterator & iterator, const CacheGuard::Lock & lock);
 };
