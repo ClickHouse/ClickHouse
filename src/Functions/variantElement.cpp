@@ -212,7 +212,7 @@ REGISTER_FUNCTION(VariantElement)
         .description = R"(
 Extracts a column with specified type from a `Variant` column.
 )",
-        .syntax{"tupleElement(variant, type_name, [, default_value])"},
+        .syntax{"variantElement(variant, type_name, [, default_value])"},
         .arguments{{
             {"variant", "Variant column"},
             {"type_name", "The name of the variant type to extract"},
