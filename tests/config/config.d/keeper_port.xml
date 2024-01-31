@@ -4,6 +4,7 @@
         <server_id>1</server_id>
 
         <create_snapshot_on_exit>1</create_snapshot_on_exit>
+        <digest_enable>1</digest_enabled>
 
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>
