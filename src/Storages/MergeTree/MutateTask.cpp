@@ -1866,6 +1866,14 @@ private:
     std::unique_ptr<PartMergerWriter> part_merger_writer_task{nullptr};
 };
 
+/*
+ * Decorator that'll drop expired parts by replacing them with empty ones.
+ * Main use case (only use case for now) is to decorate `MutateSomePartColumnsTask`,
+ * which is used to recalculate TTL. If the part is expired, this class will replace it with
+ * an empty one.
+ *
+ * Triggered when `ttl_only_drop_parts` is set and the only TTL is rows TTL.
+ * */
 class ExecutableTaskDropTTLExpiredPartsDecorator : public IExecutableTask
 {
 public:
