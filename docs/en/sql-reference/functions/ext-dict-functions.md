@@ -483,19 +483,491 @@ SELECT dictGetAll('regexp_dict', 'tag', 'foobarbaz', 2);
 
 ## dictGetInt8
 
+Retrieves type Int8 values from a dictionary.
+
+**Syntax**
+
+```sql
+dictGetInt8('dictionary_name', 'attribute_name', key)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `Int8` type.
+
+**Implementation details**
+
+This function will throw an exception if the key does not exist in the dictionary.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    code_designation Int8
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'Mali', 32);
+INSERT INTO countries VALUES (2, 'Czechia', 28);
+INSERT INTO countries VALUES (3, 'Brazil', 82);
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    code_designation Int8
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetInt8('country_codes', 'code_designation', '3') AS code_designation_output;
+```
+
+Result:
+
+```response
+28
+```
+
 ## dictGetInt16
+
+Retrieves type Int16 values from a dictionary.
+
+**Syntax**
+
+```sql
+dictGetInt16('dictionary_name', 'attribute_name', key)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `Int16` type.
+
+**Implementation details**
+
+This function will throw an exception if the key does not exist in the dictionary.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    code_designation Int16
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'Sweden', 32767);
+INSERT INTO countries VALUES (2, 'Burundi', 28372);
+INSERT INTO countries VALUES (3, 'Mozambique', 18372);
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    code_designation Int16
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetInt16('country_codes', 'code_designation', '2') AS code_designation_output;
+```
+
+Result:
+
+```response
+28372
+```
 
 ## dictGetInt32
 
+Retrieves type Int32 values from a dictionary.
+
+**Syntax**
+
+```sql
+dictGetInt32('dictionary_name', 'attribute_name', key)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `Int32` type.
+
+**Implementation details**
+
+This function will throw an exception if the key does not exist in the dictionary.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    code_designation Int32 
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'United States', 2147483647);
+INSERT INTO countries VALUES (2, 'Maldives', 1938273982);
+INSERT INTO countries VALUES (3, 'India', 928372817);
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    code_designation Int32
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetInt32('country_codes', 'code_designation', '2') AS code_designation_output;
+```
+
+Result:
+
+```response
+1938273982
+```
+
 ## dictGetInt64
+
+Retrieves type Int64 values from a dictionary.
+
+**Syntax**
+
+```sql
+dictGetInt64('dictionary_name', 'attribute_name', key)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `Int64` type.
+
+**Implementation details**
+
+This function will throw an exception if the key does not exist in the dictionary.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    code_designation Int64 
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'Palau', 9223372036854775801);
+INSERT INTO countries VALUES (2, 'Jamaica', 384982938291);
+INSERT INTO countries VALUES (3, 'Tunisia', 910382938472827168);
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    code_designation Int64
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetInt64('country_codes', 'code_designation', '2') AS code_designation_output;
+```
+
+Result:
+
+```response
+384982938291
+```
 
 ## dictGetUInt8
 
+Retrieves type UInt8 values from a dictionary.
+
+**Syntax**
+
+```sql
+dictGetUInt8('dictionary_name', 'attribute_name', key)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `UInt8` type.
+
+**Implementation details**
+
+This function will throw an exception if the key does not exist in the dictionary.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    code_designation UInt8
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'Mali', 32);
+INSERT INTO countries VALUES (2, 'Czechia', 28);
+INSERT INTO countries VALUES (3, 'Brazil', 82);
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    code_designation UInt8
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetUInt8('country_codes', 'code_designation', '3') AS code_designation_output;
+```
+
+Result:
+
+```response
+28
+```
+
 ## dictGetUInt16
+
+Retrieves type UInt16 values from a dictionary.
+
+**Syntax**
+
+```sql
+dictGetUInt16('dictionary_name', 'attribute_name', key)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `UInt16` type.
+
+**Implementation details**
+
+This function will throw an exception if the key does not exist in the dictionary.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    code_designation UInt16
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'Sweden', 32767);
+INSERT INTO countries VALUES (2, 'Burundi', 28372);
+INSERT INTO countries VALUES (3, 'Mozambique', 18372);
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    code_designation UInt16
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetUInt16('country_codes', 'code_designation', '2') AS code_designation_output;
+```
+
+Result:
+
+```response
+28372
+```
 
 ## dictGetUInt32
 
+Retrieves type UInt32 values from a dictionary.
+
+**Syntax**
+
+```sql
+dictGetUInt32('dictionary_name', 'attribute_name', key)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `UInt32` type.
+
+**Implementation details**
+
+This function will throw an exception if the key does not exist in the dictionary.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    code_designation UInt32 
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'United States', 2147483647);
+INSERT INTO countries VALUES (2, 'Maldives', 1938273982);
+INSERT INTO countries VALUES (3, 'India', 928372817);
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    code_designation UInt32
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetUInt32('country_codes', 'code_designation', '2') AS code_designation_output;
+```
+
+Result:
+
+```response
+1938273982
+```
+
 ## dictGetUInt64
+
+Retrieves type UInt64 values from a dictionary.
+
+**Syntax**
+
+```sql
+dictGetUInt64('dictionary_name', 'attribute_name', key)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `UInt64` type.
+
+**Implementation details**
+
+This function will throw an exception if the key does not exist in the dictionary.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    code_designation UInt64 
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'Palau', 9223372036854775801);
+INSERT INTO countries VALUES (2, 'Jamaica', 384982938291);
+INSERT INTO countries VALUES (3, 'Tunisia', 910382938472827168);
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    code_designation Int64
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetInt64('country_codes', 'code_designation', '2') AS code_designation_output;
+```
+
+Result:
+
+```response
+384982938291
+```
 
 ## dictGetFloat32
 
