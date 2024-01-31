@@ -872,15 +872,6 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                 for (const auto & dependency : all_dependencies)
                 {
-                    /*
-                     * If `ttl_only_drop_parts` is set, we can skip reading columns which are not needed for TTL calculation.
-                     * If it is not set, we have to read all columns because we might need to do partial pruning.
-                     * */
-//                    bool should_add_ttl_target_columns = metadata_snapshot->hasRowsTTL() && dependency.kind == ColumnDependency::TTL_TARGET
-//                        && !source.getMergeTreeData()->getSettings()->ttl_only_drop_parts;
-//                    bool should_add_column = dependency.kind == ColumnDependency::TTL_EXPRESSION || should_add_ttl_target_columns;
-//
-//                    if (should_add_column)
                     if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
                         dependencies.insert(dependency);
                 }
