@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2657 
+personal_ws-1.1 en 2657
 AArch
 ACLs
 ALTERs
@@ -214,7 +214,7 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
-DDSketch
+DD
 Decrypted
 Deduplicate
 Deduplication
@@ -1593,6 +1593,7 @@ groupArrayLast
 groupArrayMovingAvg
 groupArrayMovingSum
 groupArraySample
+groupArraySorted
 groupBitAnd
 groupBitOr
 groupBitXor
@@ -1607,6 +1608,7 @@ grouparraylast
 grouparraymovingavg
 grouparraymovingsum
 grouparraysample
+grouparraysorted
 groupbitand
 groupbitmap
 groupbitmapand
@@ -2060,7 +2062,6 @@ prebuild
 prebuilt
 preemptable
 preferServerCiphers
-prefertch
 prefetch
 prefetchsize
 preloaded
@@ -2137,7 +2138,7 @@ quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
 quantileddsketch
-quantileDDSketch
+quantileDD
 quartile
 queryID
 queryString
@@ -2637,6 +2638,8 @@ uuid
 varPop
 varSamp
 variadic
+variantElement
+variantType
 varint
 varpop
 varsamp
