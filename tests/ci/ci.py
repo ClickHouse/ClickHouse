@@ -16,6 +16,7 @@ import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
 from ci_config import CI_CONFIG, Build, Labels, JobNames
+from ci_utils import GHActions, is_hex
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
@@ -32,7 +33,7 @@ from commit_status_helper import (
     set_status_comment,
     update_mergeable_check,
 )
-from digest_helper import JOB_DIGEST_LEN, DockerDigester, JobDigester
+from digest_helper import DockerDigester, JobDigester
 from env_helper import (
     CI,
     GITHUB_JOB_API_URL,
@@ -63,21 +64,17 @@ class CiCache:
     CI cache is a bunch of records. Record is a file stored under special location on s3.
     The file name has following format
 
-        <RECORD_TYPE>_[<ATTRIBUTES>]-<JOB_NAME>_<JOB_DIGEST>_<BATCH>_<NUM_BATCHES>.ci
+        <RECORD_TYPE>_[<ATTRIBUTES>]--<JOB_NAME>_<JOB_DIGEST>_<BATCH>_<NUM_BATCHES>.ci
 
     RECORD_TYPE:
         SUCCESSFUL - for successfuly finished jobs
         PENDING - for pending jobs
 
     ATTRIBUTES:
-        master - for jobs being executed on the master branch (not a PR branch)
+        release - for jobs being executed on the release branch including master branch (not a PR branch)
     """
 
     _S3_CACHE_PREFIX = "CI_cache_v1"
-    # record file name prefix for done jobs
-    # _CACHE_RECORD_PREFIX_SUCCESSFUL = "successful"
-    # record file name prefix for pending jobs
-    # _CACHE_RECORD_PREFIX_PENDING = "pending"
     _CACHE_BUILD_REPORT_PREFIX = "build_report"
     _RECORD_FILE_EXTENSION = ".ci"
     _LOCAL_CACHE_PATH = Path(TEMP_PATH) / "ci_cache"
@@ -137,11 +134,7 @@ class CiCache:
         job_digests: Dict[str, str],
     ):
         self.s3 = s3
-        # self.build_digest = job_digests[JobNames.PACKAGE_RELEASE]
-        # self.docs_digest = job_digests[JobNames.DOCS_CHECK]
         self.job_digests = job_digests
-        # self.build_path = f"{self._S3_CACHE_PREFIX}/BUILD-{self.build_digest}/"
-        # self.docs_path = f"{self._S3_CACHE_PREFIX}/DOCS-{self.docs_digest}/"
         self.cache_s3_paths = {
             job_type: f"{self._S3_CACHE_PREFIX}/{job_type.value}-{self.job_digests[self._get_reference_job_name(job_type)]}/"
             for job_type in self.JobType
@@ -182,6 +175,7 @@ class CiCache:
             if release_branch
             else prefix
         )
+        assert self._DIV1 not in job_name, f"Invalid job name {job_name}"
         job_name = self._DIV2.join(
             [job_name, self.job_digests[job_name], str(batch), str(num_batches)]
         )
@@ -191,6 +185,69 @@ class CiCache:
 
     def _get_record_s3_path(self, job_name: str) -> str:
         return self.cache_s3_paths[self.JobType.get_type_by_name(job_name)]
+
+    def _parse_record_file_name(
+        self, record_type: RecordType, file_name: str
+    ) -> Optional["CiCache.Record"]:
+        # validate filename
+        if (
+            not file_name.endswith(self._RECORD_FILE_EXTENSION)
+            or not len(file_name.split(self._DIV1)) == 2
+        ):
+            print("ERROR: wrong file name format")
+            return None
+
+        file_name = file_name.removesuffix(self._RECORD_FILE_EXTENSION)
+        release_branch = False
+
+        prefix_extended, job_suffix = file_name.split(self._DIV1)
+        record_type_and_attribute = prefix_extended.split(self._DIV2)
+
+        # validate filename prefix
+        failure = False
+        if not 0 < len(record_type_and_attribute) <= 2:
+            print("ERROR: wrong file name prefix")
+            failure = True
+        if (
+            len(record_type_and_attribute) > 1
+            and record_type_and_attribute[1] != self._ATTRIBUTE_RELEASE
+        ):
+            print("ERROR: wrong record attribute")
+            failure = True
+        if record_type_and_attribute[0] != self.s3_record_prefixes[record_type]:
+            print("ERROR: wrong record type")
+            failure = True
+        if failure:
+            return None
+
+        if (
+            len(record_type_and_attribute) > 1
+            and record_type_and_attribute[1] == self._ATTRIBUTE_RELEASE
+        ):
+            release_branch = True
+
+        job_properties = job_suffix.split(self._DIV2)
+        job_name, job_digest, batch, num_batches = (
+            self._DIV2.join(job_properties[:-3]),
+            job_properties[-3],
+            int(job_properties[-2]),
+            int(job_properties[-1]),
+        )
+
+        if not is_hex(job_digest):
+            print("ERROR: wrong record job digest")
+            return None
+
+        record = self.Record(
+            record_type,
+            job_name,
+            job_digest,
+            batch,
+            num_batches,
+            release_branch,
+            file="",
+        )
+        return record
 
     def update(self):
         """
@@ -203,51 +260,23 @@ class CiCache:
                 path = self.cache_s3_paths[job_type]
                 records = self.s3.list_prefix(f"{path}{prefix}", S3_BUILDS_BUCKET)
                 records = [record.split("/")[-1] for record in records]
-                print(f"::group::Cache records for {job_type.value} type jobs")
-                print(records)
-                print("::endgroup::")
+                GHActions.print_in_group(
+                    f"Cache records: [{record_type}] in [{job_type.value}]", records
+                )
                 for file in records:
-                    assert file.endswith(self._RECORD_FILE_EXTENSION)
-                    file = file.replace(self._RECORD_FILE_EXTENSION, "")
-                    release_branch = False
-                    assert len(file.split(self._DIV1)) == 2, f"BUG: {file}"
-                    prefix_extended, job_suffix = file.split(self._DIV1)
-                    assert (
-                        len(prefix_extended.split(self._DIV2)) <= 2
-                    ), f"BUG: {file} {prefix_extended}"
-                    if len(prefix_extended.split(self._DIV2)) > 1:
-                        assert (
-                            prefix_extended.split(self._DIV2)[1]
-                            == self._ATTRIBUTE_RELEASE
-                        ), "BUG, no other attributes currently supported"
-                        release_branch = True
-
-                    job_properties = job_suffix.split(self._DIV2)
-                    assert len(job_properties) >= 4, "BUG"
-                    job_name, job_digest, batch, num_batches = (
-                        self._DIV2.join(job_properties[:-3]),
-                        job_properties[-3],
-                        int(job_properties[-2]),
-                        int(job_properties[-1]),
+                    record = self._parse_record_file_name(
+                        record_type=record_type, file_name=file
                     )
-                    assert (
-                        len(job_digest) == JOB_DIGEST_LEN
-                    ), f"Invalid digest: {job_digest}"
+                    if not record:
+                        print(f"ERROR: failed to parse cache record [{file}]")
+                        continue
                     if (
-                        job_name not in self.job_digests
-                        or self.job_digests[job_name] != job_digest
+                        record.job_name not in self.job_digests
+                        or self.job_digests[record.job_name] != record.job_digest
                     ):
                         # skip records we are not interested in
                         continue
-                    record = self.Record(
-                        record_type,
-                        job_name,
-                        job_digest,
-                        batch,
-                        num_batches,
-                        release_branch,
-                        file="",
-                    )
+
                     if record.to_str_key() not in cache_list:
                         cache_list[record.to_str_key()] = record
                         self.cache_data_fetched = False
@@ -388,9 +417,6 @@ class CiCache:
         """
         Gets a cache record data for a job, or None if a cache miss
         """
-        assert (
-            record_type == self.RecordType.SUCCESSFUL
-        ), "FIXME: Not support for other type currently"
 
         if not self.cache_data_fetched:
             self.fetch_records_data()
@@ -412,7 +438,7 @@ class CiCache:
         res = CommitStatusData.load_from_file(
             self._LOCAL_CACHE_PATH / record_file_name
         )  # type: CommitStatusData
-        assert res.status == "success", "BUG!"
+
         return res
 
     def delete(
@@ -714,6 +740,13 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         default=False,
         help="will create run config for rebuilding all dockers, used in --configure action (for nightly docker job)",
     )
+    # FIXME: remove, not used
+    parser.add_argument(
+        "--rebuild-all-binaries",
+        action="store_true",
+        default=False,
+        help="[DEPRECATED. to be removed, once no wf use it] will create run config without skipping build jobs in any case, used in --configure action (for release branches)",
+    )
     parser.add_argument(
         "--commit-message",
         default="",
@@ -847,11 +880,13 @@ def _mark_success_action(
         print(f"Job [{job}] runs always or by label in CI - do not cache")
     else:
         if pr_info.is_master():
+            pass
+            # delete method is disabled for ci_cache. need it?
             # pending enabled for master branch jobs only
-            ci_cache.delete_pending(job, batch, num_batches, release_branch=True)
+            # ci_cache.delete_pending(job, batch, num_batches, release_branch=True)
         if job_status and job_status.is_ok():
             ci_cache.push_successful(
-                job, batch, num_batches, job_status, pr_info.is_release()
+                job, batch, num_batches, job_status, pr_info.is_release_branch()
             )
             print(f"Job [{job}] is ok")
         elif job_status:
@@ -1004,7 +1039,7 @@ def _configure_jobs(
         batches_to_do: List[int] = []
 
         for batch in range(num_batches):  # type: ignore
-            if job_config.pr_only and pr_info.is_release():
+            if job_config.pr_only and pr_info.is_release_branch():
                 continue
             if job_config.run_by_label:
                 # this job controlled by label, add to todo if its label is set in pr
@@ -1019,8 +1054,8 @@ def _configure_jobs(
                 job,
                 batch,
                 num_batches,
-                release_branch=pr_info.is_release()
-                and job_config.mandatory_for_release,
+                release_branch=pr_info.is_release_branch()
+                and job_config.required_on_release_branch,
             ):
                 # ci cache is enabled and job is not in the cache - add
                 batches_to_do.append(batch)
@@ -1522,7 +1557,7 @@ def main() -> int:
                     job,
                     job_params["batches"],
                     config.num_batches,
-                    release_branch=pr_info.is_release(),
+                    release_branch=pr_info.is_release_branch(),
                 )
 
         # conclude results
@@ -1593,7 +1628,7 @@ def main() -> int:
                     check_name,
                     args.batch,
                     job_config.num_batches,
-                    job_config.mandatory_for_release,
+                    job_config.required_on_release_branch,
                 ):
                     job_status = ci_cache.get_successful(
                         check_name, args.batch, job_config.num_batches

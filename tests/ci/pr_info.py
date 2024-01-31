@@ -287,9 +287,9 @@ class PRInfo:
             self.fetch_changed_files()
 
     def is_master(self) -> bool:
-        return self.number == 0 and self.base_ref == "master"
+        return self.number == 0 and self.head_ref == "master"
 
-    def is_release(self) -> bool:
+    def is_release_branch(self) -> bool:
         return self.number == 0
 
     def is_scheduled(self):

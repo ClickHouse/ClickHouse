@@ -186,8 +186,8 @@ class JobConfig:
     # to run always regardless of the job digest or/and label
     run_always: bool = False
     # if the job needs to be run on the release branch, including master (e.g. building packages, docker server).
-    # NOTE: Subsequent runs with the similar digest are still considered skippable regardless of the branch.
-    mandatory_for_release: bool = False
+    # NOTE: Subsequent runs on the same branch with the similar digest are still considered skippable.
+    required_on_release_branch: bool = False
     # job is for pr workflow only
     pr_only: bool = False
 
@@ -206,7 +206,7 @@ class BuildConfig:
     static_binary_name: str = ""
     job_config: JobConfig = field(
         default_factory=lambda: JobConfig(
-            mandatory_for_release=True,
+            required_on_release_branch=True,
             digest=DigestConfig(
                 include_paths=[
                     "./src",
@@ -796,18 +796,18 @@ CI_CONFIG = CiConfig(
     },
     other_jobs_configs={
         JobNames.MARK_RELEASE_READY: TestConfig(
-            "", job_config=JobConfig(mandatory_for_release=True)
+            "", job_config=JobConfig(required_on_release_branch=True)
         ),
         JobNames.DOCKER_SERVER: TestConfig(
             "",
             job_config=JobConfig(
-                mandatory_for_release=True,
+                required_on_release_branch=True,
                 digest=DigestConfig(
                     include_paths=[
                         "tests/ci/docker_server.py",
                         "./docker/server",
                     ]
-                )
+                ),
             ),
         ),
         JobNames.DOCKER_KEEPER: TestConfig(
@@ -1009,13 +1009,13 @@ CI_CONFIG = CiConfig(
         JobNames.COMPATIBILITY_TEST: TestConfig(
             Build.PACKAGE_RELEASE,
             job_config=JobConfig(
-                mandatory_for_release=True, digest=compatibility_check_digest
+                required_on_release_branch=True, digest=compatibility_check_digest
             ),
         ),
         JobNames.COMPATIBILITY_TEST_ARM: TestConfig(
             Build.PACKAGE_AARCH64,
             job_config=JobConfig(
-                mandatory_for_release=True, digest=compatibility_check_digest
+                required_on_release_branch=True, digest=compatibility_check_digest
             ),
         ),
         JobNames.UNIT_TEST: TestConfig(

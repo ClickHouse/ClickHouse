@@ -2,6 +2,7 @@
 
 from hashlib import md5
 from pathlib import Path
+import shutil
 from typing import Dict, Set
 import unittest
 from ci_config import Build, JobNames
@@ -9,7 +10,7 @@ from s3_helper import S3Helper
 from ci import CiCache
 from digest_helper import JOB_DIGEST_LEN
 from commit_status_helper import CommitStatusData
-from env_helper import S3_BUILDS_BUCKET
+from env_helper import S3_BUILDS_BUCKET, TEMP_PATH
 
 
 def _create_mock_digest_1(string):
@@ -30,6 +31,13 @@ class S3HelperTestMock(S3Helper):
         super().__init__()
         self.files_on_s3_paths = {}  # type: Dict[str, Set[str]]
 
+        # local path which is mocking remote s3 path with ci_cache
+        self.mock_remote_s3_path = Path(TEMP_PATH) / "mock_s3_path"
+        if not self.mock_remote_s3_path.exists():
+            self.mock_remote_s3_path.mkdir(parents=True, exist_ok=True)
+        for file in self.mock_remote_s3_path.iterdir():
+            file.unlink()
+
     def list_prefix(self, s3_prefix_path, bucket=S3_BUILDS_BUCKET):
         assert bucket == S3_BUILDS_BUCKET
         file_prefix = Path(s3_prefix_path).name
@@ -42,22 +50,28 @@ class S3HelperTestMock(S3Helper):
 
     def upload_file(self, bucket, file_path, s3_path):
         assert bucket == S3_BUILDS_BUCKET
-        file_path = Path(file_path).name
+        file_name = Path(file_path).name
         assert (
-            file_path in s3_path
-        ), f"Record file name [{file_path}] must be part of a path on s3 [{s3_path}]"
+            file_name in s3_path
+        ), f"Record file name [{file_name}] must be part of a path on s3 [{s3_path}]"
         s3_path = str(Path(s3_path).parent)
         if s3_path in self.files_on_s3_paths:
-            self.files_on_s3_paths[s3_path].add(file_path)
+            self.files_on_s3_paths[s3_path].add(file_name)
         else:
-            self.files_on_s3_paths[s3_path] = set([file_path])
+            self.files_on_s3_paths[s3_path] = set([file_name])
+        shutil.copy(file_path, self.mock_remote_s3_path)
 
     def download_files(self, bucket, s3_path, file_suffix, local_directory):
         assert bucket == S3_BUILDS_BUCKET
         assert file_suffix == CiCache._RECORD_FILE_EXTENSION
         assert local_directory == CiCache._LOCAL_CACHE_PATH
         assert CiCache._S3_CACHE_PREFIX in s3_path
-        assert "BUILD-" in s3_path or "DOCS-" in s3_path
+        assert [job_type.value in s3_path for job_type in CiCache.JobType]
+
+        # copying from mock remote path to local cache
+        for remote_record in self.mock_remote_s3_path.glob(f"*{file_suffix}"):
+            destination_file = CiCache._LOCAL_CACHE_PATH / remote_record.name
+            shutil.copy(remote_record, destination_file)
 
 
 # pylint:disable=protected-access
@@ -224,6 +238,27 @@ class TestCiCache(unittest.TestCase):
         )
 
         ### check statuses
+        for job in JobNames:
+            self.assertEqual(ci_cache.is_successful(job, 0, NUM_BATCHES, False), True)
+            self.assertEqual(ci_cache.is_successful(job, 0, NUM_BATCHES, True), True)
+            self.assertEqual(ci_cache.is_successful(job, 1, NUM_BATCHES, False), False)
+            self.assertEqual(ci_cache.is_successful(job, 1, NUM_BATCHES, True), False)
+            self.assertEqual(
+                ci_cache.is_pending(job, 0, NUM_BATCHES, False), False
+            )  # it's success, not pending
+            self.assertEqual(
+                ci_cache.is_pending(job, 0, NUM_BATCHES, True), False
+            )  # it's success, not pending
+            self.assertEqual(ci_cache.is_pending(job, 1, NUM_BATCHES, False), True)
+            self.assertEqual(ci_cache.is_pending(job, 1, NUM_BATCHES, True), True)
+
+            status2 = ci_cache.get_successful(job, 0, NUM_BATCHES)
+            assert status2 and status2.pr_num == PR_NUM
+            status2 = ci_cache.get_successful(job, 1, NUM_BATCHES)
+            assert status2 is None
+
+        ### create new cache object and verify the same checks
+        ci_cache = CiCache(s3_mock, DIGESTS)
         for job in JobNames:
             self.assertEqual(ci_cache.is_successful(job, 0, NUM_BATCHES, False), True)
             self.assertEqual(ci_cache.is_successful(job, 0, NUM_BATCHES, True), True)
