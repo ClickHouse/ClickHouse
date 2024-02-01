@@ -957,6 +957,20 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
             }
         }
     }
+    if (!create.attach && !settings.allow_experimental_variant_type)
+    {
+        for (const auto & [name, type] : properties.columns.getAllPhysical())
+        {
+            if (isVariant(type))
+            {
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Cannot create table with column '{}' which type is '{}' "
+                        "because experimental Variant type is not allowed. "
+                        "Set setting allow_experimental_variant_type = 1 in order to allow it",
+                        name, type->getName());
+            }
+        }
+    }
 }
 
 namespace
@@ -1421,8 +1435,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             interpreter.execute();
         }
         else
-            throw Exception(storage_already_exists_error_code,
-                "{} {}.{} already exists", storage_name, backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+        {
+            if (database->getTable(create.getTable(), getContext())->isDictionary())
+                throw Exception(ErrorCodes::DICTIONARY_ALREADY_EXISTS,
+                                "Dictionary {}.{} already exists", backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+            else
+                throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+                                "Table {}.{} already exists", backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+        }
     }
     else if (!create.attach)
     {
