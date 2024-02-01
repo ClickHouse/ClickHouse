@@ -1,7 +1,5 @@
 #pragma once
 
-#include <variant>
-
 #include <Common/AsyncTaskExecutor.h>
 #include <Common/Epoll.h>
 #include <Common/Fiber.h>
