@@ -86,4 +86,24 @@ SELECT a, b, all FROM order_by_all ORDER BY all, a;
 SET allow_experimental_analyzer = 1;
 SELECT a, b, all FROM order_by_all ORDER BY all, a;
 
+SELECT '-- SELECT *';
+DROP TABLE IF EXISTS order_by_all1;
+
+CREATE TABLE order_by_all1
+(
+    a String,
+    b Nullable(Int32),
+    c UInt64,
+)
+    ENGINE = Memory;
+
+INSERT INTO order_by_all1 VALUES ('B', 3, 10), ('C', NULL, 40), ('D', 1, 20), ('A', 2, 30);
+
+SET allow_experimental_analyzer = 0;
+SELECT * FROM order_by_all1 ORDER BY ALL;
+
+SET allow_experimental_analyzer = 1;
+SELECT * FROM order_by_all1 ORDER BY ALL;
+
 DROP TABLE order_by_all;
+DROP TABLE order_by_all1;

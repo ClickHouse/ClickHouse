@@ -1214,7 +1214,7 @@ private:
 
     static void expandGroupByAll(QueryNode & query_tree_node_typed);
 
-    static void expandOrderByAll(QueryNode & query_tree_node_typed, const Settings & settings);
+    void expandOrderByAll(QueryNode & query_tree_node_typed, const Settings & settings);
 
     static std::string
     rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
@@ -2349,15 +2349,19 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Se
 
     for (auto & node : projection_nodes)
     {
-        if (auto * identifier_node = node->as<IdentifierNode>(); identifier_node != nullptr)
-            if (Poco::toUpper(identifier_node->getIdentifier().getFullName()) == "ALL" || Poco::toUpper(identifier_node->getAlias()) == "ALL")
-                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
-                    "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
-
-        if (auto * function_node = node->as<FunctionNode>(); function_node != nullptr)
-            if (Poco::toUpper(function_node->getAlias()) == "ALL")
-                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
-                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
+        auto resolved_expression_it = resolved_expressions.find(node);
+        if (resolved_expression_it != resolved_expressions.end())
+        {
+            auto projection_names = resolved_expression_it->second;
+            if (projection_names.size() != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Expression nodes list expected 1 projection names. Actual {}",
+                                projection_names.size());
+            else
+                if (Poco::toUpper(projection_names[0]) == "ALL")
+                    throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
+                                    "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
+        }
 
         auto sort_node = std::make_shared<SortNode>(node, all_node->getSortDirection(), all_node->getNullsSortDirection());
         list_node->getNodes().push_back(sort_node);
@@ -7180,8 +7184,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasHaving() && query_node_typed.isGroupByWithTotals() && is_rollup_or_cube)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING");
 
-    expandOrderByAll(query_node_typed, settings);
-
     /// Initialize aliases in query node scope
     QueryExpressionsAliasVisitor visitor(scope);
 
@@ -7368,6 +7370,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         if (settings.enable_positional_arguments)
             replaceNodesWithPositionalArguments(query_node_typed.getOrderByNode(), query_node_typed.getProjection().getNodes(), scope);
 
+        expandOrderByAll(query_node_typed, settings);
         resolveSortNodeList(query_node_typed.getOrderByNode(), scope);
     }
 
