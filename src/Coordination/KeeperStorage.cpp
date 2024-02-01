@@ -177,7 +177,6 @@ uint64_t calculateDigest(std::string_view path, std::string_view data, const Sta
     hash.update(data);
 
     hash.update(stat.czxid);
-    hash.update(stat.czxid);
     hash.update(stat.mzxid);
     hash.update(stat.ctime);
     hash.update(stat.mtime);
@@ -185,7 +184,6 @@ uint64_t calculateDigest(std::string_view path, std::string_view data, const Sta
     hash.update(stat.cversion);
     hash.update(stat.aversion);
     hash.update(stat.ephemeralOwner);
-    hash.update(data.length());
     hash.update(stat.numChildren);
     hash.update(stat.pzxid);
 
@@ -2679,6 +2677,17 @@ template<typename Container>
 void KeeperStorage<Container>::recalculateStats()
 {
     container.recalculateDataSize();
+}
+
+bool KeeperStorageBase::checkDigest(const Digest & first, const Digest & second)
+{
+    if (first.version != second.version)
+        return true;
+
+    if (first.version == DigestVersion::NO_DIGEST)
+        return true;
+
+    return first.value == second.value;
 }
 
 template<typename Container>

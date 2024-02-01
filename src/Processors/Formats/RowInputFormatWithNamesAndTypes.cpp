@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/PeekableReadBuffer.h>
 #include <Formats/EscapingRuleUtils.h>
 
 
