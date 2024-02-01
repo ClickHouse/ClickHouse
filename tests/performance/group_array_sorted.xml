@@ -1,0 +1,31 @@
+<test>
+    <settings>
+        <max_memory_usage>30000000000</max_memory_usage>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>millions</name>
+            <values>
+                <value>50</value>
+                <value>100</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>window</name>
+            <values>
+                <value>10</value>
+                <value>1000</value>
+                <value>10000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>create table sorted_{millions}m engine MergeTree order by k as select number % 100 k, rand() v from numbers_mt(1000000 * {millions})</create_query>
+    <create_query>optimize table sorted_{millions}m final</create_query>
+
+    <query>select k, groupArraySorted({window})(v) from sorted_{millions}m group by k format Null</query>
+    <query>select k % 10 kk, groupArraySorted({window})(v) from sorted_{millions}m group by kk format Null</query>
+
+    <drop_query>drop table if exists sorted_{millions}m</drop_query>
+</test>

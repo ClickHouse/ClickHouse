@@ -92,9 +92,13 @@ protected:
     MySQLProtocol::PacketEndpointPtr packet_endpoint;
     std::unique_ptr<Session> session;
 
-    using ReplacementFn = std::function<String(const String & query)>;
-    using Replacements = std::unordered_map<std::string, ReplacementFn>;
-    Replacements replacements;
+    using QueryReplacementFn = std::function<String(const String & query)>;
+    using QueriesReplacements = std::unordered_map<std::string, QueryReplacementFn>;
+    QueriesReplacements queries_replacements;
+
+    /// MySQL setting name --> ClickHouse setting name
+    using SettingsReplacements = std::unordered_map<std::string, std::string>;
+    SettingsReplacements settings_replacements;
 
     std::mutex prepared_statements_mutex;
     UInt32 current_prepared_statement_id TSA_GUARDED_BY(prepared_statements_mutex) = 0;
