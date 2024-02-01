@@ -211,10 +211,10 @@ std::shared_ptr<TSystemLog> createSystemLog(
             if (!settings.empty())
                 log_settings.engine += (storage_policy.empty() ? " " : ", ") + settings;
         }
-
-        /// Add comment to AST. So it will be saved when the table will be renamed.
-        log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment));
     }
+
+    /// Add comment to AST. So it will be saved when the table will be renamed.
+    log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment));
 
     /// Validate engine definition syntax to prevent some configuration errors.
     ParserStorageWithComment storage_parser;
