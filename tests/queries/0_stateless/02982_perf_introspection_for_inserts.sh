@@ -40,7 +40,7 @@ SELECT
     ProfileEvents['MergeTreeDataProjectionWriterPrimaryKeyCalculationMicroseconds'] > 0,
     ProfileEvents['MergeTreeDataWriterPrimaryKeyCalculationMicroseconds'] > 0,
     ProfileEvents['MergeTreeDataWriterProjectionsCalculationMicroseconds'] > 0,
-    ProfileEvents['MergeTreeDataWriterSecondaryIndicesCalculationMicroseconds'] > 0
+    ProfileEvents['MergeTreeDataWriterSkipIndicesCalculationMicroseconds'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND query_id='$query_id' AND type = 'QueryFinish';
 """

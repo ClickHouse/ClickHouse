@@ -204,6 +204,7 @@
     M(MergeTreeDataWriterProjectionsCalculationMicroseconds, "Time spent calculating projections") \
     M(MergeTreeDataProjectionWriterPrimaryKeyCalculationMicroseconds, "Time spent calculating primary key") \
     M(MergeTreeDataProjectionWriterMergingBlocksMicroseconds, "Time spent merging input blocks") \
+    M(MutateTaskProjectionsCalculationMicroseconds, "Time spent calculating projections") \
     \
     M(InsertedWideParts, "Number of parts inserted in Wide format.") \
     M(InsertedCompactParts, "Number of parts inserted in Compact format.") \
