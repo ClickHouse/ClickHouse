@@ -180,6 +180,10 @@ struct LogEntryStorage
 
     bool isConfLog(uint64_t index) const;
 
+    size_t empty() const;
+    size_t size() const;
+    size_t getFirstIndex() const;
+
     void shutdown();
 private:
     void prefetchCommitLogs();
@@ -222,8 +226,8 @@ private:
     LogEntryPtr latest_config;
     uint64_t latest_config_index = 0;
 
-    LogEntryPtr first_log_entry;
-    uint64_t first_log_index = 0;
+    mutable LogEntryPtr first_log_entry;
+    mutable uint64_t first_log_index = 0;
 
     std::unique_ptr<ThreadFromGlobalPool> commit_logs_prefetcher;
 
@@ -249,6 +253,7 @@ private:
     std::vector<IndexWithLogLocation> unapplied_indices_with_log_locations;
     std::unordered_map<uint64_t, LogLocation> logs_location;
     size_t max_index_with_location = 0;
+    size_t min_index_with_location = 0;
 
     std::unordered_set<uint64_t> conf_logs_indices;
 
@@ -284,9 +289,9 @@ public:
     /// Remove log files with to_log_index <= up_to_log_index.
     void compact(uint64_t up_to_log_index);
 
-    uint64_t getNextEntryIndex() const { return max_log_id + 1; }
+    uint64_t getNextEntryIndex() const;
 
-    uint64_t getStartIndex() const { return min_log_id; }
+    uint64_t getStartIndex() const;
 
     /// Last entry in log, or fake entry with term 0 if log is empty
     LogEntryPtr getLastEntry() const;
@@ -315,7 +320,7 @@ public:
 
     void shutdown();
 
-    uint64_t size() const { return max_log_id - min_log_id + 1; }
+    uint64_t size() const;
 
     uint64_t lastDurableIndex() const
     {
@@ -369,9 +374,6 @@ private:
 
     std::unordered_set<uint64_t> conf_logs_indices;
 
-    /// Start log_id which exists in all "active" logs
-    /// min_log_id + 1 == max_log_id means empty log storage for NuRaft
-    uint64_t min_log_id = 0;
     uint64_t max_log_id = 0;
     /// For compaction, queue of delete not used logs
     /// 128 is enough, even if log is not removed, it's not a problem

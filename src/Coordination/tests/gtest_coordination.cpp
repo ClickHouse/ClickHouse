@@ -558,6 +558,7 @@ TEST_P(CoordinationTest, ChangelogTestCompaction)
 
     EXPECT_EQ(changelog.size(), 3);
 
+    keeper_context->setLastCommitIndex(2);
     changelog.compact(2);
 
     EXPECT_EQ(changelog.size(), 1);
@@ -582,6 +583,7 @@ TEST_P(CoordinationTest, ChangelogTestCompaction)
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
 
+    keeper_context->setLastCommitIndex(6);
     changelog.compact(6);
     std::this_thread::sleep_for(std::chrono::microseconds(1000));
 
@@ -1812,7 +1814,10 @@ void testLogAndStateMachine(
             snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
         }
         if (snapshot_created && changelog.size() > settings->reserved_log_items)
+        {
+            keeper_context->setLastCommitIndex(i - settings->reserved_log_items);
             changelog.compact(i - settings->reserved_log_items);
+        }
     }
 
     SnapshotsQueue snapshots_queue1{1};
@@ -2132,6 +2137,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
 
     waitDurableLogs(changelog_2);
 
+    keeper_context->setLastCommitIndex(105);
     changelog_2.compact(105);
     std::this_thread::sleep_for(std::chrono::microseconds(1000));
 
@@ -2157,6 +2163,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
 
     waitDurableLogs(changelog_3);
 
+    keeper_context->setLastCommitIndex(125);
     changelog_3.compact(125);
     std::this_thread::sleep_for(std::chrono::microseconds(1000));
     assertFileDeleted("./logs/changelog_101_110.bin" + params.extension);

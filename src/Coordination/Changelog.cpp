@@ -507,17 +507,17 @@ struct ChangelogReadResult
     /// Total entries read from log including skipped.
     /// Useful when we decide to continue to write in the same log and want to know
     /// how many entries was already written in it.
-    uint64_t total_entries_read_from_log;
+    uint64_t total_entries_read_from_log{0};
 
     /// First index in log
-    uint64_t log_start_index;
+    uint64_t log_start_index{0};
 
     /// First entry actually read log (not including skipped)
-    uint64_t first_read_index;
+    uint64_t first_read_index{0};
     /// Last entry read from log (last entry in log)
     /// When we don't skip anything last_read_index - first_read_index = total_entries_read_from_log.
     /// But when some entries from the start of log can be skipped because they are not required.
-    uint64_t last_read_index;
+    uint64_t last_read_index{0};
 
     /// last offset we were able to read from log
     off_t last_position;
@@ -610,7 +610,7 @@ public:
 
                 /// Check for duplicated changelog ids
                 if (entry_storage.contains(record.header.index))
-                    entry_storage.cleanAfter(record.header.index + 1);
+                    entry_storage.cleanAfter(record.header.index - 1);
 
                 result.total_entries_read_from_log += 1;
 
@@ -814,7 +814,9 @@ void LogEntryStorage::InMemoryCache::addEntry(uint64_t index, LogEntryPtr log_en
     auto entry_size = logEntrySize(*log_entry);
     auto [_, inserted] = cache.emplace(index, std::move(log_entry));
     if (!inserted)
+    {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert log with index {} which is already present in cache", index);
+    }
     updateStatsWithNewEntry(index, entry_size);
 }
 
@@ -826,6 +828,7 @@ void LogEntryStorage::InMemoryCache::addEntry(IndexToCacheEntryNode && node)
     auto result = cache.insert(std::move(node));
     if (!result.inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert log with index {} which is already present in cache", index);
+
     updateStatsWithNewEntry(index, entry_size);
 }
 
@@ -833,7 +836,7 @@ void LogEntryStorage::InMemoryCache::addPrefetchedEntry(uint64_t index, size_t s
 {
     auto [_, inserted] = cache.emplace(index, nullptr);
     if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert log with index {} which is already present in cache", index);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to set prefetched entry with index {} which is already present in cache", index);
     updateStatsWithNewEntry(index, size);
 }
 
@@ -893,52 +896,51 @@ LogEntryPtr LogEntryStorage::InMemoryCache::getEntry(uint64_t index) const
 
 void LogEntryStorage::InMemoryCache::cleanUpTo(uint64_t index)
 {
-    if (index <= min_index_in_cache)
+    if (empty() || index <= min_index_in_cache)
         return;
 
     if (index > max_index_in_cache)
     {
         cache.clear();
         cache_size = 0;
+        return;
     }
-    else
-    {
-        for (size_t i = min_index_in_cache; i < index; ++i)
-        {
-            auto it = cache.find(i);
-            if (it == cache.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Log entry with index {} unexpectedly missing from cache", i);
 
-            cache_size -= logEntrySize(*it->second.entry);
-            cache.erase(it);
-        }
-        min_index_in_cache = index;
+    for (size_t i = min_index_in_cache; i < index; ++i)
+    {
+        auto it = cache.find(i);
+        if (it == cache.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Log entry with index {} unexpectedly missing from cache", i);
+
+        cache_size -= logEntrySize(*it->second.entry);
+        cache.erase(it);
     }
+    min_index_in_cache = index;
 }
 
 void LogEntryStorage::InMemoryCache::cleanAfter(uint64_t index)
 {
-    if (index >= max_index_in_cache)
+    if (empty() || index >= max_index_in_cache)
         return;
 
     if (index < min_index_in_cache)
     {
         cache.clear();
         cache_size = 0;
+        return;
     }
-    else
-    {
-        for (size_t i = index + 1; i < max_index_in_cache; ++i)
-        {
-            auto it = cache.find(i);
-            if (it == cache.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Log entry with index {} unexpectedly missing from cache", i);
 
-            cache_size -= logEntrySize(*it->second.entry);
-            cache.erase(it);
-        }
-        max_index_in_cache = index;
+    for (size_t i = index + 1; i <= max_index_in_cache; ++i)
+    {
+        auto it = cache.find(i);
+        if (it == cache.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Log entry with index {} unexpectedly missing from cache", i);
+
+        cache_size -= logEntrySize(*it->second.entry);
+        cache.erase(it);
     }
+
+    max_index_in_cache = index;
 }
 
 void LogEntryStorage::InMemoryCache::clear()
@@ -973,12 +975,6 @@ void LogEntryStorage::addEntry(uint64_t index, const LogEntryPtr & log_entry)
         latest_config_index = index;
         conf_logs_indices.insert(index);
     }
-
-    if (first_log_entry == nullptr)
-    {
-        first_log_index = index;
-        first_log_entry = log_entry;
-    }
 }
 
 bool LogEntryStorage::shouldMoveLogToCommitCache(uint64_t index, size_t log_entry_size)
@@ -1000,10 +996,13 @@ void LogEntryStorage::addEntryWithLocation(uint64_t index, const LogEntryPtr & l
         if (shouldMoveLogToCommitCache(entry_handle.key(), removed_entry_size))
             commit_logs_cache.addEntry(std::move(entry_handle));
     }
-
     latest_logs_cache.addEntry(index, log_entry);
 
     logs_location.emplace(index, std::move(log_location));
+
+    if (logs_location.size() == 1)
+        min_index_with_location = index;
+    max_index_with_location = index;
 
     if (log_entry->get_val_type() == nuraft::conf)
     {
@@ -1019,7 +1018,28 @@ void LogEntryStorage::cleanUpTo(uint64_t index)
     /// uncommitted logs should never be compacted so we don't have to handle
     /// logs that are currently being prefetched
     commit_logs_cache.cleanUpTo(index);
-    std::erase_if(logs_location, [&](const auto & item) { return item.first < index; });
+
+    if (!logs_location.empty() && index > min_index_with_location)
+    {
+        if (index > max_index_with_location)
+        {
+            logs_location.clear();
+        }
+        else
+        {
+            for (size_t i = min_index_with_location; i < index; ++i)
+            {
+                auto it = logs_location.find(i);
+                if (it == logs_location.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Log entry with index {} unexpectedly missing from logs location", i);
+
+                logs_location.erase(it);
+            }
+
+            min_index_with_location = index;
+        }
+    }
+
     std::erase_if(conf_logs_indices, [&](const auto conf_index) { return conf_index < index; });
     if (auto it = std::max_element(conf_logs_indices.begin(), conf_logs_indices.end()); it != conf_logs_indices.end())
     {
@@ -1029,6 +1049,8 @@ void LogEntryStorage::cleanUpTo(uint64_t index)
     else
         latest_config = nullptr;
 
+    if (first_log_index < index)
+        first_log_entry = nullptr;
 }
 
 void LogEntryStorage::cleanAfter(uint64_t index)
@@ -1037,6 +1059,9 @@ void LogEntryStorage::cleanAfter(uint64_t index)
     /// if we cleared all latest logs, there is a possibility we would need to clear commit logs
     if (latest_logs_cache.empty())
     {
+        /// we will clean everything after the index, if there is a prefetch in progress
+        /// wait until we fetch everything until index
+        /// afterwards we can stop prefetching of newer logs because they will be cleaned up
         commit_logs_cache.getEntry(index);
         if (current_prefetch_info && !current_prefetch_info->done)
         {
@@ -1052,10 +1077,28 @@ void LogEntryStorage::cleanAfter(uint64_t index)
         startCommitLogsPrefetch(keeper_context->lastCommittedIndex());
     }
 
-    std::erase_if(logs_location, [&](const auto & item) { return item.first > index; });
-    if (!logs_location.empty())
-        max_index_with_location = index;
-    else if (latest_logs_cache.empty())
+    if (!logs_location.empty() && index < max_index_with_location)
+    {
+        if (index < min_index_with_location)
+        {
+            logs_location.clear();
+        }
+        else
+        {
+            for (size_t i = index + 1; i <= max_index_with_location; ++i)
+            {
+                auto it = logs_location.find(i);
+                if (it == logs_location.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Log entry with index {} unexpectedly missing from logs location", i);
+
+                logs_location.erase(it);
+            }
+
+            max_index_with_location = index;
+        }
+    }
+
+    if (empty())
         /// if we don't store any logs, reset first log cache
         first_log_entry = nullptr;
 
@@ -1067,6 +1110,9 @@ void LogEntryStorage::cleanAfter(uint64_t index)
     }
     else
         latest_config = nullptr;
+
+    if (first_log_index > index)
+        first_log_entry = nullptr;
 }
 
 bool LogEntryStorage::contains(uint64_t index) const
@@ -1110,6 +1156,13 @@ LogEntryPtr LogEntryStorage::getEntry(uint64_t index) const
 
         auto record = readChangelogRecord(*file, changelog_description->path);
         entry = logEntryFromRecord(record);
+
+        if (first_log_entry == nullptr && index == getFirstIndex())
+        {
+            first_log_index = index;
+            first_log_entry = entry;
+        }
+
         ProfileEvents::increment(ProfileEvents::KeeperLogsEntryReadFromFile);
     }
     return entry;
@@ -1158,6 +1211,9 @@ void LogEntryStorage::refreshCache()
 
     for (auto & [index, log_location] : new_unapplied_indices_with_log_locations)
     {
+        if (logs_location.empty())
+            min_index_with_location = index;
+
         logs_location.emplace(index, std::move(log_location));
         max_index_with_location = index;
     }
@@ -1202,6 +1258,7 @@ LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end
         {
             auto record = readChangelogRecord(*file, file_description->path);
             ret->push_back(logEntryFromRecord(record));
+            ProfileEvents::increment(ProfileEvents::KeeperLogsEntryReadFromFile);
         }
 
         read_info.reset();
@@ -1251,6 +1308,44 @@ void LogEntryStorage::getKeeperLogInfo(KeeperLogInfo & log_info) const
 bool LogEntryStorage::isConfLog(uint64_t index) const
 {
     return conf_logs_indices.contains(index);
+}
+
+size_t LogEntryStorage::empty() const
+{
+    return logs_location.empty() && latest_logs_cache.empty();
+}
+
+size_t LogEntryStorage::size() const
+{
+    if (empty())
+        return 0;
+
+    size_t min_index = 0;
+    size_t max_index = 0;
+
+    if (!logs_location.empty())
+    {
+        min_index = min_index_with_location;
+        max_index = max_index_with_location;
+    }
+    else
+        min_index = latest_logs_cache.min_index_in_cache;
+
+    if (!latest_logs_cache.empty())
+        max_index = latest_logs_cache.max_index_in_cache;
+
+    return max_index - min_index + 1;
+}
+
+size_t LogEntryStorage::getFirstIndex() const
+{
+    if (!logs_location.empty())
+        return min_index_with_location;
+
+    if (!latest_logs_cache.empty())
+        return latest_logs_cache.min_index_in_cache;
+
+    return 0;
 }
 
 void LogEntryStorage::shutdown()
@@ -1399,6 +1494,7 @@ Changelog::Changelog(
 }
 
 void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uint64_t logs_to_keep)
+try
 {
     std::lock_guard writer_lock(writer_mutex);
     std::optional<ChangelogReadResult> last_log_read_result;
@@ -1440,7 +1536,6 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
                         changelog_description.from_log_index);
                     /// Nothing to do with our more fresh log, leader will overwrite them, so remove everything and just start from last_commited_index
                     removeAllLogs();
-                    min_log_id = last_commited_log_index;
                     max_log_id = last_commited_log_index == 0 ? 0 : last_commited_log_index - 1;
                     current_writer->rotate(max_log_id + 1);
                     initialized = true;
@@ -1480,10 +1575,6 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
 
             last_log_read_result->log_start_index = changelog_description.from_log_index;
 
-            /// Otherwise we have already initialized it
-            if (min_log_id == 0)
-                min_log_id = last_log_read_result->first_read_index;
-
             if (last_log_read_result->last_read_index != 0)
                 max_log_id = last_log_read_result->last_read_index;
 
@@ -1506,12 +1597,10 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     };
 
     /// we can have empty log (with zero entries) and last_log_read_result will be initialized
-    if (!last_log_read_result || min_log_id == 0) /// We just may have no logs (only snapshot or nothing)
+    if (!last_log_read_result || entry_storage.empty()) /// We just may have no logs (only snapshot or nothing)
     {
         /// Just to be sure they don't exist
         removeAllLogs();
-
-        min_log_id = last_commited_log_index;
         max_log_id = last_commited_log_index == 0 ? 0 : last_commited_log_index - 1;
     }
     else if (last_commited_log_index != 0 && max_log_id < last_commited_log_index - 1) /// If we have more fresh snapshot than our logs
@@ -1523,7 +1612,6 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
             last_commited_log_index - 1);
 
         removeAllLogs();
-        min_log_id = last_commited_log_index;
         max_log_id = last_commited_log_index - 1;
     }
     else if (last_log_is_not_complete) /// if it's complete just start new one
@@ -1554,9 +1642,9 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
         }
         else if (last_log_read_result->error)
         {
-            LOG_INFO(log, "Chagelog {} read finished with error but some logs were read from it, file will not be removed", description->path);
+            LOG_INFO(log, "Changelog {} read finished with error but some logs were read from it, file will not be removed", description->path);
             remove_invalid_logs();
-            entry_storage.cleanAfter(last_log_read_result->log_start_index);
+            entry_storage.cleanAfter(last_log_read_result->last_read_index);
             move_from_latest_logs_disks(existing_changelogs.at(last_log_read_result->log_start_index));
         }
         /// don't mix compressed and uncompressed writes
@@ -1591,9 +1679,12 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
             moveFileBetweenDisks(description->disk, description, disk, description->path);
     }
 
-    if (size() != 0)
-        entry_storage.cacheFirstLog(min_log_id);
     initialized = true;
+}
+catch (...)
+{
+    tryLogCurrentException(__PRETTY_FUNCTION__);
+
 }
 
 
@@ -1735,7 +1826,7 @@ void Changelog::appendCompletionThread()
         if (auto raft_server_locked = raft_server.lock())
             raft_server_locked->notify_log_append_completion(append_ok);
         else
-            LOG_WARNING(log, "Raft server is not set in LogStore.");
+            LOG_INFO(log, "Raft server is not set in LogStore.");
     }
 }
 
@@ -1848,12 +1939,6 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before appending records");
 
     entry_storage.addEntry(index, log_entry);
-    if (min_log_id == 0)
-    {
-        min_log_id = index;
-        entry_storage.cacheFirstLog(index);
-    }
-
     max_log_id = index;
 
     if (!write_operations.push(AppendLog{index, log_entry}))
@@ -1967,16 +2052,23 @@ void Changelog::compact(uint64_t up_to_log_index)
         else /// Files are ordered, so all subsequent should exist
             break;
     }
-    /// Compaction from the past is possible, so don't make our min_log_id smaller.
-    min_log_id = std::max(min_log_id, up_to_log_index + 1);
-    entry_storage.cacheFirstLog(min_log_id);
 
     entry_storage.cleanUpTo(up_to_log_index + 1);
 
     if (need_rotate)
         current_writer->rotate(up_to_log_index + 1);
 
-    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}", up_to_log_index, min_log_id, max_log_id);
+    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}", up_to_log_index, getStartIndex(), max_log_id);
+}
+
+uint64_t Changelog::getNextEntryIndex() const
+{
+    return max_log_id + 1;
+}
+
+uint64_t Changelog::getStartIndex() const
+{
+    return entry_storage.empty() ? max_log_id + 1 : entry_storage.getFirstIndex();
 }
 
 LogEntryPtr Changelog::getLastEntry() const
@@ -2049,7 +2141,7 @@ void Changelog::applyEntriesFromBuffer(uint64_t index, nuraft::buffer & buffer)
         buffer.get(buf_local);
 
         LogEntryPtr log_entry = nuraft::log_entry::deserialize(*buf_local);
-        if (i == 0 && cur_index >= min_log_id && cur_index <= max_log_id)
+        if (i == 0 && cur_index >= entry_storage.getFirstIndex() && cur_index <= max_log_id)
             writeAt(cur_index, log_entry);
         else
             appendEntry(cur_index, log_entry);
@@ -2093,6 +2185,11 @@ std::shared_ptr<bool> Changelog::flushAsync()
 
     entry_storage.refreshCache();
     return failed;
+}
+
+uint64_t Changelog::size() const
+{
+    return entry_storage.size();
 }
 
 void Changelog::shutdown()
@@ -2173,7 +2270,7 @@ bool Changelog::isInitialized() const
 
 void Changelog::getKeeperLogInfo(KeeperLogInfo & log_info) const
 {
-    if (size() > 0)
+    if (!entry_storage.empty())
     {
         log_info.first_log_idx = getStartIndex();
         auto first_entry = entryAt(log_info.first_log_idx);
@@ -2181,7 +2278,7 @@ void Changelog::getKeeperLogInfo(KeeperLogInfo & log_info) const
         log_info.first_log_term = first_entry->get_term();
 
         log_info.last_log_idx = max_log_id;
-        auto last_entry = entryAt(log_info.first_log_idx);
+        auto last_entry = entryAt(log_info.last_log_idx);
         chassert(last_entry != nullptr);
         log_info.last_log_term = last_entry->get_term();
     }
