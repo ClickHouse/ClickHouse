@@ -399,51 +399,33 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     const Settings & current_settings = context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
+    const auto & shard = cluster->getShardsInfo().at(0);
     size_t all_replicas_count = current_settings.max_parallel_replicas;
-    if (all_replicas_count > cluster->getShardsInfo().size())
+    if (all_replicas_count > shard.getAllNodeCount())
     {
-        LOG_INFO(getLogger("ReadFromParallelRemoteReplicasStep"),
-            "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "\
-            "Will use the latter number to execute the query.", current_settings.max_parallel_replicas, cluster->getShardsInfo().size());
-        all_replicas_count = cluster->getShardsInfo().size();
+        LOG_INFO(
+            getLogger("ReadFromParallelRemoteReplicasStep"),
+            "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
+            "Will use the latter number to execute the query.",
+            current_settings.max_parallel_replicas,
+            shard.getAllNodeCount());
+        all_replicas_count = shard.getAllNodeCount();
     }
 
-    /// Find local shard. It might happen that there is no local shard, but that's fine
-    for (const auto & shard: cluster->getShardsInfo())
+    chassert(cluster->getShardCount() == 1);
+    auto shuffled_pool = shard.pool->getShuffledPools(current_settings);
+    shuffled_pool.resize(all_replicas_count);
+
+    for (size_t i=0; i < all_replicas_count; ++i)
     {
-        if (shard.isLocal())
-        {
-            IConnections::ReplicaInfo replica_info
-            {
-                .all_replicas_count = all_replicas_count,
-                /// `shard_num` will be equal to the number of the given replica in the cluster (set by `Cluster::getClusterWithReplicasAsShards`).
-                /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
-                .number_of_current_replica = shard.shard_num - 1,
-            };
-
-            addPipeForSingeReplica(pipes, shard.pool, replica_info);
-        }
-    }
-
-    auto current_shard = cluster->getShardsInfo().begin();
-    while (pipes.size() != all_replicas_count)
-    {
-        if (current_shard->isLocal())
-        {
-            ++current_shard;
-            continue;
-        }
-
         IConnections::ReplicaInfo replica_info
         {
             .all_replicas_count = all_replicas_count,
-            /// `shard_num` will be equal to the number of the given replica in the cluster (set by `Cluster::getClusterWithReplicasAsShards`).
             /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
-            .number_of_current_replica = current_shard->shard_num - 1,
+            .number_of_current_replica = i,
         };
 
-        addPipeForSingeReplica(pipes, current_shard->pool, replica_info);
-        ++current_shard;
+        addPipeForSingeReplica(pipes, shuffled_pool[i].pool, replica_info);
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -456,7 +438,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
 }
 
 
-void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, std::shared_ptr<ConnectionPoolWithFailover> pool, IConnections::ReplicaInfo replica_info)
+void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, IConnectionPool* pool, IConnections::ReplicaInfo replica_info)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;

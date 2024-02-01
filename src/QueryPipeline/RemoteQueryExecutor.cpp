@@ -63,6 +63,50 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
+    IConnectionPool * pool,
+    const String & query_,
+    const Block & header_,
+    ContextPtr context_,
+    ThrottlerPtr throttler,
+    const Scalars & scalars_,
+    const Tables & external_tables_,
+    QueryProcessingStage::Enum stage_,
+    std::optional<Extension> extension_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
+{
+    create_connections = [this, pool, throttler, extension_](AsyncCallback)
+    {
+        const Settings & current_settings = context->getSettingsRef();
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
+
+        ConnectionPoolWithFailover::TryResult result;
+        std::string fail_message;
+        if (main_table)
+        {
+            auto table_name = main_table.getQualifiedName();
+
+            ConnectionEstablisher connection_establisher(pool, &timeouts, current_settings, log, &table_name);
+            connection_establisher.run(result, fail_message);
+        }
+        else
+        {
+            ConnectionEstablisher connection_establisher(pool, &timeouts, current_settings, log, nullptr);
+            connection_establisher.run(result, fail_message);
+        }
+
+        std::vector<IConnectionPool::Entry> connection_entries;
+        if (!result.entry.isNull() && result.is_usable)
+            connection_entries.emplace_back(std::move(result.entry));
+
+        auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), context->getSettingsRef(), throttler);
+        if (extension_ && extension_->replica_info)
+            res->setReplicaInfo(*extension_->replica_info);
+
+        return res;
+    };
+}
+
+RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
     const String & query_, const Block & header_, ContextPtr context_,
     ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,

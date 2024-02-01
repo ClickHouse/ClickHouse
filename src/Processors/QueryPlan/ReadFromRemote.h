@@ -10,8 +10,7 @@
 namespace DB
 {
 
-class ConnectionPoolWithFailover;
-using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;
+class IConnectionPool;
 
 class Throttler;
 using ThrottlerPtr = std::shared_ptr<Throttler>;
@@ -92,7 +91,7 @@ public:
 
 private:
 
-    void addPipeForSingeReplica(Pipes & pipes, std::shared_ptr<ConnectionPoolWithFailover> pool, IConnections::ReplicaInfo replica_info);
+    void addPipeForSingeReplica(Pipes & pipes, IConnectionPool* pool, IConnections::ReplicaInfo replica_info);
 
     ClusterPtr cluster;
     ASTPtr query_ast;
