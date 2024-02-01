@@ -227,7 +227,9 @@ public:
         const ReadSettings & read_settings,
         bool make_temporary_hard_links,
         BackupEntries & backup_entries,
-        TemporaryFilesOnDisks * temp_dirs) const = 0;
+        TemporaryFilesOnDisks * temp_dirs,
+        bool is_projection_part,
+        bool allow_backup_broken_projection) const = 0;
 
     /// Creates hardlinks into 'to/dir_path' for every file in data part.
     /// Callback is called after hardlinks are created, but before 'delete-on-destroy.txt' marker is removed.

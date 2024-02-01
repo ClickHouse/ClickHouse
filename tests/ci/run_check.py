@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 import atexit
-import sys
 import logging
+import sys
 from typing import Tuple
 
+# isort: off
 from github import Github
+
+# isort: on
 
 from commit_status_helper import (
     CI_STATUS_NAME,
@@ -18,12 +21,12 @@ from commit_status_helper import (
 )
 from env_helper import GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
-from pr_info import FORCE_TESTS_LABEL, PRInfo
 from lambda_shared_package.lambda_shared.pr import (
     CATEGORY_TO_LABEL,
     TRUSTED_CONTRIBUTORS,
     check_pr_description,
 )
+from pr_info import FORCE_TESTS_LABEL, PRInfo
 from report import FAILURE
 
 TRUSTED_ORG_IDS = {
@@ -146,7 +149,7 @@ def main():
         )
         post_commit_status(
             commit,
-            "failure",
+            FAILURE,
             url,
             format_description(description_error),
             PR_CHECK,
@@ -170,6 +173,14 @@ def main():
         # allow the workflow to continue
 
     if not can_run:
+        post_commit_status(
+            commit,
+            FAILURE,
+            "",
+            description,
+            PR_CHECK,
+            pr_info,
+        )
         print("::notice ::Cannot run")
         sys.exit(1)
 
