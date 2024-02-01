@@ -2,8 +2,8 @@ SET allow_experimental_inverted_index = 1;
 
 CREATE TABLE t
 (
-    `key` UInt64,
-    `str` String,
+    key UInt64,
+    str String,
     INDEX inv_idx str TYPE inverted(0) GRANULARITY 1
 )
 ENGINE = MergeTree
