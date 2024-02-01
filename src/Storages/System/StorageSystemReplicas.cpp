@@ -200,36 +200,36 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription({
-        { "database",                             std::make_shared<DataTypeString>(), "Database name."},
-        { "table",                                std::make_shared<DataTypeString>(), "Table name."},
-        { "engine",                               std::make_shared<DataTypeString>(), "Table engine name."},
-        { "is_leader",                            std::make_shared<DataTypeUInt8>(),  "Whether the replica is the leader. Multiple replicas can be leaders at the same time. "
+        { "database",                             std::make_shared<DataTypeString>(),   "Database name."},
+        { "table",                                std::make_shared<DataTypeString>(),   "Table name."},
+        { "engine",                               std::make_shared<DataTypeString>(),   "Table engine name."},
+        { "is_leader",                            std::make_shared<DataTypeUInt8>(),    "Whether the replica is the leader. Multiple replicas can be leaders at the same time. "
                                                                                           "A replica can be prevented from becoming a leader using the merge_tree setting replicated_can_become_leader. "
                                                                                           "The leaders are responsible for scheduling background merges. "
                                                                                           "Note that writes can be performed to any replica that is available and has a session in ZK, regardless of whether it is a leader."},
-        { "can_become_leader",                    std::make_shared<DataTypeUInt8>(),  "Whether the replica can be a leader."},
-        { "is_readonly",                          std::make_shared<DataTypeUInt8>(),  "Whether the replica is in read-only mode. This mode is turned on if the config does not have sections with ClickHouse Keeper, "
+        { "can_become_leader",                    std::make_shared<DataTypeUInt8>(),    "Whether the replica can be a leader."},
+        { "is_readonly",                          std::make_shared<DataTypeUInt8>(),    "Whether the replica is in read-only mode. This mode is turned on if the config does not have sections with ClickHouse Keeper, "
                                                                                           "if an unknown error occurred when reinitializing sessions in ClickHouse Keeper, and during session reinitialization in ClickHouse Keeper."},
-        { "is_session_expired",                   std::make_shared<DataTypeUInt8>(),  "Whether the session with ClickHouse Keeper has expired. Basically the same as `is_readonly`."},
-        { "future_parts",                         std::make_shared<DataTypeUInt32>(), "The number of data parts that will appear as the result of INSERTs or merges that haven't been done yet."},
-        { "parts_to_check",                       std::make_shared<DataTypeUInt32>(), "The number of data parts in the queue for verification. A part is put in the verification queue if there is suspicion that it might be damaged."},
-        { "zookeeper_name",                       std::make_shared<DataTypeString>(),   ""},
-        { "zookeeper_path",                       std::make_shared<DataTypeString>(),  "Path to table data in ClickHouse Keeper."},
-        { "replica_name",                         std::make_shared<DataTypeString>(),  "Replica name in ClickHouse Keeper. Different replicas of the same table have different names."},
-        { "replica_path",                         std::make_shared<DataTypeString>(),  "Path to replica data in ClickHouse Keeper. The same as concatenating 'zookeeper_path/replicas/replica_path'."},
-        { "columns_version",                      std::make_shared<DataTypeInt32>(),   "Version number of the table structure. Indicates how many times ALTER was performed. "
+        { "is_session_expired",                   std::make_shared<DataTypeUInt8>(),    "Whether the session with ClickHouse Keeper has expired. Basically the same as `is_readonly`."},
+        { "future_parts",                         std::make_shared<DataTypeUInt32>(),   "The number of data parts that will appear as the result of INSERTs or merges that haven't been done yet."},
+        { "parts_to_check",                       std::make_shared<DataTypeUInt32>(),   "The number of data parts in the queue for verification. A part is put in the verification queue if there is suspicion that it might be damaged."},
+        { "zookeeper_name",                       std::make_shared<DataTypeString>(),   "The name of the the [Zoo]Keeper cluster (possibly auxilary one) where the table's metadata is stored"},
+        { "zookeeper_path",                       std::make_shared<DataTypeString>(),   "Path to table data in ClickHouse Keeper."},
+        { "replica_name",                         std::make_shared<DataTypeString>(),   "Replica name in ClickHouse Keeper. Different replicas of the same table have different names."},
+        { "replica_path",                         std::make_shared<DataTypeString>(),   "Path to replica data in ClickHouse Keeper. The same as concatenating 'zookeeper_path/replicas/replica_path'."},
+        { "columns_version",                      std::make_shared<DataTypeInt32>(),    "Version number of the table structure. Indicates how many times ALTER was performed. "
                                                                                             "If replicas have different versions, it means some replicas haven't made all of the ALTERs yet."},
-        { "queue_size",                           std::make_shared<DataTypeUInt32>(),  "Size of the queue for operations waiting to be performed. Operations include inserting blocks of data, merges, and certain other actions. It usually coincides with future_parts."},
-        { "inserts_in_queue",                     std::make_shared<DataTypeUInt32>(),  "Number of inserts of blocks of data that need to be made. Insertions are usually replicated fairly quickly. If this number is large, it means something is wrong."},
-        { "merges_in_queue",                      std::make_shared<DataTypeUInt32>(),  "The number of merges waiting to be made. Sometimes merges are lengthy, so this value may be greater than zero for a long time."},
-        { "part_mutations_in_queue",              std::make_shared<DataTypeUInt32>(),  "The number of mutations waiting to be made."},
+        { "queue_size",                           std::make_shared<DataTypeUInt32>(),   "Size of the queue for operations waiting to be performed. Operations include inserting blocks of data, merges, and certain other actions. It usually coincides with future_parts."},
+        { "inserts_in_queue",                     std::make_shared<DataTypeUInt32>(),   "Number of inserts of blocks of data that need to be made. Insertions are usually replicated fairly quickly. If this number is large, it means something is wrong."},
+        { "merges_in_queue",                      std::make_shared<DataTypeUInt32>(),   "The number of merges waiting to be made. Sometimes merges are lengthy, so this value may be greater than zero for a long time."},
+        { "part_mutations_in_queue",              std::make_shared<DataTypeUInt32>(),   "The number of mutations waiting to be made."},
         { "queue_oldest_time",                    std::make_shared<DataTypeDateTime>(), "If `queue_size` greater than 0, shows when the oldest operation was added to the queue."},
         { "inserts_oldest_time",                  std::make_shared<DataTypeDateTime>(), "See `queue_oldest_time`."},
         { "merges_oldest_time",                   std::make_shared<DataTypeDateTime>(), "See `queue_oldest_time`."},
         { "part_mutations_oldest_time",           std::make_shared<DataTypeDateTime>(), "See `queue_oldest_time`."},
-        { "oldest_part_to_get",                   std::make_shared<DataTypeString>(), ""},
-        { "oldest_part_to_merge_to",              std::make_shared<DataTypeString>(), ""},
-        { "oldest_part_to_mutate_to",             std::make_shared<DataTypeString>(), ""},
+        { "oldest_part_to_get",                   std::make_shared<DataTypeString>(),   "The name of the part to fetch from other replicas obtained from the oldest GET_PARTS entry in the replication queue."},
+        { "oldest_part_to_merge_to",              std::make_shared<DataTypeString>(),   "The result part name to merge to obtained from the oldest MERGE_PARTS entry in the replication queue."},
+        { "oldest_part_to_mutate_to",             std::make_shared<DataTypeString>(),   "The result part name to mutate to obtained from the oldest MUTATE_PARTS entry in the replication queue."},
         { "log_max_index",                        std::make_shared<DataTypeUInt64>(),   "Maximum entry number in the log of general activity."},
         { "log_pointer",                          std::make_shared<DataTypeUInt64>(),   "Maximum entry number in the log of general activity that the replica copied to its execution queue, plus one. "
                                                                                              "If log_pointer is much smaller than log_max_index, something is wrong."},
