@@ -17,6 +17,7 @@ class PipelineExecutor;
 
 class StorageMaterializedView;
 class ASTRefreshStrategy;
+struct OwnedRefreshTask;
 
 class RefreshTask : public std::enable_shared_from_this<RefreshTask>
 {
@@ -25,12 +26,12 @@ public:
     RefreshTask(StorageMaterializedView * view_, const ASTRefreshStrategy & strategy);
 
     /// The only proper way to construct task
-    static RefreshTaskHolder create(
+    static OwnedRefreshTask create(
         StorageMaterializedView * view,
         ContextMutablePtr context,
         const DB::ASTRefreshStrategy & strategy);
 
-    void initializeAndStart();
+    void initializeAndStart(); // called at most once
 
     /// Call when renaming the materialized view.
     void rename(StorageID new_id);
@@ -58,6 +59,8 @@ public:
     void wait();
 
     /// Permanently disable task scheduling and remove this table from RefreshSet.
+    /// Ok to call multiple times, but not in parallel.
+    /// Ok to call even if initializeAndStart() wasn't called or failed.
     void shutdown();
 
     /// Notify dependent task
@@ -155,6 +158,23 @@ private:
     void interruptExecution();
 
     std::chrono::system_clock::time_point currentTime() const;
+};
+
+/// Wrapper around shared_ptr<RefreshTask>, calls shutdown() in destructor.
+struct OwnedRefreshTask
+{
+    RefreshTaskHolder ptr;
+
+    OwnedRefreshTask() = default;
+    OwnedRefreshTask(RefreshTaskHolder p) : ptr(std::move(p)) {}
+    OwnedRefreshTask(OwnedRefreshTask &&) = default;
+    OwnedRefreshTask & operator=(OwnedRefreshTask &&) = default;
+
+    ~OwnedRefreshTask() { if (ptr) ptr->shutdown(); }
+
+    RefreshTask* operator->() const { return ptr.get(); }
+    RefreshTask& operator*() const { return *ptr; }
+    operator bool() const { return ptr != nullptr; }
 };
 
 }

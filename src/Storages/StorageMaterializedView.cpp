@@ -296,21 +296,28 @@ bool StorageMaterializedView::optimize(
     return storage_ptr->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
 }
 
-std::shared_ptr<ASTInsertQuery> StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr & out_context, std::optional<StorageID> & out_temp_table_id) const
+ContextMutablePtr StorageMaterializedView::createRefreshContext() const
 {
     auto refresh_context = Context::createCopy(getContext());
-    out_context = refresh_context;
+    refresh_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
     /// Generate a random query id.
     refresh_context->setCurrentQueryId("");
+    /// TODO: Set view's definer as the current user in refresh_context, so that the correct user's
+    ///       quotas and permissions apply for this query.
+    return refresh_context;
+}
 
-    CurrentThread::QueryScope query_scope(refresh_context);
-
+std::shared_ptr<ASTInsertQuery> StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const
+{
     auto inner_table_id = getTargetTableId();
-    auto db = DatabaseCatalog::instance().getDatabase(inner_table_id.database_name);
     StorageID target_table = inner_table_id;
 
     if (!append)
     {
+        CurrentThread::QueryScope query_scope(refresh_context);
+
+        auto db = DatabaseCatalog::instance().getDatabase(inner_table_id.database_name);
+        String db_name = db->getDatabaseName();
         auto new_table_name = ".tmp" + generateInnerTableName(getStorageID());
 
         auto create_table_query = db->getCreateTableQuery(inner_table_id.table_name, getContext());
@@ -325,7 +332,7 @@ std::shared_ptr<ASTInsertQuery> StorageMaterializedView::prepareRefresh(bool app
         create_interpreter.setInternal(true);
         create_interpreter.execute();
 
-        target_table = DatabaseCatalog::instance().getTable({create_query.getDatabase(), create_query.getTable()}, getContext())->getStorageID();
+        target_table = DatabaseCatalog::instance().getTable({db_name, new_table_name}, getContext())->getStorageID();
         out_temp_table_id = target_table;
     }
 
@@ -351,6 +358,9 @@ std::shared_ptr<ASTInsertQuery> StorageMaterializedView::prepareRefresh(bool app
 
 StorageID StorageMaterializedView::exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context)
 {
+    /// Known problem: if the target table was ALTERed during refresh, this will effectively revert
+    /// the ALTER.
+
     auto stale_table_id = getTargetTableId();
 
     auto db = DatabaseCatalog::instance().getDatabase(stale_table_id.database_name);
@@ -358,13 +368,34 @@ StorageID StorageMaterializedView::exchangeTargetTable(StorageID fresh_table, Co
 
     CurrentThread::QueryScope query_scope(refresh_context);
 
-    target_db->renameTable(
-        refresh_context, fresh_table.table_name, *db, stale_table_id.table_name, /*exchange=*/true, /*dictionary=*/false);
+    auto rename_query = std::make_shared<ASTRenameQuery>();
+    rename_query->exchange = true;
+    rename_query->addElement(fresh_table.database_name, fresh_table.table_name, stale_table_id.database_name, stale_table_id.table_name);
 
-    std::swap(stale_table_id.database_name, fresh_table.database_name);
-    std::swap(stale_table_id.table_name, fresh_table.table_name);
-    setTargetTableId(std::move(fresh_table));
-    return stale_table_id;
+    InterpreterRenameQuery(rename_query, refresh_context).execute();
+
+    return fresh_table;
+}
+
+void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePtr refresh_context)
+{
+    CurrentThread::QueryScope query_scope(refresh_context);
+
+    try
+    {
+        auto drop_query = std::make_shared<ASTDropQuery>();
+        drop_query->setDatabase(table_id.database_name);
+        drop_query->setTable(table_id.table_name);
+        drop_query->kind = ASTDropQuery::Kind::Drop;
+        drop_query->if_exists = true;
+        drop_query->sync = false;
+
+        InterpreterDropQuery(drop_query, refresh_context).execute();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(&Poco::Logger::get("StorageMaterializedView"), "Failed to drop temporary table after refresh");
+    }
 }
 
 void StorageMaterializedView::alter(
@@ -448,20 +479,7 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
 
         assert(inner_table_id.database_name == old_table_id.database_name);
 
-        ASTRenameQuery::Element elem
-        {
-            ASTRenameQuery::Table
-            {
-                inner_table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(inner_table_id.database_name),
-                std::make_shared<ASTIdentifier>(inner_table_id.table_name)
-            },
-            ASTRenameQuery::Table
-            {
-                new_table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(new_table_id.database_name),
-                std::make_shared<ASTIdentifier>(new_target_table_name)
-            }
-        };
-        rename->elements.emplace_back(std::move(elem));
+        rename->addElement(inner_table_id.database_name, inner_table_id.table_name, new_table_id.database_name, new_table_id.table_name);
 
         InterpreterRenameQuery(rename, getContext()).execute();
         updateTargetTableId(new_table_id.database_name, new_target_table_name);
@@ -618,12 +636,6 @@ DB::StorageID StorageMaterializedView::getTargetTableId() const
 {
     std::lock_guard guard(target_table_id_mutex);
     return target_table_id;
-}
-
-void StorageMaterializedView::setTargetTableId(DB::StorageID id)
-{
-    std::lock_guard guard(target_table_id_mutex);
-    target_table_id = std::move(id);
 }
 
 void StorageMaterializedView::updateTargetTableId(std::optional<String> database_name, std::optional<String> table_name)

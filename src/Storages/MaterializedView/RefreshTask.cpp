@@ -37,7 +37,7 @@ RefreshTask::RefreshTask(
         refresh_settings.applyChanges(strategy.settings->changes);
 }
 
-RefreshTaskHolder RefreshTask::create(
+OwnedRefreshTask RefreshTask::create(
     StorageMaterializedView * view,
     ContextMutablePtr context,
     const DB::ASTRefreshStrategy & strategy)
@@ -54,7 +54,7 @@ RefreshTaskHolder RefreshTask::create(
 
     task->set_handle = context->getRefreshSet().emplace(view->getStorageID(), deps, task);
 
-    return task;
+    return OwnedRefreshTask(task);
 }
 
 void RefreshTask::initializeAndStart()
@@ -169,6 +169,10 @@ void RefreshTask::shutdown()
 {
     {
         std::lock_guard guard(mutex);
+
+        if (view == nullptr)
+            return; // already shut down
+
         stop_requested = true;
         interruptExecution();
     }
@@ -373,7 +377,7 @@ void RefreshTask::executeRefreshUnlocked(bool append)
     LOG_DEBUG(log, "Refreshing view {}", view->getStorageID().getFullTableName());
     progress.reset();
 
-    ContextMutablePtr refresh_context;
+    ContextMutablePtr refresh_context = view->createRefreshContext();
     std::optional<StorageID> table_to_drop;
     try
     {
@@ -437,24 +441,13 @@ void RefreshTask::executeRefreshUnlocked(bool append)
     catch (...)
     {
         if (table_to_drop.has_value())
-        {
-            try
-            {
-                InterpreterDropQuery::executeDropQuery(
-                    ASTDropQuery::Kind::Drop, view->getContext(), refresh_context, table_to_drop.value(), /*sync*/ false, /*ignore_sync_setting*/ true);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Failed to drop temporary table after a failed refresh");
-                /// Let's ignore this and keep going, at risk of accumulating many trash tables if this keeps happening.
-            }
-        }
+            view->dropTempTable(table_to_drop.value(), refresh_context);
         throw;
     }
 
     /// Drop the old table (outside the try-catch so we don't try to drop the other table if this fails).
     if (table_to_drop.has_value())
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, view->getContext(), refresh_context, table_to_drop.value(), /*sync*/ true, /*ignore_sync_setting*/ true);
+        view->dropTempTable(table_to_drop.value(), refresh_context);
 }
 
 void RefreshTask::advanceNextRefreshTime(std::chrono::system_clock::time_point now)

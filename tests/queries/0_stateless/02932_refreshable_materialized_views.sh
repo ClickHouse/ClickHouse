@@ -257,7 +257,7 @@ $CLICKHOUSE_CLIENT -nq "
 
 # Try OFFSET and RANDOMIZE FOR.
 $CLICKHOUSE_CLIENT -nq "
-    create materialized view g refresh every 1 week offset 3 day 4 hour randomize for 4 day 1 hour (x Int64) engine Memory empty as select 42;
+    create materialized view g refresh every 1 week offset 3 day 4 hour randomize for 4 day 1 hour (x Int64) engine Memory empty as select 42 as x;
     show create g;
     system test view g set fake time '2050-02-03 15:30:13';"
 while [ "`$CLICKHOUSE_CLIENT -nq "select next_refresh_time > '2049-01-01' from refreshes -- $LINENO" | xargs`" != '1' ]
@@ -358,6 +358,13 @@ $CLICKHOUSE_CLIENT -nq "
     drop table l;
     drop table m;
     drop table mid;"
+
+# Failing to create inner table.
+$CLICKHOUSE_CLIENT -nq "
+    create materialized view n refresh every 1 second (x Int64) engine MergeTree as select 1 as x from numbers(2);" 2>/dev/null || echo "creating MergeTree without ORDER BY failed, as expected"
+$CLICKHOUSE_CLIENT -nq "
+    create materialized view n refresh every 1 second (x Int64) engine MergeTree order by x as select 1 as x from numbers(2);
+    drop table n;"
 
 $CLICKHOUSE_CLIENT -nq "
     drop table refreshes;"
