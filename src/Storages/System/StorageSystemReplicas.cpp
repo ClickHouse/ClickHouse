@@ -213,7 +213,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
         { "is_session_expired",                   std::make_shared<DataTypeUInt8>(),    "Whether the session with ClickHouse Keeper has expired. Basically the same as `is_readonly`."},
         { "future_parts",                         std::make_shared<DataTypeUInt32>(),   "The number of data parts that will appear as the result of INSERTs or merges that haven't been done yet."},
         { "parts_to_check",                       std::make_shared<DataTypeUInt32>(),   "The number of data parts in the queue for verification. A part is put in the verification queue if there is suspicion that it might be damaged."},
-        { "zookeeper_name",                       std::make_shared<DataTypeString>(),   "The name of the the [Zoo]Keeper cluster (possibly auxilary one) where the table's metadata is stored"},
+        { "zookeeper_name",                       std::make_shared<DataTypeString>(),   "The name of the the [Zoo]Keeper cluster (possibly auxiliary one) where the table's metadata is stored"},
         { "zookeeper_path",                       std::make_shared<DataTypeString>(),   "Path to table data in ClickHouse Keeper."},
         { "replica_name",                         std::make_shared<DataTypeString>(),   "Replica name in ClickHouse Keeper. Different replicas of the same table have different names."},
         { "replica_path",                         std::make_shared<DataTypeString>(),   "Path to replica data in ClickHouse Keeper. The same as concatenating 'zookeeper_path/replicas/replica_path'."},
