@@ -273,8 +273,8 @@ public:
     /// Fetch part only when it stored on shared storage like S3
     MutableDataPartPtr executeFetchShared(const String & source_replica, const String & new_part_name, const DiskPtr & disk, const String & path);
 
-    bool lockSharedPart(std::string_view part_name, bool block) const override;
-    void unlockSharedPart(std::string_view part_name) const override;
+    bool lockSharedPart(const IDisk & disk, std::string_view part_name, bool block) const override;
+    void unlockSharedPart(const IDisk & disk, std::string_view part_name) const override;
 
     /// Lock part in zookeeper for use shared data in several nodes
     void lockSharedData(const IMergeTreeDataPart & part, bool replace_existing_lock, std::optional<HardlinkedFiles> hardlinked_files) const override;

@@ -7618,8 +7618,8 @@ bool MergeTreeData::areBackgroundMovesNeeded() const
     return policy->getVolumes().size() == 1 && policy->getVolumes()[0]->getDisks().size() > 1;
 }
 
-bool MergeTreeData::lockSharedPart(std::string_view, bool) const { return true; }
-void MergeTreeData::unlockSharedPart(std::string_view) const {}
+bool MergeTreeData::lockSharedPart(const IDisk &, std::string_view, bool) const { return true; }
+void MergeTreeData::unlockSharedPart(const IDisk &, std::string_view) const {}
 
 std::future<MovePartsOutcome> MergeTreeData::movePartsToSpace(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool async)
 {
@@ -7790,15 +7790,14 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             }
             else /// Ordinary move as it should be
             {
-                const bool vfs = disk->isObjectStorageVFS();
-                if (vfs && !lockSharedPart(moving_part.part->name, wait_for_move_if_zero_copy))
+                if (!lockSharedPart(*disk, moving_part.part->name, wait_for_move_if_zero_copy))
                 {
                     write_part_log({});
                     LOG_DEBUG(log, "Move contention, rescheduling");
                     // TODO myrrc reschedule time hint regarding part size
                     return MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy;
                 }
-                SCOPE_EXIT(if (vfs) unlockSharedPart(moving_part.part->name));
+                SCOPE_EXIT(unlockSharedPart(*disk, moving_part.part->name));
 
                 cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings);
                 parts_mover.swapClonedPart(cloned_part);

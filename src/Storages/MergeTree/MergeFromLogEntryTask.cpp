@@ -239,7 +239,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
         const bool zerocopy_lock_already_acquired = is_zerocopy
             && (!zero_copy_lock || !zero_copy_lock->isLocked());
-        const bool vfs_lock_already_acquired = is_vfs && !storage.lockSharedPart(entry.new_part_name, false);
+        const bool vfs_lock_already_acquired = !storage.lockSharedPart(*disk, entry.new_part_name, false);
 
         if (zerocopy_lock_already_acquired || vfs_lock_already_acquired)
         {
@@ -271,7 +271,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
                 zero_copy_lock->lock->unlock();
             }
 
-            storage.unlockSharedPart(entry.new_part_name);
+            storage.unlockSharedPart(*disk, entry.new_part_name);
 
             LOG_DEBUG(log,
                 "We took lock but merge of part {} finished by some other replica, will "
@@ -403,7 +403,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
 
     if (zero_copy_lock)
         zero_copy_lock->lock->unlock();
-    storage.unlockSharedPart(entry.new_part_name);
+    storage.unlockSharedPart(*part->storage.getDisks()[0], entry.new_part_name);
 
     /** Removing old parts from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
      */

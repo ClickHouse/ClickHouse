@@ -1034,8 +1034,11 @@ public:
     bool areBackgroundMovesNeeded() const;
 
     // TODO myrrc clash with zerocopy-only [un]lockSharedData. Rename to lockSharedPartVFS or so
-    virtual bool lockSharedPart(std::string_view part_name, bool block) const;
-    virtual void unlockSharedPart(std::string_view part_name) const;
+    // Passing disk is ugly, but we can't take IMergeTreeDataPart as in merges/mutations we don't have it.
+    // However, we need to pass disk as a sanity check that function is invoked only for VFS
+    // Initially, this was a VFS disk method but @alesapin suggested moving it here
+    virtual bool lockSharedPart(const IDisk & disk, std::string_view part_name, bool block) const;
+    virtual void unlockSharedPart(const IDisk & disk, std::string_view part_name) const;
 
     /// Lock part in zookeeper for shared data in several nodes
     /// Overridden in StorageReplicatedMergeTree
