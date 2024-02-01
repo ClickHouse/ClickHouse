@@ -3,7 +3,7 @@
 #include <Formats/ColumnMapping.h>
 #include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Processors/Formats/InputFormatErrorsLogger.h>
+#include <Processors/Formats/IInputFormatErrorsHandler.h>
 #include <Processors/SourceWithKeyCondition.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
@@ -60,7 +60,7 @@ public:
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
 
-    void setErrorsLogger(const InputFormatErrorsLoggerPtr & errors_logger_) { errors_logger = errors_logger_; }
+    void setErrorsHandler(const IInputFormatErrorsHandlerPtr & errors_handler_) { errors_handler = errors_handler_; }
 
     virtual size_t getApproxBytesReadForChunk() const { return 0; }
 
@@ -73,7 +73,7 @@ protected:
 
     ColumnMappingPtr column_mapping{};
 
-    InputFormatErrorsLoggerPtr errors_logger;
+    IInputFormatErrorsHandlerPtr errors_handler;
 
     bool need_only_count = false;
 

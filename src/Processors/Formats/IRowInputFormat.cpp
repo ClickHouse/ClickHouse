@@ -90,7 +90,7 @@ void IRowInputFormat::logError()
 
     auto now_time = time(nullptr);
 
-    errors_logger->logError(InputFormatErrorsLogger::ErrorEntry{now_time, total_rows, diagnostic, raw_data});
+    errors_handler->logError(IInputFormatErrorsHandler::ErrorEntry{now_time, total_rows, diagnostic, raw_data});
 }
 
 Chunk IRowInputFormat::read()
@@ -178,7 +178,7 @@ Chunk IRowInputFormat::read()
                 if (params.allow_errors_num == 0 && params.allow_errors_ratio == 0)
                     throw;
 
-                if (errors_logger)
+                if (errors_handler)
                     logError();
 
                 ++num_errors;

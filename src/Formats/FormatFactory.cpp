@@ -8,6 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 #include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
@@ -356,9 +357,9 @@ InputFormatPtr FormatFactory::getInput(
     if (!settings.input_format_record_errors_file_path.toString().empty())
     {
         if (parallel_parsing)
-            format->setErrorsLogger(std::make_shared<ParallelInputFormatErrorsLogger>(context));
+            format->setErrorsHandler(std::make_shared<ParallelInputFormatErrorsLogger>(context));
         else
-            format->setErrorsLogger(std::make_shared<InputFormatErrorsLogger>(context));
+            format->setErrorsHandler(std::make_shared<InputFormatErrorsLogger>(context));
     }
 
 

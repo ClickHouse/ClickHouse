@@ -1,30 +1,23 @@
 #pragma once
 
+#include <vector>
 #include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Context.h>
+#include <Processors/Formats/IInputFormatErrorsHandler.h>
 
 
 namespace DB
 {
 
-class InputFormatErrorsLogger
+class InputFormatErrorsLogger : public IInputFormatErrorsHandler
 {
 public:
-    struct ErrorEntry
-    {
-        time_t time;
-        size_t offset;
-        String reason;
-        String raw_data;
-    };
+    explicit InputFormatErrorsLogger(const ContextPtr & context);
+    ~InputFormatErrorsLogger() override;
+    void logError(ErrorEntry entry) override;
 
-    InputFormatErrorsLogger(const ContextPtr & context);
-
-    virtual ~InputFormatErrorsLogger();
-
-    virtual void logError(ErrorEntry entry);
+protected:
     void logErrorImpl(ErrorEntry entry);
-    void writeErrors();
 
 private:
     Block header;
@@ -38,17 +31,17 @@ private:
 
     MutableColumns errors_columns;
     size_t max_block_size;
-};
 
-using InputFormatErrorsLoggerPtr = std::shared_ptr<InputFormatErrorsLogger>;
+    void writeErrors();
+};
 
 class ParallelInputFormatErrorsLogger : public InputFormatErrorsLogger
 {
 public:
-    ParallelInputFormatErrorsLogger(const ContextPtr & context) : InputFormatErrorsLogger(context) { }
-
+    explicit ParallelInputFormatErrorsLogger(const ContextPtr & context)
+        : InputFormatErrorsLogger(context)
+    {}
     ~ParallelInputFormatErrorsLogger() override;
-
     void logError(ErrorEntry entry) override;
 
 private:
