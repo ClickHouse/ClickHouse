@@ -182,7 +182,19 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
     {
         /// Set was_cancelled, so the query won't be sent after creating connections.
         was_cancelled = true;
-        read_context->cancel();
+
+        /// Cancellation may throw (i.e. some timeout), and in case of pipeline
+        /// had not been properly created properly (EXCEPTION_BEFORE_START)
+        /// cancel will not be sent, so cancellation will be done from dtor and
+        /// will throw.
+        try
+        {
+            read_context->cancel();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log ? log : getLogger("RemoteQueryExecutor"));
+        }
     }
 
     /** If interrupted in the middle of the loop of communication with replicas, then interrupt
