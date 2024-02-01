@@ -50,7 +50,6 @@ public:
         std::shared_ptr<TaskIterator> task_iterator = nullptr;
         std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator = nullptr;
         std::optional<IConnections::ReplicaInfo> replica_info = {};
-        GetPriorityForLoadBalancing::Func priority_func;
     };
 
     /// Takes already set connection.
