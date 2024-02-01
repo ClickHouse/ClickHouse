@@ -926,14 +926,20 @@ AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, 
 }
 
 void AvroRowInputFormat::readPrefix()
+try
 {
     file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*in));
     deserializer_ptr = std::make_unique<AvroDeserializer>(
         output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
     file_reader_ptr->init();
 }
+catch (const avro::Exception & e)
+{
+    throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, e.what());
+}
 
 bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &ext)
+try
 {
     if (file_reader_ptr->hasMore())
     {
@@ -943,8 +949,13 @@ bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &ext
     }
     return false;
 }
+catch (const avro::Exception & e)
+{
+    throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, e.what());
+}
 
 size_t AvroRowInputFormat::countRows(size_t max_block_size)
+try
 {
     size_t num_rows = 0;
     while (file_reader_ptr->hasMore() && num_rows < max_block_size)
@@ -955,6 +966,10 @@ size_t AvroRowInputFormat::countRows(size_t max_block_size)
     }
 
     return num_rows;
+}
+catch (const avro::Exception & e)
+{
+    throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, e.what());
 }
 
 class AvroConfluentRowInputFormat::SchemaRegistry
@@ -1114,13 +1129,19 @@ AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
 }
 
 void AvroConfluentRowInputFormat::readPrefix()
+try
 {
     input_stream = std::make_unique<AvroInputStreamReadBufferAdapter>(*in);
     decoder = avro::binaryDecoder();
     decoder->init(*input_stream);
 }
+catch (const avro::Exception & e)
+{
+    throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, e.what());
+}
 
 bool AvroConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
+try
 {
     if (in->eof())
     {
@@ -1136,6 +1157,10 @@ bool AvroConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadExten
     deserializer.deserializeRow(columns, *decoder, ext);
     decoder->drain();
     return true;
+}
+catch (const avro::Exception & e)
+{
+    throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, e.what());
 }
 
 void AvroConfluentRowInputFormat::syncAfterError()
