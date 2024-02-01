@@ -212,6 +212,8 @@ private:
         UInt64 inode = 0;
     };
     ReadMetadataResult readMetadata(const String & filename) const;
+
+    ContextMutablePtr addSettings(ContextPtr context) const;
 };
 
 }

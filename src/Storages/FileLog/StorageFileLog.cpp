@@ -93,7 +93,6 @@ private:
         }
 
         auto modified_context = Context::createCopy(getContext());
-
         auto max_streams_number = std::min<UInt64>(file_log.filelog_settings->max_threads, file_log.file_infos.file_names.size());
 
         /// Each stream responsible for closing it's files and store meta
@@ -380,8 +379,10 @@ void StorageFileLog::read(
     size_t /* num_streams */)
 
 {
+    auto modified_context = addSettings(query_context);
     query_plan.addStep(
-        std::make_unique<ReadFromStorageFileLog>(column_names, shared_from_this(), storage_snapshot, query_info, std::move(query_context)));
+        std::make_unique<ReadFromStorageFileLog>(column_names, shared_from_this(), storage_snapshot, query_info, modified_context));
+    query_plan.addInterpreterContext(modified_context);
 }
 
 void StorageFileLog::increaseStreams()
@@ -720,7 +721,7 @@ bool StorageFileLog::streamToViews()
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = table_id;
 
-    auto new_context = Context::createCopy(getContext());
+    auto new_context = addSettings(getContext());
 
     InterpreterInsertQuery interpreter(insert, new_context, false, true, true);
     auto block_io = interpreter.execute();
@@ -1022,6 +1023,18 @@ NamesAndTypesList StorageFileLog::getVirtuals() const
     }
 
     return virtuals;
+}
+
+ContextMutablePtr StorageFileLog::addSettings(ContextPtr local_context) const
+{
+    auto modified_context = Context::createCopy(getContext());
+    Settings settings = modified_context->getSettings();
+    settings.input_format_skip_unknown_fields = true;
+    settings.input_format_allow_errors_ratio = 0.;
+    if (filelog_settings->handle_error_mode == StreamingHandleErrorMode::STREAM)
+        settings.input_format_allow_errors_num = std::numeric_limits<UInt64>::max();
+    modified_context->setSettings(settings);
+    return modified_context;
 }
 
 }
