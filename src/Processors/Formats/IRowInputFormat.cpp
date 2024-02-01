@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_IPV4;
     extern const int CANNOT_PARSE_IPV6;
     extern const int UNKNOWN_TYPE;
+    extern const int EMPTY_DATA_PASSED;
     extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
@@ -52,6 +53,7 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_PARSE_IPV4
         || code == ErrorCodes::CANNOT_PARSE_IPV6
         || code == ErrorCodes::UNKNOWN_TYPE
+        || code == ErrorCodes::EMPTY_DATA_PASSED
         || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM;
 }
 
