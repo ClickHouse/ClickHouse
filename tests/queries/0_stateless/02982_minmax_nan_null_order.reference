@@ -1,0 +1,34 @@
+-- { echoOn }
+-- Tuples with NaN
+SELECT min((c1, c2)), max((c1, c2)) FROM values((nan, 0.), (0., 0.), (5., 5.));
+(0,0)	(5,5)
+SELECT (c1, c2) as t FROM values((nan, 0.), (0., 0.), (5., 5.)) ORDER BY t ASC LIMIT 1;
+(0,0)
+SELECT (c1, c2) as t FROM values((nan, 0.), (0., 0.), (5., 5.)) ORDER BY t DESC LIMIT 1;
+(5,5)
+SELECT min((c1, c2)), max((c1, c2)) FROM values((-5, 0), (nan, 0.), (0., 0.), (5., 5.));
+(-5,0)	(5,5)
+SELECT (c1, c2) as t FROM values((-5, 0), (nan, 0.), (0., 0.), (5., 5.)) ORDER BY t ASC LIMIT 1;
+(-5,0)
+SELECT (c1, c2) as t FROM values((-5, 0), (nan, 0.), (0., 0.), (5., 5.)) ORDER BY t DESC LIMIT 1;
+(5,5)
+-- Tuples with NULL
+SELECT min((c1, c2)), max((c1, c2)) FROM values((NULL, 0.), (0., 0.), (5., 5.));
+(0,0)	(5,5)
+SELECT (c1, c2) as t FROM values((NULL, 0.), (0., 0.), (5., 5.)) ORDER BY t ASC LIMIT 1;
+(0,0)
+SELECT (c1, c2) as t FROM values((NULL, 0.), (0., 0.), (5., 5.)) ORDER BY t DESC LIMIT 1;
+(5,5)
+SELECT min((c1, c2)), max((c1, c2)) FROM values((0., 0.), (5., 5.), (NULL, 0.));
+(0,0)	(5,5)
+SELECT (c1, c2) as t FROM values((NULL, 0.), (0., 0.), (5., 5.), (NULL, 0.)) ORDER BY t ASC LIMIT 1;
+(0,0)
+SELECT (c1, c2) as t FROM values((NULL, 0.), (0., 0.), (5., 5.), (NULL, 0.)) ORDER BY t DESC LIMIT 1;
+(5,5)
+-- Map with NULL
+SELECT min(map(0, c1)), max(map(0, c1)) FROM values(NULL, 0, 5., 5.);
+{0:0}	{0:5}
+SELECT map(0, c1) as t FROM values(NULL, 0, 5., 5.) ORDER BY t ASC LIMIT 1;
+{0:0}
+SELECT map(0, c1) as t FROM values(NULL, 0, 5., 5.) ORDER BY t DESC LIMIT 1;
+{0:5}
