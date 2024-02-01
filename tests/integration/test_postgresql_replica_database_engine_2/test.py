@@ -1094,6 +1094,8 @@ def test_dependent_loading(started_cluster):
         f"SELECT toDateTime64('{nested_time}', 6) < toDateTime64('{time}', 6)"
     )
 
+    instance.query(f"DROP TABLE {table} SYNC")
+
 
 if __name__ == "__main__":
     cluster.start()

@@ -186,7 +186,7 @@ private:
 
     ContextMutablePtr live_view_context;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     bool is_periodically_refreshed = false;
     Seconds periodic_live_view_refresh;

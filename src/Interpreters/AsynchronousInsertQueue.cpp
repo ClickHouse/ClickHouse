@@ -515,7 +515,7 @@ try
 
     SCOPE_EXIT(CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size()));
 
-    const auto * log = &Poco::Logger::get("AsynchronousInsertQueue");
+    const auto log = getLogger("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
     auto insert_context = Context::createCopy(global_context);
@@ -732,7 +732,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     const std::list<InsertData::EntryPtr> & entries,
     const Block & header,
     const ContextPtr & insert_context,
-    const Poco::Logger * logger,
+    const LoggerPtr logger,
     LogFunc && add_to_async_insert_log)
 {
     size_t total_rows = 0;

@@ -39,8 +39,8 @@ If you need to update rows frequently, we recommend using the [`ReplacingMergeTr
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTIC(stat1)] [TTL expr1] [PRIMARY KEY],
-    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [STATISTIC(stat2)] [TTL expr2] [PRIMARY KEY],
+    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTIC(stat1)] [TTL expr1] [PRIMARY KEY] [SETTINGS (name = value, ...)],
+    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [STATISTIC(stat2)] [TTL expr2] [PRIMARY KEY] [SETTINGS (name = value, ...)],
     ...
     INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
     INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
@@ -56,7 +56,7 @@ ORDER BY expr
     [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx' [, ...] ]
     [WHERE conditions]
     [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] ]
-[SETTINGS name=value, ...]
+[SETTINGS name = value, ...]
 ```
 
 For a description of parameters, see the [CREATE query description](/docs/en/sql-reference/statements/create/table.md).
@@ -504,24 +504,25 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 
 | Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | inverted |
 |------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|----------|
-| [equals (=, ==)](/docs/en/sql-reference/functions/comparison-functions.md/#equals)                | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
-| [notEquals(!=, &lt;&gt;)](/docs/en/sql-reference/functions/comparison-functions.md/#notequals)    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
-| [like](/docs/en/sql-reference/functions/string-search-functions.md/#function-like)                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
-| [notLike](/docs/en/sql-reference/functions/string-search-functions.md/#function-notlike)                   | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
+| [equals (=, ==)](/docs/en/sql-reference/functions/comparison-functions.md/#equals)                         | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
+| [notEquals(!=, &lt;&gt;)](/docs/en/sql-reference/functions/comparison-functions.md/#notequals)             | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
+| [like](/docs/en/sql-reference/functions/string-search-functions.md/#like)                                  | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
+| [notLike](/docs/en/sql-reference/functions/string-search-functions.md/#notlike)                            | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
+| [match](/docs/en/sql-reference/functions/string-search-functions.md/#match)                                | ✗           | ✗      | ✔          | ✔          | ✗            | ✔        |
 | [startsWith](/docs/en/sql-reference/functions/string-functions.md/#startswith)                             | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
 | [endsWith](/docs/en/sql-reference/functions/string-functions.md/#endswith)                                 | ✗           | ✗      | ✔          | ✔          | ✗            | ✔        |
-| [multiSearchAny](/docs/en/sql-reference/functions/string-search-functions.md/#function-multisearchany)     | ✗           | ✗      | ✔          | ✗          | ✗            | ✔        |
-| [in](/docs/en/sql-reference/functions/in-functions#in-functions)                                           | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
-| [notIn](/docs/en/sql-reference/functions/in-functions#in-functions)                                        | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
-| [less (<)](/docs/en/sql-reference/functions/comparison-functions.md/#less)                        | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
-| [greater (>)](/docs/en/sql-reference/functions/comparison-functions.md/#greater)                  | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
-| [lessOrEquals (<=)](/docs/en/sql-reference/functions/comparison-functions.md/#lessorequals)       | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
-| [greaterOrEquals (>=)](/docs/en/sql-reference/functions/comparison-functions.md/#greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
-| [empty](/docs/en/sql-reference/functions/array-functions#function-empty)                                   | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
-| [notEmpty](/docs/en/sql-reference/functions/array-functions#function-notempty)                             | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
-| [has](/docs/en/sql-reference/functions/array-functions#function-has)                                       | ✗           | ✗      | ✔          | ✔          | ✔            | ✔        |
-| [hasAny](/docs/en/sql-reference/functions/array-functions#function-hasAny)                                 | ✗           | ✗      | ✔          | ✔          | ✔            | ✗        |
-| [hasAll](/docs/en/sql-reference/functions/array-functions#function-hasAll)                                 | ✗           | ✗      | ✗          | ✗          | ✔            | ✗        |
+| [multiSearchAny](/docs/en/sql-reference/functions/string-search-functions.md/#multisearchany)              | ✗           | ✗      | ✔          | ✗          | ✗            | ✔        |
+| [in](/docs/en/sql-reference/functions/in-functions)                                                        | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
+| [notIn](/docs/en/sql-reference/functions/in-functions)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
+| [less (<)](/docs/en/sql-reference/functions/comparison-functions.md/#less)                                 | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [greater (>)](/docs/en/sql-reference/functions/comparison-functions.md/#greater)                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [lessOrEquals (<=)](/docs/en/sql-reference/functions/comparison-functions.md/#lessorequals)                | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [greaterOrEquals (>=)](/docs/en/sql-reference/functions/comparison-functions.md/#greaterorequals)          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [empty](/docs/en/sql-reference/functions/array-functions/#empty)                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [notEmpty](/docs/en/sql-reference/functions/array-functions/#notempty)                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [has](/docs/en/sql-reference/functions/array-functions/#has)                                               | ✗           | ✗      | ✔          | ✔          | ✔            | ✔        |
+| [hasAny](/docs/en/sql-reference/functions/array-functions/#hasany)                                         | ✗           | ✗      | ✔          | ✔          | ✔            | ✗        |
+| [hasAll](/docs/en/sql-reference/functions/array-functions/#hasall)                                         | ✗           | ✗      | ✗          | ✗          | ✔            | ✗        |
 | hasToken                                                                                                   | ✗           | ✗      | ✗          | ✔          | ✗            | ✔        |
 | hasTokenOrNull                                                                                             | ✗           | ✗      | ✗          | ✔          | ✗            | ✔        |
 | hasTokenCaseInsensitive (*)                                                                                | ✗           | ✗      | ✗          | ✔          | ✗            | ✗        |
@@ -619,7 +620,7 @@ The `TTL` clause can’t be used for key columns.
 #### Creating a table with `TTL`:
 
 ``` sql
-CREATE TABLE example_table
+CREATE TABLE tab
 (
     d DateTime,
     a Int TTL d + INTERVAL 1 MONTH,
@@ -634,7 +635,7 @@ ORDER BY d;
 #### Adding TTL to a column of an existing table
 
 ``` sql
-ALTER TABLE example_table
+ALTER TABLE tab
     MODIFY COLUMN
     c String TTL d + INTERVAL 1 DAY;
 ```
@@ -642,7 +643,7 @@ ALTER TABLE example_table
 #### Altering TTL of the column
 
 ``` sql
-ALTER TABLE example_table
+ALTER TABLE tab
     MODIFY COLUMN
     c String TTL d + INTERVAL 1 MONTH;
 ```
@@ -680,7 +681,7 @@ If a column is not part of the `GROUP BY` expression and is not set explicitly i
 #### Creating a table with `TTL`:
 
 ``` sql
-CREATE TABLE example_table
+CREATE TABLE tab
 (
     d DateTime,
     a Int
@@ -696,7 +697,7 @@ TTL d + INTERVAL 1 MONTH DELETE,
 #### Altering `TTL` of the table:
 
 ``` sql
-ALTER TABLE example_table
+ALTER TABLE tab
     MODIFY TTL d + INTERVAL 1 DAY;
 ```
 
@@ -1365,7 +1366,7 @@ In this sample configuration:
 The statistic declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistic = 1`.
 
 ``` sql
-CREATE TABLE example_table
+CREATE TABLE tab
 (
     a Int64 STATISTIC(tdigest),
     b Float64
@@ -1377,8 +1378,8 @@ ORDER BY a
 We can also manipulate statistics with `ALTER` statements.
 
 ```sql
-ALTER TABLE example_table ADD STATISTIC b TYPE tdigest;
-ALTER TABLE example_table DROP STATISTIC a TYPE tdigest;
+ALTER TABLE tab ADD STATISTIC b TYPE tdigest;
+ALTER TABLE tab DROP STATISTIC a TYPE tdigest;
 ```
 
 These lightweight statistics aggregate information about distribution of values in columns.
@@ -1389,3 +1390,42 @@ They can be used for query optimization when we enable `set allow_statistic_opti
 -   `tdigest`
 
     Stores distribution of values from numeric columns in [TDigest](https://github.com/tdunning/t-digest) sketch.
+
+## Column-level Settings {#column-level-settings}
+
+Certain MergeTree settings can be override at column level:
+
+- `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table.
+- `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark.
+
+Example:
+
+```sql
+CREATE TABLE tab
+(
+    id Int64,
+    document String SETTINGS (min_compress_block_size = 16777216, max_compress_block_size = 16777216)
+)
+ENGINE = MergeTree
+ORDER BY id
+```
+
+Column-level settings can be modified or removed using [ALTER MODIFY COLUMN](/docs/en/sql-reference/statements/alter/column.md), for example:
+
+- Remove `SETTINGS` from column declaration:
+
+```sql
+ALTER TABLE tab MODIFY COLUMN document REMOVE SETTINGS;
+```
+
+- Modify a setting:
+
+```sql
+ALTER TABLE tab MODIFY COLUMN document MODIFY SETTING min_compress_block_size = 8192;
+```
+
+- Reset one or more settings, also removes the setting declaration in the column expression of the table's CREATE query.
+
+```sql
+ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;
+```

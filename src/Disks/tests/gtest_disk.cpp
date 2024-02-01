@@ -47,7 +47,7 @@ TEST_F(DiskTest, writeFile)
         writeString("test data", *out);
     }
 
-    DB::String data;
+    String data;
     {
         std::unique_ptr<DB::ReadBuffer> in = disk->readFile("test_file");
         readString(data, *in);

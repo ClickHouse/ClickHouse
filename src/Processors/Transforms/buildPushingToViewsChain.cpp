@@ -211,7 +211,7 @@ std::optional<Chain> generateViewChain(
     if (view == nullptr)
     {
         LOG_WARNING(
-            &Poco::Logger::get("PushingToViews"), "Trying to access table {} but it doesn't exist", view_id.getFullTableName());
+            getLogger("PushingToViews"), "Trying to access table {} but it doesn't exist", view_id.getFullTableName());
         return std::nullopt;
     }
 
@@ -223,7 +223,33 @@ std::optional<Chain> generateViewChain(
 
     // Do not deduplicate insertions into MV if the main insertion is Ok
     if (disable_deduplication_for_children)
+    {
         insert_context->setSetting("insert_deduplicate", Field{false});
+    }
+    else if (insert_settings.update_insert_deduplication_token_in_dependent_materialized_views &&
+        !insert_settings.insert_deduplication_token.value.empty())
+    {
+        /** Update deduplication token passed to dependent MV with current table id. So it is possible to properly handle
+          * deduplication in complex INSERT flows.
+          *
+          * Example:
+          *
+          * landing -┬--> mv_1_1 ---> ds_1_1 ---> mv_2_1 --┬-> ds_2_1 ---> mv_3_1 ---> ds_3_1
+          *          |                                     |
+          *          └--> mv_1_2 ---> ds_1_2 ---> mv_2_2 --┘
+          *
+          * Here we want to avoid deduplication for two different blocks generated from `mv_2_1` and `mv_2_2` that will
+          * be inserted into `ds_2_1`.
+          */
+        auto insert_deduplication_token = insert_settings.insert_deduplication_token.value;
+
+        if (views_data->source_storage_id.hasUUID())
+            insert_deduplication_token += "_" + toString(views_data->source_storage_id.uuid);
+        else
+            insert_deduplication_token += "_" + views_data->source_storage_id.getFullNameNotQuoted();
+
+        insert_context->setSetting("insert_deduplication_token", insert_deduplication_token);
+    }
 
     // Processing of blocks for MVs is done block by block, and there will
     // be no parallel reading after (plus it is not a costless operation)
@@ -272,7 +298,7 @@ std::optional<Chain> generateViewChain(
             // In case the materialized view is dropped/detached at this point, we register a warning and ignore it
             assert(materialized_view->is_dropped || materialized_view->is_detached);
             LOG_WARNING(
-                &Poco::Logger::get("PushingToViews"), "Trying to access table {} but it doesn't exist", view_id.getFullTableName());
+                getLogger("PushingToViews"), "Trying to access table {} but it doesn't exist", view_id.getFullTableName());
             return std::nullopt;
         }
 
@@ -303,7 +329,7 @@ std::optional<Chain> generateViewChain(
             /// It may happen if materialize view query was changed and it doesn't depend on this source table anymore.
             /// See setting `allow_experimental_alter_materialized_view_structure`
             LOG_DEBUG(
-                &Poco::Logger::get("PushingToViews"), "Table '{}' is not a source for view '{}' anymore, current source is '{}'",
+                getLogger("PushingToViews"), "Table '{}' is not a source for view '{}' anymore, current source is '{}'",
                 select_query.select_table_id.getFullTableName(), view_id.getFullTableName(), views_data->source_storage_id);
             return std::nullopt;
         }
@@ -866,14 +892,14 @@ void FinalizingViewsTransform::work()
 
             /// Exception will be ignored, it is saved here for the system.query_views_log
             if (materialized_views_ignore_errors)
-                tryLogException(view.exception, &Poco::Logger::get("PushingToViews"), "Cannot push to the storage, ignoring the error");
+                tryLogException(view.exception, getLogger("PushingToViews"), "Cannot push to the storage, ignoring the error");
         }
         else
         {
             view.runtime_stats->setStatus(QueryViewsLogElement::ViewStatus::QUERY_FINISH);
 
             LOG_TRACE(
-                &Poco::Logger::get("PushingToViews"),
+                getLogger("PushingToViews"),
                 "Pushing ({}) from {} to {} took {} ms.",
                 views_data->max_threads <= 1 ? "sequentially" : ("parallel " + std::to_string(views_data->max_threads)),
                 views_data->source_storage_id.getNameForLogs(),

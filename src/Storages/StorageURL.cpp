@@ -36,13 +36,13 @@
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
+#include <Common/re2.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 
 #include <algorithm>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <regex>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -84,9 +84,9 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
 
 /// Headers in config file will have structure "headers.header.name" and "headers.header.value".
 /// But Poco::AbstractConfiguration converts them into "header", "header[1]", "header[2]".
-static const std::vector<std::regex> optional_regex_keys = {
-    std::regex(R"(headers.header\[[\d]*\].name)"),
-    std::regex(R"(headers.header\[[\d]*\].value)"),
+static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys = {
+    std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].name)"),
+    std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].value)"),
 };
 
 static bool urlWithGlobs(const String & uri)
@@ -498,13 +498,13 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     throw Exception(ErrorCodes::NETWORK_ERROR, "All uri ({}) options are unreachable: {}", options, first_exception_message);
 }
 
-void StorageURLSource::addNumRowsToCache(const DB::String & uri, size_t num_rows)
+void StorageURLSource::addNumRowsToCache(const String & uri, size_t num_rows)
 {
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
     StorageURL::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
 }
 
-std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const DB::String & uri, std::optional<time_t> last_mod_time)
+std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time)
 {
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
     auto get_last_mod_time = [&]() -> std::optional<time_t>
@@ -930,7 +930,7 @@ private:
 
 void ReadFromURL::applyFilters()
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -1284,7 +1284,7 @@ StorageURLWithFailover::StorageURLWithFailover(
     {
         Poco::URI poco_uri(uri_option);
         context_->getRemoteHostFilter().checkURL(poco_uri);
-        LOG_DEBUG(&Poco::Logger::get("StorageURLDistributed"), "Adding URL option: {}", uri_option);
+        LOG_DEBUG(getLogger("StorageURLDistributed"), "Adding URL option: {}", uri_option);
         uri_options.emplace_back(uri_option);
     }
 }
@@ -1324,7 +1324,7 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
     return format_settings;
 }
 
-ASTs::iterator StorageURL::collectHeaders(
+size_t StorageURL::evalArgsAndCollectHeaders(
     ASTs & url_function_args, HTTPHeaderEntries & header_entries, ContextPtr context)
 {
     ASTs::iterator headers_it = url_function_args.end();
@@ -1382,7 +1382,11 @@ ASTs::iterator StorageURL::collectHeaders(
         (*arg_it) = evaluateConstantExpressionOrIdentifierAsLiteral((*arg_it), context);
     }
 
-    return headers_it;
+    if (headers_it == url_function_args.end())
+        return url_function_args.size();
+
+    std::rotate(headers_it, std::next(headers_it), url_function_args.end());
+    return url_function_args.size() - 1;
 }
 
 void StorageURL::processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection)
@@ -1412,21 +1416,19 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, ContextPtr l
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, local_context))
     {
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
-        collectHeaders(args, configuration.headers, local_context);
+        evalArgsAndCollectHeaders(args, configuration.headers, local_context);
     }
     else
     {
-        if (args.empty() || args.size() > 3)
+        size_t count = evalArgsAndCollectHeaders(args, configuration.headers, local_context);
+
+        if (count == 0 || count > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, bad_arguments_error_message);
 
-        auto * header_it = collectHeaders(args, configuration.headers, local_context);
-        if (header_it != args.end())
-            args.erase(header_it);
-
         configuration.url = checkAndGetLiteralArgument<String>(args[0], "url");
-        if (args.size() > 1)
+        if (count > 1)
             configuration.format = checkAndGetLiteralArgument<String>(args[1], "format");
-        if (args.size() == 3)
+        if (count == 3)
             configuration.compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
     }
 

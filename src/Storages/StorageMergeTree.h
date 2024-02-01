@@ -273,6 +273,8 @@ private:
 
     PreparedSetsCachePtr getPreparedSetsCache(Int64 mutation_id);
 
+    void assertNotReadonly() const;
+
     friend class MergeTreeSink;
     friend class MergeTreeData;
     friend class MergePlainMergeTreeTask;

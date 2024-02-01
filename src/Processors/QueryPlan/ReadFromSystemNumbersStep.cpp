@@ -507,7 +507,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
 ActionsDAGPtr ReadFromSystemNumbersStep::buildFilterDAG()
 {
     std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
-    return ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, node_name_to_input_node_column, context);
+    return ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, node_name_to_input_node_column);
 }
 
 void ReadFromSystemNumbersStep::checkLimits(size_t rows)

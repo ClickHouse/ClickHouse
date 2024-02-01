@@ -21,6 +21,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Core/ServerSettings.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -39,6 +40,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
+    extern const int TOO_MANY_MATERIALIZED_VIEWS;
 }
 
 namespace ActionLocks
@@ -93,6 +95,16 @@ StorageMaterializedView::StorageMaterializedView(
                         "either ENGINE or an existing table in a TO clause");
 
     auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), query.refresh_strategy != nullptr, local_context);
+    if (select.select_table_id)
+    {
+        auto select_table_dependent_views = DatabaseCatalog::instance().getDependentViews(select.select_table_id);
+
+        auto max_materialized_views_count_for_table = getContext()->getServerSettings().max_materialized_views_count_for_table;
+        if (max_materialized_views_count_for_table && select_table_dependent_views.size() >= max_materialized_views_count_for_table)
+            throw Exception(ErrorCodes::TOO_MANY_MATERIALIZED_VIEWS,
+                            "Too many materialized views, maximum: {}", max_materialized_views_count_for_table);
+    }
+
     storage_metadata.setSelectQuery(select);
     if (!comment.empty())
         storage_metadata.setComment(comment);
@@ -544,7 +556,7 @@ void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries
         if (auto table = tryGetTargetTable())
             table->backupData(backup_entries_collector, data_path_in_backup, partitions);
         else
-            LOG_WARNING(&Poco::Logger::get("StorageMaterializedView"),
+            LOG_WARNING(getLogger("StorageMaterializedView"),
                         "Inner table does not exist, will not backup any data");
     }
 }

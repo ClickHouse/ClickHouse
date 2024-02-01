@@ -152,13 +152,30 @@ LoadTaskPtr DatabaseMaterializedPostgreSQL::startupDatabaseAsync(AsyncLoader & a
         {
             startup_task->activateAndSchedule();
         });
+    std::scoped_lock lock(mutex);
     return startup_postgresql_database_task = makeLoadTask(async_loader, {job});
 }
 
-void DatabaseMaterializedPostgreSQL::waitDatabaseStarted(bool no_throw) const
+void DatabaseMaterializedPostgreSQL::waitDatabaseStarted() const
 {
-    if (startup_postgresql_database_task)
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_postgresql_database_task, no_throw);
+    LoadTaskPtr task;
+    {
+        std::scoped_lock lock(mutex);
+        task = startup_postgresql_database_task;
+    }
+    if (task)
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task);
+}
+
+void DatabaseMaterializedPostgreSQL::stopLoading()
+{
+    LoadTaskPtr stop_startup_postgresql_database;
+    {
+        std::scoped_lock lock(mutex);
+        stop_startup_postgresql_database.swap(startup_postgresql_database_task);
+    }
+    stop_startup_postgresql_database.reset();
+    DatabaseAtomic::stopLoading();
 }
 
 void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context)
@@ -281,7 +298,7 @@ ASTPtr DatabaseMaterializedPostgreSQL::createAlterSettingsQuery(const SettingCha
 
     auto command = std::make_shared<ASTAlterCommand>();
     command->type = ASTAlterCommand::Type::MODIFY_DATABASE_SETTING;
-    command->settings_changes = std::move(set);
+    command->settings_changes = command->children.emplace_back(std::move(set)).get();
 
     auto command_list = std::make_shared<ASTExpressionList>();
     command_list->children.push_back(command);
@@ -438,7 +455,7 @@ void DatabaseMaterializedPostgreSQL::shutdown()
 
 void DatabaseMaterializedPostgreSQL::stopReplication()
 {
-    waitDatabaseStarted(/* no_throw = */ true);
+    stopLoading();
 
     std::lock_guard lock(handler_mutex);
     if (replication_handler)

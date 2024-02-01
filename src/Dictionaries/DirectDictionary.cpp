@@ -118,7 +118,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
         block_key_columns.clear();
     }
 
-    LOG_DEBUG(&Poco::Logger::get("DirectDictionary"), "read {} blocks with {} rows from pipeline in {} ms",
+    LOG_DEBUG(getLogger("DirectDictionary"), "read {} blocks with {} rows from pipeline in {} ms",
         block_num, rows_num, watch.elapsedMilliseconds());
 
     Field value_to_insert;
@@ -353,7 +353,7 @@ Pipe DirectDictionary<dictionary_key_type>::getSourcePipe(
             pipe = Pipe(std::make_shared<SourceFromQueryPipeline<PullingPipelineExecutor>>(std::move(pipeline)));
     }
 
-    LOG_DEBUG(&Poco::Logger::get("DirectDictionary"), "building pipeline for loading keys done in {} ms", watch.elapsedMilliseconds());
+    LOG_DEBUG(getLogger("DirectDictionary"), "building pipeline for loading keys done in {} ms", watch.elapsedMilliseconds());
     return pipe;
 }
 

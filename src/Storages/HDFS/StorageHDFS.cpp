@@ -3,6 +3,7 @@
 #if USE_HDFS
 
 #include <Common/parseGlobs.h>
+#include <Common/re2.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Parsers/ASTLiteral.h>
@@ -47,15 +48,6 @@
 #include <hdfs/hdfs.h>
 
 #include <filesystem>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace fs = std::filesystem;
 
@@ -695,7 +687,7 @@ Chunk HDFSSource::generate()
     return {};
 }
 
-void HDFSSource::addNumRowsToCache(const DB::String & path, size_t num_rows)
+void HDFSSource::addNumRowsToCache(const String & path, size_t num_rows)
 {
     auto cache_key = getKeyForSchemaCache(path, storage->format_name, std::nullopt, getContext());
     StorageHDFS::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
@@ -885,7 +877,7 @@ private:
 
 void ReadFromHDFS::applyFilters()
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
