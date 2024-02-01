@@ -282,14 +282,14 @@ namespace JSONUtils
                 ReadBufferFromString buf(str);
 
                 if (as_nullable)
-                    return SerializationNullable::deserializeWholeTextImpl(column, buf, format_settings, serialization);
+                    return SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(column, buf, format_settings, serialization);
 
                 serialization->deserializeWholeText(column, buf, format_settings);
                 return true;
             }
 
             if (as_nullable)
-                return SerializationNullable::deserializeTextJSONImpl(column, in, format_settings, serialization);
+                return SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column, in, format_settings, serialization);
 
             serialization->deserializeTextJSON(column, in, format_settings);
             return true;

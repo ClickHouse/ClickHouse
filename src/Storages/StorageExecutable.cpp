@@ -80,7 +80,7 @@ StorageExecutable::StorageExecutable(
     : IStorage(table_id_)
     , settings(settings_)
     , input_queries(input_queries_)
-    , log(settings.is_executable_pool ? &Poco::Logger::get("StorageExecutablePool") : &Poco::Logger::get("StorageExecutable"))
+    , log(settings.is_executable_pool ? getLogger("StorageExecutablePool") : getLogger("StorageExecutable"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);

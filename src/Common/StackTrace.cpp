@@ -317,16 +317,19 @@ constexpr std::pair<std::string_view, std::string_view> replacements[]
 // Demangle @c symbol_name if it's not from __functional header (as such functions don't provide any useful
 // information but pollute stack traces).
 // Replace parts from @c replacements with shorter aliases
-String demangleAndCollapseNames(std::string_view file, const char * const symbol_name)
+String demangleAndCollapseNames(std::optional<std::string_view> file, const char * const symbol_name)
 {
     if (!symbol_name)
         return "?";
 
-    std::string_view file_copy = file;
-    if (auto trim_pos = file.find_last_of('/'); trim_pos != file.npos)
-        file_copy.remove_suffix(file.size() - trim_pos);
-    if (file_copy.ends_with("functional"))
-        return "?";
+    if (file.has_value())
+    {
+        std::string_view file_copy = file.value();
+        if (auto trim_pos = file_copy.find_last_of('/'); trim_pos != file_copy.npos)
+            file_copy.remove_suffix(file_copy.size() - trim_pos);
+        if (file_copy.ends_with("functional"))
+            return "?";
+    }
 
     String haystack = demangle(symbol_name);
 
@@ -393,8 +396,8 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         if (frame.file.has_value() && frame.line.has_value())
             out << *frame.file << ':' << *frame.line << ": ";
 
-        if (frame.symbol.has_value() && frame.file.has_value())
-            out << demangleAndCollapseNames(*frame.file, frame.symbol->data());
+        if (frame.symbol.has_value())
+            out << demangleAndCollapseNames(frame.file, frame.symbol->data());
         else
             out << "?";
 

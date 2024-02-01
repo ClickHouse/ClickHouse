@@ -70,7 +70,7 @@ RabbitMQSource::RabbitMQSource(
     , ack_in_suffix(ack_in_suffix_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
-    , log(&Poco::Logger::get("RabbitMQSource"))
+    , log(getLogger("RabbitMQSource"))
     , max_execution_time_ms(max_execution_time_)
 {
     storage.incrementReader();

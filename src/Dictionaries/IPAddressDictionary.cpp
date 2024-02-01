@@ -205,7 +205,7 @@ IPAddressDictionary::IPAddressDictionary(
     , source_ptr{std::move(source_ptr_)}
     , configuration(configuration_)
     , access_to_key_from_attributes(dict_struct_.access_to_key_from_attributes)
-    , logger(&Poco::Logger::get("IPAddressDictionary"))
+    , logger(getLogger("IPAddressDictionary"))
 {
     createAttributes();
     loadData();

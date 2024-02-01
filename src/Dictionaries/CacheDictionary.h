@@ -218,7 +218,7 @@ private:
 
     const CacheDictionaryConfiguration configuration;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     mutable pcg64 rnd_engine;
 

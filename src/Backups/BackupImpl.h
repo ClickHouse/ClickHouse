@@ -153,7 +153,7 @@ private:
     bool writing_finalized = false;
     bool deduplicate_files = true;
     bool use_same_s3_credentials_for_base_backup = false;
-    const Poco::Logger * log;
+    const LoggerPtr log;
 };
 
 }

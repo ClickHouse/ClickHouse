@@ -58,7 +58,7 @@ AsynchronousMetrics::AsynchronousMetrics(
     int update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : update_period(update_period_seconds)
-    , log(&Poco::Logger::get("AsynchronousMetrics"))
+    , log(getLogger("AsynchronousMetrics"))
     , protocol_server_metrics_func(protocol_server_metrics_func_)
 {
 #if defined(OS_LINUX)
@@ -125,7 +125,7 @@ void AsynchronousMetrics::openSensors() TSA_REQUIRES(data_mutex)
         catch (const ErrnoException & e)
         {
             LOG_WARNING(
-                &Poco::Logger::get("AsynchronousMetrics"),
+                getLogger("AsynchronousMetrics"),
                 "Thermal monitor '{}' exists but could not be read: {}.",
                 thermal_device_index,
                 errnoToString(e.getErrno()));
@@ -254,7 +254,7 @@ void AsynchronousMetrics::openSensorsChips() TSA_REQUIRES(data_mutex)
             catch (const ErrnoException & e)
             {
                 LOG_WARNING(
-                    &Poco::Logger::get("AsynchronousMetrics"),
+                    getLogger("AsynchronousMetrics"),
                     "Hardware monitor '{}', sensor '{}' exists but could not be read: {}.",
                     hwmon_name,
                     sensor_index,

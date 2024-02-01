@@ -82,7 +82,7 @@ WebObjectStorage::loadFiles(const String & path, const std::unique_lock<std::sha
             if (!inserted)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Loading data for {} more than once", file_path);
 
-            LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Adding file: {}, size: {}", file_path, size);
+            LOG_TRACE(getLogger("DiskWeb"), "Adding file: {}, size: {}", file_path, size);
             loaded_files.emplace_back(file_path);
         }
 
@@ -119,7 +119,7 @@ WebObjectStorage::WebObjectStorage(
     ContextPtr context_)
     : WithContext(context_->getGlobalContext())
     , url(url_)
-    , log(&Poco::Logger::get("WebObjectStorage"))
+    , log(getLogger("WebObjectStorage"))
 {
 }
 
@@ -130,7 +130,7 @@ bool WebObjectStorage::exists(const StoredObject & object) const
 
 bool WebObjectStorage::exists(const std::string & path) const
 {
-    LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Checking existence of path: {}", path);
+    LOG_TRACE(getLogger("DiskWeb"), "Checking existence of path: {}", path);
     return tryGetFileInfo(path) != nullptr;
 }
 

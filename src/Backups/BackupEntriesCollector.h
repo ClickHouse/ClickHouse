@@ -129,7 +129,7 @@ private:
     /// Whether we should collect the metadata after a successful attempt one more time and check that nothing has changed.
     const bool compare_collected_metadata;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     /// Unfortunately we can use ZooKeeper for collecting information for backup
     /// and we need to retry...
     ZooKeeperRetriesInfo global_zookeeper_retries_info;

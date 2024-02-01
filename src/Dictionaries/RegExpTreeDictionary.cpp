@@ -140,7 +140,7 @@ struct RegExpTreeDictionary::RegexTreeNode
     std::unordered_map<String, AttributeValue> attributes;
 };
 
-std::vector<StringPiece> createStringPieces(const String & value, int num_captures, const String & regex, Poco::Logger * logger)
+std::vector<StringPiece> createStringPieces(const String & value, int num_captures, const String & regex, LoggerPtr logger)
 {
     std::vector<StringPiece> result;
     String literal;
@@ -402,7 +402,7 @@ RegExpTreeDictionary::RegExpTreeDictionary(
       use_vectorscan(use_vectorscan_),
       flag_case_insensitive(flag_case_insensitive_),
       flag_dotall(flag_dotall_),
-      logger(&Poco::Logger::get("RegExpTreeDictionary"))
+      logger(getLogger("RegExpTreeDictionary"))
 {
     if (auto * ch_source = typeid_cast<ClickHouseDictionarySource *>(source_ptr.get()))
     {

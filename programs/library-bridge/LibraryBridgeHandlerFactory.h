@@ -19,7 +19,7 @@ public:
     std::unique_ptr<HTTPRequestHandler> createRequestHandler(const HTTPServerRequest & request) override;
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
     const std::string name;
     const size_t keep_alive_timeout;
 };
