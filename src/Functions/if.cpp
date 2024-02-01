@@ -1,4 +1,3 @@
-#include <type_traits>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
@@ -29,6 +28,8 @@
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+
+#include <type_traits>
 
 namespace DB
 {
@@ -841,18 +842,21 @@ private:
         const auto * value_array = assert_cast<const ColumnArray *>(value_result.get());
         if (!key_array)
             throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "Illegal key result column {} in executeMap for function {}", key_result->getName(), getName());
+                ErrorCodes::LOGICAL_ERROR,
+                "Key result column should be {} instead of {} in executeMap of function {}",
+                key_result_type->getName(),
+                key_result->getName(),
+                getName());
         if (!value_array)
             throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal value result column {} in executeMap for function {}",
+                ErrorCodes::LOGICAL_ERROR,
+                "Value result column should be {} instead of {} in executeMap of function {}",
+                key_result_type->getName(),
                 value_result->getName(),
                 getName());
         if (!key_array->hasEqualOffsets(*value_array))
             throw Exception(
-                ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                "Key result column and value result column in executeMap for function {} must have equal sizes",
-                getName());
+                ErrorCodes::LOGICAL_ERROR, "Key array and value array must have equal sizes in executeMap of function {}", getName());
 
         auto nested_column = ColumnArray::create(
             ColumnTuple::create(Columns{key_array->getDataPtr(), value_array->getDataPtr()}), key_array->getOffsetsPtr());
