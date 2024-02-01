@@ -182,7 +182,14 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
     {
         /// Set was_cancelled, so the query won't be sent after creating connections.
         was_cancelled = true;
-        read_context->cancel();
+        try
+        {
+            read_context->cancel();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("RemoteQueryExecutor");
+        }
     }
 
     /** If interrupted in the middle of the loop of communication with replicas, then interrupt
@@ -190,7 +197,16 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
       * these connections did not remain hanging in the out-of-sync state.
       */
     if (established || (isQueryPending() && connections))
-        connections->disconnect();
+    {
+        try
+        {
+            connections->disconnect();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("RemoteQueryExecutor");
+        }
+    }
 }
 
 /** If we receive a block with slightly different column types, or with excessive columns,
