@@ -541,7 +541,7 @@ def test_multiple_tables_meta_mismatch(started_cluster):
         )
     except QueryRuntimeException as e:
         assert (
-            "Metadata with the same `s3queue_zookeeper_path` was already created but with different settings"
+            "Existing table metadata in ZooKeeper differs in engine mode"
             in str(e)
         )
         failed = True

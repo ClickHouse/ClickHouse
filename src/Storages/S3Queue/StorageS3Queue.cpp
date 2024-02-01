@@ -161,7 +161,6 @@ StorageS3Queue::StorageS3Queue(
     }
     catch (...)
     {
-        S3QueueMetadataFactory::instance().remove(zk_path);
         throw;
     }
 
