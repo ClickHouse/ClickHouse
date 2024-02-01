@@ -36,7 +36,7 @@ namespace ProfileEvents
     extern const Event MergeTreeDataWriterRows;
     extern const Event MergeTreeDataWriterUncompressedBytes;
     extern const Event MergeTreeDataWriterCompressedBytes;
-    extern const Event MergeTreeDataWriterPrimaryKeyCalculationMicroseconds;
+    extern const Event MergeTreeDataWriterSortingBlocksMicroseconds;
     extern const Event MergeTreeDataWriterMergingBlocksMicroseconds;
     extern const Event MergeTreeDataWriterProjectionsCalculationMicroseconds;
     extern const Event MergeTreeDataProjectionWriterBlocks;
@@ -44,7 +44,7 @@ namespace ProfileEvents
     extern const Event MergeTreeDataProjectionWriterRows;
     extern const Event MergeTreeDataProjectionWriterUncompressedBytes;
     extern const Event MergeTreeDataProjectionWriterCompressedBytes;
-    extern const Event MergeTreeDataProjectionWriterPrimaryKeyCalculationMicroseconds;
+    extern const Event MergeTreeDataProjectionWriterSortingBlocksMicroseconds;
     extern const Event MergeTreeDataProjectionWriterMergingBlocksMicroseconds;
     extern const Event RejectedInserts;
 }
@@ -478,7 +478,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     IColumn::Permutation perm;
     if (!sort_description.empty())
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterPrimaryKeyCalculationMicroseconds);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterSortingBlocksMicroseconds);
 
         if (!isAlreadySorted(block, sort_description))
         {
@@ -702,7 +702,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     IColumn::Permutation perm;
     if (!sort_description.empty())
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataProjectionWriterPrimaryKeyCalculationMicroseconds);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataProjectionWriterSortingBlocksMicroseconds);
 
         if (!isAlreadySorted(block, sort_description))
         {

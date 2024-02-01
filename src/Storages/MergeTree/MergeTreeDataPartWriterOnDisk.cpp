@@ -500,7 +500,7 @@ void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(bool sync)
     }
 
     for (size_t i = 0; i < stats.size(); ++i)
-        LOG_DEBUG(log, "Spent {} ms calculating statistics {}", execution_stats.statistics_build_us[i] / 1000, stats[i]->columnName());
+        LOG_DEBUG(log, "Spent {} ms calculating statistics {} for the part {}", execution_stats.statistics_build_us[i] / 1000, stats[i]->columnName(), data_part->name);
 }
 
 void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataPart::Checksums & checksums)
@@ -526,7 +526,7 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
         store.second->finalize();
 
     for (size_t i = 0; i < skip_indices.size(); ++i)
-        LOG_DEBUG(log, "Spent {} ms calculating index {}", execution_stats.skip_indices_build_us[i] / 1000, skip_indices[i]->index.name);
+        LOG_DEBUG(log, "Spent {} ms calculating index {} for the part {}", execution_stats.skip_indices_build_us[i] / 1000, skip_indices[i]->index.name, data_part->name);
 
     gin_index_stores.clear();
     skip_indices_streams.clear();

@@ -37,8 +37,8 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 $CLICKHOUSE_CLIENT -q """
 SELECT
     ProfileEvents['MergeTreeDataProjectionWriterMergingBlocksMicroseconds'] > 0,
-    ProfileEvents['MergeTreeDataProjectionWriterPrimaryKeyCalculationMicroseconds'] > 0,
-    ProfileEvents['MergeTreeDataWriterPrimaryKeyCalculationMicroseconds'] > 0,
+    ProfileEvents['MergeTreeDataProjectionWriterSortingBlocksMicroseconds'] > 0,
+    ProfileEvents['MergeTreeDataWriterSortingBlocksMicroseconds'] > 0,
     ProfileEvents['MergeTreeDataWriterProjectionsCalculationMicroseconds'] > 0,
     ProfileEvents['MergeTreeDataWriterSkipIndicesCalculationMicroseconds'] > 0
 FROM system.query_log
