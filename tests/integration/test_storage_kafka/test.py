@@ -433,10 +433,11 @@ def test_kafka_settings_new_syntax(kafka_cluster):
     kafka_produce(kafka_cluster, "new", messages)
 
     result = ""
-    while True:
+    for i in range(60):
         result += instance.query("SELECT * FROM test.kafka", ignore_error=True)
         if kafka_check_result(result):
             break
+        time.sleep(1)
 
     kafka_check_result(result, True)
 
