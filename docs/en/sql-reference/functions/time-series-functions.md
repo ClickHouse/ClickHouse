@@ -10,33 +10,27 @@ Below functions are used for series data analysis.
 
 ## seriesOutliersDetectTukey
 
-Detects a possible anomaly in series using [Tukey Fences](https://en.wikipedia.org/wiki/Outlier#Tukey%27s_fences).
+Detects outliers in series data using [Tukey Fences](https://en.wikipedia.org/wiki/Outlier#Tukey%27s_fences).
 
 **Syntax**
 
 ``` sql
 seriesOutliersDetectTukey(series);
-seriesOutliersDetectTukey(series, kind, min_percentile, max_percentile, K);
+seriesOutliersDetectTukey(series, min_percentile, max_percentile, K);
 ```
 
 **Arguments**
 
 - `series` - An array of numeric values.
-- `kind` - Kind of algorithm to use. Supported values are 'tukey' for standard tukey and 'ctukey' for custom tukey algorithm. The default is 'ctukey'.
-- `min_percentile` - The minimum percentile to be used to calculate inter-quantile range(IQR). The value must be in range [2,98]. The default is 10. This value is only supported for 'ctukey'.
-- `max_percentile` - The maximum percentile to be used to calculate inter-quantile range(IQR). The value must be in range [2,98]. The default is 90. This value is only supported for 'ctukey'.
+- `min_percentile` - The minimum percentile to be used to calculate inter-quantile range [(IQR)](https://en.wikipedia.org/wiki/Interquartile_range). The value must be in range [2,98]. The default is 25.
+- `max_percentile` - The maximum percentile to be used to calculate inter-quantile range (IQR). The value must be in range [2,98]. The default is 75.
 - `K` - Non-negative constant value to detect mild or stronger outliers. The default value is 1.5
 
 At least four data points are required in `series` to detect outliers.
 
-Default quantile range:
-- `tukey` - 25%/75%
-- `ctukey` - 10%/90%
-
 **Returned value**
 
-- Returns an array of the same length where each value represents score of possible anomaly of corresponding element in the series.
-- A non-zero score indicates a possible anomaly.
+- Returns an array of the same length as the input array where each value represents score of possible anomaly of corresponding element in the series. A non-zero score indicates a possible anomaly.
 
 Type: [Array](../../sql-reference/data-types/array.md).
 
@@ -51,23 +45,23 @@ SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4, 5, 12, 45, 12, 3, 3, 4,
 Result:
 
 ``` text
-┌───────────print_0───────────────────┐
-│[0,0,0,0,0,0,0,0,0,10.5,0,0,0,0,0,0] │
-└─────────────────────────────────────┘
+┌───────────print_0─────────────────┐
+│[0,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0] │
+└───────────────────────────────────┘
 ```
 
 Query:
 
 ``` sql
-SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4.50, 5, 12, 45, 12, 3.40, 3, 4, 5, 6], 'ctukey', 20, 80, 1.5) AS print_0;
+SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4.50, 5, 12, 45, 12, 3.40, 3, 4, 5, 6], 20, 80, 1.5) AS print_0;
 ```
 
 Result:
 
 ``` text
-┌─print_0────────────────────────────┐
-│ [0,0,0,0,0,0,0,0,0,12,0,0,0,0,0,0] │
-└────────────────────────────────────┘
+┌─print_0──────────────────────────────┐
+│ [0,0,0,0,0,0,0,0,0,19.5,0,0,0,0,0,0] │
+└──────────────────────────────────────┘
 ```
 
 ## seriesPeriodDetectFFT
