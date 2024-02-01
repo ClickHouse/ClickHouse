@@ -23,7 +23,7 @@ RUN apt-get update \
         sudo \
     --yes --no-install-recommends
 
-RUN pip3 install numpy scipy pandas Jinja2
+RUN pip3 install numpy==1.26.3 scipy==1.12.0 pandas==1.5.3 Jinja2==3.1.3
 
 RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3FA7E0328081BFF6A14DA29AA6A19B38D3D831EF \

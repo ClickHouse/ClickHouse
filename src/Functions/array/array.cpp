@@ -4,6 +4,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -14,9 +15,12 @@ class FunctionArray : public IFunction
 {
 public:
     static constexpr auto name = "array";
-    static FunctionPtr create(ContextPtr)
+
+    explicit FunctionArray(bool use_variant_as_common_type_ = false) : use_variant_as_common_type(use_variant_as_common_type_) {}
+
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionArray>();
+        return std::make_shared<FunctionArray>(context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type);
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -31,6 +35,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if (use_variant_as_common_type)
+            return std::make_shared<DataTypeArray>(getLeastSupertypeOrVariant(arguments));
+
         return std::make_shared<DataTypeArray>(getLeastSupertype(arguments));
     }
 
@@ -97,6 +104,8 @@ private:
     }
 
     bool addField(DataTypePtr type_res, const Field & f, Array & arr) const;
+
+    bool use_variant_as_common_type = false;
 };
 
 

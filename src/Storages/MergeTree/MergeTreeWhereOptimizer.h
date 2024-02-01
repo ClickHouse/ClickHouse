@@ -123,7 +123,7 @@ private:
     static ASTPtr reconstructAST(const Conditions & conditions);
 
     /// Reconstruct DAG from conditions
-    static ActionsDAGPtr reconstructDAG(const Conditions & conditions, const ContextPtr & context);
+    static ActionsDAGPtr reconstructDAG(const Conditions & conditions);
 
     void optimizeArbitrary(ASTSelectQuery & select) const;
 

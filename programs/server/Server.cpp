@@ -1753,7 +1753,6 @@ try
         LOG_INFO(log, "Stopping AsyncLoader.");
 
         // Waits for all currently running jobs to finish and do not run any other pending jobs.
-        // Pending jobs will be canceled and destructed later by `load_metadata_tasks` dtor.
         global_context->getAsyncLoader().stop();
     );
 

@@ -3908,7 +3908,9 @@ class ClickHouseInstance:
         except Exception as e:
             logging.warning(f"Stop ClickHouse raised an error {e}")
 
-    def start_clickhouse(self, start_wait_sec=60, retry_start=True):
+    def start_clickhouse(
+        self, start_wait_sec=60, retry_start=True, expected_to_fail=False
+    ):
         if not self.stay_alive:
             raise Exception(
                 "ClickHouse can be started again only with stay_alive=True instance"
@@ -3926,10 +3928,15 @@ class ClickHouseInstance:
                     ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
                     user=str(os.getuid()),
                 )
+                if expected_to_fail:
+                    self.wait_start_failed(start_wait_sec + start_time - time.time())
+                    return
                 time.sleep(1)
                 continue
             else:
                 logging.debug("Clickhouse process running.")
+                if expected_to_fail:
+                    raise Exception("ClickHouse was expected not to be running.")
                 try:
                     self.wait_start(start_wait_sec + start_time - time.time())
                     return
@@ -3980,6 +3987,30 @@ class ClickHouseInstance:
             )
         if last_err is not None:
             raise last_err
+
+    def wait_start_failed(self, start_wait_sec):
+        start_time = time.time()
+        while time.time() <= start_time + start_wait_sec:
+            pid = self.get_process_pid("clickhouse")
+            if pid is None:
+                return
+            time.sleep(1)
+        logging.error(
+            f"No time left to shutdown. Process is still running. Will dump threads."
+        )
+        ps_clickhouse = self.exec_in_container(
+            ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
+        )
+        logging.info(f"PS RESULT:\n{ps_clickhouse}")
+        pid = self.get_process_pid("clickhouse")
+        if pid is not None:
+            self.exec_in_container(
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
+                user="root",
+            )
+        raise Exception(
+            "ClickHouse server is still running, but was expected to shutdown. Check logs."
+        )
 
     def restart_clickhouse(self, stop_start_wait_sec=60, kill=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
