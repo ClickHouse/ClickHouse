@@ -7950,10 +7950,10 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
 
 AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(MergeTreeDataPartPtr part) const
 {
-    auto commands_map = getAlterMutationCommandsForPart(part);
+    auto commands_list = getAlterMutationCommandsForPart(part);
 
     auto result = std::make_shared<AlterConversions>();
-    for (const auto & [_, commands] : commands_map)
+    for (const auto & commands : commands_list)
         for (const auto & command : commands)
             result->addMutationCommand(command);
 

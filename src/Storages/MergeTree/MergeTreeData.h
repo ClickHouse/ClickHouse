@@ -1356,11 +1356,14 @@ protected:
     /// mechanisms for parts locking
     virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
 
-    /// Return most recent mutations commands for part which weren't applied
-    /// Used to receive AlterConversions for part and apply them on fly. This
-    /// method has different implementations for replicated and non replicated
-    /// MergeTree because they store mutations in different way.
-    virtual std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
+    /// Return most recent mutations RENAME_COLUMN commands for part which
+    /// weren't applied Used to receive AlterConversions for part and apply
+    /// them on fly. This method has different implementations for replicated
+    /// and non replicated MergeTree because they store mutations in different
+    /// way.
+    ///
+    /// @return list of mutations (not sorted)
+    virtual std::vector<MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
 
     struct PartBackupEntries
     {

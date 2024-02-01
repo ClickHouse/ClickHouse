@@ -1789,7 +1789,7 @@ ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zk
 }
 
 
-std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
+std::vector<MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
 {
     std::unique_lock lock(state_mutex);
 
@@ -1799,9 +1799,8 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
 
     Int64 part_data_version = part->info.getDataVersion();
     Int64 part_metadata_version = part->getMetadataVersion();
-    LOG_TEST(log, "Looking for mutations for part {} (part data version {}, part metadata version {})", part->name, part_data_version, part_metadata_version);
 
-    std::map<int64_t, MutationCommands> result;
+    std::vector<MutationCommands> result;
 
     bool seen_all_data_mutations = false;
     bool seen_all_metadata_mutations = false;
@@ -1814,6 +1813,14 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
         if (seen_all_data_mutations && seen_all_metadata_mutations)
             break;
 
+        /// Only RENAME_COLUMN is required by AlterConversions
+        auto has_rename_column = std::find_if(mutation_status->entry->commands.begin(), mutation_status->entry->commands.end(), [](const auto & command)
+        {
+            return command.type == MutationCommand::RENAME_COLUMN;
+        }) != mutation_status->entry->commands.end();
+        if (!has_rename_column)
+            continue;
+
         auto alter_version = mutation_status->entry->alter_version;
         if (alter_version != -1)
         {
@@ -1822,21 +1829,18 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
 
             /// We take commands with bigger metadata version
             if (alter_version > part_metadata_version)
-                result[mutation_version] = mutation_status->entry->commands;
+                result.emplace_back(mutation_status->entry->commands);
             else
                 seen_all_metadata_mutations = true;
         }
         else
         {
             if (mutation_version > part_data_version)
-                result[mutation_version] = mutation_status->entry->commands;
+                result.emplace_back(mutation_status->entry->commands);
             else
                 seen_all_data_mutations = true;
         }
     }
-
-    LOG_TEST(log, "Got {} commands for part {} (part data version {}, part metadata version {})",
-        result.size(), part->name, part_data_version, part_metadata_version);
 
     return result;
 }

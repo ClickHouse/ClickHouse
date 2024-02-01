@@ -2394,17 +2394,25 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
 }
 
 
-std::map<int64_t, MutationCommands> StorageMergeTree::getAlterMutationCommandsForPart(const DataPartPtr & part) const
+std::vector<MutationCommands> StorageMergeTree::getAlterMutationCommandsForPart(const DataPartPtr & part) const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
     UInt64 part_data_version = part->info.getDataVersion();
-    std::map<int64_t, MutationCommands> result;
+    std::vector<MutationCommands> result;
 
     for (const auto & [mutation_version, entry] : current_mutations_by_version | std::views::reverse)
     {
+        /// Only RENAME_COLUMN is required by AlterConversions
+        auto has_rename_column = std::find_if(entry.commands.begin(), entry.commands.end(), [](const auto & command)
+        {
+            return command.type == MutationCommand::RENAME_COLUMN;
+        }) != entry.commands.end();
+        if (!has_rename_column)
+            continue;
+
         if (mutation_version > part_data_version)
-            result[mutation_version] = entry.commands;
+            result.emplace_back(entry.commands);
         else
             break;
     }
