@@ -19,7 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_EXCEPTION;
+    extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
 }
 
@@ -117,7 +117,7 @@ static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer &
 {
     auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(in));
     if (!stream_reader_status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
+        throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Error while opening a table: {}", stream_reader_status.status().ToString());
     return *stream_reader_status;
 }
@@ -130,7 +130,7 @@ static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(ReadB
 
     auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(arrow_file);
     if (!file_reader_status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
+        throw Exception(ErrorCodes::INCORRECT_DATA,
             "Error while opening a table: {}", file_reader_status.status().ToString());
     return *file_reader_status;
 }
