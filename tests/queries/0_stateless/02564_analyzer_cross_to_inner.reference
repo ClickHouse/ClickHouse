@@ -25,9 +25,9 @@ QUERY id: 0
       COLUMN id: 7, column_name: b, result_type: UInt64, source_id: 6
       COLUMN id: 8, column_name: x, result_type: UInt64, source_id: 9
   JOIN TREE
-    JOIN id: 10, strictness: ALL, kind: INNER
+    JOIN id: 10, alias: __join1, strictness: ALL, kind: INNER
       LEFT TABLE EXPRESSION
-        JOIN id: 11, strictness: ALL, kind: INNER
+        JOIN id: 11, alias: __join2, strictness: ALL, kind: INNER
           LEFT TABLE EXPRESSION
             TABLE id: 3, alias: __table1, table_name: default.t1
           RIGHT TABLE EXPRESSION
@@ -93,9 +93,9 @@ QUERY id: 0
       COLUMN id: 7, column_name: b, result_type: UInt64, source_id: 6
       COLUMN id: 8, column_name: x, result_type: UInt64, source_id: 9
   JOIN TREE
-    JOIN id: 10, kind: COMMA
+    JOIN id: 10, alias: __join1, kind: COMMA
       LEFT TABLE EXPRESSION
-        JOIN id: 11, kind: COMMA
+        JOIN id: 11, alias: __join2, kind: COMMA
           LEFT TABLE EXPRESSION
             TABLE id: 3, alias: __table1, table_name: default.t1
           RIGHT TABLE EXPRESSION
@@ -162,9 +162,9 @@ QUERY id: 0
       COLUMN id: 7, column_name: b, result_type: UInt64, source_id: 6
       COLUMN id: 8, column_name: x, result_type: UInt64, source_id: 9
   JOIN TREE
-    JOIN id: 10, kind: COMMA
+    JOIN id: 10, alias: __join1, kind: COMMA
       LEFT TABLE EXPRESSION
-        JOIN id: 11, strictness: ALL, kind: INNER
+        JOIN id: 11, alias: __join2, strictness: ALL, kind: INNER
           LEFT TABLE EXPRESSION
             TABLE id: 3, alias: __table1, table_name: default.t1
           RIGHT TABLE EXPRESSION

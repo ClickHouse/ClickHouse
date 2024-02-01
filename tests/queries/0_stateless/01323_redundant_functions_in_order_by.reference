@@ -169,7 +169,7 @@ QUERY id: 0
       COLUMN id: 6, column_name: b, result_type: String, source_id: 5
       COLUMN id: 7, column_name: c, result_type: Float64, source_id: 5
   JOIN TREE
-    JOIN id: 8, strictness: ALL, kind: FULL
+    JOIN id: 8, alias: __join1, strictness: ALL, kind: FULL
       LEFT TABLE EXPRESSION
         QUERY id: 3, alias: __table1, is_subquery: 1
           PROJECTION COLUMNS
@@ -295,7 +295,7 @@ QUERY id: 0
       COLUMN id: 2, column_name: id, result_type: UInt64, source_id: 3
       COLUMN id: 4, column_name: id, result_type: UInt64, source_id: 5
   JOIN TREE
-    JOIN id: 6, strictness: ALL, kind: INNER
+    JOIN id: 6, alias: __join1, strictness: ALL, kind: INNER
       LEFT TABLE EXPRESSION
         TABLE id: 3, alias: __table1, table_name: default.t1
       RIGHT TABLE EXPRESSION
