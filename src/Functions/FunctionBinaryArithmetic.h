@@ -152,22 +152,7 @@ public:
     /// DateTime, but if both operands are Dates, their type must be the same (e.g. Date - DateTime is invalid).
     using ResultDataType = Switch<
         /// Result must be Integer
-        Case<
-            only_integer && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>),
-            Switch<
-                Case<
-                    IsDataTypeDecimal<LeftDataType>,
-                    Switch<
-                        Case<std::is_same_v<LeftDataType, DataTypeDecimal256>, DataTypeInt256>,
-                        Case<std::is_same_v<LeftDataType, DataTypeDecimal128>, DataTypeInt128>,
-                        Case<std::is_same_v<LeftDataType, DataTypeDecimal64>, DataTypeInt64>,
-                        Case<std::is_same_v<LeftDataType, DataTypeDecimal32>, DataTypeInt32>>>,
-                Case<
-                    IsDataTypeDecimal<RightDataType>,
-                    Switch<
-                        Case<IsIntegralOrExtended<LeftDataType>, LeftDataType>,
-                        Case<std::is_same_v<LeftDataType, DataTypeFloat64>, DataTypeInt64>,
-                        Case<std::is_same_v<LeftDataType, DataTypeFloat32>, DataTypeInt32>>>>>,
+        Case<IsOperation<Operation>::div_int || IsOperation<Operation>::div_int_or_zero, DataTypeFromFieldType<typename Op::ResultType>>,
 
         /// Decimal cases
         Case<!allow_decimal && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>), InvalidType>,
@@ -1687,16 +1672,7 @@ public:
                     if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                     {
                         if constexpr (is_div_int || is_div_int_or_zero)
-                        {
-                            if constexpr (std::is_same_v<LeftDataType, DataTypeDecimal256>)
-                                type_res = std::make_shared<DataTypeInt256>();
-                            else if constexpr (std::is_same_v<LeftDataType, DataTypeDecimal128>)
-                                type_res = std::make_shared<DataTypeInt128>();
-                            else if constexpr (std::is_same_v<LeftDataType, DataTypeDecimal64>)
-                                type_res = std::make_shared<DataTypeInt64>();
-                            else
-                                type_res = std::make_shared<DataTypeInt32>();
-                        }
+                            type_res = std::make_shared<ResultDataType>();
                         else
                         {
                             if constexpr (is_division)
@@ -1721,54 +1697,22 @@ public:
                     else if constexpr (((IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>) ||
                         (IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>)))
                     {
-                        if constexpr ((is_div_int || is_div_int_or_zero) && IsDataTypeDecimal<LeftDataType>)
-                        {
-                            if constexpr (std::is_same_v<LeftDataType, DataTypeDecimal256>)
-                                type_res = std::make_shared<DataTypeInt256>();
-                            else if constexpr (std::is_same_v<LeftDataType, DataTypeDecimal128>)
-                                type_res = std::make_shared<DataTypeInt128>();
-                            else if constexpr (std::is_same_v<LeftDataType, DataTypeDecimal64>)
-                                type_res = std::make_shared<DataTypeInt64>();
-                            else
-                                type_res = std::make_shared<DataTypeInt32>();
-                        }
-                        else if constexpr (is_div_int || is_div_int_or_zero)
-                        {
-                            if constexpr (std::is_same_v<LeftDataType, DataTypeFloat64>)
-                                type_res = std::make_shared<DataTypeInt64>();
-                            else
-                                type_res = std::make_shared<DataTypeInt32>();
-                        }
+                        if constexpr (is_div_int || is_div_int_or_zero)
+                            type_res = std::make_shared<ResultDataType>();
                         else
                             type_res = std::make_shared<DataTypeFloat64>();
                     }
                     else if constexpr (IsDataTypeDecimal<LeftDataType>)
                     {
                         if constexpr (is_div_int || is_div_int_or_zero)
-                        {
-                            if constexpr (std::is_same_v<LeftDataType, DataTypeDecimal256>)
-                                type_res = std::make_shared<DataTypeInt256>();
-                            else if constexpr (std::is_same_v<LeftDataType, DataTypeDecimal128>)
-                                type_res = std::make_shared<DataTypeInt128>();
-                            else if constexpr (std::is_same_v<LeftDataType, DataTypeDecimal64>)
-                                type_res = std::make_shared<DataTypeInt64>();
-                            else
-                                type_res = std::make_shared<DataTypeInt32>();
-                        }
+                            type_res = std::make_shared<ResultDataType>();
                         else
                             type_res = std::make_shared<LeftDataType>(left.getPrecision(), left.getScale());
                     }
                     else if constexpr (IsDataTypeDecimal<RightDataType>)
                     {
-                        if constexpr ((is_div_int || is_div_int_or_zero) && IsIntegralOrExtended<LeftDataType>)
-                            type_res = std::make_shared<LeftDataType>();
-                        else if constexpr (is_div_int || is_div_int_or_zero)
-                        {
-                            if constexpr (std::is_same_v<LeftDataType, DataTypeFloat64>)
-                                type_res = std::make_shared<DataTypeInt64>();
-                            else
-                                type_res = std::make_shared<DataTypeInt32>();
-                        }
+                        if constexpr (is_div_int || is_div_int_or_zero)
+                            type_res = std::make_shared<ResultDataType>();
                         else
                             type_res = std::make_shared<RightDataType>(right.getPrecision(), right.getScale());
                     }
@@ -2089,10 +2033,8 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             constexpr bool decimal_with_float = (IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>)
                 || (IsFloatingPoint<LeftDataType> && IsDataTypeDecimal<RightDataType>);
 
-            constexpr bool is_div_int_with_decimal = (is_div_int || is_div_int_or_zero) && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>);
-
-            using T0 = std::conditional_t<decimal_with_float, Float64, std::conditional_t<is_div_int_with_decimal, Int64, typename LeftDataType::FieldType>>;
-            using T1 = std::conditional_t<decimal_with_float, Float64, std::conditional_t<is_div_int_with_decimal, Int64, typename RightDataType::FieldType>>;
+            using T0 = std::conditional_t<decimal_with_float, Float64, typename LeftDataType::FieldType>;
+            using T1 = std::conditional_t<decimal_with_float, Float64, typename RightDataType::FieldType>;
             using ResultType = typename ResultDataType::FieldType;
             using ColVecT0 = ColumnVectorOrDecimal<T0>;
             using ColVecT1 = ColumnVectorOrDecimal<T1>;
@@ -2105,12 +2047,6 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             if constexpr (decimal_with_float)
             {
                 const auto converted_type = std::make_shared<DataTypeFloat64>();
-                left_col = castColumn(arguments[0], converted_type);
-                right_col = castColumn(arguments[1], converted_type);
-            }
-            else if constexpr (is_div_int_with_decimal)
-            {
-                const auto converted_type = std::make_shared<DataTypeInt64>();
                 left_col = castColumn(arguments[0], converted_type);
                 right_col = castColumn(arguments[1], converted_type);
             }
@@ -2138,6 +2074,61 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     col_left, col_right,
                     col_left_size,
                     right_nullmap);
+            }
+            else if constexpr (!decimal_with_float && (is_div_int || is_div_int_or_zero) && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>))
+            {
+                using DecimalResultType = Switch<
+                    Case<
+                        IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType> && UseLeftDecimal<LeftDataType, RightDataType>,
+                        LeftDataType>,
+                    Case<IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>, RightDataType>,
+                    Case<IsDataTypeDecimal<LeftDataType> && IsIntegralOrExtended<RightDataType>, LeftDataType>,
+                    Case<IsDataTypeDecimal<RightDataType> && IsIntegralOrExtended<LeftDataType>, RightDataType>,
+
+                    /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
+                    Case<IsDataTypeDecimal<LeftDataType> && !IsIntegralOrExtendedOrDecimal<RightDataType>, InvalidType>,
+                    Case<IsDataTypeDecimal<RightDataType> && !IsIntegralOrExtendedOrDecimal<LeftDataType>, InvalidType>>; /// Determine result decimal type as it would be with usual division (as we determine BinaryOperationTraits::ResultType)
+
+                if constexpr (!std::is_same_v<DecimalResultType, InvalidType>)
+                {
+                    DataTypePtr type_res;
+                    if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                    {
+                        if constexpr (is_division)
+                        {
+                            if (context->getSettingsRef().decimal_check_overflow)
+                            {
+                                /// Check overflow by using operands scale (based on big decimal division implementation details):
+                                /// big decimal arithmetic is based on big integers, decimal operands are converted to big integers
+                                /// i.e. int_operand = decimal_operand*10^scale
+                                /// For division, left operand will be scaled by right operand scale also to do big integer division,
+                                /// BigInt result = left*10^(left_scale + right_scale) / right * 10^right_scale
+                                /// So, we can check upfront possible overflow just by checking max scale used for left operand
+                                /// Note: it doesn't detect all possible overflow during big decimal division
+                                if (left.getScale() + right.getScale() > DecimalResultType::maxPrecision())
+                                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Overflow during decimal division");
+                            }
+                        }
+                        DecimalResultType result_type = decimalResultType<is_multiply, is_division>(left, right);
+                        type_res = std::make_shared<DecimalResultType>(result_type.getPrecision(), result_type.getScale());
+                    }
+                    else if constexpr (IsDataTypeDecimal<LeftDataType>)
+                        type_res = std::make_shared<LeftDataType>(left.getPrecision(), left.getScale());
+                    else
+                        type_res = std::make_shared<RightDataType>(right.getPrecision(), right.getScale());
+                    // Create result decimal type somehow, maybe similar to how we do it in getReturnTypeImplStatic
+
+                    auto res = executeNumericWithDecimal<LeftDataType, RightDataType, DecimalResultType>(
+                            left, right,
+                            col_left_const, col_right_const,
+                            col_left, col_right,
+                            col_left_size,
+                            right_nullmap);
+
+                    auto col = ColumnWithTypeAndName(res, type_res, name);
+                    return castColumn(col, std::make_shared<ResultDataType>());
+                }
+                return nullptr;
             }
             else // can't avoid else and another indentation level, otherwise the compiler would try to instantiate
                  // ColVecResult for Decimals which would lead to a compile error.
