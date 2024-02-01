@@ -79,14 +79,13 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
             return;
         }
 
-        UInt32 delay = table_status_it->second.absolute_delay;
-
+        const UInt32 delay = table_status_it->second.absolute_delay;
         if (delay < max_allowed_delay)
             result.is_up_to_date = true;
         else
         {
             result.is_up_to_date = false;
-            result.staleness = delay;
+            result.delay = delay;
 
             LOG_TRACE(log, "Server {} has unacceptable replica delay for table {}.{}: {}", result.entry->getDescription(), table_to_check->database, table_to_check->table, delay);
             ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);

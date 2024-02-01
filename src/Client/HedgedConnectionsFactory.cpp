@@ -413,7 +413,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::setBestUsableReplica(C
         indexes.end(),
         [&](size_t lhs, size_t rhs)
         {
-            return replicas[lhs].connection_establisher->getResult().staleness < replicas[rhs].connection_establisher->getResult().staleness;
+            return replicas[lhs].connection_establisher->getResult().delay < replicas[rhs].connection_establisher->getResult().delay;
         });
 
     replicas[indexes[0]].is_ready = true;
