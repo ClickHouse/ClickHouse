@@ -60,6 +60,17 @@ public:
                 }
                 break;
             }
+            case QueryTreeNodeType::JOIN:
+            {
+                auto & alias = table_expression_to_alias[node];
+                if (alias.empty())
+                {
+                    scope_to_nodes_with_aliases[scope_nodes_stack.back()].push_back(node);
+                    alias = fmt::format("__join{}", ++next_id);
+                    node->setAlias(alias);
+                }
+                break;
+            }
             default:
                 break;
         }

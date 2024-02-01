@@ -60,6 +60,9 @@ void JoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
 {
     buffer << std::string(indent, ' ') << "JOIN id: " << format_state.getNodeId(this);
 
+    if (hasAlias())
+        buffer << ", alias: " << getAlias();
+
     if (locality != JoinLocality::Unspecified)
         buffer << ", locality: " << toString(locality);
 
