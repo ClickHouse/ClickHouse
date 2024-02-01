@@ -202,7 +202,17 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
       * these connections did not remain hanging in the out-of-sync state.
       */
     if (established || (isQueryPending() && connections))
-        connections->disconnect();
+    {
+        /// May also throw (so as cancel() above)
+        try
+        {
+            connections->disconnect();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log ? log : getLogger("RemoteQueryExecutor"));
+        }
+    }
 }
 
 /** If we receive a block with slightly different column types, or with excessive columns,
