@@ -193,7 +193,6 @@ if (BUILD_STANDALONE_KEEPER)
             ch_contrib::lz4
             ch_contrib::zstd
             ch_contrib::cityhash
-            ch_contrib::jemalloc
             common ch_contrib::double_conversion
             ch_contrib::dragonbox_to_chars
             pcg_random
@@ -206,6 +205,12 @@ if (BUILD_STANDALONE_KEEPER)
 
         ${LINK_RESOURCE_LIB_STANDALONE_KEEPER}
     )
+
+    if (TARGET ch_contrib::jemalloc)
+        target_link_libraries(clickhouse-keeper PRIVATE ch_contrib::jemalloc)
+    elseif (TARGET ch_contrib::mimalloc)
+        target_link_libraries(clickhouse-keeper PRIVATE ch_contrib::mimalloc)
+    endif()
 
     set_target_properties(clickhouse-keeper PROPERTIES RUNTIME_OUTPUT_DIRECTORY ../)
 
