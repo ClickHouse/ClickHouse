@@ -16,9 +16,9 @@ namespace DB
 //  * free: slot is available to be allocated.
 //  * allocated: slot is allocated to a specific ISlotAllocation.
 //
-// Allocated slots can be considered as:
+// Allocated slots can be in one of the following states:
 //  * granted: allocated, but not yet acquired.
-//  * acquired: acquired using IAcquiredSlot.
+//  * acquired: a granted slot becomes acquired by using IAcquiredSlot.
 //
 // Example for CPU (see ConcurrencyControl.h). Every slot represents one CPU in the system.
 // Slot allocation is a request to allocate specific number of CPUs for a specific query.
