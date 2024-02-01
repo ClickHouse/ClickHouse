@@ -540,10 +540,7 @@ def test_multiple_tables_meta_mismatch(started_cluster):
             },
         )
     except QueryRuntimeException as e:
-        assert (
-            "Existing table metadata in ZooKeeper differs in engine mode"
-            in str(e)
-        )
+        assert "Existing table metadata in ZooKeeper differs in engine mode" in str(e)
         failed = True
 
     assert failed is True
