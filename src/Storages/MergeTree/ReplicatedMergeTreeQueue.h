@@ -205,7 +205,7 @@ private:
       * Called under the state_mutex.
       */
     bool shouldExecuteLogEntry(
-        const LogEntry & entry, String & out_postpone_reason,
+        LogEntry & entry, String & out_postpone_reason,
         MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data,
         std::unique_lock<std::mutex> & state_lock) const;
 

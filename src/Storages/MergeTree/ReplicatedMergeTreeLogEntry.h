@@ -197,6 +197,8 @@ struct ReplicatedMergeTreeLogEntry : public ReplicatedMergeTreeLogEntryData, std
 
     bool hasPriority() const { return priority_tag.use_count() > 1; }
 
+    bool is_covered_by_future_part = false; /// Whether the part produced by this entry is covered by a part that is currently executing (fetching or merging).
+
     static Ptr parse(const String & s, const Coordination::Stat & stat, MergeTreeDataFormatVersion format_version);
 };
 

@@ -1962,9 +1962,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         return true;
     }
 
-    const bool is_get_or_attach = entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART;
+    bool is_get_or_attach = entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART;
 
-    if (is_get_or_attach || entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::MUTATE_PART)
+    if (is_get_or_attach)
     {
         /// If we already have this part or a part covering it, we do not need to do anything.
         /// The part may be still in the PreActive -> Active transition so we first search
@@ -1977,12 +1977,14 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         /// Even if the part is local, it (in exceptional cases) may not be in ZooKeeper. Let's check that it is there.
         if (existing_part && getZooKeeper()->exists(fs::path(replica_path) / "parts" / existing_part->name))
         {
-            if (!is_get_or_attach || entry.source_replica != replica_name)
+            if (entry.source_replica != replica_name)
                 LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.",
                     entry.new_part_name, existing_part->name);
-
             return true;
         }
+
+        if (entry.is_covered_by_future_part)
+            return false;
     }
 
     if (entry.type == LogEntry::ATTACH_PART)

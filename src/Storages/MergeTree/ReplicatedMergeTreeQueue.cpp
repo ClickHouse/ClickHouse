@@ -1285,37 +1285,51 @@ bool ReplicatedMergeTreeQueue::addFuturePartIfNotCoveredByThem(const String & pa
 
 
 bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
-    const LogEntry & entry,
+    LogEntry & entry,
     String & out_postpone_reason,
     MergeTreeDataMergerMutator & merger_mutator,
     MergeTreeData & data,
     std::unique_lock<std::mutex> & state_lock) const
 {
-
-    /// Optimization: if local table already contains the part, it's likely that replica already has it.
-    /// Only additional step is to check if the part is in zookeeper then we can remove the log entry.
-    if (entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
-    {
-        auto existing_part = data.getPartIfExists(entry.new_part_name, {MergeTreeDataPartState::PreActive});
-
-        if (!existing_part || existing_part->was_removed_as_broken)
-            existing_part = data.getActiveContainingPart(entry.new_part_name);
-        auto fetches_pool_size_limit = storage.getFetchPoolSizeLimit(entry);
-        size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundFetchesPoolTask].load(std::memory_order_relaxed);
-
-        if (existing_part && !existing_part->was_removed_as_broken && busy_threads_in_pool < fetches_pool_size_limit
-            && !storage.fetcher.blocker.isCancelled())
-            return true;
-    }
-
     /// If our entry produce part which is already covered by
     /// some other entry which is currently executing, then we can postpone this entry.
+    entry.is_covered_by_future_part = false;
     for (const String & new_part_name : entry.getVirtualPartNames(format_version))
     {
         /// Do not wait for any entries here, because we have only one thread that scheduling queue entries.
         /// We can wait in worker threads, but not in scheduler.
         if (isCoveredByFuturePartsImpl(entry, new_part_name, out_postpone_reason, state_lock, /* covered_entries_to_wait */ nullptr))
-            return false;
+        {
+            entry.is_covered_by_future_part = true;
+            break;
+        }
+    }
+
+    if (entry.is_covered_by_future_part)
+    {
+        /// If local table already contains the part, it's likely that replica already has it.
+        /// Only additional step is to check if the part is in zookeeper then we can remove the log entry.
+        /// Therefore let give a chance to execute the log entry. With entry.is_covered_by_future_part = true
+        /// executeLogEntry will ony check if the part is in zookeeper and remove the log entry if it is.
+        /// While it does not help to replicate data faster, it keep the queue clean and query "SYSTEM SYNC REPLICA"
+        /// can finish faster. For example, if we have a GET_PART entry that is blocked by a big merge,
+        /// then "SYSTEM SYNC REPLICA" needs to wait for the merge to finish, which does not make sense.
+        if (entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
+        {
+            auto existing_part = data.getPartIfExists(entry.new_part_name, {MergeTreeDataPartState::PreActive});
+
+            if (!existing_part || existing_part->was_removed_as_broken)
+                existing_part = data.getActiveContainingPart(entry.new_part_name);
+            auto fetches_pool_size_limit = storage.getFetchPoolSizeLimit(entry);
+            size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundFetchesPoolTask].load(std::memory_order_relaxed);
+
+            if (existing_part && !existing_part->was_removed_as_broken && !existing_part->is_unexpected_local_part && busy_threads_in_pool < fetches_pool_size_limit
+                && !storage.fetcher.blocker.isCancelled())
+                return true;
+        }
+
+        /// Otherwise just postpone the entry
+        return false;
     }
 
     if (entry.type != LogEntry::DROP_RANGE && entry.type != LogEntry::DROP_PART)
