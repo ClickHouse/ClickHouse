@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
     extern const int CANNOT_PARSE_IPV4;
     extern const int CANNOT_PARSE_IPV6;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int UNKNOWN_TYPE;
     extern const int UNKNOWN_PROTOBUF_FORMAT;
     extern const int EMPTY_DATA_PASSED;
@@ -53,6 +54,7 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING
         || code == ErrorCodes::CANNOT_PARSE_IPV4
         || code == ErrorCodes::CANNOT_PARSE_IPV6
+        || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
         || code == ErrorCodes::UNKNOWN_TYPE
         || code == ErrorCodes::UNKNOWN_PROTOBUF_FORMAT
         || code == ErrorCodes::EMPTY_DATA_PASSED
