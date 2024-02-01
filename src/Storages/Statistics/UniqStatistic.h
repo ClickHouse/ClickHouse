@@ -54,7 +54,7 @@ public:
     void update(const ColumnPtr & column) override
     {
         const IColumn * col_ptr = column.get();
-        uniq_collector->add(data, &col_ptr, column->size(), nullptr);
+        uniq_collector->addBatchSinglePlace(0, column->size(), data, &col_ptr, nullptr);
     }
 };
 
