@@ -433,7 +433,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         snapshots_queue,
         keeper_context,
         snapshot_s3,
-        [this](uint64_t log_idx, const KeeperStorage::RequestForSession & request_for_session)
+        [this](uint64_t /*log_idx*/, const KeeperStorage::RequestForSession & request_for_session)
         {
             {
                 /// check if we have queue of read requests depending on this request to be committed
@@ -457,8 +457,6 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                     }
                 }
             }
-
-            keeper_context->setLastCommitIndex(log_idx);
         });
 
     try

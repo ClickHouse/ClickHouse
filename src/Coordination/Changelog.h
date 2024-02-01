@@ -128,7 +128,7 @@ using IndexToCacheEntryNode = typename IndexToCacheEntry::node_type;
   * It consists of 2 in-memory caches that rely heavily on the way
   * entries are used in Raft.
   * Random and repeated access to certain entries is almost never done so we can't implement a solution
-  * like LRU/SLRU cache because entries would be cached and never read again. 
+  * like LRU/SLRU cache because entries would be cached and never read again.
   * Entries are often read sequentially for 2 cases:
   * - for replication
   * - for committing
@@ -143,7 +143,7 @@ using IndexToCacheEntryNode = typename IndexToCacheEntry::node_type;
   * which means that for each commit we would need to read the log from disk.
   * In case latest logs cache hits the threshold we have a second cache called commit logs cache limited by commit_logs_cache_size_threshold.
   * If a log is evicted from the latest logs cache, we check if we can move it to commit logs cache to avoid re-reading the log from disk.
-  * If latest logs cache moves ahead of the commit log by a lot or commit log hits the threshold 
+  * If latest logs cache moves ahead of the commit log by a lot or commit log hits the threshold
   * we cannot move the entries from latest logs and we will need to refill the commit cache from disk.
   * To avoid reading entry by entry (which can have really bad effect on performance because we support disks based on S3),
   * we try to prefetch multiple entries ahead of time because we know that they will be read by commit thread
@@ -179,7 +179,7 @@ struct LogEntryStorage
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
 
     bool isConfLog(uint64_t index) const;
-    
+
     void shutdown();
 private:
     void prefetchCommitLogs();

@@ -452,11 +452,12 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
 
         ProfileEvents::increment(ProfileEvents::KeeperCommits);
         last_committed_idx = log_idx;
+        keeper_context->setLastCommitIndex(log_idx);
 
         if (commit_callback)
             commit_callback(log_idx, *request_for_session);
     }
-    catch(...)
+    catch (...)
     {
         tryLogCurrentException(log, fmt::format("Failed to commit stored log at index {}", log_idx));
         throw;
@@ -520,6 +521,7 @@ void KeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraf
     auto tmp = new_conf->serialize();
     cluster_config = ClusterConfig::deserialize(*tmp);
     last_committed_idx = log_idx;
+    keeper_context->setLastCommitIndex(log_idx);
 }
 
 void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)

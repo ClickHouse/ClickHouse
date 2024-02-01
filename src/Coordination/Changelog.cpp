@@ -986,7 +986,7 @@ bool LogEntryStorage::shouldMoveLogToCommitCache(uint64_t index, size_t log_entr
     /// if commit logs cache is empty, we need it only if it's the next log to commit
     if (commit_logs_cache.empty())
         return keeper_context->lastCommittedIndex() + 1 == index;
-    
+
     return commit_logs_cache.max_index_in_cache == index - 1 && commit_logs_cache.hasSpaceAvailable(log_entry_size);
 }
 
@@ -996,7 +996,7 @@ void LogEntryStorage::addEntryWithLocation(uint64_t index, const LogEntryPtr & l
     while (!latest_logs_cache.hasSpaceAvailable(entry_size))
     {
         auto entry_handle = latest_logs_cache.popOldestEntry();
-        size_t removed_entry_size = logEntrySize(*entry_handle.mapped().entry); 
+        size_t removed_entry_size = logEntrySize(*entry_handle.mapped().entry);
         if (shouldMoveLogToCommitCache(entry_handle.key(), removed_entry_size))
             commit_logs_cache.addEntry(std::move(entry_handle));
     }
@@ -1257,14 +1257,14 @@ void LogEntryStorage::shutdown()
 {
     if (std::exchange(is_shutdown, true))
         return;
-        
+
     if (!prefetch_queue.isFinished())
         prefetch_queue.finish();
 
     if (current_prefetch_info)
     {
         current_prefetch_info->cancel = true;
-        current_prefetch_info->done.wait(false); 
+        current_prefetch_info->done.wait(false);
     }
 
     if (commit_logs_prefetcher->joinable())
