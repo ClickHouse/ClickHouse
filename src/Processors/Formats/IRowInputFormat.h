@@ -42,7 +42,7 @@ public:
 
     IRowInputFormat(Block header, ReadBuffer & in_, Params params_);
 
-    Chunk read() override;
+    Chunk read() final;
 
     void resetParser() override;
 
