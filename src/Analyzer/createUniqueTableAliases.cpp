@@ -66,7 +66,7 @@ public:
                 if (alias.empty())
                 {
                     scope_to_nodes_with_aliases[scope_nodes_stack.back()].push_back(node);
-                    alias = fmt::format("__join{}", ++next_id);
+                    alias = fmt::format("__join{}", ++next_join_id);
                     node->setAlias(alias);
                 }
                 break;
@@ -131,6 +131,7 @@ public:
 
 private:
     size_t next_id = 0;
+    size_t next_join_id = 0;
 
     // Stack of nodes which create scopes: QUERY, UNION and LAMBDA.
     QueryTreeNodes scope_nodes_stack;
