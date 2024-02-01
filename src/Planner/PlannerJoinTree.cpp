@@ -84,32 +84,38 @@ namespace
 {
 
 /// Check if current user has privileges to SELECT columns from table
-void checkAccessRights(const TableNode & table_node, const Names & column_names, const ContextPtr & query_context)
+/// Throws an exception if access to any column from `column_names` is not granted
+/// If `column_names` is empty, check access to any columns and retun names of accessible columns
+NameSet checkAccessRights(const TableNode & table_node, Names & column_names, const ContextPtr & query_context)
 {
     /// StorageDummy is created on preliminary stage, ignore access check for it.
     if (typeid_cast<const StorageDummy *>(table_node.getStorage().get()))
-        return;
+        return {};
 
     const auto & storage_id = table_node.getStorageID();
     const auto & storage_snapshot = table_node.getStorageSnapshot();
 
     if (column_names.empty())
     {
+        NameSet accessible_columns;
         /** For a trivial queries like "SELECT count() FROM table", "SELECT 1 FROM table" access is granted if at least
           * one table column is accessible.
           */
         auto access = query_context->getAccess();
-
         for (const auto & column : storage_snapshot->metadata->getColumns())
         {
             if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
-                return;
+                accessible_columns.insert(column.name);
         }
 
-        throw Exception(ErrorCodes::ACCESS_DENIED,
-            "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
-            query_context->getUserName(),
-            storage_id.getFullTableName());
+        if (accessible_columns.empty())
+        {
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
+                query_context->getUserName(),
+                storage_id.getFullTableName());
+        }
+        return accessible_columns;
     }
 
     // In case of cross-replication we don't know what database is used for the table.
@@ -117,6 +123,8 @@ void checkAccessRights(const TableNode & table_node, const Names & column_names,
     // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
     if (storage_id.hasDatabase())
         query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+
+    return {};
 }
 
 bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
@@ -133,7 +141,7 @@ bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
     return false;
 }
 
-NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot)
+NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot, const NameSet & column_names_allowed_to_select)
 {
     /** We need to read at least one column to find the number of rows.
       * We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
@@ -166,6 +174,18 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
 
     auto column_sizes = storage->getColumnSizes();
     auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns());
+
+    if (!column_names_allowed_to_select.empty())
+    {
+        auto it = column_names_and_types.begin();
+        while (it != column_names_and_types.end())
+        {
+            if (!column_names_allowed_to_select.contains(it->name))
+                it = column_names_and_types.erase(it);
+            else
+                ++it;
+        }
+    }
 
     if (!column_sizes.empty())
     {
@@ -330,12 +350,13 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
     /** The current user must have the SELECT privilege.
       * We do not check access rights for table functions because they have been already checked in ITableFunction::execute().
       */
+    NameSet columns_names_allowed_to_select;
     if (table_node)
     {
         auto column_names_with_aliases = columns_names;
         const auto & alias_columns_names = table_expression_data.getAliasColumnsNames();
         column_names_with_aliases.insert(column_names_with_aliases.end(), alias_columns_names.begin(), alias_columns_names.end());
-        checkAccessRights(*table_node, column_names_with_aliases, query_context);
+        columns_names_allowed_to_select = checkAccessRights(*table_node, column_names_with_aliases, query_context);
     }
 
     if (columns_names.empty())
@@ -346,8 +367,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         {
             const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-            additional_column_to_read = chooseSmallestColumnToReadFromStorage(storage, storage_snapshot);
-
+            additional_column_to_read = chooseSmallestColumnToReadFromStorage(storage, storage_snapshot, columns_names_allowed_to_select);
         }
         else if (query_node || union_node)
         {
