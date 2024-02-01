@@ -197,7 +197,8 @@
     M(MergeTreeDataWriterBlocks, "Number of blocks INSERTed to MergeTree tables. Each block forms a data part of level zero.") \
     M(MergeTreeDataWriterBlocksAlreadySorted, "Number of blocks INSERTed to MergeTree tables that appeared to be already sorted.") \
     \
-    M(MergeTreeDataWriterSecondaryIndicesCalculationMicroseconds, "Time spent calculating secondary indices") \
+    M(MergeTreeDataWriterSkipIndicesCalculationMicroseconds, "Time spent calculating skip indices") \
+    M(MergeTreeDataWriterStatisticsCalculationMicroseconds, "Time spent calculating statistics") \
     M(MergeTreeDataWriterPrimaryKeyCalculationMicroseconds, "Time spent calculating primary key") \
     M(MergeTreeDataWriterMergingBlocksMicroseconds, "Time spent merging input blocks (for special MergeTree engines)") \
     M(MergeTreeDataWriterProjectionsCalculationMicroseconds, "Time spent calculating projections") \

@@ -7,6 +7,7 @@
 namespace ProfileEvents
 {
 extern const Event MergeTreeDataWriterSkipIndicesCalculationMicroseconds;
+extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
 }
 
 namespace DB
@@ -338,9 +339,12 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeStatistics(const Block & block)
 {
-    for (const auto & stat_ptr : stats)
+    for (size_t i = 0; i < stats.size(); ++i)
     {
+        const auto & stat_ptr = stats[i];
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
         stat_ptr->update(block.getByName(stat_ptr->columnName()).column);
+        execution_stats.statistics_build_us[i] += watch.elapsed();
     }
 }
 
@@ -494,6 +498,9 @@ void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(bool sync)
         if (sync)
             stream->sync();
     }
+
+    for (size_t i = 0; i < stats.size(); ++i)
+        LOG_DEBUG(log, "Spent {} ms calculating statistics {}", execution_stats.statistics_build_us[i] / 1000, stats[i]->columnName());
 }
 
 void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataPart::Checksums & checksums)
@@ -518,7 +525,6 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
     for (auto & store: gin_index_stores)
         store.second->finalize();
 
-    chassert(execution_stats.skip_indices_build_us.size() == skip_indices.size());
     for (size_t i = 0; i < skip_indices.size(); ++i)
         LOG_DEBUG(log, "Spent {} ms calculating index {}", execution_stats.skip_indices_build_us[i] / 1000, skip_indices[i]->index.name);
 
