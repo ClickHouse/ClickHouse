@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Literal, Optional, Union
 
-from integration_test_images import IMAGES
 from ci_utils import WithIter
+from integration_test_images import IMAGES
 
 
 class Labels(metaclass=WithIter):
@@ -42,8 +42,9 @@ class Build(metaclass=WithIter):
 
 class JobNames(metaclass=WithIter):
     STYLE_CHECK = "Style check"
-    FAST_TEST = "Fast tests"
-    DOCKER_SERVER = "Docker server and keeper images"
+    FAST_TEST = "Fast test"
+    DOCKER_SERVER = "Docker server image"
+    DOCKER_KEEPER = "Docker keeper image"
     INSTALL_TEST_AMD = "Install packages (amd64)"
     INSTALL_TEST_ARM = "Install packages (arm64)"
 
@@ -786,6 +787,16 @@ CI_CONFIG = CiConfig(
                     include_paths=[
                         "tests/ci/docker_server.py",
                         "./docker/server",
+                    ]
+                )
+            ),
+        ),
+        JobNames.DOCKER_KEEPER: TestConfig(
+            "",
+            job_config=JobConfig(
+                digest=DigestConfig(
+                    include_paths=[
+                        "tests/ci/docker_server.py",
                         "./docker/keeper",
                     ]
                 )
@@ -922,7 +933,7 @@ CI_CONFIG = CiConfig(
             Build.PACKAGE_DEBUG,
             job_config=JobConfig(num_batches=6, **statless_test_common_params),  # type: ignore
         ),
-        JobNames.STATELESS_TEST_S3_DEBUG: TestConfig(
+        JobNames.STATELESS_TEST_S3_TSAN: TestConfig(
             Build.PACKAGE_TSAN,
             job_config=JobConfig(num_batches=5, **statless_test_common_params),  # type: ignore
         ),
@@ -1123,16 +1134,22 @@ CHECK_DESCRIPTIONS = [
         lambda x: x.startswith("Compatibility check"),
     ),
     CheckDescription(
-        "Docker image for servers",
+        JobNames.DOCKER_SERVER,
         "The check to build and optionally push the mentioned image to docker hub",
-        lambda x: x.startswith("Docker image")
-        and (x.endswith("building check") or x.endswith("build and push")),
+        lambda x: x.startswith("Docker server"),
     ),
     CheckDescription(
-        "Docs Check", "Builds and tests the documentation", lambda x: x == "Docs Check"
+        JobNames.DOCKER_KEEPER,
+        "The check to build and optionally push the mentioned image to docker hub",
+        lambda x: x.startswith("Docker keeper"),
     ),
     CheckDescription(
-        "Fast test",
+        JobNames.DOCS_CHECK,
+        "Builds and tests the documentation",
+        lambda x: x == JobNames.DOCS_CHECK,
+    ),
+    CheckDescription(
+        JobNames.FAST_TEST,
         "Normally this is the first check that is ran for a PR. It builds ClickHouse "
         'and runs most of <a href="https://clickhouse.com/docs/en/development/tests'
         '#functional-tests">stateless functional tests</a>, '
@@ -1140,7 +1157,7 @@ CHECK_DESCRIPTIONS = [
         "Look at the report to see which tests fail, then reproduce the failure "
         'locally as described <a href="https://clickhouse.com/docs/en/development/'
         'tests#functional-test-locally">here</a>',
-        lambda x: x == "Fast test",
+        lambda x: x == JobNames.FAST_TEST,
     ),
     CheckDescription(
         "Flaky tests",
@@ -1214,10 +1231,10 @@ CHECK_DESCRIPTIONS = [
         lambda x: x.startswith("Stress test ("),
     ),
     CheckDescription(
-        "Style Check",
+        JobNames.STYLE_CHECK,
         "Runs a set of checks to keep the code style clean. If some of tests failed, "
         "see the related log from the report",
-        lambda x: x == "Style Check",
+        lambda x: x == JobNames.STYLE_CHECK,
     ),
     CheckDescription(
         "Unit tests",
