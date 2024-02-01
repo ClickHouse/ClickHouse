@@ -1,4 +1,3 @@
-#include <unordered_map>
 #include <Databases/TablesDependencyGraph.h>
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
