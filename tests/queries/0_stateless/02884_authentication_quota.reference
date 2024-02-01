@@ -1,0 +1,54 @@
+> Drop the user, quota, and role if those were created.
+> Create the user with quota with the maximum single authentication attempt.
+> Check if the quota has been created.
+1
+> Try to login to the user account with correct password
+> Login to the user account using the wrong password.
+password is incorrect
+> Quota is exceeded 1 >= 1. Login with correct password should fail.
+QUOTA_EXCEEDED
+> Check the failed_sequential_authentications, max_failed_sequential_authentications fields.
+2	1
+> Alter the quota with MAX FAILED SEQUENTIAL AUTHENTICATIONS = 4
+> Try to login to the user account with correct password
+> Successfull login should reset failed authentications counter. Check the failed_sequential_authentications, max_failed_sequential_authentications fields.
+0	4
+> Login to the user account using the wrong password before exeeding the quota.
+password is incorrect
+password is incorrect
+password is incorrect
+password is incorrect
+QUOTA_EXCEEDED
+> Also try to login with correct password. Quota should stay exceeded.
+QUOTA_EXCEEDED
+> Check the failed_sequential_authentications, max_failed_sequential_authentications fields.
+6	4
+> Reset the quota by increasing MAX FAILED SEQUENTIAL AUTHENTICATIONS and succesfull login
+> and check failed_sequential_authentications, max_failed_sequential_authentications.
+0	7
+ ---------------------------------------------------------------------------
+> Create the role with quota with the maximum single authentication attempt.
+> Try to login to the user account with correct password
+> Login to the user account using the wrong password.
+password is incorrect
+> Quota is exceeded 1 >= 1. Login with correct password should fail.
+QUOTA_EXCEEDED
+> Check the failed_sequential_authentications, max_failed_sequential_authentications fields.
+2	1
+> Alter the quota with MAX FAILED SEQUENTIAL AUTHENTICATIONS = 4
+> Try to login to the user account with correct password
+> Successfull login should reset failed authentications counter. Check the failed_sequential_authentications, max_failed_sequential_authentications fields.
+0	4
+> Login to the user account using the wrong password before exeeding the quota.
+password is incorrect
+password is incorrect
+password is incorrect
+password is incorrect
+QUOTA_EXCEEDED
+> Also try to login with correct password. Quota should stay exceeded.
+QUOTA_EXCEEDED
+> Check the failed_sequential_authentications, max_failed_sequential_authentications fields.
+6	4
+> Reset the quota by increasing MAX FAILED SEQUENTIAL AUTHENTICATIONS and succesfull login
+> and check failed_sequential_authentications, max_failed_sequential_authentications.
+0	7
