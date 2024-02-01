@@ -21,10 +21,18 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
+#include <Common/ProfileEvents.h>
 #include <libnuraft/log_val_type.hxx>
 #include <libnuraft/log_entry.hxx>
 #include <libnuraft/raft_server.hxx>
 
+namespace ProfileEvents
+{
+    extern const Event KeeperLogsEntryReadFromLatestCache;
+    extern const Event KeeperLogsEntryReadFromCommitCache;
+    extern const Event KeeperLogsEntryReadFromFile;
+    extern const Event KeeperLogsPrefetchedEntries;
+}
 
 namespace DB
 {
@@ -691,6 +699,7 @@ void LogEntryStorage::prefetchCommitLogs()
                 auto file = changelog_description->disk->readFile(changelog_description->path, ReadSettings());
                 file->seek(position, SEEK_SET);
                 LOG_TRACE(log, "Prefetching {} log entries from path {}, from position {}", count, changelog_description->path, position);
+                ProfileEvents::increment(ProfileEvents::KeeperLogsPrefetchedEntries, count);
 
                 for (size_t i = 0; i < count; ++i)
                 {
@@ -1084,10 +1093,12 @@ LogEntryPtr LogEntryStorage::getEntry(uint64_t index) const
     else if (auto entry_from_latest_cache = latest_logs_cache.getEntry(index))
     {
         entry = std::move(entry_from_latest_cache);
+        ProfileEvents::increment(ProfileEvents::KeeperLogsEntryReadFromLatestCache);
     }
     else if (auto entry_from_commit_cache = commit_logs_cache.getEntry(index))
     {
         entry = std::move(entry_from_commit_cache);
+        ProfileEvents::increment(ProfileEvents::KeeperLogsEntryReadFromCommitCache);
     }
     else if (auto it = logs_location.find(index); it != logs_location.end())
     {
@@ -1099,6 +1110,7 @@ LogEntryPtr LogEntryStorage::getEntry(uint64_t index) const
 
         auto record = readChangelogRecord(*file, changelog_description->path);
         entry = logEntryFromRecord(record);
+        ProfileEvents::increment(ProfileEvents::KeeperLogsEntryReadFromFile);
     }
     return entry;
 }

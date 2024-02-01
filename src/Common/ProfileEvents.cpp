@@ -616,6 +616,11 @@ The server successfully detected this situation and will download merged part fr
     M(InterfacePostgreSQLReceiveBytes, "Number of bytes received through PostgreSQL interfaces") \
     \
     M(ParallelReplicasUsedCount, "Number of replicas used to execute a query with task-based parallel replicas") \
+    \
+    M(KeeperLogsEntryReadFromLatestCache, "Number of log entries in Keeper being read from latest logs cache") \
+    M(KeeperLogsEntryReadFromCommitCache, "Number of log entries in Keeper being read from commit logs cache") \
+    M(KeeperLogsEntryReadFromFile, "Number of log entries in Keeper being read directly from the changelog file") \
+    M(KeeperLogsPrefetchedEntries, "Number of log entries in Keeper being prefetched from the changelog file") \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)
