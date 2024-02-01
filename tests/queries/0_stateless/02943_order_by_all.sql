@@ -86,10 +86,11 @@ SELECT a, b, all FROM order_by_all ORDER BY all, a;
 SET allow_experimental_analyzer = 1;
 SELECT a, b, all FROM order_by_all ORDER BY all, a;
 
-SELECT '-- SELECT *';
-DROP TABLE IF EXISTS order_by_all1;
+DROP TABLE order_by_all;
 
-CREATE TABLE order_by_all1
+SELECT '-- test SELECT * ORDER BY ALL with no "all" column in the SELECT clause';
+
+CREATE TABLE order_by_all
 (
     a String,
     b Nullable(Int32),
@@ -97,13 +98,12 @@ CREATE TABLE order_by_all1
 )
     ENGINE = Memory;
 
-INSERT INTO order_by_all1 VALUES ('B', 3, 10), ('C', NULL, 40), ('D', 1, 20), ('A', 2, 30);
+INSERT INTO order_by_all VALUES ('B', 3, 10), ('C', NULL, 40), ('D', 1, 20), ('A', 2, 30);
 
 SET allow_experimental_analyzer = 0;
-SELECT * FROM order_by_all1 ORDER BY ALL;
+SELECT * FROM order_by_all ORDER BY ALL;
 
 SET allow_experimental_analyzer = 1;
-SELECT * FROM order_by_all1 ORDER BY ALL;
+SELECT * FROM order_by_all ORDER BY ALL;
 
 DROP TABLE order_by_all;
-DROP TABLE order_by_all1;

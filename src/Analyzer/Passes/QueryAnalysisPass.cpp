@@ -2357,10 +2357,9 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Se
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Expression nodes list expected 1 projection names. Actual {}",
                                 projection_names.size());
-            else
-                if (Poco::toUpper(projection_names[0]) == "ALL")
-                    throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
-                                    "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
+            if (Poco::toUpper(projection_names[0]) == "ALL")
+                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
+                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
         }
 
         auto sort_node = std::make_shared<SortNode>(node, all_node->getSortDirection(), all_node->getNullsSortDirection());
