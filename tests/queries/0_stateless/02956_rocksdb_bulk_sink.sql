@@ -1,6 +1,10 @@
 -- Tags: no-ordinary-database, use-rocksdb
--- Tag no-ordinary-database: Sometimes cannot lock file most likely due to concurrent or adjacent tests, but we don't care how it works in Ordinary database
--- Tag no-fasttest: In fasttest, ENABLE_LIBRARIES=0, so rocksdb engine is not enabled by default
-CREATE TABLE rocksdb_worm (key UInt64, value UInt64) ENGINE = EmbeddedRocksDB() PRIMARY KEY key SETTINGS optimize_for_bulk_insert = 1;
-INSERT INTO rocksdb_worm SELECT number, number+1 FROM numbers_mt(1000) SETTINGS max_insert_threads = 2;
+CREATE TABLE IF NOT EXISTS rocksdb_worm (key UInt64, value UInt64) ENGINE = EmbeddedRocksDB() PRIMARY KEY key SETTINGS optimize_for_bulk_insert = 1;
+INSERT INTO rocksdb_worm SELECT number, number+1 FROM numbers(1000);
+SELECT sum(value) FROM system.rocksdb WHERE database = currentDatabase() AND table = 'rocksdb_worm' AND name = 'no.file.opens'; -- should be 1
+SELECT count() FROM rocksdb_worm;
+TRUNCATE TABLE rocksdb_worm;
+ALTER TABLE rocksdb_worm MODIFY SETTING optimize_for_bulk_insert = 0;
+INSERT INTO rocksdb_worm SELECT number, number+1 FROM numbers(1000);
+SELECT sum(value) FROM system.rocksdb WHERE database = currentDatabase() AND table = 'rocksdb_worm' AND name = 'no.file.opens'; -- should be 0 because all data is still in memtable
 SELECT count() FROM rocksdb_worm;
