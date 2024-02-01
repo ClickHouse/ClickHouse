@@ -84,6 +84,7 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
+    {"24.2", {{"input_format_try_infer_exponent_floats", true, false, "Don't infer floats in exponential notation by default"}}},
     {"24.1", {{"print_pretty_type_names", false, true, "Better user experience."},
               {"input_format_json_read_bools_as_strings", false, true, "Allow to read bools as strings in JSON formats by default"},
               {"output_format_arrow_use_signed_indexes_for_dictionary", false, true, "Use signed indexes type for Arrow dictionaries by default as it's recommended"},

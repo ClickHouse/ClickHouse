@@ -17,6 +17,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 #include <IO/PeekableReadBuffer.h>
+#include <IO/readFloatText.h>
 
 #include <Core/Block.h>
 #include <Common/assert_cast.h>
@@ -865,6 +866,13 @@ namespace
         return std::make_shared<DataTypeTuple>(nested_types);
     }
 
+    bool tryReadFloat(Float64 & value, ReadBuffer & buf, const FormatSettings & settings)
+    {
+        if (settings.try_infer_exponent_floats)
+            return tryReadFloatText(value, buf);
+        return tryReadFloatTextNoExponent(value, buf);
+    }
+
     DataTypePtr tryInferNumber(ReadBuffer & buf, const FormatSettings & settings)
     {
         if (buf.eof())
@@ -903,7 +911,7 @@ namespace
                     buf.position() = number_start;
                 }
 
-                if (tryReadFloatText(tmp_float, buf))
+                if (tryReadFloat(tmp_float, buf, settings))
                 {
                     if (read_int && buf.position() == int_end)
                         return std::make_shared<DataTypeInt64>();
@@ -937,7 +945,7 @@ namespace
                 peekable_buf.rollbackToCheckpoint(true);
             }
 
-            if (tryReadFloatText(tmp_float, peekable_buf))
+            if (tryReadFloat(tmp_float, peekable_buf, settings))
             {
                 /// Float parsing reads no fewer bytes than integer parsing,
                 /// so position of the buffer is either the same, or further.
@@ -949,7 +957,7 @@ namespace
                 return std::make_shared<DataTypeFloat64>();
             }
         }
-        else if (tryReadFloatText(tmp_float, buf))
+        else if (tryReadFloat(tmp_float, buf, settings))
         {
             return std::make_shared<DataTypeFloat64>();
         }
@@ -1390,7 +1398,7 @@ DataTypePtr tryInferNumberFromString(std::string_view field, const FormatSetting
     buf.position() = buf.buffer().begin();
 
     Float64 tmp;
-    if (tryReadFloatText(tmp, buf) && buf.eof())
+    if (tryReadFloat(tmp, buf, settings) && buf.eof())
         return std::make_shared<DataTypeFloat64>();
 
     return nullptr;
