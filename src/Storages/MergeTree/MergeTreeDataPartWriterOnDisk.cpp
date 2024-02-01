@@ -6,7 +6,7 @@
 
 namespace ProfileEvents
 {
-extern const Event MergeTreeDataWriterSecondaryIndicesCalculationMicroseconds;
+extern const Event MergeTreeDataWriterSkipIndicesCalculationMicroseconds;
 }
 
 namespace DB
@@ -155,6 +155,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     , default_codec(default_codec_)
     , compute_granularity(index_granularity.empty())
     , compress_primary_key(settings.compress_primary_key)
+    , execution_stats(skip_indices.size(), stats.size())
     , log(getLogger(storage.getLogName() + " (DataPartWriter)"))
 {
     if (settings.blocks_are_granules_size && !index_granularity.empty())
@@ -362,7 +363,6 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             store = it->second;
         }
 
-        size_t index_build_us = 0;
         for (const auto & granule : granules_to_write)
         {
             if (skip_index_accumulated_marks[i] == index_helper->index.granularity)
@@ -387,16 +387,15 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
                     writeBinaryLittleEndian(1UL, marks_out);
             }
 
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterSecondaryIndicesCalculationMicroseconds);
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterSkipIndicesCalculationMicroseconds);
 
             size_t pos = granule.start_row;
             skip_indices_aggregators[i]->update(skip_indexes_block, &pos, granule.rows_to_write);
             if (granule.is_complete)
                 ++skip_index_accumulated_marks[i];
 
-            index_build_us += watch.elapsed<Microseconds>();
+            execution_stats.skip_indices_build_us[i] += watch.elapsed();
         }
-        LOG_DEBUG(log, "Spent {} ms calculating index {} for the part {}", index_build_us / 1000, skip_indices[i]->index.name, data_part->name);
     }
 }
 
@@ -518,6 +517,11 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
     }
     for (auto & store: gin_index_stores)
         store.second->finalize();
+
+    chassert(execution_stats.skip_indices_build_us.size() == skip_indices.size());
+    for (size_t i = 0; i < skip_indices.size(); ++i)
+        LOG_DEBUG(log, "Spent {} ms calculating index {}", execution_stats.skip_indices_build_us[i] / 1000, skip_indices[i]->index.name);
+
     gin_index_stores.clear();
     skip_indices_streams.clear();
     skip_indices_aggregators.clear();
