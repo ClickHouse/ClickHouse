@@ -139,8 +139,8 @@ ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used fo
 ## MODIFY COLUMN
 
 ``` sql
-MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [AFTER name_after | FIRST]
-ALTER COLUMN [IF EXISTS] name TYPE [type] [default_expr] [codec] [TTL] [AFTER name_after | FIRST]
+MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+ALTER COLUMN [IF EXISTS] name TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
 ```
 
 This query changes the `name` column properties:
@@ -153,9 +153,13 @@ This query changes the `name` column properties:
 
 - TTL
 
+- Column-level Settings
+
 For examples of columns compression CODECS modifying, see [Column Compression Codecs](../create/table.md/#codecs).
 
 For examples of columns TTL modifying, see [Column TTL](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-column-ttl).
+
+For examples of colum-level settings modifying, see [Column-level Settings](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#column-level-settings).
 
 If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
@@ -209,7 +213,7 @@ The `ALTER` query for changing columns is replicated. The instructions are saved
 
 ## MODIFY COLUMN REMOVE
 
-Removes one of the column properties: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`, `SETTING`.
+Removes one of the column properties: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`, `SETTINGS`.
 
 Syntax:
 
@@ -237,7 +241,7 @@ Modify a column setting.
 Syntax:
 
 ```sql
-ALTER TABLE table_name MODIFY COLUMN MODIFY SETTING name=value,...;
+ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING name=value,...;
 ```
 
 **Example**
@@ -245,7 +249,7 @@ ALTER TABLE table_name MODIFY COLUMN MODIFY SETTING name=value,...;
 Modify column's `max_compress_block_size` to `1MB`:
 
 ```sql
-ALTER TABLE table_name MODIFY COLUMN MODIFY SETTING max_compress_block_size = 1048576;
+ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING max_compress_block_size = 1048576;
 ```
 
 ## MODIFY COLUMN RESET SETTING
@@ -255,21 +259,21 @@ Reset a column setting, also removes the setting declaration in the column expre
 Syntax:
 
 ```sql
-ALTER TABLE table_name MODIFY COLUMN RESET SETTING name,...;
+ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING name,...;
 ```
 
 **Example**
 
-Remove column setting `max_compress_block_size` to `1MB`:
+Reset column setting `max_compress_block_size` to it's default value:
 
 ```sql
-ALTER TABLE table_name MODIFY COLUMN REMOVE SETTING max_compress_block_size;
+ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_block_size;
 ```
 
 ## MATERIALIZE COLUMN
 
 Materializes or updates a column with an expression for a default value (`DEFAULT` or `MATERIALIZED`).
-It is used if it is necessary to add or update a column with a complicated expression, because evaluating such an expression directly on `SELECT` executing turns out to be expensive. 
+It is used if it is necessary to add or update a column with a complicated expression, because evaluating such an expression directly on `SELECT` executing turns out to be expensive.
 Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
 
 Syntax:
