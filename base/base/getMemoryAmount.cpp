@@ -32,11 +32,6 @@ std::optional<uint64_t> getCgroupsV2MemoryLimit()
     /// - cgroup.subtree_control defines which controllers *are* enabled.
     /// (see https://docs.kernel.org/admin-guide/cgroup-v2.html)
     /// Caveat: nested groups may disable controllers. For simplicity, check only the top-level group.
-    /// ReadBufferFromFile subtree_control_file(default_cgroups_mount / "cgroup.subtree_control");
-    /// std::string subtree_control;
-    /// readString(subtree_control, subtree_control_file);
-    /// if (subtree_control.find("memory") == std::string::npos)
-    ///     return {};
     std::ifstream subtree_control_file(default_cgroups_mount / "cgroup.subtree_control");
     std::stringstream subtree_control_buf;
     subtree_control_buf << subtree_control_file.rdbuf();
