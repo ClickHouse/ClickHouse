@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <memory>
+#include <stack>
 #include <Core/NamesAndTypes.h>
 #include <Core/TypeId.h>
 
