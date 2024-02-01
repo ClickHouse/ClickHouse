@@ -252,6 +252,8 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->dictionary, dictionary->clone());
     }
 
+    if (refresh_strategy)
+        res->set(res->refresh_strategy, refresh_strategy->clone());
     if (as_table_function)
         res->set(res->as_table_function, as_table_function->clone());
     if (comment)
