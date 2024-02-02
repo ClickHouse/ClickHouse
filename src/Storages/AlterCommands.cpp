@@ -447,7 +447,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_SQL_SECURITY;
-        command.sql_security = command_ast->sql_security;
+        command.sql_security = command_ast->sql_security->clone();
         return command;
     }
     else

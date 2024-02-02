@@ -92,7 +92,7 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     bool is_definer_current_user = false;
     ASTPtr definer;
-    std::optional<ASTSQLSecurity::Type> type;
+    std::optional<SQLSecurityType> type;
 
     while (true)
     {
@@ -110,11 +110,11 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!type && ParserKeyword{"SQL SECURITY"}.ignore(pos, expected))
         {
             if (s_definer.ignore(pos, expected))
-                type = ASTSQLSecurity::Type::DEFINER;
+                type = SQLSecurityType::DEFINER;
             else if (ParserKeyword{"INVOKER"}.ignore(pos, expected))
-                type = ASTSQLSecurity::Type::INVOKER;
+                type = SQLSecurityType::INVOKER;
             else if (ParserKeyword{"NONE"}.ignore(pos, expected))
-                type = ASTSQLSecurity::Type::NONE;
+                type = SQLSecurityType::NONE;
             else
                 return false;
 
@@ -127,11 +127,11 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!type)
     {
         if (is_definer_current_user || definer)
-            type = ASTSQLSecurity::Type::DEFINER;
+            type = SQLSecurityType::DEFINER;
         else
             return false;
     }
-    else if (type == ASTSQLSecurity::Type::DEFINER && !definer)
+    else if (type == SQLSecurityType::DEFINER && !definer)
         is_definer_current_user = true;
 
     auto result = std::make_shared<ASTSQLSecurity>();

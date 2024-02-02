@@ -77,8 +77,6 @@ public:
 
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
-
     void drop() override;
 
     void startup() override;

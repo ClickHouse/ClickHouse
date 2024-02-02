@@ -117,32 +117,35 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     if (!sql_security_type.has_value())
         return Context::createCopy(context);
 
-    if (sql_security_type == ASTSQLSecurity::Type::INVOKER)
+    if (sql_security_type == SQLSecurityType::INVOKER)
         return Context::createCopy(context);
 
     auto new_context = Context::createCopy(context->getGlobalContext());
-    new_context->applySettingsChanges(context->getSettingsRef().changes());
     new_context->setClientInfo(context->getClientInfo());
-    if (context->hasQueryContext())
-        new_context->setQueryContext(context->getQueryContext());
+    new_context->makeQueryContext();
 
-    const auto & database = context->getCurrentDatabase();
-    if (!database.empty())
-        new_context->setCurrentDatabase(database);
-
+    new_context->setCurrentDatabase(context->getCurrentDatabase());
     new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames());
     new_context->setProgressCallback(context->getProgressCallback());
     new_context->setProcessListElement(context->getProcessListElement());
 
     if (context->getCurrentTransaction())
-        new_context->copyTransactionInfo(context);
+        new_context->setCurrentTransaction(context->getCurrentTransaction());
 
-    if (sql_security_type == ASTSQLSecurity::Type::NONE)
+    if (context->getZooKeeperMetadataTransaction())
+        new_context->initZooKeeperMetadataTransaction(context->getZooKeeperMetadataTransaction());
+
+    if (sql_security_type == SQLSecurityType::NONE)
+    {
+        new_context->applySettingsChanges(context->getSettingsRef().changes());
         return new_context;
+    }
 
     new_context->setUser(getDefinerID(context));
-    auto user = new_context->getUser();
-    new_context->applySettingsChanges(user->settings.toSettingsChanges());
+
+    auto changed_settings = context->getSettingsRef().changes();
+    new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
+    new_context->applySettingsChanges(changed_settings);
 
     return new_context;
 }

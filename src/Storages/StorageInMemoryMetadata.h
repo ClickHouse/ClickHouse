@@ -59,7 +59,7 @@ struct StorageInMemoryMetadata
 
     /// SQL SECURITY <DEFINER | INVOKER | NONE>
     /// Supported for MaterializedView and View.
-    std::optional<ASTSQLSecurity::Type> sql_security_type;
+    std::optional<SQLSecurityType> sql_security_type;
 
     String comment;
 

@@ -31,13 +31,13 @@ void ASTSQLSecurity::formatImpl(const FormatSettings & settings, FormatState & s
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "SQL SECURITY" << (settings.hilite ? hilite_none : "");
     switch (*type)
     {
-        case Type::INVOKER:
+        case SQLSecurityType::INVOKER:
             settings.ostr << " INVOKER";
             break;
-        case Type::DEFINER:
+        case SQLSecurityType::DEFINER:
             settings.ostr << " DEFINER";
             break;
-        case Type::NONE:
+        case SQLSecurityType::NONE:
             settings.ostr << " NONE";
             break;
     }

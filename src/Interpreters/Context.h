@@ -1182,8 +1182,6 @@ public:
     void setCurrentTransaction(MergeTreeTransactionPtr txn);
     MergeTreeTransactionPtr getCurrentTransaction() const;
 
-    void copyTransactionInfo(ContextPtr ctx);
-
     bool isServerCompletelyStarted() const;
     void setServerCompletelyStarted();
 

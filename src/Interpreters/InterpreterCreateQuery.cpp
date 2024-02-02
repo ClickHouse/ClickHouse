@@ -1943,14 +1943,14 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
     /// If no SQL security is specified, apply default from default_*_view_sql_security setting.
     if (!sql_security.type.has_value())
     {
-        ASTSQLSecurity::Type default_security;
+        SQLSecurityType default_security;
 
         if (is_materialized_view)
             default_security = context_->getSettingsRef().default_materialized_view_sql_security;
         else
             default_security = context_->getSettingsRef().default_normal_view_sql_security;
 
-        if (default_security == ASTSQLSecurity::Type::DEFINER)
+        if (default_security == SQLSecurityType::DEFINER)
         {
             String default_definer = context_->getSettingsRef().default_view_definer;
             if (default_definer == "CURRENT_USER")
@@ -1969,9 +1969,9 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
         if (current_user_name.empty())
             /// This can happen only when attaching a view for the first time after migration and with `CURRENT_USER` default.
             if (is_materialized_view)
-                sql_security.type = ASTSQLSecurity::Type::NONE;
+                sql_security.type = SQLSecurityType::NONE;
             else
-                sql_security.type = ASTSQLSecurity::Type::INVOKER;
+                sql_security.type = SQLSecurityType::INVOKER;
         else if (sql_security.definer)
             sql_security.definer->replace(current_user_name);
         else
@@ -1989,7 +1989,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
             context_->checkAccess(AccessType::SET_DEFINER, definer_name);
     }
 
-    if (sql_security.type == ASTSQLSecurity::Type::NONE && !is_attach)
+    if (sql_security.type == SQLSecurityType::NONE && !is_attach)
         context_->checkAccess(AccessType::ALLOW_SQL_SECURITY_NONE);
 }
 

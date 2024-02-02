@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Access/Common/SQLSecurityDefs.h>
 
 
 namespace DB
@@ -12,16 +13,9 @@ namespace DB
 class ASTSQLSecurity : public IAST
 {
 public:
-    enum class Type: UInt8
-    {
-        INVOKER = 0,
-        DEFINER = 1,
-        NONE = 2,
-    };
-
     bool is_definer_current_user{false};
     std::shared_ptr<ASTUserNameWithHost> definer = nullptr;
-    std::optional<Type> type = std::nullopt;
+    std::optional<SQLSecurityType> type = std::nullopt;
 
     String getID(char) const override { return "View SQL Security"; }
     ASTPtr clone() const override { return std::make_shared<ASTSQLSecurity>(*this); }

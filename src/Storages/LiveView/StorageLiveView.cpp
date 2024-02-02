@@ -29,7 +29,6 @@ limitations under the License. */
 #include <Common/SipHash.h>
 #include <base/hex.h>
 
-#include <Storages/AlterCommands.h>
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/LiveView/LiveViewSource.h>
 #include <Storages/LiveView/LiveViewSink.h>
@@ -61,7 +60,6 @@ namespace ErrorCodes
     extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -217,8 +215,6 @@ StorageLiveView::StorageLiveView(
     storage_metadata.setColumns(columns_);
     if (!comment.empty())
         storage_metadata.setComment(comment);
-    if (query.sql_security)
-        storage_metadata.setDefiner(query.sql_security->as<ASTSQLSecurity &>());
 
     setInMemoryMetadata(storage_metadata);
 
@@ -438,14 +434,14 @@ void StorageLiveView::writeBlock(const Block & block, ContextPtr local_context)
             }
 
             InterpreterSelectQueryAnalyzer interpreter(select_description.inner_query_node,
-                getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(local_context),
+                local_context,
                 SelectQueryOptions(QueryProcessingStage::WithMergeableState));
             builder = interpreter.buildQueryPipeline();
         }
         else
         {
             InterpreterSelectQuery interpreter(select_query_description.inner_query,
-                getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(local_context),
+                local_context,
                 blocks_storage.getTable(),
                 blocks_storage.getTable()->getInMemoryMetadataPtr(),
                 QueryProcessingStage::WithMergeableState);
@@ -506,7 +502,7 @@ Block StorageLiveView::getHeader() const
         if (live_view_context->getSettingsRef().allow_experimental_analyzer)
         {
             sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(select_query_description.select_query,
-                getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(live_view_context),
+                live_view_context,
                 SelectQueryOptions(QueryProcessingStage::Complete));
         }
         else
@@ -514,7 +510,7 @@ Block StorageLiveView::getHeader() const
             auto & select_with_union_query = select_query_description.select_query->as<ASTSelectWithUnionQuery &>();
             auto select_query = select_with_union_query.list_of_selects->children.at(0)->clone();
             sample_block = InterpreterSelectQuery(select_query,
-                getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(live_view_context),
+                live_view_context,
                 SelectQueryOptions(QueryProcessingStage::Complete)).getSampleBlock();
         }
 
@@ -574,14 +570,14 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_cont
     if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
         InterpreterSelectQueryAnalyzer interpreter(select_query_description.inner_query,
-            getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(local_context),
+            local_context,
             SelectQueryOptions(QueryProcessingStage::WithMergeableState));
         builder = interpreter.buildQueryPipeline();
     }
     else
     {
         InterpreterSelectQuery interpreter(select_query_description.inner_query->clone(),
-            getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(local_context),
+            local_context,
             SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names());
         builder = interpreter.buildQueryPipeline();
     }
@@ -645,7 +641,7 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
         }
 
         InterpreterSelectQueryAnalyzer interpreter(select_description.select_query_node,
-            getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(block_context),
+            block_context,
             SelectQueryOptions(QueryProcessingStage::Complete));
         builder = interpreter.buildQueryPipeline();
     }
@@ -654,7 +650,7 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
         auto inner_blocks_query_ = getInnerBlocksQuery();
         block_context->addExternalTable(getBlocksTableName(), std::move(blocks_storage_table_holder));
         InterpreterSelectQuery interpreter(inner_blocks_query_,
-            getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(block_context),
+            block_context,
             StoragePtr(),
             nullptr,
             SelectQueryOptions(QueryProcessingStage::Complete));
@@ -782,16 +778,6 @@ void StorageLiveView::scheduleNextPeriodicRefresh(const std::lock_guard<std::mut
         periodic_refresh_task->scheduleAfter(static_cast<size_t>(schedule_time.count()));
     }
 }
-
-void StorageLiveView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* local_context */) const
-{
-    for (const auto & command : commands)
-    {
-        if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_SQL_SECURITY)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
-    }
-}
-
 
 void registerStorageLiveView(StorageFactory & factory)
 {

@@ -81,7 +81,7 @@ StorageMaterializedView::StorageMaterializedView(
     if (query.sql_security)
         storage_metadata.setDefiner(query.sql_security->as<ASTSQLSecurity &>());
 
-    if (storage_metadata.sql_security_type.has_value() && storage_metadata.sql_security_type == ASTSQLSecurity::Type::INVOKER)
+    if (storage_metadata.sql_security_type == SQLSecurityType::INVOKER)
         throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "SQL SECURITY INVOKER can't be specified for MATERIALIZED VIEW");
 
     if (!query.select)
@@ -404,7 +404,7 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
     {
         if (command.type == AlterCommand::MODIFY_SQL_SECURITY)
         {
-            if (command.sql_security->as<ASTSQLSecurity &>().type == ASTSQLSecurity::Type::INVOKER)
+            if (command.sql_security->as<ASTSQLSecurity &>().type == SQLSecurityType::INVOKER)
                 throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "SQL SECURITY INVOKER can't be specified for MATERIALIZED VIEW");
 
             continue;
