@@ -40,7 +40,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"min_date",                                   std::make_shared<DataTypeDate>(), "The minimum value of the date key in the data part."},
         {"max_date",                                   std::make_shared<DataTypeDate>(), "The maximum value of the date key in the data part."},
         {"min_time",                                   std::make_shared<DataTypeDateTime>(), ""},
-        {"max_time",                                   std::make_shared<DataTypeDateTime>()},
+        {"max_time",                                   std::make_shared<DataTypeDateTime>(), ""},
         {"partition_id",                               std::make_shared<DataTypeString>(), "ID of the partition."},
         {"min_block_number",                           std::make_shared<DataTypeInt64>(),  "The minimum number of data parts that make up the current part after merging."},
         {"max_block_number",                           std::make_shared<DataTypeInt64>(),  "The maximum number of data parts that make up the current part after merging."},
@@ -64,7 +64,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>(), "Total size of compressed data in the column, in bytes."},
         {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>(), "Total size of the decompressed data in the column, in bytes."},
         {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>(), "The size of the column with marks, in bytes."},
-        {"column_modification_time",                   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
+        {"column_modification_time",                   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The last time the column was modified."},
 
         {"serialization_kind",                         std::make_shared<DataTypeString>()},
         {"substreams",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},

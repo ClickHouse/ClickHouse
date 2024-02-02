@@ -269,18 +269,18 @@ StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_i
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription{{
-        {"database",         std::make_shared<DataTypeString>()},
-        {"table",            std::make_shared<DataTypeString>()},
-        {"partition_id",     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"name",             std::make_shared<DataTypeString>()},
-        {"bytes_on_disk",    std::make_shared<DataTypeUInt64>()},
-        {"modification_time",std::make_shared<DataTypeDateTime>()},
-        {"disk",             std::make_shared<DataTypeString>()},
-        {"path",             std::make_shared<DataTypeString>()},
-        {"reason",           std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"min_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
-        {"max_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
-        {"level",            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())},
+        {"database",         std::make_shared<DataTypeString>(), "The name of the database this part belongs to."},
+        {"table",            std::make_shared<DataTypeString>(), "The name of the table this part belongs to."},
+        {"partition_id",     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The identifier of the partition this part belongs to."},
+        {"name",             std::make_shared<DataTypeString>(), "The name of the part."},
+        {"bytes_on_disk",    std::make_shared<DataTypeUInt64>(), "Total size of all the data part files in bytes."},
+        {"modification_time",std::make_shared<DataTypeDateTime>(), "The time the directory with the data part was modified. This usually corresponds to the time when detach happened."},
+        {"disk",             std::make_shared<DataTypeString>(), "The name of the disk that stores this data part."},
+        {"path",             std::make_shared<DataTypeString>(), "The path of the disk to the file of this data part."},
+        {"reason",           std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The explanation why this part was detached."},
+        {"min_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()), "The minimum number of data parts that make up the current part after merging."},
+        {"max_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()), "The maximum number of data parts that make up the current part after merging."},
+        {"level",            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>()), "Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts."},
     }});
     setInMemoryMetadata(storage_metadata);
 }
