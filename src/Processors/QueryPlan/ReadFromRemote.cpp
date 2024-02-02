@@ -438,7 +438,8 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
 }
 
 
-void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, IConnectionPool* pool, IConnections::ReplicaInfo replica_info)
+void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
+    Pipes & pipes, IConnectionPool * pool, IConnections::ReplicaInfo replica_info)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -458,7 +459,14 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, I
     assert(output_stream);
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-        pool, query_string, output_stream->header, context, throttler, scalars, external_tables, stage,
+        pool,
+        query_string,
+        output_stream->header,
+        context,
+        throttler,
+        scalars,
+        external_tables,
+        stage,
         RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)});
 
     remote_query_executor->setLogger(log);
