@@ -184,7 +184,7 @@ void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo
 namespace DB
 {
 
-TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string host_name_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
+TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
@@ -192,11 +192,11 @@ TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::N
     , log(getLogger("TCPHandler"))
     , read_event(read_event_)
     , write_event(write_event_)
-    , host_name(std::move(host_name_))
+    , server_display_name(std::move(server_display_name_))
 {
 }
 
-TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string host_name_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
+TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
 : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
@@ -206,7 +206,7 @@ TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::N
     , read_event(read_event_)
     , write_event(write_event_)
     , default_database(stack_data.default_database)
-    , host_name(std::move(host_name_))
+    , server_display_name(std::move(server_display_name_))
 {
     if (!forwarded_for.empty())
         LOG_TRACE(log, "Forwarded client address: {}", forwarded_for);
@@ -1201,7 +1201,7 @@ void TCPHandler::sendExtremes(const Block & extremes)
 void TCPHandler::sendProfileEvents()
 {
     Block block;
-    ProfileEvents::getProfileEvents(host_name, state.profile_queue, block, last_sent_snapshots);
+    ProfileEvents::getProfileEvents(server_display_name, state.profile_queue, block, last_sent_snapshots);
     if (block.rows() != 0)
     {
         initProfileEventsBlockOutput(block);
@@ -1536,7 +1536,7 @@ void TCPHandler::sendHello()
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
-        writeStringBinary(host_name, *out);
+        writeStringBinary(server_display_name, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
         writeVarUInt(VERSION_PATCH, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
