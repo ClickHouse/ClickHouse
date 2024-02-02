@@ -5291,9 +5291,15 @@ SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as 
 
 Default value: `false`.
 
-## default_view_sql_security {#default_view_sql_security}
+## default_normal_view_sql_security {#default_normal_view_sql_security}
 
-Allows to set default `SQL SECURITY` option while creating a view. [More about SQL security](../../sql-reference/statements/create/view.md#sql_security).
+Allows to set default `SQL SECURITY` option while creating a normal view. [More about SQL security](../../sql-reference/statements/create/view.md#sql_security).
+
+The default value is `INVOKER`.
+
+## default_materialized_view_sql_security {#default_materialized_view_sql_security}
+
+Allows to set a default value for SQL SECURITY option when creating a materialized view. [More about SQL security](../../sql-reference/statements/create/view.md#sql_security).
 
 The default value is `DEFINER`.
 

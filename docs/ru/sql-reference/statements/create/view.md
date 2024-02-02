@@ -92,7 +92,7 @@ AS SELECT ...
 :::
 
 Если `DEFINER`/`SQL SECURITY` не указан, будут использованы значения по умолчанию:
-- `SQL SECURITY`: `DEFINER` ([изменяется в настройках](../../../operations/settings/settings.md#default_view_sql_security))
+- `SQL SECURITY`: `INVOKER` для обычных представлений и `DEFINER` для материализованных ([изменяется в настройках](../../../operations/settings/settings.md#default_normal_view_sql_security))
 - `DEFINER`: `CURRENT_USER` ([изменяется в настройках](../../../operations/settings/settings.md#default_view_definer))
 
 Если представление подключается с помощью ключевого слова `ATTACH` и настройки SQL безопасности не были заданы,

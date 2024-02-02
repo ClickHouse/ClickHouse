@@ -115,7 +115,7 @@ Thus, it is required to have `GRANT ALLOW SQL SECURITY NONE TO <user>` in order 
 :::
 
 If `DEFINER`/`SQL SECURITY` aren't specified, the default values are used:
-- `SQL SECURITY`: `DEFINER` ([configurable by settings](../../../operations/settings/settings.md#default_view_sql_security))
+- `SQL SECURITY`: `INVOKER` for normal views and `DEFINER` for materialized views ([configurable by settings](../../../operations/settings/settings.md#default_normal_view_sql_security))
 - `DEFINER`: `CURRENT_USER` ([configurable by settings](../../../operations/settings/settings.md#default_view_definer))
 
 If a view is attached without `DEFINER`/`SQL SECURITY` specified, the default value is `SQL SECURITY NONE` for the materialized view and `SQL SECURITY INVOKER` for the normal view.
