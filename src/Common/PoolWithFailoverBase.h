@@ -101,7 +101,7 @@ public:
 
     struct ShuffledPool
     {
-        NestedPool * pool{};
+        NestedPoolPtr pool{};
         const PoolState * state{}; // WARNING: valid only during initial ordering, dangling
         size_t index = 0;
         size_t error_count = 0;
@@ -110,7 +110,7 @@ public:
 
     /// This functor must be provided by a client. It must perform a single try that takes a connection
     /// from the provided pool and checks that it is good.
-    using TryGetEntryFunc = std::function<TryResult(NestedPool & pool, std::string & fail_message)>;
+    using TryGetEntryFunc = std::function<TryResult(const NestedPoolPtr & pool, std::string & fail_message)>;
 
     /// The client can provide this functor to affect load balancing - the index of a pool is passed to
     /// this functor. The pools with lower result value will be tried first.
@@ -181,7 +181,7 @@ PoolWithFailoverBase<TNestedPool>::getShuffledPools(
     std::vector<ShuffledPool> shuffled_pools;
     shuffled_pools.reserve(nested_pools.size());
     for (size_t i = 0; i < nested_pools.size(); ++i)
-        shuffled_pools.push_back(ShuffledPool{nested_pools[i].get(), &pool_states[i], i, /* error_count = */ 0, /* slowdown_count = */ 0});
+        shuffled_pools.push_back(ShuffledPool{nested_pools[i], &pool_states[i], i, /* error_count = */ 0, /* slowdown_count = */ 0});
 
     ::sort(
         shuffled_pools.begin(), shuffled_pools.end(),
@@ -267,7 +267,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                 continue;
 
             std::string fail_message;
-            result = try_get_entry(*shuffled_pool.pool, fail_message);
+            result = try_get_entry(shuffled_pool.pool, fail_message);
 
             if (!fail_message.empty())
                 fail_messages += fail_message + '\n';
