@@ -28,7 +28,7 @@ MergeFromLogEntryTask::MergeFromLogEntryTask(
     StorageReplicatedMergeTree & storage_,
     IExecutableTask::TaskResultCallback & task_result_callback_)
     : ReplicatedMergeMutateTaskBase(
-        &Poco::Logger::get(
+        getLogger(
             storage_.getStorageID().getShortName() + "::" + selected_entry_->log_entry->new_part_name + " (MergeFromLogEntryTask)"),
         storage_,
         selected_entry_,

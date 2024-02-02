@@ -228,21 +228,27 @@ public:
                 {
                     auto get_raw_read_buf = [&]() -> std::unique_ptr<ReadBuffer>
                     {
-                        auto buf = std::make_unique<ReadBufferFromHDFS>(
-                            hdfs_namenode_url,
-                            current_path,
-                            getContext()->getGlobalContext()->getConfigRef(),
-                            getContext()->getReadSettings());
-
                         bool thread_pool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
                         if (thread_pool_read)
                         {
+                            auto buf = std::make_unique<ReadBufferFromHDFS>(
+                                hdfs_namenode_url,
+                                current_path,
+                                getContext()->getGlobalContext()->getConfigRef(),
+                                getContext()->getReadSettings(),
+                                /* read_until_position */0,
+                                /* use_external_buffer */true);
+
                             return std::make_unique<AsynchronousReadBufferFromHDFS>(
                                 getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER), read_settings, std::move(buf));
                         }
                         else
                         {
-                            return buf;
+                            return std::make_unique<ReadBufferFromHDFS>(
+                                hdfs_namenode_url,
+                                current_path,
+                                getContext()->getGlobalContext()->getConfigRef(),
+                                getContext()->getReadSettings());
                         }
                     };
 
@@ -405,7 +411,7 @@ private:
     bool generate_chunk_from_metadata{false};
     UInt64 current_file_remained_rows = 0;
 
-    Poco::Logger * log = &Poco::Logger::get("StorageHive");
+    LoggerPtr log = getLogger("StorageHive");
 };
 
 
@@ -774,7 +780,7 @@ public:
         HDFSFSPtr fs_,
         HiveMetastoreClient::HiveTableMetadataPtr hive_table_metadata_,
         Block sample_block_,
-        Poco::Logger * log_,
+        LoggerPtr log_,
         ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
@@ -799,7 +805,7 @@ private:
     HDFSFSPtr fs;
     HiveMetastoreClient::HiveTableMetadataPtr hive_table_metadata;
     Block sample_block;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     ContextPtr context;
     size_t max_block_size;
@@ -812,7 +818,7 @@ private:
 
 void ReadFromHive::applyFilters()
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
     createFiles(filter_actions_dag);
 }
 
