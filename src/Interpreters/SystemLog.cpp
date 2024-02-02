@@ -125,14 +125,16 @@ std::shared_ptr<TSystemLog> createSystemLog(
 {
     if (!config.has(config_prefix))
     {
-        LOG_DEBUG(getLogger("SystemLog"),
+            LOG_DEBUG(
+                "SystemLog",
                 "Not creating {}.{} since corresponding section '{}' is missing from config",
-                default_database_name, default_table_name, config_prefix);
+                default_database_name,
+                default_table_name,
+                config_prefix);
 
-        return {};
+            return {};
     }
-    LOG_DEBUG(getLogger("SystemLog"),
-              "Creating {}.{} from {}", default_database_name, default_table_name, config_prefix);
+    LOG_DEBUG("SystemLog", "Creating {}.{} from {}", default_database_name, default_table_name, config_prefix);
 
     SystemLogSettings log_settings;
 
@@ -395,7 +397,7 @@ SystemLog<LogElement>::SystemLog(
     std::shared_ptr<SystemLogQueue<LogElement>> queue_)
     : Base(settings_.queue_settings, queue_)
     , WithContext(context_)
-    , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
+    , log("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")")
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
     , storage_def(settings_.engine)
     , create_query(serializeAST(*getCreateTableQuery()))

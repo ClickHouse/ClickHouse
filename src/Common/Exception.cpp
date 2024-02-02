@@ -211,7 +211,8 @@ Exception::FramePointers Exception::getStackFramePointers() const
 thread_local bool Exception::enable_job_stack_trace = false;
 thread_local std::vector<StackTrace::FramePointers> Exception::thread_frame_pointers = {};
 
-static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message)
+template <typename T>
+void tryLogCurrentExceptionImpl(T && logger, const std::string & start_of_message)
 {
     try
     {
@@ -226,7 +227,7 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
     }
 }
 
-void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
+void tryLogCurrentException(std::string_view log_name, const std::string & start_of_message)
 {
     /// Under high memory pressure, new allocations throw a
     /// MEMORY_LIMIT_EXCEEDED exception.
@@ -234,10 +235,7 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
     /// In this case the exception will not be logged, so let's block the
     /// MemoryTracker until the exception will be logged.
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-
-    /// getLogger can allocate memory too
-    auto logger = getLogger(log_name);
-    tryLogCurrentExceptionImpl(logger.get(), start_of_message);
+    tryLogCurrentExceptionImpl(log_name, start_of_message);
 }
 
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)

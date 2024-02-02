@@ -215,7 +215,7 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
 }
 
 
-bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const ZooKeeperPtr & zookeeper, const std::optional<std::string> & config_host_name)
+bool DDLTask::findCurrentHostID(ContextPtr global_context, const std::string & log, const ZooKeeperPtr & zookeeper, const std::optional<std::string> & config_host_name)
 {
     bool host_in_hostlist = false;
     std::exception_ptr first_exception = nullptr;
@@ -312,7 +312,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
     return host_in_hostlist;
 }
 
-void DDLTask::setClusterInfo(ContextPtr context, LoggerPtr log)
+void DDLTask::setClusterInfo(ContextPtr context, const std::string & log)
 {
     auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query.get());
     if (!query_on_cluster)

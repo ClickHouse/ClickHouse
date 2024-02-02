@@ -79,7 +79,7 @@ DDLWorker::DDLWorker(
     const CurrentMetrics::Metric * max_entry_metric_,
     const CurrentMetrics::Metric * max_pushed_entry_metric_)
     : context(Context::createCopy(context_))
-    , log(getLogger(logger_name))
+    , log(logger_name)
     , pool_size(pool_size_)
     , max_entry_metric(max_entry_metric_)
     , max_pushed_entry_metric(max_pushed_entry_metric_)

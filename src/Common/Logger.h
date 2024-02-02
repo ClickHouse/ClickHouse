@@ -26,6 +26,8 @@ using LoggerRawPtr = Poco::Logger *;
   */
 LoggerPtr getLogger(const std::string & name);
 
+const Poco::Logger * getDefaultLogger();
+
 /** Get Logger with specified name. If the Logger does not exists, it is created.
   * This overload was added for specific purpose, when logger is constructed from constexpr string.
   * Logger is destroyed only during program shutdown.

@@ -19,6 +19,9 @@ namespace Poco { class Logger; }
 
 using LogSeriesLimiterPtr = std::shared_ptr<LogSeriesLimiter>;
 
+template <typename T>
+concept IsLogger = requires(T logger) { logger->getChannel(); } || std::same_as<T, AtomicLogger>;
+
 namespace
 {
     [[maybe_unused]] LoggerPtr getLoggerHelper(const LoggerPtr & logger) { return logger; }
@@ -27,6 +30,18 @@ namespace
     [[maybe_unused]] std::unique_ptr<LogToStrImpl> getLoggerHelper(std::unique_ptr<LogToStrImpl> && logger) { return logger; }
     [[maybe_unused]] std::unique_ptr<LogFrequencyLimiterIml> getLoggerHelper(std::unique_ptr<LogFrequencyLimiterIml> && logger) { return logger; }
     [[maybe_unused]] LogSeriesLimiterPtr getLoggerHelper(LogSeriesLimiterPtr & logger) { return logger; }
+    template <typename T>
+    const ::Poco::Logger * getLoggerHelper(const T & /*arg*/) { return getDefaultLogger(); }
+
+    template <typename T>
+    std::string getName(T && arg)
+    {
+        if constexpr (IsLogger<T>)
+            return arg->name();
+        else
+            return std::string{std::forward<T>(arg)};
+    }
+
 }
 
 #define LOG_IMPL_FIRST_ARG(X, ...) X
@@ -63,9 +78,8 @@ namespace
 ///  and the latter arguments are treated as values to substitute.
 /// If only one argument is provided, it is treated as a message without substitutions.
 
-#define LOG_IMPL(logger, priority, PRIORITY, ...) do                                                                \
+#define LOG_IMPL_1(_logger, logger_name, priority, PRIORITY, ...) do                                                                \
 {                                                                                                                   \
-    auto _logger = ::getLoggerHelper(logger);                                                                             \
     const bool _is_clients_log = (DB::CurrentThread::getGroup() != nullptr) &&                                      \
         (DB::CurrentThread::get().getClientLogsLevel() >= (priority));                                              \
     if (!_is_clients_log && !_logger->is((PRIORITY)))                                                               \
@@ -103,7 +117,7 @@ namespace
                                                                                                                     \
         std::string _file_function = __FILE__ "; ";                                                                 \
         _file_function += __PRETTY_FUNCTION__;                                                                      \
-        Poco::Message _poco_message(_logger->name(), std::move(_formatted_message),                                 \
+        Poco::Message _poco_message(logger_name, std::move(_formatted_message),                                 \
             (PRIORITY), _file_function.c_str(), __LINE__, _format_string);                                          \
         _channel->log(_poco_message);                                                                               \
     }                                                                                                               \
@@ -113,6 +127,14 @@ namespace
     }                                                                                                               \
 } while (false)
 
+#define LOG_IMPL(first_arg, ...) do \
+{ \
+    auto _logger = ::getLoggerHelper(first_arg); \
+    if constexpr (IsLogger<decltype(first_arg)>) \
+        LOG_IMPL_1(_logger, ::getName(_logger), __VA_ARGS__); \
+    else \
+        LOG_IMPL_1(_logger, ::getName(first_arg), __VA_ARGS__); \
+} while (false)
 
 #define LOG_TEST(logger, ...)    LOG_IMPL(logger, DB::LogsLevel::test, Poco::Message::PRIO_TEST, __VA_ARGS__)
 #define LOG_TRACE(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::trace, Poco::Message::PRIO_TRACE, __VA_ARGS__)

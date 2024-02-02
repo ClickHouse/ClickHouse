@@ -243,7 +243,7 @@ using Exceptions = std::vector<std::exception_ptr>;
   * Can be used in destructors in the catch-all block.
   */
 /// TODO: Logger leak constexpr overload
-void tryLogCurrentException(const char * log_name, const std::string & start_of_message = "");
+void tryLogCurrentException(std::string_view log_name, const std::string & start_of_message = "");
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "");
 void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message = "");
 void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message = "");

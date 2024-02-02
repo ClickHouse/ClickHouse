@@ -151,7 +151,7 @@ protected:
     void runCleanupThread();
 
     ContextMutablePtr context;
-    LoggerPtr log;
+    std::string log;
 
     std::optional<std::string> config_host_name; /// host_name from config
 
