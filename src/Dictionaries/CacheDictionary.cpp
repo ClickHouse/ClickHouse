@@ -156,7 +156,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
     auto keys = extractor.extractAllKeys();
 
-    DictionaryStorageFetchRequest request(dict_struct, attribute_names, result_types, default_values_columns);
+    DictionaryStorageFetchRequest request(dict_struct, attribute_names, result_types, &default_values_columns);
 
     FetchResult result_of_fetch_from_storage;
 

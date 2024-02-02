@@ -54,7 +54,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
     const auto requested_keys = extractor.extractAllKeys();
 
-    DictionaryStorageFetchRequest request(dict_struct, attribute_names, result_types, default_values_columns);
+    DictionaryStorageFetchRequest request(dict_struct, attribute_names, result_types, &default_values_columns);
 
     HashMap<KeyType, size_t> key_to_fetched_index;
     key_to_fetched_index.reserve(requested_keys.size());
