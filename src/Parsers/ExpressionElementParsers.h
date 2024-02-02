@@ -469,7 +469,12 @@ protected:
   */
 class ParserTTLElement : public IParserBase
 {
+public:
+    explicit ParserTTLElement(bool with_round_bracket_) : with_round_bracket(with_round_bracket_) { }
+
 protected:
+    bool with_round_bracket;
+
     const char * getName() const override { return "element of TTL expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

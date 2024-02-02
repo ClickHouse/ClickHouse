@@ -32,6 +32,8 @@ ASTPtr ASTTTLElement::clone() const
 
 void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    settings.ostr << "(";
+
     ttl()->formatImpl(settings, state, frame);
     if (mode == TTLMode::MOVE)
     {
@@ -85,6 +87,8 @@ void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & st
         settings.ostr << " WHERE ";
         where()->formatImpl(settings, state, frame);
     }
+
+    settings.ostr << ")";
 }
 
 void ASTTTLElement::setExpression(int & pos, ASTPtr && ast)
