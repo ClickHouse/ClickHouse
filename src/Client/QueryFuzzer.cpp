@@ -915,16 +915,33 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
             "toFixedString", std::make_shared<ASTLiteral>(value), std::make_shared<ASTLiteral>(static_cast<UInt64>(value.size())));
     }
 
-    if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 7 == 0)
         child = makeASTFunction("toNullable", child);
 
-    if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 7 == 0)
         child = makeASTFunction("toLowCardinality", child);
 
-    if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 7 == 0)
         child = makeASTFunction("materialize", child);
 
     return child;
+}
+
+/// Tries to remove the functions added in fuzzLiteralUnderExpressionList
+/// Note that it removes them even if the child is not a literal
+ASTPtr QueryFuzzer::reverseLiteralFuzzing(ASTPtr child)
+{
+    if (auto * function = child.get()->as<ASTFunction>())
+    {
+        std::unordered_set<String> can_be_reverted{"toNullable", "toLowCardinality", "materialize"};
+        if (can_be_reverted.contains(function->name) && function->children.size() == 1)
+        {
+            if (fuzz_rand() % 7 == 0)
+                return function->children[0];
+        }
+    }
+
+    return nullptr;
 }
 
 
@@ -938,7 +955,13 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
                 child = fuzzLiteralUnderExpressionList(child);
         }
         else
-            fuzz(child);
+        {
+            auto new_child = reverseLiteralFuzzing(child);
+            if (new_child)
+                child = new_child;
+            else
+                fuzz(child);
+        }
     }
 }
 
