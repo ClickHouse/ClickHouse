@@ -24,7 +24,7 @@ seriesOutliersDetectTukey(series, min_percentile, max_percentile, K);
 - `series` - An array of numeric values.
 - `min_percentile` - The minimum percentile to be used to calculate inter-quantile range [(IQR)](https://en.wikipedia.org/wiki/Interquartile_range). The value must be in range [2,98]. The default is 25.
 - `max_percentile` - The maximum percentile to be used to calculate inter-quantile range (IQR). The value must be in range [2,98]. The default is 75.
-- `K` - Non-negative constant value to detect mild or stronger outliers. The default value is 1.5
+- `K` - Non-negative constant value to detect mild or stronger outliers. The default value is 1.5.
 
 At least four data points are required in `series` to detect outliers.
 

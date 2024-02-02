@@ -23,6 +23,9 @@ class FunctionSeriesOutliersDetectTukey : public IFunction
 public:
     static constexpr auto name = "seriesOutliersDetectTukey";
 
+    static constexpr Float64 min_quartile = 2.0;
+    static constexpr Float64 max_quartile = 98.0;
+
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSeriesOutliersDetectTukey>(); }
 
     std::string getName() const override { return name; }
@@ -72,18 +75,18 @@ public:
 
         Float64 min_percentile = 0.25; /// default 25th percentile
         Float64 max_percentile = 0.75; /// default 75th percentile
-        Float64 K = 1.50;
+        Float64 k = 1.50;
 
         if (arguments.size() > 1)
         {
             Float64 p_min = arguments[1].column->getFloat64(0);
-            if (p_min < 2.0 || p_min > 98.0)
+            if (p_min < min_quartile|| p_min > max_quartile)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} must be in range [2.0, 98.0]", getName());
 
             min_percentile = p_min / 100;
 
             Float64 p_max = arguments[2].column->getFloat64(0);
-            if (p_max < 2.0 || p_max > 98.0 || p_max < min_percentile * 100)
+            if (p_max < min_quartile || p_max > max_quartile || p_max < min_percentile * 100)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The third argument of function {} must be in range [2.0, 98.0]", getName());
 
             max_percentile = p_max / 100;
@@ -92,19 +95,19 @@ public:
             if (k_val < 0.0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The fourth argument of function {} must be a positive number", getName());
 
-            K = k_val;
+            k = k_val;
         }
 
-        if (executeNumber<UInt8>(arr_data, arr_offsets, min_percentile, max_percentile, K, col_res)
-            || executeNumber<UInt16>(arr_data, arr_offsets, min_percentile, max_percentile, K, col_res)
-            || executeNumber<UInt32>(arr_data, arr_offsets, min_percentile, max_percentile, K, col_res)
-            || executeNumber<UInt64>(arr_data, arr_offsets, min_percentile, max_percentile, K, col_res)
-            || executeNumber<Int8>(arr_data, arr_offsets, min_percentile, max_percentile, K, col_res)
-            || executeNumber<Int16>(arr_data, arr_offsets, min_percentile, max_percentile, K, col_res)
-            || executeNumber<Int32>(arr_data, arr_offsets, min_percentile, max_percentile, K, col_res)
-            || executeNumber<Int64>(arr_data, arr_offsets, min_percentile, max_percentile, K, col_res)
-            || executeNumber<Float32>(arr_data, arr_offsets, min_percentile, max_percentile, K, col_res)
-            || executeNumber<Float64>(arr_data, arr_offsets, min_percentile, max_percentile, K, col_res))
+        if (executeNumber<UInt8>(arr_data, arr_offsets, min_percentile, max_percentile, k, col_res)
+            || executeNumber<UInt16>(arr_data, arr_offsets, min_percentile, max_percentile, k, col_res)
+            || executeNumber<UInt32>(arr_data, arr_offsets, min_percentile, max_percentile, k, col_res)
+            || executeNumber<UInt64>(arr_data, arr_offsets, min_percentile, max_percentile, k, col_res)
+            || executeNumber<Int8>(arr_data, arr_offsets, min_percentile, max_percentile, k, col_res)
+            || executeNumber<Int16>(arr_data, arr_offsets, min_percentile, max_percentile, k, col_res)
+            || executeNumber<Int32>(arr_data, arr_offsets, min_percentile, max_percentile, k, col_res)
+            || executeNumber<Int64>(arr_data, arr_offsets, min_percentile, max_percentile, k, col_res)
+            || executeNumber<Float32>(arr_data, arr_offsets, min_percentile, max_percentile, k, col_res)
+            || executeNumber<Float64>(arr_data, arr_offsets, min_percentile, max_percentile, k, col_res))
         {
             return col_res;
         }
@@ -123,7 +126,7 @@ private:
         const ColumnArray::Offsets & arr_offsets,
         Float64 min_percentile,
         Float64 max_percentile,
-        Float64 K,
+        Float64 k,
         ColumnPtr & res_ptr) const
     {
         const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&arr_data);
@@ -179,8 +182,8 @@ private:
 
             Float64 iqr = q2 - q1; /// interquantile range
 
-            Float64 lower_fence = q1 - K * iqr;
-            Float64 upper_fence = q2 + K * iqr;
+            Float64 lower_fence = q1 - k * iqr;
+            Float64 upper_fence = q2 + k * iqr;
 
             for (ColumnArray::Offset j = prev_src_offset; j < src_offset; ++j)
             {
@@ -206,7 +209,7 @@ Detects outliers in series data using [Tukey Fences](https://en.wikipedia.org/wi
 
 ``` sql
 seriesOutliersDetectTukey(series);
-seriesOutliersDetectTukey(series, min_percentile, max_percentile, K);
+seriesOutliersDetectTukey(series, min_percentile, max_percentile, k);
 ```
 
 **Arguments**
@@ -214,7 +217,7 @@ seriesOutliersDetectTukey(series, min_percentile, max_percentile, K);
 - `series` - An array of numeric values.
 - `min_percentile` - The minimum percentile to be used to calculate inter-quantile range [(IQR)](https://en.wikipedia.org/wiki/Interquartile_range). The value must be in range [2,98]. The default is 25.
 - `max_percentile` - The maximum percentile to be used to calculate inter-quantile range (IQR). The value must be in range [2,98]. The default is 75.
-- `K` - Non-negative constant value to detect mild or stronger outliers. The default value is 1.5
+- `k` - Non-negative constant value to detect mild or stronger outliers. The default value is 1.5
 
 At least four data points are required in `series` to detect outliers.
 

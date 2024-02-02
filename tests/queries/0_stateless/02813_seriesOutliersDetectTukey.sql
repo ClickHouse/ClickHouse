@@ -1,3 +1,6 @@
+-- Tags: no-cpu-aarch64
+-- Tag no-cpu-aarch64: values generated are slighly different on aarch64
+
 DROP TABLE IF EXISTS tb1;
 
 CREATE TABLE tb1 (n UInt32, a Array(Float64)) engine=Memory;
