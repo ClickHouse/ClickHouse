@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
 import argparse
-import logging
-import subprocess
-import os
 import csv
+import logging
+import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Tuple
 
 from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import S3_BUILDS_BUCKET, TEMP_PATH, REPO_COPY
+from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from report import JobReport, TestResult, TestResults, read_test_results
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-
-NAME = "Fast test"
 
 # Will help to avoid errors like _csv.Error: field larger than field limit (131072)
 csv.field_size_limit(sys.maxsize)

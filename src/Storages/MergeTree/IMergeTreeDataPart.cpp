@@ -706,13 +706,14 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         loadIndex(); /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
         loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
         loadPartitionAndMinMaxIndex();
+        bool has_broken_projections = false;
         if (!parent_part)
         {
             loadTTLInfos();
-            loadProjections(require_columns_checksums, check_consistency, false /* if_not_loaded */);
+            loadProjections(require_columns_checksums, check_consistency, has_broken_projections, false /* if_not_loaded */);
         }
 
-        if (check_consistency)
+        if (check_consistency && !has_broken_projections)
             checkConsistency(require_columns_checksums);
 
         loadDefaultCompressionCodec();
@@ -774,7 +775,7 @@ void IMergeTreeDataPart::addProjectionPart(
     projection_parts[projection_name] = std::move(projection_part);
 }
 
-void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool check_consistency, bool if_not_loaded)
+void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool check_consistency, bool & has_broken_projection, bool if_not_loaded)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     for (const auto & projection : metadata_snapshot->projections)
@@ -791,9 +792,33 @@ void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool ch
             else
             {
                 auto part = getProjectionPartBuilder(projection.name).withPartFormatFromDisk().build();
-                part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
+
+                try
+                {
+                    part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
+                }
+                catch (...)
+                {
+                    if (isRetryableException(std::current_exception()))
+                        throw;
+
+                    auto message = getCurrentExceptionMessage(true);
+                    LOG_ERROR(&Poco::Logger::get("IMergeTreeDataPart"),
+                              "Cannot load projection {}, will consider it broken. Reason: {}", projection.name, message);
+
+                    has_broken_projection = true;
+                    part->setBrokenReason(message, getCurrentExceptionCode());
+                }
+
                 addProjectionPart(projection.name, std::move(part));
             }
+        }
+        else if (checksums.has(path))
+        {
+            auto part = getProjectionPartBuilder(projection.name).withPartFormatFromDisk().build();
+            part->setBrokenReason("Projection directory " + path + " does not exist while loading projections", ErrorCodes::NO_FILE_IN_DATA_PART);
+            addProjectionPart(projection.name, std::move(part));
+            has_broken_projection = true;
         }
     }
 }
@@ -1189,7 +1214,8 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         /// Check the data while we are at it.
         LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
 
-        checksums = checkDataPart(shared_from_this(), false);
+        bool noop;
+        checksums = checkDataPart(shared_from_this(), false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */false);
         writeChecksums(checksums, {});
 
         bytes_on_disk = checksums.getTotalSizeOnDisk();
@@ -2194,6 +2220,32 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
 {
     auto stream_name = ISerialization::getFileNameForStream(column, substream_path);
     return getStreamNameOrHash(stream_name, extension, storage_);
+}
+
+void IMergeTreeDataPart::markProjectionPartAsBroken(const String & projection_name, const String & message, int code) const
+{
+    auto it = projection_parts.find(projection_name);
+    if (it == projection_parts.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no projection part '{}'", projection_name);
+    it->second->setBrokenReason(message, code);
+}
+
+bool IMergeTreeDataPart::hasBrokenProjection(const String & projection_name) const
+{
+    auto it = projection_parts.find(projection_name);
+    if (it == projection_parts.end())
+        return false;
+    return it->second->is_broken;
+}
+
+void IMergeTreeDataPart::setBrokenReason(const String & message, int code) const
+{
+    std::lock_guard lock(broken_reason_mutex);
+    if (is_broken)
+        return;
+    is_broken = true;
+    exception = message;
+    exception_code = code;
 }
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)

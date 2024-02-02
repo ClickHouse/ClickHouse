@@ -82,3 +82,12 @@ B	3	10
 D	1	20
 A	2	30
 C	\N	40
+-- test SELECT * ORDER BY ALL with no "all" column in the SELECT clause
+A	2	30
+B	3	10
+C	\N	40
+D	1	20
+A	2	30
+B	3	10
+C	\N	40
+D	1	20
