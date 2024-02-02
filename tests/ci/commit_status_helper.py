@@ -67,7 +67,9 @@ class RerunHelper:
         return None
 
 
-def override_status(status: str, check_name: str, invert: bool = False) -> str:
+def override_status(
+    status: StatusType, check_name: str, invert: bool = False
+) -> StatusType:
     test_config = CI_CONFIG.test_configs.get(check_name)
     if test_config and test_config.force_tests:
         return SUCCESS
@@ -96,7 +98,7 @@ def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:
 
 def post_commit_status(
     commit: Commit,
-    state: str,
+    state: StatusType,
     report_url: Optional[str] = None,
     description: Optional[str] = None,
     check_name: Optional[str] = None,
@@ -291,7 +293,7 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     return "".join(result)
 
 
-def get_worst_state(statuses: CommitStatuses) -> str:
+def get_worst_state(statuses: CommitStatuses) -> StatusType:
     return get_worst_status(status.state for status in statuses)
 
 

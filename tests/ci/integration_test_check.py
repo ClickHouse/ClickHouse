@@ -25,7 +25,7 @@ from get_robot_token import get_best_robot_token
 from github_helper import GitHub
 from integration_test_images import IMAGES
 from pr_info import PRInfo
-from report import ERROR, TestResult, TestResults, read_test_results
+from report import ERROR, StatusType, TestResult, TestResults, read_test_results
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -84,7 +84,7 @@ def get_env_for_runner(
 
 def process_results(
     result_directory: Path,
-) -> Tuple[str, str, TestResults, List[Path]]:
+) -> Tuple[StatusType, str, TestResults, List[Path]]:
     test_results = []  # type: TestResults
     additional_files = []
     # Just upload all files from result_directory.
@@ -118,7 +118,7 @@ def process_results(
             additional_files,
         )
 
-    return state, description, test_results, additional_files
+    return state, description, test_results, additional_files  # type: ignore
 
 
 def parse_args():

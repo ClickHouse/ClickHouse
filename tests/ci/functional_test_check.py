@@ -34,7 +34,7 @@ from download_release_packages import download_last_release
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
-from report import TestResults, read_test_results
+from report import StatusType, TestResults, read_test_results
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -155,7 +155,7 @@ def get_tests_to_run(pr_info: PRInfo) -> List[str]:
 def process_results(
     result_directory: Path,
     server_log_path: Path,
-) -> Tuple[str, str, TestResults, List[Path]]:
+) -> Tuple[StatusType, str, TestResults, List[Path]]:
     test_results = []  # type: TestResults
     additional_files = []
     # Just upload all files from result_directory.
@@ -200,7 +200,7 @@ def process_results(
             additional_files,
         )
 
-    return state, description, test_results, additional_files
+    return state, description, test_results, additional_files  # type: ignore
 
 
 def parse_args():

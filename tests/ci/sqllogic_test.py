@@ -18,6 +18,7 @@ from report import (
     OK,
     SUCCESS,
     JobReport,
+    StatusType,
     TestResult,
     TestResults,
     read_test_results,
@@ -46,7 +47,7 @@ def get_run_command(
     )
 
 
-def read_check_status(result_folder: Path) -> Tuple[str, str]:
+def read_check_status(result_folder: Path) -> Tuple[StatusType, str]:
     status_path = result_folder / "check_status.tsv"
     if not status_path.exists():
         return ERROR, "Not found check_status.tsv"
@@ -59,9 +60,9 @@ def read_check_status(result_folder: Path) -> Tuple[str, str]:
         if len(row) != 2:
             return ERROR, "Invalid check_status.tsv"
         if row[0] != SUCCESS:
-            return row[0], row[1]
+            return row[0], row[1]  # type: ignore
 
-    return status_rows[-1][0], status_rows[-1][1]
+    return status_rows[-1][0], status_rows[-1][1]  # type: ignore
 
 
 def parse_args() -> argparse.Namespace:

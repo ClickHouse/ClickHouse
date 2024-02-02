@@ -15,7 +15,7 @@ from commit_status_helper import override_status
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPORT_PATH, TEMP_PATH
 from pr_info import FORCE_TESTS_LABEL, PRInfo
-from report import JobReport, TestResults
+from report import JobReport, StatusType, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
@@ -48,7 +48,7 @@ def get_run_command(
 def process_results(
     result_directory: Path,
     server_log_path: Path,
-) -> Tuple[str, str, TestResults, List[Path]]:
+) -> Tuple[StatusType, str, TestResults, List[Path]]:
     test_results = []  # type: TestResults
     additional_files = []  # type: List[Path]
     # Just upload all files from result_directory.
@@ -90,7 +90,7 @@ def process_results(
             additional_files,
         )
 
-    return state, description, test_results, additional_files
+    return state, description, test_results, additional_files  # type: ignore
 
 
 def parse_args():

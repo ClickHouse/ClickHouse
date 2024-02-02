@@ -19,7 +19,7 @@ from docker_images_helper import DockerImageData, docker_login, get_images_orede
 from env_helper import GITHUB_RUN_URL, RUNNER_TEMP
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResult, TestResults
+from report import FAILURE, SUCCESS, StatusType, TestResult, TestResults
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -192,7 +192,7 @@ def main():
     #     additional_cache.append(str(pr_info.merged_pr))
 
     ok_cnt = 0
-    status = "success"
+    status = SUCCESS  # type: StatusType
     image_tags = (
         json.loads(args.image_tags)
         if not os.path.isfile(args.image_tags)
@@ -236,7 +236,7 @@ def main():
         if all(x.status == "OK" for x in res):
             ok_cnt += 1
         else:
-            status = "failure"
+            status = FAILURE
             break  # No need to continue with next images
 
     description = format_description(

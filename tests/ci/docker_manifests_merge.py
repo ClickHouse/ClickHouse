@@ -18,7 +18,7 @@ from commit_status_helper import format_description, get_commit, post_commit_sta
 from docker_images_helper import docker_login, get_images_oredered_list
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResult
+from report import FAILURE, SUCCESS, StatusType, TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
@@ -148,7 +148,7 @@ def main():
         else json.load(open(args.missing_images))
     )
     test_results = []
-    status = "success"
+    status = SUCCESS  # type: StatusType
 
     ok_cnt, fail_cnt = 0, 0
     images = get_images_oredered_list()
@@ -176,7 +176,7 @@ def main():
         test_results.append(TestResult(manifest, test_result))
 
         if test_result != "OK":
-            status = "failure"
+            status = FAILURE
             fail_cnt += 1
         else:
             ok_cnt += 1
