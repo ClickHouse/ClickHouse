@@ -6,14 +6,11 @@ import sys
 from pathlib import Path
 
 from docker_images_helper import get_docker_image, pull_image
-from env_helper import TEMP_PATH, REPO_COPY
+from env_helper import REPO_COPY, TEMP_PATH
 from pr_info import PRInfo
-from report import JobReport, TestResults, TestResult
+from report import JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-
-
-NAME = "Docs Check"
 
 
 def parse_args() -> argparse.Namespace:

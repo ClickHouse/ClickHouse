@@ -86,6 +86,8 @@ public:
 
     /// Data type id. It's used for runtime type checks.
     virtual TypeIndex getTypeId() const = 0;
+    /// Storage type (e.g. Int64 for Interval)
+    virtual TypeIndex getColumnType() const { return getTypeId(); }
 
     bool hasSubcolumn(std::string_view subcolumn_name) const;
 
