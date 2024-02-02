@@ -85,7 +85,7 @@ namespace
 
 /// Check if current user has privileges to SELECT columns from table
 /// Throws an exception if access to any column from `column_names` is not granted
-/// If `column_names` is empty, check access to any columns and retun names of accessible columns
+/// If `column_names` is empty, check access to any columns and return names of accessible columns
 NameSet checkAccessRights(const TableNode & table_node, Names & column_names, const ContextPtr & query_context)
 {
     /// StorageDummy is created on preliminary stage, ignore access check for it.
