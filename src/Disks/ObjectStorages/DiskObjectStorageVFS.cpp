@@ -196,17 +196,13 @@ DiskTransactionPtr DiskObjectStorageVFS::createObjectStorageTransaction()
     return std::make_shared<DiskObjectStorageVFSTransaction>(*this);
 }
 
-std::string_view DiskObjectStorageVFS::getMetadataObjectPrefix() const
-{
-    // https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
-    return object_storage_type == ObjectStorageType::S3 ? "vfs/" : "vfs_";
-}
-
 StoredObject DiskObjectStorageVFS::getMetadataObject(std::string_view remote) const
 {
     // TODO myrrc this works only for S3 and Azure.
     // We must include disk name as two disks with different names might use same object storage bucket
-    String remote_key = fmt::format("{}{}{}", getMetadataObjectPrefix(), name, remote);
+    // vfs/ prefix is required for AWS:
+    //  https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
+    String remote_key = fmt::format("vfs/{}{}", name, remote);
     return StoredObject{ObjectStorageKey::createAsRelative(object_key_prefix, std::move(remote_key)).serialize()};
 }
 }

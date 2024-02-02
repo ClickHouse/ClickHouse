@@ -229,8 +229,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     TemporaryClonedPart cloned_part;
     cloned_part.temporary_directory_lock = data->getTemporaryPartDirectoryHolder(part->name);
 
-    // TODO myrrc this duplicates lock key in MergeTreeData::moveParts
-    const String vfs_move_lock = fs::path(data->getTableSharedID()) / part->name / "move";
+    const String vfs_move_metadata_key = fs::path(data->getTableSharedID()) / part->name;
     const bool is_vfs = disk->isObjectStorageVFS();
     auto * const vfs_disk = is_vfs ? static_cast<DiskObjectStorageVFS *>(disk.get()) : nullptr;
     bool vfs_downloaded_metadata = false;
@@ -264,7 +263,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     MutableDataPartStoragePtr cloned_part_storage;
 
     if (is_vfs &&
-        (vfs_downloaded_metadata = vfs_disk->tryDownloadMetadata(vfs_move_lock, result_dir)))
+        (vfs_downloaded_metadata = vfs_disk->tryDownloadMetadata(vfs_move_metadata_key, result_dir)))
     {
         LOG_DEBUG(log, "Picking metadata from {}", result_dir);
         cloned_part_storage = std::make_shared<DataPartStorageOnDiskFull>(
@@ -298,7 +297,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     cloned_part.part->modification_time = cloned_storage.getLastModified().epochTime();
 
     if (is_vfs && !vfs_downloaded_metadata)
-        vfs_disk->uploadMetadata(vfs_move_lock, cloned_storage.getFullPath());
+        vfs_disk->uploadMetadata(vfs_move_metadata_key, cloned_storage.getFullPath());
 
     return cloned_part;
 }

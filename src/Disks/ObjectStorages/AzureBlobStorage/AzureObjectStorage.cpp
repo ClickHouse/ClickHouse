@@ -147,7 +147,8 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
         options.PageSizeHint = settings.get()->list_object_keys_size;
     Azure::Storage::Blobs::ListBlobsPagedResponse blob_list_response;
 
-    while (true)
+    int attempts_left = max_keys > 0 ? max_keys : 1;
+    while (attempts_left)
     {
         blob_list_response = client_ptr->ListBlobs(options);
         auto blobs_list = blob_list_response.Blobs;
@@ -170,6 +171,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
             if (keys_left <= 0)
                 break;
             options.PageSizeHint = keys_left;
+            --attempts_left;
         }
 
         if (blob_list_response.HasPage())

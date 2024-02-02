@@ -234,7 +234,6 @@ Logpointer VFSGarbageCollector::reconcile(Logpointer start, Logpointer end, std:
     const fs::path snapshots_path = storage.getMetadataObject(SNAPSHOTS_PATH).remote_path;
     RelativePathsWithMetadata snapshots;
     constexpr int max_candidates = 5;
-    // TODO myrrc this breaks in random moment for Azure blob storage
     storage.object_storage->listObjects(snapshots_path, snapshots, max_candidates);
 
     if (const bool empty = snapshots.empty(); empty && starting)
