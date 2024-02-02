@@ -2,7 +2,7 @@
 
 namespace std
 {
-std::string to_string(Int8 v)
+std::string to_string(Int8 v) /// NOLINT (cert-dcl58-cpp)
 {
     return to_string(int8_t{v});
 }

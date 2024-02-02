@@ -16,7 +16,7 @@ using Int8 = signed _BitInt(8);
 namespace std
 {
 template <>
-struct hash<Int8>
+struct hash<Int8> /// NOLINT (cert-dcl58-cpp)
 {
     size_t operator()(const Int8 x) const { return std::hash<int8_t>()(int8_t{x}); }
 };
