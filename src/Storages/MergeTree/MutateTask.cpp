@@ -1897,7 +1897,7 @@ public:
                 if (executable_task->executeStep())
                     return true;
 
-                if (isMaxTTLExpired())
+                if (isRowsMaxTTLExpired())
                     replacePartWithEmpty();
 
                 state = State::SUCCESS;
@@ -1924,10 +1924,11 @@ private:
     std::unique_ptr<IExecutableTask> executable_task;
     MutationContextPtr ctx;
 
-    bool isMaxTTLExpired() const
+    bool isRowsMaxTTLExpired() const
     {
         const auto ttl = ctx->new_data_part->ttl_infos.table_ttl;
         return ttl.max && ttl.max <= ctx->time_of_mutation;
+//        return ctx->new_data_part->ttl_infos.part_max_ttl <= ctx->time_of_mutation;
     }
 
     void replacePartWithEmpty()
@@ -2271,9 +2272,8 @@ bool MutateTask::prepare()
         /// Keeper has to be asked with unlock request to release the references to the blobs
         ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
 
-
-        // TODO: Check if this actually makes sense
-        bool drop_expired_parts = !ctx->data->getSettings()->materialize_ttl_recalculate_only;
+        bool suitable_for_ttl_optimization = ctx->metadata_snapshot->isRowsTTLTheOnlyTTL() && ctx->data->getSettings()->ttl_only_drop_parts;
+        bool drop_expired_parts = suitable_for_ttl_optimization && !ctx->data->getSettings()->materialize_ttl_recalculate_only;
         if (drop_expired_parts)
             task = std::make_unique<ExecutableTaskDropTTLExpiredPartsDecorator>(std::make_unique<MutateSomePartColumnsTask>(ctx), ctx);
         else
