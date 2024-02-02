@@ -1310,7 +1310,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         /// If local table already contains the part, it's likely that replica already has it.
         /// Only additional step is to check if the part is in zookeeper then we can remove the log entry.
         /// Therefore let give a chance to execute the log entry. With entry.is_covered_by_future_part = true
-        /// executeLogEntry will ony check if the part is in zookeeper and remove the log entry if it is.
+        /// executeLogEntry will only check if the part is in zookeeper and remove the log entry if it is.
         /// While it does not help to replicate data faster, it keep the queue clean and query "SYSTEM SYNC REPLICA"
         /// can finish faster. For example, if we have a GET_PART entry that is blocked by a big merge,
         /// then "SYSTEM SYNC REPLICA" needs to wait for the merge to finish, which does not make sense.
