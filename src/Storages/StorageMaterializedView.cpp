@@ -448,7 +448,11 @@ StorageID StorageMaterializedView::exchangeTargetTable(StorageID fresh_table, Co
 
     InterpreterRenameQuery(rename_query, refresh_context).execute();
 
-    return fresh_table;
+    std::swap(stale_table_id.database_name, fresh_table.database_name);
+    std::swap(stale_table_id.table_name, fresh_table.table_name);
+
+    setTargetTableId(std::move(fresh_table));
+    return stale_table_id;
 }
 
 void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePtr refresh_context)
@@ -731,6 +735,12 @@ StorageID StorageMaterializedView::getTargetTableId() const
     if (!fixed_uuid)
         id.uuid = UUIDHelpers::Nil;
     return id;
+}
+
+void StorageMaterializedView::setTargetTableId(DB::StorageID id)
+{
+    std::lock_guard guard(target_table_id_mutex);
+    target_table_id = std::move(id);
 }
 
 void StorageMaterializedView::updateTargetTableId(std::optional<String> database_name, std::optional<String> table_name)
