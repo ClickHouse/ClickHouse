@@ -3,6 +3,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/HashSet.h>
 #include <bit>
+#include <cstring>
 #include "ColumnsCommon.h"
 
 #if USE_ISAL
@@ -114,7 +115,9 @@ bool memoryIsByte(const void * data, size_t start, size_t end, uint8_t byte)
 bool memoryIsZero(const void * data, size_t start, size_t end)
 {
 #if USE_ISAL
-    return isal_zero_detect(data, end - start) == 0;
+    std::vector<char> buf(end - start, 0);
+    std::memcpy(buf.data(), reinterpret_cast<const char *>(data) + start, end - start);
+    return isal_zero_detect(buf.data(), end - start) == 0;
 #endif
     return memoryIsByte(data, start, end, 0x0);
 }
