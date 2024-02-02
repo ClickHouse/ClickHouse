@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2657 
+personal_ws-1.1 en 2724
 AArch
 ACLs
 ALTERs
@@ -12,6 +12,7 @@ ARMv
 ASLR
 ASOF
 ASan
+AWND
 AWST
 Actian
 ActionsMenu
@@ -214,6 +215,7 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
+DD
 Decrypted
 Deduplicate
 Deduplication
@@ -237,6 +239,7 @@ DistributedSend
 DockerHub
 DoubleDelta
 Doxygen
+Durre
 ECMA
 Ecto
 EdgeAngle
@@ -288,6 +291,7 @@ ForEach
 FreeBSD
 Fuzzer
 Fuzzers
+GHCN
 GTID
 GTest
 Gb
@@ -443,6 +447,7 @@ Khanna
 KittenHouse
 Klickhouse
 Kolmogorov
+Korzeniewski
 Kubernetes
 LDAP
 LGPL
@@ -502,6 +507,7 @@ MaxMind
 MaxPartCountForPartition
 MaxPushedDDLEntryID
 Mbps
+McNeal
 Memcheck
 MemoryCode
 MemoryDataAndStack
@@ -511,6 +517,7 @@ MemorySanitizer
 MemoryShared
 MemoryTracking
 MemoryVirtual
+Menne
 MergeJoin
 MergeState
 MergeTree
@@ -555,6 +562,7 @@ NEWDATE
 NEWDECIMAL
 NFKC
 NFKD
+NOAA
 NULLIF
 NVME
 NVMe
@@ -575,6 +583,7 @@ NetworkSendBytes
 NetworkSendDrop
 NetworkSendErrors
 NetworkSendPackets
+Noaa
 NodeJs
 NuRaft
 NumHexagons
@@ -655,8 +664,10 @@ OrZero
 OvercommitTracker
 PAAMAYIM
 PCRE
+PRCP
 PREWHERE
 PROCESSLIST
+PSUN
 PagerDuty
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
@@ -801,6 +812,7 @@ SIMD
 SLES
 SLRU
 SMALLINT
+SNWD
 SPNEGO
 SQEs
 SQLAlchemy
@@ -873,11 +885,14 @@ SupersetDocker
 SystemReplicasThreads
 SystemReplicasThreadsActive
 TABLUM
+TAVG
 TCPConnection
 TCPThreads
 TDigest
 TINYINT
 TLSv
+TMAX
+TMIN
 TPCH
 TSDB
 TSVRaw
@@ -979,7 +994,9 @@ VersionedCollapsingMergeTree
 VideoContainer
 ViewAllLink
 VirtualBox
+Vose
 WALs
+WSFG
 Welch's
 Werror
 Wether
@@ -998,6 +1015,7 @@ Xeon
 YAML
 YAMLRegExpTree
 YYYY
+YYYYMMDD
 YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
@@ -1108,6 +1126,7 @@ arrayRotateLeft
 arrayRotateRight
 arrayShiftLeft
 arrayShiftRight
+arrayShingles
 arraySlice
 arraySort
 arraySplit
@@ -1568,6 +1587,7 @@ getSetting
 getSizeOfEnumType
 getblockinfo
 getevents
+ghcnd
 github
 glibc
 globalIn
@@ -1591,6 +1611,7 @@ groupArrayLast
 groupArrayMovingAvg
 groupArrayMovingSum
 groupArraySample
+groupArraySorted
 groupBitAnd
 groupBitOr
 groupBitXor
@@ -1605,6 +1626,7 @@ grouparraylast
 grouparraymovingavg
 grouparraymovingsum
 grouparraysample
+grouparraysorted
 groupbitand
 groupbitmap
 groupbitmapand
@@ -1950,6 +1972,7 @@ ngramSimHashCaseInsensitiveUTF
 ngramSimHashUTF
 ngrambf
 ngrams
+noaa
 nonNegativeDerivative
 noop
 normalizeQuery
@@ -2058,7 +2081,6 @@ prebuild
 prebuilt
 preemptable
 preferServerCiphers
-prefertch
 prefetch
 prefetchsize
 preloaded
@@ -2134,6 +2156,8 @@ quantiletdigest
 quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
+quantileddsketch
+quantileDD
 quartile
 queryID
 queryString
@@ -2205,6 +2229,7 @@ reinterpretAsString
 reinterpretAsUInt
 reinterpretAsUUID
 remoteSecure
+repivot
 replaceAll
 replaceOne
 replaceRegexpAll
@@ -2319,6 +2344,7 @@ sqlinsert
 sqlite
 sqrt
 src
+srcReplicas
 stacktrace
 stacktraces
 startsWith
@@ -2632,6 +2658,8 @@ uuid
 varPop
 varSamp
 variadic
+variantElement
+variantType
 varint
 varpop
 varsamp
@@ -2698,4 +2726,6 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-srcReplicas
+iTerm
+shortkeys
+Shortkeys

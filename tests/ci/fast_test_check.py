@@ -1,40 +1,19 @@
 #!/usr/bin/env python3
 import argparse
-import logging
-import subprocess
-import os
 import csv
+import logging
+import os
+import subprocess
 import sys
-import atexit
 from pathlib import Path
 from typing import Tuple
-from github import Github
-
-from build_check import get_release_or_pr
-from clickhouse_helper import (
-    ClickHouseHelper,
-    prepare_tests_results_for_clickhouse,
-)
-from commit_status_helper import (
-    RerunHelper,
-    get_commit,
-    post_commit_status,
-    update_mergeable_check,
-    format_description,
-)
 
 from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import S3_BUILDS_BUCKET, TEMP_PATH, REPO_COPY
-from get_robot_token import get_best_robot_token
+from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
 from pr_info import FORCE_TESTS_LABEL, PRInfo
-from report import TestResult, TestResults, read_test_results
-from s3_helper import S3Helper
+from report import JobReport, TestResult, TestResults, read_test_results
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from upload_result_helper import upload_results
-from version_helper import get_version_from_repo
-
-NAME = "Fast test"
 
 # Will help to avoid errors like _csv.Error: field larger than field limit (131072)
 csv.field_size_limit(sys.maxsize)
@@ -121,22 +100,7 @@ def main():
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token(), per_page=100)
-    commit = get_commit(gh, pr_info.sha)
-
-    atexit.register(update_mergeable_check, commit, pr_info, NAME)
-
-    rerun_helper = RerunHelper(commit, NAME)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        status = rerun_helper.get_finished_status()
-        if status is not None and status.state != "success":
-            sys.exit(1)
-        sys.exit(0)
-
     docker_image = pull_image(get_docker_image("clickhouse/fasttest"))
-
-    s3_helper = S3Helper()
 
     workspace = temp_path / "fasttest-workspace"
     workspace.mkdir(parents=True, exist_ok=True)
@@ -204,47 +168,17 @@ def main():
     if timeout_expired:
         test_results.append(TestResult.create_check_timeout_expired(args.timeout))
         state = "failure"
-        description = format_description(test_results[-1].name)
+        description = test_results[-1].name
 
-    ch_helper = ClickHouseHelper()
-    s3_path_prefix = "/".join(
-        (
-            get_release_or_pr(pr_info, get_version_from_repo())[0],
-            pr_info.sha,
-            "fast_tests",
-        )
-    )
-    build_urls = s3_helper.upload_build_directory_to_s3(
-        output_path / "binaries",
-        s3_path_prefix,
-        keep_dirs_in_s3_path=False,
-        upload_symlinks=False,
-    )
-
-    report_url = upload_results(
-        s3_helper,
-        pr_info.number,
-        pr_info.sha,
-        test_results,
-        additional_logs,
-        NAME,
-        build_urls,
-    )
-    print(f"::notice ::Report url: {report_url}")
-    post_commit_status(
-        commit, state, report_url, description, NAME, pr_info, dump_to_file=True
-    )
-
-    prepared_events = prepare_tests_results_for_clickhouse(
-        pr_info,
-        test_results,
-        state,
-        stopwatch.duration_seconds,
-        stopwatch.start_time_str,
-        report_url,
-        NAME,
-    )
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+    JobReport(
+        description=description,
+        test_results=test_results,
+        status=state,
+        start_time=stopwatch.start_time_str,
+        duration=stopwatch.duration_seconds,
+        additional_files=additional_logs,
+        build_dir_for_upload=str(output_path / "binaries"),
+    ).dump()
 
     # Refuse other checks to run if fast test failed
     if state != "success":
