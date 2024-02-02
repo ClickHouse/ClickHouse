@@ -52,7 +52,7 @@ public:
         std::optional<IConnections::ReplicaInfo> replica_info = {};
     };
 
-    /// Takes a connection pool to a node (not cluster)
+    /// Takes a connection pool for a node (not cluster)
     RemoteQueryExecutor(
         IConnectionPool * pool,
         const String & query_,
