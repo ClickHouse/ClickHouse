@@ -501,6 +501,7 @@ int main(int argc_, char ** argv_)
         }
     }
 
+#if ENABLE_CLICKHOUSE_LOCAL
     /// Interpret binary without argument or with arguments starts with dash
     /// ('-') as clickhouse-local for better usability:
     ///
@@ -511,6 +512,7 @@ int main(int argc_, char ** argv_)
     ///
     if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'))
         main_func = mainEntryClickHouseLocal;
+#endif
 
     return main_func(static_cast<int>(argv.size()), argv.data());
 }
