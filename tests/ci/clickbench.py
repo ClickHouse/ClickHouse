@@ -10,18 +10,14 @@ from pathlib import Path
 from typing import List, Tuple
 
 from build_download_helper import download_all_deb_packages
-from clickhouse_helper import (
-    CiLogsCredentials,
-)
-from commit_status_helper import (
-    override_status,
-)
-from docker_images_helper import get_docker_image, pull_image, DockerImage
-from env_helper import TEMP_PATH, REPORT_PATH
+from clickhouse_helper import CiLogsCredentials
+from commit_status_helper import override_status
+from docker_images_helper import DockerImage, get_docker_image, pull_image
+from env_helper import REPORT_PATH, TEMP_PATH
 from pr_info import FORCE_TESTS_LABEL, PRInfo
+from report import JobReport, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from report import JobReport, TestResults
 
 
 def get_image_name() -> str:

@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
+import csv
+import datetime
+import json
+import logging
+import os
 from ast import literal_eval
 from dataclasses import asdict, dataclass
+from html import escape
 from pathlib import Path
 from typing import (
     Dict,
@@ -13,17 +19,10 @@ from typing import (
     Tuple,
     Union,
 )
-from html import escape
-import csv
-import datetime
-import json
-import logging
-import os
 
 from build_download_helper import get_gh_api
-from ci_config import BuildConfig, CI_CONFIG
+from ci_config import CI_CONFIG, BuildConfig
 from env_helper import REPORT_PATH, TEMP_PATH
-
 
 logger = logging.getLogger(__name__)
 

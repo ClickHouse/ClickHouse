@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 
 import argparse
+import atexit
 import csv
 import logging
 import os
 import re
 import subprocess
 import sys
-import atexit
 from pathlib import Path
 from typing import List, Tuple
 
+# isort: off
 from github import Github
+
+# isort: on
 
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import (
@@ -26,9 +29,9 @@ from commit_status_helper import (
     post_commit_status_to_file,
     update_mergeable_check,
 )
-from docker_images_helper import DockerImage, pull_image, get_docker_image
+from docker_images_helper import DockerImage, get_docker_image, pull_image
 from download_release_packages import download_last_release
-from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
+from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from report import TestResults, read_test_results

@@ -10,21 +10,20 @@ from typing import Tuple
 
 from build_download_helper import download_all_deb_packages
 from commit_status_helper import override_status
-from docker_images_helper import DockerImage, pull_image, get_docker_image
-from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
+from docker_images_helper import DockerImage, get_docker_image, pull_image
+from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from report import (
-    OK,
-    FAIL,
     ERROR,
+    FAIL,
+    OK,
     SUCCESS,
     JobReport,
-    TestResults,
     TestResult,
+    TestResults,
     read_test_results,
 )
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-
 
 NO_CHANGES_MSG = "Nothing to run"
 IMAGE_NAME = "clickhouse/sqllogic-test"

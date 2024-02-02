@@ -3,24 +3,27 @@ import argparse
 import json
 import logging
 import os
-import time
 import sys
+import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+# isort: off
 from github import Github
+
+# isort: on
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import format_description, get_commit, post_commit_status
-from env_helper import RUNNER_TEMP, GITHUB_RUN_URL
+from docker_images_helper import DockerImageData, docker_login, get_images_oredered_list
+from env_helper import GITHUB_RUN_URL, RUNNER_TEMP
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResults, TestResult
+from report import TestResult, TestResults
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from upload_result_helper import upload_results
-from docker_images_helper import DockerImageData, docker_login, get_images_oredered_list
 
 NAME = "Push to Dockerhub"
 TEMP_PATH = Path(RUNNER_TEMP) / "docker_images_check"

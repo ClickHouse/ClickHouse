@@ -5,24 +5,23 @@ import json
 import logging
 import os
 import subprocess
-
 import sys
 from typing import List, Tuple
 
+# isort: off
 from github import Github
 
-from clickhouse_helper import (
-    ClickHouseHelper,
-    prepare_tests_results_for_clickhouse,
-)
+# isort: on
+
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import format_description, get_commit, post_commit_status
+from docker_images_helper import docker_login, get_images_oredered_list
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
-from docker_images_helper import docker_login, get_images_oredered_list
 
 NAME = "Push multi-arch images to Dockerhub"
 

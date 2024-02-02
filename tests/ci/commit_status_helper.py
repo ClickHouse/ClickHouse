@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 
-from collections import defaultdict
-import json
-from pathlib import Path
-from typing import Dict, List, Optional, Union
 import csv
+import json
 import logging
 import time
+from collections import defaultdict
 from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Dict, List, Optional, Union
 
+# isort: off
 from github import Github
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
@@ -17,15 +18,17 @@ from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
 from github.Repository import Repository
 
-from ci_config import CI_CONFIG, REQUIRED_CHECKS, CHECK_DESCRIPTIONS, CheckDescription
+# isort: on
+
+from ci_config import CHECK_DESCRIPTIONS, CI_CONFIG, REQUIRED_CHECKS, CheckDescription
 from env_helper import GITHUB_JOB_URL, GITHUB_REPOSITORY, TEMP_PATH
-from pr_info import PRInfo, SKIP_MERGEABLE_CHECK_LABEL
+from pr_info import SKIP_MERGEABLE_CHECK_LABEL, PRInfo
 from report import (
     ERROR,
     FAILURE,
     PENDING,
-    StatusType,
     SUCCESS,
+    StatusType,
     TestResult,
     TestResults,
     get_worst_status,
