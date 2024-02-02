@@ -58,6 +58,7 @@
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
+#include "Core/NamesAndTypes.h"
 
 namespace
 {
@@ -388,7 +389,12 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
 
         Names column_names_as_aliases;
         Aliases aliases;
-        auto modified_query_info = getModifiedQueryInfo(context, table, nested_storage_snaphsot, column_names, column_names_as_aliases, aliases);
+
+        Names real_column_names = column_names;
+        if (child_plan.row_policy_data_opt)
+            child_plan.row_policy_data_opt->extendNames(real_column_names);
+
+        auto modified_query_info = getModifiedQueryInfo(context, table, nested_storage_snaphsot, real_column_names, column_names_as_aliases, aliases);
 
         auto source_pipeline = createSources(
             child_plan.plan,
@@ -624,47 +630,50 @@ public:
             column != nullptr && column->hasExpression())
         {
             node = column->getExpressionOrThrow();
+            node->setAlias(column->getColumnName());
         }
     }
 };
 
-bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr replacement_table_expression)
-{
-    QueryTreeNodes stack = { node };
-    while (!stack.empty())
-    {
-        auto current = stack.back();
-        stack.pop_back();
+// bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr replacement_table_expression)
+// {
+//     QueryTreeNodes stack = { node };
+//     while (!stack.empty())
+//     {
+//         auto current = stack.back();
+//         stack.pop_back();
 
-        switch (current->getNodeType())
-        {
-            case QueryTreeNodeType::CONSTANT:
-                break;
-            case QueryTreeNodeType::COLUMN:
-            {
-                auto * column_node = current->as<ColumnNode>();
-                auto source = column_node->getColumnSourceOrNull();
-                if (source != replacement_table_expression)
-                    return true;
-                break;
-            }
-            default:
-            {
-                for (const auto & child : current->getChildren())
-                {
-                    if (child)
-                        stack.push_back(child);
-                }
-            }
-        }
-    }
-    return false;
-}
+//         switch (current->getNodeType())
+//         {
+//             case QueryTreeNodeType::CONSTANT:
+//                 break;
+//             case QueryTreeNodeType::COLUMN:
+//             {
+//                 auto * column_node = current->as<ColumnNode>();
+//                 auto source = column_node->getColumnSourceOrNull();
+//                 if (source != replacement_table_expression)
+//                     return true;
+//                 break;
+//             }
+//             default:
+//             {
+//                 for (const auto & child : current->getChildren())
+//                 {
+//                     if (child)
+//                         stack.push_back(child);
+//                 }
+//             }
+//         }
+//     }
+//     return false;
+// }
 
 QueryTreeNodePtr removeJoin(
     QueryTreeNodePtr query,
     QueryTreeNodePtr original_table_expression,
-    QueryTreeNodePtr replacement_table_expression)
+    QueryTreeNodePtr replacement_table_expression,
+    const ContextPtr & context,
+    const Names & required_column_names)
 {
     auto * query_node = query->as<QueryNode>();
     auto join_tree = query_node->getJoinTree();
@@ -687,20 +696,32 @@ QueryTreeNodePtr removeJoin(
     if (join_tree->as<TableNode>() == nullptr && join_tree->as<TableFunctionNode>() == nullptr)
     {
         auto & projection = modified_query_node->getProjection().getNodes();
-        auto projection_columns = modified_query_node->getProjectionColumns();
-        for (size_t i = 0; i < projection.size();)
+        projection.clear();
+        NamesAndTypes projection_columns;
+
+        for (auto const & column_name : required_column_names)
         {
-            if (hasUnknownColumn(projection[i], replacement_table_expression))
-            {
-                projection.erase(projection.begin() + i);
-                projection_columns.erase(projection_columns.begin() + i);
-                continue;
-            }
-            ++i;
+            QueryTreeNodePtr fake_node = std::make_shared<IdentifierNode>(Identifier{column_name});
+
+            QueryAnalysisPass query_analysis_pass(original_table_expression);
+            query_analysis_pass.run(fake_node, context);
+
+            auto * resolved_column = fake_node->as<ColumnNode>();
+            if (!resolved_column)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Required column '{}' is not resolved", column_name);
+            auto fake_column = resolved_column->getColumn();
+
+            ApplyAliasColumnExpressionsVisitor visitor;
+            visitor.visit(fake_node);
+
+            projection.push_back(fake_node);
+            projection_columns.push_back(fake_column);
         }
 
         query_node->resolveProjectionColumns(std::move(projection_columns));
     }
+
+    LOG_DEBUG(&Poco::Logger::get("removeJoin"), "Result:\n{}", modified_query->dumpTree());
 
     return modified_query;
 }
@@ -710,7 +731,7 @@ QueryTreeNodePtr removeJoin(
 SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_context,
     const StorageWithLockAndName & storage_with_lock_and_name,
     const StorageSnapshotPtr & storage_snapshot,
-    Names real_column_names,
+    Names required_column_names,
     Names & column_names_as_aliases,
     Aliases & aliases) const
 {
@@ -725,7 +746,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
         if (query_info.table_expression_modifiers)
             replacement_table_expression->setTableExpressionModifiers(*query_info.table_expression_modifiers);
 
-        modified_query_info.query_tree = removeJoin(modified_query_info.query_tree, modified_query_info.table_expression, replacement_table_expression);
+        modified_query_info.query_tree = removeJoin(modified_query_info.query_tree, modified_query_info.table_expression, replacement_table_expression, modified_context, required_column_names);
         modified_query_info.table_expression = replacement_table_expression;
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
@@ -755,7 +776,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
         if (with_aliases)
         {
             auto filter_actions_dag = std::make_shared<ActionsDAG>();
-            for (const auto & column : real_column_names)
+            for (const auto & column : required_column_names)
             {
                 const auto column_default = storage_columns.getDefault(column);
                 bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
