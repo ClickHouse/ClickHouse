@@ -300,7 +300,7 @@ public:
         return this->template getIndicesOfNonDefaultRowsImpl<Self>(indices, from, limit);
     }
 
-    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const override;
+    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
 
     ColumnPtr compress() const override;
 
