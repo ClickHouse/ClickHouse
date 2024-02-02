@@ -123,6 +123,7 @@ private:
     StorageID exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context);
     void dropTempTable(StorageID table, ContextMutablePtr refresh_context);
 
+    void setTargetTableId(StorageID id);
     void updateTargetTableId(std::optional<String> database_name, std::optional<String> table_name);
 };
 
