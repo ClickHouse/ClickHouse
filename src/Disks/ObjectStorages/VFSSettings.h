@@ -13,6 +13,7 @@ struct VFSNodes
     String log_base;
     String log_item;
     String gc_lock;
+    String migrate_lock;
 };
 
 struct VFSSettings

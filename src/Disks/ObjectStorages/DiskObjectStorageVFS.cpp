@@ -55,19 +55,15 @@ void DiskObjectStorageVFS::startupImpl(ContextPtr context)
 {
     DiskObjectStorage::startupImpl(context);
 
-    const auto settings_ref = settings.get();
     const auto & ctx_settings = context->getSettingsRef();
-    auto settings_new_version = std::make_unique<VFSSettings>(*settings_ref);
-
-    settings_new_version->keeper_fault_injection_probability = ctx_settings.insert_keeper_fault_injection_probability;
-    settings_new_version->keeper_fault_injection_seed = ctx_settings.insert_keeper_fault_injection_seed;
-
-    LOG_INFO(log, "VFS settings: {}", *settings_new_version);
-    settings.set(std::move(settings_new_version));
+    auto new_settings = std::make_unique<VFSSettings>(*settings.get());
+    new_settings->keeper_fault_injection_probability = ctx_settings.insert_keeper_fault_injection_probability;
+    new_settings->keeper_fault_injection_seed = ctx_settings.insert_keeper_fault_injection_seed;
+    LOG_INFO(log, "VFS settings: {}", *new_settings);
+    settings.set(std::move(new_settings));
 
     if (!enable_gc)
         return;
-    garbage_collector.emplace(*this, context->getSchedulePool());
 
     // Assuming you can't migrate while having GC turned off
     // TODO myrrc we can't rely on user setting this correctly all the time.
@@ -77,9 +73,11 @@ void DiskObjectStorageVFS::startupImpl(ContextPtr context)
     // - Whether this disk needs migration (or we have to throw an exception)
     // This change must be persistent, so after successful migration we must reset the setting
     // and prevent user from setting it again.
-    const auto config_prefix = "storage_configuration.disks." + name;
-    if (context->getConfigRef().getBool(config_prefix + ".vfs_migrate", false))
+    const String migrate_key = fmt::format("storage_configuration.disks.{}.vfs_migrate", name);
+    if (context->getConfigRef().getBool(migrate_key, false))
         VFSMigration{*this, context}.migrate();
+
+    garbage_collector.emplace(*this, context->getSchedulePool());
 }
 
 void DiskObjectStorageVFS::shutdown()
@@ -93,15 +91,12 @@ void DiskObjectStorageVFS::applyNewSettings(
     const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap & disk_map)
 {
     const auto config_prefix = "storage_configuration.disks." + name;
-    const auto & context_settings = context->getSettingsRef();
+    const auto & ctx_settings = context->getSettingsRef();
 
-    auto settings_new_version = std::make_unique<VFSSettings>(
-        config,
-        config_prefix,
-        context_settings.insert_keeper_fault_injection_probability,
-        context_settings.insert_keeper_fault_injection_seed);
-    LOG_DEBUG(log, "New VFS settings: {}", *settings_new_version);
-    settings.set(std::move(settings_new_version));
+    auto new_settings = std::make_unique<VFSSettings>(
+        config, config_prefix, ctx_settings.insert_keeper_fault_injection_probability, ctx_settings.insert_keeper_fault_injection_seed);
+    LOG_DEBUG(log, "New VFS settings: {}", *new_settings);
+    settings.set(std::move(new_settings));
 
     DiskObjectStorage::applyNewSettings(config, context, config_prefix, disk_map);
 }
