@@ -197,6 +197,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_MUTATIONS;
     extern const int CANNOT_SCHEDULE_TASK;
     extern const int LIMIT_EXCEEDED;
+    extern const int CANNOT_FORGET_PARTITION;
 }
 
 static size_t getPartitionAstFieldsCount(const ASTPartition & partition_ast, ASTPtr partition_value_ast)
@@ -4945,8 +4946,18 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                     // call to `getPartitionIDFromQuery` using source storage.
                     // Note: `PartitionCommand::REPLACE_PARTITION` is used both for `REPLACE PARTITION` and `ATTACH PARTITION FROM` queries.
                     // But not for `ATTACH PARTITION` queries.
+
+                    String partition_id;
                     if (command.type != PartitionCommand::REPLACE_PARTITION)
-                        getPartitionIDFromQuery(command.partition, getContext());
+                        partition_id = getPartitionIDFromQuery(command.partition, getContext());
+
+                    if (command.type == PartitionCommand::FORGET_PARTITION)
+                    {
+                        DataPartsLock lock = lockParts();
+                        auto parts_in_partition = getDataPartsPartitionRange(partition_id);
+                        if (!parts_in_partition.empty())
+                            throw Exception(ErrorCodes::CANNOT_FORGET_PARTITION, "Partition {} is not empty", partition_id);
+                    }
                 }
             }
         }
@@ -5168,6 +5179,11 @@ void MergeTreeData::fetchPartition(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FETCH PARTITION is not supported by storage {}", getName());
 }
 
+void MergeTreeData::forgetPartition(const ASTPtr & /*partition*/, ContextPtr /*query_context*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FORGET PARTITION is not supported by storage {}", getName());
+}
+
 Pipe MergeTreeData::alterPartition(
     const StorageMetadataPtr & metadata_snapshot,
     const PartitionCommands & commands,
@@ -5202,6 +5218,10 @@ Pipe MergeTreeData::alterPartition(
 
             case PartitionCommand::DROP_DETACHED_PARTITION:
                 dropDetached(command.partition, command.part, query_context);
+                break;
+
+            case PartitionCommand::FORGET_PARTITION:
+                forgetPartition(command.partition, query_context);
                 break;
 
             case PartitionCommand::ATTACH_PARTITION:

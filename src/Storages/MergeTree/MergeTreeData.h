@@ -832,7 +832,7 @@ public:
         return secondary_index_sizes;
     }
 
-    /// For ATTACH/DETACH/DROP PARTITION.
+    /// For ATTACH/DETACH/DROP/FORGET PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, DataPartsLock * acquired_lock = nullptr) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
     std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
@@ -1356,6 +1356,8 @@ protected:
         const String & from,
         bool fetch_part,
         ContextPtr query_context);
+
+    virtual void forgetPartition(const ASTPtr & partition, ContextPtr context);
 
     virtual void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, ContextPtr query_context);
 

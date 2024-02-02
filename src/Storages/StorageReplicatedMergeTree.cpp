@@ -7312,6 +7312,20 @@ void StorageReplicatedMergeTree::fetchPartition(
 }
 
 
+void StorageReplicatedMergeTree::forgetPartition(const ASTPtr & partition, ContextPtr query_context)
+{
+    assertNotReadonly();
+    zkutil::ZooKeeperPtr zookeeper = getZooKeeperAndAssertNotReadonly();
+
+    String partition_id = getPartitionIDFromQuery(partition, query_context);
+    LOG_INFO(log, "Forget partition {}", partition_id);
+
+    String block_numbers_path = fs::path(zookeeper_path) / "block_numbers";
+    String partition_path = fs::path(block_numbers_path) / partition_id;
+    zookeeper->remove(partition_path);
+}
+
+
 void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
     /// Overview of the mutation algorithm.

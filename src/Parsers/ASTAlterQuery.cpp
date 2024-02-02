@@ -274,6 +274,12 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
                       << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::FORGET_PARTITION)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "FORGET PARTITION "
+                      << (settings.hilite ? hilite_none : "");
+        partition->formatImpl(settings, state, frame);
+    }
     else if (type == ASTAlterCommand::ATTACH_PARTITION)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "ATTACH " << (part ? "PART " : "PARTITION ")

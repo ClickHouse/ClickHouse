@@ -63,6 +63,7 @@ public:
 
         DROP_PARTITION,
         DROP_DETACHED_PARTITION,
+        FORGET_PARTITION,
         ATTACH_PARTITION,
         MOVE_PARTITION,
         REPLACE_PARTITION,
@@ -139,7 +140,7 @@ public:
 
     IAST * statistic_decl = nullptr;
 
-    /** Used in DROP PARTITION, ATTACH PARTITION FROM, UPDATE, DELETE queries.
+    /** Used in DROP PARTITION, ATTACH PARTITION FROM, FORGET PARTITION, UPDATE, DELETE queries.
      *  The value or ID of the partition is stored here.
      */
     IAST * partition = nullptr;
