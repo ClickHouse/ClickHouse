@@ -159,7 +159,7 @@ For examples of columns compression CODECS modifying, see [Column Compression Co
 
 For examples of columns TTL modifying, see [Column TTL](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-column-ttl).
 
-For examples of colum-level settings modifying, see [Column-level Settings](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#column-level-settings).
+For examples of column-level settings modifying, see [Column-level Settings](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#column-level-settings).
 
 If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
