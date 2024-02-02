@@ -54,7 +54,6 @@ static rocksdb::Status buildSSTFile(const String & path, const ColumnString & ke
         return status;
 
     auto rows = perm.size();
-    WriteBufferFromOwnString wb_value;
     for (size_t i = 0; i < rows; ++i)
     {
         auto row = perm[i];
@@ -95,8 +94,15 @@ EmbeddedRocksDBBulkSink::EmbeddedRocksDBBulkSink(
 
 EmbeddedRocksDBBulkSink::~EmbeddedRocksDBBulkSink()
 {
-    if (fs::exists(insert_directory_queue))
-        fs::remove_all(insert_directory_queue);
+    try
+    {
+        if (fs::exists(insert_directory_queue))
+            fs::remove_all(insert_directory_queue);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 std::vector<Chunk> EmbeddedRocksDBBulkSink::squash(Chunk chunk)
@@ -193,14 +199,14 @@ void EmbeddedRocksDBBulkSink::consume(Chunk chunk_)
         return;
 
     auto [serialized_key_column, serialized_value_column] = serializeChunks(to_written);
-    auto path = getTemporarySSTFilePath();
+    auto sst_file_path = getTemporarySSTFilePath();
     if (auto status = buildSSTFile(path, *serialized_key_column, *serialized_value_column); !status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 
     /// Ingest the SST file
     rocksdb::IngestExternalFileOptions ingest_options;
     ingest_options.move_files = true; /// The temporary file is on the same disk, so move (or hardlink) file will be faster than copy
-    if (auto status = storage.rocksdb_ptr->IngestExternalFile({path}, rocksdb::IngestExternalFileOptions()); !status.ok())
+    if (auto status = storage.rocksdb_ptr->IngestExternalFile({path}, ingest_options); !status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 
     if (fs::exists(path))
