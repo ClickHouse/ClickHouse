@@ -220,6 +220,7 @@ private:
     const UInt64 max_block_size;
     Paths paths;
     ContextPtr context;
+    bool started = false;
 };
 
 
@@ -441,7 +442,7 @@ static Paths extractPath(const ActionsDAG::NodeRawConstPtrs & filter_nodes, Cont
     for (const auto * node : filter_nodes)
         extractPathImpl(*node, res, context, allow_unrestricted);
 
-    if (filter_nodes.empty() && allow_unrestricted)
+    if (res.empty() && allow_unrestricted)
         res.emplace_back("/", ZkPathType::Recurse);
 
     return res;
@@ -457,7 +458,18 @@ void ReadFromSystemZooKeeper::applyFilters()
 Chunk SystemZooKeeperSource::generate()
 {
     if (paths.empty())
+    {
+        if (!started)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "SELECT from system.zookeeper table must contain condition like path = 'path' "
+                        "or path IN ('path1','path2'...) or path IN (subquery) "
+                        "in WHERE clause unless `set allow_unrestricted_reads_from_keeper = 'true'`.");
+
+        /// No more work
         return {};
+    }
+
+    started = true;
 
     MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
     size_t row_count = 0;
@@ -486,12 +498,6 @@ Chunk SystemZooKeeperSource::generate()
         }
         return zookeeper;
     };
-
-    if (paths.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "SELECT from system.zookeeper table must contain condition like path = 'path' "
-                        "or path IN ('path1','path2'...) or path IN (subquery) "
-                        "in WHERE clause unless `set allow_unrestricted_reads_from_keeper = 'true'`.");
 
     const Int64 max_inflight_requests = std::max<Int64>(1, context->getSettingsRef().max_download_threads.value);
 
@@ -591,8 +597,8 @@ Chunk SystemZooKeeperSource::generate()
 
             auto & get_task = get_tasks[i];
             auto & list_task = list_tasks[get_task.list_task_idx];
-            if (auto elem = context->getProcessListElement())
-                elem->checkTimeLimit();
+            if (query_status)
+                query_status->checkTimeLimit();
 
             // Deduplication
             String key = list_task.path_part + '/' + get_task.node;
