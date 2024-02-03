@@ -7,10 +7,13 @@
 #include "fsst12.h"
 
 #include <fsst.h>
+#include <cassert>
 #include <cstring>
 #include <stdexcept>
 #include <vector>
 #include <iostream>
+
+#define SERIALIZE(l,p) { (p)[0] = ((l)>>16)&255; (p)[1] = ((l)>>8)&255; (p)[2] = (l)&255; }
 
 namespace DB
 {
@@ -32,42 +35,41 @@ public:
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override {
-        std::cerr << "bebra " << "1" << std::endl;
         FsstParams params = FsstParams(reinterpret_cast<const unsigned char*>(source), source_size);
-        std::cerr << "bebra " << "2" << std::endl;
         fsst_encoder_t *encoder = fsst_create(params.n, params.len_in.data(),
                     const_cast<unsigned char**>(params.str_in.data()), 1);
-        std::cerr << "bebra " << "3" << std::endl;
 
-        std::cerr << *(uint64_t*)encoder << " version" << std::endl;
+        // if (fsst_compress(encoder, 1, lenIn, strIn,
+        //                   source_size * 5 + 2166,
+        //                   reinterpret_cast<unsigned char*>(dest + FSST_MAXHEADER + 3),
+        //                   lenOut,
+        //                   strOut) < 1) return -1;
+        // lenOut[0] += 3 + hdr;
+        // strOut[0] -= 3 + hdr;
+        // SERIALIZE(lenOut[0], strOut[0])
+        // std::copy(tmp, tmp + hdr, strOut[0] + 3);
+        // fsst_destroy(encoder);
 
-        auto header_size = fsst_export(encoder, reinterpret_cast<unsigned char*>(dest));
-        std::cerr << "bebra " << "4" << std::endl;
-        lenOut.resize(params.n);
-        std::cerr << "bebra " << "5" << std::endl;
-        strOut.resize(params.n);
-        std::cerr << "bebra " << "6" << std::endl;
+        // std::cerr << fsst_decoder(encoder).version << " version" << std::endl;
 
-        std::cerr << params.n << std::endl;
-        for (auto el: params.len_in) {
-            std::cerr << el << std::endl;
-        }
+        // auto header_size = fsst_export(encoder, reinterpret_cast<unsigned char*>(dest));
+        // lenOut.resize(params.n);
+        // strOut.resize(params.n);
 
         // auto compressed_count = fsst_compress(encoder, params.n, params.len_in.data(),
         //     const_cast<unsigned char**>(params.str_in.data()),
         //     source_size + FSST_MAXHEADER - header_size + 100000, reinterpret_cast<unsigned char*>(dest + header_size),
         //     lenOut.data(), strOut.data());
-        std::cerr << "bebra " << "7" << std::endl;
+
         // if (compressed_count < params.n) {
         // std::cerr << "bebra " << "8" << std::endl;
         //     throw std::runtime_error("FSST compression failed");
         // }
-        std::cerr << "bebra " << "9" << std::endl;
-        auto compressed_size = lenOut.back() + (strOut.back() - reinterpret_cast<const unsigned char*>(source));
-        std::cerr << "bebra " << "10" << std::endl;
-        fsst_destroy(encoder);
-        std::cerr << "bebra " << "11" << std::endl;
-        return static_cast<UInt32>(header_size) + static_cast<UInt32>(compressed_size);
+
+        // auto compressed_size = lenOut.back() + (strOut.back() - reinterpret_cast<const unsigned char*>(source));
+        // fsst_destroy(encoder);
+        // return header_size;
+        // return static_cast<UInt32>(header_size) + static_cast<UInt32>(compressed_size);
     }
 
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override {
@@ -75,7 +77,7 @@ protected:
         unsigned char* mutable_source = const_cast<unsigned char*>(reinterpret_cast<const unsigned char*>(source));
 
         auto header_len = fsst_import(&decoder, mutable_source);
-        std::cerr << decoder.version << " " << header_len << std::endl;
+        std::cerr << "version: " << decoder.version << " " << header_len << std::endl;
         // auto uncompressed_len = fsst_decompress(&decoder, source_size,
         //     mutable_source + header_len, uncompressed_size,
         //     reinterpret_cast<unsigned char*>(dest));
@@ -88,8 +90,15 @@ protected:
     // void RebuildSymbolTable();
 
 private:
-    mutable std::vector<size_t> lenOut;
-    mutable std::vector<unsigned char*> strOut;
+
+    // mutable size_t lenIn[100];
+    // mutable unsigned char* strIn[100];
+
+    // mutable size_t lenOut[100];
+    // mutable unsigned char* strOut[100];
+
+    // mutable std::vector<size_t> lenOut;
+    // mutable std::vector<unsigned char*> strOut;
     struct FsstParams {
         size_t n{0};
         std::vector <size_t> len_in;
