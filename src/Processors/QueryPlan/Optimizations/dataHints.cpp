@@ -321,7 +321,7 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
             if (name == "modulo")
             {
                 node_to_hint[node] = {};
-                if (!info->reversed && info->value.has_value() && info->value.value().getTypeName() == "UInt64")
+                if (!(info->reversed) && info->value.has_value() && info->value.value().getTypeName() == "UInt64")
                 {
                     if (node->result_type->isValueRepresentedByUnsignedInteger())
                     {
