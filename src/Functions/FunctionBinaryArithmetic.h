@@ -146,7 +146,6 @@ private: /// it's not correct for Decimal
 
 public:
     static constexpr bool allow_decimal = IsOperation<Operation>::allow_decimal;
-    static constexpr bool only_integer = IsOperation<Operation>::div_int || IsOperation<Operation>::div_int_or_zero;
 
     /// Appropriate result type for binary operator on numeric types. "Date" can also mean
     /// DateTime, but if both operands are Dates, their type must be the same (e.g. Date - DateTime is invalid).
@@ -626,7 +625,10 @@ private:
             if constexpr (op_case == OpCase::RightConstant)
             {
                 if ((*right_nullmap)[0])
+                {
+                    c[0] = ResultType();
                     return;
+                }
 
                 for (size_t i = 0; i < size; ++i)
                     c[i] = apply_func(undec(a[i]), undec(b));
@@ -2094,21 +2096,6 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     DataTypePtr type_res;
                     if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                     {
-                        if constexpr (is_division)
-                        {
-                            if (context->getSettingsRef().decimal_check_overflow)
-                            {
-                                /// Check overflow by using operands scale (based on big decimal division implementation details):
-                                /// big decimal arithmetic is based on big integers, decimal operands are converted to big integers
-                                /// i.e. int_operand = decimal_operand*10^scale
-                                /// For division, left operand will be scaled by right operand scale also to do big integer division,
-                                /// BigInt result = left*10^(left_scale + right_scale) / right * 10^right_scale
-                                /// So, we can check upfront possible overflow just by checking max scale used for left operand
-                                /// Note: it doesn't detect all possible overflow during big decimal division
-                                if (left.getScale() + right.getScale() > DecimalResultType::maxPrecision())
-                                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Overflow during decimal division");
-                            }
-                        }
                         DecimalResultType result_type = decimalResultType<is_multiply, is_division>(left, right);
                         type_res = std::make_shared<DecimalResultType>(result_type.getPrecision(), result_type.getScale());
                     }
