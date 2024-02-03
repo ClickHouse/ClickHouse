@@ -1935,7 +1935,7 @@ Possible values:
 
 Default value: `450`.
 
-### async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
+### async_insert_busy_timeout_max_ms {#async-insert-busy-timeout-max-ms}
 
 The maximum timeout in milliseconds since the first `INSERT` query before inserting collected data.
 
@@ -1945,6 +1945,61 @@ Possible values:
 - 0 — Timeout disabled.
 
 Default value: `200`.
+
+### async_insert_poll_timeout_ms {#async-insert-poll-timeout-ms}
+
+Timeout in milliseconds for polling data from asynchronous insert queue.
+
+Possible values:
+
+- Positive integer.
+
+Default value: `10`.
+
+### async_insert_use_adaptive_busy_timeout {#allow-experimental-async-insert-adaptive-busy-timeout}
+
+Use adaptive asynchronous insert timeout.
+
+Possible values:
+
+- 0 - Disabled.
+- 1 - Enabled.
+
+Default value: `0`.
+
+### async_insert_busy_timeout_min_ms {#async-insert-busy-timeout-min-ms}
+
+If adaptive asynchronous insert timeout is allowed through [async_insert_use_adaptive_busy_timeout](#allow-experimental-async-insert-adaptive-busy-timeout), the setting specifies the minimum value of the asynchronous insert timeout in milliseconds. It also serves as the initial value, which may be increased later by the adaptive algorithm, up to the [async_insert_busy_timeout_ms](#async_insert_busy_timeout_ms).
+
+Possible values:
+
+- Positive integer.
+
+Default value: `50`.
+
+### async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
+
+Alias for [`async_insert_busy_timeout_max_ms`](#async_insert_busy_timeout_max_ms).
+
+### async_insert_busy_timeout_increase_rate {#async-insert-busy-timeout-increase-rate}
+
+If adaptive asynchronous insert timeout is allowed through [async_insert_use_adaptive_busy_timeout](#allow-experimental-async-insert-adaptive-busy-timeout), the setting specifies the exponential growth rate at which the adaptive asynchronous insert timeout increases.
+
+Possible values:
+
+- A positive floating-point number.
+
+Default value: `0.2`.
+
+### async_insert_busy_timeout_decrease_rate {#async-insert-busy-timeout-decrease-rate}
+
+If adaptive asynchronous insert timeout is allowed through [async_insert_use_adaptive_busy_timeout](#allow-experimental-async-insert-adaptive-busy-timeout), the setting specifies the exponential growth rate at which the adaptive asynchronous insert timeout decreases.
+
+Possible values:
+
+- A positive floating-point number.
+
+Default value: `0.2`.
 
 ### async_insert_stale_timeout_ms {#async-insert-stale-timeout-ms}
 
