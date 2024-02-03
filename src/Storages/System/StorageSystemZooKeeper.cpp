@@ -180,7 +180,7 @@ using Paths = std::deque<std::pair<String, ZkPathType>>;
 class ReadFromSystemZooKeeper final : public SourceStepWithFilter
 {
 public:
-    ReadFromSystemZooKeeper(const Block & header, SelectQueryInfo & query_info_, ContextPtr context_);
+    ReadFromSystemZooKeeper(const Block & header, SelectQueryInfo & query_info_, UInt64 max_block_size_, ContextPtr context_);
 
     String getName() const override { return "ReadFromSystemZooKeeper"; }
 
@@ -189,12 +189,39 @@ public:
     void applyFilters() override;
 
 private:
-    void fillData(MutableColumns & res_columns);
-
     std::shared_ptr<const StorageLimitsList> storage_limits;
+    const UInt64 max_block_size;
     ContextPtr context;
     Paths paths;
 };
+
+
+class SystemZooKeeperSource : public ISource
+{
+public:
+    SystemZooKeeperSource(
+        Paths && paths_,
+        Block header_,
+        UInt64 max_block_size_,
+        ContextPtr context_)
+        : ISource(header_)
+        , max_block_size(max_block_size_)
+        , paths(std::move(paths_))
+        , context(std::move(context_))
+    {
+    }
+
+    String getName() const override { return "SystemZooKeeper"; }
+
+protected:
+    Chunk generate() override;
+
+private:
+    const UInt64 max_block_size;
+    Paths paths;
+    ContextPtr context;
+};
+
 
 StorageSystemZooKeeper::StorageSystemZooKeeper(const StorageID & table_id_)
         : IStorage(table_id_)
@@ -211,11 +238,11 @@ void StorageSystemZooKeeper::read(
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    size_t /*max_block_size*/,
+    size_t max_block_size,
     size_t /*num_streams*/)
 {
     auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtuals());
-    auto read_step = std::make_unique<ReadFromSystemZooKeeper>(header, query_info, context);
+    auto read_step = std::make_unique<ReadFromSystemZooKeeper>(header, query_info, max_block_size, context);
     query_plan.addStep(std::move(read_step));
 }
 
@@ -426,8 +453,15 @@ void ReadFromSystemZooKeeper::applyFilters()
     paths = extractPath(getFilterNodes().nodes, context, context->getSettingsRef().allow_unrestricted_reads_from_keeper);
 }
 
-void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
+
+Chunk SystemZooKeeperSource::generate()
 {
+    if (paths.empty())
+        return {};
+
+    MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
+    size_t row_count = 0;
+
     QueryStatusPtr query_status = context->getProcessListElement();
 
     const auto & settings = context->getSettingsRef();
@@ -471,7 +505,7 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
     };
     std::vector<ListTask> list_tasks;
     std::unordered_set<String> added;
-    while (!paths.empty())
+    while (!paths.empty() && (max_block_size == 0 || row_count < max_block_size))
     {
         if (query_status)
             query_status->checkTimeLimit();
@@ -519,8 +553,8 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
                 continue;
 
             auto & task = list_tasks[list_task_idx];
-            if (auto elem = context->getProcessListElement())
-                elem->checkTimeLimit();
+            if (query_status)
+                query_status->checkTimeLimit();
 
             Strings nodes = std::move(list_result.names);
 
@@ -584,17 +618,22 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
             res_columns[col_num++]->insert(
                 list_task.path); /// This is the original path. In order to process the request, condition in WHERE should be triggered.
 
+            ++row_count;
+
             if (list_task.path_type != ZkPathType::Exact && res.stat.numChildren > 0)
             {
                 paths.emplace_back(key, ZkPathType::Recurse);
             }
         }
     }
+
+    return Chunk(std::move(res_columns), row_count);
 }
 
-ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(const Block & header, SelectQueryInfo & query_info, ContextPtr context_)
+ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(const Block & header, SelectQueryInfo & query_info, UInt64 max_block_size_, ContextPtr context_)
     : SourceStepWithFilter({.header = header})
     , storage_limits(query_info.storage_limits)
+    , max_block_size(max_block_size_)
     , context(std::move(context_))
 {
 }
@@ -602,13 +641,7 @@ ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(const Block & header, SelectQue
 void ReadFromSystemZooKeeper::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     const auto & header = getOutputStream().header;
-    MutableColumns res_columns = header.cloneEmptyColumns();
-    fillData(res_columns);
-
-    UInt64 num_rows = res_columns.at(0)->size();
-    Chunk chunk(std::move(res_columns), num_rows);
-
-    auto source = std::make_shared<SourceFromSingleChunk>(header, std::move(chunk));
+    auto source = std::make_shared<SystemZooKeeperSource>(std::move(paths), header, max_block_size, context);
     source->setStorageLimits(storage_limits);
     processors.emplace_back(source);
     pipeline.init(Pipe(std::move(source)));
