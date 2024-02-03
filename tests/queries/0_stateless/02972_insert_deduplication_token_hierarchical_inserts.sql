@@ -101,3 +101,54 @@ DROP VIEW mv_2_2;
 
 DROP TABLE ds_3_1;
 DROP VIEW mv_3_1;
+
+SELECT '-----';
+
+DROP TABLE IF EXISTS landing_fix;
+CREATE TABLE landing_fix
+(
+    timestamp UInt64,
+    value UInt64
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS non_replicated_deduplication_window = 1000;
+
+DROP TABLE IF EXISTS ds_1_1_fix;
+CREATE TABLE ds_1_1_fix
+(
+    t UInt64,
+    v UInt64
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS non_replicated_deduplication_window = 1000;
+
+DROP VIEW IF EXISTS mv_1_1;
+CREATE MATERIALIZED VIEW mv_1_1 TO ds_1_1_fix as
+SELECT
+    timestamp t, sum(value) v
+FROM landing_fix
+GROUP BY t;
+
+DROP VIEW IF EXISTS mv_1_2;
+CREATE MATERIALIZED VIEW mv_1_2 TO ds_1_1_fix as
+SELECT
+    timestamp t, sum(value) v
+FROM landing_fix
+GROUP BY t;
+
+INSERT INTO landing_fix SELECT 1 as timestamp, 1 AS value FROM numbers(10);
+
+SELECT sleep(3);
+
+INSERT INTO landing_fix SELECT 1 as timestamp, 1 AS value FROM numbers(10);
+
+SYSTEM FLUSH LOGS;
+SELECT table, name, error FROM system.part_log
+WHERE database = currentDatabase() AND table LIKE '%_fix'
+ORDER BY table, name;
+
+SELECT count() FROM landing_fix;
+
+DROP TABLE landing_fix;
+
+DROP TABLE ds_1_1_fix;
+DROP VIEW mv_1_1;
+DROP VIEW mv_1_2;
