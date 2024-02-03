@@ -161,7 +161,7 @@ public:
                 if (curr_process.processed)
                     continue;
 
-                LOG_DEBUG(&Poco::Logger::get("KillQuery"), "Will kill query {} (synchronously)", curr_process.query_id);
+                LOG_DEBUG(getLogger("KillQuery"), "Will kill query {} (synchronously)", curr_process.query_id);
 
                 auto code = process_list.sendCancelToQuery(curr_process.query_id, curr_process.user, true);
 
@@ -229,7 +229,7 @@ BlockIO InterpreterKillQueryQuery::execute()
             for (const auto & query_desc : queries_to_stop)
             {
                 if (!query.test)
-                    LOG_DEBUG(&Poco::Logger::get("KillQuery"), "Will kill query {} (asynchronously)", query_desc.query_id);
+                    LOG_DEBUG(getLogger("KillQuery"), "Will kill query {} (asynchronously)", query_desc.query_id);
                 auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user, true);
                 insertResultRow(query_desc.source_num, code, processes_block, header, res_columns);
             }

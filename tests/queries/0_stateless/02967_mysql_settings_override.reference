@@ -1,13 +1,22 @@
--- Uppercase tests
-name	value
-limit	11
+-- Init
+s
+a
+b
+c
+d
+-- Uppercase setting name
+s
+a
+b
 name	value
 send_timeout	22
 name	value
 receive_timeout	33
--- Lowercase tests
-name	value
-limit	44
+-- Lowercase setting name
+s
+a
+b
+c
 name	value
 send_timeout	55
 name	value

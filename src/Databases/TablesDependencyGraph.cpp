@@ -720,10 +720,10 @@ void TablesDependencyGraph::log() const
 }
 
 
-Poco::Logger * TablesDependencyGraph::getLogger() const
+LoggerPtr TablesDependencyGraph::getLogger() const
 {
     if (!logger)
-        logger = &Poco::Logger::get(name_for_logging);
+        logger = ::getLogger(name_for_logging);
     return logger;
 }
 

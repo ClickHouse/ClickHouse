@@ -1208,11 +1208,13 @@ private:
 
     static void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
+    static void checkDuplicateTableNamesOrAlias(const QueryTreeNodePtr & join_node, QueryTreeNodePtr & left_table_expr, QueryTreeNodePtr & right_table_expr, IdentifierResolveScope & scope);
+
     static std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into);
 
     static void expandGroupByAll(QueryNode & query_tree_node_typed);
 
-    static void expandOrderByAll(QueryNode & query_tree_node_typed);
+    void expandOrderByAll(QueryNode & query_tree_node_typed, const Settings & settings);
 
     static std::string
     rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
@@ -1393,6 +1395,8 @@ private:
 
     /// Lambdas that are currently in resolve process
     std::unordered_set<IQueryTreeNode *> lambdas_in_resolve_process;
+
+    std::unordered_set<std::string_view> cte_in_resolve_process;
 
     /// Function name to user defined lambda map
     std::unordered_map<std::string, QueryTreeNodePtr> function_name_to_user_defined_lambda;
@@ -2244,12 +2248,16 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
     if (table_expression_has_alias)
         return;
 
+    if (join_node->as<JoinNode &>().getKind() == JoinKind::Paste)
+        return;
+
     auto * query_node = table_expression_node->as<QueryNode>();
     auto * union_node = table_expression_node->as<UnionNode>();
     if ((query_node && !query_node->getCTEName().empty()) || (union_node && !union_node->getCTEName().empty()))
         return;
 
     auto table_expression_node_type = table_expression_node->getNodeType();
+
     if (table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION ||
         table_expression_node_type == QueryTreeNodeType::QUERY ||
         table_expression_node_type == QueryTreeNodeType::UNION)
@@ -2315,15 +2323,22 @@ std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(
   */
 void QueryAnalyzer::expandGroupByAll(QueryNode & query_tree_node_typed)
 {
+    if (!query_tree_node_typed.isGroupByAll())
+        return;
+
     auto & group_by_nodes = query_tree_node_typed.getGroupBy().getNodes();
     auto & projection_list = query_tree_node_typed.getProjection();
 
     for (auto & node : projection_list.getNodes())
         recursivelyCollectMaxOrdinaryExpressions(node, group_by_nodes);
+    query_tree_node_typed.setIsGroupByAll(false);
 }
 
-void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed)
+void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Settings & settings)
 {
+    if (!settings.enable_order_by_all || !query_tree_node_typed.isOrderByAll())
+        return;
+
     auto * all_node = query_tree_node_typed.getOrderBy().getNodes()[0]->as<SortNode>();
     if (!all_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not sort node.");
@@ -2334,21 +2349,25 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed)
 
     for (auto & node : projection_nodes)
     {
-        if (auto * identifier_node = node->as<IdentifierNode>(); identifier_node != nullptr)
-            if (Poco::toUpper(identifier_node->getIdentifier().getFullName()) == "ALL" || Poco::toUpper(identifier_node->getAlias()) == "ALL")
-                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
-                    "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
-
-        if (auto * function_node = node->as<FunctionNode>(); function_node != nullptr)
-            if (Poco::toUpper(function_node->getAlias()) == "ALL")
+        auto resolved_expression_it = resolved_expressions.find(node);
+        if (resolved_expression_it != resolved_expressions.end())
+        {
+            auto projection_names = resolved_expression_it->second;
+            if (projection_names.size() != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Expression nodes list expected 1 projection names. Actual {}",
+                                projection_names.size());
+            if (Poco::toUpper(projection_names[0]) == "ALL")
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
                                 "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
+        }
 
         auto sort_node = std::make_shared<SortNode>(node, all_node->getSortDirection(), all_node->getNullsSortDirection());
         list_node->getNodes().push_back(sort_node);
     }
 
     query_tree_node_typed.getOrderByNode() = list_node;
+    query_tree_node_typed.setIsOrderByAll(false);
 }
 
 std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
@@ -2980,6 +2999,8 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromStorage(
 
     if (!result_expression)
     {
+        if (can_be_not_found)
+            return {};
         std::unordered_set<Identifier> valid_identifiers;
         collectTableExpressionValidIdentifiersForTypoCorrection(identifier,
             table_expression_node,
@@ -3704,7 +3725,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         if (it->second.resolve_result.isResolved() &&
             scope.use_identifier_lookup_to_result_cache &&
             !scope.non_cached_identifier_lookups_during_expression_resolve.contains(identifier_lookup))
-            return it->second.resolve_result;
+        {
+            if (!it->second.resolve_result.isResolvedFromCTEs() || !cte_in_resolve_process.contains(identifier_lookup.identifier.getFullName()))
+            {
+                return it->second.resolve_result;
+            }
+        }
     }
     else
     {
@@ -3761,8 +3787,23 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
     if (!resolve_result.resolved_identifier && identifier_lookup.isTableExpressionLookup())
     {
-        auto cte_query_node_it = scope.cte_name_to_query_node.find(identifier_lookup.identifier.getFullName());
-        if (cte_query_node_it != scope.cte_name_to_query_node.end())
+        auto full_name = identifier_lookup.identifier.getFullName();
+        auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
+
+        /// CTE may reference table expressions with the same name, e.g.:
+        ///
+        /// WITH test1 AS (SELECT * FROM test1) SELECT * FROM test1;
+        ///
+        /// Since we don't support recursive CTEs, `test1` identifier inside of CTE
+        /// references to table <default database name>.test1.
+        /// This means that the example above is equivalent to the following query:
+        ///
+        /// SELECT * FROM test1;
+        ///
+        /// To accomplish this behaviour it's not allowed to resolve identifiers to
+        /// CTE that is being resolved.
+        if (cte_query_node_it != scope.cte_name_to_query_node.end()
+            && !cte_in_resolve_process.contains(full_name))
         {
             resolve_result.resolved_identifier = cte_query_node_it->second;
             resolve_result.resolve_place = IdentifierResolvePlace::CTE;
@@ -5700,6 +5741,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
                         subquery_node = resolved_identifier_node->as<QueryNode>();
                         union_node = resolved_identifier_node->as<UnionNode>();
 
+                        std::string_view cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
+
                         if (subquery_node)
                             subquery_node->setIsCTE(false);
                         else
@@ -5708,10 +5751,21 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
                         IdentifierResolveScope subquery_scope(resolved_identifier_node, &scope /*parent_scope*/);
                         subquery_scope.subquery_depth = scope.subquery_depth + 1;
 
+                        /// CTE is being resolved, it's required to forbid to resolve to it again
+                        /// because recursive CTEs are not supported, e.g.:
+                        ///
+                        /// WITH test1 AS (SELECT i + 1, j + 1 FROM test1) SELECT toInt64(4) i, toInt64(5) j FROM numbers(3) WHERE (i, j) IN test1;
+                        ///
+                        /// In this example argument of function `in` is being resolve here. If CTE `test1` is not forbidden,
+                        /// `test1` is resolved to CTE (not to the table) in `initializeQueryJoinTreeNode` function.
+                        cte_in_resolve_process.insert(cte_name);
+
                         if (subquery_node)
                             resolveQuery(resolved_identifier_node, subquery_scope);
                         else
                             resolveUnion(resolved_identifier_node, subquery_scope);
+
+                        cte_in_resolve_process.erase(cte_name);
                     }
                 }
             }
@@ -6853,6 +6907,39 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
     }
 }
 
+void QueryAnalyzer::checkDuplicateTableNamesOrAlias(const QueryTreeNodePtr & join_node, QueryTreeNodePtr & left_table_expr, QueryTreeNodePtr & right_table_expr, IdentifierResolveScope & scope)
+{
+    Names column_names;
+    if (!scope.context->getSettingsRef().joined_subquery_requires_alias)
+        return;
+
+    if (join_node->as<JoinNode &>().getKind() != JoinKind::Paste)
+        return;
+
+    auto * left_node = left_table_expr->as<QueryNode>();
+    auto * right_node = right_table_expr->as<QueryNode>();
+
+    if (!left_node && !right_node)
+        return;
+
+    if (left_node)
+        for (const auto & name_and_type : left_node->getProjectionColumns())
+            column_names.push_back(name_and_type.name);
+    if (right_node)
+        for (const auto & name_and_type : right_node->getProjectionColumns())
+            column_names.push_back(name_and_type.name);
+
+    if (column_names.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Names of projection columns cannot be empty");
+
+    std::sort(column_names.begin(), column_names.end());
+    for (size_t i = 0; i < column_names.size() - 1; i++) // Check if there is no any duplicates because it will lead to broken result
+        if (column_names[i] == column_names[i+1])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Name of columns and aliases should be unique for this query (you can add/change aliases to avoid duplication)"
+                            "While processing '{}'", join_node->formatASTForErrorMessage());
+}
+
 /// Resolve join node in scope
 void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
 {
@@ -6863,6 +6950,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
     resolveQueryJoinTreeNode(join_node_typed.getRightTableExpression(), scope, expressions_visitor);
     validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getRightTableExpression(), scope);
+
+    if (!join_node_typed.getLeftTableExpression()->hasAlias() && !join_node_typed.getRightTableExpression()->hasAlias())
+        checkDuplicateTableNamesOrAlias(join_node, join_node_typed.getLeftTableExpression(), join_node_typed.getRightTableExpression(), scope);
 
     if (join_node_typed.isOnJoinExpression())
     {
@@ -7068,6 +7158,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             max_subquery_depth);
 
     auto & query_node_typed = query_node->as<QueryNode &>();
+
+    if (query_node_typed.isCTE())
+        cte_in_resolve_process.insert(query_node_typed.getCTEName());
+
     const auto & settings = scope.context->getSettingsRef();
 
     bool is_rollup_or_cube = query_node_typed.isGroupByWithRollup() || query_node_typed.isGroupByWithCube();
@@ -7088,9 +7182,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasHaving() && query_node_typed.isGroupByWithTotals() && is_rollup_or_cube)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING");
-
-    if (settings.enable_order_by_all && query_node_typed.isOrderByAll())
-        expandOrderByAll(query_node_typed);
 
     /// Initialize aliases in query node scope
     QueryExpressionsAliasVisitor visitor(scope);
@@ -7278,6 +7369,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         if (settings.enable_positional_arguments)
             replaceNodesWithPositionalArguments(query_node_typed.getOrderByNode(), query_node_typed.getProjection().getNodes(), scope);
 
+        expandOrderByAll(query_node_typed, settings);
         resolveSortNodeList(query_node_typed.getOrderByNode(), scope);
     }
 
@@ -7378,8 +7470,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         node->removeAlias();
     }
 
-    if (query_node_typed.isGroupByAll())
-        expandGroupByAll(query_node_typed);
+    expandGroupByAll(query_node_typed);
 
     validateFilters(query_node);
     validateAggregates(query_node, { .group_by_use_nulls = scope.group_by_use_nulls });
@@ -7408,11 +7499,18 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         node->removeAlias();
 
     query_node_typed.resolveProjectionColumns(std::move(projection_columns));
+
+    if (query_node_typed.isCTE())
+        cte_in_resolve_process.erase(query_node_typed.getCTEName());
 }
 
 void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope)
 {
     auto & union_node_typed = union_node->as<UnionNode &>();
+
+    if (union_node_typed.isCTE())
+        cte_in_resolve_process.insert(union_node_typed.getCTEName());
+
     auto & queries_nodes = union_node_typed.getQueries().getNodes();
 
     for (auto & query_node : queries_nodes)
@@ -7436,6 +7534,9 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
                 scope.scope_node->formatASTForErrorMessage());
         }
     }
+
+    if (union_node_typed.isCTE())
+        cte_in_resolve_process.erase(union_node_typed.getCTEName());
 }
 
 }
