@@ -20,6 +20,7 @@ public:
         MYSQL,
         GRPC,
         POSTGRESQL,
+        MONGODB,
         PROMETHEUS,
         CUSTOM,
         INTERSERVER_HTTP,

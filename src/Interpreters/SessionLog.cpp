@@ -107,6 +107,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             {"Local",                  static_cast<Int8>(Interface::LOCAL)},
             {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)},
             {"Prometheus",             static_cast<Int8>(Interface::PROMETHEUS)},
+            {"MongoDB",               static_cast<Int8>(Interface::MONGODB)}
         });
     static_assert(magic_enum::enum_count<Interface>() == 8);
 
