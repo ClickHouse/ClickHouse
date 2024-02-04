@@ -10,6 +10,7 @@
 #include <Formats/verbosePrintString.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
+#include "Formats/FormatSettings.h"
 
 namespace DB
 {
@@ -105,14 +106,17 @@ template <bool read_string>
 String TabSeparatedFormatReader::readFieldIntoString()
 {
     String field;
+    bool support_crlf = format_settings.tsv.crlf_end_of_line_input;
     if (is_raw)
         readString(field, *buf);
     else
     {
         if constexpr (read_string)
-            readEscapedString(field, *buf);
+            support_crlf ? readEscapedStringCRLF<true>(field, *buf)
+                         : readEscapedStringCRLF<false>(field, *buf);
         else
-            readTSVField(field, *buf);
+            support_crlf ? readTSVField<true>(field, *buf)
+                         : readTSVField<false>(field, *buf);
     }
     return field;
 }
@@ -123,7 +127,8 @@ void TabSeparatedFormatReader::skipField()
     if (is_raw)
         readStringInto(out, *buf);
     else
-        readEscapedStringInto(out, *buf);
+        format_settings.tsv.crlf_end_of_line_input ? readEscapedStringInto<NullOutput,true>(out, *buf)
+                                                   : readEscapedStringInto<NullOutput,false>(out, *buf);
 }
 
 void TabSeparatedFormatReader::skipHeaderRow()

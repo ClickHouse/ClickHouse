@@ -496,13 +496,19 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 }
 
 
-template <typename Vector, bool parse_complex_escape_sequence>
+template <typename Vector, bool parse_complex_escape_sequence, bool support_crlf>
 void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
-
+        char * next_pos;
+        if constexpr (support_crlf)
+        {
+            next_pos = find_first_symbols<'\t', '\n', '\\','\r'>(buf.position(), buf.buffer().end());
+        } else {
+            next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
+        }
+        
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
@@ -529,25 +535,41 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
                 }
             }
         }
+
+        if (*buf.position() == '\r')
+        {
+            ++buf.position(); // advance to \n after \r   
+        }
     }
 }
 
-template <typename Vector>
+template <typename Vector, bool support_crlf>
 void readEscapedStringInto(Vector & s, ReadBuffer & buf)
 {
-    readEscapedStringIntoImpl<Vector, true>(s, buf);
+    readEscapedStringIntoImpl<Vector, true, support_crlf>(s, buf);
 }
 
 
 void readEscapedString(String & s, ReadBuffer & buf)
 {
     s.clear();
-    readEscapedStringInto(s, buf);
+    readEscapedStringInto<String,false>(s, buf);
 }
 
-template void readEscapedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readEscapedStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
+template<bool support_crlf>
+void readEscapedStringCRLF(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readEscapedStringInto<String,support_crlf>(s, buf);
+}
 
+template void readEscapedStringInto<PaddedPODArray<UInt8>,false>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readEscapedStringInto<NullOutput,false>(NullOutput & s, ReadBuffer & buf);
+template void readEscapedStringInto<PaddedPODArray<UInt8>,true>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readEscapedStringInto<NullOutput,true>(NullOutput & s, ReadBuffer & buf);
+
+template void readEscapedStringCRLF<true>(String & s, ReadBuffer & buf);
+template void readEscapedStringCRLF<false>(String & s, ReadBuffer & buf);
 
 /** If enable_sql_style_quoting == true,
   *  strings like 'abc''def' will be parsed as abc'def.
@@ -1761,10 +1783,16 @@ void readJSONField(String & s, ReadBuffer & buf)
     readParsedValueInto(s, buf, parse_func);
 }
 
+template<bool support_crlf>
 void readTSVField(String & s, ReadBuffer & buf)
 {
     s.clear();
-    readEscapedStringIntoImpl<String, false>(s, buf);
+    readEscapedStringIntoImpl<String, false, support_crlf>(s, buf);
 }
 
+template void readTSVField<true>(String & s, ReadBuffer & buf);
+template void readTSVField<false>(String & s, ReadBuffer & buf);
+
 }
+
+

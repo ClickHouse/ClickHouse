@@ -151,9 +151,13 @@ static inline void read(const SerializationFixedString & self, IColumn & column,
 }
 
 
-void SerializationFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    read(*this, column, [&istr](ColumnFixedString::Chars & data) { readEscapedStringInto(data, istr); });
+    read(*this, column, [&istr, &settings](ColumnFixedString::Chars & data)
+    { 
+        settings.tsv.crlf_end_of_line_input ? readEscapedStringInto<ColumnFixedString::Chars,true>(data, istr) 
+                                            : readEscapedStringInto<ColumnFixedString::Chars,false>(data, istr); 
+    });
 }
 
 

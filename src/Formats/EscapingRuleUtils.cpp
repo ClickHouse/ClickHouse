@@ -76,7 +76,7 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             /// Empty field, just skip spaces
             break;
         case FormatSettings::EscapingRule::Escaped:
-            readEscapedStringInto(out, buf);
+            readEscapedStringInto<NullOutput,false>(out, buf);
             break;
         case FormatSettings::EscapingRule::Quoted:
             readQuotedFieldInto(out, buf);
@@ -236,7 +236,7 @@ String readByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escapin
             if constexpr (read_string)
                 readEscapedString(result, buf);
             else
-                readTSVField(result, buf);
+                readTSVField<false>(result, buf);
             break;
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read value with {} escaping rule", escapingRuleToString(escaping_rule));

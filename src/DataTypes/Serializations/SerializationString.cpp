@@ -301,9 +301,13 @@ void SerializationString::deserializeWholeText(IColumn & column, ReadBuffer & is
 }
 
 
-void SerializationString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    read(column, [&](ColumnString::Chars & data) { readEscapedStringInto(data, istr); });
+    read(column, [&](ColumnString::Chars & data)
+    { 
+        settings.tsv.crlf_end_of_line_input ? readEscapedStringInto<PaddedPODArray<UInt8>,true>(data, istr) 
+                                            : readEscapedStringInto<PaddedPODArray<UInt8>,false>(data, istr);
+    });
 }
 
 
