@@ -28,7 +28,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int AZURE_BLOB_STORAGE_ERROR;
 }
