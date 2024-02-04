@@ -149,7 +149,7 @@ private:
     FileInfos file_infos;
 
     const String format_name;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     DiskPtr disk;
 

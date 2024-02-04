@@ -6,11 +6,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Literal, Optional, Union
 
-from integration_test_images import IMAGES
 from ci_utils import WithIter
+from integration_test_images import IMAGES
 
 
 class Labels(metaclass=WithIter):
+    """
+    Label names or commit tokens in normalized form
+    """
+
     DO_NOT_TEST_LABEL = "do_not_test"
     NO_MERGE_COMMIT = "no_merge_commit"
     NO_CI_CACHE = "no_ci_cache"
@@ -42,8 +46,9 @@ class Build(metaclass=WithIter):
 
 class JobNames(metaclass=WithIter):
     STYLE_CHECK = "Style check"
-    FAST_TEST = "Fast tests"
-    DOCKER_SERVER = "Docker server and keeper images"
+    FAST_TEST = "Fast test"
+    DOCKER_SERVER = "Docker server image"
+    DOCKER_KEEPER = "Docker keeper image"
     INSTALL_TEST_AMD = "Install packages (amd64)"
     INSTALL_TEST_ARM = "Install packages (arm64)"
 
@@ -110,7 +115,6 @@ class JobNames(metaclass=WithIter):
     PERFORMANCE_TEST_AMD64 = "Performance Comparison"
     PERFORMANCE_TEST_ARM64 = "Performance Comparison Aarch64"
 
-    SQL_LANCER_TEST = "SQLancer (release)"
     SQL_LOGIC_TEST = "Sqllogic test (release)"
 
     SQLANCER = "SQLancer (release)"
@@ -130,6 +134,8 @@ class JobNames(metaclass=WithIter):
 
     DOCS_CHECK = "Docs check"
     BUGFIX_VALIDATE = "tests bugfix validate check"
+
+    MARK_RELEASE_READY = "Mark Commit Release Ready"
 
 
 # dynamically update JobName with Build jobs
@@ -155,7 +161,7 @@ class DigestConfig:
 @dataclass
 class LabelConfig:
     """
-    class to configure different CI scenarious per GH label or commit message token
+    configures different CI scenarious per GH label
     """
 
     run_jobs: Iterable[str] = frozenset()
@@ -164,19 +170,26 @@ class LabelConfig:
 @dataclass
 class JobConfig:
     """
-    contains config parameter relevant for job execution in CI workflow
-    @digest - configures digest calculation for the job
-    @run_command - will be triggered for the job if omited in CI workflow yml
-    @timeout
-    @num_batches - sets number of batches for multi-batch job
+    contains config parameters for job execution in CI workflow
     """
 
+    # configures digest calculation for the job
     digest: DigestConfig = field(default_factory=DigestConfig)
+    # will be triggered for the job if omited in CI workflow yml
     run_command: str = ""
+    # job timeout
     timeout: Optional[int] = None
+    # sets number of batches for multi-batch job
     num_batches: int = 1
+    # label that enables job in CI, if set digest won't be used
     run_by_label: str = ""
+    # to run always regardless of the job digest or/and label
     run_always: bool = False
+    # if the job needs to be run on the release branch, including master (e.g. building packages, docker server).
+    # NOTE: Subsequent runs on the same branch with the similar digest are still considered skippable.
+    required_on_release_branch: bool = False
+    # job is for pr workflow only
+    pr_only: bool = False
 
 
 @dataclass
@@ -193,6 +206,7 @@ class BuildConfig:
     static_binary_name: str = ""
     job_config: JobConfig = field(
         default_factory=lambda: JobConfig(
+            required_on_release_branch=True,
             digest=DigestConfig(
                 include_paths=[
                     "./src",
@@ -213,6 +227,12 @@ class BuildConfig:
                     "./programs",
                     "./packages",
                     "./docker/packager/packager",
+                    "./rust",
+                    # FIXME: This is a WA to rebuild the CH and recreate the Performance.tar.zst artifact
+                    # when there are changes in performance test scripts.
+                    # Due to the current design of the perf test we need to rebuild CH when the performance test changes,
+                    # otherwise the changes will not be visible in the PerformanceTest job in CI
+                    "./tests/performance",
                 ],
                 exclude_files=[".md"],
                 docker=["clickhouse/binary-builder"],
@@ -607,6 +627,8 @@ CI_CONFIG = CiConfig(
                             "tsan",
                             "msan",
                             "ubsan",
+                            # skip build report jobs as not all builds will be done
+                            "build check",
                         )
                     ]
                 )
@@ -773,16 +795,30 @@ CI_CONFIG = CiConfig(
         ),
     },
     other_jobs_configs={
+        JobNames.MARK_RELEASE_READY: TestConfig(
+            "", job_config=JobConfig(required_on_release_branch=True)
+        ),
         JobNames.DOCKER_SERVER: TestConfig(
+            "",
+            job_config=JobConfig(
+                required_on_release_branch=True,
+                digest=DigestConfig(
+                    include_paths=[
+                        "tests/ci/docker_server.py",
+                        "./docker/server",
+                    ]
+                ),
+            ),
+        ),
+        JobNames.DOCKER_KEEPER: TestConfig(
             "",
             job_config=JobConfig(
                 digest=DigestConfig(
                     include_paths=[
                         "tests/ci/docker_server.py",
-                        "./docker/server",
                         "./docker/keeper",
                     ]
-                )
+                ),
             ),
         ),
         JobNames.DOCS_CHECK: TestConfig(
@@ -797,11 +833,12 @@ CI_CONFIG = CiConfig(
         JobNames.FAST_TEST: TestConfig(
             "",
             job_config=JobConfig(
+                pr_only=True,
                 digest=DigestConfig(
                     include_paths=["./tests/queries/0_stateless/"],
                     exclude_files=[".md"],
                     docker=["clickhouse/fasttest"],
-                )
+                ),
             ),
         ),
         JobNames.STYLE_CHECK: TestConfig(
@@ -916,7 +953,7 @@ CI_CONFIG = CiConfig(
             Build.PACKAGE_DEBUG,
             job_config=JobConfig(num_batches=6, **statless_test_common_params),  # type: ignore
         ),
-        JobNames.STATELESS_TEST_S3_DEBUG: TestConfig(
+        JobNames.STATELESS_TEST_S3_TSAN: TestConfig(
             Build.PACKAGE_TSAN,
             job_config=JobConfig(num_batches=5, **statless_test_common_params),  # type: ignore
         ),
@@ -971,11 +1008,15 @@ CI_CONFIG = CiConfig(
         ),
         JobNames.COMPATIBILITY_TEST: TestConfig(
             Build.PACKAGE_RELEASE,
-            job_config=JobConfig(digest=compatibility_check_digest),
+            job_config=JobConfig(
+                required_on_release_branch=True, digest=compatibility_check_digest
+            ),
         ),
         JobNames.COMPATIBILITY_TEST_ARM: TestConfig(
             Build.PACKAGE_AARCH64,
-            job_config=JobConfig(digest=compatibility_check_digest),
+            job_config=JobConfig(
+                required_on_release_branch=True, digest=compatibility_check_digest
+            ),
         ),
         JobNames.UNIT_TEST: TestConfig(
             Build.BINARY_RELEASE, job_config=JobConfig(**unit_test_common_params)  # type: ignore
@@ -1117,16 +1158,22 @@ CHECK_DESCRIPTIONS = [
         lambda x: x.startswith("Compatibility check"),
     ),
     CheckDescription(
-        "Docker image for servers",
+        JobNames.DOCKER_SERVER,
         "The check to build and optionally push the mentioned image to docker hub",
-        lambda x: x.startswith("Docker image")
-        and (x.endswith("building check") or x.endswith("build and push")),
+        lambda x: x.startswith("Docker server"),
     ),
     CheckDescription(
-        "Docs Check", "Builds and tests the documentation", lambda x: x == "Docs Check"
+        JobNames.DOCKER_KEEPER,
+        "The check to build and optionally push the mentioned image to docker hub",
+        lambda x: x.startswith("Docker keeper"),
     ),
     CheckDescription(
-        "Fast test",
+        JobNames.DOCS_CHECK,
+        "Builds and tests the documentation",
+        lambda x: x == JobNames.DOCS_CHECK,
+    ),
+    CheckDescription(
+        JobNames.FAST_TEST,
         "Normally this is the first check that is ran for a PR. It builds ClickHouse "
         'and runs most of <a href="https://clickhouse.com/docs/en/development/tests'
         '#functional-tests">stateless functional tests</a>, '
@@ -1134,7 +1181,7 @@ CHECK_DESCRIPTIONS = [
         "Look at the report to see which tests fail, then reproduce the failure "
         'locally as described <a href="https://clickhouse.com/docs/en/development/'
         'tests#functional-test-locally">here</a>',
-        lambda x: x == "Fast test",
+        lambda x: x == JobNames.FAST_TEST,
     ),
     CheckDescription(
         "Flaky tests",
@@ -1208,10 +1255,10 @@ CHECK_DESCRIPTIONS = [
         lambda x: x.startswith("Stress test ("),
     ),
     CheckDescription(
-        "Style Check",
+        JobNames.STYLE_CHECK,
         "Runs a set of checks to keep the code style clean. If some of tests failed, "
         "see the related log from the report",
-        lambda x: x == "Style Check",
+        lambda x: x == JobNames.STYLE_CHECK,
     ),
     CheckDescription(
         "Unit tests",

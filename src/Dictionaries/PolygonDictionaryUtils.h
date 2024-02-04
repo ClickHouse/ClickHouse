@@ -83,7 +83,7 @@ private:
     /** Auxiliary function for adding ring to the index */
     void indexAddRing(const Ring & ring, size_t polygon_id);
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /** Sorted distinct coordinates of all vertices */
     std::vector<Coord> sorted_x;

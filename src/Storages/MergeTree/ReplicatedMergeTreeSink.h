@@ -3,7 +3,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <base/types.h>
-#include <Storages/MergeTree/ZooKeeperRetries.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 
@@ -128,7 +128,7 @@ private:
     bool last_block_is_duplicate = false;
     UInt64 num_blocks_processed = 0;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     ContextPtr context;
     StorageSnapshotPtr storage_snapshot;

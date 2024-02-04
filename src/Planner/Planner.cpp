@@ -215,7 +215,7 @@ void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const Planne
         if (!read_from_dummy)
             continue;
 
-        auto filter_actions = ActionsDAG::buildFilterActionsDAG(read_from_dummy->getFilterNodes().nodes, {}, query_context);
+        auto filter_actions = ActionsDAG::buildFilterActionsDAG(read_from_dummy->getFilterNodes().nodes);
         auto & table_expression_data = dummy_storage_to_table_expression_data.at(&read_from_dummy->getStorage());
         table_expression_data->setFilterActions(std::move(filter_actions));
     }
@@ -1196,7 +1196,7 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_plan.isInitialized())
         return;
 
-    LOG_TRACE(&Poco::Logger::get("Planner"), "Query {} to stage {}{}",
+    LOG_TRACE(getLogger("Planner"), "Query {} to stage {}{}",
         query_tree->formatConvertedASTForErrorMessage(),
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
@@ -1355,7 +1355,7 @@ void Planner::buildPlanForQueryNode()
 
             auto & mutable_context = planner_context->getMutableQueryContext();
             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            LOG_DEBUG(&Poco::Logger::get("Planner"), "Disabling parallel replicas to execute a query with IN with subquery");
+            LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas to execute a query with IN with subquery");
         }
     }
 
@@ -1382,7 +1382,7 @@ void Planner::buildPlanForQueryNode()
                 else
                 {
                     LOG_DEBUG(
-                        &Poco::Logger::get("Planner"),
+                        getLogger("Planner"),
                         "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
                     auto & mutable_context = planner_context->getMutableQueryContext();
                     mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
@@ -1401,7 +1401,7 @@ void Planner::buildPlanForQueryNode()
             else
             {
                 LOG_DEBUG(
-                    &Poco::Logger::get("Planner"),
+                    getLogger("Planner"),
                     "JOINs are not supported with parallel replicas. Query will be executed without using them.");
 
                 auto & mutable_context = planner_context->getMutableQueryContext();
@@ -1422,7 +1422,7 @@ void Planner::buildPlanForQueryNode()
     query_plan = std::move(join_tree_query_plan.query_plan);
     used_row_policies = std::move(join_tree_query_plan.used_row_policies);
 
-    LOG_TRACE(&Poco::Logger::get("Planner"), "Query {} from stage {} to stage {}{}",
+    LOG_TRACE(getLogger("Planner"), "Query {} from stage {} to stage {}{}",
         query_tree->formatConvertedASTForErrorMessage(),
         QueryProcessingStage::toString(from_stage),
         QueryProcessingStage::toString(select_query_options.to_stage),

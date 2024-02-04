@@ -265,7 +265,7 @@ private:
     ThreadFromGlobalPool thread;
     bool quit = false;
 
-    Poco::Logger * log = &Poco::Logger::get("NamedSessionsStorage");
+    LoggerPtr log = getLogger("NamedSessionsStorage");
 };
 
 
@@ -282,7 +282,7 @@ void Session::shutdownNamedSessions()
 Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure, const std::string & certificate)
     : auth_id(UUIDHelpers::generateV4()),
       global_context(global_context_),
-      log(&Poco::Logger::get(String{magic_enum::enum_name(interface_)} + "-Session"))
+      log(getLogger(String{magic_enum::enum_name(interface_)} + "-Session"))
 {
     prepared_client_info.emplace();
     prepared_client_info->interface = interface_;
@@ -349,10 +349,9 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     try
     {
-        auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host());
+        auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo().getLastForwardedFor());
         user_id = auth_result.user_id;
         settings_from_auth_server = auth_result.settings;
-
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
     }

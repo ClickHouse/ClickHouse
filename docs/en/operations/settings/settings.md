@@ -1935,7 +1935,7 @@ Possible values:
 
 Default value: `450`.
 
-### async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
+### async_insert_busy_timeout_max_ms {#async-insert-busy-timeout-max-ms}
 
 The maximum timeout in milliseconds since the first `INSERT` query before inserting collected data.
 
@@ -1945,6 +1945,61 @@ Possible values:
 - 0 — Timeout disabled.
 
 Default value: `200`.
+
+### async_insert_poll_timeout_ms {#async-insert-poll-timeout-ms}
+
+Timeout in milliseconds for polling data from asynchronous insert queue.
+
+Possible values:
+
+- Positive integer.
+
+Default value: `10`.
+
+### async_insert_use_adaptive_busy_timeout {#allow-experimental-async-insert-adaptive-busy-timeout}
+
+Use adaptive asynchronous insert timeout.
+
+Possible values:
+
+- 0 - Disabled.
+- 1 - Enabled.
+
+Default value: `0`.
+
+### async_insert_busy_timeout_min_ms {#async-insert-busy-timeout-min-ms}
+
+If adaptive asynchronous insert timeout is allowed through [async_insert_use_adaptive_busy_timeout](#allow-experimental-async-insert-adaptive-busy-timeout), the setting specifies the minimum value of the asynchronous insert timeout in milliseconds. It also serves as the initial value, which may be increased later by the adaptive algorithm, up to the [async_insert_busy_timeout_ms](#async_insert_busy_timeout_ms).
+
+Possible values:
+
+- Positive integer.
+
+Default value: `50`.
+
+### async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
+
+Alias for [`async_insert_busy_timeout_max_ms`](#async_insert_busy_timeout_max_ms).
+
+### async_insert_busy_timeout_increase_rate {#async-insert-busy-timeout-increase-rate}
+
+If adaptive asynchronous insert timeout is allowed through [async_insert_use_adaptive_busy_timeout](#allow-experimental-async-insert-adaptive-busy-timeout), the setting specifies the exponential growth rate at which the adaptive asynchronous insert timeout increases.
+
+Possible values:
+
+- A positive floating-point number.
+
+Default value: `0.2`.
+
+### async_insert_busy_timeout_decrease_rate {#async-insert-busy-timeout-decrease-rate}
+
+If adaptive asynchronous insert timeout is allowed through [async_insert_use_adaptive_busy_timeout](#allow-experimental-async-insert-adaptive-busy-timeout), the setting specifies the exponential growth rate at which the adaptive asynchronous insert timeout decreases.
+
+Possible values:
+
+- A positive floating-point number.
+
+Default value: `0.2`.
 
 ### async_insert_stale_timeout_ms {#async-insert-stale-timeout-ms}
 
@@ -2039,6 +2094,32 @@ SELECT * FROM test_table
 │ 1 │
 └───┘
 ```
+
+## update_insert_deduplication_token_in_dependent_materialized_views {#update-insert-deduplication-token-in-dependent-materialized-views}
+
+Allows to update `insert_deduplication_token` with table identifier during insert in dependent materialized views, if setting `deduplicate_blocks_in_dependent_materialized_views` is enabled and `insert_deduplication_token` is set.
+
+Possible values:
+
+      0 — Disabled.
+      1 — Enabled.
+
+Default value: 0.
+
+Usage:
+
+If setting `deduplicate_blocks_in_dependent_materialized_views` is enabled, `insert_deduplication_token` is passed to dependent materialized views. But in complex INSERT flows it is possible that we want to avoid deduplication for dependent materialized views.
+
+Example:
+```
+landing -┬--> mv_1_1 ---> ds_1_1 ---> mv_2_1 --┬-> ds_2_1 ---> mv_3_1 ---> ds_3_1
+         |                                     |
+         └--> mv_1_2 ---> ds_1_2 ---> mv_2_2 --┘
+```
+
+In this example we want to avoid deduplication for two different blocks generated from `mv_2_1` and `mv_2_2` that will be inserted into `ds_2_1`. Without `update_insert_deduplication_token_in_dependent_materialized_views` setting enabled, those two different blocks will be deduplicated, because different blocks from `mv_2_1` and `mv_2_2` will have the same `insert_deduplication_token`.
+
+If setting `update_insert_deduplication_token_in_dependent_materialized_views` is enabled, during each insert into dependent materialized views `insert_deduplication_token` is updated with table identifier, so block from `mv_2_1` and block from `mv_2_2` will have different `insert_deduplication_token` and will not be deduplicated.
 
 ## insert_keeper_max_retries
 
@@ -5165,7 +5246,7 @@ SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 ## storage_metadata_write_full_object_key {#storage_metadata_write_full_object_key}
 
 When set to `true` the metadata files are written with `VERSION_FULL_OBJECT_KEY` format version. With that format full object storage key names are written to the metadata files.
-When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section. 
+When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section.
 
 Default value: `false`.
 
@@ -5175,6 +5256,95 @@ When set to `true` than for all s3 requests first two attempts are made with low
 When set to `false` than all attempts are made with identical timeouts.
 
 Default value: `true`.
+
+## allow_experimental_variant_type {#allow_experimental_variant_type}
+
+Allows creation of experimental [Variant](../../sql-reference/data-types/variant.md).
+
+Default value: `false`.
+
+## use_variant_as_common_type {#use_variant_as_common_type}
+
+Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiif)/[array](../../sql-reference/functions/array-functions.md)/[map](../../sql-reference/functions/tuple-map-functions.md) functions when there is no common type for argument types.
+
+Example:
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT toTypeName(if(number % 2, number, range(number))) as variant_type FROM numbers(1);
+SELECT if(number % 2, number, range(number)) as variant FROM numbers(5);
+```
+
+```text
+┌─variant_type───────────────────┐
+│ Variant(Array(UInt64), UInt64) │
+└────────────────────────────────┘
+┌─variant───┐
+│ []        │
+│ 1         │
+│ [0,1]     │
+│ 3         │
+│ [0,1,2,3] │
+└───────────┘
+```
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT toTypeName(multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) = 2, 'Hello, World!', NULL)) AS variant_type FROM numbers(1);
+SELECT multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) = 2, 'Hello, World!', NULL) AS variant FROM numbers(4);
+```
+
+```text
+─variant_type─────────────────────────┐
+│ Variant(Array(UInt8), String, UInt8) │
+└──────────────────────────────────────┘
+
+┌─variant───────┐
+│ 42            │
+│ [1,2,3]       │
+│ Hello, World! │
+│ ᴺᵁᴸᴸ          │
+└───────────────┘
+```
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT toTypeName(array(range(number), number, 'str_' || toString(number))) as array_of_variants_type from numbers(1);
+SELECT array(range(number), number, 'str_' || toString(number)) as array_of_variants FROM numbers(3);
+```
+
+```text
+┌─array_of_variants_type────────────────────────┐
+│ Array(Variant(Array(UInt64), String, UInt64)) │
+└───────────────────────────────────────────────┘
+
+┌─array_of_variants─┐
+│ [[],0,'str_0']    │
+│ [[0],1,'str_1']   │
+│ [[0,1],2,'str_2'] │
+└───────────────────┘
+```
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT toTypeName(map('a', range(number), 'b', number, 'c', 'str_' || toString(number))) as map_of_variants_type from numbers(1);
+SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as map_of_variants FROM numbers(3);
+```
+
+```text
+┌─map_of_variants_type────────────────────────────────┐
+│ Map(String, Variant(Array(UInt64), String, UInt64)) │
+└─────────────────────────────────────────────────────┘
+
+┌─map_of_variants───────────────┐
+│ {'a':[],'b':0,'c':'str_0'}    │
+│ {'a':[0],'b':1,'c':'str_1'}   │
+│ {'a':[0,1],'b':2,'c':'str_2'} │
+└───────────────────────────────┘
+```
+
+
+Default value: `false`.
 
 ## max_partition_size_to_drop
 
