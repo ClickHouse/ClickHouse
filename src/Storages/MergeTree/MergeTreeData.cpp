@@ -412,7 +412,6 @@ MergeTreeData::MergeTreeData(
     , parts_mover(this)
     , background_operations_assignee(*this, BackgroundJobsAssignee::Type::DataProcessing, getContext())
     , background_moves_assignee(*this, BackgroundJobsAssignee::Type::Moving, getContext())
-    , mutation_backoff_policy(getContext())
 {
     context_->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
 

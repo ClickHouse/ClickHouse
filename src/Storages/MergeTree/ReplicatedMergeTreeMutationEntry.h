@@ -56,8 +56,6 @@ struct ReplicatedMergeTreeMutationEntry
     std::shared_ptr<const IBackupEntry> backup() const;
 
     String getBlockNumbersForLogs() const;
-
-    size_t max_postpone_time = 0;
 };
 
 using ReplicatedMergeTreeMutationEntryPtr = std::shared_ptr<const ReplicatedMergeTreeMutationEntry>;

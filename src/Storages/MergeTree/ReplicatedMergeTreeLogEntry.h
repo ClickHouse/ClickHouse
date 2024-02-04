@@ -165,7 +165,6 @@ struct ReplicatedMergeTreeLogEntryData
     size_t num_postponed = 0;             /// The number of times the action was postponed.
     String postpone_reason;               /// The reason why the action was postponed, if it was postponed.
     time_t last_postpone_time = 0;        /// The time of the last time the action was postponed.
-    size_t max_postpone_time = 0;
 
     /// Creation time or the time to copy from the general log to the queue of a particular replica.
     time_t create_time = 0;

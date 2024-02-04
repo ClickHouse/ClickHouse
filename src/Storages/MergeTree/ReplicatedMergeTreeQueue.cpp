@@ -2481,7 +2481,7 @@ bool ReplicatedMergeTreeMergePredicate::partParticipatesInReplaceRange(const Mer
 }
 
 
-std::optional<ReplicatedMergeTreeMergePredicate::DesiredMutationDescription>  ReplicatedMergeTreeMergePredicate::getDesiredMutationDescription(const MergeTreeData::DataPartPtr & part) const
+std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const
 {
     /// Assigning mutations is easier than assigning merges because mutations appear in the same order as
     /// the order of their version numbers (see StorageReplicatedMergeTree::mutate).
@@ -2509,7 +2509,6 @@ std::optional<ReplicatedMergeTreeMergePredicate::DesiredMutationDescription>  Re
 
     Int64 current_version = queue.getCurrentMutationVersion(part->info.partition_id, part->info.getDataVersion());
     Int64 max_version = in_partition->second.begin()->first;
-    size_t mutation_postpone_time = 0ul;
 
     int alter_version = -1;
     bool barrier_found = false;
@@ -2528,7 +2527,6 @@ std::optional<ReplicatedMergeTreeMergePredicate::DesiredMutationDescription>  Re
         }
 
         max_version = mutation_version;
-        mutation_postpone_time = mutation_status->entry->max_postpone_time;
         if (current_version < max_version)
             ++mutations_count;
 
@@ -2562,7 +2560,7 @@ std::optional<ReplicatedMergeTreeMergePredicate::DesiredMutationDescription>  Re
     LOG_TRACE(queue.log, "Will apply {} mutations and mutate part {} to version {} (the last version is {})",
               mutations_count, part->name, max_version, in_partition->second.rbegin()->first);
 
-    return DesiredMutationDescription({max_version, alter_version, mutation_postpone_time});
+    return std::make_pair(max_version, alter_version);
 }
 
 

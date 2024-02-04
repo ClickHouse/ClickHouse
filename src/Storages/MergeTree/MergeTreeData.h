@@ -1413,10 +1413,6 @@ protected:
         mutable std::mutex parts_info_lock;
 
     public:
-        explicit PartMutationBackoffPolicy(ContextPtr global_context_)
-            : WithContext(global_context_)
-        {
-        }
 
         void removeFromFailedByVersion(UInt64 mutation_version)
         {

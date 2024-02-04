@@ -518,8 +518,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings(),
-                                     query_context->getSettings().max_postpone_time_for_failed_mutations);
+        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
         version = increment.get();
         entry.commit(version);
         String mutation_id = entry.file_name;
@@ -574,7 +573,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
 
                 if (static_cast<UInt64>(result_part->part_info.mutation) == it->first)
                 {
-                    mutation_backoff_policy.addPartMutationFailure(failed_part->name, it->first, entry.max_postpone_time);
+                    mutation_backoff_policy.addPartMutationFailure(failed_part->name, it->first, getSettings()->max_postpone_time_for_failed_mutations);
                 }
             }
         }

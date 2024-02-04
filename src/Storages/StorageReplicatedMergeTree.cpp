@@ -3811,17 +3811,16 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 if (part->getBytesOnDisk() > max_source_part_size_for_mutation)
                     continue;
 
-                std::optional<ReplicatedMergeTreeMergePredicate::DesiredMutationDescription> desired_mutation_description = merge_pred->getDesiredMutationDescription(part);
-                if (!desired_mutation_description)
+                std::optional<std::pair<Int64, int>> desired_mutation_version = merge_pred->getDesiredMutationVersion(part);
+                if (!desired_mutation_version)
                     continue;
 
                 create_result = createLogEntryToMutatePart(
                     *part,
                     future_merged_part->uuid,
-                    desired_mutation_description->mutation_version,
-                    desired_mutation_description->alter_version,
-                    merge_pred->getVersion(),
-                    desired_mutation_description->max_postpone_time);
+                    desired_mutation_version->first,
+                    desired_mutation_version->second,
+                    merge_pred->getVersion());
 
                 if (create_result == CreateMergeEntryResult::Ok)
                     return AttemptStatus::EntryCreated;
@@ -3990,7 +3989,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
 
 
 StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::createLogEntryToMutatePart(
-    const IMergeTreeDataPart & part, const UUID & new_part_uuid, Int64 mutation_version, int32_t alter_version, int32_t log_version, size_t max_postpone_time)
+    const IMergeTreeDataPart & part, const UUID & new_part_uuid, Int64 mutation_version, int32_t alter_version, int32_t log_version)
 {
     auto zookeeper = getZooKeeper();
 
@@ -4020,7 +4019,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.new_part_uuid = new_part_uuid;
     entry.create_time = time(nullptr);
     entry.alter_version = alter_version;
-    entry.max_postpone_time = max_postpone_time;
+
     Coordination::Requests ops;
     Coordination::Responses responses;
 
@@ -7373,7 +7372,7 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
     ReplicatedMergeTreeMutationEntry mutation_entry;
     mutation_entry.source_replica = replica_name;
     mutation_entry.commands = commands;
-    mutation_entry.max_postpone_time = query_context->getSettings().max_postpone_time_for_failed_mutations;
+
     const String mutations_path = fs::path(zookeeper_path) / "mutations";
     const auto zookeeper = getZooKeeper();
 
@@ -7481,8 +7480,6 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
     auto mutation_entry = queue.removeMutation(zookeeper, mutation_id);
     if (!mutation_entry)
         return CancellationCode::NotFound;
-
-    mutation_backoff_policy.removeFromFailedByVersion(static_cast<UInt64>(mutation_entry->alter_version));
 
     /// After this point no new part mutations will start and part mutations that still exist
     /// in the queue will be skipped.

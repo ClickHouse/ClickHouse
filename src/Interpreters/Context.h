@@ -1010,9 +1010,6 @@ public:
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
     BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
 
-    // Setting for backoff policy for failed mutation tasks.
-    size_t getMaxPostponeTimeForFailedMutations() const;
-
     BackgroundSchedulePool & getBufferFlushSchedulePool() const;
     BackgroundSchedulePool & getSchedulePool() const;
     BackgroundSchedulePool & getMessageBrokerSchedulePool() const;

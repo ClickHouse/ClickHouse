@@ -216,9 +216,6 @@ inline void assertString(const String & s, ReadBuffer & buf)
 }
 
 bool checkString(const char * s, ReadBuffer & buf);
-
-bool checkStringWithPositionSaving(const char * s, ReadBuffer & buf);
-
 inline bool checkString(const String & s, ReadBuffer & buf)
 {
     return checkString(s.c_str(), buf);

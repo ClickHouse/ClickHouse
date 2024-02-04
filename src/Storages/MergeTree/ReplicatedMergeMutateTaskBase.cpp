@@ -118,7 +118,7 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
                     status.latest_fail_time = time(nullptr);
                     status.latest_fail_reason = getExceptionMessage(saved_exception, false);
                     if (result_data_version == it->first)
-                        storage.mutation_backoff_policy.addPartMutationFailure(src_part, source_part_info.mutation + 1, log_entry->max_postpone_time);
+                        storage.mutation_backoff_policy.addPartMutationFailure(src_part, result_data_version, storage.getSettings()->max_postpone_time_for_failed_mutations);
                 }
             }
         }

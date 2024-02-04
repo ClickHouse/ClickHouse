@@ -143,7 +143,6 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
             if (isAlterMutation())
                 out << "\nalter_version\n" << alter_version;
-            out << "\nmax_postpone_time\n" <<  max_postpone_time;
             break;
 
         case ALTER_METADATA: /// Just make local /metadata and /columns consistent with global
@@ -319,9 +318,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
         {
             in >> "\n";
 
-            if (checkString("max_postpone_time\n", in))
-                in >> max_postpone_time;
-            else if (checkString("alter_version\n", in))
+            if (checkString("alter_version\n", in))
                 in >> alter_version;
             else if (checkString("to_uuid\n", in))
                 in >> new_part_uuid;

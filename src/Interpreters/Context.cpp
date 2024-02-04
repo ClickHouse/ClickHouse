@@ -2942,12 +2942,6 @@ BackgroundTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSetting
     return task_settings;
 }
 
-size_t Context::getMaxPostponeTimeForFailedMutations() const
-{
-    const auto & config = getConfigRef();
-    return config.getUInt("max_postpone_time_for_failed_mutations", 0ull);
-}
-
 BackgroundSchedulePool & Context::getSchedulePool() const
 {
     callOnce(shared->schedule_pool_initialized, [&] {
