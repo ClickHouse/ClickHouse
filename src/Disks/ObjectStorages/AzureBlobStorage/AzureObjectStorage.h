@@ -52,7 +52,6 @@ struct AzureObjectStorageSettings
     size_t max_single_part_copy_size = 256 * 1024 * 1024;
     bool use_native_copy = false;
     size_t max_unexpected_write_error_retries = 4;
->>>>>>> master
 };
 
 using AzureClient = Azure::Storage::Blobs::BlobContainerClient;

@@ -33,7 +33,7 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
     const ContextPtr & context_)
-    : BackupReaderDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupReaderAzureBlobStorage"))
+    : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderAzureBlobStorage"))
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, configuration_.container, false, false}
     , configuration(configuration_)
 {
@@ -96,8 +96,6 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderAzureBlobStorage::readFile(const
 void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                                     DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
-    LOG_INFO(&Poco::Logger::get("BackupReaderAzureBlobStorage"), "Enter copyFileToDisk");
-
     auto destination_data_source_description = destination_disk->getDataSourceDescription();
     if ((destination_data_source_description.type == DataSourceType::ObjectStorage)
         && (destination_data_source_description.object_storage_type == ObjectStorageType::Azure)
@@ -143,7 +141,7 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
     const ContextPtr & context_)
-    : BackupWriterDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupWriterAzureBlobStorage"))
+    : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterAzureBlobStorage"))
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, configuration_.container, false, false}
     , configuration(configuration_)
 {
@@ -225,14 +223,11 @@ bool BackupWriterAzureBlobStorage::fileExists(const String & file_name)
     {
         key = file_name;
     }
-    LOG_INFO(&Poco::Logger::get("BackupWriterAzureBlobStorage"), "Result fileExists   {} ", object_storage->exists(StoredObject(key)));
-
     return object_storage->exists(StoredObject(key));
 }
 
 UInt64 BackupWriterAzureBlobStorage::getFileSize(const String & file_name)
 {
-    LOG_INFO(&Poco::Logger::get("BackupWriterAzureBlobStorage"), "Enter getFileSize");
     String key;
     if (startsWith(file_name, "."))
     {
@@ -281,6 +276,7 @@ std::unique_ptr<WriteBuffer> BackupWriterAzureBlobStorage::writeFile(const Strin
         client,
         key,
         settings.get()->max_single_part_upload_size,
+        settings.get()->max_unexpected_write_error_retries,
         DBMS_DEFAULT_BUFFER_SIZE,
         write_settings);
 }

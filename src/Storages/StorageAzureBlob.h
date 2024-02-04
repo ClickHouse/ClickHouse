@@ -72,7 +72,6 @@ public:
     static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration, bool is_read_only);
 
     static AzureObjectStorage::SettingsPtr createSettings(ContextPtr local_context);
-    static std::shared_ptr<AzureObjectStorageSettings> createSettingsAsSharedPtr(ContextPtr local_context);
 
     static void processNamedCollectionResult(StorageAzureBlob::Configuration & configuration, const NamedCollection & collection);
 

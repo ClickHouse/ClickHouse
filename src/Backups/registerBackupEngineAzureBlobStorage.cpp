@@ -49,40 +49,65 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
         const String & id_arg = params.backup_info.id_arg;
         const auto & args = params.backup_info.args;
 
-        LOG_INFO(&Poco::Logger::get("registerBackupEngineAzureBlobStorage"), "Begin id_arg={} args.size={}", id_arg, args.size());
-
         StorageAzureBlob::Configuration configuration;
 
-        if (args.size() == 3)
+        if (!id_arg.empty())
         {
-            configuration.connection_url = args[0].safeGet<String>();
-            configuration.is_connection_string = true;
+            const auto & config = params.context->getConfigRef();
+            auto config_prefix = "named_collections." + id_arg;
 
-            configuration.container =  args[1].safeGet<String>();
-            configuration.blob_path = args[2].safeGet<String>();
+            if (!config.has(config_prefix))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", id_arg);
 
-            LOG_TRACE(&Poco::Logger::get("registerBackupEngineAzureBlobStorage"), "configuration.connection_url = {}"
-                                                                                 "configuration.container = {}"
-                                                                                 "configuration.blob_path = {}",
-                                                                                 configuration.connection_url, configuration.container, configuration.blob_path);
-        }
-        else if (args.size() == 5)
-        {
-            configuration.connection_url = args[0].safeGet<String>();
-            configuration.is_connection_string = false;
+            if (config.has(config_prefix + ".connection_string"))
+            {
+                configuration.connection_url = config.getString(config_prefix + ".connection_string");
+                configuration.is_connection_string = true;
+                configuration.container = config.getString(config_prefix + ".container");
+            }
+            else
+            {
+                configuration.connection_url = config.getString(config_prefix + ".storage_account_url");
+                configuration.is_connection_string = false;
+                configuration.container =  config.getString(config_prefix + ".container");
+                configuration.account_name = config.getString(config_prefix + ".account_name");
+                configuration.account_key =  config.getString(config_prefix + ".account_key");
+            }
 
-            configuration.container =  args[1].safeGet<String>();
-            configuration.blob_path = args[2].safeGet<String>();
-            configuration.account_name = args[3].safeGet<String>();
-            configuration.account_key = args[4].safeGet<String>();
+            if (args.size() > 1)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup AzureBlobStorage requires 1 or 2 arguments: named_collection, [filename]");
+
+            if (args.size() == 1)
+                configuration.blob_path = args[0].safeGet<String>();
 
         }
         else
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                                "Backup AzureBlobStorage requires 3 or 5 arguments: connection string>/<url, container, path, [account name], [account key]");
-        }
+            if (args.size() == 3)
+            {
+                configuration.connection_url = args[0].safeGet<String>();
+                configuration.is_connection_string = true;
 
+                configuration.container =  args[1].safeGet<String>();
+                configuration.blob_path = args[2].safeGet<String>();
+            }
+            else if (args.size() == 5)
+            {
+                configuration.connection_url = args[0].safeGet<String>();
+                configuration.is_connection_string = false;
+
+                configuration.container =  args[1].safeGet<String>();
+                configuration.blob_path = args[2].safeGet<String>();
+                configuration.account_name = args[3].safeGet<String>();
+                configuration.account_key = args[4].safeGet<String>();
+
+            }
+            else
+            {
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                    "Backup AzureBlobStorage requires 3 or 5 arguments: connection string>/<url, container, path, [account name], [account key]");
+            }
+        }
 
         BackupImpl::ArchiveParams archive_params;
         if (hasRegisteredArchiveFileExtension(configuration.blob_path))
@@ -115,7 +140,7 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 params.base_backup_info,
                 reader,
                 params.context,
-                /*params.use_same_s3_credentials_for_base_backup*/ false);
+                /* use_same_s3_credentials_for_base_backup*/ false);
         }
         else
         {
@@ -134,7 +159,7 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 params.backup_coordination,
                 params.backup_uuid,
                 params.deduplicate_files,
-                /*params.use_same_s3_credentials_for_base_backup*/ false);
+                /* use_same_s3_credentials_for_base_backup */ false);
         }
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "AzureBlobStorage support is disabled");

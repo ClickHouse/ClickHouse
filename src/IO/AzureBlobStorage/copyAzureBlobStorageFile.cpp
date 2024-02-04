@@ -80,7 +80,8 @@ namespace
 
         struct UploadPartTask
         {
-            std::unique_ptr<ReadBuffer> read_buffer = nullptr;
+            size_t part_offset;
+            size_t part_size;
             std::vector<std::string> block_ids;
             bool is_finished = false;
             std::exception_ptr exception;
@@ -182,7 +183,8 @@ namespace
 
                 try
                 {
-                    task->read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), part_offset, part_size);
+                    task->part_offset = part_offset;
+                    task->part_size = part_size;
 
                     schedule([this, task, task_finish_notify]()
                     {
@@ -206,7 +208,8 @@ namespace
             else
             {
                 UploadPartTask task;
-                task.read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), part_offset, part_size);
+                task.part_offset = part_offset;
+                task.part_size = part_size;
                 processUploadPartRequest(task);
                 block_ids.insert(block_ids.end(),task.block_ids.begin(), task.block_ids.end());
             }
@@ -219,17 +222,17 @@ namespace
                 ProfileEvents::increment(ProfileEvents::DiskAzureUploadPart);
 
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
-
-            while (!task.read_buffer->eof())
+            auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), task.part_offset, task.part_size);
+            while (!read_buffer->eof())
             {
-                  auto size = task.read_buffer->available();
+                  auto size = read_buffer->available();
                   if (size > 0)
                   {
                       auto block_id = getRandomASCIIString(64);
-                      Azure::Core::IO::MemoryBodyStream memory(reinterpret_cast<const uint8_t *>(task.read_buffer->position()), size);
+                      Azure::Core::IO::MemoryBodyStream memory(reinterpret_cast<const uint8_t *>(read_buffer->position()), size);
                       block_blob_client.StageBlock(block_id, memory);
                       task.block_ids.emplace_back(block_id);
-                      task.read_buffer->ignore(size);
+                      read_buffer->ignore(size);
                       LOG_TRACE(log, "Writing part. Container: {}, Blob: {}, block_id: {}", dest_container_for_logging, dest_blob, block_id);
                   }
             }

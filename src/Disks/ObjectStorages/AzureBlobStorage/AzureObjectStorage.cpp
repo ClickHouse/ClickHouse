@@ -97,6 +97,7 @@ AzureObjectStorage::AzureObjectStorage(
     : name(name_)
     , client(std::move(client_))
     , settings(std::move(settings_))
+    , container(container_)
     , log(getLogger("AzureObjectStorage"))
 {
 }

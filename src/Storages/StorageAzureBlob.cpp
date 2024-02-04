@@ -253,17 +253,6 @@ AzureObjectStorage::SettingsPtr StorageAzureBlob::createSettings(ContextPtr loca
     return settings_ptr;
 }
 
-std::shared_ptr<AzureObjectStorageSettings> StorageAzureBlob::createSettingsAsSharedPtr(ContextPtr local_context)
-{
-    const auto & context_settings = local_context->getSettingsRef();
-    auto settings_ptr = std::make_shared<AzureObjectStorageSettings>();
-    settings_ptr->max_single_part_upload_size = context_settings.azure_max_single_part_upload_size;
-    settings_ptr->max_single_read_retries = context_settings.azure_max_single_read_retries;
-    settings_ptr->list_object_keys_size = static_cast<int32_t>(context_settings.azure_list_object_keys_size);
-
-    return settings_ptr;
-}
-
 void registerStorageAzureBlob(StorageFactory & factory)
 {
     factory.registerStorage("AzureBlobStorage", [](const StorageFactory::Arguments & args)

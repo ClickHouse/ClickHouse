@@ -542,7 +542,6 @@ void BackupImpl::checkBackupDoesntExist() const
     if (!is_internal_backup)
     {
         assert(!lock_file_name.empty());
-        LOG_INFO(&Poco::Logger::get("BackupImpl"), "checkBackupDoesntExist 2");
         if (writer->fileExists(lock_file_name))
             throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} is being written already", backup_name_for_logging);
     }
