@@ -82,7 +82,7 @@ size_t tryReduceSortingKeysSize(QueryPlan::Node * node, QueryPlan::Nodes & nodes
 
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 11> optimizations = {{
+    static const std::array<Optimization, 10> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
@@ -92,8 +92,7 @@ inline const auto & getOptimizations()
         {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::reuse_storage_ordering_for_window_functions},
         {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::lift_up_union},
         {tryAggregatePartitionsIndependently, "aggregatePartitionsIndependently", &QueryPlanOptimizationSettings::aggregate_partitions_independently},
-        {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct},
-        {tryReduceAggregationKeysSize, "reduceAggregationKeysSize", &QueryPlanOptimizationSettings::aggregation_with_data_hints}
+        {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct}
     }};
 
     return optimizations;
