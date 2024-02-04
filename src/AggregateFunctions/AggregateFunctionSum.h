@@ -146,7 +146,7 @@ struct AggregateFunctionSumData
         size_t count = end - start;
         const auto * end_ptr = ptr + count;
 
-        if constexpr ((is_integer<T> || is_decimal<T>)&&!is_over_big_int<T>)
+        if constexpr ((is_integer<T> || is_decimal<T>) && !is_over_big_int<T>)
         {
             /// For integers we can vectorize the operation if we replace the null check using a multiplication (by 0 for null, 1 for not null)
             /// https://quick-bench.com/q/MLTnfTvwC2qZFVeWHfOBR3U7a8I
