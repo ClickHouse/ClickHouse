@@ -43,7 +43,6 @@ static ColumnPtr castColumn(CastType cast_type, const ColumnWithTypeAndName & ar
 
 ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)
 {
-    std::cout << "cast from " << arg.dumpStructure() << " to " << type->getName() << std::endl;
     return castColumn(CastType::nonAccurate, arg, type, cache);
 }
 

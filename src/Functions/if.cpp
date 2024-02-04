@@ -727,7 +727,6 @@ private:
                 conditional(ConstSource<GenericArraySource>(*col_arr_then_const), ConstSource<GenericArraySource>(*col_arr_else_const), GenericArraySink(col_res->getData(), col_res->getOffsets(), rows), cond_data);
             else
                 return nullptr;
-
             return res;
         }
 
@@ -826,8 +825,8 @@ private:
             const DataTypeMap & type = static_cast<const DataTypeMap &>(*arg.type);
             const auto & key_type = type.getKeyType();
             const auto & value_type = type.getValueType();
-            key_columns[i + 1] = {key_cols[i], key_type, {}};
-            value_columns[i + 1] = {value_cols[i], value_type, {}};
+            key_columns[i + 1] = {key_cols[i], std::make_shared<DataTypeArray>(key_type), {}};
+            value_columns[i + 1] = {value_cols[i], std::make_shared<DataTypeArray>(value_type), {}};
         }
 
         /// Calculate function corresponding keys and values in map
