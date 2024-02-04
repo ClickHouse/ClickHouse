@@ -41,8 +41,9 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     , skip_unavailable_shards(skip_unavailable_shards_)
 {
     shuffled_pools = pool->getShuffledPools(settings_, priority_func);
-    for (auto shuffled_pool : shuffled_pools)
-        replicas.emplace_back(std::make_unique<ConnectionEstablisherAsync>(shuffled_pool.pool, &timeouts, settings_, log, table_to_check.get()));
+    for (const auto & shuffled_pool : shuffled_pools)
+        replicas.emplace_back(
+            std::make_unique<ConnectionEstablisherAsync>(shuffled_pool.pool, &timeouts, settings_, log, table_to_check.get()));
 }
 
 HedgedConnectionsFactory::~HedgedConnectionsFactory()

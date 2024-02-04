@@ -22,12 +22,12 @@ namespace ErrorCodes
 }
 
 ConnectionEstablisher::ConnectionEstablisher(
-    IConnectionPool * pool_,
+    ConnectionPoolPtr pool_,
     const ConnectionTimeouts * timeouts_,
     const Settings & settings_,
     LoggerPtr log_,
     const QualifiedTableName * table_to_check_)
-    : pool(pool_), timeouts(timeouts_), settings(settings_), log(log_), table_to_check(table_to_check_), is_finished(false)
+    : pool(std::move(pool_)), timeouts(timeouts_), settings(settings_), log(log_), table_to_check(table_to_check_), is_finished(false)
 {
 }
 
@@ -111,12 +111,13 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
 #if defined(OS_LINUX)
 
 ConnectionEstablisherAsync::ConnectionEstablisherAsync(
-    IConnectionPool * pool_,
+    ConnectionPoolPtr pool_,
     const ConnectionTimeouts * timeouts_,
     const Settings & settings_,
     LoggerPtr log_,
     const QualifiedTableName * table_to_check_)
-    : AsyncTaskExecutor(std::make_unique<Task>(*this)), connection_establisher(pool_, timeouts_, settings_, log_, table_to_check_)
+    : AsyncTaskExecutor(std::make_unique<Task>(*this))
+    , connection_establisher(std::move(pool_), timeouts_, settings_, log_, table_to_check_)
 {
     epoll.add(timeout_descriptor.getDescriptor());
 }
