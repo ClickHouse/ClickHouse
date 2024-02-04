@@ -47,7 +47,6 @@ def generate_cluster_def(port):
     return path
 
 
-
 @pytest.fixture(scope="module")
 def cluster():
     try:
@@ -156,6 +155,7 @@ def delete_all_files(cluster):
 
     yield
 
+
 def test_backup_restore(cluster):
     node = cluster.instances["node"]
     port = cluster.env_variables["AZURITE_PORT"]
@@ -184,6 +184,7 @@ def test_backup_restore(cluster):
         == "1\ta\n"
     )
 
+
 def test_backup_restore_diff_container(cluster):
     node = cluster.instances["node"]
     port = cluster.env_variables["AZURITE_PORT"]
@@ -204,8 +205,10 @@ def test_backup_restore_diff_container(cluster):
         f"RESTORE TABLE test_simple_write_connection_string_cont1 AS test_simple_write_connection_string_restored_cont1 FROM {backup_destination};",
     )
     assert (
-            azure_query(node, f"SELECT * from test_simple_write_connection_string_restored_cont1")
-            == "1\ta\n"
+        azure_query(
+            node, f"SELECT * from test_simple_write_connection_string_restored_cont1"
+        )
+        == "1\ta\n"
     )
 
 
@@ -216,13 +219,13 @@ def test_backup_restore_with_named_collection_azure_conf1(cluster):
         node,
         f"CREATE TABLE test_write_connection_string (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_write.csv', 'CSV')",
     )
-    azure_query(
-        node, f"INSERT INTO test_write_connection_string VALUES (1, 'a')"
-    )
+    azure_query(node, f"INSERT INTO test_write_connection_string VALUES (1, 'a')")
     print(get_azure_file_content("test_simple_write.csv", port))
     assert get_azure_file_content("test_simple_write.csv", port) == '1,"a"\n'
 
-    backup_destination = f"AzureBlobStorage(azure_conf1, 'test_simple_write_nc_backup.csv')"
+    backup_destination = (
+        f"AzureBlobStorage(azure_conf1, 'test_simple_write_nc_backup.csv')"
+    )
     azure_query(
         node,
         f"BACKUP TABLE test_write_connection_string TO {backup_destination}",
@@ -233,9 +236,10 @@ def test_backup_restore_with_named_collection_azure_conf1(cluster):
         f"RESTORE TABLE test_write_connection_string AS test_write_connection_string_restored FROM {backup_destination};",
     )
     assert (
-            azure_query(node, f"SELECT * from test_write_connection_string_restored")
-            == "1\ta\n"
+        azure_query(node, f"SELECT * from test_write_connection_string_restored")
+        == "1\ta\n"
     )
+
 
 def test_backup_restore_with_named_collection_azure_conf2(cluster):
     node = cluster.instances["node"]
@@ -244,13 +248,13 @@ def test_backup_restore_with_named_collection_azure_conf2(cluster):
         node,
         f"CREATE TABLE test_write_connection_string_2 (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_write_2.csv', 'CSV')",
     )
-    azure_query(
-        node, f"INSERT INTO test_write_connection_string_2 VALUES (1, 'a')"
-    )
+    azure_query(node, f"INSERT INTO test_write_connection_string_2 VALUES (1, 'a')")
     print(get_azure_file_content("test_simple_write_2.csv", port))
     assert get_azure_file_content("test_simple_write_2.csv", port) == '1,"a"\n'
 
-    backup_destination = f"AzureBlobStorage(azure_conf2, 'test_simple_write_nc_backup_2.csv')"
+    backup_destination = (
+        f"AzureBlobStorage(azure_conf2, 'test_simple_write_nc_backup_2.csv')"
+    )
     azure_query(
         node,
         f"BACKUP TABLE test_write_connection_string_2 TO {backup_destination}",
@@ -261,6 +265,6 @@ def test_backup_restore_with_named_collection_azure_conf2(cluster):
         f"RESTORE TABLE test_write_connection_string_2 AS test_write_connection_string_restored_2 FROM {backup_destination};",
     )
     assert (
-            azure_query(node, f"SELECT * from test_write_connection_string_restored_2")
-            == "1\ta\n"
+        azure_query(node, f"SELECT * from test_write_connection_string_restored_2")
+        == "1\ta\n"
     )
