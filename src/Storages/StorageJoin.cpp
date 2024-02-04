@@ -48,6 +48,7 @@ StorageJoin::StorageJoin(
     const StorageID & table_id_,
     const Names & key_names_,
     bool use_nulls_,
+    bool enable_restore_,
     SizeLimits limits_,
     JoinKind kind_,
     JoinStrictness strictness_,
@@ -59,6 +60,7 @@ StorageJoin::StorageJoin(
     : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
     , key_names(key_names_)
     , use_nulls(use_nulls_)
+    , enable_restore(enable_restore_)
     , limits(limits_)
     , kind(kind_)
     , strictness(strictness_)
@@ -71,7 +73,8 @@ StorageJoin::StorageJoin(
 
     table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
     join = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
-    restore();
+    if(enable_restore)
+        restore();
 }
 
 RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const
@@ -302,6 +305,11 @@ void StorageJoin::convertRightBlock(Block & block) const
         JoinCommon::convertColumnToNullable(col);
 }
 
+void StorageJoin::externalRestore()
+{
+    restore();
+}
+
 void registerStorageJoin(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
@@ -318,6 +326,8 @@ void registerStorageJoin(StorageFactory & factory)
         auto join_overflow_mode = settings.join_overflow_mode;
         auto join_any_take_last_row = settings.join_any_take_last_row;
         auto old_any_join = settings.any_join_distinct_right_table_keys;
+        auto enable_join_restore = settings.enable_join_restore;
+
         bool persistent = true;
         String disk_name = "default";
 
@@ -337,6 +347,8 @@ void registerStorageJoin(StorageFactory & factory)
                     join_any_take_last_row = setting.value;
                 else if (setting.name == "any_join_distinct_right_table_keys")
                     old_any_join = setting.value;
+                else if (setting.name == "enable_join_restore")
+                    enable_join_restore = setting.value;
                 else if (setting.name == "disk")
                     disk_name = setting.value.get<String>();
                 else if (setting.name == "persistent")
@@ -418,6 +430,7 @@ void registerStorageJoin(StorageFactory & factory)
             args.table_id,
             key_names,
             join_use_nulls,
+            enable_join_restore,
             SizeLimits{max_rows_in_join, max_bytes_in_join, join_overflow_mode},
             kind,
             strictness,

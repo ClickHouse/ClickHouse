@@ -55,6 +55,7 @@
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
 #include <Storages/StorageAzureBlob.h>
+#include <Storages/StorageJoin.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/HDFS/StorageHDFS.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
@@ -517,6 +518,12 @@ BlockIO InterpreterSystemQuery::execute()
                 [&] { system_context->getEmbeddedDictionaries().reload(); }
             });
             ExternalDictionariesLoader::resetAll();
+            break;
+        }
+        case Type::RELOAD_JOIN:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_JOIN);
+            restoreJoin(query);
             break;
         }
         case Type::RELOAD_MODEL:
@@ -1148,6 +1155,14 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
 }
 
+void InterpreterSystemQuery::restoreJoin(ASTSystemQuery &)
+{
+    if (auto * storage_join = dynamic_cast<StorageJoin *>(DatabaseCatalog::instance().getTable(table_id, getContext()).get()))
+        storage_join->externalRestore();
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not JOIN", table_id.getNameForLogs());
+}
+
 [[noreturn]] void InterpreterSystemQuery::restartDisk(String &)
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTART_DISK);
@@ -1209,6 +1224,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_DICTIONARY);
+            break;
+        }
+        case Type::RELOAD_JOIN:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RELOAD_JOIN);
             break;
         }
         case Type::RELOAD_MODEL:

@@ -60,6 +60,7 @@ public:
         REPLICA_UNREADY,
         RELOAD_DICTIONARY,
         RELOAD_DICTIONARIES,
+        RELOAD_JOIN,
         RELOAD_MODEL,
         RELOAD_MODELS,
         RELOAD_FUNCTION,

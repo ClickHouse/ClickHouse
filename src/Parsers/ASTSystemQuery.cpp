@@ -177,6 +177,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             || type == Type::WAIT_LOADING_PARTS
             || type == Type::FLUSH_DISTRIBUTED
             || type == Type::RELOAD_DICTIONARY
+            || type == Type::RELOAD_JOIN
             || type == Type::RELOAD_MODEL
             || type == Type::RELOAD_FUNCTION
             || type == Type::RESTART_DISK
