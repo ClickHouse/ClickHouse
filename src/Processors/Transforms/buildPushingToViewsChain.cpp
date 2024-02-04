@@ -303,8 +303,8 @@ Chain buildPushingToViewsChain(
         auto & target_name = runtime_stats->target_name;
         auto * view_counter_ms = &runtime_stats->elapsed_ms;
 
-        auto new_insert_context = Context::createCopy(insert_context);
-        auto insert_settings = new_insert_context->getSettings();
+        auto insert_settings = insert_context->getSettings();
+        ContextMutablePtr new_insert_context = insert_context;
 
         if (!disable_deduplication_for_children &&
             insert_settings.update_insert_deduplication_token_in_dependent_materialized_views &&
@@ -329,6 +329,7 @@ Chain buildPushingToViewsChain(
             else
                 insert_deduplication_token += "_" + view_id.getFullNameNotQuoted();
 
+            new_insert_context = Context::createCopy(insert_context);
             new_insert_context->setSetting("insert_deduplication_token", insert_deduplication_token);
         }
 
