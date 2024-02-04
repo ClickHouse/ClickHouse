@@ -203,7 +203,7 @@ void optimizeTreeThirdPass(const QueryPlanOptimizationSettings & optimization_se
         if (optimization_settings.sorting_with_data_hints)
             tryReduceSortingKeysSize(frame.node, nodes);
 
-        if (optimization_settings.aggregation_with_data_hints)
+        if (optimization_settings.aggregation_with_data_hints && !optimization_settings.aggregation_in_order)
             tryReduceAggregationKeysSize(frame.node, nodes);
 
         if (auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>(frame.node->step.get()))
