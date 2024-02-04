@@ -27,11 +27,5 @@
     <query>select key_int64_1,key_int64_2,key_int64_3,key_int64_4,key_int64_5, min(m1) from t_nullable group by key_int64_1,key_int64_2,key_int64_3,key_int64_4,key_int64_5</query>
     <query>select toFloat64(key_int64_1),toFloat64(key_int64_2),toFloat64(key_int64_3),toFloat64(key_int64_4),toFloat64(key_int64_5), min(m1) from t_nullable group by toFloat64(key_int64_1),toFloat64(key_int64_2),toFloat64(key_int64_3),toFloat64(key_int64_4),toFloat64(key_int64_5) limit 10</query>
     <query>select toDecimal64(key_int64_1, 3),toDecimal64(key_int64_2, 3),toDecimal64(key_int64_3, 3),toDecimal64(key_int64_4, 3),toDecimal64(key_int64_5, 3), min(m1) from t_nullable group by toDecimal64(key_int64_1, 3),toDecimal64(key_int64_2, 3),toDecimal64(key_int64_3, 3),toDecimal64(key_int64_4, 3),toDecimal64(key_int64_5, 3) limit 10</query>
-    <query>select key_string1,key_string2,key_string3, min(m1) from t_nullable group by key_string1,key_string2,key_string3 settings enable_adaptive_aggregation_method=0</query>
-    <query>select key_string3,key_int64_1,key_int64_2, min(m1) from t_nullable group by key_string3,key_int64_1,key_int64_2 settings enable_adaptive_aggregation_method=0</query>
-    <query>select key_int64_1,key_int64_2,key_int64_3,key_int64_4,key_int64_5, min(m1) from t_nullable group by key_int64_1,key_int64_2,key_int64_3,key_int64_4,key_int64_5</query>
-    <query>select toFloat64(key_int64_1),toFloat64(key_int64_2),toFloat64(key_int64_3),toFloat64(key_int64_4),toFloat64(key_int64_5), min(m1) from t_nullable group by toFloat64(key_int64_1),toFloat64(key_int64_2),toFloat64(key_int64_3),toFloat64(key_int64_4),toFloat64(key_int64_5) limit 10 settings enable_adaptive_aggregation_method=0</query>
-    <query>select toDecimal64(key_int64_1, 3),toDecimal64(key_int64_2, 3),toDecimal64(key_int64_3, 3),toDecimal64(key_int64_4, 3),toDecimal64(key_int64_5, 3), min(m1) from t_nullable group by toDecimal64(key_int64_1, 3),toDecimal64(key_int64_2, 3),toDecimal64(key_int64_3, 3),toDecimal64(key_int64_4, 3),toDecimal64(key_int64_5, 3) limit 10 settings enable_adaptive_aggregation_method=0</query>
-
     <drop_query>drop table if exists t_nullable</drop_query>
 </test>
