@@ -1,7 +1,7 @@
 <clickhouse>
     <profiles>
         <default>
-            <enable_join_restore>0</enable_join_restore>
+            <enable_join_restore>true</enable_join_restore>
         </default>
     </profiles>
 </clickhouse>
