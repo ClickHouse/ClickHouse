@@ -750,7 +750,12 @@ class IColumn;
     M(Seconds, wait_for_async_insert_timeout, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, "Timeout for waiting for processing asynchronous insertion", 0) \
     M(UInt64, async_insert_max_data_size, 1000000, "Maximum size in bytes of unparsed data collected per query before being inserted", 0) \
     M(UInt64, async_insert_max_query_number, 450, "Maximum number of insert queries before being inserted", 0) \
-    M(Milliseconds, async_insert_busy_timeout_ms, 200, "Maximum time to wait before dumping collected data per query since the first data appeared", 0) \
+    M(Milliseconds, async_insert_poll_timeout_ms, 10, "Timeout for polling data from asynchronous insert queue", 0) \
+    M(Bool, async_insert_use_adaptive_busy_timeout, true, "If it is set to true, use adaptive busy timeout for asynchronous inserts", 0) \
+    M(Milliseconds, async_insert_busy_timeout_min_ms, 50, "If auto-adjusting is enabled through async_insert_use_adaptive_busy_timeout, minimum time to wait before dumping collected data per query since the first data appeared. It also serves as the initial value for the adaptive algorithm", 0) \
+    M(Milliseconds, async_insert_busy_timeout_max_ms, 200, "Maximum time to wait before dumping collected data per query since the first data appeared.", 0) ALIAS(async_insert_busy_timeout_ms) \
+    M(Double, async_insert_busy_timeout_increase_rate, 0.2, "The exponential growth rate at which the adaptive asynchronous insert timeout increases", 0) \
+    M(Double, async_insert_busy_timeout_decrease_rate, 0.2, "The exponential growth rate at which the adaptive asynchronous insert timeout decreases", 0) \
     \
     M(UInt64, remote_fs_read_max_backoff_ms, 10000, "Max wait time when trying to read data for remote disk", 0) \
     M(UInt64, remote_fs_read_backoff_max_tries, 5, "Max attempts to read with backoff", 0) \
