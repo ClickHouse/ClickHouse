@@ -22,6 +22,8 @@ class Labels(metaclass=WithIter):
     CI_SET_ARM = "ci_set_arm"
     CI_SET_INTEGRATION = "ci_set_integration"
 
+    libFuzzer = "libFuzzer"
+
 
 class Build(metaclass=WithIter):
     PACKAGE_RELEASE = "package_release"
@@ -193,6 +195,8 @@ class JobConfig:
     required_on_release_branch: bool = False
     # job is for pr workflow only
     pr_only: bool = False
+    # job is for release/master branches only
+    release_only: bool = False
 
 
 @dataclass
@@ -790,6 +794,7 @@ CI_CONFIG = CiConfig(
             name=Build.FUZZERS,
             compiler="clang-17",
             package_type="fuzzers",
+            job_config=JobConfig(run_by_label=Labels.libFuzzer),
         ),
     },
     builds_report_config={
@@ -824,7 +829,7 @@ CI_CONFIG = CiConfig(
     },
     other_jobs_configs={
         JobNames.MARK_RELEASE_READY: TestConfig(
-            "", job_config=JobConfig(required_on_release_branch=True)
+            "", job_config=JobConfig(release_only=True)
         ),
         JobNames.DOCKER_SERVER: TestConfig(
             "",
@@ -909,13 +914,6 @@ CI_CONFIG = CiConfig(
         JobNames.STATEFUL_TEST_AARCH64: TestConfig(
             Build.PACKAGE_AARCH64, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
-        # FIXME: delete?
-        # "Stateful tests (release, DatabaseOrdinary)": TestConfig(
-        #     Build.PACKAGE_RELEASE, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
-        # ),
-        # "Stateful tests (release, DatabaseReplicated)": TestConfig(
-        #     Build.PACKAGE_RELEASE, job_config=JobConfig(**stateful_test_common_params) # type: ignore
-        # ),
         # Stateful tests for parallel replicas
         JobNames.STATEFUL_TEST_PARALLEL_REPL_RELEASE: TestConfig(
             Build.PACKAGE_RELEASE, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
@@ -997,16 +995,16 @@ CI_CONFIG = CiConfig(
             Build.PACKAGE_DEBUG, job_config=JobConfig(**stress_test_common_params)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_ASAN: TestConfig(
-            Build.PACKAGE_ASAN, job_config=JobConfig(**upgrade_test_common_params)  # type: ignore
+            Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, **upgrade_test_common_params)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_TSAN: TestConfig(
-            Build.PACKAGE_TSAN, job_config=JobConfig(**upgrade_test_common_params)  # type: ignore
+            Build.PACKAGE_TSAN, job_config=JobConfig(pr_only=True, **upgrade_test_common_params)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_MSAN: TestConfig(
-            Build.PACKAGE_MSAN, job_config=JobConfig(**upgrade_test_common_params)  # type: ignore
+            Build.PACKAGE_MSAN, job_config=JobConfig(pr_only=True, **upgrade_test_common_params)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_DEBUG: TestConfig(
-            Build.PACKAGE_DEBUG, job_config=JobConfig(**upgrade_test_common_params)  # type: ignore
+            Build.PACKAGE_DEBUG, job_config=JobConfig(pr_only=True, **upgrade_test_common_params)  # type: ignore
         ),
         JobNames.INTEGRATION_TEST_ASAN: TestConfig(
             Build.PACKAGE_ASAN,
@@ -1033,7 +1031,7 @@ CI_CONFIG = CiConfig(
             job_config=JobConfig(num_batches=4, **integration_test_common_params),  # type: ignore
         ),
         JobNames.INTEGRATION_TEST_FLAKY: TestConfig(
-            Build.PACKAGE_ASAN, job_config=JobConfig(**integration_test_common_params)  # type: ignore
+            Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, **integration_test_common_params)  # type: ignore
         ),
         JobNames.COMPATIBILITY_TEST: TestConfig(
             Build.PACKAGE_RELEASE,
@@ -1080,7 +1078,7 @@ CI_CONFIG = CiConfig(
         JobNames.STATELESS_TEST_FLAKY_ASAN: TestConfig(
             # replace to non-default
             Build.PACKAGE_ASAN,
-            job_config=JobConfig(**{**statless_test_common_params, "timeout": 3600}),  # type: ignore
+            job_config=JobConfig(pr_only=True, **{**statless_test_common_params, "timeout": 3600}),  # type: ignore
         ),
         JobNames.JEPSEN_KEEPER: TestConfig(
             Build.BINARY_RELEASE,
@@ -1116,7 +1114,7 @@ CI_CONFIG = CiConfig(
         ),
         JobNames.CLCIKBENCH_TEST: TestConfig(Build.PACKAGE_RELEASE),
         JobNames.CLCIKBENCH_TEST_ARM: TestConfig(Build.PACKAGE_AARCH64),
-        JobNames.LIBFUZZER_TEST: TestConfig(Build.FUZZERS),  # type: ignore
+        JobNames.LIBFUZZER_TEST: TestConfig(Build.FUZZERS, job_config=JobConfig(run_by_label=Labels.libFuzzer)),  # type: ignore
     },
 )
 CI_CONFIG.validate()
