@@ -33,7 +33,7 @@ void IDisk::copyFile( /// NOLINT
     const std::function<void()> & cancellation_hook
     )
 {
-    LOG_DEBUG(&Poco::Logger::get("IDisk"), "Copying from {} (path: {}) {} to {} (path: {}) {}.",
+    LOG_DEBUG(getLogger("IDisk"), "Copying from {} (path: {}) {} to {} (path: {}) {}.",
               getName(), getPath(), from_file_path, to_disk.getName(), to_disk.getPath(), to_file_path);
 
     auto in = readFile(from_file_path, read_settings);
@@ -194,7 +194,7 @@ void IDisk::startup(ContextPtr context, bool skip_access_check)
     {
         if (isReadOnly())
         {
-            LOG_DEBUG(&Poco::Logger::get("IDisk"),
+            LOG_DEBUG(getLogger("IDisk"),
                 "Skip access check for disk {} (read-only disk).",
                 getName());
         }
