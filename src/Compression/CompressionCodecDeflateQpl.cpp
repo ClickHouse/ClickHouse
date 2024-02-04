@@ -222,13 +222,11 @@ Int32 HardwareCodecDeflateQpl::doDecompressDataSynchronous(const char * source, 
     }
 
     /// Busy waiting till job complete.
-    UInt32 num_checks = 0;
     do
     {
         _tpause(1, __rdtsc() + 1000);
         status = qpl_check_job(job_ptr);
-        ++num_checks;
-    } while (status == QPL_STS_BEING_PROCESSED && num_checks < MAX_CHECKS);
+    }while (status == QPL_STS_BEING_PROCESSED);
 
     if (status != QPL_STS_OK)
     {
@@ -277,7 +275,6 @@ void HardwareCodecDeflateQpl::flushAsynchronousDecompressRequests()
 {
     auto n_jobs_processing = decomp_async_job_map.size();
     std::map<UInt32, qpl_job *>::iterator it = decomp_async_job_map.begin();
-    UInt32 num_checks = 0;
 
     while (n_jobs_processing)
     {
@@ -287,7 +284,7 @@ void HardwareCodecDeflateQpl::flushAsynchronousDecompressRequests()
         job_ptr = it->second;
 
         auto status = qpl_check_job(job_ptr);
-        if ((status == QPL_STS_BEING_PROCESSED) && (num_checks < MAX_CHECKS))
+        if (status == QPL_STS_BEING_PROCESSED)
         {
             it++;
         }
@@ -313,7 +310,6 @@ void HardwareCodecDeflateQpl::flushAsynchronousDecompressRequests()
         {
             it = decomp_async_job_map.begin();
             _tpause(1, __rdtsc() + 1000);
-            ++num_checks;
         }
     }
 }

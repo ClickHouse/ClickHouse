@@ -401,7 +401,7 @@ if (ENABLE_QPL)
     dbms_target_link_libraries(PRIVATE accel-config)
 endif ()
 
-if (ENABLE_QAT)
+if (ENABLE_QATLIB)
     dbms_target_link_libraries(PRIVATE qatzstd_plugin)
 endif ()
 
