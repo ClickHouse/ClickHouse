@@ -696,7 +696,7 @@ size_t FlatDictionary::getItemsShortCircuitImpl(
 
         if (key < loaded_keys.size() && loaded_keys[key])
         {
-            default_mask[row] = 1;
+            default_mask[row] = 0;
 
             if constexpr (is_nullable)
                 set_value(keys_found, container[key], attribute.is_nullable_set->find(key) != nullptr);
@@ -706,7 +706,7 @@ size_t FlatDictionary::getItemsShortCircuitImpl(
             ++keys_found;
         }
         else
-            default_mask[row] = 0;
+            default_mask[row] = 1;
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);

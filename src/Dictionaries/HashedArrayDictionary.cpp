@@ -225,7 +225,7 @@ Columns HashedArrayDictionary<dictionary_key_type, sharded>::getColumnsOrDefault
                 else
                     key_index_to_element_index[key_index] = -1;
 
-                default_mask[key_index] = 0;
+                default_mask[key_index] = 1;
             }
             else
             {
@@ -234,7 +234,7 @@ Columns HashedArrayDictionary<dictionary_key_type, sharded>::getColumnsOrDefault
                 else
                     key_index_to_element_index[key_index] = it->getMapped();
 
-                default_mask[key_index] = 1;
+                default_mask[key_index] = 0;
 
                 ++keys_found;
             }
@@ -979,12 +979,12 @@ size_t HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuit
             else
                 set_value(key_index, element, false);
 
-            default_mask[key_index] = 1;
+            default_mask[key_index] = 0;
 
             ++keys_found;
         }
         else
-            default_mask[key_index] = 0;
+            default_mask[key_index] = 1;
 
         keys_extractor.rollbackCurrentKey();
     }

@@ -176,7 +176,7 @@ private:
         const DictionaryStorageFetchRequest & request,
         const MutableColumns & fetched_columns,
         const PaddedPODArray<KeyState> & key_index_to_state,
-        IColumn::Filter * default_mask = nullptr) const;
+        IColumn::Filter * const default_mask = nullptr) const;
 
     MutableColumns aggregateColumns(
         const PaddedPODArray<KeyType> & keys,
@@ -185,7 +185,7 @@ private:
         const PaddedPODArray<KeyState> & key_index_to_fetched_columns_from_storage_result,
         const MutableColumns & fetched_columns_during_update,
         const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index,
-        IColumn::Filter * default_mask = nullptr) const;
+        IColumn::Filter * const default_mask = nullptr) const;
 
     void update(CacheDictionaryUpdateUnitPtr<dictionary_key_type> update_unit_ptr);
 

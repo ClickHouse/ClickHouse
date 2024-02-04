@@ -1081,7 +1081,7 @@ size_t RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
 
                 if (range.has_value())
                 {
-                    default_mask[key_index] = 1;
+                    default_mask[key_index] = 0;
                     ++keys_found;
 
                     AttributeType value = attribute_container[value_index];
@@ -1101,7 +1101,7 @@ size_t RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
                 }
             }
 
-            default_mask[key_index] = 0;
+            default_mask[key_index] = 1;
 
             keys_extractor.rollbackCurrentKey();
         }

@@ -282,11 +282,11 @@ Columns DirectDictionary<dictionary_key_type>::getColumnsOrDefaultShortCircuit(
                 fetched_column_from_storage->get(it->getMapped(), value_to_insert);
                 ++keys_found;
 
-                default_mask[requested_key_index] = 1;
+                default_mask[requested_key_index] = 0;
                 result_column->insert(value_to_insert);
             }
             else
-                default_mask[requested_key_index] = 0;
+                default_mask[requested_key_index] = 1;
         }
     }
 

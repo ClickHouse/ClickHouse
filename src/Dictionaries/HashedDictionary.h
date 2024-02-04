@@ -1179,7 +1179,7 @@ size_t HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsShortCirc
         if (it != container.end())
         {
             set_value(key_index, getValueFromCell(it));
-            default_mask[key_index] = 1;
+            default_mask[key_index] = 0;
 
             ++keys_found;
         }
@@ -1187,12 +1187,12 @@ size_t HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsShortCirc
         else if (is_nullable && (*attribute.is_nullable_sets)[shard].find(key) != nullptr)
         {
             set_null(key_index);
-            default_mask[key_index] = 1;
+            default_mask[key_index] = 0;
 
             ++keys_found;
         }
         else
-            default_mask[key_index] = 0;
+            default_mask[key_index] = 1;
 
         keys_extractor.rollbackCurrentKey();
     }

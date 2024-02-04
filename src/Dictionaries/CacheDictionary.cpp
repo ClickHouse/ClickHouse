@@ -540,7 +540,7 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumnsInOrderOfKe
     const DictionaryStorageFetchRequest & request,
     const MutableColumns & fetched_columns,
     const PaddedPODArray<KeyState> & key_index_to_state,
-    IColumn::Filter * default_mask) const
+    IColumn::Filter * const default_mask) const
 {
     MutableColumns aggregated_columns = request.makeAttributesResultColumns();
 
@@ -567,10 +567,10 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumnsInOrderOfKe
             if (default_mask)
             {
                 if (state.isDefault())
-                    (*default_mask)[key_index] = 0;
+                    (*default_mask)[key_index] = 1;
                 else
                 {
-                    (*default_mask)[key_index] = 1;
+                    (*default_mask)[key_index] = 0;
                     aggregated_column->insertFrom(*fetched_column, state.getFetchedColumnIndex());
                 }
             }
@@ -590,7 +590,7 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
         const PaddedPODArray<KeyState> & key_index_to_fetched_columns_from_storage_result,
         const MutableColumns & fetched_columns_during_update,
         const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index,
-        IColumn::Filter * default_mask) const
+        IColumn::Filter * const default_mask) const
 {
     /**
     * Aggregation of columns fetched from storage and from source during update.
@@ -625,10 +625,10 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
                 if (default_mask)
                 {
                     if (key_state_from_storage.isDefault())
-                        (*default_mask)[key_index] = 0;
+                        (*default_mask)[key_index] = 1;
                     else
                     {
-                        (*default_mask)[key_index] = 1;
+                        (*default_mask)[key_index] = 0;
                         aggregated_column->insertFrom(*fetched_column_from_storage,
                             key_state_from_storage.getFetchedColumnIndex());
                     }
@@ -647,13 +647,13 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
                 aggregated_column->insertFrom(*fetched_column_during_update, find_iterator_in_fetch_during_update->getMapped());
 
                 if (default_mask)
-                    (*default_mask)[key_index] = 1;
+                    (*default_mask)[key_index] = 0;
 
                 continue;
             }
 
             if (default_mask)
-                (*default_mask)[key_index] = 0;
+                (*default_mask)[key_index] = 1;
             else
             {
                 /// Insert default value

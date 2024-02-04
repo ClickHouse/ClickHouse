@@ -626,7 +626,7 @@ private:
         ColumnPtr mask_col_res = std::move(mask_col);
 
         IColumn::Filter mask(rows, 1);
-        auto mask_info = extractInvertedMask(mask, mask_col_res);
+        auto mask_info = extractMask(mask, mask_col_res);
         ColumnWithTypeAndName column_before_cast = last_argument;
         maskedExecute(column_before_cast, mask, mask_info);
 
@@ -648,8 +648,8 @@ private:
         ColumnsWithTypeAndName if_args =
         {
             {mask_column, std::make_shared<DataTypeUInt8>(), {}},
-            {result_column, result_type, {}},
             {defaults_column, result_type, {}},
+            {result_column, result_type, {}},
         };
 
         auto rows = mask_column->size();
@@ -659,7 +659,7 @@ private:
 #ifdef ABORT_ON_LOGICAL_ERROR
     void validateShortCircuitResult(const ColumnPtr & column, const IColumn::Filter & filter) const
     {
-        size_t expected_size = countBytesInFilter(filter);
+        size_t expected_size = filter.size() - countBytesInFilter(filter);
         size_t col_size = column->size();
         if (col_size != expected_size)
             throw Exception(

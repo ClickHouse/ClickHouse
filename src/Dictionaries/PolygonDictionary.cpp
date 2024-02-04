@@ -491,10 +491,10 @@ void IPolygonDictionary::getItemsShortCircuitImpl(
             auto value = get_value(attribute_values_index);
             set_value(value);
             ++keys_found;
-            default_mask[requested_key_index] = 1;
+            default_mask[requested_key_index] = 0;
         }
         else
-            default_mask[requested_key_index] = 0;
+            default_mask[requested_key_index] = 1;
     }
 
     query_count.fetch_add(requested_key_size, std::memory_order_relaxed);

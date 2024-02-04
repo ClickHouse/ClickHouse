@@ -232,7 +232,7 @@ private:
         const String & data,
         std::unordered_set<UInt64> & visited_nodes,
         const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-        std::unordered_set<String> * defaults) const;
+        std::unordered_set<String> * const defaults) const;
 
     struct RegexTreeNode;
     using RegexTreeNodePtr = std::shared_ptr<RegexTreeNode>;

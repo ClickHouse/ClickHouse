@@ -801,11 +801,11 @@ size_t IPAddressDictionary::getItemsByTwoKeyColumnsShortCircuitImpl(
                 mask_column[*found_it] == mask))
             {
                 set_value(i, vec[row_idx[*found_it]]);
-                default_mask[i] = 1;
+                default_mask[i] = 0;
                 keys_found++;
             }
             else
-                default_mask[i] = 0;
+                default_mask[i] = 1;
         }
         return keys_found;
     }
@@ -840,11 +840,11 @@ size_t IPAddressDictionary::getItemsByTwoKeyColumnsShortCircuitImpl(
             mask_column[*found_it] == mask))
         {
             set_value(i, vec[row_idx[*found_it]]);
-            default_mask[i] = 1;
+            default_mask[i] = 0;
             keys_found++;
         }
         else
-            default_mask[i] = 0;
+            default_mask[i] = 1;
     }
     return keys_found;
 }
@@ -950,10 +950,10 @@ size_t IPAddressDictionary::getItemsShortCircuitImpl(
             {
                 set_value(i, vec[*found]);
                 ++keys_found;
-                default_mask[i] = 1;
+                default_mask[i] = 0;
             }
             else
-                default_mask[i] = 0;
+                default_mask[i] = 1;
         }
     }
     else if (type_id == TypeIndex::IPv6 || type_id == TypeIndex::FixedString)
@@ -968,10 +968,10 @@ size_t IPAddressDictionary::getItemsShortCircuitImpl(
             {
                 set_value(i, vec[*found]);
                 ++keys_found;
-                default_mask[i] = 1;
+                default_mask[i] = 0;
             }
             else
-                default_mask[i] = 0;
+                default_mask[i] = 1;
         }
     }
     else
