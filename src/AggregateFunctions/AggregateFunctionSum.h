@@ -161,7 +161,7 @@ struct AggregateFunctionSumData
             Impl::add(sum, local_sum);
             return;
         }
-        else if constexpr (is_integer<T> || is_decimal<T>)
+        else if constexpr (is_over_big_int<T>)
         {
             /// Use a mask to discard the value if it is null
             T local_sum{};
