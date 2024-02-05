@@ -53,11 +53,10 @@ protected:
     virtual ~RefCountedObject();
     /// Destroys the RefCountedObject.
 
+    mutable std::atomic<size_t> _counter;
 private:
     RefCountedObject(const RefCountedObject &);
     RefCountedObject & operator=(const RefCountedObject &);
-
-    mutable std::atomic<size_t> _counter;
 };
 
 
