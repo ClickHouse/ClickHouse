@@ -14,6 +14,7 @@ class Labels(metaclass=WithIter):
     """
     Label names or commit tokens in normalized form
     """
+
     DO_NOT_TEST_LABEL = "do_not_test"
     NO_MERGE_COMMIT = "no_merge_commit"
     NO_CI_CACHE = "no_ci_cache"
