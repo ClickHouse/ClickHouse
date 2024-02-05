@@ -121,7 +121,7 @@ std::optional<ProcessedFunction> processFunction(const ActionsDAG::Node & node)
             result.value = maybe_constant_node->column->getUInt(0);
         else
             result.value = maybe_constant_node->column->getInt(0);
-        result.reversed = maybe_hinted_node == node.children[1];
+        result.reversed = (node.children.size() == 2 && maybe_hinted_node == node.children[1]);
     }
     return result;
 }
