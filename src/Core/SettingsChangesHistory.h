@@ -113,7 +113,6 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"parallel_replicas_prefer_local_join", true, true, "If true, and JOIN can be executed with parallel replicas algorithm, and all storages of right JOIN part are *MergeTree, local JOIN will be used instead of GLOBAL JOIN."},
               {"update_insert_deduplication_token_in_dependent_materialized_views", false, false, "Allow to update insert deduplication token with table identifier during insert in dependent materialized views"},
               {"azure_max_unexpected_write_error_retries", 4, 4, "The maximum number of retries in case of unexpected errors during Azure blob storage write"}}},
-              {"optimize_injective_functions_in_group_by", false, true, "Replace injective functions by it's arguments in GROUP BY section in analyzer"}}},
     {"23.12", {{"allow_suspicious_ttl_expressions", true, false, "It is a new setting, and in previous versions the behavior was equivalent to allowing."},
               {"input_format_parquet_allow_missing_columns", false, true, "Allow missing columns in Parquet files by default"},
               {"input_format_orc_allow_missing_columns", false, true, "Allow missing columns in ORC files by default"},
