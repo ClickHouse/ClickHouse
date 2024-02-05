@@ -152,7 +152,11 @@ size_t tryReduceAggregationKeysSize(QueryPlan::Node * node, QueryPlan::Nodes & n
     predecessor_node.children = {next_node};
     predecessor_node.step = std::make_unique<ExpressionStep>(input_stream, predecessor_dag);
 
-    aggregating_step->updateParams(new_aggregating_keys);
+    std::unordered_map<std::string, std::string> changed_to_new_key_mapping;
+    for (size_t i = 0; i < changed_aggregating_keys.size(); ++i)
+        changed_to_new_key_mapping[changed_aggregating_keys[i]] = new_aggregating_keys[i];
+
+    aggregating_step->updateParams(new_aggregating_keys, changed_to_new_key_mapping);
     aggregating_step->updateInputStream(predecessor_node.step->getOutputStream());
     aggregating_step->setOptimizedWithDataHints();
 

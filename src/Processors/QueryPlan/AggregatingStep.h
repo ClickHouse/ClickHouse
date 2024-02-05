@@ -69,7 +69,7 @@ public:
 
     DataHints getHints() { return hints; }
 
-    void updateParams(const Names & new_keys) { params.keys = new_keys; }
+    void updateParams(const Names & new_keys, const std::unordered_map<std::string, std::string> & changed_to_new_key_mapping);
 
     void setOptimizedWithDataHints() { optimized_with_data_hints = true; }
 

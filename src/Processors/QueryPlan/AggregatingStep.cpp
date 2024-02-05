@@ -561,6 +561,14 @@ std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregating
     return aggregating_projection;
 }
 
+void AggregatingStep::updateParams(const Names & new_keys, const std::unordered_map<std::string, std::string> & changed_to_new_key_mapping)
+{
+    params.keys = new_keys;
+    for (auto & column_description : group_by_sort_description)
+        if (changed_to_new_key_mapping.contains(column_description.column_name))
+            column_description.column_name = changed_to_new_key_mapping.at(column_description.column_name);
+}
+
 void AggregatingStep::updateOutputStream()
 {
     output_stream = createOutputStream(
