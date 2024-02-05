@@ -79,7 +79,7 @@ RUN python3 -m pip install --no-cache-dir \
     grpcio \
     grpcio-tools \
     kafka-python \
-    kazoo \
+    kazoo=2.9.0 \
     lz4 \
     minio \
     nats-py \
