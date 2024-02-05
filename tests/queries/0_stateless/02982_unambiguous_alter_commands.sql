@@ -17,6 +17,7 @@ SELECT '--- Check only consistent parens around TTL expressions are accepted';
 -- valid expression on its own, thus the parens doesn't belong to the TTL expression, but to the expression, same as
 -- it would like "SELECT (expr2)".
 SELECT formatQuery('ALTER TABLE a (MODIFY TTL expr, (expr2))');
+SELECT formatQuery('ALTER TABLE a (MODIFY TTL expr, (((expr2))))');
 -- Almost same as above, but "expr2 GROUP BY expr3" cannot be parsed as an expression, thus the parens has to be
 -- parsed as part of the TTL expression which results in inconsistent parens.
 SELECT formatQuery('ALTER TABLE a (MODIFY TTL (expr), expr2)'); -- { serverError SYNTAX_ERROR }
