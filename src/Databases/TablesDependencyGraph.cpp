@@ -699,6 +699,17 @@ std::vector<StorageID> TablesDependencyGraph::getTablesSortedByDependency() cons
 }
 
 
+std::map<size_t, std::vector<StorageID>> TablesDependencyGraph::getTablesSortedByDependencyWithLevels() const
+{
+    std::map<size_t, std::vector<StorageID>> tables_by_level;
+    for (const auto * node : getNodesSortedByLevel())
+    {
+        tables_by_level[node->level].emplace_back(node->storage_id);
+    }
+    return tables_by_level;
+}
+
+
 void TablesDependencyGraph::log() const
 {
     if (nodes.empty())
