@@ -4,8 +4,6 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ConcurrentBoundedQueue.h>
 
-#include <boost/smart_ptr/intrusive_ptr.hpp>
-
 #include <map>
 #include <unordered_set>
 
@@ -21,7 +19,7 @@ namespace Poco
     class Logger;
 }
 
-using LoggerPtr = boost::intrusive_ptr<Poco::Logger>;
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 namespace DB
 {
