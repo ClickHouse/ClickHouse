@@ -69,7 +69,7 @@ RUN python3 -m pip install --no-cache-dir \
     azure-storage-blob \
     boto3 \
     cassandra-driver \
-    confluent-kafka==1.9.2 \
+    confluent-kafka==2.3.0 \
     delta-spark==2.3.0 \
     dict2xml \
     dicttoxml \
