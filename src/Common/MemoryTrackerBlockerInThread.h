@@ -29,4 +29,5 @@ public:
 
     friend class MemoryTracker;
     friend struct AllocationTrace;
+    friend class MemoryDumper;
 };

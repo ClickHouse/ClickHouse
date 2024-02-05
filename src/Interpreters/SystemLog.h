@@ -52,6 +52,7 @@ class AsynchronousInsertLog;
 class BackupLog;
 class S3QueueLog;
 class BlobStorageLog;
+class MemoryDumpLog;
 
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
@@ -92,6 +93,8 @@ struct SystemLogs
     std::shared_ptr<BackupLog> backup_log;
     /// Log blob storage operations
     std::shared_ptr<BlobStorageLog> blob_storage_log;
+    /// Log memory dumps
+    std::shared_ptr<MemoryDumpLog> memory_dump_log;
 
     std::vector<ISystemLog *> logs;
 };

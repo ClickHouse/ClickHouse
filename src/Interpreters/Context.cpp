@@ -77,6 +77,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
+#include <Interpreters/MemoryDumpCollector.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/UncompressedCache.h>
@@ -104,6 +105,7 @@
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
 #include <Interpreters/TransactionLog.h>
+#include <Interpreters/MemoryDumpLog.h>
 #include <filesystem>
 #include <re2/re2.h>
 #include <Storages/StorageView.h>
@@ -383,6 +385,9 @@ struct ContextSharedPart : boost::noncopyable
 
     /// No lock required for trace_collector modified only during initialization
     std::optional<TraceCollector> trace_collector;          /// Thread collecting traces from threads executing queries
+
+    /// No lock required for memory_dump_collector modified only during initialization
+    std::optional<MemoryDumpCollector> memory_dump_collector; /// Thread collecting current allocations from whole process
 
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
@@ -716,6 +721,21 @@ struct ContextSharedPart : boost::noncopyable
             return;
 
         trace_collector.emplace(std::move(trace_log));
+    }
+
+    bool hasMemoryDumpCollector() const
+    {
+        return memory_dump_collector.has_value();
+    }
+
+    void initializeMemoryDumpCollector(std::shared_ptr<MemoryDumpLog> memory_dump_log, UInt64 memory_dump_interval_ms)
+    {
+        if (!memory_dump_log)
+            return;
+        if (hasMemoryDumpCollector())
+            return;
+
+        memory_dump_collector.emplace(std::move(memory_dump_log), memory_dump_interval_ms);
     }
 
     void addWarningMessage(const String & message) TSA_REQUIRES(mutex)
@@ -3676,6 +3696,11 @@ void Context::initializeTraceCollector()
     shared->initializeTraceCollector(getTraceLog());
 }
 
+void Context::initializeMemoryDumpCollector(UInt64 memory_dump_interval_ms)
+{
+    shared->initializeMemoryDumpCollector(getMemoryDumpLog(), memory_dump_interval_ms);
+}
+
 /// Call after unexpected crash happen.
 void Context::handleCrash() const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
@@ -3688,6 +3713,10 @@ bool Context::hasTraceCollector() const
     return shared->hasTraceCollector();
 }
 
+bool Context::hasMemoryDumpCollector() const
+{
+    return shared->hasMemoryDumpCollector();
+}
 
 std::shared_ptr<QueryLog> Context::getQueryLog() const
 {
@@ -3745,6 +3774,17 @@ std::shared_ptr<TraceLog> Context::getTraceLog() const
         return {};
 
     return shared->system_logs->trace_log;
+}
+
+
+std::shared_ptr<MemoryDumpLog> Context::getMemoryDumpLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->memory_dump_log;
 }
 
 

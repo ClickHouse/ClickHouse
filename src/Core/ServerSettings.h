@@ -114,6 +114,8 @@ namespace DB
     M(Bool, validate_tcp_client_information, false, "Validate client_information in the query packet over the native TCP protocol.", 0) \
     M(Bool, storage_metadata_write_full_object_key, false, "Write disk metadata files with VERSION_FULL_OBJECT_KEY format", 0) \
     M(UInt64, max_materialized_views_count_for_table, 0, "A limit on the number of materialized views attached to a table.", 0) \
+    M(Bool, enable_memory_dump_collector, false, "Enable periodic with `memory_dump_interval_ms` interval memory dump collection.", 0) \
+    M(UInt64, memory_dump_interval_ms, 15000UL, "Interval for memory dump collection (in milliseconds).", 0) \
 
     /// If you add a setting which can be updated at runtime, please update 'changeable_settings' map in StorageSystemServerSettings.cpp
 
