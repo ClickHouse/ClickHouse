@@ -89,8 +89,8 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderAzureBlobStorage::readFile(const
         key = file_name;
     }
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
-        client, key, read_settings, settings.get()->max_single_read_retries,
-        settings.get()->max_single_download_retries);
+        client, key, read_settings, settings->max_single_read_retries,
+        settings->max_single_download_retries);
 }
 
 void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
@@ -257,8 +257,8 @@ std::unique_ptr<ReadBuffer> BackupWriterAzureBlobStorage::readFile(const String 
     }
 
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
-        client, key, read_settings, settings.get()->max_single_read_retries,
-        settings.get()->max_single_download_retries);
+        client, key, read_settings, settings->max_single_read_retries,
+        settings->max_single_download_retries);
 }
 
 std::unique_ptr<WriteBuffer> BackupWriterAzureBlobStorage::writeFile(const String & file_name)
@@ -275,8 +275,8 @@ std::unique_ptr<WriteBuffer> BackupWriterAzureBlobStorage::writeFile(const Strin
     return std::make_unique<WriteBufferFromAzureBlobStorage>(
         client,
         key,
-        settings.get()->max_single_part_upload_size,
-        settings.get()->max_unexpected_write_error_retries,
+        settings->max_single_part_upload_size,
+        settings->max_unexpected_write_error_retries,
         DBMS_DEFAULT_BUFFER_SIZE,
         write_settings);
 }

@@ -97,7 +97,7 @@ namespace
 
         void calculatePartSize()
         {
-            auto max_upload_part_size = settings.get()->max_upload_part_size;
+            auto max_upload_part_size = settings->max_upload_part_size;
             if (!max_upload_part_size)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_upload_part_size must not be 0");
             /// We've calculated the size of a normal part (the final part can be smaller).
@@ -292,7 +292,7 @@ void copyAzureBlobStorageFile(
     bool for_disk_azure_blob_storage)
 {
 
-    if (settings.get()->use_native_copy)
+    if (settings->use_native_copy)
     {
         ProfileEvents::increment(ProfileEvents::AzureCopyObject);
         if (for_disk_azure_blob_storage)
@@ -302,7 +302,7 @@ void copyAzureBlobStorageFile(
         auto block_blob_client_dest = dest_client->GetBlockBlobClient(dest_blob);
         auto source_uri = block_blob_client_src.GetUrl();
 
-        if (size < settings.get()->max_single_part_copy_size)
+        if (size < settings->max_single_part_copy_size)
         {
             block_blob_client_dest.CopyFromUri(source_uri);
         }
@@ -326,8 +326,8 @@ void copyAzureBlobStorageFile(
         LOG_TRACE(&Poco::Logger::get("copyAzureBlobStorageFile"), "Reading from Container: {}, Blob: {}", src_container_for_logging, src_blob);
         auto create_read_buffer = [&]
         {
-            return std::make_unique<ReadBufferFromAzureBlobStorage>(src_client, src_blob, read_settings, settings.get()->max_single_read_retries,
-            settings.get()->max_single_download_retries);
+            return std::make_unique<ReadBufferFromAzureBlobStorage>(src_client, src_blob, read_settings, settings->max_single_read_retries,
+            settings->max_single_download_retries);
         };
 
         UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, for_disk_azure_blob_storage, &Poco::Logger::get("copyAzureBlobStorageFile")};
