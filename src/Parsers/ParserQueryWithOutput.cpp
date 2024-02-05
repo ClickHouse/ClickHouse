@@ -150,11 +150,11 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     }
 
-    ParserKeyword s_format("FORMAT");
+    ParserKeyword s_format("FORMAT"); 
 
     if (s_format.ignore(pos, expected))
     {
-        ParserIdentifier format_p;
+        ParserFormatIdentifier format_p;
 
         if (!format_p.parse(pos, query_with_output.format, expected))
             return false;

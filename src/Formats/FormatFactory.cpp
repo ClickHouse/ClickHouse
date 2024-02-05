@@ -1,6 +1,7 @@
 #include <Formats/FormatFactory.h>
 
 #include <algorithm>
+#include <cctype>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -560,6 +561,26 @@ ExternalSchemaReaderPtr FormatFactory::getExternalSchemaReader(
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     return external_schema_reader_creator(format_settings);
+}
+
+void FormatFactory::genAllKeywords()
+{
+    for (const auto & name : dict)
+    {
+        String upper_name = name.first;
+        std::transform(upper_name.begin(), upper_name.end(), upper_name.begin(), [](unsigned char c) { return std::toupper(c); });
+        keyword[upper_name] = name.first;
+    }
+}
+
+String FormatFactory::getKeyword(const String & name) const 
+{
+    String upper_name = name;
+    std::transform(upper_name.begin(), upper_name.end(), upper_name.begin(), [](unsigned char c) { return std::toupper(c); });
+    auto it = keyword.find(upper_name);
+    if (keyword.end() != it)
+        return it->second;
+    return name;
 }
 
 void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator)

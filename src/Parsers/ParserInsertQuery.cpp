@@ -43,6 +43,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserToken s_semicolon(TokenType::Semicolon);
     ParserIdentifier name_p(true);
+    ParserFormatIdentifier format_p;
     ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserFunction table_function_p{false};
     ParserStringLiteral infile_name_p;
@@ -156,7 +157,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else if (s_format.ignore(pos, expected))
     {
         /// If FORMAT is defined, read format name
-        if (!name_p.parse(pos, format, expected))
+        if (!format_p.parse(pos, format, expected))
             return false;
 
         tryGetIdentifierNameInto(format, format_str);
@@ -170,7 +171,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         select_p.parse(pos, select, expected);
 
         /// FORMAT section is expected if we have input() in SELECT part
-        if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
+        if (s_format.ignore(pos, expected) && !format_p.parse(pos, format, expected))
             return false;
 
         tryGetIdentifierNameInto(format, format_str);

@@ -33,6 +33,18 @@ protected:
     bool allow_query_parameter;
 };
 
+/** An identifier for format
+  */
+class ParserFormatIdentifier : public IParserBase
+{
+public:
+    explicit ParserFormatIdentifier() {}
+
+protected:
+    const char * getName() const override { return "format identifier"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 
 /** An identifier for tables written as string literal, for example, 'mytable.avro'
   */

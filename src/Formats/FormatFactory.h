@@ -146,6 +146,7 @@ private:
         SubsetOfColumnsSupportChecker subset_of_columns_support_checker;
     };
 
+    using FormatKeyword = std::unordered_map<String, String>;
     using FormatsDictionary = std::unordered_map<String, Creators>;
     using FileExtensionFormats = std::unordered_map<String, String>;
 
@@ -254,6 +255,9 @@ public:
         return dict;
     }
 
+    void genAllKeywords();
+    String getKeyword(const String & name) const;
+
     bool isInputFormat(const String & name) const;
     bool isOutputFormat(const String & name) const;
 
@@ -261,6 +265,7 @@ public:
     void checkFormatName(const String & name) const;
 
 private:
+    FormatKeyword keyword;
     FormatsDictionary dict;
     FileExtensionFormats file_extension_formats;
 

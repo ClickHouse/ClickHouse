@@ -291,6 +291,8 @@ void registerFormats()
     registerDWARFSchemaReader(factory);
     registerOneSchemaReader(factory);
     registerNpySchemaReader(factory);
+
+    factory.genAllKeywords();
 }
 
 }

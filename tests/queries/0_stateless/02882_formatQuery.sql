@@ -33,6 +33,9 @@ SELECT formatQuerySingleLine('SELECT 1');
 SELECT formatQuerySingleLine('SeLeCt 1;');
 SELECT formatQuerySingleLine('select 1;') == formatQuerySingleLine('SeLeCt 1');
 SELECT normalizedQueryHash(formatQuerySingleLine('select 1')) = normalizedQueryHash(formatQuerySingleLine('SELECT 1'));
+SELECT formatQuerySingleLine('SELECT 1 FORMAT Tsv;');
+SELECT formatQuerySingleLine('SELECT 1 FORMAT tsv;');
+SELECT formatQuerySingleLine('SELECT 1 FORMAT rowbinary;');
 
 SELECT formatQuerySingleLine('INSERT INTO tab VALUES (\'\') (\'test\')');
 

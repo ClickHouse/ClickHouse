@@ -42,6 +42,7 @@
 #include <Parsers/queryToString.h>
 
 #include <Interpreters/StorageID.h>
+#include <Formats/FormatFactory.h>
 
 namespace DB
 {
@@ -238,6 +239,20 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         node = std::make_shared<ASTIdentifier>("", std::make_shared<ASTQueryParameter>(name, type));
         return true;
     }
+    return false;
+}
+
+
+bool ParserFormatIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (pos->type == TokenType::BareWord)
+    {
+        auto name = FormatFactory::instance().getKeyword(String(pos->begin, pos->end));
+        node = std::make_shared<ASTIdentifier>(name);
+        ++pos;
+        return true;
+    }
+    expected.add(pos, "invalid character");
     return false;
 }
 
