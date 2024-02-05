@@ -20,7 +20,6 @@ from clickhouse_helper import (
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
-    RerunHelper,
     get_commit,
     override_status,
     post_commit_status,
@@ -55,6 +54,7 @@ def get_additional_envs(
         result.append("USE_PARALLEL_REPLICAS=1")
     if "s3 storage" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
+        result.append("RANDOMIZE_OBJECT_KEY_TYPE=1")
     if "analyzer" in check_name:
         result.append("USE_NEW_ANALYZER=1")
 
@@ -246,13 +246,14 @@ def main():
     flaky_check = "flaky" in check_name.lower()
 
     run_changed_tests = flaky_check or validate_bugfix_check
-    gh = Github(get_best_robot_token(), per_page=100)
 
     # For validate_bugfix_check we need up to date information about labels, so pr_event_from_api is used
     pr_info = PRInfo(
         need_changed_files=run_changed_tests, pr_event_from_api=validate_bugfix_check
     )
 
+    # FIXME: move to job report and remove
+    gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
     atexit.register(update_mergeable_check, commit, pr_info, check_name)
 
@@ -277,11 +278,6 @@ def main():
         run_by_hash_num = 0
         run_by_hash_total = 0
         check_name_with_group = check_name
-
-    rerun_helper = RerunHelper(commit, check_name_with_group)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
 
     tests_to_run = []
     if run_changed_tests:

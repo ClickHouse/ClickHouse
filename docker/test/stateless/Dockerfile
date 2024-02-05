@@ -44,9 +44,10 @@ RUN apt-get update -y \
             pv \
             zip \
             p7zip-full \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-RUN pip3 install numpy scipy pandas Jinja2
+RUN pip3 install numpy scipy pandas Jinja2 pyarrow
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \

@@ -31,6 +31,7 @@ public:
     struct Arguments
     {
         const String & engine_name;
+        /// Mutable to allow replacing constant expressions with literals, and other transformations.
         ASTs & engine_args;
         ASTStorage * storage_def;
         const ASTCreateQuery & query;

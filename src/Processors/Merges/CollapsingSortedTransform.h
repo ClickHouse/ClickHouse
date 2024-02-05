@@ -29,7 +29,7 @@ public:
             only_positive_sign,
             max_block_size_rows,
             max_block_size_bytes,
-            &Poco::Logger::get("CollapsingSortedTransform"),
+            getLogger("CollapsingSortedTransform"),
             out_row_sources_buf_,
             use_average_block_sizes)
     {

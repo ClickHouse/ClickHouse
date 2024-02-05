@@ -87,7 +87,7 @@
     M(MarksLoaderThreads, "Number of threads in thread pool for loading marks.") \
     M(MarksLoaderThreadsActive, "Number of threads in the thread pool for loading marks running a task.") \
     M(MarksLoaderThreadsScheduled, "Number of queued or active jobs in the thread pool for loading marks.") \
-    M(IOPrefetchThreads, "Number of threads in the IO prefertch thread pool.") \
+    M(IOPrefetchThreads, "Number of threads in the IO prefetch thread pool.") \
     M(IOPrefetchThreadsActive, "Number of threads in the IO prefetch thread pool running a task.") \
     M(IOPrefetchThreadsScheduled, "Number of queued or active jobs in the IO prefetch thread pool.") \
     M(IOWriterThreads, "Number of threads in the IO writer thread pool.") \
@@ -143,6 +143,8 @@
     M(AsynchronousInsertThreads, "Number of threads in the AsynchronousInsert thread pool.") \
     M(AsynchronousInsertThreadsActive, "Number of threads in the AsynchronousInsert thread pool running a task.") \
     M(AsynchronousInsertThreadsScheduled, "Number of queued or active jobs in the AsynchronousInsert thread pool.") \
+    M(AsynchronousInsertQueueSize, "Number of pending tasks in the AsynchronousInsert queue.") \
+    M(AsynchronousInsertQueueBytes, "Number of pending bytes in the AsynchronousInsert queue.") \
     M(StartupSystemTablesThreads, "Number of threads in the StartupSystemTables thread pool.") \
     M(StartupSystemTablesThreadsActive, "Number of threads in the StartupSystemTables thread pool running a task.") \
     M(StartupSystemTablesThreadsScheduled, "Number of queued or active jobs in the StartupSystemTables thread pool.") \
@@ -242,7 +244,7 @@
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
-    M(S3Requests, "S3 requests") \
+    M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequets, "Number of outstanding requests") \
     M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \

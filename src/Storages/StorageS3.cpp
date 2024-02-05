@@ -8,6 +8,8 @@
 #include <IO/S3/Requests.h>
 #include <IO/ParallelReadBuffer.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -242,7 +244,7 @@ public:
         fillInternalBufferAssumeLocked();
     }
 
-    KeyWithInfoPtr next()
+    KeyWithInfoPtr next(size_t)
     {
         std::lock_guard lock(mutex);
         return nextAssumeLocked();
@@ -434,9 +436,9 @@ StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(
 {
 }
 
-StorageS3Source::KeyWithInfoPtr StorageS3Source::DisclosedGlobIterator::next()
+StorageS3Source::KeyWithInfoPtr StorageS3Source::DisclosedGlobIterator::next(size_t idx) /// NOLINT
 {
-    return pimpl->next();
+    return pimpl->next(idx);
 }
 
 size_t StorageS3Source::DisclosedGlobIterator::estimatedKeysCount()
@@ -469,7 +471,7 @@ public:
         }
     }
 
-    KeyWithInfoPtr next()
+    KeyWithInfoPtr next(size_t)
     {
         size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
         if (current_index >= keys.size())
@@ -514,9 +516,9 @@ StorageS3Source::KeysIterator::KeysIterator(
 {
 }
 
-StorageS3Source::KeyWithInfoPtr StorageS3Source::KeysIterator::next()
+StorageS3Source::KeyWithInfoPtr StorageS3Source::KeysIterator::next(size_t idx) /// NOLINT
 {
-    return pimpl->next();
+    return pimpl->next(idx);
 }
 
 size_t StorageS3Source::KeysIterator::estimatedKeysCount()
@@ -543,7 +545,7 @@ StorageS3Source::ReadTaskIterator::ReadTaskIterator(
         buffer.emplace_back(std::make_shared<KeyWithInfo>(key_future.get(), std::nullopt));
 }
 
-StorageS3Source::KeyWithInfoPtr StorageS3Source::ReadTaskIterator::next()
+StorageS3Source::KeyWithInfoPtr StorageS3Source::ReadTaskIterator::next(size_t) /// NOLINT
 {
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
     if (current_index >= buffer.size())
@@ -597,23 +599,23 @@ StorageS3Source::StorageS3Source(
 {
 }
 
-void StorageS3Source::lazyInitialize()
+void StorageS3Source::lazyInitialize(size_t idx)
 {
     if (initialized)
         return;
 
-    reader = createReader();
+    reader = createReader(idx);
     if (reader)
-        reader_future = createReaderAsync();
+        reader_future = createReaderAsync(idx);
     initialized = true;
 }
 
-StorageS3Source::ReaderHolder StorageS3Source::createReader()
+StorageS3Source::ReaderHolder StorageS3Source::createReader(size_t idx)
 {
     KeyWithInfoPtr key_with_info;
     do
     {
-        key_with_info = (*file_iterator)();
+        key_with_info = file_iterator->next(idx);
         if (!key_with_info || key_with_info->key.empty())
             return {};
 
@@ -687,9 +689,9 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
     return ReaderHolder{key_with_info, bucket, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader)};
 }
 
-std::future<StorageS3Source::ReaderHolder> StorageS3Source::createReaderAsync()
+std::future<StorageS3Source::ReaderHolder> StorageS3Source::createReaderAsync(size_t idx)
 {
-    return create_reader_scheduler([this] { return createReader(); }, Priority{});
+    return create_reader_scheduler([=, this] { return createReader(idx); }, Priority{});
 }
 
 std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & key, size_t object_size)
@@ -856,6 +858,7 @@ public:
             blob_log->query_id = context->getCurrentQueryId();
         }
 
+        const auto & settings = context->getSettingsRef();
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromS3>(
                 configuration_.client,
@@ -868,7 +871,8 @@ public:
                 threadPoolCallbackRunner<void>(getIOThreadPool().get(), "S3ParallelWrite"),
                 context->getWriteSettings()),
             compression_method,
-            3);
+            static_cast<int>(settings.output_format_compression_level),
+            static_cast<int>(settings.output_format_compression_zstd_window_log));
         writer
             = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, format_settings);
     }
@@ -1156,7 +1160,7 @@ void StorageS3::read(
 
 void ReadFromStorageS3Step::applyFilters()
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, local_context);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -1190,7 +1194,7 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
 
     const size_t max_threads = local_context->getSettingsRef().max_threads;
     const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
-    LOG_DEBUG(&Poco::Logger::get("StorageS3"), "Reading in {} streams, {} threads per stream", num_streams, max_parsing_threads);
+    LOG_DEBUG(getLogger("StorageS3"), "Reading in {} streams, {} threads per stream", num_streams, max_parsing_threads);
 
     Pipes pipes;
     pipes.reserve(num_streams);
@@ -1343,7 +1347,7 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
     }
 
     for (const auto & error : response.GetResult().GetErrors())
-        LOG_WARNING(&Poco::Logger::get("StorageS3"), "Failed to delete {}, error: {}", error.GetKey(), error.GetMessage());
+        LOG_WARNING(getLogger("StorageS3"), "Failed to delete {}, error: {}", error.GetKey(), error.GetMessage());
 }
 
 StorageS3::Configuration StorageS3::updateConfigurationAndGetCopy(ContextPtr local_context)
@@ -1377,7 +1381,7 @@ bool StorageS3::Configuration::update(ContextPtr context)
     request_settings = s3_settings.request_settings;
     request_settings.updateFromSettings(context->getSettings());
 
-    if (client && (static_configuration || s3_settings.auth_settings == auth_settings))
+    if (client && (static_configuration || !auth_settings.hasUpdates(s3_settings.auth_settings)))
         return false;
 
     auth_settings.updateFrom(s3_settings.auth_settings);
@@ -1484,24 +1488,12 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'session_token', 'format', 'compression')
         /// with optional headers() function
 
-        if (engine_args.empty() || engine_args.size() > 6)
+        size_t count = StorageURL::evalArgsAndCollectHeaders(engine_args, configuration.headers_from_ast, local_context);
+
+        if (count == 0 || count > 6)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Storage S3 requires 1 to 5 arguments: "
                             "url, [NOSIGN | access_key_id, secret_access_key], name of used format and [compression_method]");
-
-        auto * header_it = StorageURL::collectHeaders(engine_args, configuration.headers_from_ast, local_context);
-        if (header_it != engine_args.end())
-            engine_args.erase(header_it);
-
-        for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
-
-        /// Size -> argument indexes
-        static std::unordered_map<size_t, std::unordered_map<std::string_view, size_t>> size_to_engine_args
-        {
-            {1, {{}}},
-            {6, {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"compression_method", 5}}}
-        };
 
         std::unordered_map<std::string_view, size_t> engine_args_to_idx;
         bool no_sign_request = false;
@@ -1510,7 +1502,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         /// - s3(source, format)
         /// - s3(source, NOSIGN)
         /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN or not.
-        if (engine_args.size() == 2)
+        if (count == 2)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(engine_args[1], "format/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
@@ -1520,10 +1512,10 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         }
         /// For 3 arguments we support 2 possible variants:
         /// - s3(source, format, compression_method)
-        /// - s3(source, access_key_id, access_key_id)
+        /// - s3(source, access_key_id, secret_access_key)
         /// - s3(source, NOSIGN, format)
         /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN or format name.
-        else if (engine_args.size() == 3)
+        else if (count == 3)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(engine_args[1], "format/access_key_id/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
@@ -1541,7 +1533,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         /// - s3(source, access_key_id, secret_access_key, format)
         /// - s3(source, NOSIGN, format, compression_method)
         /// We can distinguish them by looking at the 2-nd argument: check if it's a NOSIGN or not.
-        else if (engine_args.size() == 4)
+        else if (count == 4)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
@@ -1565,7 +1557,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         /// For 5 arguments we support 2 possible variants:
         /// - s3(source, access_key_id, secret_access_key, session_token, format)
         /// - s3(source, access_key_id, secret_access_key, format, compression)
-        else if (engine_args.size() == 5)
+        else if (count == 5)
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "session_token/format");
             if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
@@ -1577,9 +1569,9 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}};
             }
         }
-        else
+        else if (count == 6)
         {
-            engine_args_to_idx = size_to_engine_args[engine_args.size()];
+            engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"compression_method", 5}};
         }
 
         /// This argument is always the first
@@ -1600,11 +1592,11 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         if (engine_args_to_idx.contains("session_token"))
             configuration.auth_settings.session_token = checkAndGetLiteralArgument<String>(engine_args[engine_args_to_idx["session_token"]], "session_token");
 
-
-        configuration.auth_settings.no_sign_request = no_sign_request;
+        if (no_sign_request)
+            configuration.auth_settings.no_sign_request = no_sign_request;
     }
 
-    configuration.static_configuration = !configuration.auth_settings.access_key_id.empty();
+    configuration.static_configuration = !configuration.auth_settings.access_key_id.empty() || configuration.auth_settings.no_sign_request.has_value();
 
     configuration.keys = {configuration.url.key};
 
