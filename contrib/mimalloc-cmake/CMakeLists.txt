@@ -5,9 +5,9 @@ if (NOT ENABLE_MIMALLOC)
     return()
 endif ()
 
-# if (ENABLE_JEMALLOC)
-#     message (FATAL_ERROR "Cannot enable both mimalloc and jemalloc")
-# endif ()
+if (ENABLE_JEMALLOC)
+    message (FATAL_ERROR "Cannot enable both mimalloc and jemalloc")
+endif ()
 
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/mimalloc")
 
