@@ -83,18 +83,20 @@ namespace
                                                                                                                     \
         std::string_view _format_string;                                                                            \
         std::string _formatted_message;                                                                             \
+        std::vector<std::string> _format_string_args;                                                               \
                                                                                                                     \
         if constexpr (LogTypeInfo::is_static)                                                                       \
         {                                                                                                           \
             formatStringCheckArgsNum(LOG_IMPL_FIRST_ARG(__VA_ARGS__), _nargs - 1);                                  \
             _format_string = ConstexprIfsAreNotIfdefs<LogTypeInfo::is_static>::getStaticFormatString(LOG_IMPL_FIRST_ARG(__VA_ARGS__)); \
+            ConstexprIfsAreNotIfdefs<LogTypeInfo::is_static>::getFormattedArgs(_format_string_args, true, __VA_ARGS__); \
         }                                                                                                           \
                                                                                                                     \
         constexpr bool is_preformatted_message = !LogTypeInfo::is_static && LogTypeInfo::has_format;                \
         if constexpr (is_preformatted_message)                                                                      \
         {                                                                                                           \
             static_assert(_nargs == 1 || !is_preformatted_message);                                                 \
-            ConstexprIfsAreNotIfdefs<is_preformatted_message>::getPreformatted(LOG_IMPL_FIRST_ARG(__VA_ARGS__)).apply(_formatted_message, _format_string);  \
+            ConstexprIfsAreNotIfdefs<is_preformatted_message>::getPreformatted(LOG_IMPL_FIRST_ARG(__VA_ARGS__)).apply(_formatted_message, _format_string, _format_string_args);  \
         }                                                                                                           \
         else                                                                                                        \
         {                                                                                                           \
@@ -104,7 +106,7 @@ namespace
         std::string _file_function = __FILE__ "; ";                                                                 \
         _file_function += __PRETTY_FUNCTION__;                                                                      \
         Poco::Message _poco_message(_logger->name(), std::move(_formatted_message),                                 \
-            (PRIORITY), _file_function.c_str(), __LINE__, _format_string);                                          \
+            (PRIORITY), _file_function.c_str(), __LINE__, _format_string, _format_string_args);                     \
         _channel->log(_poco_message);                                                                               \
     }                                                                                                               \
     catch (...)                                                                                                     \

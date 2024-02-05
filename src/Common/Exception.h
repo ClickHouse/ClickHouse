@@ -57,6 +57,7 @@ public:
             std::terminate();
         capture_thread_frame_pointers = thread_frame_pointers;
         message_format_string = msg.format_string;
+        message_format_string_args = msg.format_string_args;
     }
 
     Exception(PreformattedMessage && msg, int code): Exception(std::move(msg.text), code)
@@ -65,6 +66,7 @@ public:
             std::terminate();
         capture_thread_frame_pointers = thread_frame_pointers;
         message_format_string = msg.format_string;
+        message_format_string_args = msg.format_string_args;
     }
 
     /// Collect call stacks of all previous jobs' schedulings leading to this thread job's execution
@@ -108,6 +110,7 @@ public:
     {
         capture_thread_frame_pointers = thread_frame_pointers;
         message_format_string = fmt.message_format_string;
+        tryGetFormattedArgs(message_format_string_args, false, args...);
     }
 
     struct CreateFromPocoTag {};
@@ -148,6 +151,8 @@ public:
 
     std::string_view tryGetMessageFormatString() const { return message_format_string; }
 
+    std::vector<std::string> getMessageFormatStringArgs() const { return message_format_string_args; }
+
 private:
 #ifndef STD_EXCEPTION_HAS_STACK_TRACE
     StackTrace trace;
@@ -158,6 +163,7 @@ private:
 
 protected:
     std::string_view message_format_string;
+    std::vector<std::string> message_format_string_args;
     /// Local copy of static per-thread thread_frame_pointers, should be mutable to be unpoisoned on printout
     mutable std::vector<StackTrace::FramePointers> capture_thread_frame_pointers;
 };
@@ -193,6 +199,7 @@ public:
     {
         capture_thread_frame_pointers = thread_frame_pointers;
         message_format_string = fmt.message_format_string;
+        tryGetFormattedArgs(message_format_string_args, false, args...);
         addMessage(", {}", errnoToString(saved_errno));
     }
 
@@ -201,6 +208,7 @@ public:
     {
         auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, with_errno);
         e.message_format_string = fmt.message_format_string;
+        tryGetFormattedArgs(e.message_format_string_args, false, args...);
         throw e;
     }
 
@@ -209,6 +217,7 @@ public:
     {
         auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, errno);
         e.message_format_string = fmt.message_format_string;
+        tryGetFormattedArgs(e.message_format_string_args, false, args...);
         e.path = path;
         throw e;
     }
@@ -219,6 +228,7 @@ public:
     {
         auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, with_errno);
         e.message_format_string = fmt.message_format_string;
+        tryGetFormattedArgs(e.message_format_string_args, false, args...);
         e.path = path;
         throw e;
     }

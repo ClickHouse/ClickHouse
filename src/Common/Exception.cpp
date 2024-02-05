@@ -386,6 +386,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
 {
     WriteBufferFromOwnString stream;
     std::string_view message_format_string;
+    std::vector<std::string> message_format_string_args;
 
     try
     {
@@ -397,6 +398,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
                << (with_extra_info ? getExtraExceptionInfo(e) : "")
                << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         message_format_string = e.tryGetMessageFormatString();
+        message_format_string_args = e.getMessageFormatStringArgs();
     }
     catch (const Poco::Exception & e)
     {
@@ -457,7 +459,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
         catch (...) {} // NOLINT(bugprone-empty-catch)
     }
 
-    return PreformattedMessage{stream.str(), message_format_string};
+    return PreformattedMessage{stream.str(), message_format_string, message_format_string_args};
 }
 
 
@@ -576,7 +578,7 @@ PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with
     }
     catch (...) {} // NOLINT(bugprone-empty-catch)
 
-    return PreformattedMessage{stream.str(), e.tryGetMessageFormatString()};
+    return PreformattedMessage{stream.str(), e.tryGetMessageFormatString(), e.getMessageFormatStringArgs()};
 }
 
 std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
