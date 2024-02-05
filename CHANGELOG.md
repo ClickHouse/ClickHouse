@@ -6,8 +6,6 @@
 
 ### <a id="241"></a> ClickHouse release 24.1, 2024-01-30
 
-### ClickHouse release master (b4a5b6060ea) FIXME as compared to v23.12.1.1368-stable (a2faa65b080)
-
 #### Backward Incompatible Change
 * The setting `print_pretty_type_names` is turned on by default. You can turn it off to keep the old behavior or `SET compatibility = '23.12'`. [#57726](https://github.com/ClickHouse/ClickHouse/pull/57726) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * The MergeTree setting `clean_deleted_rows` is deprecated, it has no effect anymore. The `CLEANUP` keyword for `OPTIMIZE` is not allowed by default (unless `allow_experimental_replacing_merge_with_cleanup` is enabled). [#58316](https://github.com/ClickHouse/ClickHouse/pull/58316) ([Alexander Tokmakov](https://github.com/tavplubix)).
