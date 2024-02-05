@@ -12,9 +12,11 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemFilesystemCache::getNamesAndTypes()
+ColumnsDescription StorageSystemFilesystemCache::getColumnsDescription()
 {
-    return {
+    /// TODO: Fill in all the comments.
+    return ColumnsDescription
+    {
         {"cache_name", std::make_shared<DataTypeString>()},
         {"cache_base_path", std::make_shared<DataTypeString>()},
         {"cache_path", std::make_shared<DataTypeString>()},
@@ -28,6 +30,7 @@ NamesAndTypesList StorageSystemFilesystemCache::getNamesAndTypes()
         {"downloaded_size", std::make_shared<DataTypeUInt64>()},
         {"kind", std::make_shared<DataTypeString>()},
         {"unbound", std::make_shared<DataTypeNumber<UInt8>>()},
+        {"user_id", std::make_shared<DataTypeString>()},
         {"file_size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
     };
 }
@@ -50,10 +53,12 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
             res_columns[i++]->insert(cache_name);
             res_columns[i++]->insert(cache->getBasePath());
 
-            /// Do not use `file_segment->getPathInLocalCache` here because it will lead to nullptr dereference
+            /// Do not use `file_segment->getPath` here because it will lead to nullptr dereference
             /// (because file_segments in getSnapshot doesn't have `cache` field set)
 
-            const auto path = cache->getPathInLocalCache(file_segment.key, file_segment.offset, file_segment.kind);
+            const auto path = cache->getFileSegmentPath(
+                file_segment.key, file_segment.offset, file_segment.kind,
+                FileCache::UserInfo(file_segment.user_id, file_segment.user_weight));
             res_columns[i++]->insert(path);
             res_columns[i++]->insert(file_segment.key.toString());
             res_columns[i++]->insert(file_segment.range_left);
@@ -65,6 +70,7 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
             res_columns[i++]->insert(file_segment.downloaded_size);
             res_columns[i++]->insert(toString(file_segment.kind));
             res_columns[i++]->insert(file_segment.is_unbound);
+            res_columns[i++]->insert(file_segment.user_id);
 
             std::error_code ec;
             auto size = fs::file_size(path, ec);
@@ -72,7 +78,7 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
                 res_columns[i++]->insert(size);
             else
                 res_columns[i++]->insertDefault();
-        });
+        }, FileCache::getCommonUser().user_id);
     }
 }
 

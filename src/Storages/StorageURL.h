@@ -172,11 +172,6 @@ public:
 
     String getName() const override { return name; }
 
-    void setKeyCondition(const SelectQueryInfo & query_info_, ContextPtr context_) override
-    {
-        setKeyConditionImpl(query_info_, context_, block_for_format);
-    }
-
     void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override
     {
         setKeyConditionImpl(nodes, context_, block_for_format);
@@ -299,7 +294,10 @@ public:
 
     static Configuration getConfiguration(ASTs & args, ContextPtr context);
 
-    static ASTs::iterator collectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, ContextPtr context);
+    /// Does evaluateConstantExpressionOrIdentifierAsLiteral() on all arguments.
+    /// If `headers(...)` argument is present, parses it and moves it to the end of the array.
+    /// Returns number of arguments excluding `headers(...)`.
+    static size_t evalArgsAndCollectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, ContextPtr context);
 
     static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
 };

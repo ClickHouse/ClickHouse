@@ -15,6 +15,8 @@ jobs:
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
+      - name: DebugInfo
+        uses: hmarr/debug-action@a701ed95a46e6f2fb0df25e1a558c16356fae35a
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
@@ -33,11 +35,9 @@ jobs:
       - name: PrepareRunConfig
         id: runconfig
         run: |
-            echo "::group::configure CI run"
-            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --rebuild-all-binaries --outfile ${{ runner.temp }}/ci_run_data.json
-            echo "::endgroup::"
+            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --outfile ${{ runner.temp }}/ci_run_data.json
 
-            echo "::group::CI run configure results"
+            echo "::group::CI configuration"
             python3 -m json.tool ${{ runner.temp }}/ci_run_data.json
             echo "::endgroup::"
 
@@ -55,7 +55,6 @@ jobs:
     uses: ./.github/workflows/reusable_docker.yml
     with:
       data: ${{ needs.RunConfig.outputs.data }}
-      set_latest: true
   StyleCheck:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -242,22 +241,28 @@ jobs:
 ############################################################################################
 ##################################### Docker images  #######################################
 ############################################################################################
-  DockerServerImages:
+  DockerServerImage:
     needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Docker server and keeper images
+      test_name: Docker server image
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
-      # FIXME: avoid using 0 checkout
-      checkout_depth: 0  # It MUST BE THE SAME for all dependencies and the job itself
       run_command: |
-        cd "$GITHUB_WORKSPACE/tests/ci"
         python3 docker_server.py --release-type head \
-          --image-repo clickhouse/clickhouse-server --image-path docker/server
+          --image-repo clickhouse/clickhouse-server --image-path docker/server --allow-build-reuse
+  DockerKeeperImage:
+    needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Docker keeper image
+      runner_type: style-checker
+      data: ${{ needs.RunConfig.outputs.data }}
+      run_command: |
         python3 docker_server.py --release-type head \
-          --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
+          --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper --allow-build-reuse
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
@@ -313,22 +318,15 @@ jobs:
       run_command: |
         python3 build_report_check.py "$CHECK_NAME"
   MarkReleaseReady:
+    needs: [RunConfig, BuilderBinDarwin, BuilderBinDarwinAarch64, BuilderDebRelease, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
-    needs:
-      - BuilderBinDarwin
-      - BuilderBinDarwinAarch64
-      - BuilderDebRelease
-      - BuilderDebAarch64
-    runs-on: [self-hosted, style-checker]
-    steps:
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-      - name: Mark Commit Release Ready
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 mark_release_ready.py
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Mark Commit Release Ready
+      runner_type: style-checker
+      data: ${{ needs.RunConfig.outputs.data }}
+      run_command: |
+        python3 mark_release_ready.py
 ############################################################################################
 #################################### INSTALL PACKAGES ######################################
 ############################################################################################
@@ -361,14 +359,6 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateless tests (release)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestReleaseDatabaseOrdinary:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (release, DatabaseOrdinary)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestReleaseDatabaseReplicated:
@@ -734,7 +724,6 @@ jobs:
       - MarkReleaseReady
       - FunctionalStatelessTestDebug
       - FunctionalStatelessTestRelease
-      - FunctionalStatelessTestReleaseDatabaseOrdinary
       - FunctionalStatelessTestReleaseDatabaseReplicated
       - FunctionalStatelessTestReleaseAnalyzer
       - FunctionalStatelessTestReleaseS3

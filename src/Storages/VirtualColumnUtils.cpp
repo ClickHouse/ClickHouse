@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <memory>
+#include <stack>
 #include <Core/NamesAndTypes.h>
 #include <Core/TypeId.h>
 
@@ -211,7 +212,7 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
         const auto * expr_const_node = actions->tryFindInOutputs(expr_column_name);
         if (!expr_const_node)
             return false;
-        auto filter_actions = ActionsDAG::buildFilterActionsDAG({expr_const_node}, {}, context);
+        auto filter_actions = ActionsDAG::buildFilterActionsDAG({expr_const_node});
         const auto & nodes = filter_actions->getNodes();
         bool has_dependent_columns = std::any_of(nodes.begin(), nodes.end(), [&](const auto & node)
         {
@@ -253,19 +254,7 @@ static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & co
                 if (!future_set->get())
                 {
                     if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
-                    {
-                        auto plan = set_from_subquery->build(context);
-
-                        if (!plan)
-                            continue;
-
-                        auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
-                        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-                        pipeline.complete(std::make_shared<EmptySink>(Block()));
-
-                        CompletedPipelineExecutor executor(pipeline);
-                        executor.execute();
-                    }
+                        set_from_subquery->buildSetInplace(context);
                 }
             }
         }
@@ -406,7 +395,7 @@ ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, con
     }
 
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
-    return splitFilterDagForAllowedInputs(predicate, block);
+    return splitFilterDagForAllowedInputs(predicate, &block);
 }
 
 ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ActionsDAGPtr & dag, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
@@ -480,7 +469,7 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block & allo
 
 static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
     const ActionsDAG::Node * node,
-    const Block & allowed_inputs,
+    const Block * allowed_inputs,
     ActionsDAG::Nodes & additional_nodes)
 {
     if (node->type == ActionsDAG::ActionType::FUNCTION)
@@ -555,13 +544,13 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
         }
     }
 
-    if (!canEvaluateSubtree(node, allowed_inputs))
+    if (allowed_inputs && !canEvaluateSubtree(node, *allowed_inputs))
         return nullptr;
 
     return node;
 }
 
-ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block & allowed_inputs)
+ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs)
 {
     if (!predicate)
         return nullptr;
@@ -576,7 +565,7 @@ ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate,
 
 void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block, ContextPtr context)
 {
-    auto dag = splitFilterDagForAllowedInputs(predicate, block);
+    auto dag = splitFilterDagForAllowedInputs(predicate, &block);
     if (dag)
         filterBlockWithDAG(dag, block, context);
 }

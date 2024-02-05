@@ -1,36 +1,37 @@
-#include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/MergeTree/BoolMask.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/Utils.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/castColumn.h>
-#include <Interpreters/misc.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/indexHint.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/CastOverloadResolver.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/MortonUtils.h>
-#include <Common/typeid_cast.h>
-#include <Columns/ColumnSet.h>
-#include <Columns/ColumnConst.h>
-#include <Interpreters/convertFieldToType.h>
+#include <Functions/indexHint.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/Set.h>
-#include <Parsers/queryToString.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/applyFunction.h>
+#include <Interpreters/castColumn.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/misc.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include <Parsers/queryToString.h>
+#include <Storages/MergeTree/BoolMask.h>
+#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/MortonUtils.h>
+#include <Common/typeid_cast.h>
 
 #include <algorithm>
 #include <cassert>
@@ -763,92 +764,6 @@ void KeyCondition::getAllSpaceFillingCurves()
 }
 
 KeyCondition::KeyCondition(
-    const ASTPtr & query,
-    const ASTs & additional_filter_asts,
-    Block block_with_constants,
-    PreparedSetsPtr prepared_sets,
-    ContextPtr context,
-    const Names & key_column_names,
-    const ExpressionActionsPtr & key_expr_,
-    NameSet array_joined_column_names_,
-    bool single_point_,
-    bool strict_)
-    : key_expr(key_expr_)
-    , key_subexpr_names(getAllSubexpressionNames(*key_expr))
-    , array_joined_column_names(std::move(array_joined_column_names_))
-    , single_point(single_point_)
-    , strict(strict_)
-{
-    size_t key_index = 0;
-    for (const auto & name : key_column_names)
-    {
-        if (!key_columns.contains(name))
-        {
-            key_columns[name] = key_columns.size();
-            key_indices.push_back(key_index);
-        }
-        ++key_index;
-    }
-
-    if (context->getSettingsRef().analyze_index_with_space_filling_curves)
-        getAllSpaceFillingCurves();
-
-    ASTPtr filter_node;
-    if (query)
-        filter_node = buildFilterNode(query, additional_filter_asts);
-
-    if (!filter_node)
-    {
-        has_filter = false;
-        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
-        return;
-    }
-
-    has_filter = true;
-
-    /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
-      * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
-      * This is caused by rewriting in KeyCondition::tryParseAtomFromAST of relational operators to less strict
-      * when parsing the AST into internal RPN representation.
-      * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
-      * are pushed down and applied (when possible) to leaf nodes.
-      */
-    auto inverted_filter_node = DB::cloneASTWithInversionPushDown(filter_node);
-
-    RPNBuilder<RPNElement> builder(
-        inverted_filter_node,
-        std::move(context),
-        std::move(block_with_constants),
-        std::move(prepared_sets),
-        [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
-
-    rpn = std::move(builder).extractRPN();
-
-    findHyperrectanglesForArgumentsOfSpaceFillingCurves();
-}
-
-KeyCondition::KeyCondition(
-    const SelectQueryInfo & query_info,
-    ContextPtr context,
-    const Names & key_column_names,
-    const ExpressionActionsPtr & key_expr_,
-    bool single_point_,
-    bool strict_)
-    : KeyCondition(
-        query_info.query,
-        query_info.filter_asts,
-        KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context),
-        query_info.prepared_sets,
-        context,
-        key_column_names,
-        key_expr_,
-        query_info.syntax_analyzer_result ? query_info.syntax_analyzer_result->getArrayJoinSourceNameSet() : NameSet{},
-        single_point_,
-        strict_)
-{
-}
-
-KeyCondition::KeyCondition(
     ActionsDAGPtr filter_dag,
     ContextPtr context,
     const Names & key_column_names,
@@ -883,6 +798,13 @@ KeyCondition::KeyCondition(
 
     has_filter = true;
 
+    /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
+      * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
+      * This is caused by rewriting in KeyCondition::tryParseAtomFromAST of relational operators to less strict
+      * when parsing the AST into internal RPN representation.
+      * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
+      * are pushed down and applied (when possible) to leaf nodes.
+      */
     auto inverted_dag = cloneASTWithInversionPushDown({filter_dag->getOutputs().at(0)}, context);
     assert(inverted_dag->getOutputs().size() == 1);
 
@@ -913,21 +835,6 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
     RPNBuilderTreeNode node(expr.get(), tree_context);
 
     return node.tryGetConstant(out_value, out_type);
-}
-
-
-static Field applyFunctionForField(
-    const FunctionBasePtr & func,
-    const DataTypePtr & arg_type,
-    const Field & arg_value)
-{
-    ColumnsWithTypeAndName columns
-    {
-        { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
-    };
-
-    auto col = func->execute(columns, func->getResultType(), 1);
-    return (*col)[0];
 }
 
 /// The case when arguments may have types different than in the primary key.
@@ -967,33 +874,6 @@ static std::pair<Field, DataTypePtr> applyBinaryFunctionForFieldOfUnknownType(
     Field result = (*col)[0];
 
     return {std::move(result), std::move(return_type)};
-}
-
-
-static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
-{
-    /// Fallback for fields without block reference.
-    if (field.isExplicit())
-        return applyFunctionForField(func, current_type, field);
-
-    String result_name = "_" + func->getName() + "_" + toString(field.column_idx);
-    const auto & columns = field.columns;
-    size_t result_idx = columns->size();
-
-    for (size_t i = 0; i < result_idx; ++i)
-    {
-        if ((*columns)[i].name == result_name)
-            result_idx = i;
-    }
-
-    if (result_idx == columns->size())
-    {
-        ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
-        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
-        (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size());
-    }
-
-    return {field.columns, field.row_idx, result_idx};
 }
 
 /** When table's key has expression with these functions from a column,

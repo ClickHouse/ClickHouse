@@ -6,6 +6,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Common/re2.h>
 
 #include <IO/SharedThreadPools.h>
 
@@ -39,15 +40,6 @@
 
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 using namespace Azure::Storage::Blobs;
 
@@ -535,7 +527,12 @@ public:
         , format_settings(format_settings_)
     {
         StoredObject object(blob_path);
-        write_buf = wrapWriteBufferWithCompressionMethod(object_storage->writeObject(object, WriteMode::Rewrite), compression_method, 3);
+        const auto & settings = context->getSettingsRef();
+        write_buf = wrapWriteBufferWithCompressionMethod(
+            object_storage->writeObject(object, WriteMode::Rewrite),
+            compression_method,
+            static_cast<int>(settings.output_format_compression_level),
+            static_cast<int>(settings.output_format_compression_zstd_window_log));
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, format_settings);
     }
 
@@ -710,7 +707,7 @@ private:
 
 void ReadFromAzureBlob::applyFilters()
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -1124,7 +1121,7 @@ Chunk StorageAzureBlobSource::generate()
     return {};
 }
 
-void StorageAzureBlobSource::addNumRowsToCache(const DB::String & path, size_t num_rows)
+void StorageAzureBlobSource::addNumRowsToCache(const String & path, size_t num_rows)
 {
     String source = fs::path(connection_url) / container / path;
     auto cache_key = getKeyForSchemaCache(source, format, format_settings, getContext());

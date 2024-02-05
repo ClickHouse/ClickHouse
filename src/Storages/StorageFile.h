@@ -163,7 +163,7 @@ private:
 
     mutable std::shared_timed_mutex rwlock;
 
-    Poco::Logger * log = &Poco::Logger::get("StorageFile");
+    LoggerPtr log = getLogger("StorageFile");
 
     /// Total number of bytes to read (sums for multiple files in case of globs). Needed for progress bar.
     size_t total_bytes_to_read = 0;
@@ -255,8 +255,6 @@ private:
     {
         return storage->getName();
     }
-
-    void setKeyCondition(const SelectQueryInfo & query_info_, ContextPtr context_) override;
 
     void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override;
 
