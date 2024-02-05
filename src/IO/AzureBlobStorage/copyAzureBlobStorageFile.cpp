@@ -58,7 +58,7 @@ namespace
             , schedule(schedule_)
             , for_disk_azure_blob_storage(for_disk_azure_blob_storage_)
             , log(log_)
-            , max_single_part_upload_size(settings_.get()->max_single_part_upload_size)
+            , max_single_part_upload_size(settings_->max_single_part_upload_size)
         {
         }
 
