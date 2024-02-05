@@ -19,7 +19,7 @@ StorageSystemNumbers::StorageSystemNumbers(const StorageID & table_id, bool mult
     : IStorage(table_id), multithreaded(multithreaded_), limit(limit_), offset(offset_)
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
+    storage_metadata.setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>(), "The actual number."}}));
     setInMemoryMetadata(storage_metadata);
 }
 

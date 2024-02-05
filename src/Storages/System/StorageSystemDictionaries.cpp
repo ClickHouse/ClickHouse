@@ -75,7 +75,7 @@ ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
         {"attribute.names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Array of attribute names provided by the dictionary."},
         {"attribute.types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Corresponding array of attribute types provided by the dictionary."},
         {"bytes_allocated", std::make_shared<DataTypeUInt64>(), "Amount of RAM allocated for the dictionary."},
-        {"hierarchical_index_bytes_allocated", std::make_shared<DataTypeUInt64>(), ""},
+        {"hierarchical_index_bytes_allocated", std::make_shared<DataTypeUInt64>(), "Amount of RAM allocated for hierarchical index."},
         {"query_count", std::make_shared<DataTypeUInt64>(), "Number of queries since the dictionary was loaded or since the last successful reboot."},
         {"hit_rate", std::make_shared<DataTypeFloat64>(), "For cache dictionaries, the percentage of uses for which the value was in the cache."},
         {"found_rate", std::make_shared<DataTypeFloat64>(), "The percentage of uses for which the value was found."},

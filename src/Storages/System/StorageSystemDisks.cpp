@@ -30,7 +30,7 @@ StorageSystemDisks::StorageSystemDisks(const StorageID & table_id_)
         {"is_write_once", std::make_shared<DataTypeUInt8>(), "Flag which indicates if disk is write-once. Which means that it does support BACKUP to this disk, but does not support INSERT into MergeTree table on this disk."},
         {"is_remote", std::make_shared<DataTypeUInt8>(), "Flag which indicated what operations with this disk involve network interaction."},
         {"is_broken", std::make_shared<DataTypeUInt8>(), "Flag which indicates if disk is broken. Broken disks will have 0 space and cannot be used."},
-        {"cache_path", std::make_shared<DataTypeString>(), "The path to the cache directory on local drive in case when the disk suports caching."},
+        {"cache_path", std::make_shared<DataTypeString>(), "The path to the cache directory on local drive in case when the disk supports caching."},
     }));
     setInMemoryMetadata(storage_metadata);
 }

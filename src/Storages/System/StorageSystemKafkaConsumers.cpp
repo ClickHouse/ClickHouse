@@ -41,8 +41,8 @@ ColumnsDescription StorageSystemKafkaConsumers::getColumnsDescription()
         {"last_rebalance_time", std::make_shared<DataTypeDateTime>(), "Timestamp of the most recent Kafka rebalance."},
         {"num_rebalance_revocations", std::make_shared<DataTypeUInt64>(), "Number of times the consumer was revoked its partitions."},
         {"num_rebalance_assignments", std::make_shared<DataTypeUInt64>(), "Number of times the consumer was assigned to Kafka cluster."},
-        {"is_currently_used", std::make_shared<DataTypeUInt8>(), "Consumer is in use."},
-        {"last_used", std::make_shared<DataTypeDateTime64>(6)},
+        {"is_currently_used", std::make_shared<DataTypeUInt8>(), "The flag which shows whether the consumer is in use."},
+        {"last_used", std::make_shared<DataTypeDateTime64>(6), "The last time this consumer was in use."},
         {"rdkafka_stat", std::make_shared<DataTypeString>(), "Library internal statistic. Set statistics_interval_ms to 0 disable, default is 3000 (once in three seconds)."},
     };
 }

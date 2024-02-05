@@ -42,7 +42,7 @@ ColumnsDescription StorageSystemViewRefreshes::getColumnsDescription()
         {"total_rows", std::make_shared<DataTypeUInt64>(), "Estimated total number of rows that need to be read by the current refresh."},
         {"total_bytes", std::make_shared<DataTypeUInt64>(), "Estimated total number of bytes that need to be read by the current refresh."},
         {"written_rows", std::make_shared<DataTypeUInt64>(), "Number of rows written during the current refresh."},
-        {"written_bytes", std::make_shared<DataTypeUInt64>(), "Numbe rof bytes written during the current refresh."},
+        {"written_bytes", std::make_shared<DataTypeUInt64>(), "Number rof bytes written during the current refresh."},
         {"result_rows", std::make_shared<DataTypeUInt64>(), "Estimated total number of rows in the result set of the SELECT query."},
         {"result_bytes", std::make_shared<DataTypeUInt64>(), "Estimated total number of bytes in the result set of the SELECT query."},
     };
