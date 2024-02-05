@@ -200,7 +200,7 @@ void KeeperStorage::Node::setResponseStat(Coordination::Stat & response_stat) co
     response_stat.cversion = stat.cversion;
     response_stat.aversion = stat.aversion;
     response_stat.ephemeralOwner = stat.ephemeralOwner;
-    response_stat.dataLength = static_cast<int32_t>(data.size());
+    response_stat.dataLength = static_cast<int32_t>(getData().size());
     response_stat.numChildren = stat.numChildren;
     response_stat.pzxid = stat.pzxid;
 
@@ -208,12 +208,17 @@ void KeeperStorage::Node::setResponseStat(Coordination::Stat & response_stat) co
 
 uint64_t KeeperStorage::Node::sizeInBytes() const
 {
-    return sizeof(Node) + children.size() * sizeof(StringRef) + data.size();
+    return sizeof(Node) + children.size() * sizeof(StringRef) + getData().size();
 }
 
 void KeeperStorage::Node::setData(String new_data)
 {
-    data = std::move(new_data);
+    if (new_data.empty())
+    {
+        data = {};
+        return;
+    }
+    data = StringPool::instance().addString(new_data);
 }
 
 void KeeperStorage::Node::addChild(StringRef child_path)
@@ -235,7 +240,7 @@ UInt64 KeeperStorage::Node::getDigest(const std::string_view path) const
 {
     if (!has_cached_digest)
     {
-        cached_digest = calculateDigest(path, data, stat);
+        cached_digest = calculateDigest(path, getData(), stat);
         has_cached_digest = true;
     }
 
@@ -246,7 +251,7 @@ void KeeperStorage::Node::shallowCopy(const KeeperStorage::Node & other)
 {
     stat = other.stat;
     seq_num = other.seq_num;
-    setData(other.getData());
+    data = other.data;
     cached_digest = other.cached_digest;
 }
 

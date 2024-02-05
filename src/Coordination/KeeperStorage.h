@@ -22,6 +22,238 @@ using ResponseCallback = std::function<void(const Coordination::ZooKeeperRespons
 using ChildrenSet = absl::flat_hash_set<StringRef, StringRefHash>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
+
+/// Stores small strings inlined in the object and large strings in a separate memory buffer.
+/// These objects are stores in global StringPool where they can be found by string hash and
+/// are deleted from it when the last reference is removed.
+class ConstStringWithRefCount
+{
+    friend class ConstStringRef;
+    friend class StringPool;
+
+    /// Store either inlined small string or pointer to char array and size
+    union
+    {
+        StringRef str{};
+        char inline_data[16];
+    } data = {};
+
+    /// Highest byte is used to store the size of the inline_data. If it is 0 then the string is not inlined.
+    std::atomic<size_t> ref_count{0};
+
+    size_t getInlineSize() const
+    {
+        return (ref_count & 0xff00000000000000) >> (64 - 8);
+    }
+
+    bool isInline() const
+    {
+        return getInlineSize() != 0;
+    }
+
+    void ref()
+    {
+        ref_count.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void unRef()
+    {
+        ref_count.fetch_sub(1, std::memory_order_relaxed);
+
+        if ((ref_count & 0x00ffffffffffffff) == 0)
+            destroy(this);
+    }
+
+    static void destroy(ConstStringWithRefCount * ptr);
+
+public:
+    ConstStringWithRefCount() = default;
+
+    ~ConstStringWithRefCount()
+    {
+        assert((ref_count & 0x00ffffffffffffff) == 0);
+        if (!isInline())
+            delete[] data.str.data;
+    }
+
+    bool operator == (const ConstStringWithRefCount & other) const
+    {
+        return get() == other.get();
+    }
+
+    /// We are going to store pointers to ConstStringWithRefCount
+    /// so we need to make sure it cannot be used in containers that move elements
+    ConstStringWithRefCount(const ConstStringWithRefCount &) = delete;
+    ConstStringWithRefCount & operator=(const ConstStringWithRefCount &) = delete;
+    ConstStringWithRefCount(const ConstStringWithRefCount &&) = delete;
+    ConstStringWithRefCount & operator=(const ConstStringWithRefCount &&) = delete;
+
+    explicit ConstStringWithRefCount(StringRef str)
+    {
+        data.str = {};
+
+        if (str.size <= 16)
+        {
+            memcpy(data.inline_data, str.data, str.size);
+            ref_count = (str.size << (64 - 8));
+        }
+        else
+        {
+            char * buf = new char[str.size];
+            memcpy(buf, str.data, str.size);
+            data.str.data = buf;
+            data.str.size = str.size;
+        }
+    }
+
+    StringRef get() const
+    {
+        if (isInline())
+            return StringRef(data.inline_data, getInlineSize());
+        else
+            return data.str;
+    }
+};
+
+struct ConstStringWithRefCountHash
+{
+    size_t operator()(const ConstStringWithRefCount & s) const
+    {
+        return StringRefHash()(s.get());
+    }
+};
+
+/// Points to ConstStringWithRefCount and manages reference counting
+/// FOr empty string it stores nullptr
+class ConstStringRef
+{
+    friend class StringPool;
+
+    ConstStringWithRefCount * ptr = nullptr;
+
+    explicit ConstStringRef(ConstStringWithRefCount * ptr_) : ptr(ptr_)
+    {
+        if (ptr)
+            ptr->ref();
+    }
+
+public:
+    ConstStringRef() = default;
+
+    ConstStringRef(const ConstStringRef & other) : ptr(other.ptr)
+    {
+        if (this == &other)
+            return;
+
+        if (ptr)
+            ptr->ref();
+    }
+
+    ConstStringRef(ConstStringRef && other) noexcept : ptr(other.ptr)
+    {
+        other.ptr = nullptr;
+    }
+
+    ConstStringRef & operator=(const ConstStringRef & other)
+    {
+        if (this == &other)
+            return * this;
+
+        if (ptr)
+        {
+            ptr->unRef();
+        }
+
+        ptr = other.ptr;
+        if (ptr)
+            ptr->ref();
+
+        return *this;
+    }
+
+    ConstStringRef & operator=(ConstStringRef && other) noexcept
+    {
+        if (ptr)
+        {
+            ptr->unRef();
+        }
+
+        ptr = other.ptr;
+        other.ptr = nullptr;
+
+        return *this;
+    }
+
+    ~ConstStringRef()
+    {
+        if (ptr)
+        {
+            ptr->unRef();
+        }
+    }
+
+    StringRef get() const
+    {
+        if (ptr)
+            return ptr->get();
+        else
+            return {};
+    }
+};
+
+
+class StringPool
+{
+    friend class ConstStringWithRefCount;
+
+    void remove(ConstStringWithRefCount * str)
+    {
+        std::lock_guard lock_guard(lock);
+        auto it = strings.find(*str);
+        assert(&*it == str);
+        strings.erase(it);
+    }
+
+public:
+    static StringPool & instance()
+    {
+        static StringPool pool;
+        return pool;
+    }
+
+    ConstStringRef addString(const String & str)
+    {
+        std::lock_guard lock_guard(lock);
+
+        ConstStringWithRefCount key;
+        key.data.str = str;
+
+        auto it = strings.find(key);
+        key.data.str = {}; /// key.data.str is not ownde by key and should not be deleted
+
+        if (it != strings.end())
+        {
+//            std::cerr << "FOUND " << str << std::endl;
+            return ConstStringRef(const_cast<ConstStringWithRefCount*>(&*it));
+        }
+
+        auto res= strings.emplace(str);
+        return ConstStringRef(const_cast<ConstStringWithRefCount*>(&*res.first));
+    }
+
+private:
+    std::mutex lock;
+
+    std::unordered_set<ConstStringWithRefCount, ConstStringWithRefCountHash> strings;
+};
+
+inline void ConstStringWithRefCount::destroy(ConstStringWithRefCount * ptr)
+{
+    /// Remove from pool
+    StringPool::instance().remove(ptr);
+}
+
+
 struct KeeperStorageSnapshot;
 
 /// Keeper state machine almost equal to the ZooKeeper's state machine.
@@ -68,7 +300,11 @@ public:
 
         void setData(String new_data);
 
-        const auto & getData() const noexcept { return data; }
+        std::string_view getData() const noexcept
+        {
+            auto s = data.get();
+            return s.toView();
+        }
 
         void addChild(StringRef child_path);
 
@@ -87,7 +323,7 @@ public:
         // (e.g. we don't need to copy list of children)
         void shallowCopy(const Node & other);
     private:
-        String data;
+        ConstStringRef data;
         ChildrenSet children{};
     };
 
