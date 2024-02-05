@@ -9,9 +9,6 @@
 
 namespace DB
 {
-
-class IConnectionPool;
-
 class Throttler;
 using ThrottlerPtr = std::shared_ptr<Throttler>;
 
