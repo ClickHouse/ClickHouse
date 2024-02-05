@@ -2,8 +2,6 @@
 
 #include <memory>
 
-#include <base/defines.h>
-
 #include <Poco/Channel.h>
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
@@ -27,16 +25,6 @@ using LoggerRawPtr = Poco::Logger *;
 LoggerPtr getLogger(const std::string & name);
 
 const Poco::Logger * getDefaultLogger();
-
-/** Get Logger with specified name. If the Logger does not exists, it is created.
-  * This overload was added for specific purpose, when logger is constructed from constexpr string.
-  * Logger is destroyed only during program shutdown.
-  */
-template <size_t n>
-ALWAYS_INLINE LoggerPtr getLogger(const char (&name)[n])
-{
-    return Poco::Logger::getShared(name, false /*should_be_owned_by_shared_ptr_if_created*/);
-}
 
 /** Create Logger with specified name, channel and logging level.
   * If Logger already exists, throws exception.

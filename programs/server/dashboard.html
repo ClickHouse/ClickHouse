@@ -1450,7 +1450,13 @@ window.onpopstate = function(event) {
 if (window.location.hash) {
     try {
         let search_query_, customized_;
-        ({host, user, queries, params, search_query_, customized_} = JSON.parse(LZString.decompressFromEncodedURIComponent(window.location.hash.substring(1))));
+        try {
+            ({host, user, queries, params, search_query_, customized_} = JSON.parse(LZString.decompressFromEncodedURIComponent(window.location.hash.substring(1))));
+        } catch {
+            // For compatibility with uncompressed state
+            ({host, user, queries, params, search_query_, customized_} = JSON.parse(atob(window.location.hash.substring(1))));
+        }
+
         // For compatibility with old URLs' hashes
         search_query = search_query_ !== undefined ? search_query_ : search_query;
         customized = customized_ !== undefined ? customized_ : true;
