@@ -229,7 +229,8 @@ FDBKeeper::FDBKeeper(const zkutil::ZooKeeperArgs & args, std::shared_ptr<ZooKeep
                 {
                     promise.set_value();
                 }
-            });
+            },
+            trx_tracker.newToken());
         promise.get_future().get();
     }
 
