@@ -1,7 +1,5 @@
 #pragma once
 
-#include <variant>
-
 #include <Common/AsyncTaskExecutor.h>
 #include <Common/Epoll.h>
 #include <Common/Fiber.h>
@@ -20,7 +18,7 @@ class ConnectionEstablisher
 public:
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    ConnectionEstablisher(IConnectionPool * pool_,
+    ConnectionEstablisher(ConnectionPoolPtr pool_,
                           const ConnectionTimeouts * timeouts_,
                           const Settings & settings_,
                           LoggerPtr log,
@@ -35,7 +33,7 @@ public:
     bool isFinished() const { return is_finished; }
 
 private:
-    IConnectionPool * pool;
+    ConnectionPoolPtr pool;
     const ConnectionTimeouts * timeouts;
     const Settings & settings;
     LoggerPtr log;
@@ -58,7 +56,7 @@ class ConnectionEstablisherAsync : public AsyncTaskExecutor
 public:
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    ConnectionEstablisherAsync(IConnectionPool * pool_,
+    ConnectionEstablisherAsync(ConnectionPoolPtr pool_,
                                const ConnectionTimeouts * timeouts_,
                                const Settings & settings_,
                                LoggerPtr log_,

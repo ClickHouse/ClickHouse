@@ -21,6 +21,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeIndexInverted.h>
+#include <Storages/BlockNumberColumn.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -309,6 +310,15 @@ getColumnsForNewDataPart(
         }
     }
 
+    if (!storage_columns_set.contains(BlockNumberColumn::name))
+    {
+        if (source_part->tryGetSerialization(BlockNumberColumn::name) != nullptr)
+        {
+            storage_columns.push_back({BlockNumberColumn::name, BlockNumberColumn::type});
+            storage_columns_set.insert(BlockNumberColumn::name);
+        }
+    }
+
     SerializationInfoByName new_serialization_infos;
     for (const auto & [name, old_info] : serialization_infos)
     {
@@ -541,7 +551,9 @@ static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
     {
         bool need_recalculate =
             materialized_projections.contains(projection.name)
-            || (!is_full_part_storage && source_part->hasProjection(projection.name));
+            || (!is_full_part_storage
+                && source_part->hasProjection(projection.name)
+                && !source_part->hasBrokenProjection(projection.name));
 
         if (need_recalculate)
             projections_to_recalc.insert(&projection);
@@ -885,7 +897,8 @@ void finalizeMutatedPart(
     new_data_part->modification_time = time(nullptr);
 
     /// Load rest projections which are hardlinked
-    new_data_part->loadProjections(false, false, true /* if_not_loaded */);
+    bool noop;
+    new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
 
     /// All information about sizes is stored in checksums.
     /// It doesn't make sense to touch filesystem for sizes.
@@ -1462,7 +1475,9 @@ private:
 
             bool need_recalculate =
                 ctx->materialized_projections.contains(projection.name)
-                || (!is_full_part_storage && ctx->source_part->hasProjection(projection.name));
+                || (!is_full_part_storage
+                    && ctx->source_part->hasProjection(projection.name)
+                    && !ctx->source_part->hasBrokenProjection(projection.name));
 
             if (need_recalculate)
             {
@@ -1586,8 +1601,9 @@ private:
 
     void finalize()
     {
+        bool noop;
         ctx->new_data_part->minmax_idx = std::move(ctx->minmax_idx);
-        ctx->new_data_part->loadProjections(false, false, true /* if_not_loaded */);
+        ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 
