@@ -32,6 +32,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int LOGICAL_ERROR;
     extern const int CLUSTER_DOESNT_EXIST;
+    extern const int UNEXPECTED_CLUSTER;
 }
 
 namespace ClusterProxy
@@ -399,8 +400,10 @@ void executeQueryWithParallelReplicas(
     }
     else
     {
-        // todo: add error and exception for this case
-        chassert(not_optimized_cluster->getShardCount() == 1);
+        if (not_optimized_cluster->getShardCount() > 1)
+            throw DB::Exception(
+                ErrorCodes::UNEXPECTED_CLUSTER,
+                "`cluster_for_parallel_replicas` setting refers to cluster with several shards. Expected a cluster with one shard");
     }
 
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(
