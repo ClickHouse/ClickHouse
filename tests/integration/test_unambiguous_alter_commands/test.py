@@ -35,6 +35,7 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 QUERIES = """
 SELECT '--- Alter commands in parens';
 SELECT formatQuery('ALTER TABLE a (MODIFY TTL expr GROUP BY some_key), (ADD COLUMN a Int64)');
@@ -66,6 +67,7 @@ SELECT formatQuery('ALTER TABLE a (MODIFY TTL expr, expr2)'); -- Make sure it is
 SELECT formatQuery('ALTER TABLE a (MODIFY TTL (expr), (expr2 GROUP BY expr3))');
 SELECT formatQuery('ALTER TABLE a (MODIFY TTL expr, expr2 GROUP BY expr3)'); -- Make sure it is backward compatible
 """
+
 
 def test_alter():
     EXPECTED_OUTPUT = """--- Alter commands in parens
@@ -131,5 +133,3 @@ ALTER TABLE a\\n    (MODIFY TTL (expr), (expr2 GROUP BY expr3))
 """
     result = both_node.query(QUERIES)
     assert result == EXPECTED_OUTPUT
-
-
