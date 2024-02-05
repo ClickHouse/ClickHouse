@@ -19,6 +19,8 @@ class Labels(metaclass=WithIter):
     NO_MERGE_COMMIT = "no_merge_commit"
     NO_CI_CACHE = "no_ci_cache"
     CI_SET_REDUCED = "ci_set_reduced"
+    CI_SET_ARM = "ci_set_arm"
+    CI_SET_INTEGRATION = "ci_set_integration"
 
 
 class Build(metaclass=WithIter):
@@ -90,6 +92,7 @@ class JobNames(metaclass=WithIter):
     INTEGRATION_TEST_ASAN = "Integration tests (asan)"
     INTEGRATION_TEST_ASAN_ANALYZER = "Integration tests (asan, analyzer)"
     INTEGRATION_TEST_TSAN = "Integration tests (tsan)"
+    INTEGRATION_TEST_ARM = "Integration tests (aarch64)"
     INTEGRATION_TEST_FLAKY = "Integration tests flaky check (asan)"
 
     UPGRADE_TEST_DEBUG = "Upgrade check (debug)"
@@ -615,6 +618,28 @@ class CiConfig:
 CI_CONFIG = CiConfig(
     label_configs={
         Labels.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
+        Labels.CI_SET_ARM: LabelConfig(
+            run_jobs=[
+                # JobNames.STYLE_CHECK,
+                Build.PACKAGE_AARCH64,
+                JobNames.INTEGRATION_TEST_ARM,
+            ]
+        ),
+        Labels.CI_SET_INTEGRATION: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                Build.PACKAGE_ASAN,
+                Build.PACKAGE_RELEASE,
+                Build.PACKAGE_TSAN,
+                Build.PACKAGE_AARCH64,
+                JobNames.INTEGRATION_TEST_ASAN,
+                JobNames.INTEGRATION_TEST_ARM,
+                JobNames.INTEGRATION_TEST,
+                JobNames.INTEGRATION_TEST_ASAN_ANALYZER,
+                JobNames.INTEGRATION_TEST_TSAN,
+                JobNames.INTEGRATION_TEST_FLAKY,
+            ]
+        ),
         Labels.CI_SET_REDUCED: LabelConfig(
             run_jobs=[
                 job
@@ -995,6 +1020,11 @@ CI_CONFIG = CiConfig(
         JobNames.INTEGRATION_TEST_TSAN: TestConfig(
             Build.PACKAGE_TSAN,
             job_config=JobConfig(num_batches=6, **integration_test_common_params),  # type: ignore
+        ),
+        JobNames.INTEGRATION_TEST_ARM: TestConfig(
+            Build.PACKAGE_AARCH64,
+            # add [run_by_label="test arm"] to not run in regular pr workflow by default
+            job_config=JobConfig(num_batches=6, **integration_test_common_params, run_by_label="test arm"),  # type: ignore
         ),
         # FIXME: currently no wf has this job. Try to enable
         # "Integration tests (msan)": TestConfig(Build.PACKAGE_MSAN, job_config=JobConfig(num_batches=6, **integration_test_common_params) # type: ignore
