@@ -1,6 +1,8 @@
-#include <iomanip>
-#include <IO/Operators.h>
 #include <Parsers/ASTAlterQuery.h>
+
+#include <Core/ServerSettings.h>
+#include <IO/Operators.h>
+#include <Interpreters/Context.h>
 #include <Common/quoteString.h>
 
 
@@ -69,7 +71,11 @@ ASTPtr ASTAlterCommand::clone() const
 
 void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << ("(");
+    const auto format_with_parens = Context::getGlobalContextInstance()->getServerSettings().format_alter_operations_with_parentheses.value;
+
+    if (format_with_parens)
+        settings.ostr << "(";
+
     if (type == ASTAlterCommand::ADD_COLUMN)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD COLUMN " << (if_not_exists ? "IF NOT EXISTS " : "")
@@ -473,7 +479,8 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
 
-    settings.ostr << ")";
+    if (format_with_parens)
+        settings.ostr << ")";
 }
 
 void ASTAlterCommand::forEachPointerToChild(std::function<void(void**)> f)

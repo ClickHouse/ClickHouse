@@ -28,30 +28,9 @@ Default: 1
 
 Period in seconds for updating asynchronous metrics.
 
-Type: UInt32
-
-Default: 120
-
-
-## asynchronous_metrics_update_period_s
-
-Period in seconds for updating asynchronous metrics.
-
-Type: UInt32
+Type: UInt32Type: Bool
 
 Default: 1
-
-
-## background_buffer_flush_schedule_pool_size
-
-The maximum number of threads that will be used for performing flush operations for Buffer-engine tables in the background.
-
-Type: UInt64
-
-Default: 16
-
-
-## background_common_pool_size
 
 The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for \*MergeTree-engine tables in a background.
 
@@ -315,31 +294,29 @@ The maximum read speed in bytes per second for all backups on server. Zero means
 
 Type: UInt64
 
-Default: 0
 
-## max_backups_io_thread_pool_free_size
+Default: 120
 
-If the number of **idle** threads in the Backups IO Thread pool exceeds `max_backup_io_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.
+
+## asynchronous_metrics_update_period_s
+
+Period in seconds for updating asynchronous metrics.
+
+Type: UInt32
+
+Default: 1
+
+
+## background_buffer_flush_schedule_pool_size
+
+The maximum number of threads that will be used for performing flush operations for Buffer-engine tables in the background.
 
 Type: UInt64
 
-Default: 0
+Default: 16
 
-## max_backups_io_thread_pool_size
 
-The maximum number of threads that would be used for IO operations for BACKUP queries
-
-Type: UInt64
-
-Default: 1000
-
-## max_concurrent_queries
-
-Limit on total number of concurrently executed queries. Zero means Unlimited. Note that limits on insert and select queries, and on the maximum number of queries for users must also be considered.  See also max_concurrent_insert_queries, max_concurrent_select_queries, max_concurrent_queries_for_all_users. Zero means unlimited.
-
-:::note
-This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
-:::
+## background_common_pool_size
 
 Type: UInt64
 
@@ -472,10 +449,10 @@ The value 0 means that you can delete all tables without any restrictions.
 ``` xml
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
-  
 
-## max\_database\_num\_to\_warn {#max-database-num-to-warn}  
-If the number of attached databases exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.    
+
+## max\_database\_num\_to\_warn {#max-database-num-to-warn}
+If the number of attached databases exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
 Default value: 1000
 
 **Example**
@@ -483,10 +460,10 @@ Default value: 1000
 ``` xml
 <max_database_num_to_warn>50</max_database_num_to_warn>
 ```
-  
-## max\_table\_num\_to\_warn {#max-table-num-to-warn}   
-If the number of attached tables exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.  
-Default value: 5000    
+
+## max\_table\_num\_to\_warn {#max-table-num-to-warn}
+If the number of attached tables exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+Default value: 5000
 
 **Example**
 
@@ -495,9 +472,9 @@ Default value: 5000
 ```
 
 
-## max\_part\_num\_to\_warn {#max-part-num-to-warn}  
-If the number of active parts exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.  
-Default value: 100000  
+## max\_part\_num\_to\_warn {#max-part-num-to-warn}
+If the number of active parts exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+Default value: 100000
 
 **Example**
 
@@ -2873,3 +2850,19 @@ A limit on the number of materialized views attached to a table.
 Note that only directly dependent views are considered here, and the creation of one view on top of another view is not considered.
 
 Default value: `0`.
+
+## format_ttl_expressions_with_parentheses {#format_ttl_expressions_with_parentheses}
+
+If set to true, then TTL expressions will be surrounded by parentheses in formatted queries. This makes the parsing of formatted queries containing TTL expressions less ambiguous.
+
+Type: Bool
+
+Default: 0
+
+## format_alter_operations_with_parentheses {#format_alter_operations_with_parentheses}
+
+If set to true, then alter operations will be surrounded by parentheses in formatted queries. This makes the parsing of formatted alter queries less ambiguous.
+
+Type: Bool
+
+Default: 0

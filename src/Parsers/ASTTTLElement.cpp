@@ -1,8 +1,11 @@
-#include <Columns/Collator.h>
-#include <Common/quoteString.h>
 #include <Parsers/ASTTTLElement.h>
+
+#include <Columns/Collator.h>
+#include <Core/ServerSettings.h>
 #include <IO/Operators.h>
+#include <Interpreters/Context.h>
 #include <base/EnumReflection.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -32,7 +35,10 @@ ASTPtr ASTTTLElement::clone() const
 
 void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << "(";
+    const auto format_with_parens = Context::getGlobalContextInstance()->getServerSettings().format_ttl_expressions_with_parentheses.value;
+
+    if (format_with_parens)
+        settings.ostr << "(";
 
     ttl()->formatImpl(settings, state, frame);
     if (mode == TTLMode::MOVE)
@@ -88,7 +94,8 @@ void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & st
         where()->formatImpl(settings, state, frame);
     }
 
-    settings.ostr << ")";
+    if (format_with_parens)
+        settings.ostr << ")";
 }
 
 void ASTTTLElement::setExpression(int & pos, ASTPtr && ast)

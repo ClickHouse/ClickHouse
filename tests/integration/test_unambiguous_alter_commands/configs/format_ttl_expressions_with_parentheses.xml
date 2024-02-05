@@ -1,0 +1,3 @@
+<clickhouse>
+    <format_ttl_expressions_with_parentheses>1</format_ttl_expressions_with_parentheses>
+</clickhouse>
