@@ -64,7 +64,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
-    IConnectionPool * pool,
+    ConnectionPoolPtr pool,
     const String & query_,
     const Block & header_,
     ContextPtr context_,

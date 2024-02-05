@@ -90,7 +90,7 @@ public:
     void enforceAggregationInOrder();
 
 private:
-    void addPipeForSingeReplica(Pipes & pipes, IConnectionPool * pool, IConnections::ReplicaInfo replica_info);
+    void addPipeForSingeReplica(Pipes & pipes, const ConnectionPoolPtr & pool, IConnections::ReplicaInfo replica_info);
 
     ClusterPtr cluster;
     ASTPtr query_ast;
