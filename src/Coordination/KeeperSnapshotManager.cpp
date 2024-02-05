@@ -427,9 +427,12 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     {
         for (const auto & itr : storage.container)
         {
-            auto parent_path = parentNodePath(itr.key);
-            storage.container.updateValue(
-                parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(getBaseNodeName(path)); });
+            if (itr.key != "/")
+            {
+                auto parent_path = parentNodePath(itr.key);
+                storage.container.updateValue(
+                    parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(getBaseNodeName(path)); });
+            }
         }
 
         for (const auto & itr : storage.container)
