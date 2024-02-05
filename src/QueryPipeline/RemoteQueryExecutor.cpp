@@ -30,6 +30,7 @@ namespace ProfileEvents
     extern const Event SuspendSendingQueryToShard;
     extern const Event ReadTaskRequestsReceived;
     extern const Event MergeTreeReadTaskRequestsReceived;
+    extern const Event ParallelReplicasAvailableCount;
 }
 
 namespace DB
@@ -97,7 +98,12 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
         std::vector<IConnectionPool::Entry> connection_entries;
         if (!result.entry.isNull() && result.is_usable)
+        {
+            if (extension_ && extension_->parallel_reading_coordinator)
+                ProfileEvents::increment(ProfileEvents::ParallelReplicasAvailableCount);
+
             connection_entries.emplace_back(std::move(result.entry));
+        }
 
         auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), context->getSettingsRef(), throttler);
         if (extension_ && extension_->replica_info)
