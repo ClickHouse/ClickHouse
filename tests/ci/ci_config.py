@@ -14,7 +14,6 @@ class Labels(metaclass=WithIter):
     """
     Label names or commit tokens in normalized form
     """
-
     DO_NOT_TEST_LABEL = "do_not_test"
     NO_MERGE_COMMIT = "no_merge_commit"
     NO_CI_CACHE = "no_ci_cache"
@@ -293,6 +292,7 @@ stateless_check_digest = DigestConfig(
     include_paths=[
         "./tests/queries/0_stateless/",
         "./tests/clickhouse-test",
+        "./tests/config",
         "./tests/*.txt",
     ],
     exclude_files=[".md"],
@@ -302,6 +302,7 @@ stateful_check_digest = DigestConfig(
     include_paths=[
         "./tests/queries/1_stateful/",
         "./tests/clickhouse-test",
+        "./tests/config",
         "./tests/*.txt",
     ],
     exclude_files=[".md"],
@@ -313,6 +314,7 @@ stress_check_digest = DigestConfig(
         "./tests/queries/0_stateless/",
         "./tests/queries/1_stateful/",
         "./tests/clickhouse-test",
+        "./tests/config",
         "./tests/*.txt",
     ],
     exclude_files=[".md"],
@@ -937,10 +939,6 @@ CI_CONFIG = CiConfig(
         JobNames.STATELESS_TEST_ANALYZER_RELEASE: TestConfig(
             Build.PACKAGE_RELEASE, job_config=JobConfig(**statless_test_common_params)  # type: ignore
         ),
-        # delete?
-        # "Stateless tests (release, DatabaseOrdinary)": TestConfig(
-        #     Build.PACKAGE_RELEASE, job_config=JobConfig(**statless_test_common_params)  # type: ignore
-        # ),
         JobNames.STATELESS_TEST_DB_REPL_RELEASE: TestConfig(
             Build.PACKAGE_RELEASE,
             job_config=JobConfig(num_batches=4, **statless_test_common_params),  # type: ignore
@@ -1082,7 +1080,7 @@ CI_CONFIG = CiConfig(
         JobNames.SQL_LOGIC_TEST: TestConfig(
             Build.PACKAGE_RELEASE, job_config=JobConfig(**sqllogic_test_params)  # type: ignore
         ),
-        JobNames.SQL_LOGIC_TEST: TestConfig(
+        JobNames.SQLTEST: TestConfig(
             Build.PACKAGE_RELEASE, job_config=JobConfig(**sql_test_params)  # type: ignore
         ),
         JobNames.CLCIKBENCH_TEST: TestConfig(Build.PACKAGE_RELEASE),
