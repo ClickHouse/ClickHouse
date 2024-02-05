@@ -219,6 +219,10 @@ TEST_P(ArchiveReaderAndWriterTest, TwoFilesInArchive)
     ASSERT_TRUE(reader->fileExists("a.txt"));
     ASSERT_TRUE(reader->fileExists("b/c.txt"));
 
+    // Get all files
+    auto files = reader->getAllFiles();
+    EXPECT_EQ(files.size(), 2);
+
     EXPECT_EQ(reader->getFileInfo("a.txt").uncompressed_size, a_contents.size());
     EXPECT_EQ(reader->getFileInfo("b/c.txt").uncompressed_size, c_contents.size());
 
@@ -274,6 +278,10 @@ TEST_P(ArchiveReaderAndWriterTest, TwoFilesInArchive)
         enumerator = reader->nextFile(std::move(in));
         EXPECT_EQ(enumerator, nullptr);
     }
+    
+    // Get all files one last time
+    files = reader->getAllFiles();
+    EXPECT_EQ(files.size(), 2);
 }
 
 
