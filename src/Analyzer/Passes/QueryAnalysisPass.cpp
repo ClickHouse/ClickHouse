@@ -5570,6 +5570,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 column = function_base->getConstantResultForNonConstArguments(argument_columns, result_type);
             }
 
+            if (column->getDataType() != result_type->getColumnType())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected return type from {}. Expected {}. Got {}",
+                    function->getName(),
+                    result_type->getColumnType(),
+                    column->getDataType());
+
             /** Do not perform constant folding if there are aggregate or arrayJoin functions inside function.
               * Example: SELECT toTypeName(sum(number)) FROM numbers(10);
               */
