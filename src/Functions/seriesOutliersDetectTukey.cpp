@@ -6,6 +6,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Common/NaNUtils.h>
 #include <cmath>
 
 namespace DB
@@ -80,19 +81,19 @@ public:
         if (arguments.size() > 1)
         {
             Float64 p_min = arguments[1].column->getFloat64(0);
-            if (p_min < min_quartile|| p_min > max_quartile)
+            if (isnan(p_min) || !isFinite(p_min) || p_min < min_quartile|| p_min > max_quartile)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} must be in range [2.0, 98.0]", getName());
 
             min_percentile = p_min / 100;
 
             Float64 p_max = arguments[2].column->getFloat64(0);
-            if (p_max < min_quartile || p_max > max_quartile || p_max < min_percentile * 100)
+            if (isnan(p_max) || !isFinite(p_max) || p_max < min_quartile || p_max > max_quartile || p_max < min_percentile * 100)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The third argument of function {} must be in range [2.0, 98.0]", getName());
 
             max_percentile = p_max / 100;
 
             auto k_val = arguments[3].column->getFloat64(0);
-            if (k_val < 0.0)
+            if (k_val < 0.0 || isnan(k_val) || !isFinite(k_val))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The fourth argument of function {} must be a positive number", getName());
 
             k = k_val;
