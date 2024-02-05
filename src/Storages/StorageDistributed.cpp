@@ -744,6 +744,22 @@ StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
 namespace
 {
 
+class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasColumnsVisitor>
+{
+public:
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        auto * column_node = node->as<ColumnNode>();
+        if (!column_node || !column_node->hasExpression())
+            return;
+        const auto & column_source = column_node->getColumnSourceOrNull();
+        if (column_source && (column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN || column_source->getNodeType() == QueryTreeNodeType::JOIN))
+            return;
+        node = column_node->getExpression();
+    }
+};
+
 QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     const StorageSnapshotPtr & distributed_storage_snapshot,
     const StorageID & remote_storage_id,
@@ -796,6 +812,8 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
+    ReplaseAliasColumnsVisitor replase_alias_columns_visitor;
+    replase_alias_columns_visitor.visit(query_tree_to_modify);
 
     return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify);
 }
