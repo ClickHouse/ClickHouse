@@ -6,6 +6,10 @@ sidebar_label:  Memory
 
 # Memory Table Engine
 
+:::note
+When using the Memory table engine on ClickHouse Cloud, you must use a client that uses TCP (such as [clickhouse-client](/en/interfaces/cli)) or a native interface, and not one that uses HTTP (such as [clickhouse-connect](/en/integrations/python)). If you use HTTP, all queries must be submitted and executed at once using a multi-statement query.
+:::
+
 The Memory engine stores data in RAM, in uncompressed form. Data is stored in exactly the same form as it is received when read. In other words, reading from this table is completely free.
 Concurrent data access is synchronized. Locks are short: read and write operations do not block each other.
 Indexes are not supported. Reading is parallelized.
