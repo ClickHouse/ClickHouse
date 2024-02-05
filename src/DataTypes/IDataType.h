@@ -86,6 +86,8 @@ public:
 
     /// Data type id. It's used for runtime type checks.
     virtual TypeIndex getTypeId() const = 0;
+    /// Storage type (e.g. Int64 for Interval)
+    virtual TypeIndex getColumnType() const { return getTypeId(); }
 
     bool hasSubcolumn(std::string_view subcolumn_name) const;
 
@@ -150,7 +152,7 @@ public:
 
     /** Create ColumnConst for corresponding type, with specified size and value.
       */
-    ColumnPtr createColumnConst(size_t size, const Field & field) const;
+    virtual ColumnPtr createColumnConst(size_t size, const Field & field) const;
     ColumnPtr createColumnConstWithDefaultValue(size_t size) const;
 
     /** Get default value of data type.
@@ -412,6 +414,8 @@ struct WhichDataType
     constexpr bool isSimple() const  { return isInt() || isUInt() || isFloat() || isString(); }
 
     constexpr bool isLowCardinality() const { return idx == TypeIndex::LowCardinality; }
+
+    constexpr bool isVariant() const { return idx == TypeIndex::Variant; }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
@@ -464,6 +468,7 @@ template <typename T> inline bool isTuple(const T & data_type) { return WhichDat
 template <typename T> inline bool isMap(const T & data_type) {return WhichDataType(data_type).isMap(); }
 template <typename T> inline bool isInterval(const T & data_type) {return WhichDataType(data_type).isInterval(); }
 template <typename T> inline bool isObject(const T & data_type) { return WhichDataType(data_type).isObject(); }
+template <typename T> inline bool isVariant(const T & data_type) { return WhichDataType(data_type).isVariant(); }
 
 template <typename T> inline bool isNothing(const T & data_type) { return WhichDataType(data_type).isNothing(); }
 

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <variant>
-
 #include <Common/AsyncTaskExecutor.h>
 #include <Common/Epoll.h>
 #include <Common/Fiber.h>
@@ -20,10 +18,10 @@ class ConnectionEstablisher
 public:
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    ConnectionEstablisher(IConnectionPool * pool_,
+    ConnectionEstablisher(ConnectionPoolPtr pool_,
                           const ConnectionTimeouts * timeouts_,
                           const Settings & settings_,
-                          Poco::Logger * log,
+                          LoggerPtr log,
                           const QualifiedTableName * table_to_check = nullptr);
 
     /// Establish connection and save it in result, write possible exception message in fail_message.
@@ -35,10 +33,10 @@ public:
     bool isFinished() const { return is_finished; }
 
 private:
-    IConnectionPool * pool;
+    ConnectionPoolPtr pool;
     const ConnectionTimeouts * timeouts;
     const Settings & settings;
-    Poco::Logger * log;
+    LoggerPtr log;
     const QualifiedTableName * table_to_check;
 
     bool is_finished;
@@ -58,10 +56,10 @@ class ConnectionEstablisherAsync : public AsyncTaskExecutor
 public:
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    ConnectionEstablisherAsync(IConnectionPool * pool_,
+    ConnectionEstablisherAsync(ConnectionPoolPtr pool_,
                                const ConnectionTimeouts * timeouts_,
                                const Settings & settings_,
-                               Poco::Logger * log_,
+                               LoggerPtr log_,
                                const QualifiedTableName * table_to_check_ = nullptr);
 
     /// Get file descriptor that can be added in epoll and be polled,

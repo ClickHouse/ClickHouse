@@ -18,12 +18,14 @@ struct DataTypeValidationSettings
         : allow_suspicious_low_cardinality_types(settings.allow_suspicious_low_cardinality_types)
         , allow_experimental_object_type(settings.allow_experimental_object_type)
         , allow_suspicious_fixed_string_types(settings.allow_suspicious_fixed_string_types)
+        , allow_experimental_variant_type(settings.allow_experimental_variant_type)
     {
     }
 
     bool allow_suspicious_low_cardinality_types = true;
     bool allow_experimental_object_type = true;
     bool allow_suspicious_fixed_string_types = true;
+    bool allow_experimental_variant_type = true;
 };
 
 void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings & settings);

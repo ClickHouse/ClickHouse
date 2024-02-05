@@ -350,7 +350,7 @@ class CommitStatusData:
         return cls.load_from_file(STATUS_FILE_PATH)
 
     @classmethod
-    def is_present(cls) -> bool:
+    def exist(cls) -> bool:
         return STATUS_FILE_PATH.is_file()
 
     def dump_status(self) -> None:

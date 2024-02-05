@@ -12,6 +12,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -426,7 +428,30 @@ void ReadFromSystemZooKeeper::applyFilters()
 
 void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
 {
-    zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
+    QueryStatusPtr query_status = context->getProcessListElement();
+
+    const auto & settings = context->getSettingsRef();
+    /// Use insert settings for now in order not to introduce new settings.
+    /// Hopefully insert settings will also be unified and replaced with some generic retry settings.
+    ZooKeeperRetriesInfo retries_seetings(
+        settings.insert_keeper_max_retries,
+        settings.insert_keeper_retry_initial_backoff_ms,
+        settings.insert_keeper_retry_max_backoff_ms);
+
+    ZooKeeperWithFaultInjection::Ptr zookeeper;
+    /// Handles reconnects when needed
+    auto get_zookeeper = [&] ()
+    {
+        if (!zookeeper || zookeeper->expired())
+        {
+            zookeeper = ZooKeeperWithFaultInjection::createInstance(
+                settings.insert_keeper_fault_injection_probability,
+                settings.insert_keeper_fault_injection_seed,
+                context->getZooKeeper(),
+                "", nullptr);
+        }
+        return zookeeper;
+    };
 
     if (paths.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -448,6 +473,9 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
     std::unordered_set<String> added;
     while (!paths.empty())
     {
+        if (query_status)
+            query_status->checkTimeLimit();
+
         list_tasks.clear();
         std::vector<String> paths_to_list;
         while (!paths.empty() && static_cast<Int64>(list_tasks.size()) < max_inflight_requests)
@@ -470,7 +498,10 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
             paths_to_list.emplace_back(task.path_corrected);
             list_tasks.emplace_back(std::move(task));
         }
-        auto list_responses = zookeeper->tryGetChildren(paths_to_list);
+
+        zkutil::ZooKeeper::MultiTryGetChildrenResponse list_responses;
+        ZooKeeperRetriesControl("", nullptr, retries_seetings, query_status).retryLoop(
+            [&]() { list_responses = get_zookeeper()->tryGetChildren(paths_to_list); });
 
         struct GetTask
         {
@@ -514,7 +545,9 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
             }
         }
 
-        auto get_responses = zookeeper->tryGet(paths_to_get);
+        zkutil::ZooKeeper::MultiTryGetResponse get_responses;
+        ZooKeeperRetriesControl("", nullptr, retries_seetings, query_status).retryLoop(
+            [&]() { get_responses = get_zookeeper()->tryGet(paths_to_get); });
 
         for (size_t i = 0, size = get_tasks.size(); i < size; ++i)
         {

@@ -120,7 +120,7 @@ bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & sett
     return true;
 }
 
-Poco::Logger * getLogger() { return &Poco::Logger::get("ExpressionAnalyzer"); }
+LoggerPtr getLogger() { return ::getLogger("ExpressionAnalyzer"); }
 
 }
 

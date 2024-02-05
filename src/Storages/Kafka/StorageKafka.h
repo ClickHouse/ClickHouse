@@ -101,7 +101,7 @@ private:
     const size_t max_rows_per_message;
     const String schema_name;
     const size_t num_consumers; /// total number of consumers
-    Poco::Logger * log;
+    LoggerPtr log;
     const bool intermediate_commit;
     const SettingsChanges settings_adjustments;
 

@@ -403,7 +403,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         {
             if (keeper_context->ignoreSystemPathOnStartup() || keeper_context->getServerState() != KeeperContext::Phase::INIT)
             {
-                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
+                LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
                 continue;
             }
             else
@@ -419,7 +419,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
             {
                 if (keeper_context->ignoreSystemPathOnStartup() || keeper_context->getServerState() != KeeperContext::Phase::INIT)
                 {
-                    LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
+                    LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
                     node = KeeperStorage::Node{};
                 }
                 else
@@ -457,7 +457,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
             {
 #ifdef NDEBUG
                 /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
-                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
+                LOG_ERROR(getLogger("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
                             " is different from actual children size {} for node {}", itr.value.numChildren(), itr.value.getChildren().size(), itr.key);
 #else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
@@ -614,7 +614,7 @@ KeeperSnapshotManager::KeeperSnapshotManager(
 
             if (!inserted)
                 LOG_WARNING(
-                    &Poco::Logger::get("KeeperSnapshotManager"),
+                    getLogger("KeeperSnapshotManager"),
                     "Found another snapshots with last log idx {}, will use snapshot from disk {}",
                     snapshot_up_to,
                     disk->getName());

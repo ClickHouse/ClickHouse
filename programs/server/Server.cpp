@@ -365,7 +365,7 @@ void Server::createServer(
 namespace
 {
 
-void setOOMScore(int value, Poco::Logger * log)
+void setOOMScore(int value, LoggerRawPtr log)
 {
     try
     {
@@ -450,7 +450,7 @@ void checkForUsersNotInMainConfig(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_path,
     const std::string & users_config_path,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     if (config.getBool("skip_check_for_incorrect_settings", false))
         return;
@@ -1748,7 +1748,6 @@ try
         LOG_INFO(log, "Stopping AsyncLoader.");
 
         // Waits for all currently running jobs to finish and do not run any other pending jobs.
-        // Pending jobs will be canceled and destructed later by `load_metadata_tasks` dtor.
         global_context->getAsyncLoader().stop();
     );
 
@@ -2491,7 +2490,7 @@ void Server::stopServers(
     const ServerType & server_type
 ) const
 {
-    Poco::Logger * log = &logger();
+    LoggerRawPtr log = &logger();
 
     /// Remove servers once all their connections are closed
     auto check_server = [&log](const char prefix[], auto & server)
@@ -2530,7 +2529,7 @@ void Server::updateServers(
     std::vector<ProtocolServerAdapter> & servers,
     std::vector<ProtocolServerAdapter> & servers_to_start_before_tables)
 {
-    Poco::Logger * log = &logger();
+    LoggerRawPtr log = &logger();
 
     const auto listen_hosts = getListenHosts(config);
     const auto interserver_listen_hosts = getInterserverListenHosts(config);

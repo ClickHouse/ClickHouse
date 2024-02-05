@@ -175,7 +175,6 @@ uint64_t calculateDigest(std::string_view path, const KeeperStorage::Node & node
     hash.update(node.data, node.data_size);
 
     hash.update(node.czxid);
-    hash.update(node.czxid);
     hash.update(node.mzxid);
     hash.update(node.ctime());
     hash.update(node.mtime());
@@ -183,9 +182,8 @@ uint64_t calculateDigest(std::string_view path, const KeeperStorage::Node & node
     hash.update(node.cversion);
     hash.update(node.aversion);
     bool is_ephemeral = node.isEphemeral();
-    hash.update(is_ephemeral ? node.ephemeral_or_children_data.ephemeral_owner : 0);
-    hash.update(node.data_size);
-    hash.update(is_ephemeral ? 0 : node.ephemeral_or_children_data.children_info.num_children);
+    hash.update(is_ephemeral ? node.ephemeralOwner() : 0);
+    hash.update(is_ephemeral ? 0 : node.numChildren());
     hash.update(node.pzxid);
 
     return hash.get64();
@@ -660,7 +658,7 @@ namespace
 [[noreturn]] void onStorageInconsistency()
 {
     LOG_ERROR(
-        &Poco::Logger::get("KeeperStorage"),
+        getLogger("KeeperStorage"),
         "Inconsistency found between uncommitted and committed data. Keeper will terminate to avoid undefined behaviour.");
     std::terminate();
 }
@@ -939,7 +937,7 @@ void handleSystemNodeModification(const KeeperContext & keeper_context, std::str
             "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true.",
             error_msg);
 
-    LOG_ERROR(&Poco::Logger::get("KeeperStorage"), fmt::runtime(error_msg));
+    LOG_ERROR(getLogger("KeeperStorage"), fmt::runtime(error_msg));
 }
 
 }
@@ -2434,7 +2432,7 @@ void KeeperStorage::rollbackRequest(int64_t rollback_zxid, bool allow_missing)
     }
     catch (...)
     {
-        LOG_FATAL(&Poco::Logger::get("KeeperStorage"), "Failed to rollback log. Terminating to avoid inconsistencies");
+        LOG_FATAL(getLogger("KeeperStorage"), "Failed to rollback log. Terminating to avoid inconsistencies");
         std::terminate();
     }
 }
@@ -2582,6 +2580,17 @@ uint64_t KeeperStorage::getTotalEphemeralNodesCount() const
 void KeeperStorage::recalculateStats()
 {
     container.recalculateDataSize();
+}
+
+bool KeeperStorage::checkDigest(const Digest & first, const Digest & second)
+{
+    if (first.version != second.version)
+        return true;
+
+    if (first.version == DigestVersion::NO_DIGEST)
+        return true;
+
+    return first.value == second.value;
 }
 
 String KeeperStorage::generateDigest(const String & userdata)
