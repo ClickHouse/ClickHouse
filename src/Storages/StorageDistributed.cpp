@@ -830,7 +830,7 @@ void StorageDistributed::read(
           */
         for (auto & column : header)
             column.column = column.column->convertToFullColumnIfConst();
-        query_ast = queryNodeToSelectQuery(query_tree_distributed);
+        query_ast = queryNodeToDistributedSelectQuery(query_tree_distributed);
     }
     else
     {

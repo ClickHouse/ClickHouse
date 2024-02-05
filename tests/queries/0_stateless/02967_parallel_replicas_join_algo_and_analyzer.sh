@@ -18,6 +18,7 @@ insert into num_2 select number * 3, -number from numbers(1.5e6);
 "
 
 ##############
+echo
 echo "simple join with analyzer"
 
 $CLICKHOUSE_CLIENT -q "
@@ -27,6 +28,7 @@ order by l.key limit 10 offset 700000
 SETTINGS allow_experimental_analyzer=1"
 
 ##############
+echo
 echo "simple (global) join with analyzer and parallel replicas"
 
 $CLICKHOUSE_CLIENT -q "
@@ -49,6 +51,7 @@ grep -o "SELECT.*WithMergeableState)\|<Debug>.*Coordinator: Coordination done" |
 sed -re 's/_data_[[:digit:]]+_[[:digit:]]+/_data_/g'
 
 ##############
+echo
 echo "simple (local) join with analyzer and parallel replicas"
 
 $CLICKHOUSE_CLIENT -q "
@@ -72,6 +75,7 @@ sed -re 's/_data_[[:digit:]]+_[[:digit:]]+/_data_/g'
 
 
 ##############
+echo
 echo "simple (local) join with analyzer and parallel replicas and full sorting merge join"
 
 $CLICKHOUSE_CLIENT -q "
@@ -95,6 +99,7 @@ sed -re 's/_data_[[:digit:]]+_[[:digit:]]+/_data_/g'
 
 
 ##############
+echo
 echo "nested join with analyzer"
 
 $CLICKHOUSE_CLIENT -q "
@@ -106,6 +111,7 @@ SETTINGS allow_experimental_analyzer=1"
 
 
 ##############
+echo
 echo "nested join with analyzer and parallel replicas, both local"
 
 $CLICKHOUSE_CLIENT -q "
@@ -131,6 +137,7 @@ sed -re 's/_data_[[:digit:]]+_[[:digit:]]+/_data_/g'
 
 
 ##############
+echo
 echo "nested join with analyzer and parallel replicas, both global"
 
 $CLICKHOUSE_CLIENT -q "
@@ -155,6 +162,7 @@ grep -o "SELECT.*WithMergeableState)\|<Debug>.*Coordinator: Coordination done" |
 sed -re 's/_data_[[:digit:]]+_[[:digit:]]+/_data_/g'
 
 ##############
+echo
 echo "nested join with analyzer and parallel replicas, global + local"
 
 $CLICKHOUSE_CLIENT -q "
@@ -180,6 +188,7 @@ sed -re 's/_data_[[:digit:]]+_[[:digit:]]+/_data_/g'
 
 
 ##############
+echo
 echo "nested join with analyzer and parallel replicas, both local, both full sorting merge join"
 
 $CLICKHOUSE_CLIENT -q "
@@ -204,6 +213,7 @@ grep -o "SELECT.*WithMergeableState)\|<Debug>.*Coordinator: Coordination done" |
 sed -re 's/_data_[[:digit:]]+_[[:digit:]]+/_data_/g'
 
 ##############
+echo
 echo "nested join with analyzer and parallel replicas, both local, both full sorting and hash join"
 
 $CLICKHOUSE_CLIENT -q "
@@ -228,6 +238,7 @@ grep -o "SELECT.*WithMergeableState)\|<Debug>.*Coordinator: Coordination done" |
 sed -re 's/_data_[[:digit:]]+_[[:digit:]]+/_data_/g'
 
 ##############
+echo
 echo "nested join with analyzer and parallel replicas, both local, both full sorting and hash join"
 
 $CLICKHOUSE_CLIENT -q "

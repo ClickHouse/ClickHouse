@@ -391,23 +391,6 @@ const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tr
     return findTableForParallelReplicas(query_tree_node.get());
 }
 
-static void removeCTEs(ASTPtr & ast)
-{
-    std::stack<IAST *> stack;
-    stack.push(ast.get());
-    while (!stack.empty())
-    {
-        auto * node = stack.top();
-        stack.pop();
-
-        if (auto * subquery = typeid_cast<ASTSubquery *>(node))
-            subquery->cte_name = {};
-
-        for (const auto & child : node->children)
-            stack.push(child.get());
-    }
-}
-
 JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     const QueryNode & query_node,
     const PlannerContextPtr & planner_context,
@@ -428,8 +411,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     // std::cerr << "buildQueryPlanForParallelReplicas 1 " << modified_query_tree->dumpTree() << std::endl;
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree);
     // std::cerr << "buildQueryPlanForParallelReplicas 2 " << modified_query_tree->dumpTree() << std::endl;
-    modified_query_ast = queryNodeToSelectQuery(modified_query_tree);
-    removeCTEs(modified_query_ast);
+    modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
     // std::cerr << "buildQueryPlanForParallelReplicas AST " << queryToString(modified_query_ast) << std::endl;
     // std::cerr << "buildQueryPlanForParallelReplicas AST " << modified_query_ast->dumpTree() << std::endl;

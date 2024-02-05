@@ -5417,7 +5417,7 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
 
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(
             modified_query_tree, local_context, SelectQueryOptions(processed_stage).analyze());
-        modified_query_ast = queryNodeToSelectQuery(modified_query_tree);
+        modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
     }
     else
     {
