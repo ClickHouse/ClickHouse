@@ -86,14 +86,14 @@ namespace
         writeBinary(node.version, out);
         writeBinary(node.cversion, out);
         writeBinary(node.aversion, out);
-        const bool is_ephemeral = node.isEphemeral(); 
+        const bool is_ephemeral = node.isEphemeral();
         writeBinary(is_ephemeral ? node.ephemeralOwner() : 0, out);
         if (version < SnapshotVersion::V6)
             writeBinary(static_cast<int32_t>(node.data_size), out);
         writeBinary(is_ephemeral ? 0 : node.numChildren(), out);
         writeBinary(node.pzxid, out);
 
-        writeBinary(node.seqNum(), out);
+        writeBinary(is_ephemeral ? 0 : node.seqNum(), out);
 
         if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
             writeBinary(node.sizeInBytes(), out);
@@ -153,26 +153,23 @@ namespace
         int64_t ephemeral_owner = 0;
         readBinary(ephemeral_owner, in);
         if (ephemeral_owner != 0)
-        {
-            node.is_ephemeral_and_mtime.is_ephemeral = true;
-            node.ephemeral_or_children_data.ephemeral_owner = ephemeral_owner;
-        }
+            node.setEphemeralOwner(ephemeral_owner);
 
         if (version < SnapshotVersion::V6)
         {
             int32_t data_length = 0;
             readBinary(data_length, in);
         }
-        int32_t num_children;
+        int32_t num_children = 0;
         readBinary(num_children, in);
-        if (num_children)
+        if (num_children != 0)
             node.ephemeral_or_children_data.children_info.num_children = num_children;
 
         readBinary(node.pzxid, in);
 
-        int32_t seq_num;
+        int32_t seq_num = 0;
         readBinary(seq_num, in);
-        if (seq_num)
+        if (seq_num != 0)
             node.ephemeral_or_children_data.children_info.seq_num = seq_num;
 
         if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
@@ -383,11 +380,6 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
     if (recalculate_digest)
         storage.nodes_digest = 0;
 
-    const auto is_node_empty = [](const auto & /*node*/)
-    {
-        return false; //node.getData().empty() && node == KeeperStorage::Node{};
-    };
-
     for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
     {
         std::string path;
@@ -415,7 +407,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         }
         else if (match_result == EXACT)
         {
-            if (!is_node_empty(node))
+            if (!node.empty())
             {
                 if (keeper_context->ignoreSystemPathOnStartup() || keeper_context->getServerState() != KeeperContext::Phase::INIT)
                 {

@@ -25,13 +25,13 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
         keys.pop();
         std::cout << key << "\n";
         auto value = storage.container.getValue(key);
-        std::cout << "\tStat: {version: " << value.stat.version <<
-            ", mtime: " << value.stat.mtime <<
-            ", emphemeralOwner: " << value.stat.ephemeralOwner <<
-            ", czxid: " << value.stat.czxid <<
-            ", mzxid: " << value.stat.mzxid <<
-            ", numChildren: " << value.stat.numChildren <<
-            ", dataLength: " << value.getData().size() <<
+        std::cout << "\tStat: {version: " << value.version <<
+            ", mtime: " << value.mtime() <<
+            ", emphemeralOwner: " << value.ephemeralOwner() <<
+            ", czxid: " << value.czxid <<
+            ", mzxid: " << value.mzxid <<
+            ", numChildren: " << value.numChildren() <<
+            ", dataLength: " << value.data_size <<
             "}" << std::endl;
         std::cout << "\tData: " << storage.container.getValue(key).getData() << std::endl;
 

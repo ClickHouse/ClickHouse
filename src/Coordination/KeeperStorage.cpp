@@ -191,6 +191,47 @@ uint64_t calculateDigest(std::string_view path, const KeeperStorage::Node & node
 
 }
 
+KeeperStorage::Node::~Node()
+{
+    if (data_size)
+        delete[] data;
+}
+
+KeeperStorage::Node & KeeperStorage::Node::operator=(const Node & other)
+{
+    if (this == &other)
+        return *this;
+
+    czxid = other.czxid;
+    mzxid = other.mzxid;
+    pzxid = other.pzxid;
+    acl_id = other.acl_id;
+    has_cached_digest_and_ctime = other.has_cached_digest_and_ctime;
+    is_ephemeral_and_mtime = other.is_ephemeral_and_mtime;
+    ephemeral_or_children_data = other.ephemeral_or_children_data;
+    data_size = other.data_size;
+    version = other.version;
+    cversion = other.cversion;
+    aversion = other.aversion;
+
+    if (data_size != 0)
+    {
+        data = new char[data_size];
+        memcpy(data, other.data, data_size);
+    }
+    return *this;
+}
+
+KeeperStorage::Node::Node(const Node & other)
+{
+    *this = other;
+}
+
+bool KeeperStorage::Node::empty() const
+{
+    return data_size == 0 && mzxid == 0;
+}
+
 void KeeperStorage::Node::copyStats(const Coordination::Stat & stat)
 {
     czxid = stat.czxid;
@@ -211,8 +252,7 @@ void KeeperStorage::Node::copyStats(const Coordination::Stat & stat)
     }
     else
     {
-        is_ephemeral_and_mtime.is_ephemeral = true;
-        ephemeral_or_children_data.ephemeral_owner = stat.ephemeralOwner;
+        setEphemeralOwner(stat.ephemeralOwner);
     }
 }
 

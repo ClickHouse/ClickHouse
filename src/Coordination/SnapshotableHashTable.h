@@ -18,11 +18,11 @@ struct ListNode
     StringRef key;
     V value;
 
-    struct 
+    struct
     {
         bool active_in_map : 1;
         bool free_key : 1;
-        uint64_t version : 6;
+        uint64_t version : 62;
     } node_metadata{false, false, 0};
 
     void setInactiveInMap()

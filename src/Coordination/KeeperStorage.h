@@ -5,16 +5,14 @@
 #include <Coordination/ACLMap.h>
 #include <Coordination/SessionExpiryQueue.h>
 #include <Coordination/SnapshotableHashTable.h>
-#include <IO/WriteBufferFromString.h>
-#include <Common/ConcurrentBoundedQueue.h>
-#include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Coordination/KeeperContext.h>
 
 #include <absl/container/flat_hash_set.h>
 
 namespace DB
 {
+
+class KeeperContext;
+using KeeperContextPtr = std::shared_ptr<KeeperContext>;
 
 struct KeeperStorageRequestProcessor;
 using KeeperStorageRequestProcessorPtr = std::shared_ptr<KeeperStorageRequestProcessor>;
@@ -43,13 +41,13 @@ public:
         mutable struct
         {
             bool has_cached_digest : 1;
-            int64_t ctime : 7;
+            int64_t ctime : 63;
         } has_cached_digest_and_ctime{false, 0};
 
         struct
         {
             bool is_ephemeral : 1;
-            int64_t mtime : 7;
+            int64_t mtime : 63;
         } is_ephemeral_and_mtime{false, 0};
 
 
@@ -74,53 +72,30 @@ public:
         /// pack the boolean with seq_num above
         mutable uint64_t cached_digest = 0;
 
-        ~Node()
-        {
-            if (data_size)
-                delete [] data;
-        }
+        ~Node();
 
         Node() = default;
 
-        Node & operator=(const Node & other)
-        {
-            if (this == &other)
-                return *this;
+        Node & operator=(const Node & other);
 
-            czxid = other.czxid;
-            mzxid = other.mzxid;
-            pzxid = other.pzxid;
-            acl_id = other.acl_id;
-            has_cached_digest_and_ctime = other.has_cached_digest_and_ctime;
-            is_ephemeral_and_mtime = other.is_ephemeral_and_mtime;
-            ephemeral_or_children_data = other.ephemeral_or_children_data;
-            data_size = other.data_size;
-            version = other.version;
-            cversion = other.cversion;
-            aversion = other.aversion;
+        Node(const Node & other);
 
-            if (data_size != 0)
-            {
-                data = new char[data_size];
-                memcpy(data, other.data, data_size);
-            }
-            return *this;
-        }
-
-        Node(const Node & other)
-        {
-            *this = other;
-        }
+        bool empty() const;
 
         bool isEphemeral() const
         {
-
             return is_ephemeral_and_mtime.is_ephemeral;
         }
 
         int64_t ephemeralOwner() const
         {
             return isEphemeral() ? ephemeral_or_children_data.ephemeral_owner : 0;
+        }
+
+        void setEphemeralOwner(int64_t ephemeral_owner)
+        {
+            is_ephemeral_and_mtime.is_ephemeral = true;
+            ephemeral_or_children_data.ephemeral_owner = ephemeral_owner;
         }
 
         int32_t numChildren() const
@@ -130,12 +105,18 @@ public:
 
         void increaseNumChildren()
         {
+            chassert(!isEphemeral());
             ++ephemeral_or_children_data.children_info.num_children;
         }
 
         int32_t seqNum() const
         {
             return ephemeral_or_children_data.children_info.seq_num;
+        }
+
+        void setSeqNum(int32_t seq_num)
+        {
+            ephemeral_or_children_data.children_info.seq_num = seq_num;
         }
 
         void increaseSeqNum()
