@@ -29,6 +29,10 @@
 
 #include <algorithm>
 
+#ifdef ADDRESS_SANITIZER
+#include <sanitizer/lsan_interface.h>
+#endif
+
 namespace ProfileEvents
 {
     extern const Event S3WriteRequestsErrors;
@@ -864,7 +868,14 @@ void ClientCacheRegistry::clearCacheForAll()
 ClientFactory::ClientFactory()
 {
     aws_options = Aws::SDKOptions{};
-    Aws::InitAPI(aws_options);
+    {
+#ifdef ADDRESS_SANITIZER
+        /// Leak sanitizer (part of address sanitizer) thinks that memory in OpenSSL (called by AWS SDK) is allocated but not
+        /// released. Actually, the memory is released at the end of the program (ClientFactory is a singleton, see the dtor).
+        __lsan::ScopedDisabler lsan_disabler;
+#endif
+        Aws::InitAPI(aws_options);
+    }
     Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>(false));
     Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
 }
