@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include "Disks/RemoteDiskFeature.h"
 #include <Disks/IDiskTransaction.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 
@@ -209,11 +210,11 @@ public:
         String unique_id;
     };
 
-    // This is kind of a leaked abstraction, as currently a zerocopy-aware disk may be asked to
+    // This is a leaked abstraction as currently a feature-aware disk may be asked to
     // send list of data instead of metadata (see Service::sendPartFromDisk).
+    // Example: a 0copy replica is asked to supply data to a non-0copy disk
     virtual ReplicatedFilesDescription getReplicatedFilesDescription(
-        const NameSet & file_names,
-        bool try_use_zerocopy) const = 0;
+        const NameSet & file_names, RemoteDiskFeature feature) const = 0;
 
     /// Create a backup of a data part.
     /// This method adds a new entry to backup_entries.

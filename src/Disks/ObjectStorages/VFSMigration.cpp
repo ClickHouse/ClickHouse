@@ -24,8 +24,6 @@ void VFSMigration::migrate() const
     // TODO myrrc rewrite using Common/AsyncLoader.h
     for (const auto & entry : fs::recursive_directory_iterator{path})
         if (entry.is_regular_file())
-        {
-            LOG_TRACE(log, "Found metadata file {}", entry.path());
             for (const StoredObject & elem : metadata_storage->getStorageObjects(entry.path()))
             {
                 const size_t links = fs::hard_link_count(entry);
@@ -34,8 +32,8 @@ void VFSMigration::migrate() const
                 else
                     it->second += links;
             }
-        }
 
+    // TODO myrrc write to s3 instead
     disk.zookeeper()->create(disk.nodes.log_item, item.serialize(), zkutil::CreateMode::PersistentSequential);
 
     LOG_INFO(log, "Migrated disk {}", disk.getName());

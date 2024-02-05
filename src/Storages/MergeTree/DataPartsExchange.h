@@ -8,6 +8,7 @@
 #include <IO/copyData.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Common/Throttler.h>
+#include <Disks/RemoteDiskFeature.h>
 
 
 namespace zkutil
@@ -49,9 +50,8 @@ private:
         const MergeTreeData::DataPartPtr & part,
         WriteBuffer & out,
         int client_protocol_version,
-        bool from_disk_with_zero_copy,
         bool send_projections,
-        bool verify_checksums);
+        RemoteDiskFeature feature);
 
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
     /// so Service will never access dangling reference to storage
@@ -83,7 +83,7 @@ public:
         bool to_detached = false,
         const String & tmp_prefix_ = "",
         std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr = nullptr,
-        bool try_zero_copy = true,
+        RemoteDiskFeature feature = RemoteDiskFeature::Zerocopy,
         DiskPtr dest_disk = nullptr);
 
     /// You need to stop the data transfer.
@@ -107,13 +107,12 @@ private:
         bool to_detached,
         const String & tmp_prefix_,
         DiskPtr disk,
-        bool zero_copy,
+        RemoteDiskFeature feature,
         PooledReadWriteBufferFromHTTP & in,
         OutputBufferGetter output_buffer_getter,
         size_t projections,
         ThrottlerPtr throttler,
-        bool sync,
-        bool object_storage_vfs = false);
+        bool sync);
 
     MergeTreeData::MutableDataPartPtr downloadPartToMemory(
        MutableDataPartStoragePtr data_part_storage,

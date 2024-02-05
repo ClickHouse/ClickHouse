@@ -49,7 +49,7 @@ public:
     ReservationPtr tryReserve(UInt64 bytes) const override;
 
     ReplicatedFilesDescription getReplicatedFilesDescription(
-        const NameSet & file_names, bool try_use_zerocopy) const override;
+        const NameSet & file_names, RemoteDiskFeature feature) const override;
 
     void backup(
         const MergeTreeDataPartChecksums & checksums,
