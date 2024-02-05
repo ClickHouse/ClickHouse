@@ -73,26 +73,20 @@ public:
     {
         TryResult() = default;
 
-        explicit TryResult(Entry entry_)
-            : entry(std::move(entry_))
-            , is_usable(true)
-            , is_up_to_date(true)
-        {
-        }
-
         void reset()
         {
             entry = Entry();
             is_usable = false;
             is_up_to_date = false;
-            staleness = 0.0;
+            delay = 0;
         }
 
-        Entry entry;
-        bool is_usable = false; /// If false, the entry is unusable for current request
-                                /// (but may be usable for other requests, so error counts are not incremented)
-        bool is_up_to_date = false; /// If true, the entry is a connection to up-to-date replica.
-        double staleness = 0.0; /// Helps choosing the "least stale" option when all replicas are stale.
+        Entry entry; /// use isNull() to check if connection is established
+        bool is_usable = false; /// if connection is established, then can be false only with table check
+                                /// if table is not present on remote peer, -> it'll be false
+        bool is_up_to_date = false; /// If true, the entry is a connection to up-to-date replica
+                                    /// Depends on max_replica_delay_for_distributed_queries setting
+        UInt32 delay = 0; /// Helps choosing the "least stale" option when all replicas are stale.
     };
 
     struct PoolState;
@@ -101,7 +95,7 @@ public:
 
     struct ShuffledPool
     {
-        NestedPool * pool{};
+        NestedPoolPtr pool{};
         const PoolState * state{}; // WARNING: valid only during initial ordering, dangling
         size_t index = 0;
         size_t error_count = 0;
@@ -110,7 +104,7 @@ public:
 
     /// This functor must be provided by a client. It must perform a single try that takes a connection
     /// from the provided pool and checks that it is good.
-    using TryGetEntryFunc = std::function<TryResult(NestedPool & pool, std::string & fail_message)>;
+    using TryGetEntryFunc = std::function<TryResult(const NestedPoolPtr & pool, std::string & fail_message)>;
 
     /// The client can provide this functor to affect load balancing - the index of a pool is passed to
     /// this functor. The pools with lower result value will be tried first.
@@ -193,7 +187,7 @@ PoolWithFailoverBase<TNestedPool>::getShuffledPools(
             state.priority,
             state.random);
 
-        shuffled_pools.push_back(ShuffledPool{nested_pools[i].get(), &pool_states[i], i, /* error_count = */ 0, /* slowdown_count = */ 0});
+        shuffled_pools.push_back(ShuffledPool{nested_pools[i], &pool_states[i], i, /* error_count = */ 0, /* slowdown_count = */ 0});
     }
 
     ::sort(
@@ -265,57 +259,64 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     });
 
     std::string fail_messages;
-    for (size_t i = 0; i < shuffled_pools.size(); ++i)
+    bool finished = false;
+    while (!finished)
     {
-        if (up_to_date_count >= max_entries /// Already enough good entries.
-            || entries_count + failed_pools_count >= nested_pools.size()) /// No more good entries will be produced.
-            break;
-
-        ShuffledPool & shuffled_pool = shuffled_pools[i];
-        LOG_TRACE(log, "Considering address to connect to: {}", shuffled_pool.pool->getAddress());
-
-        TryResult & result = try_results[i];
-        if (max_tries && shuffled_pool.error_count >= max_tries)
+        for (size_t i = 0; i < shuffled_pools.size(); ++i)
         {
-            LOG_TRACE(log, "Reach max tries to get connection");
-            break;
-        }
-
-        std::string fail_message;
-        result = try_get_entry(*shuffled_pool.pool, fail_message);
-
-        if (!fail_message.empty())
-            fail_messages += fail_message + '\n';
-
-        if (!result.entry.isNull())
-        {
-            LOG_TRACE(log, "Got connection to {}. {}", shuffled_pool.pool->getAddress(), fail_message);
-
-            ++entries_count;
-            if (result.is_usable)
+            if (up_to_date_count >= max_entries /// Already enough good entries.
+                || entries_count + failed_pools_count >= nested_pools.size()) /// No more good entries will be produced.
             {
-                ++usable_count;
-                if (result.is_up_to_date)
-                    ++up_to_date_count;
+                finished = true;
+                break;
+            }
+
+            ShuffledPool & shuffled_pool = shuffled_pools[i];
+            LOG_TRACE(log, "Considering address to connect to: {}", shuffled_pool.pool->getAddress());
+
+            TryResult & result = try_results[i];
+            if (max_tries && shuffled_pool.error_count >= max_tries)
+            {
+                LOG_TRACE(log, "Reach max tries to get connection");
+                break;
+            }
+
+            std::string fail_message;
+            result = try_get_entry(shuffled_pool.pool, fail_message);
+
+            if (!fail_message.empty())
+                fail_messages += fail_message + '\n';
+
+            if (!result.entry.isNull())
+            {
+                LOG_TRACE(log, "Got connection to {}. {}", shuffled_pool.pool->getAddress(), fail_message);
+
+                ++entries_count;
+                if (result.is_usable)
+                {
+                    ++usable_count;
+                    if (result.is_up_to_date)
+                        ++up_to_date_count;
+                    else
+                        LOG_TRACE(log, "Got not up to date connection {}. Will try again", shuffled_pool.pool->getAddress());
+                }
                 else
-                    LOG_TRACE(log, "Got not up to date connection {}. Will try again", shuffled_pool.pool->getAddress());
+                {
+                    LOG_TRACE(log, "Got unusable connection to {}. Will try again", shuffled_pool.pool->getAddress());
+                }
             }
             else
             {
-                LOG_TRACE(log, "Got unusable connection to {}. Will try again", shuffled_pool.pool->getAddress());
-            }
-        }
-        else
-        {
-            LOG_WARNING(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
-            ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
+                LOG_WARNING(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
+                ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
-            shuffled_pool.error_count = std::min(max_error_cap, shuffled_pool.error_count + 1);
+                shuffled_pool.error_count = std::min(max_error_cap, shuffled_pool.error_count + 1);
 
-            if (shuffled_pool.error_count >= max_tries)
-            {
-                ++failed_pools_count;
-                ProfileEvents::increment(ProfileEvents::DistributedConnectionFailAtAll);
+                if (shuffled_pool.error_count >= max_tries)
+                {
+                    ++failed_pools_count;
+                    ProfileEvents::increment(ProfileEvents::DistributedConnectionFailAtAll);
+                }
             }
         }
     }
@@ -331,8 +332,8 @@ PoolWithFailoverBase<TNestedPool>::getMany(
             try_results.begin(), try_results.end(),
             [](const TryResult & left, const TryResult & right)
             {
-                return std::forward_as_tuple(!left.is_up_to_date, left.staleness)
-                    < std::forward_as_tuple(!right.is_up_to_date, right.staleness);
+                return std::forward_as_tuple(!left.is_up_to_date, left.delay)
+                    < std::forward_as_tuple(!right.is_up_to_date, right.delay);
             });
 
     if (fallback_to_stale_replicas)

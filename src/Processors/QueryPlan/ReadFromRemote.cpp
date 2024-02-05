@@ -178,11 +178,11 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
                 throw;
         }
 
-        double max_remote_delay = 0.0;
+        UInt32 max_remote_delay = 0;
         for (const auto & try_result : try_results)
         {
             if (!try_result.is_up_to_date)
-                max_remote_delay = std::max(try_result.staleness, max_remote_delay);
+                max_remote_delay = std::max(try_result.delay, max_remote_delay);
         }
 
         if (try_results.empty() || local_delay < max_remote_delay)
