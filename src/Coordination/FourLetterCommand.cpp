@@ -18,6 +18,11 @@
 #include <unistd.h>
 #include <bit>
 
+#if USE_JEMALLOC
+#include <Common/Jemalloc.h>
+#include <jemalloc/jemalloc.h>
+#endif
+
 namespace
 {
 
@@ -172,6 +177,23 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr feature_flags_command = std::make_shared<FeatureFlagsCommand>(keeper_dispatcher);
         factory.registerCommand(feature_flags_command);
 
+        FourLetterCommandPtr yield_leadership_command = std::make_shared<YieldLeadershipCommand>(keeper_dispatcher);
+        factory.registerCommand(yield_leadership_command);
+
+#if USE_JEMALLOC
+        FourLetterCommandPtr jemalloc_dump_stats = std::make_shared<JemallocDumpStats>(keeper_dispatcher);
+        factory.registerCommand(jemalloc_dump_stats);
+
+        FourLetterCommandPtr jemalloc_flush_profile = std::make_shared<JemallocFlushProfile>(keeper_dispatcher);
+        factory.registerCommand(jemalloc_flush_profile);
+
+        FourLetterCommandPtr jemalloc_enable_profile = std::make_shared<JemallocEnableProfile>(keeper_dispatcher);
+        factory.registerCommand(jemalloc_enable_profile);
+
+        FourLetterCommandPtr jemalloc_disable_profile = std::make_shared<JemallocDisableProfile>(keeper_dispatcher);
+        factory.registerCommand(jemalloc_disable_profile);
+#endif
+
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
@@ -212,7 +234,7 @@ void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dis
             }
             else
             {
-                auto * log = &Poco::Logger::get("FourLetterCommandFactory");
+                auto log = getLogger("FourLetterCommandFactory");
                 LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
             }
         }
@@ -278,7 +300,11 @@ String MonitorCommand::run()
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
-    print(ret, "max_file_descriptor_count", getMaxFileDescriptorCount());
+    auto max_file_descriptor_count = getMaxFileDescriptorCount();
+    if (max_file_descriptor_count.has_value())
+        print(ret, "max_file_descriptor_count", *max_file_descriptor_count);
+    else
+        print(ret, "max_file_descriptor_count", -1);
 #endif
 
     if (keeper_info.is_leader)
@@ -466,7 +492,7 @@ String EnviCommand::run()
 
     StringBuffer buf;
     buf << "Environment:\n";
-    buf << "clickhouse.keeper.version=" << (String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH) << '\n';
+    buf << "clickhouse.keeper.version=" << VERSION_DESCRIBE << '-' << VERSION_GITHASH << '\n';
 
     buf << "host.name=" << Environment::nodeName() << '\n';
     buf << "os.name=" << Environment::osDisplayName() << '\n';
@@ -577,7 +603,45 @@ String FeatureFlagsCommand::run()
     }
 
     return ret.str();
-
 }
+
+String YieldLeadershipCommand::run()
+{
+    keeper_dispatcher.yieldLeadership();
+    return "Sent yield leadership request to leader.";
+}
+
+#if USE_JEMALLOC
+
+void printToString(void * output, const char * data)
+{
+    std::string * output_data = reinterpret_cast<std::string *>(output);
+    *output_data += std::string(data);
+}
+
+String JemallocDumpStats::run()
+{
+    std::string output;
+    malloc_stats_print(printToString, &output, nullptr);
+    return output;
+}
+
+String JemallocFlushProfile::run()
+{
+    return flushJemallocProfile("/tmp/jemalloc_keeper");
+}
+
+String JemallocEnableProfile::run()
+{
+    setJemallocProfileActive(true);
+    return "ok";
+}
+
+String JemallocDisableProfile::run()
+{
+    setJemallocProfileActive(false);
+    return "ok";
+}
+#endif
 
 }

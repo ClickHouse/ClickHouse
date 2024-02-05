@@ -17,8 +17,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Exception.h>
 #include <Common/parseGlobs.h>
-
-#include <re2/re2.h>
+#include <Common/re2.h>
 
 static void setupLogging(const std::string & log_level)
 {

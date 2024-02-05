@@ -22,6 +22,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event QueryProfilerSignalOverruns;
+    extern const Event QueryProfilerConcurrencyOverruns;
     extern const Event QueryProfilerRuns;
 }
 
@@ -40,8 +41,19 @@ namespace
     /// to ignore delivered signals after timer_delete().
     thread_local bool signal_handler_disarmed = true;
 
+    /// Don't permit too many threads be busy inside profiler,
+    /// which could slow down the system in some environments.
+    std::atomic<Int64> concurrent_invocations = 0;
+
     void writeTraceInfo(TraceType trace_type, int /* sig */, siginfo_t * info, void * context)
     {
+        SCOPE_EXIT({ concurrent_invocations.fetch_sub(1, std::memory_order_relaxed); });
+        if (concurrent_invocations.fetch_add(1, std::memory_order_relaxed) > 100)
+        {
+            ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerConcurrencyOverruns);
+            return;
+        }
+
         auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
 #if defined(OS_LINUX)
@@ -93,7 +105,7 @@ namespace ErrorCodes
 
 #ifndef __APPLE__
 Timer::Timer()
-    : log(&Poco::Logger::get("Timer"))
+    : log(getLogger("Timer"))
 {}
 
 void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal)
@@ -129,7 +141,7 @@ void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal
 
             /// Also, it cannot be created if the server has too many threads.
 
-            throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
+            throw ErrnoException(ErrorCodes::CANNOT_CREATE_TIMER, "Failed to create thread timer");
         }
         timer_id.emplace(local_timer_id);
         CurrentMetrics::add(CurrentMetrics::CreatedTimersInQueryProfiler);
@@ -152,7 +164,7 @@ void Timer::set(UInt32 period)
 
     struct itimerspec timer_spec = {.it_interval = interval, .it_value = offset};
     if (timer_settime(*timer_id, 0, &timer_spec, nullptr))
-        throwFromErrno("Failed to set thread timer period", ErrorCodes::CANNOT_SET_TIMER_PERIOD);
+        throw ErrnoException(ErrorCodes::CANNOT_SET_TIMER_PERIOD, "Failed to set thread timer period");
     CurrentMetrics::add(CurrentMetrics::ActiveTimersInQueryProfiler);
 }
 
@@ -199,7 +211,7 @@ void Timer::cleanup()
 
 template <typename ProfilerImpl>
 QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_)
-    : log(&Poco::Logger::get("QueryProfiler"))
+    : log(getLogger("QueryProfiler"))
     , pause_signal(pause_signal_)
 {
 #if defined(SANITIZER)
@@ -226,13 +238,13 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
 
     if (sigemptyset(&sa.sa_mask))
-        throwFromErrno("Failed to clean signal mask for query profiler", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to clean signal mask for query profiler");
 
     if (sigaddset(&sa.sa_mask, pause_signal))
-        throwFromErrno("Failed to add signal to mask for query profiler", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to add signal to mask for query profiler");
 
     if (sigaction(pause_signal, &sa, nullptr))
-        throwFromErrno("Failed to setup signal handler for query profiler", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Failed to setup signal handler for query profiler");
 
     try
     {

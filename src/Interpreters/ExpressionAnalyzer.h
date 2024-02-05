@@ -168,7 +168,7 @@ protected:
     const ConstStoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
     const TableJoin & analyzedJoin() const { return *syntax->analyzed_join; }
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
-    const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
+    const ASTs & aggregates() const { return syntax->aggregates; }
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables(bool do_global, bool is_explain);
 

@@ -57,8 +57,8 @@ std::vector<String> S3DataLakeMetadataReadHelper::listFiles(
     {
         outcome = client->ListObjectsV2(request);
         if (!outcome.IsSuccess())
-            throw Exception(
-                ErrorCodes::S3_ERROR,
+            throw S3Exception(
+                outcome.GetError().GetErrorType(),
                 "Could not list objects in bucket {} with key {}, S3 exception: {}, message: {}",
                 quoteString(bucket),
                 quoteString(base_configuration.url.key),
@@ -77,7 +77,7 @@ std::vector<String> S3DataLakeMetadataReadHelper::listFiles(
         is_finished = !outcome.GetResult().GetIsTruncated();
     }
 
-    LOG_TRACE(&Poco::Logger::get("S3DataLakeMetadataReadHelper"), "Listed {} files", res.size());
+    LOG_TRACE(getLogger("S3DataLakeMetadataReadHelper"), "Listed {} files", res.size());
 
     return res;
 }

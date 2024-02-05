@@ -352,7 +352,7 @@ ColumnPtr fillColumnWithRandomData(
         {
             auto column = ColumnUInt256::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UInt256), rng);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UInt256), rng, true);
             return column;
         }
         case TypeIndex::UUID:
@@ -360,7 +360,7 @@ ColumnPtr fillColumnWithRandomData(
             auto column = ColumnUUID::create();
             column->getData().resize(limit);
             /// NOTE This is slightly incorrect as random UUIDs should have fixed version 4.
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UUID), rng);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UUID), rng, true);
             return column;
         }
         case TypeIndex::Int8:
@@ -511,7 +511,7 @@ ColumnPtr fillColumnWithRandomData(
         {
             auto column = ColumnIPv4::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(IPv4), rng);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(IPv4), rng, true);
             return column;
         }
         case TypeIndex::IPv6:
@@ -532,7 +532,7 @@ class GenerateSource : public ISource
 {
 public:
     GenerateSource(UInt64 block_size_, UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_, Block block_header_, ContextPtr context_)
-        : ISource(Nested::flattenArrayOfTuples(prepareBlockToFill(block_header_)))
+        : ISource(Nested::flattenNested(prepareBlockToFill(block_header_)))
         , block_size(block_size_), max_array_length(max_array_length_), max_string_length(max_string_length_)
         , block_to_fill(std::move(block_header_)), rng(random_seed_), context(context_) {}
 
@@ -547,7 +547,7 @@ protected:
         for (const auto & elem : block_to_fill)
             columns.emplace_back(fillColumnWithRandomData(elem.type, block_size, max_array_length, max_string_length, rng, context));
 
-        columns = Nested::flattenArrayOfTuples(block_to_fill.cloneWithColumns(columns)).getColumns();
+        columns = Nested::flattenNested(block_to_fill.cloneWithColumns(columns)).getColumns();
         return {std::move(columns), block_size};
     }
 

@@ -1,96 +1,115 @@
 #pragma once
 
 #include <memory>
-#include <mutex>
 #include <Core/Types.h>
 #include <Common/Exception.h>
-#include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Cache/FileSegmentInfo.h>
 #include <Interpreters/Cache/Guards.h>
+#include <Interpreters/Cache/IFileCachePriority.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
+#include <Interpreters/Cache/UserInfo.h>
 
 namespace DB
 {
+struct FileCacheReserveStat;
+class EvictionCandidates;
 
-/// IFileCachePriority is used to maintain the priority of cached data.
 class IFileCachePriority : private boost::noncopyable
 {
 public:
     using Key = FileCacheKey;
-    using KeyAndOffset = FileCacheKeyAndOffset;
+    using QueueEntryType = FileCacheQueueEntryType;
+    using UserInfo = FileCacheUserInfo;
+    using UserID = UserInfo::UserID;
 
     struct Entry
     {
-        Entry(const Key & key_, size_t offset_, size_t size_, KeyMetadataPtr key_metadata_)
-            : key(key_), offset(offset_), size(size_), key_metadata(key_metadata_) {}
-
-        Entry(const Entry & other)
-            : key(other.key), offset(other.offset), size(other.size.load()), hits(other.hits), key_metadata(other.key_metadata) {}
+        Entry(const Key & key_, size_t offset_, size_t size_, KeyMetadataPtr key_metadata_);
+        Entry(const Entry & other);
 
         const Key key;
         const size_t offset;
+        const KeyMetadataPtr key_metadata;
+
         std::atomic<size_t> size;
         size_t hits = 0;
-        const KeyMetadataPtr key_metadata;
     };
+    using EntryPtr = std::shared_ptr<Entry>;
 
-    /// Provides an iterator to traverse the cache priority. Under normal circumstances,
-    /// the iterator can only return the records that have been directly swapped out.
-    /// For example, in the LRU algorithm, it can traverse all records, but in the LRU-K, it
-    /// can only traverse the records in the low priority queue.
-    class IIterator
+    class Iterator
     {
     public:
-        virtual ~IIterator() = default;
+        virtual ~Iterator() = default;
 
-        virtual size_t use(const CacheGuard::Lock &) = 0;
+        virtual EntryPtr getEntry() const = 0;
+
+        virtual size_t increasePriority(const CacheGuard::Lock &) = 0;
+
+        virtual void updateSize(int64_t size) = 0;
 
         virtual void remove(const CacheGuard::Lock &) = 0;
 
-        virtual const Entry & getEntry() const = 0;
-
-        virtual Entry & getEntry() = 0;
-
         virtual void invalidate() = 0;
 
-        virtual void updateSize(int64_t size) = 0;
+        virtual QueueEntryType getType() const = 0;
     };
-
-    using Iterator = std::shared_ptr<IIterator>;
-    using ConstIterator = std::shared_ptr<const IIterator>;
-
-    enum class IterationResult
-    {
-        BREAK,
-        CONTINUE,
-        REMOVE_AND_CONTINUE,
-    };
-    using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
-
-    IFileCachePriority(size_t max_size_, size_t max_elements_) : max_size(max_size_), max_elements(max_elements_) {}
+    using IteratorPtr = std::shared_ptr<Iterator>;
 
     virtual ~IFileCachePriority() = default;
 
-    size_t getElementsLimit() const { return max_elements; }
+    size_t getElementsLimit(const CacheGuard::Lock &) const { return max_elements; }
 
-    size_t getSizeLimit() const { return max_size; }
+    size_t getSizeLimit(const CacheGuard::Lock &) const { return max_size; }
 
     virtual size_t getSize(const CacheGuard::Lock &) const = 0;
 
     virtual size_t getElementsCount(const CacheGuard::Lock &) const = 0;
 
-    virtual Iterator add(
-        KeyMetadataPtr key_metadata, size_t offset, size_t size, const CacheGuard::Lock &) = 0;
+    /// Throws exception if there is not enough size to fit it.
+    virtual IteratorPtr add( /// NOLINT
+        KeyMetadataPtr key_metadata,
+        size_t offset,
+        size_t size,
+        const UserInfo & user,
+        const CacheGuard::Lock &,
+        bool best_effort = false) = 0;
 
-    virtual void pop(const CacheGuard::Lock &) = 0;
+    /// `reservee` is the entry for which are reserving now.
+    /// It does not exist, if it is the first space reservation attempt
+    /// for the corresponding file segment.
+    virtual bool canFit( /// NOLINT
+        size_t size,
+        const CacheGuard::Lock &,
+        IteratorPtr reservee = nullptr,
+        bool best_effort = false) const = 0;
 
-    virtual void removeAll(const CacheGuard::Lock &) = 0;
+    virtual void shuffle(const CacheGuard::Lock &) = 0;
 
-    /// From lowest to highest priority.
-    virtual void iterate(IterateFunc && func, const CacheGuard::Lock &) = 0;
+    struct IPriorityDump
+    {
+        virtual ~IPriorityDump() = default;
+    };
+    using PriorityDumpPtr = std::shared_ptr<IPriorityDump>;
 
-private:
-    const size_t max_size = 0;
-    const size_t max_elements = 0;
+    virtual PriorityDumpPtr dump(const CacheGuard::Lock &) = 0;
+
+    using FinalizeEvictionFunc = std::function<void(const CacheGuard::Lock & lk)>;
+    virtual bool collectCandidatesForEviction(
+        size_t size,
+        FileCacheReserveStat & stat,
+        EvictionCandidates & res,
+        IFileCachePriority::IteratorPtr reservee,
+        FinalizeEvictionFunc & finalize_eviction_func,
+        const UserID & user_id,
+        const CacheGuard::Lock &) = 0;
+
+    virtual bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CacheGuard::Lock &) = 0;
+
+protected:
+    IFileCachePriority(size_t max_size_, size_t max_elements_);
+
+    size_t max_size = 0;
+    size_t max_elements = 0;
 };
 
 }

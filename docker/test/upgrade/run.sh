@@ -16,7 +16,8 @@ ln -s /usr/share/clickhouse-test/ci/get_previous_release_tag.py /usr/bin/get_pre
 
 # Stress tests and upgrade check uses similar code that was placed
 # in a separate bash library. See tests/ci/stress_tests.lib
-source /usr/share/clickhouse-test/ci/stress_tests.lib
+source /attach_gdb.lib
+source /stress_tests.lib
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateless # to have a proper environment
@@ -55,13 +56,35 @@ echo "ATTACH DATABASE system ENGINE=Ordinary" > /var/lib/clickhouse/metadata/sys
 # Install previous release packages
 install_packages previous_release_package_folder
 
+# Save old settings from system table for settings changes check
+clickhouse-local -q "select * from system.settings format Native" > old_settings.native
+
 # Initial run without S3 to create system.*_log on local file system to make it
 # available for dump via clickhouse-local
 configure
 
+function remove_keeper_config()
+{
+  sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
+    | sed "/<$1>$2<\/$1>/d" \
+    > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
+  sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+}
+
+# async_replication setting doesn't exist on some older versions
+remove_keeper_config "async_replication" "1"
+
+# create_if_not_exists feature flag doesn't exist on some older versions
+remove_keeper_config "create_if_not_exists" "[01]"
+
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
+rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
+rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
+rm /etc/clickhouse-server/config.d/storage_conf_02963.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
+rm /etc/clickhouse-server/users.d/s3_cache_new.xml
+rm /etc/clickhouse-server/users.d/replicated_ddl_entry.xml
 
 start
 stop
@@ -80,6 +103,12 @@ sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
   > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
 sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
 
+# async_replication setting doesn't exist on some older versions
+remove_keeper_config "async_replication" "1"
+
+# create_if_not_exists feature flag doesn't exist on some older versions
+remove_keeper_config "create_if_not_exists" "[01]"
+
 # But we still need default disk because some tables loaded only into it
 sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \
   | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" \
@@ -90,7 +119,13 @@ sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_defau
 
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
+rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
+rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
+rm /etc/clickhouse-server/config.d/storage_conf_02963.xml
+rm /etc/clickhouse-server/config.d/block_number.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
+rm /etc/clickhouse-server/users.d/s3_cache_new.xml
+rm /etc/clickhouse-server/users.d/replicated_ddl_entry.xml
 
 start
 
@@ -121,11 +156,69 @@ install_packages package_folder
 export ZOOKEEPER_FAULT_INJECTION=1
 configure
 
+# Check that all new/changed setting were added in settings changes history.
+# Some settings can be different for builds with sanitizers, so we check
+# settings changes only for non-sanitizer builds.
+IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
+if [ "${IS_SANITIZED}" -eq "0" ]
+then
+  clickhouse-local -q "select * from system.settings format Native" > new_settings.native
+  clickhouse-local -nmq "
+  CREATE TABLE old_settings AS file('old_settings.native');
+  CREATE TABLE new_settings AS file('new_settings.native');
+
+  SELECT
+      name,
+      new_settings.value AS new_value,
+      old_settings.value AS old_value
+  FROM new_settings
+  LEFT JOIN old_settings ON new_settings.name = old_settings.name
+  WHERE (new_settings.value != old_settings.value) AND (name NOT IN (
+      SELECT arrayJoin(tupleElement(changes, 'name'))
+      FROM system.settings_changes
+      WHERE version = extract(version(), '^(?:\\d+\\.\\d+)')
+  ))
+  SETTINGS join_use_nulls = 1
+  INTO OUTFILE 'changed_settings.txt'
+  FORMAT PrettyCompactNoEscapes;
+
+  SELECT name
+  FROM new_settings
+  WHERE (name NOT IN (
+      SELECT name
+      FROM old_settings
+  )) AND (name NOT IN (
+      SELECT arrayJoin(tupleElement(changes, 'name'))
+      FROM system.settings_changes
+      WHERE version = extract(version(), '^(?:\\d+\\.\\d+)')
+  ))
+  INTO OUTFILE 'new_settings.txt'
+  FORMAT PrettyCompactNoEscapes;
+  "
+
+  if [ -s changed_settings.txt ]
+  then
+      mv changed_settings.txt /test_output/
+      echo -e "Changed settings are not reflected in settings changes history (see changed_settings.txt)$FAIL$(head_escaped /test_output/changed_settings.txt)" >> /test_output/test_results.tsv
+  else
+      echo -e "There are no changed settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
+  fi
+
+  if [ -s new_settings.txt ]
+  then
+      mv new_settings.txt /test_output/
+      echo -e "New settings are not reflected in settings changes history (see new_settings.txt)$FAIL$(head_escaped /test_output/new_settings.txt)" >> /test_output/test_results.tsv
+  else
+      echo -e "There are no new settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
+  fi
+fi
+
 # Just in case previous version left some garbage in zk
 sudo cat /etc/clickhouse-server/config.d/lost_forever_check.xml \
   | sed "s|>1<|>0<|g" \
   > /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp
 sudo mv /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp /etc/clickhouse-server/config.d/lost_forever_check.xml
+rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 
 start 500
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
@@ -165,6 +258,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "ZooKeeperClient" \
            -e "KEEPER_EXCEPTION" \
            -e "DirectoryMonitor" \
+           -e "DistributedInsertQueue" \
            -e "TABLE_IS_READ_ONLY" \
            -e "Code: 1000, e.code() = 111, Connection refused" \
            -e "UNFINISHED" \
@@ -224,8 +318,16 @@ clickhouse-local --structure "test String, res String, time Nullable(Float32), d
 (test like '%Fatal message%') DESC,
 (test like '%Error message%') DESC,
 (test like '%previous release%') DESC,
+(test like '%Changed settings%') DESC,
+(test like '%New settings%') DESC,
 rowNumberInAllBlocks()
 LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
+
+# But OOMs in stress test are allowed
+if rg 'OOM in dmesg|Signal 9' /test_output/check_status.tsv
+then
+    sed -i 's/failure/success/' /test_output/check_status.tsv
+fi
 
 collect_core_dumps

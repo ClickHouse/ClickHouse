@@ -22,7 +22,7 @@ You can see more technical details about how projections work internally on this
 ## Example filtering without using primary keys
 
 Creating the table:
-```
+```sql
 CREATE TABLE visits_order
 (
    `user_id` UInt64,
@@ -34,7 +34,7 @@ ENGINE = MergeTree()
 PRIMARY KEY user_agent
 ```
 Using `ALTER TABLE`, we could add the Projection to an existing table:
-```
+```sql
 ALTER TABLE visits_order ADD PROJECTION user_name_projection (
 SELECT
 *
@@ -44,7 +44,7 @@ ORDER BY user_name
 ALTER TABLE visits_order MATERIALIZE PROJECTION user_name_projection
 ```
 Inserting the data:
-```
+```sql
 INSERT INTO visits_order SELECT
     number,
     'test',
@@ -55,7 +55,7 @@ FROM numbers(1, 100);
 
 The Projection will allow us to filter by `user_name` fast even if in the original Table `user_name` was not defined as a `PRIMARY_KEY`.
 At query time ClickHouse determined that less data will be processed if the projection is used, as the data is ordered by `user_name`.
-```
+```sql
 SELECT
     *
 FROM visits_order
@@ -64,14 +64,14 @@ LIMIT 2
 ```
 
 To verify that a query is using the projection, we could review the `system.query_log` table. On the `projections` field we have the name of the projection used or empty if none has been used:
-```
+```sql
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 
 ## Example pre-aggregation query
 
 Creating the table with the Projection:
-```
+```sql
 CREATE TABLE visits
 (
    `user_id` UInt64,
@@ -90,7 +90,7 @@ ENGINE = MergeTree()
 ORDER BY user_agent
 ```
 Inserting the data:
-```
+```sql
 INSERT INTO visits SELECT
     number,
     'test',
@@ -98,7 +98,7 @@ INSERT INTO visits SELECT
     'Android'
 FROM numbers(1, 100);
 ```
-```
+```sql
 INSERT INTO visits SELECT
     number,
     'test',
@@ -107,7 +107,7 @@ INSERT INTO visits SELECT
 FROM numbers(100, 500);
 ```
 We will execute a first query using `GROUP BY` using the field `user_agent`, this query will not use the projection defined as the pre-aggregation does not match.
-```
+```sql
 SELECT
     user_agent,
     count(DISTINCT user_id)
@@ -116,7 +116,7 @@ GROUP BY user_agent
 ```
 
 To use the projection we could execute queries that select part of, or all of the pre-aggregation and `GROUP BY` fields.
-```
+```sql
 SELECT
     user_agent
 FROM visits
@@ -132,7 +132,7 @@ GROUP BY user_agent
 ```
 
 As mentioned before, we could review the `system.query_log` table. On the `projections` field we have the name of the projection used or empty if none has been used:
-```
+```sql
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 

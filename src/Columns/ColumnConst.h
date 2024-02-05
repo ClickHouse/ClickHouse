@@ -151,7 +151,7 @@ public:
         s -= n;
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin) const override
+    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const UInt8 *) const override
     {
         return data->serializeValueIntoArena(0, arena, begin);
     }
@@ -291,5 +291,10 @@ public:
 
     bool isCollationSupported() const override { return data->isCollationSupported(); }
 };
+
+ColumnConst::Ptr createColumnConst(const ColumnPtr & column, Field value);
+ColumnConst::Ptr createColumnConst(const ColumnPtr & column, size_t const_value_index);
+ColumnConst::Ptr createColumnConstWithDefaultValue(const ColumnPtr  &column);
+
 
 }

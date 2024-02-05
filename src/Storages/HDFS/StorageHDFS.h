@@ -7,6 +7,8 @@
 #include <Processors/ISource.h>
 #include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/prepareReadingFromFormat.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Poco/URI.h>
 
 namespace DB
@@ -29,6 +31,8 @@ public:
 
     struct PathWithInfo
     {
+        PathWithInfo() = default;
+        PathWithInfo(const String & path_, const std::optional<PathInfo> & info_) : path(path_), info(info_) {}
         String path;
         std::optional<PathInfo> info;
     };
@@ -47,7 +51,8 @@ public:
 
     String getName() const override { return "HDFS"; }
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -65,6 +70,7 @@ public:
         TableExclusiveLockHolder &) override;
 
     NamesAndTypesList getVirtuals() const override;
+    static Names getVirtualColumnNames();
 
     bool supportsPartitionBy() const override { return true; }
 
@@ -72,7 +78,9 @@ public:
     /// Is is useful because column oriented formats could effectively skip unknown columns
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns(const ContextPtr & context_) const;
+
+    bool supportsSubcolumns() const override { return true; }
 
     static ColumnsDescription getTableStructureFromData(
         const String & format,
@@ -82,23 +90,13 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
+    bool supportsTrivialCountOptimization() const override { return true; }
+
 protected:
     friend class HDFSSource;
+    friend class ReadFromHDFS;
 
 private:
-    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
-        const std::vector<StorageHDFS::PathWithInfo> & paths_with_info,
-        const String & uri_without_path,
-        const String & format_name,
-        const ContextPtr & ctx);
-
-    static void addColumnsToCache(
-        const std::vector<StorageHDFS::PathWithInfo> & paths,
-        const String & uri_without_path,
-        const ColumnsDescription & columns,
-        const String & format_name,
-        const ContextPtr & ctx);
-
     std::vector<String> uris;
     String format_name;
     String compression_method;
@@ -107,7 +105,7 @@ private:
     bool is_path_with_globs;
     NamesAndTypesList virtual_columns;
 
-    Poco::Logger * log = &Poco::Logger::get("StorageHDFS");
+    LoggerPtr log = getLogger("StorageHDFS");
 };
 
 class PullingPipelineExecutor;
@@ -118,7 +116,7 @@ public:
     class DisclosedGlobIterator
     {
         public:
-            DisclosedGlobIterator(ContextPtr context_, const String & uri_);
+            DisclosedGlobIterator(const String & uri_, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
             StorageHDFS::PathWithInfo next();
         private:
             class Impl;
@@ -129,7 +127,7 @@ public:
     class URISIterator
     {
         public:
-            URISIterator(const std::vector<String> & uris_, ContextPtr context);
+            URISIterator(const std::vector<String> & uris_, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
             StorageHDFS::PathWithInfo next();
         private:
             class Impl;
@@ -140,39 +138,38 @@ public:
     using IteratorWrapper = std::function<StorageHDFS::PathWithInfo()>;
     using StorageHDFSPtr = std::shared_ptr<StorageHDFS>;
 
-    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
-
     HDFSSource(
+        const ReadFromFormatInfo & info,
         StorageHDFSPtr storage_,
-        const Block & block_for_format_,
-        const std::vector<NameAndTypePair> & requested_virtual_columns_,
         ContextPtr context_,
         UInt64 max_block_size_,
         std::shared_ptr<IteratorWrapper> file_iterator_,
-        ColumnsDescription columns_description_);
+        bool need_only_count_);
 
     String getName() const override;
 
     Chunk generate() override;
 
 private:
+    void addNumRowsToCache(const String & path, size_t num_rows);
+    std::optional<size_t> tryGetNumRowsFromCache(const StorageHDFS::PathWithInfo & path_with_info);
+
     StorageHDFSPtr storage;
     Block block_for_format;
-    std::vector<NameAndTypePair> requested_virtual_columns;
+    NamesAndTypesList requested_columns;
+    NamesAndTypesList requested_virtual_columns;
     UInt64 max_block_size;
     std::shared_ptr<IteratorWrapper> file_iterator;
     ColumnsDescription columns_description;
+    bool need_only_count;
+    size_t total_rows_in_file = 0;
 
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
     String current_path;
-
-    UInt64 total_rows_approx_max = 0;
-    size_t total_rows_count_times = 0;
-    UInt64 total_rows_approx_accumulated = 0;
-    size_t total_files_size = 0;
+    std::optional<size_t> current_file_size;
 
     /// Recreate ReadBuffer and PullingPipelineExecutor for each file.
     bool initialize();

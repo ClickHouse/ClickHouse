@@ -595,24 +595,3 @@ def execute_task(started_cluster, task, cmd_options):
         task.check()
     finally:
         zk.delete(task.zk_task_path, recursive=True)
-
-
-# Tests
-@pytest.mark.skip(reason="Too flaky :(")
-def test_different_schema(started_cluster):
-    execute_task(started_cluster, TaskWithDifferentSchema(started_cluster), [])
-
-
-@pytest.mark.skip(reason="Too flaky :(")
-def test_ttl_columns(started_cluster):
-    execute_task(started_cluster, TaskTTL(started_cluster), [])
-
-
-@pytest.mark.skip(reason="Too flaky :(")
-def test_skip_index(started_cluster):
-    execute_task(started_cluster, TaskSkipIndex(started_cluster), [])
-
-
-@pytest.mark.skip(reason="Too flaky :(")
-def test_ttl_move_to_volume(started_cluster):
-    execute_task(started_cluster, TaskTTLMoveToVolume(started_cluster), [])

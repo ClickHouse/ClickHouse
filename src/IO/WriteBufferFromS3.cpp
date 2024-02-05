@@ -11,12 +11,12 @@
 #include <Common/Throttler.h>
 #include <Interpreters/Cache/FileCache.h>
 
-#include <IO/ResourceGuard.h>
+#include <Common/Scheduler/ResourceGuard.h>
 #include <IO/WriteHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/getObjectInfo.h>
-#include <Interpreters/Context.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 
 #include <aws/s3/model/StorageClass.h>
 
@@ -77,11 +77,11 @@ struct WriteBufferFromS3::PartData
 
 WriteBufferFromS3::WriteBufferFromS3(
     std::shared_ptr<const S3::Client> client_ptr_,
-    std::shared_ptr<const S3::Client> client_with_long_timeout_ptr_,
     const String & bucket_,
     const String & key_,
     size_t buf_size_,
     const S3Settings::RequestSettings & request_settings_,
+    BlobStorageLogWriterPtr blob_log_,
     std::optional<std::map<String, String>> object_metadata_,
     ThreadPoolCallbackRunner<void> schedule_,
     const WriteSettings & write_settings_)
@@ -92,7 +92,6 @@ WriteBufferFromS3::WriteBufferFromS3(
     , upload_settings(request_settings.getUploadSettings())
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
-    , client_with_long_timeout_ptr(std::move(client_with_long_timeout_ptr_))
     , object_metadata(std::move(object_metadata_))
     , buffer_allocation_policy(ChooseBufferPolicy(upload_settings))
     , task_tracker(
@@ -100,6 +99,7 @@ WriteBufferFromS3::WriteBufferFromS3(
               std::move(schedule_),
               upload_settings.max_inflight_parts_for_one_file,
               limitedLog))
+    , blob_log(std::move(blob_log_))
 {
     LOG_TRACE(limitedLog, "Create WriteBufferFromS3, {}", getShortLogDetails());
 
@@ -178,6 +178,11 @@ void WriteBufferFromS3::preFinalize()
 
 void WriteBufferFromS3::finalizeImpl()
 {
+    OpenTelemetry::SpanHolder span("WriteBufferFromS3::finalizeImpl");
+    span.addAttribute("clickhouse.s3_bucket", bucket);
+    span.addAttribute("clickhouse.s3_key", key);
+    span.addAttribute("clickhouse.total_size", total_size);
+
     LOG_TRACE(limitedLog, "finalizeImpl WriteBufferFromS3. {}.", getShortLogDetails());
 
     if (!is_prefinalized)
@@ -187,6 +192,8 @@ void WriteBufferFromS3::finalizeImpl()
     chassert(hidden_size == 0);
 
     task_tracker->waitAll();
+
+    span.addAttributeIfNotZero("clickhouse.multipart_upload_parts", multipart_tags.size());
 
     if (!multipart_upload_id.empty())
     {
@@ -380,6 +387,9 @@ void WriteBufferFromS3::createMultipartUpload()
     watch.stop();
 
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
+    if (blob_log)
+        blob_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadCreate, bucket, key, {}, 0,
+                           outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
     if (!outcome.IsSuccess())
     {
@@ -388,6 +398,7 @@ void WriteBufferFromS3::createMultipartUpload()
     }
 
     multipart_upload_id = outcome.GetResult().GetUploadId();
+
     LOG_TRACE(limitedLog, "Multipart upload has created. {}", getShortLogDetails());
 }
 
@@ -415,6 +426,10 @@ void WriteBufferFromS3::abortMultipartUpload()
     watch.stop();
 
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
+
+    if (blob_log)
+        blob_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadAbort, bucket, key, {}, 0,
+                           outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
     if (!outcome.IsSuccess())
     {
@@ -510,6 +525,13 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
 
         ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
+        if (blob_log)
+        {
+            blob_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadWrite,
+                /* bucket = */ bucket, /* remote_path = */ key, /* local_path = */ {}, /* data_size */ data_size,
+                outcome.IsSuccess() ? nullptr : &outcome.GetError());
+        }
+
         if (!outcome.IsSuccess())
         {
             ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
@@ -566,10 +588,14 @@ void WriteBufferFromS3::completeMultipartUpload()
             ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
         Stopwatch watch;
-        auto outcome = client_with_long_timeout_ptr->CompleteMultipartUpload(req);
+        auto outcome = client_ptr->CompleteMultipartUpload(req);
         watch.stop();
 
         ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
+
+        if (blob_log)
+            blob_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadComplete, bucket, key, {}, 0,
+                               outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
         if (outcome.IsSuccess())
         {
@@ -582,7 +608,7 @@ void WriteBufferFromS3::completeMultipartUpload()
         if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
         {
             /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
-            /// BTW, NO_SUCH_UPLOAD is expected error and we shouldn't retry it
+            /// BTW, NO_SUCH_UPLOAD is expected error and we shouldn't retry it here, DB::S3::Client take care of it
             LOG_INFO(log, "Multipart upload failed with NO_SUCH_KEY error, will retry. {}, Parts: {}", getVerboseLogDetails(), multipart_tags.size());
         }
         else
@@ -652,6 +678,9 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             rlock.unlock();
 
             ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
+            if (blob_log)
+                blob_log->addEvent(BlobStorageLogElement::EventType::Upload, bucket, key, {}, request.GetContentLength(),
+                                   outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
             if (outcome.IsSuccess())
             {

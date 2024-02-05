@@ -8,7 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int UNEXPECTED_END_OF_FILE;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
 
@@ -50,7 +50,7 @@ ParallelReadBuffer::ParallelReadBuffer(
     , file_size(file_size_)
     , range_step(std::max(1ul, range_step_))
 {
-    LOG_TRACE(&Poco::Logger::get("ParallelReadBuffer"), "Parallel reading is used");
+    LOG_TRACE(getLogger("ParallelReadBuffer"), "Parallel reading is used");
 
     try
     {
@@ -260,7 +260,7 @@ void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
 
         if (!on_progress(r) && r < read_worker->segment.size())
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
+                ErrorCodes::UNEXPECTED_END_OF_FILE,
                 "Failed to read all the data from the reader at offset {}, got {}/{} bytes",
                 read_worker->start_offset, r, read_worker->segment.size());
     }

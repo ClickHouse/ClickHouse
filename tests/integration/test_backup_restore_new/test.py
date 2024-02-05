@@ -4,10 +4,13 @@ import glob
 import re
 import random
 import os.path
+import sys
 from collections import namedtuple
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry, TSV
 
+
+script_dir = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -882,7 +885,7 @@ def test_required_privileges():
     instance.query("CREATE USER u1")
 
     backup_name = new_backup_name()
-    expected_error = "necessary to have grant BACKUP ON test.table"
+    expected_error = "necessary to have the grant BACKUP ON test.table"
     assert expected_error in instance.query_and_get_error(
         f"BACKUP TABLE test.table TO {backup_name}", user="u1"
     )
@@ -890,12 +893,12 @@ def test_required_privileges():
     instance.query("GRANT BACKUP ON test.table TO u1")
     instance.query(f"BACKUP TABLE test.table TO {backup_name}", user="u1")
 
-    expected_error = "necessary to have grant INSERT, CREATE TABLE ON test.table"
+    expected_error = "necessary to have the grant INSERT, CREATE TABLE ON test.table"
     assert expected_error in instance.query_and_get_error(
         f"RESTORE TABLE test.table FROM {backup_name}", user="u1"
     )
 
-    expected_error = "necessary to have grant INSERT, CREATE TABLE ON test.table2"
+    expected_error = "necessary to have the grant INSERT, CREATE TABLE ON test.table2"
     assert expected_error in instance.query_and_get_error(
         f"RESTORE TABLE test.table AS test.table2 FROM {backup_name}", user="u1"
     )
@@ -907,7 +910,7 @@ def test_required_privileges():
 
     instance.query("DROP TABLE test.table")
 
-    expected_error = "necessary to have grant INSERT, CREATE TABLE ON test.table"
+    expected_error = "necessary to have the grant INSERT, CREATE TABLE ON test.table"
     assert expected_error in instance.query_and_get_error(
         f"RESTORE ALL FROM {backup_name}", user="u1"
     )
@@ -1014,14 +1017,14 @@ def test_system_users_required_privileges():
 
     backup_name = new_backup_name()
 
-    expected_error = "necessary to have grant BACKUP ON system.users"
+    expected_error = "necessary to have the grant BACKUP ON system.users"
     assert expected_error in instance.query_and_get_error(
         f"BACKUP TABLE system.users, TABLE system.roles TO {backup_name}", user="u2"
     )
 
     instance.query("GRANT BACKUP ON system.users TO u2")
 
-    expected_error = "necessary to have grant BACKUP ON system.roles"
+    expected_error = "necessary to have the grant BACKUP ON system.roles"
     assert expected_error in instance.query_and_get_error(
         f"BACKUP TABLE system.users, TABLE system.roles TO {backup_name}", user="u2"
     )
@@ -1035,7 +1038,7 @@ def test_system_users_required_privileges():
     instance.query("DROP ROLE r1")
 
     expected_error = (
-        "necessary to have grant CREATE USER, CREATE ROLE, ROLE ADMIN ON *.*"
+        "necessary to have the grant CREATE USER, CREATE ROLE, ROLE ADMIN ON *.*"
     )
     assert expected_error in instance.query_and_get_error(
         f"RESTORE ALL FROM {backup_name}", user="u2"
@@ -1043,7 +1046,7 @@ def test_system_users_required_privileges():
 
     instance.query("GRANT CREATE USER, CREATE ROLE, ROLE ADMIN ON *.* TO u2")
 
-    expected_error = "necessary to have grant SELECT ON test.* WITH GRANT OPTION"
+    expected_error = "necessary to have the grant SELECT ON test.* WITH GRANT OPTION"
     assert expected_error in instance.query_and_get_error(
         f"RESTORE ALL FROM {backup_name}", user="u2"
     )
@@ -1236,6 +1239,7 @@ def test_backup_all(exclude_system_log_tables):
             "transactions_info_log",
             "processors_profile_log",
             "asynchronous_insert_log",
+            "backup_log",
         ]
         exclude_from_backup += ["system." + table_name for table_name in log_tables]
 
@@ -1558,3 +1562,19 @@ def test_tables_dependency():
         )
 
     drop()
+
+
+# Test for the "clickhouse_backupview" utility.
+
+test_backupview_dir = os.path.abspath(
+    os.path.join(script_dir, "../../../utils/backupview/test")
+)
+if test_backupview_dir not in sys.path:
+    sys.path.append(test_backupview_dir)
+import test_backupview as test_backupview_module
+
+
+def test_backupview():
+    if instance.is_built_with_sanitizer():
+        return  # This test is actually for clickhouse_backupview, not for ClickHouse itself.
+    test_backupview_module.test_backupview_1()

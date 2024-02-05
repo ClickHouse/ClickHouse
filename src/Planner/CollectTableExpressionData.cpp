@@ -8,6 +8,8 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/JoinNode.h>
+#include <Analyzer/ListNode.h>
 
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerActionsVisitor.h>
@@ -33,6 +35,28 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
+        /// Special case for USING clause which contains references to ALIAS columns.
+        /// We can not modify such ColumnNode.
+        if (auto * join_node = node->as<JoinNode>())
+        {
+            if (!join_node->isUsingJoinExpression())
+                return;
+
+            auto & using_list = join_node->getJoinExpression()->as<ListNode&>();
+            for (auto & using_element : using_list)
+            {
+                auto & column_node = using_element->as<ColumnNode&>();
+                /// This list contains column nodes from left and right tables.
+                auto & columns_from_subtrees = column_node.getExpressionOrThrow()->as<ListNode&>().getNodes();
+
+                /// Visit left table column node.
+                visitUsingColumn(columns_from_subtrees[0]);
+                /// Visit right table column node.
+                visitUsingColumn(columns_from_subtrees[1]);
+            }
+            return;
+        }
+
         auto * column_node = node->as<ColumnNode>();
         if (!column_node)
             return;
@@ -55,7 +79,13 @@ public:
         if (column_node->hasExpression() && column_source_node_type != QueryTreeNodeType::ARRAY_JOIN)
         {
             /// Replace ALIAS column with expression
-            table_expression_data.addAliasColumnName(column_node->getColumnName());
+            bool column_already_exists = table_expression_data.hasColumn(column_node->getColumnName());
+            if (!column_already_exists)
+            {
+                auto column_identifier = planner_context.getGlobalPlannerContext()->createColumnIdentifier(node);
+                table_expression_data.addAliasColumnName(column_node->getColumnName(), column_identifier);
+            }
+
             node = column_node->getExpression();
             visitImpl(node);
             return;
@@ -78,13 +108,38 @@ public:
         table_expression_data.addColumn(column_node->getColumn(), column_identifier);
     }
 
-    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
+    static bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child_node)
     {
+        if (auto * join_node = parent->as<JoinNode>())
+        {
+            if (join_node->getJoinExpression() == child_node && join_node->isUsingJoinExpression())
+                return false;
+        }
         auto child_node_type = child_node->getNodeType();
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }
 
 private:
+
+    void visitUsingColumn(QueryTreeNodePtr & node)
+    {
+        auto & column_node = node->as<ColumnNode&>();
+        if (column_node.hasExpression())
+        {
+            auto & table_expression_data = planner_context.getOrCreateTableExpressionData(column_node.getColumnSource());
+            bool column_already_exists = table_expression_data.hasColumn(column_node.getColumnName());
+            if (column_already_exists)
+                return;
+
+            auto column_identifier = planner_context.getGlobalPlannerContext()->createColumnIdentifier(node);
+            table_expression_data.addAliasColumnName(column_node.getColumnName(), column_identifier);
+
+            visitImpl(column_node.getExpressionOrThrow());
+        }
+        else
+            visitImpl(node);
+    }
+
     PlannerContext & planner_context;
 };
 
@@ -206,12 +261,16 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         if (auto * table_node = table_expression_node->as<TableNode>())
         {
             bool storage_is_remote = table_node->getStorage()->isRemote();
+            bool storage_is_merge_tree = table_node->getStorage()->isMergeTree();
             table_expression_data.setIsRemote(storage_is_remote);
+            table_expression_data.setIsMergeTree(storage_is_merge_tree);
         }
         else if (auto * table_function_node = table_expression_node->as<TableFunctionNode>())
         {
             bool storage_is_remote = table_function_node->getStorage()->isRemote();
+            bool storage_is_merge_tree = table_function_node->getStorage()->isMergeTree();
             table_expression_data.setIsRemote(storage_is_remote);
+            table_expression_data.setIsMergeTree(storage_is_merge_tree);
         }
     }
 

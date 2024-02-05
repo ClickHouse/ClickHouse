@@ -111,7 +111,7 @@ void ColumnMap::popBack(size_t n)
     nested->popBack(n);
 }
 
-StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
 {
     return nested->serializeValueIntoArena(n, arena, begin);
 }
@@ -139,6 +139,11 @@ void ColumnMap::updateWeakHash32(WeakHash32 & hash) const
 void ColumnMap::updateHashFast(SipHash & hash) const
 {
     nested->updateHashFast(hash);
+}
+
+void ColumnMap::insertFrom(const IColumn & src, size_t n)
+{
+    nested->insertFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), n);
 }
 
 void ColumnMap::insertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -227,6 +232,11 @@ void ColumnMap::gather(ColumnGathererStream & gatherer)
 void ColumnMap::reserve(size_t n)
 {
     nested->reserve(n);
+}
+
+void ColumnMap::shrinkToFit()
+{
+    nested->shrinkToFit();
 }
 
 void ColumnMap::ensureOwnership()

@@ -35,7 +35,7 @@ struct ReplicatedMergeTreeLogEntryData
         EMPTY,          /// Not used.
         GET_PART,       /// Get the part from another replica.
         ATTACH_PART,    /// Attach the part, possibly from our own replica (if found in /detached folder).
-                        /// You may think of it as a GET_PART with some optimisations as they're nearly identical.
+                        /// You may think of it as a GET_PART with some optimizations as they're nearly identical.
         MERGE_PARTS,    /// Merge the parts.
         DROP_RANGE,     /// Delete the parts in the specified partition in the specified number range.
         CLEAR_COLUMN,   /// NOTE: Deprecated. Drop specific column from specified partition.
@@ -171,6 +171,9 @@ struct ReplicatedMergeTreeLogEntryData
 
     /// The quorum value (for GET_PART) is a non-zero value when the quorum write is enabled.
     size_t quorum = 0;
+
+    /// Used only in tests for permanent fault injection for particular queue entry.
+    bool fault_injected = false;
 
     /// If this MUTATE_PART entry caused by alter(modify/drop) query.
     bool isAlterMutation() const

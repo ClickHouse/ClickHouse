@@ -51,6 +51,13 @@ public:
         Names key_names_left;
         Names key_names_right; /// Duplicating right key names are qualified
 
+        /** JOIN ON a1 == a2 AND b1 <=> b2 AND c1 == c2 AND d1 <=> d2
+          * key_names_left:  [a1, b1, c1, d1]
+          * key_names_right: [a2, b2, c2, d2]
+          * nullsafe_compare_key_indexes: {1, 3}
+          */
+        std::unordered_set<size_t> nullsafe_compare_key_indexes;
+
         ASTPtr on_filter_condition_left;
         ASTPtr on_filter_condition_right;
 
@@ -58,6 +65,14 @@ public:
         std::string analyzer_right_filter_condition_column_name;
 
         JoinOnClause() = default;
+
+        void addKey(const String & left_name, const String & right_name, bool null_safe_comparison)
+        {
+            key_names_left.push_back(left_name);
+            key_names_right.push_back(right_name);
+            if (null_safe_comparison)
+                nullsafe_compare_key_indexes.insert(key_names_left.size() - 1);
+        }
 
         std::pair<String, String> condColumnNames() const
         {
@@ -125,11 +140,14 @@ private:
     const size_t default_max_bytes = 0;
     const bool join_use_nulls = false;
     const size_t max_joined_block_rows = 0;
-    MultiEnum<JoinAlgorithm> join_algorithm = MultiEnum<JoinAlgorithm>(JoinAlgorithm::AUTO);
+    std::vector<JoinAlgorithm> join_algorithm;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
     const String temporary_files_codec = "LZ4";
+
+    /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
+    size_t max_memory_usage = 0;
 
     ASTs key_asts_left;
     ASTs key_asts_right;
@@ -177,21 +195,35 @@ private:
 
     /// Create converting actions and change key column names if required
     ActionsDAGPtr applyKeyConvertToTable(
-        const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping,
-        NameToNameMap & key_column_rename,
-        bool make_nullable) const;
+        const ColumnsWithTypeAndName & cols_src,
+        const NameToTypeMap & type_mapping,
+        JoinTableSide table_side,
+        NameToNameMap & key_column_rename);
 
-    void addKey(const String & left_name, const String & right_name, const ASTPtr & left_ast, const ASTPtr & right_ast = nullptr);
+    ActionsDAGPtr applyNullsafeWrapper(
+        const ColumnsWithTypeAndName & cols_src,
+        const NameSet & columns_for_nullsafe_comparison,
+        JoinTableSide table_side,
+        NameToNameMap & key_column_rename);
+
+    ActionsDAGPtr applyJoinUseNullsConversion(
+        const ColumnsWithTypeAndName & cols_src,
+        const NameToNameMap & key_column_rename);
+
+    void applyRename(JoinTableSide side, const NameToNameMap & name_map);
+
+    void addKey(const String & left_name, const String & right_name, const ASTPtr & left_ast, const ASTPtr & right_ast, bool null_safe_comparison = false);
 
     void assertHasOneOnExpr() const;
 
     /// Calculates common supertypes for corresponding join key columns.
     template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
-    void inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right, bool strict);
-
-    NamesAndTypesList correctedColumnsAddedByJoin() const;
+    void inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right, bool require_strict_keys_match);
 
     void deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix);
+
+    std::pair<NameSet, NameSet>
+    getKeysForNullSafeComparion(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns);
 
 public:
     TableJoin() = default;
@@ -204,7 +236,7 @@ public:
         : size_limits(limits)
         , default_max_bytes(0)
         , join_use_nulls(use_nulls)
-        , join_algorithm(JoinAlgorithm::DEFAULT)
+        , join_algorithm({JoinAlgorithm::DEFAULT})
     {
         clauses.emplace_back().key_names_right = key_names_right;
         table_join.kind = kind;
@@ -215,20 +247,22 @@ public:
     JoinStrictness strictness() const { return table_join.strictness; }
     bool sameStrictnessAndKind(JoinStrictness, JoinKind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
+    size_t getMaxMemoryUsage() const;
+
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
     ActionsDAGPtr createJoinedBlockActions(ContextPtr context) const;
+
+    const std::vector<JoinAlgorithm> & getEnabledJoinAlgorithms() const { return join_algorithm; }
 
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {
         /// When join_algorithm = 'default' (not specified by user) we use hash or direct algorithm.
         /// It's behaviour that was initially supported by clickhouse.
-        bool is_enbaled_by_default = val == JoinAlgorithm::DEFAULT
-                                  || val == JoinAlgorithm::HASH
-                                  || val == JoinAlgorithm::DIRECT;
-        if (join_algorithm.isSet(JoinAlgorithm::DEFAULT) && is_enbaled_by_default)
+        bool is_default_enabled = std::find(join_algorithm.begin(), join_algorithm.end(), JoinAlgorithm::DEFAULT) != join_algorithm.end();
+        if (is_default_enabled && (val == JoinAlgorithm::DEFAULT || val == JoinAlgorithm::HASH || val == JoinAlgorithm::DIRECT))
             return true;
-        return join_algorithm.isSet(val);
+        return std::find(join_algorithm.begin(), join_algorithm.end(), val) != join_algorithm.end();
     }
 
     bool allowParallelHashJoin() const;
@@ -271,7 +305,7 @@ public:
 
     void addDisjunct();
 
-    void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
+    void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast, bool null_safe_comparison);
 
     /* Conditions for left/right table from JOIN ON section.
      *
@@ -331,7 +365,7 @@ public:
         const ColumnsWithTypeAndName & right_sample_columns);
 
     void setAsofInequality(ASOFJoinInequality inequality) { asof_inequality = inequality; }
-    ASOFJoinInequality getAsofInequality() { return asof_inequality; }
+    ASOFJoinInequality getAsofInequality() const { return asof_inequality; }
 
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only
@@ -371,6 +405,8 @@ public:
     bool isSpecialStorage() const { return !right_storage_name.empty() || right_storage_join || right_kv_storage; }
 
     std::shared_ptr<const IKeyValueEntity> getStorageKeyValue() { return right_kv_storage; }
+
+    NamesAndTypesList correctedColumnsAddedByJoin() const;
 };
 
 }

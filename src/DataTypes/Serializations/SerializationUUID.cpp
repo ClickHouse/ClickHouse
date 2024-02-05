@@ -1,12 +1,11 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/Serializations/SerializationUUID.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
 
+#include <ranges>
 
 namespace DB
 {
@@ -26,15 +25,16 @@ void SerializationUUID::deserializeText(IColumn & column, ReadBuffer & istr, con
         throwUnexpectedDataAfterParsedValue(column, istr, settings, "UUID");
 }
 
-void SerializationUUID::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+bool SerializationUUID::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const
 {
-    deserializeText(column, istr, settings, false);
+    UUID x;
+    if (!tryReadText(x, istr) || (whole && !istr.eof()))
+        return false;
+
+    assert_cast<ColumnUUID &>(column).getData().push_back(x);
+    return true;
 }
 
-void SerializationUUID::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeText(column, row_num, ostr, settings);
-}
 
 void SerializationUUID::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
@@ -77,6 +77,17 @@ void SerializationUUID::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
     assert_cast<ColumnUUID &>(column).getData().push_back(std::move(uuid)); /// It's important to do this at the end - for exception safety.
 }
 
+bool SerializationUUID::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    UUID uuid;
+    String field;
+    if (!checkChar('\'', istr) || !tryReadText(uuid, istr) || !checkChar('\'', istr))
+        return false;
+
+    assert_cast<ColumnUUID &>(column).getData().push_back(std::move(uuid));
+    return true;
+}
+
 void SerializationUUID::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('"', ostr);
@@ -93,6 +104,15 @@ void SerializationUUID::deserializeTextJSON(IColumn & column, ReadBuffer & istr,
     assert_cast<ColumnUUID &>(column).getData().push_back(x);
 }
 
+bool SerializationUUID::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    UUID x;
+    if (!checkChar('"', istr) || !tryReadText(x, istr) || !checkChar('"', istr))
+        return false;
+    assert_cast<ColumnUUID &>(column).getData().push_back(x);
+    return true;
+}
+
 void SerializationUUID::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('"', ostr);
@@ -107,52 +127,74 @@ void SerializationUUID::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
     assert_cast<ColumnUUID &>(column).getData().push_back(value);
 }
 
+bool SerializationUUID::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    UUID value;
+    if (!tryReadCSV(value, istr))
+        return false;
+    assert_cast<ColumnUUID &>(column).getData().push_back(value);
+    return true;
+}
 
 void SerializationUUID::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
     UUID x = field.get<UUID>();
-    writeBinary(x, ostr);
+    writeBinaryLittleEndian(x, ostr);
 }
 
 void SerializationUUID::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
-    readBinary(x, istr);
+    readBinaryLittleEndian(x, istr);
     field = NearestFieldType<UUID>(x);
 }
 
 void SerializationUUID::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeBinary(assert_cast<const ColumnVector<UUID> &>(column).getData()[row_num], ostr);
+    writeBinaryLittleEndian(assert_cast<const ColumnVector<UUID> &>(column).getData()[row_num], ostr);
 }
 
 void SerializationUUID::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
-    readBinary(x, istr);
+    readBinaryLittleEndian(x, istr);
     assert_cast<ColumnVector<UUID> &>(column).getData().push_back(x);
 }
 
 void SerializationUUID::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
     const typename ColumnVector<UUID>::Container & x = typeid_cast<const ColumnVector<UUID> &>(column).getData();
-
-    size_t size = x.size();
-
-    if (limit == 0 || offset + limit > size)
+    if (const size_t size = x.size(); limit == 0 || offset + limit > size)
         limit = size - offset;
 
-    if (limit)
+    if (limit == 0)
+        return;
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
+    if constexpr (std::endian::native == std::endian::big)
+    {
+        for (size_t i = offset; i < offset + limit; ++i)
+            writeBinaryLittleEndian(x[i], ostr);
+    }
+    else
         ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(UUID) * limit);
+#pragma clang diagnostic pop
 }
 
 void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
     typename ColumnVector<UUID>::Container & x = typeid_cast<ColumnVector<UUID> &>(column).getData();
-    size_t initial_size = x.size();
+    const size_t initial_size = x.size();
     x.resize(initial_size + limit);
-    size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(UUID) * limit);
+    const size_t size = istr.readBig(reinterpret_cast<char *>(&x[initial_size]), sizeof(UUID) * limit);
     x.resize(initial_size + size / sizeof(UUID));
-}
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
+    if constexpr (std::endian::native == std::endian::big)
+        for (size_t i = initial_size; i < x.size(); ++i)
+            transformEndianness<std::endian::big, std::endian::little>(x[i]);
+#pragma clang diagnostic pop
+}
 }

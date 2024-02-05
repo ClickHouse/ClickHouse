@@ -36,7 +36,7 @@ MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
     , name(name_)
     , path(storage.getRelativeDataPath() + name_)
     , pool(storage.getContext()->getSchedulePool())
-    , log(&Poco::Logger::get(storage.getLogName() + " (WriteAheadLog)"))
+    , log(getLogger(storage.getLogName() + " (WriteAheadLog)"))
 {
     init();
     sync_task = pool.createTask("MergeTreeWriteAheadLog::sync", [this]
@@ -113,7 +113,7 @@ void MergeTreeWriteAheadLog::rotate(const std::unique_lock<std::mutex> &)
 MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
-    std::unique_lock<std::mutex> & parts_lock,
+    DataPartsLock & parts_lock,
     bool readonly)
 {
     std::unique_lock lock(write_mutex);
@@ -198,7 +198,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
                 part,
                 metadata_snapshot,
                 block.getNamesAndTypesList(),
-                {},
+                {}, {},
                 CompressionCodecFactory::instance().get("NONE", {}),
                 NO_TRANSACTION_PTR);
 

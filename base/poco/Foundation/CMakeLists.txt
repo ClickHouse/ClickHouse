@@ -55,7 +55,6 @@ set (SRCS
     src/DigestStream.cpp
     src/DirectoryIterator.cpp
     src/DirectoryIteratorStrategy.cpp
-    src/DirectoryWatcher.cpp
     src/Environment.cpp
     src/Error.cpp
     src/ErrorHandler.cpp
@@ -167,6 +166,12 @@ set (SRCS
 )
 
 add_library (_poco_foundation ${SRCS})
+target_link_libraries (_poco_foundation
+    PUBLIC
+        boost::headers_only
+        boost::system
+)
+
 add_library (Poco::Foundation ALIAS _poco_foundation)
 
 # TODO: remove these warning exclusions

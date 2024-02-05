@@ -69,7 +69,7 @@ namespace
 }
 
 
-void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
     HTMLForm params(getContext()->getSettingsRef(), request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
@@ -78,7 +78,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
-            *response.send() << message << std::endl;
+            *response.send() << message << '\n';
         LOG_WARNING(log, fmt::runtime(message));
     };
 
@@ -145,6 +145,10 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             if (tables.next())
             {
                 catalog_name = tables.table_catalog();
+                /// `tables.next()` call is mandatory to drain the iterator before next operation and avoid "Invalid cursor state"
+                if (tables.next())
+                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Driver returned more than one table for '{}': '{}' and '{}'",
+                                    table_name, catalog_name, tables.table_schema());
                 LOG_TRACE(log, "Will fetch info for table '{}.{}'", catalog_name, table_name);
                 return catalog.find_columns(/* column = */ "", table_name, /* schema = */ "", catalog_name);
             }
@@ -153,6 +157,10 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             if (tables.next())
             {
                 catalog_name = tables.table_catalog();
+                /// `tables.next()` call is mandatory to drain the iterator before next operation and avoid "Invalid cursor state"
+                if (tables.next())
+                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Driver returned more than one table for '{}': '{}' and '{}'",
+                                    table_name, catalog_name, tables.table_schema());
                 LOG_TRACE(log, "Will fetch info for table '{}.{}.{}'", catalog_name, schema_name, table_name);
                 return catalog.find_columns(/* column = */ "", table_name, schema_name, catalog_name);
             }

@@ -17,7 +17,7 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    DB::UInt64 x = DB::parse<UInt64>(argv[1]);
+    UInt64 x = DB::parse<UInt64>(argv[1]);
 
     std::cout << std::hex << std::showbase << "Input: " << x << std::endl;
 
@@ -47,7 +47,7 @@ int main(int argc, char ** argv)
     hex << s;
     std::cout << std::endl;
 
-    DB::UInt64 y = 0;
+    UInt64 y = 0;
 
     DB::ReadBufferFromString rb(s);
     DB::readVarUInt(y, rb);

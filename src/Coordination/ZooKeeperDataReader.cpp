@@ -40,7 +40,7 @@ void deserializeSnapshotMagic(ReadBuffer & in)
     Coordination::read(dbid, in);
     static constexpr int32_t SNP_HEADER = 1514885966; /// "ZKSN"
     if (magic_header != SNP_HEADER)
-        throw Exception(ErrorCodes::CORRUPTED_DATA ,"Incorrect magic header in file, expected {}, got {}", SNP_HEADER, magic_header);
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Incorrect magic header in file, expected {}, got {}", SNP_HEADER, magic_header);
 }
 
 int64_t deserializeSessionAndTimeout(KeeperStorage & storage, ReadBuffer & in)
@@ -90,7 +90,7 @@ void deserializeACLMap(KeeperStorage & storage, ReadBuffer & in)
     }
 }
 
-int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, Poco::Logger * log)
+int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, LoggerPtr log)
 {
     int64_t max_zxid = 0;
     std::string path;
@@ -120,7 +120,6 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, Poco::L
         Coordination::read(node.stat.pzxid, in);
         if (!path.empty())
         {
-            node.stat.dataLength = static_cast<Int32>(node.getData().length());
             node.seq_num = node.stat.cversion;
             storage.container.insertOrReplace(path, node);
 
@@ -147,7 +146,7 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, Poco::L
     return max_zxid;
 }
 
-void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::string & snapshot_path, Poco::Logger * log)
+void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::string & snapshot_path, LoggerPtr log)
 {
     LOG_INFO(log, "Deserializing storage snapshot {}", snapshot_path);
     int64_t zxid = getZxidFromName(snapshot_path);
@@ -186,7 +185,7 @@ void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::st
     LOG_INFO(log, "Finished, snapshot ZXID {}", storage.zxid);
 }
 
-void deserializeKeeperStorageFromSnapshotsDir(KeeperStorage & storage, const std::string & path, Poco::Logger * log)
+void deserializeKeeperStorageFromSnapshotsDir(KeeperStorage & storage, const std::string & path, LoggerPtr log)
 {
     namespace fs = std::filesystem;
     std::map<int64_t, std::string> existing_snapshots;
@@ -284,7 +283,7 @@ void deserializeLogMagic(ReadBuffer & in)
 ///     strange, that this 550 bytes obviously was a part of Create transaction,
 ///     but the operation code was -1. We have added debug prints to original
 ///     zookeeper (3.6.3) and found that it just reads 550 bytes of this "Error"
-///     transaction, tooks the first 4 bytes as an error code (it was 79, non
+///     transaction, took the first 4 bytes as an error code (it was 79, non
 ///     existing code) and skip all remaining 546 bytes. NOTE: it looks like a bug
 ///     in ZooKeeper.
 ///
@@ -474,7 +473,7 @@ bool hasErrorsInMultiRequest(Coordination::ZooKeeperRequestPtr request)
 
 }
 
-bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, Poco::Logger * /*log*/)
+bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, LoggerPtr /*log*/)
 {
     int64_t checksum;
     Coordination::read(checksum, in);
@@ -529,7 +528,7 @@ bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, Poco::Logger * /*l
     return true;
 }
 
-void deserializeLogAndApplyToStorage(KeeperStorage & storage, const std::string & log_path, Poco::Logger * log)
+void deserializeLogAndApplyToStorage(KeeperStorage & storage, const std::string & log_path, LoggerPtr log)
 {
     ReadBufferFromFile reader(log_path);
 
@@ -553,7 +552,7 @@ void deserializeLogAndApplyToStorage(KeeperStorage & storage, const std::string 
     LOG_INFO(log, "Finished {} deserialization, totally read {} records", log_path, counter);
 }
 
-void deserializeLogsAndApplyToStorage(KeeperStorage & storage, const std::string & path, Poco::Logger * log)
+void deserializeLogsAndApplyToStorage(KeeperStorage & storage, const std::string & path, LoggerPtr log)
 {
     namespace fs = std::filesystem;
     std::map<int64_t, std::string> existing_logs;

@@ -46,16 +46,15 @@ public:
 private:
     std::string type_name;
     static std::string generateName(const Values & values);
-    static std::string generateMySQLName(const Values & values);
 
 public:
     explicit DataTypeEnum(const Values & values_);
 
     std::string doGetName() const override { return type_name; }
     const char * getFamilyName() const override;
-    String getSQLCompatibleName() const override { return generateMySQLName(this->getValues()); }
 
     TypeIndex getTypeId() const override { return type_id; }
+    TypeIndex getColumnType() const override { return sizeof(FieldType) == 1 ? TypeIndex::Int8 : TypeIndex::Int16; }
 
     FieldType readValue(ReadBuffer & istr) const
     {

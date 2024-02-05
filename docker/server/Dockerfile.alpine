@@ -23,7 +23,6 @@ COPY docker_related_config.xml /etc/clickhouse-server/config.d/
 COPY entrypoint.sh /entrypoint.sh
 
 ARG TARGETARCH
-
 RUN arch=${TARGETARCH:-amd64} \
     && case $arch in \
         amd64) mkdir -p /lib64 && ln -sf /lib/ld-2.31.so /lib64/ld-linux-x86-64.so.2 ;; \
@@ -33,8 +32,9 @@ RUN arch=${TARGETARCH:-amd64} \
 # lts / testing / prestable / etc
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="https://packages.clickhouse.com/tgz/${REPO_CHANNEL}"
-ARG VERSION="23.6.2.18"
+ARG VERSION="24.1.2.5"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
+ARG DIRECT_DOWNLOAD_URLS=""
 
 # user/group precreated explicitly with fixed uid/gid on purpose.
 # It is especially important for rootless containers: in that case entrypoint
@@ -44,17 +44,26 @@ ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 # The same uid / gid (101) is used both for alpine and ubuntu.
 
 RUN arch=${TARGETARCH:-amd64} \
-    && for package in ${PACKAGES}; do \
-        { \
-            { echo "Get ${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
-                && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" -O "/tmp/${package}-${VERSION}-${arch}.tgz" \
-                && tar xvzf "/tmp/${package}-${VERSION}-${arch}.tgz" --strip-components=1 -C / ; \
-            } || \
-            { echo "Fallback to ${REPOSITORY}/${package}-${VERSION}.tgz" \
-                && wget -c -q "${REPOSITORY}/${package}-${VERSION}.tgz" -O "/tmp/${package}-${VERSION}.tgz" \
-                && tar xvzf "/tmp/${package}-${VERSION}.tgz" --strip-components=2 -C / ; \
-            } ; \
-        } || exit 1 \
+    && cd /tmp \
+    && if [ -n "${DIRECT_DOWNLOAD_URLS}" ]; then \
+        echo "installing from provided urls with tgz packages: ${DIRECT_DOWNLOAD_URLS}" \
+        && for url in $DIRECT_DOWNLOAD_URLS; do \
+            echo "Get ${url}" \
+            && wget -c -q "$url" \
+        ; done \
+    else \
+        for package in ${PACKAGES}; do \
+            echo "Get ${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
+            && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
+            && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz.sha512" \
+        ; done \
+    fi \
+    && cat *.tgz.sha512 | sed 's:/output/:/tmp/:' | sha512sum -c \
+    && for file in *.tgz; do \
+        if [ -f "$file" ]; then \
+            echo "Unpacking $file"; \
+            tar xvzf "$file" --strip-components=1 -C /; \
+        fi \
     ; done \
     && rm /tmp/*.tgz /install -r \
     && addgroup -S -g 101 clickhouse \

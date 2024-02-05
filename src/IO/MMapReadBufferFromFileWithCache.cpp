@@ -1,4 +1,5 @@
 #include <IO/MMapReadBufferFromFileWithCache.h>
+#include <base/getPageSize.h>
 
 
 namespace DB
@@ -73,6 +74,11 @@ off_t MMapReadBufferFromFileWithCache::seek(off_t offset, int whence)
 
     position() = working_buffer.begin() + new_pos;
     return new_pos;
+}
+
+size_t MMapReadBufferFromFileWithCache::getFileOffsetOfBufferEnd() const
+{
+    return mapped->getOffset() + mapped->getLength();
 }
 
 }

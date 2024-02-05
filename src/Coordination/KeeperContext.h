@@ -1,16 +1,16 @@
 #pragma once
-
-#include <Poco/Util/AbstractConfiguration.h>
-
 #include <Coordination/KeeperFeatureFlags.h>
-#include <IO/WriteBufferFromString.h>
 #include <Disks/DiskSelector.h>
-
+#include <IO/WriteBufferFromString.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <condition_variable>
 #include <cstdint>
 #include <memory>
 
 namespace DB
 {
+
+class KeeperDispatcher;
 
 class KeeperContext
 {
@@ -24,7 +24,7 @@ public:
         SHUTDOWN
     };
 
-    void initialize(const Poco::Util::AbstractConfiguration & config);
+    void initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_);
 
     Phase getServerState() const;
     void setServerState(Phase server_state_);
@@ -51,6 +51,23 @@ public:
     const KeeperFeatureFlags & getFeatureFlags() const;
 
     void dumpConfiguration(WriteBufferFromOwnString & buf) const;
+
+    constexpr KeeperDispatcher * getDispatcher() const { return dispatcher; }
+
+    UInt64 getKeeperMemorySoftLimit() const { return memory_soft_limit; }
+    void updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config);
+
+    bool setShutdownCalled();
+    const auto & isShutdownCalled() const
+    {
+        return shutdown_called;
+    }
+
+    void setLocalLogsPreprocessed();
+    bool localLogsPreprocessed() const;
+
+    void waitLocalLogsPreprocessedOrShutdown();
+
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
@@ -63,6 +80,14 @@ private:
     Storage getStatePathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
 
     DiskPtr getDisk(const Storage & storage) const;
+
+    std::mutex local_logs_preprocessed_cv_mutex;
+    std::condition_variable local_logs_preprocessed_cv;
+
+    /// set to true when we have preprocessed or committed all the logs
+    /// that were already present locally during startup
+    std::atomic<bool> local_logs_preprocessed = false;
+    std::atomic<bool> shutdown_called = false;
 
     Phase server_state{Phase::INIT};
 
@@ -85,8 +110,10 @@ private:
     std::unordered_map<std::string, std::string> system_nodes_with_data;
 
     KeeperFeatureFlags feature_flags;
+    KeeperDispatcher * dispatcher{nullptr};
+
+    std::atomic<UInt64> memory_soft_limit = 0;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
-
 }

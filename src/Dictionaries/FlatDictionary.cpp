@@ -12,9 +12,9 @@
 #include <Functions/FunctionHelpers.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <Dictionaries/DictionarySource.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
@@ -288,7 +288,7 @@ DictionaryHierarchyParentToChildIndexPtr FlatDictionary::getHierarchicalIndex() 
     const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
 
-    HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+    DictionaryHierarchicalParentToChildIndex::ParentToChildIndex parent_to_child;
     parent_to_child.reserve(element_count);
 
     UInt64 child_keys_size = static_cast<UInt64>(parent_keys.size());
@@ -395,11 +395,15 @@ void FlatDictionary::updateData()
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
-
-        PullingPipelineExecutor executor(pipeline);
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        update_field_loaded_block.reset();
         Block block;
+
         while (executor.pull(block))
         {
+            if (!block.rows())
+                continue;
+
             convertToFullIfSparse(block);
 
             /// We are using this to keep saved data if input stream consists of multiple blocks
@@ -432,7 +436,7 @@ void FlatDictionary::loadData()
     if (!source_ptr->hasUpdateField())
     {
         QueryPipeline pipeline(source_ptr->loadAll());
-        PullingPipelineExecutor executor(pipeline);
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
 
         Block block;
         while (executor.pull(block))
@@ -683,7 +687,7 @@ void registerDictionaryFlat(DictionaryFactory & factory)
         return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
-    factory.registerLayout("flat", create_layout, false);
+    factory.registerLayout("flat", create_layout, false, false);
 }
 
 

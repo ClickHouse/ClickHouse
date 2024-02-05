@@ -6,6 +6,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
+#include "Core/TypeId.h"
 #include "config.h"
 
 
@@ -62,7 +63,7 @@ public:
     StringRef getDataAt(size_t) const override;
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -108,6 +109,7 @@ public:
     void updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
     void reserve(size_t n) override;
+    void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
@@ -166,7 +168,7 @@ public:
         getIndicesOfNonDefaultRowsImpl<ColumnNullable>(indices, from, limit);
     }
 
-    ColumnPtr createWithOffsets(const Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const override;
+    ColumnPtr createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
 
     bool isNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return false; }
@@ -212,6 +214,8 @@ public:
 private:
     WrappedPtr nested_column;
     WrappedPtr null_map;
+    // optimize serializeValueIntoArena
+    TypeIndex nested_type;
 
     template <bool negative>
     void applyNullMapImpl(const NullMap & map);
@@ -228,5 +232,6 @@ private:
 ColumnPtr makeNullable(const ColumnPtr & column);
 ColumnPtr makeNullableSafe(const ColumnPtr & column);
 ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column);
+ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column);
 
 }

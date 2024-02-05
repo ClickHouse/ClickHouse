@@ -48,19 +48,17 @@ public:
         , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
         , hdfs_fs(createHDFSFS(hdfs_builder.get()))
         , settings(std::move(settings_))
+        , hdfs_root_path(hdfs_root_path_)
     {
-        data_source_description.type = DataSourceType::HDFS;
-        data_source_description.description = hdfs_root_path_;
-        data_source_description.is_cached = false;
-        data_source_description.is_encrypted = false;
     }
 
     std::string getName() const override { return "HDFSObjectStorage"; }
 
-    DataSourceDescription getDataSourceDescription() const override
-    {
-        return data_source_description;
-    }
+    std::string getCommonKeyPrefix() const override { return hdfs_root_path; }
+
+    std::string getDescription() const override { return hdfs_root_path; }
+
+    ObjectStorageType getType() const override { return ObjectStorageType::HDFS; }
 
     bool exists(const StoredObject & object) const override;
 
@@ -98,6 +96,8 @@ public:
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
     void shutdown() override;
@@ -112,7 +112,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    std::string generateBlobNameForPath(const std::string & path) override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
 
     bool isRemote() const override { return true; }
 
@@ -121,10 +121,8 @@ private:
 
     HDFSBuilderWrapper hdfs_builder;
     HDFSFSPtr hdfs_fs;
-
     SettingsPtr settings;
-
-    DataSourceDescription data_source_description;
+    const std::string hdfs_root_path;
 };
 
 }

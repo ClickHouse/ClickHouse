@@ -1,6 +1,6 @@
 #pragma once
 
-#include <time.h>
+#include <ctime>
 #include <cstdlib>
 #include <climits>
 #include <random>
@@ -58,7 +58,7 @@ public:
             NestedPools nested_pools_,
             time_t decrease_error_period_,
             size_t max_error_cap_,
-            Poco::Logger * log_)
+            LoggerPtr log_)
         : nested_pools(std::move(nested_pools_))
         , decrease_error_period(decrease_error_period_)
         , max_error_cap(max_error_cap_)
@@ -124,7 +124,9 @@ public:
             size_t max_ignored_errors,
             bool fallback_to_stale_replicas,
             const TryGetEntryFunc & try_get_entry,
-            const GetPriorityFunc & get_priority = GetPriorityFunc());
+            const GetPriorityFunc & get_priority);
+
+    size_t getPoolSize() const { return nested_pools.size(); }
 
 protected:
 
@@ -147,7 +149,7 @@ protected:
         return std::make_tuple(shared_pool_states, nested_pools, last_error_decrease_time);
     }
 
-    NestedPools nested_pools;
+    const NestedPools nested_pools;
 
     const time_t decrease_error_period;
     const size_t max_error_cap;
@@ -157,7 +159,7 @@ protected:
     /// The time when error counts were last decreased.
     time_t last_error_decrease_time = 0;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 
@@ -180,6 +182,7 @@ PoolWithFailoverBase<TNestedPool>::getShuffledPools(
     shuffled_pools.reserve(nested_pools.size());
     for (size_t i = 0; i < nested_pools.size(); ++i)
         shuffled_pools.push_back(ShuffledPool{nested_pools[i].get(), &pool_states[i], i, /* error_count = */ 0, /* slowdown_count = */ 0});
+
     ::sort(
         shuffled_pools.begin(), shuffled_pools.end(),
         [](const ShuffledPool & lhs, const ShuffledPool & rhs)

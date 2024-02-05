@@ -25,9 +25,10 @@ public:
         : table_join(table_join_)
         , right_sample_block(right_sample_block_)
     {
-        LOG_TRACE(&Poco::Logger::get("FullSortingMergeJoin"), "Will use full sorting merge join");
+        LOG_TRACE(getLogger("FullSortingMergeJoin"), "Will use full sorting merge join");
     }
 
+    std::string getName() const override { return "FullSortingMergeJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override

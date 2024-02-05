@@ -24,7 +24,7 @@ struct NATSConfiguration
 class NATSConnectionManager
 {
 public:
-    NATSConnectionManager(const NATSConfiguration & configuration_, Poco::Logger * log_);
+    NATSConnectionManager(const NATSConfiguration & configuration_, LoggerPtr log_);
     ~NATSConnectionManager();
 
     bool isConnected();
@@ -54,7 +54,7 @@ private:
     static void reconnectedCallback(natsConnection * nc, void * log);
 
     NATSConfiguration configuration;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     UVLoop loop;
     NATSHandler event_handler;

@@ -4,6 +4,10 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnsDateTime.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
@@ -34,6 +38,7 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
 {
     /// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
     nested_column = getNestedColumn().convertToFullColumnIfConst();
+    nested_type = nested_column->getDataType();
 
     if (!getNestedColumn().canBeInsideNullable())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", getNestedColumn().getName());
@@ -92,7 +97,7 @@ MutableColumnPtr ColumnNullable::cloneResized(size_t new_size) const
 
     if (new_size > 0)
     {
-        new_null_map->getData().resize(new_size);
+        new_null_map->getData().resize_exact(new_size);
 
         size_t count = std::min(size(), new_size);
         memcpy(new_null_map->getData().data(), getNullMapData().data(), count * sizeof(getNullMapData()[0]));
@@ -134,21 +139,77 @@ void ColumnNullable::insertData(const char * pos, size_t length)
     }
 }
 
-StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
 {
     const auto & arr = getNullMapData();
     static constexpr auto s = sizeof(arr[0]);
+    char * pos;
 
-    auto * pos = arena.allocContinue(s, begin);
-    memcpy(pos, &arr[n], s);
-
-    if (arr[n])
-        return StringRef(pos, s);
-
-    auto nested_ref = getNestedColumn().serializeValueIntoArena(n, arena, begin);
-
-    /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
-    return StringRef(nested_ref.data - s, nested_ref.size + s);
+    switch (nested_type)
+    {
+        case TypeIndex::UInt8:
+            return static_cast<const ColumnUInt8 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::UInt16:
+            return static_cast<const ColumnUInt16 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::UInt32:
+            return static_cast<const ColumnUInt32 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::UInt64:
+            return static_cast<const ColumnUInt64 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::UInt128:
+            return static_cast<const ColumnUInt128 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::UInt256:
+            return static_cast<const ColumnUInt256 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Int8:
+            return static_cast<const ColumnInt8 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Int16:
+            return static_cast<const ColumnInt16 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Int32:
+            return static_cast<const ColumnInt32 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Int64:
+            return static_cast<const ColumnInt64 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Int128:
+            return static_cast<const ColumnInt128 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Int256:
+            return static_cast<const ColumnInt256 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Float32:
+            return static_cast<const ColumnFloat32 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Float64:
+            return static_cast<const ColumnFloat64 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Date:
+            return static_cast<const ColumnDate *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Date32:
+            return static_cast<const ColumnDate32 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::DateTime:
+            return static_cast<const ColumnDateTime *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::DateTime64:
+            return static_cast<const ColumnDateTime64 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::String:
+            return static_cast<const ColumnString *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::FixedString:
+            return static_cast<const ColumnFixedString *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Decimal32:
+            return static_cast<const ColumnDecimal<Decimal32> *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Decimal64:
+            return static_cast<const ColumnDecimal<Decimal64> *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Decimal128:
+            return static_cast<const ColumnDecimal<Decimal128> *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Decimal256:
+            return static_cast<const ColumnDecimal<Decimal256> *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::UUID:
+            return static_cast<const ColumnUUID *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::IPv4:
+            return static_cast<const ColumnIPv4 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::IPv6:
+            return static_cast<const ColumnIPv6 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        default:
+            pos = arena.allocContinue(s, begin);
+            memcpy(pos, &arr[n], s);
+            if (arr[n])
+                return StringRef(pos, s);
+            auto nested_ref = getNestedColumn().serializeValueIntoArena(n, arena, begin);
+            /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
+            return StringRef(nested_ref.data - s, nested_ref.size + s);
+    }
 }
 
 const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
@@ -564,15 +625,22 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
     else
         getNestedColumn().updatePermutation(direction, stability, limit, null_direction_hint, res, new_ranges);
 
-    equal_ranges = std::move(new_ranges);
-
     if (unlikely(stability == PermutationSortStability::Stable))
     {
         for (auto & null_range : null_ranges)
             ::sort(res.begin() + null_range.first, res.begin() + null_range.second);
     }
 
-    std::move(null_ranges.begin(), null_ranges.end(), std::back_inserter(equal_ranges));
+    if (is_nulls_last || null_ranges.empty())
+    {
+        equal_ranges = std::move(new_ranges);
+        std::move(null_ranges.begin(), null_ranges.end(), std::back_inserter(equal_ranges));
+    }
+    else
+    {
+        equal_ranges = std::move(null_ranges);
+        std::move(new_ranges.begin(), new_ranges.end(), std::back_inserter(equal_ranges));
+    }
 }
 
 void ColumnNullable::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -608,6 +676,12 @@ void ColumnNullable::reserve(size_t n)
 {
     getNestedColumn().reserve(n);
     getNullMapData().reserve(n);
+}
+
+void ColumnNullable::shrinkToFit()
+{
+    getNestedColumn().shrinkToFit();
+    getNullMapData().shrink_to_fit();
 }
 
 void ColumnNullable::ensureOwnership()
@@ -759,24 +833,22 @@ void ColumnNullable::checkConsistency() const
                         "Logical error: Sizes of nested column and null map of Nullable column are not equal");
 }
 
-ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const
+ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
 {
     ColumnPtr new_values;
     ColumnPtr new_null_map;
 
-    if (default_field.getType() == Field::Types::Null)
+    const ColumnNullable & nullable_column_with_default_value = assert_cast<const ColumnNullable &>(column_with_default_value.getDataColumn());
+    if (nullable_column_with_default_value.isNullAt(0))
     {
-        auto default_column = nested_column->cloneEmpty();
-        default_column->insertDefault();
-
         /// Value in main column, when null map is 1 is implementation defined. So, take any value.
-        new_values = nested_column->createWithOffsets(offsets, (*default_column)[0], total_rows, shift);
-        new_null_map = null_map->createWithOffsets(offsets, Field(1u), total_rows, shift);
+        new_values = nested_column->createWithOffsets(offsets, *createColumnConstWithDefaultValue(nested_column), total_rows, shift);
+        new_null_map = null_map->createWithOffsets(offsets, *createColumnConst(null_map, Field(1u)), total_rows, shift);
     }
     else
     {
-        new_values = nested_column->createWithOffsets(offsets, default_field, total_rows, shift);
-        new_null_map = null_map->createWithOffsets(offsets, Field(0u), total_rows, shift);
+        new_values = nested_column->createWithOffsets(offsets, *ColumnConst::create(nullable_column_with_default_value.getNestedColumnPtr(), 1), total_rows, shift);
+        new_null_map = null_map->createWithOffsets(offsets, *createColumnConst(null_map, Field(0u)), total_rows, shift);
     }
 
     return ColumnNullable::create(new_values, new_null_map);
@@ -797,10 +869,14 @@ ColumnPtr ColumnNullable::getNestedColumnWithDefaultOnNull() const
         if (next_null_index != start)
             res->insertRangeFrom(*nested_column, start, next_null_index - start);
 
-        if (next_null_index < end)
-            res->insertDefault();
+        size_t next_none_null_index = next_null_index;
+        while (next_none_null_index < end && null_map_data[next_none_null_index])
+            ++next_none_null_index;
 
-        start = next_null_index + 1;
+        if (next_null_index != next_none_null_index)
+            res->insertManyDefaults(next_none_null_index - next_null_index);
+
+        start = next_none_null_index;
     }
     return res;
 }
@@ -818,10 +894,7 @@ ColumnPtr makeNullable(const ColumnPtr & column)
 
 ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column)
 {
-    if (isColumnNullable(*column))
-        return column;
-
-    if (isColumnLowCardinalityNullable(*column))
+    if (isColumnNullableOrLowCardinalityNullable(*column))
         return column;
 
     if (isColumnConst(*column))
@@ -840,6 +913,23 @@ ColumnPtr makeNullableSafe(const ColumnPtr & column)
 
     if (isColumnConst(*column))
         return ColumnConst::create(makeNullableSafe(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
+
+    if (column->canBeInsideNullable())
+        return makeNullable(column);
+
+    return column;
+}
+
+ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column)
+{
+    if (isColumnNullableOrLowCardinalityNullable(*column))
+        return column;
+
+    if (isColumnConst(*column))
+        return ColumnConst::create(makeNullableOrLowCardinalityNullableSafe(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
+
+    if (column->lowCardinality())
+        return assert_cast<const ColumnLowCardinality &>(*column).cloneNullable();
 
     if (column->canBeInsideNullable())
         return makeNullable(column);

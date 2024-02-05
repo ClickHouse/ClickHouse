@@ -68,7 +68,7 @@ namespace Net
         struct ProxyConfig
         /// HTTP proxy server configuration.
         {
-            ProxyConfig() : port(HTTP_PORT), protocol("http"), tunnel(true) { }
+            ProxyConfig() : port(HTTP_PORT), protocol("http"), tunnel(true), originalRequestProtocol("http") { }
 
             std::string host;
             /// Proxy server host name or IP address.
@@ -87,6 +87,9 @@ namespace Net
             /// A regular expression defining hosts for which the proxy should be bypassed,
             /// e.g. "localhost|127\.0\.0\.1|192\.168\.0\.\d+". Can also be an empty
             /// string to disable proxy bypassing.
+            std::string originalRequestProtocol;
+            /// Original request protocol (http or https).
+            /// Required in the case of: HTTPS request over HTTP proxy with tunneling (CONNECT) off.
         };
 
         HTTPClientSession();
@@ -306,7 +309,7 @@ namespace Net
             DEFAULT_KEEP_ALIVE_TIMEOUT = 8
         };
 
-        void reconnect();
+        virtual void reconnect();
         /// Connects the underlying socket to the HTTP server.
 
         int write(const char * buffer, std::streamsize length);

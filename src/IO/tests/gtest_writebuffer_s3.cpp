@@ -23,10 +23,20 @@
 
 #include <IO/WriteBufferFromS3.h>
 #include <IO/S3Common.h>
+#include <IO/FileEncryptionCommon.h>
+#include <IO/WriteBufferFromEncryptedFile.h>
+#include <IO/ReadBufferFromEncryptedFile.h>
+#include <IO/AsyncReadCounters.h>
+#include <IO/ReadBufferFromS3.h>
+#include <IO/S3/Client.h>
+
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 
 #include <Common/filesystemHelpers.h>
-#include <IO/S3/Client.h>
 #include <Core/Settings.h>
+
 
 namespace DB
 {
@@ -200,9 +210,13 @@ struct Client : DB::S3::Client
                std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
                GetClientConfiguration(),
                Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-               /* use_virtual_addressing = */ true)
+               DB::S3::ClientSettings{
+                   .use_virtual_addressing = true,
+                   .disable_checksum= false,
+                   .gcs_issue_compose_request = false,
+               })
         , store(mock_s3_store)
-    { }
+    {}
 
     static std::shared_ptr<Client> CreateClient(String bucket = "mock-s3-bucket")
     {
@@ -218,6 +232,7 @@ struct Client : DB::S3::Client
             "some-region",
             remote_host_filter,
             /* s3_max_redirects = */ 100,
+            /* s3_retry_attempts = */ 0,
             /* enable_s3_requests_logging = */ true,
             /* for_disk_s3 = */ false,
             /* get_request_throttler = */ {},
@@ -258,10 +273,22 @@ struct Client : DB::S3::Client
         ++counters.getObject;
 
         auto & bStore = store->GetBucketStore(request.GetBucket());
+        const String data = bStore.objects[request.GetKey()];
+
+        size_t begin = 0;
+        size_t end = data.size() - 1;
+
+        const String & range = request.GetRange();
+        const String prefix = "bytes=";
+        if (range.starts_with(prefix))
+        {
+            int ret = sscanf(range.c_str(), "bytes=%zu-%zu", &begin, &end); /// NOLINT
+            chassert(ret == 2);
+        }
 
         auto factory = request.GetResponseStreamFactory();
         Aws::Utils::Stream::ResponseStream responseStream(factory);
-        responseStream.GetUnderlyingStream() << std::stringstream(bStore.objects[request.GetKey()]).rdbuf();
+        responseStream.GetUnderlyingStream() << std::stringstream(data.substr(begin, end - begin + 1)).rdbuf();
 
         Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> awsStream(std::move(responseStream), Aws::Http::HeaderValueCollection());
         Aws::S3::Model::GetObjectResult getObjectResult(std::move(awsStream));
@@ -527,11 +554,11 @@ public:
 
         return std::make_unique<WriteBufferFromS3>(
                     client,
-                    client,
                     bucket,
                     file_name,
                     DBMS_DEFAULT_BUFFER_SIZE,
                     request_settings,
+                    nullptr,
                     std::nullopt,
                     getAsyncPolicy().getScheduler());
     }
@@ -1146,6 +1173,16 @@ TEST_P(SyncAsync, StrictUploadPartSize) {
             ASSERT_THAT(actual_parts_sizes, testing::ElementsAre(11, 11, 11, 11, 11, 11, 1));
         }
     }
+}
+
+String fillStringWithPattern(String pattern, int n)
+{
+    String data;
+    for (int i = 0; i < n; ++i)
+    {
+        data += pattern;
+    }
+    return data;
 }
 
 #endif

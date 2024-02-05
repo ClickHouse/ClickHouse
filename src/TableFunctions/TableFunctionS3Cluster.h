@@ -35,6 +35,7 @@ public:
                                       " - cluster, url, access_key_id, secret_access_key, format\n"
                                       " - cluster, url, access_key_id, secret_access_key, format, structure\n"
                                       " - cluster, url, access_key_id, secret_access_key, format, structure, compression_method\n"
+                                      " - cluster, url, access_key_id, secret_access_key, session_token, format, structure, compression_method\n"
                                       "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
     String getName() const override
@@ -52,7 +53,8 @@ protected:
         const ASTPtr & ast_function,
         ContextPtr context,
         const std::string & table_name,
-        ColumnsDescription cached_columns) const override;
+        ColumnsDescription cached_columns,
+        bool is_insert_query) const override;
 
     const char * getStorageTypeName() const override { return "S3Cluster"; }
 };

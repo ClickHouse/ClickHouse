@@ -115,7 +115,7 @@ public:
         chars.resize_assume_reserved(chars.size() - n * elems);
     }
 
-    StringRef serializeValueIntoArena(size_t index, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t index, Arena & arena, char const *& begin, const UInt8 *) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
@@ -179,6 +179,11 @@ public:
     void reserve(size_t size) override
     {
         chars.reserve(n * size);
+    }
+
+    void shrinkToFit() override
+    {
+        chars.shrink_to_fit();
     }
 
     void resize(size_t size)

@@ -16,11 +16,6 @@
 
 #include <aws/s3/model/GetObjectResult.h>
 
-namespace Aws::S3
-{
-class Client;
-}
-
 namespace DB
 {
 /**
@@ -44,7 +39,7 @@ private:
     std::optional<Aws::S3::Model::GetObjectResult> read_result;
     std::unique_ptr<ReadBuffer> impl;
 
-    Poco::Logger * log = &Poco::Logger::get("ReadBufferFromS3");
+    LoggerPtr log = getLogger("ReadBufferFromS3");
 
 public:
     ReadBufferFromS3(
@@ -84,7 +79,7 @@ public:
     bool supportsReadAt() override { return true; }
 
 private:
-    std::unique_ptr<ReadBuffer> initialize();
+    std::unique_ptr<ReadBuffer> initialize(size_t attempt);
 
     /// If true, if we destroy impl now, no work was wasted. Just for metrics.
     bool atEndOfRequestedRangeGuess();
@@ -93,7 +88,7 @@ private:
     /// Returns true if the error looks retriable.
     bool processException(Poco::Exception & e, size_t read_offset, size_t attempt) const;
 
-    Aws::S3::Model::GetObjectResult sendRequest(size_t range_begin, std::optional<size_t> range_end_incl) const;
+    Aws::S3::Model::GetObjectResult sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const;
 
     bool readAllRangeSuccessfully() const;
 

@@ -56,6 +56,8 @@ public:
 
         /// Store polygon key column. That will allow to read columns from polygon dictionary.
         bool store_polygon_key_column = false;
+
+        bool use_async_executor = false;
     };
 
     IPolygonDictionary(

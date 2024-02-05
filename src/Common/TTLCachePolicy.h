@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ICachePolicy.h>
+#include <base/UUID.h>
 
 #include <limits>
 #include <unordered_map>
@@ -11,38 +12,38 @@ namespace DB
 class PerUserTTLCachePolicyUserQuota : public ICachePolicyUserQuota
 {
 public:
-    void setQuotaForUser(const String & user_name, size_t max_size_in_bytes, size_t max_entries) override
+    void setQuotaForUser(const UUID & user_id, size_t max_size_in_bytes, size_t max_entries) override
     {
-        quotas[user_name] = {max_size_in_bytes, max_entries};
+        quotas[user_id] = {max_size_in_bytes, max_entries};
     }
 
-    void increaseActual(const String & user_name, size_t entry_size_in_bytes) override
+    void increaseActual(const UUID & user_id, size_t entry_size_in_bytes) override
     {
-        auto & actual_for_user = actual[user_name];
+        auto & actual_for_user = actual[user_id];
         actual_for_user.size_in_bytes += entry_size_in_bytes;
         actual_for_user.num_items += 1;
     }
 
-    void decreaseActual(const String & user_name, size_t entry_size_in_bytes) override
+    void decreaseActual(const UUID & user_id, size_t entry_size_in_bytes) override
     {
-        chassert(actual.contains(user_name));
+        chassert(actual.contains(user_id));
 
-        chassert(actual[user_name].size_in_bytes >= entry_size_in_bytes);
-        actual[user_name].size_in_bytes -= entry_size_in_bytes;
+        chassert(actual[user_id].size_in_bytes >= entry_size_in_bytes);
+        actual[user_id].size_in_bytes -= entry_size_in_bytes;
 
-        chassert(actual[user_name].num_items >= 1);
-        actual[user_name].num_items -= 1;
+        chassert(actual[user_id].num_items >= 1);
+        actual[user_id].num_items -= 1;
     }
 
-    bool approveWrite(const String & user_name, size_t entry_size_in_bytes) const override
+    bool approveWrite(const UUID & user_id, size_t entry_size_in_bytes) const override
     {
-        auto it_actual = actual.find(user_name);
-        Resources actual_for_user{.size_in_bytes = 0, .num_items = 0}; /// assume zero actual resource consumption is user isn't found
+        auto it_actual = actual.find(user_id);
+        Resources actual_for_user{.size_in_bytes = 0, .num_items = 0}; /// if no user is found, the default is no resource consumption
         if (it_actual != actual.end())
             actual_for_user = it_actual->second;
 
-        auto it_quota = quotas.find(user_name);
-        Resources quota_for_user{.size_in_bytes = std::numeric_limits<size_t>::max(), .num_items = std::numeric_limits<size_t>::max()}; /// assume no threshold if no quota is found
+        auto it_quota = quotas.find(user_id);
+        Resources quota_for_user{.size_in_bytes = std::numeric_limits<size_t>::max(), .num_items = std::numeric_limits<size_t>::max()}; /// if no user is found, the default is no threshold
         if (it_quota != quotas.end())
             quota_for_user = it_quota->second;
 
@@ -53,14 +54,19 @@ public:
             quota_for_user.num_items = std::numeric_limits<UInt64>::max();
 
         /// Check size quota
-        if (actual_for_user.size_in_bytes + entry_size_in_bytes >= quota_for_user.size_in_bytes)
+        if (actual_for_user.size_in_bytes + entry_size_in_bytes > quota_for_user.size_in_bytes)
             return false;
 
         /// Check items quota
-        if (quota_for_user.num_items + 1 >= quota_for_user.num_items)
+        if (actual_for_user.num_items + 1 > quota_for_user.num_items)
             return false;
 
         return true;
+    }
+
+    void clear() override
+    {
+        actual.clear();
     }
 
     struct Resources
@@ -69,10 +75,10 @@ public:
         size_t num_items = 0;
     };
 
-    /// user name --> cache size quota (in bytes) / number of items quota
-    std::map<String, Resources> quotas;
-    /// user name --> actual cache usage (in bytes) / number of items
-    std::map<String, Resources> actual;
+    /// user id --> cache size quota (in bytes) / number of items quota
+    std::map<UUID, Resources> quotas;
+    /// user id --> actual cache usage (in bytes) / number of items
+    std::map<UUID, Resources> actual;
 };
 
 
@@ -94,50 +100,52 @@ public:
     {
     }
 
-    size_t weight(std::lock_guard<std::mutex> & /* cache_lock */) const override
+    size_t sizeInBytes() const override
     {
         return size_in_bytes;
     }
 
-    size_t count(std::lock_guard<std::mutex> & /* cache_lock */) const override
+    size_t count() const override
     {
         return cache.size();
     }
 
-    size_t maxSize(std::lock_guard<std::mutex> & /* cache_lock */) const override
+    size_t maxSizeInBytes() const override
     {
         return max_size_in_bytes;
     }
 
-    void setMaxCount(size_t max_count_, std::lock_guard<std::mutex> & /* cache_lock */) override
+    void setMaxCount(size_t max_count_) override
     {
         /// lazy behavior: the cache only shrinks upon the next insert
         max_count = max_count_;
     }
 
-    void setMaxSize(size_t max_size_in_bytes_, std::lock_guard<std::mutex> & /* cache_lock */) override
+    void setMaxSizeInBytes(size_t max_size_in_bytes_) override
     {
         /// lazy behavior: the cache only shrinks upon the next insert
         max_size_in_bytes = max_size_in_bytes_;
     }
 
-    void reset(std::lock_guard<std::mutex> & /* cache_lock */) override
+    void clear() override
     {
         cache.clear();
+        Base::user_quotas->clear();
     }
 
-    void remove(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) override
+    void remove(const Key & key) override
     {
         auto it = cache.find(key);
         if (it == cache.end())
             return;
         size_t sz = weight_function(*it->second);
-        Base::user_quotas->decreaseActual(it->first.user_name, sz);
+        if (it->first.user_id.has_value())
+            Base::user_quotas->decreaseActual(*it->first.user_id, sz);
         cache.erase(it);
         size_in_bytes -= sz;
     }
 
-    MappedPtr get(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) override
+    MappedPtr get(const Key & key) override
     {
         auto it = cache.find(key);
         if (it == cache.end())
@@ -145,7 +153,7 @@ public:
         return it->second;
     }
 
-    std::optional<KeyMapped> getWithKey(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) override
+    std::optional<KeyMapped> getWithKey(const Key & key) override
     {
         auto it = cache.find(key);
         if (it == cache.end())
@@ -154,7 +162,7 @@ public:
     }
 
     /// Evicts on a best-effort basis. If there are too many non-stale entries, the new entry may not be cached at all!
-    void set(const Key & key, const MappedPtr & mapped, std::lock_guard<std::mutex> & /* cache_lock */) override
+    void set(const Key & key, const MappedPtr & mapped) override
     {
         chassert(mapped.get());
 
@@ -169,7 +177,9 @@ public:
         /// Checks against per-user limits
         auto sufficient_space_in_cache_for_user = [&]()
         {
-            return Base::user_quotas->approveWrite(key.user_name, entry_size_in_bytes);
+            if (key.user_id.has_value())
+                return Base::user_quotas->approveWrite(*key.user_id, entry_size_in_bytes);
+            return true;
         };
 
         if (!sufficient_space_in_cache() || !sufficient_space_in_cache_for_user())
@@ -179,7 +189,8 @@ public:
                 if (is_stale_function(it->first))
                 {
                     size_t sz = weight_function(*it->second);
-                    Base::user_quotas->decreaseActual(it->first.user_name, sz);
+                    if (it->first.user_id.has_value())
+                        Base::user_quotas->decreaseActual(*it->first.user_id, sz);
                     it = cache.erase(it);
                     size_in_bytes -= sz;
                 }
@@ -193,14 +204,16 @@ public:
             if (auto it = cache.find(key); it != cache.end())
             {
                 size_t sz = weight_function(*it->second);
-                Base::user_quotas->decreaseActual(it->first.user_name, sz);
+                if (it->first.user_id.has_value())
+                    Base::user_quotas->decreaseActual(*it->first.user_id, sz);
                 cache.erase(it); // stupid bug: (*) doesn't replace existing entries (likely due to custom hash function), need to erase explicitly
                 size_in_bytes -= sz;
             }
 
             cache[key] = std::move(mapped); // (*)
             size_in_bytes += entry_size_in_bytes;
-            Base::user_quotas->increaseActual(key.user_name, entry_size_in_bytes);
+            if (key.user_id.has_value())
+                Base::user_quotas->increaseActual(*key.user_id, entry_size_in_bytes);
         }
     }
 

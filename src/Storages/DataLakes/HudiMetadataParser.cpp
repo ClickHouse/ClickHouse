@@ -50,7 +50,7 @@ struct HudiMetadataParser<Configuration, MetadataReadHelper>::Impl
       */
     Strings processMetadataFiles(const Configuration & configuration)
     {
-        auto * log = &Poco::Logger::get("HudiMetadataParser");
+        auto log = getLogger("HudiMetadataParser");
 
         const auto keys = MetadataReadHelper::listFiles(configuration, "", Poco::toLower(configuration.format));
 
@@ -67,7 +67,8 @@ struct HudiMetadataParser<Configuration, MetadataReadHelper>::Impl
         {
             auto key_file = std::filesystem::path(key);
             Strings file_parts;
-            splitInto<'_'>(file_parts, key_file.stem());
+            const String stem = key_file.stem();
+            splitInto<'_'>(file_parts, stem);
             if (file_parts.size() != 3)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected format for file: {}", key);
 

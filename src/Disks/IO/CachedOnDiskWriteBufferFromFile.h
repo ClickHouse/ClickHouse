@@ -2,7 +2,9 @@
 
 #include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/WriteSettings.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCache_fwd.h>
+#include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/FilesystemCacheLog.h>
 
 namespace Poco
@@ -25,8 +27,12 @@ class FileSegmentRangeWriter
 {
 public:
     FileSegmentRangeWriter(
-        FileCache * cache_, const FileSegment::Key & key_,
-        std::shared_ptr<FilesystemCacheLog> cache_log_, const String & query_id_, const String & source_path_);
+        FileCache * cache_,
+        const FileSegment::Key & key_,
+        const FileCacheUserInfo & user_,
+        std::shared_ptr<FilesystemCacheLog> cache_log_,
+        const String & query_id_,
+        const String & source_path_);
 
     /**
     * Write a range of file segments. Allocate file segment of `max_file_segment_size` and write to
@@ -48,10 +54,11 @@ private:
     FileCache * cache;
     FileSegment::Key key;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     std::shared_ptr<FilesystemCacheLog> cache_log;
     String query_id;
     String source_path;
+    FileCacheUserInfo user;
 
     FileSegmentsHolderPtr file_segments;
 
@@ -71,32 +78,36 @@ public:
         std::unique_ptr<WriteBuffer> impl_,
         FileCachePtr cache_,
         const String & source_path_,
-        const FileCache::Key & key_,
+        const FileCacheKey & key_,
         const String & query_id_,
-        const WriteSettings & settings_);
+        const WriteSettings & settings_,
+        const FileCacheUserInfo & user_,
+        std::shared_ptr<FilesystemCacheLog> cache_log_);
 
     void nextImpl() override;
 
     void finalizeImpl() override;
 
+    bool cachingStopped() const { return cache_in_error_state_or_disabled; }
+
 private:
     void cacheData(char * data, size_t size, bool throw_on_error);
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     FileCachePtr cache;
     String source_path;
-    FileCache::Key key;
+    FileCacheKey key;
 
     size_t current_download_offset = 0;
     const String query_id;
-
-    bool enable_cache_log;
+    const FileCacheUserInfo user;
 
     bool throw_on_error_from_cache;
     bool cache_in_error_state_or_disabled = false;
 
     std::unique_ptr<FileSegmentRangeWriter> cache_writer;
+    std::shared_ptr<FilesystemCacheLog> cache_log;
 };
 
 }

@@ -375,9 +375,14 @@ Token Lexer::nextTokenImpl()
                 return Token(TokenType::NotEquals, token_begin, ++pos);
             return Token(TokenType::ErrorSingleExclamationMark, token_begin, pos);
         }
-        case '<':   /// <, <=, <>
+        case '<':   /// <, <=, <>, <=>
         {
             ++pos;
+            if (pos + 1 < end && *pos == '=' && *(pos + 1) == '>')
+            {
+                pos += 2;
+                return Token(TokenType::Spaceship, token_begin, pos);
+            }
             if (pos < end && *pos == '=')
                 return Token(TokenType::LessOrEquals, token_begin, ++pos);
             if (pos < end && *pos == '>')
@@ -421,7 +426,17 @@ Token Lexer::nextTokenImpl()
                 return Token(TokenType::VerticalDelimiter, token_begin, ++pos);
             return Token(TokenType::Error, token_begin, pos);
         }
-
+        case '\xE2':
+        {
+            /// Mathematical minus symbol, UTF-8
+            if (pos + 3 <= end && pos[1] == '\x88' && pos[2] == '\x92')
+            {
+                pos += 3;
+                return Token(TokenType::Minus, token_begin, pos);
+            }
+            /// Other characters starting at E2 can be parsed, see skipWhitespacesUTF8
+            [[fallthrough]];
+        }
         default:
             if (*pos == '$')
             {

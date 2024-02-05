@@ -6,7 +6,6 @@
 #include <Common/Exception.h>
 #include <boost/algorithm/hex.hpp>
 #include <IO/ReadBufferFromEncryptedFile.h>
-#include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromEncryptedFile.h>
 #include <Common/quoteString.h>
@@ -53,11 +52,11 @@ String DiskEncryptedSettings::findKeyByFingerprint(UInt128 key_fingerprint, cons
     return it->second;
 }
 
-void DiskEncryptedTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path)
+void DiskEncryptedTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
     auto wrapped_from_path = wrappedPath(from_file_path);
     auto wrapped_to_path = wrappedPath(to_file_path);
-    delegate_transaction->copyFile(wrapped_from_path, wrapped_to_path);
+    delegate_transaction->copyFile(wrapped_from_path, wrapped_to_path, read_settings, write_settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFile( // NOLINT

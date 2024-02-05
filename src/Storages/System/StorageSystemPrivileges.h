@@ -12,7 +12,7 @@ class StorageSystemPrivileges final : public IStorageSystemOneBlock<StorageSyste
 {
 public:
     std::string getName() const override { return "SystemPrivileges"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static const std::vector<std::pair<String, Int16>> & getAccessTypeEnumValues();
 
 protected:

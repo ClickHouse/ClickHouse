@@ -22,6 +22,7 @@ insert into buffer_02572 values (1);
 select * from data_02572;
 select * from copy_02572;
 -- we cannot use OPTIMIZE, this will attach query context, so let's wait
+SET function_sleep_max_microseconds_per_block = 6000000;
 select sleepEachRow(1) from numbers(3*2) format Null;
 select * from data_02572;
 select * from copy_02572;

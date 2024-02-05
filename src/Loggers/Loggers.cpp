@@ -21,6 +21,12 @@ namespace fs = std::filesystem;
 namespace DB
 {
     class SensitiveDataMasker;
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 }
 
 
@@ -40,26 +46,12 @@ static std::string renderFileNameTemplate(time_t now, const std::string & file_p
     std::tm buf;
     localtime_r(&now, &buf);
     std::ostringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    ss << std::put_time(&buf, file_path.c_str());
+    ss << std::put_time(&buf, path.filename().c_str());
     return path.replace_filename(ss.str());
 }
 
-#ifndef WITHOUT_TEXT_LOG
-void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
-{
-    text_log = log;
-    text_log_max_priority = max_priority;
-}
-#endif
-
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
-#ifndef WITHOUT_TEXT_LOG
-    if (split)
-        if (auto log = text_log.lock())
-            split->addTextLog(log, text_log_max_priority);
-#endif
-
     auto current_logger = config.getString("logger", "");
     if (config_logger.has_value() && *config_logger == current_logger)
         return;
@@ -167,7 +159,6 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     if (config.getBool("logger.use_syslog", false))
     {
-        //const std::string & cmd_name = commandName();
         auto syslog_level = Poco::Logger::parseLevel(config.getString("logger.syslog_level", log_level_string));
         if (syslog_level > max_log_level)
         {
@@ -236,21 +227,23 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     split->open();
     logger.close();
-    logger.setChannel(split);
 
-    // Global logging level (it can be overridden for specific loggers).
+    logger.setChannel(split);
     logger.setLevel(max_log_level);
 
-    // Set level to all already created loggers
-    std::vector<std::string> names;
-    //logger_root = Logger::root();
-    logger.root().names(names);
-    for (const auto & name : names)
-        logger.root().get(name).setLevel(max_log_level);
-
-    // Attach to the root logger.
+    // Global logging level and channel (it can be overridden for specific loggers).
     logger.root().setLevel(max_log_level);
     logger.root().setChannel(logger.getChannel());
+
+    // Set level and channel to all already created loggers
+    std::vector<std::string> names;
+    logger.names(names);
+
+    for (const auto & name : names)
+    {
+        logger.get(name).setLevel(max_log_level);
+        logger.get(name).setChannel(split);
+    }
 
     // Explicitly specified log levels for specific loggers.
     {
@@ -276,6 +269,44 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             }
         }
     }
+#ifndef WITHOUT_TEXT_LOG
+    if (config.has("text_log"))
+    {
+        String text_log_level_str = config.getString("text_log.level", "trace");
+        int text_log_level = Poco::Logger::parseLevel(text_log_level_str);
+
+        DB::SystemLogQueueSettings log_settings;
+        log_settings.flush_interval_milliseconds = config.getUInt64("text_log.flush_interval_milliseconds",
+                                                                    DB::TextLog::getDefaultFlushIntervalMilliseconds());
+
+        log_settings.max_size_rows = config.getUInt64("text_log.max_size_rows",
+                                                      DB::TextLog::getDefaultMaxSize());
+
+        if (log_settings.max_size_rows< 1)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "text_log.max_size_rows {} should be 1 at least",
+                                log_settings.max_size_rows);
+
+        log_settings.reserved_size_rows = config.getUInt64("text_log.reserved_size_rows", DB::TextLog::getDefaultReservedSize());
+
+        if (log_settings.max_size_rows < log_settings.reserved_size_rows)
+        {
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+                                "text_log.max_size {0} should be greater or equal to text_log.reserved_size_rows {1}",
+                                log_settings.max_size_rows,
+                                log_settings.reserved_size_rows);
+        }
+
+        log_settings.buffer_size_rows_flush_threshold = config.getUInt64("text_log.buffer_size_rows_flush_threshold",
+                                                                         log_settings.max_size_rows / 2);
+
+        log_settings.notify_flush_on_crash = config.getBool("text_log.flush_on_crash",
+                                                            DB::TextLog::shouldNotifyFlushOnCrash());
+
+        log_settings.turn_off_logger = DB::TextLog::shouldTurnOffLogger();
+
+        split->addTextLog(DB::TextLog::getLogQueue(log_settings), text_log_level);
+    }
+#endif
 }
 
 void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger)

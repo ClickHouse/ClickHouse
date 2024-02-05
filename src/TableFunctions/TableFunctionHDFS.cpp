@@ -28,7 +28,7 @@ StoragePtr TableFunctionHDFS::getStorage(
         compression_method_);
 }
 
-ColumnsDescription TableFunctionHDFS::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionHDFS::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     if (structure == "auto")
     {
@@ -37,6 +37,12 @@ ColumnsDescription TableFunctionHDFS::getActualTableStructure(ContextPtr context
     }
 
     return parseColumnsListFromString(structure, context);
+}
+
+std::unordered_set<String> TableFunctionHDFS::getVirtualsToCheckBeforeUsingStructureHint() const
+{
+    auto virtual_column_names = StorageHDFS::getVirtualColumnNames();
+    return {virtual_column_names.begin(), virtual_column_names.end()};
 }
 
 void registerTableFunctionHDFS(TableFunctionFactory & factory)

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
-from collections import namedtuple
 import fnmatch
 import json
 import time
+from collections import namedtuple
+from urllib.parse import quote
 
 import requests  # type: ignore
-
 from lambda_shared.pr import TRUSTED_CONTRIBUTORS
 from lambda_shared.token import get_cached_access_token
 
@@ -64,6 +64,7 @@ NEED_RERUN_WORKFLOWS = {
     "DocsCheck",
     "MasterCI",
     "NightlyBuilds",
+    "PublishedReleaseCI",
     "PullRequestCI",
     "ReleaseBranchCI",
 }
@@ -128,7 +129,7 @@ def _exec_post_with_retry(url, token, data=None):
 
 
 def _get_pull_requests_from(repo_url, owner, branch, token):
-    url = f"{repo_url}/pulls?head={owner}:{branch}"
+    url = f"{repo_url}/pulls?head={quote(owner)}:{quote(branch)}"
     return _exec_get_with_retry(url, token)
 
 

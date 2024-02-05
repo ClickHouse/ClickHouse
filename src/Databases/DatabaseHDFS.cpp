@@ -2,6 +2,7 @@
 
 #if USE_HDFS
 
+#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseHDFS.h>
 
 #include <Interpreters/Context.h>
@@ -13,9 +14,9 @@
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/re2.h>
 
 #include <Poco/URI.h>
-#include <re2/re2.h>
 
 #include <filesystem>
 
@@ -44,7 +45,7 @@ DatabaseHDFS::DatabaseHDFS(const String & name_, const String & source_url, Cont
     : IDatabase(name_)
     , WithContext(context_->getGlobalContext())
     , source(source_url)
-    , log(&Poco::Logger::get("DatabaseHDFS(" + name_ + ")"))
+    , log(getLogger("DatabaseHDFS(" + name_ + ")"))
 {
     if (!source.empty())
     {
@@ -229,6 +230,30 @@ DatabaseTablesIteratorPtr DatabaseHDFS::getTablesIterator(ContextPtr, const Filt
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
+void registerDatabaseHDFS(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        auto * engine_define = args.create_query.storage;
+        const ASTFunction * engine = engine_define->engine;
+        const String & engine_name = engine_define->engine->name;
+
+        /// If source_url is empty, then table name must contain full url
+        std::string source_url;
+
+        if (engine->arguments && !engine->arguments->children.empty())
+        {
+            if (engine->arguments->children.size() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS database requires at most 1 argument: source_url");
+
+            const auto & arguments = engine->arguments->children;
+            source_url = safeGetLiteralValue<String>(arguments[0], engine_name);
+        }
+
+        return std::make_shared<DatabaseHDFS>(args.database_name, source_url, args.context);
+    };
+    factory.registerDatabase("HDFS", create_fn);
+}
 } // DB
 
 #endif

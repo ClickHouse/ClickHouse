@@ -15,7 +15,7 @@ using namespace DB;
 
 void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
 {
-    auto & storage = machine->getStorage();
+    auto & storage = machine->getStorageUnsafe();
     std::queue<std::string> keys;
     keys.push("/");
 
@@ -31,7 +31,7 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
             ", czxid: " << value.stat.czxid <<
             ", mzxid: " << value.stat.mzxid <<
             ", numChildren: " << value.stat.numChildren <<
-            ", dataLength: " << value.stat.dataLength <<
+            ", dataLength: " << value.getData().size() <<
             "}" << std::endl;
         std::cout << "\tData: " << storage.container.getValue(key).getData() << std::endl;
 
@@ -59,13 +59,13 @@ int main(int argc, char *argv[])
         Poco::Logger::root().setChannel(channel);
         Poco::Logger::root().setLevel("trace");
     }
-    auto * logger = &Poco::Logger::get("keeper-dumper");
+    auto logger = getLogger("keeper-dumper");
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
     KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true);
     keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", argv[2]));
-    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("LogDisk", argv[1]));
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", argv[1]));
 
     auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
     state_machine->init();
@@ -74,7 +74,9 @@ int main(int argc, char *argv[])
     LOG_INFO(logger, "Last committed index: {}", last_commited_index);
 
     DB::KeeperLogStore changelog(
-        LogFileSettings{.force_sync = true, .compress_logs = settings->compress_logs, .rotate_interval = 10000000}, keeper_context);
+        LogFileSettings{.force_sync = true, .compress_logs = settings->compress_logs, .rotate_interval = 10000000},
+        FlushSettings(),
+        keeper_context);
     changelog.init(last_commited_index, 10000000000UL); /// collect all logs
     if (changelog.size() == 0)
         LOG_INFO(logger, "Changelog empty");

@@ -49,6 +49,7 @@ jobs:
       with:
         clear-repository: true
         fetch-depth: 0  # otherwise we will have no version info
+        filter: tree:0
         ref: ${{ env.GITHUB_TAG }}
     - name: Check docker clickhouse/clickhouse-server building
       run: |

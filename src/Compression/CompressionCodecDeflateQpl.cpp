@@ -1,15 +1,20 @@
 #ifdef ENABLE_QPL_COMPRESSION
+
 #include <cstdio>
 #include <thread>
 #include <Compression/CompressionCodecDeflateQpl.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-#include "libaccel_config.h"
 #include <Common/MemorySanitizer.h>
+#include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
 #include <base/scope_guard.h>
+#include <base/getPageSize.h>
+
+#include "libaccel_config.h"
+
+#include <immintrin.h>
 
 namespace DB
 {
@@ -27,9 +32,9 @@ DeflateQplJobHWPool & DeflateQplJobHWPool::instance()
 
 DeflateQplJobHWPool::DeflateQplJobHWPool()
     : max_hw_jobs(0)
-    , random_engine(std::random_device()())
+    , random_engine(randomSeed())
 {
-    Poco::Logger * log = &Poco::Logger::get("DeflateQplJobHWPool");
+    LoggerPtr log = getLogger("DeflateQplJobHWPool");
     const char * qpl_version = qpl_get_library_version();
 
     // loop all configured workqueue size to get maximum job number.
@@ -136,9 +141,9 @@ void DeflateQplJobHWPool::unLockJob(UInt32 index)
     hw_job_ptr_locks[index].store(false);
 }
 
-//HardwareCodecDeflateQpl
-HardwareCodecDeflateQpl::HardwareCodecDeflateQpl()
-    :log(&Poco::Logger::get("HardwareCodecDeflateQpl"))
+HardwareCodecDeflateQpl::HardwareCodecDeflateQpl(SoftwareCodecDeflateQpl & sw_codec_)
+    : log(getLogger("HardwareCodecDeflateQpl"))
+    , sw_codec(sw_codec_)
 {
 }
 
@@ -166,7 +171,7 @@ Int32 HardwareCodecDeflateQpl::doCompressData(const char * source, UInt32 source
     UInt32 compressed_size = 0;
     if (!(job_ptr = DeflateQplJobHWPool::instance().acquireJob(job_id)))
     {
-        LOG_INFO(log, "DeflateQpl HW codec failed, falling back to SW codec.(Details: doCompressData->acquireJob fail, probably job pool exhausted)");
+        LOG_INFO(log, "DeflateQpl HW codec failed, falling back to SW codec. (Details: doCompressData->acquireJob fail, probably job pool exhausted)");
         return RET_ERROR;
     }
 
@@ -186,7 +191,7 @@ Int32 HardwareCodecDeflateQpl::doCompressData(const char * source, UInt32 source
     }
     else
     {
-        LOG_WARNING(log, "DeflateQpl HW codec failed, falling back to SW codec.(Details: doCompressData->qpl_execute_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", static_cast<UInt32>(status));
+        LOG_WARNING(log, "DeflateQpl HW codec failed, falling back to SW codec. (Details: doCompressData->qpl_execute_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", static_cast<UInt32>(status));
         DeflateQplJobHWPool::instance().releaseJob(job_id);
         return RET_ERROR;
     }
@@ -199,7 +204,7 @@ Int32 HardwareCodecDeflateQpl::doDecompressDataSynchronous(const char * source, 
     UInt32 decompressed_size = 0;
     if (!(job_ptr = DeflateQplJobHWPool::instance().acquireJob(job_id)))
     {
-        LOG_INFO(log, "DeflateQpl HW codec failed, falling back to SW codec.(Details: doDecompressDataSynchronous->acquireJob fail, probably job pool exhausted)");
+        LOG_INFO(log, "DeflateQpl HW codec failed, falling back to SW codec. (Details: doDecompressDataSynchronous->acquireJob fail, probably job pool exhausted)");
         return RET_ERROR;
     }
 
@@ -211,17 +216,29 @@ Int32 HardwareCodecDeflateQpl::doDecompressDataSynchronous(const char * source, 
     job_ptr->available_out = uncompressed_size;
     job_ptr->flags = QPL_FLAG_FIRST | QPL_FLAG_LAST;
 
-    if (auto status = qpl_submit_job(job_ptr); status != QPL_STS_OK)
+    auto status = qpl_submit_job(job_ptr);
+    if (status != QPL_STS_OK)
     {
         DeflateQplJobHWPool::instance().releaseJob(job_id);
-        LOG_WARNING(log, "DeflateQpl HW codec failed, falling back to SW codec.(Details: doDecompressDataSynchronous->qpl_execute_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", static_cast<UInt32>(status));
+        LOG_WARNING(log, "DeflateQpl HW codec failed, falling back to SW codec. (Details: doDecompressDataSynchronous->qpl_submit_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", static_cast<UInt32>(status));
         return RET_ERROR;
     }
+
     /// Busy waiting till job complete.
+    UInt32 num_checks = 0;
     do
     {
         _tpause(1, __rdtsc() + 1000);
-    } while (qpl_check_job(job_ptr) == QPL_STS_BEING_PROCESSED);
+        status = qpl_check_job(job_ptr);
+        ++num_checks;
+    } while (status == QPL_STS_BEING_PROCESSED && num_checks < MAX_CHECKS);
+
+    if (status != QPL_STS_OK)
+    {
+        DeflateQplJobHWPool::instance().releaseJob(job_id);
+        LOG_WARNING(log, "DeflateQpl HW codec failed, falling back to SW codec. (Details: doDecompressDataSynchronous->qpl_submit_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", static_cast<UInt32>(status));
+        return RET_ERROR;
+    }
 
     decompressed_size = job_ptr->total_out;
     DeflateQplJobHWPool::instance().releaseJob(job_id);
@@ -234,7 +251,7 @@ Int32 HardwareCodecDeflateQpl::doDecompressDataAsynchronous(const char * source,
     qpl_job * job_ptr = nullptr;
     if (!(job_ptr = DeflateQplJobHWPool::instance().acquireJob(job_id)))
     {
-        LOG_INFO(log, "DeflateQpl HW codec failed, falling back to SW codec.(Details: doDecompressDataAsynchronous->acquireJob fail, probably job pool exhausted)");
+        LOG_INFO(log, "DeflateQpl HW codec failed, falling back to SW codec. (Details: doDecompressDataAsynchronous->acquireJob fail, probably job pool exhausted)");
         return RET_ERROR;
     }
 
@@ -254,7 +271,7 @@ Int32 HardwareCodecDeflateQpl::doDecompressDataAsynchronous(const char * source,
     else
     {
         DeflateQplJobHWPool::instance().releaseJob(job_id);
-        LOG_WARNING(log, "DeflateQpl HW codec failed, falling back to SW codec.(Details: doDecompressDataAsynchronous->qpl_execute_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", static_cast<UInt32>(status));
+        LOG_WARNING(log, "DeflateQpl HW codec failed, falling back to SW codec. (Details: doDecompressDataAsynchronous->qpl_submit_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", static_cast<UInt32>(status));
         return RET_ERROR;
     }
 }
@@ -263,6 +280,7 @@ void HardwareCodecDeflateQpl::flushAsynchronousDecompressRequests()
 {
     auto n_jobs_processing = decomp_async_job_map.size();
     std::map<UInt32, qpl_job *>::iterator it = decomp_async_job_map.begin();
+    UInt32 num_checks = 0;
 
     while (n_jobs_processing)
     {
@@ -271,22 +289,34 @@ void HardwareCodecDeflateQpl::flushAsynchronousDecompressRequests()
         job_id = it->first;
         job_ptr = it->second;
 
-        if (qpl_check_job(job_ptr) == QPL_STS_BEING_PROCESSED)
+        auto status = qpl_check_job(job_ptr);
+        if ((status == QPL_STS_BEING_PROCESSED) && (num_checks < MAX_CHECKS))
         {
             it++;
         }
         else
         {
+            if (status != QPL_STS_OK)
+            {
+                sw_codec.doDecompressData(
+                    reinterpret_cast<const char * >(job_ptr->next_in_ptr),
+                    job_ptr->available_in,
+                    reinterpret_cast<char *>(job_ptr->next_out_ptr),
+                    job_ptr->available_out);
+                LOG_WARNING(log, "DeflateQpl HW codec failed, falling back to SW codec. (Details: flushAsynchronousDecompressRequests with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", static_cast<UInt32>(status));
+            }
             it = decomp_async_job_map.erase(it);
             DeflateQplJobHWPool::instance().releaseJob(job_id);
             n_jobs_processing--;
             if (n_jobs_processing <= 0)
                 break;
         }
+
         if (it == decomp_async_job_map.end())
         {
             it = decomp_async_job_map.begin();
             _tpause(1, __rdtsc() + 1000);
+            ++num_checks;
         }
     }
 }
@@ -361,8 +391,8 @@ void SoftwareCodecDeflateQpl::doDecompressData(const char * source, UInt32 sourc
 }
 
 CompressionCodecDeflateQpl::CompressionCodecDeflateQpl()
-    : hw_codec(std::make_unique<HardwareCodecDeflateQpl>())
-    , sw_codec(std::make_unique<SoftwareCodecDeflateQpl>())
+    : sw_codec(std::make_unique<SoftwareCodecDeflateQpl>())
+    , hw_codec(std::make_unique<HardwareCodecDeflateQpl>(*sw_codec))
 {
     setCodecDescription("DEFLATE_QPL");
 }
@@ -374,7 +404,7 @@ uint8_t CompressionCodecDeflateQpl::getMethodByte() const
 
 void CompressionCodecDeflateQpl::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecDeflateQpl::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -387,9 +417,7 @@ UInt32 CompressionCodecDeflateQpl::doCompressData(const char * source, UInt32 so
 {
 /// QPL library is using AVX-512 with some shuffle operations.
 /// Memory sanitizer don't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.
-#if defined(MEMORY_SANITIZER)
     __msan_unpoison(dest, getMaxCompressedDataSize(source_size));
-#endif
     Int32 res = HardwareCodecDeflateQpl::RET_ERROR;
     if (DeflateQplJobHWPool::instance().isJobPoolReady())
         res = hw_codec->doCompressData(source, source_size, dest, getMaxCompressedDataSize(source_size));
@@ -398,13 +426,23 @@ UInt32 CompressionCodecDeflateQpl::doCompressData(const char * source, UInt32 so
     return res;
 }
 
+inline void touchBufferWithZeroFilling(char * buffer, UInt32 buffer_size)
+{
+    for (char * p = buffer; p < buffer + buffer_size; p += ::getPageSize()/(sizeof(*p)))
+    {
+        *p = 0;
+    }
+}
+
 void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
 /// QPL library is using AVX-512 with some shuffle operations.
 /// Memory sanitizer don't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.
-#if defined(MEMORY_SANITIZER)
     __msan_unpoison(dest, uncompressed_size);
-#endif
+/// Device IOTLB miss has big perf. impact for IAA accelerators.
+/// To avoid page fault, we need touch buffers related to accelerator in advance.
+    touchBufferWithZeroFilling(dest, uncompressed_size);
+
     switch (getDecompressMode())
     {
         case CodecMode::Synchronous:
