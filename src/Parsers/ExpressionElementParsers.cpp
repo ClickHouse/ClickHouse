@@ -252,7 +252,7 @@ bool ParserFormatIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         ++pos;
         return true;
     }
-    expected.add(pos, "invalid character");
+    expected.add(pos, "format name");
     return false;
 }
 
