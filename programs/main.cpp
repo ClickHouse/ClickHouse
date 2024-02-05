@@ -509,9 +509,10 @@ int main(int argc_, char ** argv_)
     ///     clickhouse # spawn local
     ///     clickhouse local # spawn local
     ///
+#if ENABLE_CLICKHOUSE_LOCAL
     if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'))
         main_func = mainEntryClickHouseLocal;
-
+#endif
     return main_func(static_cast<int>(argv.size()), argv.data());
 }
 #endif
