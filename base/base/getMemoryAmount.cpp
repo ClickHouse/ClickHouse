@@ -27,14 +27,26 @@ std::optional<uint64_t> getCgroupsV2MemoryLimit()
     if (!controllers_file.is_open())
         return {};
 
-    /// We also need the memory controller enabled
-    std::stringstream controllers_buf;
-    controllers_buf << controllers_file.rdbuf();
-    std::string controllers = controllers_buf.str();
-    if (controllers.find("memory") == std::string::npos)
+    /// Make sure that the memory controller is enabled.
+    /// - cgroup.controllers defines which controllers *can* be enabled.
+    /// - cgroup.subtree_control defines which controllers *are* enabled.
+    /// (see https://docs.kernel.org/admin-guide/cgroup-v2.html)
+    /// Caveat: nested groups may disable controllers. For simplicity, check only the top-level group.
+    /// ReadBufferFromFile subtree_control_file(default_cgroups_mount / "cgroup.subtree_control");
+    /// std::string subtree_control;
+    /// readString(subtree_control, subtree_control_file);
+    /// if (subtree_control.find("memory") == std::string::npos)
+    ///     return {};
+    std::ifstream subtree_control_file(default_cgroups_mount / "cgroup.subtree_control");
+    std::stringstream subtree_control_buf;
+    subtree_control_buf << subtree_control_file.rdbuf();
+    std::string subtree_control = subtree_control_buf.str();
+    if (subtree_control.find("memory") == std::string::npos)
         return {};
 
     /// Identify the cgroup the process belongs to
+    /// All PIDs assigned to a cgroup are in /sys/fs/cgroups/{cgroup_name}/cgroup.procs
+    /// A simpler way to get the membership is:
     std::ifstream cgroup_name_file("/proc/self/cgroup");
     if (!cgroup_name_file.is_open())
         return {};
@@ -44,10 +56,9 @@ std::optional<uint64_t> getCgroupsV2MemoryLimit()
     std::string cgroup_name = cgroup_name_buf.str();
     if (!cgroup_name.empty() && cgroup_name.back() == '\n')
         cgroup_name.pop_back(); /// remove trailing newline, if any
-    /// cgroups v2 will show a single line with prefix "0::/"
-    /// - https://book.hacktricks.xyz/linux-hardening/privilege-escalation/docker-security/cgroups
+    /// With cgroups v2, there will be a *single* line with prefix "0::/"
     const std::string v2_prefix = "0::/";
-    if (cgroup_name.find('\n') != std::string::npos || !cgroup_name.starts_with(v2_prefix))
+    if (!cgroup_name.starts_with(v2_prefix))
         return {};
     cgroup_name = cgroup_name.substr(v2_prefix.length());
 
