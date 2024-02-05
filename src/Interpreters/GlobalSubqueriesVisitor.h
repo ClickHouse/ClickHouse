@@ -267,8 +267,10 @@ private:
                 /// We don't support WITH cte as (subquery) Select table JOIN cte because we don't do conversion in AST
                 bool is_subquery = false;
                 if (const auto * ast_table_expr = table_elem.table_expression->as<ASTTableExpression>())
-                    is_subquery = ast_table_expr->subquery->as<ASTSubquery>() != nullptr
+                {
+                    is_subquery = ast_table_expr->subquery && ast_table_expr->subquery->as<ASTSubquery>() != nullptr
                         && ast_table_expr->subquery->as<ASTSubquery>()->cte_name.empty();
+                }
                 else if (table_elem.table_expression->as<ASTSubquery>())
                     is_subquery = true;
 
