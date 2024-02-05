@@ -26,53 +26,12 @@ SELECT
 FROM landing
 GROUP BY t;
 
-DROP TABLE IF EXISTS ds_1_2;
-CREATE TABLE ds_1_2
-(
-    t UInt64,
-    v UInt64
-)
-ENGINE = MergeTree ORDER BY tuple() SETTINGS non_replicated_deduplication_window = 1000;
-
 DROP VIEW IF EXISTS mv_1_2;
-CREATE MATERIALIZED VIEW mv_1_2 TO ds_1_2 as
+CREATE MATERIALIZED VIEW mv_1_2 TO ds_1_1 as
 SELECT
     timestamp t, sum(value) v
 FROM landing
 GROUP BY t;
-
-DROP TABLE IF EXISTS ds_2_1;
-CREATE TABLE ds_2_1
-(
-    l String,
-    t DateTime,
-    v UInt64
-)
-ENGINE = MergeTree ORDER BY tuple() SETTINGS non_replicated_deduplication_window = 1000;
-
-DROP VIEW IF EXISTS mv_2_1;
-CREATE MATERIALIZED VIEW mv_2_1 TO ds_2_1 as
-SELECT '2_1' l, t, v
-FROM ds_1_1;
-
-DROP VIEW IF EXISTS mv_2_2;
-CREATE MATERIALIZED VIEW mv_2_2 TO ds_2_1 as
-SELECT '2_2' l, t, v
-FROM ds_1_2;
-
-DROP TABLE IF EXISTS ds_3_1;
-CREATE TABLE ds_3_1
-(
-    l String,
-    t DateTime,
-    v UInt64
-)
-ENGINE = MergeTree ORDER BY tuple() SETTINGS non_replicated_deduplication_window = 1000;
-
-DROP VIEW IF EXISTS mv_3_1;
-CREATE MATERIALIZED VIEW mv_3_1 TO ds_3_1 as
-SELECT '3_1' l, t, v
-FROM ds_2_1;
 
 INSERT INTO landing SELECT 1 as timestamp, 1 AS value FROM numbers(10);
 
@@ -91,13 +50,4 @@ DROP TABLE landing;
 
 DROP TABLE ds_1_1;
 DROP VIEW mv_1_1;
-
-DROP TABLE ds_1_2;
 DROP VIEW mv_1_2;
-
-DROP TABLE ds_2_1;
-DROP VIEW mv_2_1;
-DROP VIEW mv_2_2;
-
-DROP TABLE ds_3_1;
-DROP VIEW mv_3_1;
