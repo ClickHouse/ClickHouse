@@ -244,7 +244,8 @@ void LibArchiveWriter::finalize()
 
 void LibArchiveWriter::setCompression(const String & compression_method_, int compression_level)
 {
-    if (compression_method_.size() == 0 and compression_level == 1)
+    // throw an error unless setCompression is passed the defualt value
+    if (compression_method_.size() == 0 and compression_level == -1)
     {
             return;
     }
