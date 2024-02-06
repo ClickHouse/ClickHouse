@@ -504,7 +504,7 @@ void Client::connect()
                         << "It may lack support for new features." << std::endl
                         << std::endl;
         }
-        else if (client_version_tuple > server_version_tuple)
+        else if (client_version_tuple > server_version_tuple && server_display_name != "clickhouse-cloud")
         {
             std::cout << "ClickHouse server version is older than ClickHouse client. "
                         << "It may indicate that the server is out of date and can be upgraded." << std::endl
