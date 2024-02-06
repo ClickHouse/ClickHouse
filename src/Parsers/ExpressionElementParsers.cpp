@@ -245,7 +245,26 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserFormatIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (pos->type == TokenType::BareWord)
+    
+    if (pos->type == TokenType::QuotedIdentifier)
+    {
+        ReadBufferFromMemory buf(pos->begin, pos->size());
+        String s;
+
+        if (*pos->begin == '`')
+            readBackQuotedStringWithSQLStyle(s, buf);
+        else
+            readDoubleQuotedStringWithSQLStyle(s, buf);
+
+        if (s.empty())    /// Identifiers "empty string" are not allowed.
+            return false;
+
+        auto name = FormatFactory::instance().getKeyword(s);
+        node = std::make_shared<ASTIdentifier>(name);
+        ++pos;
+        return true;
+    }
+    else if (pos->type == TokenType::BareWord)
     {
         auto name = FormatFactory::instance().getKeyword(String(pos->begin, pos->end));
         node = std::make_shared<ASTIdentifier>(name);
