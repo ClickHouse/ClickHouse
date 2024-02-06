@@ -25,7 +25,14 @@ from get_robot_token import get_best_robot_token
 from github_helper import GitHub
 from integration_test_images import IMAGES
 from pr_info import PRInfo
-from report import ERROR, StatusType, TestResult, TestResults, read_test_results
+from report import (
+    ERROR,
+    SUCCESS,
+    StatusType,
+    TestResult,
+    TestResults,
+    read_test_results,
+)
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -102,17 +109,17 @@ def process_results(
 
     if len(status) != 1 or len(status[0]) != 2:
         logging.info("Files in result folder %s", os.listdir(result_directory))
-        return "error", "Invalid check_status.tsv", test_results, additional_files
+        return ERROR, "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     try:
         results_path = result_directory / "test_results.tsv"
         test_results = read_test_results(results_path, False)
         if len(test_results) == 0:
-            return "error", "Empty test_results.tsv", test_results, additional_files
+            return ERROR, "Empty test_results.tsv", test_results, additional_files
     except Exception as e:
         return (
-            "error",
+            ERROR,
             f"Cannot parse test_results.tsv ({e})",
             test_results,
             additional_files,
@@ -182,7 +189,7 @@ def main():
             post_commit_status_to_file(
                 post_commit_path,
                 f"Skipped (no pr-bugfix in {pr_info.labels})",
-                "success",
+                SUCCESS,
                 "null",
             )
         logging.info("Skipping '%s' (no pr-bugfix in '%s')", check_name, pr_info.labels)
@@ -315,7 +322,7 @@ def main():
 
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
-    if state == "failure":
+    if state != SUCCESS:
         sys.exit(1)
 
 

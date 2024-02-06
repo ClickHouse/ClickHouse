@@ -172,7 +172,7 @@ def main():
         )
     )
 
-    # Until it pass all tests, do not block CI, report "success"
+    # Until it pass all tests, do not block CI, report SUCCESS
     assert description is not None
     # FIXME: force SUCCESS until all cases are fixed
     status = SUCCESS

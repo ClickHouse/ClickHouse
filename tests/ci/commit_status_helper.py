@@ -378,12 +378,12 @@ class CommitStatusData:
 def get_commit_filtered_statuses(commit: Commit) -> CommitStatuses:
     """
     Squash statuses to latest state
-    1. context="first", state="success", update_time=1
-    2. context="second", state="success", update_time=2
-    3. context="first", stat="failure", update_time=3
+    1. context="first", state=SUCCESS, update_time=1
+    2. context="second", state=SUCCESS, update_time=2
+    3. context="first", stat=FAILURE, update_time=3
     =========>
-    1. context="second", state="success"
-    2. context="first", stat="failure"
+    1. context="second", state=SUCCESS
+    2. context="first", stat=FAILURE
     """
     filtered = {}
     for status in sorted(commit.get_statuses(), key=lambda x: x.updated_at):
@@ -435,7 +435,7 @@ def format_description(description: str) -> str:
 def set_mergeable_check(
     commit: Commit,
     description: str = "",
-    state: StatusType = "success",
+    state: StatusType = SUCCESS,
 ) -> None:
     commit.create_status(
         context=MERGEABLE_NAME,

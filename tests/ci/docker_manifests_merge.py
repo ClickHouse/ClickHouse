@@ -212,7 +212,7 @@ def main():
     )
     ch_helper = ClickHouseHelper()
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-    if status == "failure":
+    if status == FAILURE:
         sys.exit(1)
 
 

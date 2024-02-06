@@ -15,7 +15,7 @@ from commit_status_helper import override_status
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPORT_PATH, TEMP_PATH
 from pr_info import FORCE_TESTS_LABEL, PRInfo
-from report import JobReport, StatusType, TestResults
+from report import ERROR, SUCCESS, JobReport, StatusType, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
@@ -70,7 +70,7 @@ def process_results(
 
     if len(status) != 1 or len(status[0]) != 2:
         logging.info("Files in result folder %s", os.listdir(result_directory))
-        return "error", "Invalid check_status.tsv", test_results, additional_files
+        return ERROR, "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     try:
@@ -80,11 +80,11 @@ def process_results(
             logging.info("Found %s", results_path.name)
         else:
             logging.info("Files in result folder %s", os.listdir(result_directory))
-            return "error", "Not found test_results.tsv", test_results, additional_files
+            return ERROR, "Not found test_results.tsv", test_results, additional_files
 
     except Exception as e:
         return (
-            "error",
+            ERROR,
             f"Cannot parse test_results.tsv ({e})",
             test_results,
             additional_files,
@@ -175,7 +175,7 @@ def main():
         additional_files=[run_log_path] + additional_logs,
     ).dump()
 
-    if state != "success":
+    if state != SUCCESS:
         if FORCE_TESTS_LABEL in pr_info.labels:
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
