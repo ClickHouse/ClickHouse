@@ -5570,7 +5570,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 column = function_base->getConstantResultForNonConstArguments(argument_columns, result_type);
             }
 
-            if (column->getDataType() != result_type->getColumnType())
+            if (column && column->getDataType() != result_type->getColumnType())
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Unexpected return type from {}. Expected {}. Got {}",
