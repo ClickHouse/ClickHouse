@@ -22,47 +22,6 @@ set(LLAMA_HDRS
 )
 
 #
-# GGML library
-#
-
-add_library(_ggml OBJECT
-    ${GGML_SRCS} ${GGML_HDRS}
-)
-target_include_directories(_ggml PUBLIC ${LLAMA_CPP_SOURCE_DIR})
-target_link_libraries(_ggml PUBLIC Threads::Threads)
-
-# Posix conformance -- data types, macros and functions related to 
-# controlling CPU affinity and ome memory allocation
-
-if (CMAKE_SYSTEM_NAME MATCHES "Linux")
-    target_compile_definitions(_ggml PUBLIC _GNU_SOURCE)
-endif()
-
-if (CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
-    target_compile_definitions(_ggml PUBLIC __BSD_VISIBLE)
-endif()
-
-if (
-    CMAKE_SYSTEM_NAME MATCHES "Darwin" OR
-    CMAKE_SYSTEM_NAME MATCHES "iOS" OR
-    CMAKE_SYSTEM_NAME MATCHES "DragonFly"
-)
-    target_compile_definitions(_ggml PUBLIC _DARWIN_C_SOURCE)
-endif()
-
-#
-# LLaMA library
-#
-
-add_library(_llama
-    ${LLAMA_SRCS} ${LLAMA_HDRS}
-)
-target_include_directories(_llama PUBLIC ${LLAMA_CPP_SOURCE_DIR})
-target_link_libraries(_llama PRIVATE
-    _ggml
-)
-
-#
 # Architecture-related optimization flags
 #
 
@@ -86,17 +45,68 @@ if ((${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm") OR (${CMAKE_SYSTEM_PROCESSOR} MATC
     endif()
 
 elseif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "^(x86_64|i686|AMD64)$")
-    # X86 architecture
-    message("X86")
-    # TODO: Add LLAMA native flags
+    # x86 architecture
+
+    list(APPEND LLAMA_ARCH_FLAGS -march=native)
+    # TODO: Add LLAMA avx and fma optimizations
 
 elseif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "ppc64le")
     # PowerPC64LE CPU architecture (ClickHouse supports little-endian ppc64 only)
 
-    list(APPEND ARCH_FLAGS -mcpu=powerpc64le)
+    list(APPEND LLAMA_ARCH_FLAGS -mcpu=powerpc64le)
 endif()
 
-target_compile_options(_ggml PRIVATE ${ARCH_FLAGS})
-target_compile_options(_llama PRIVATE ${ARCH_FLAGS})
+#
+# Posix conformance -- data types, macros and functions related to 
+# controlling CPU affinity and memory allocation
+#
+
+set(LLAMA_COMPILE_DEFENITIONS "")
+list(APPEND LLAMA_COMPILE_DEFENITIONS _XOPEN_SOURCE=600)
+
+if (CMAKE_SYSTEM_NAME MATCHES "Linux")
+    list(APPEND LLAMA_COMPILE_DEFENITIONS _GNU_SOURCE)
+endif()
+
+if (CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
+    list(APPEND LLAMA_COMPILE_DEFENITIONS __BSD_VISIBLE)
+endif()
+
+if (
+    CMAKE_SYSTEM_NAME MATCHES "Darwin" OR
+    CMAKE_SYSTEM_NAME MATCHES "iOS" OR
+    CMAKE_SYSTEM_NAME MATCHES "DragonFly"
+)
+    list(APPEND LLAMA_COMPILE_DEFENITIONS _DARWIN_C_SOURCE)
+endif()
+
+#
+# GGML library
+#
+
+add_library(_ggml OBJECT
+    ${GGML_SRCS} ${GGML_HDRS}
+)
+target_include_directories(_ggml PUBLIC ${LLAMA_CPP_SOURCE_DIR})
+target_link_libraries(_ggml PUBLIC Threads::Threads)
+
+
+#
+# LLaMA library
+#
+
+add_library(_llama
+    ${LLAMA_SRCS} ${LLAMA_HDRS}
+)
+target_include_directories(_llama PUBLIC ${LLAMA_CPP_SOURCE_DIR})
+target_link_libraries(_llama PRIVATE
+    _ggml
+)
+
+target_compile_definitions(_ggml PRIVATE ${LLAMA_COMPILE_DEFENITIONS})
+target_compile_definitions(_llama PRIVATE ${LLAMA_COMPILE_DEFENITIONS})
+
+target_compile_options(_ggml PRIVATE ${LLAMA_ARCH_FLAGS})
+target_compile_options(_llama PRIVATE ${LLAMA_ARCH_FLAGS})
 
 add_library(ch_contrib::llama ALIAS _llama)
