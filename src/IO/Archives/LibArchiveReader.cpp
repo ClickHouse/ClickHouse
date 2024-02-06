@@ -119,7 +119,7 @@ public:
         std::unique_ptr<LibArchiveReader::StreamInfo> rs;
         if(archive_read_function)
         {
-            read_stream = std::make_unique<StreamInfo>(archive_read_function());
+            rs = std::make_unique<StreamInfo>(archive_read_function());
             archive = openWithReader(&(*rs));
         }
         else
