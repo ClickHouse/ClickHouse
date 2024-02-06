@@ -1306,25 +1306,21 @@ TEST(LZ4Test, DecompressMalformedInput)
 
 TEST(FSSTTest, CompressDecompress)
 {
-    // const int string_length = 44;
-    // char some_source[] = "sadf asdfjojsd asijdfojas dsjf asodf aosdjf\0";
-    // char bebra[string_length * 10];
-    std::string src_string = "skjf ksjfks aksjfiqwr lanzm,noqij asldkjfl sjfhakjsh kjsha";
-    if (src_string[src_string.size()] == '\0') {
-        std::cerr << "\\0" << std::endl;
-    }
-    std::string dest(src_string.size() * 5 + 2166, '!');
+    char in_str[2281337] = "Hello, World!\0";
+    char out_str[2281337];
+    auto string_length = strlen(in_str);
+    std::cerr << "in_str length: " << string_length << std::endl;
 
     auto fsst_codec = CompressionCodecFactory::instance().get("FSST", {});
-    std::cerr << "Method byte" << static_cast<size_t>(fsst_codec->getMethodByte()) << std::endl;
+    auto compressed_size = fsst_codec->compress(in_str, static_cast<UInt32>(string_length), out_str);
 
-    auto compressed_size = fsst_codec->compress(src_string.data(), static_cast<UInt32>(src_string.size()), dest.data());
-    // dest.resize(compressed_size);
-    // std::cerr << compressed_size << " " << dest << std::endl;
-    UNUSED(compressed_size);
-    // fsst_codec->decompress(dest.data(), static_cast<UInt32>(dest.size()), src_string.data());
-    // std::cerr << src_string;
-    // std::cerr << out;
+    std::cerr << "compressed size: " << compressed_size << std::endl;
+
+    memset(in_str, '\0', string_length);
+
+    fsst_codec->decompress(out_str, compressed_size, in_str);
+
+    std::cerr << "decompressed string: " << in_str << std::endl;
 }
 
 }
