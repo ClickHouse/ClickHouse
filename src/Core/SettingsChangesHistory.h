@@ -84,9 +84,9 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
-    {"24.3", {{"optimize_sorting_with_data_hints", true, true, "Optimizing sorting with data hints."},
-              {"optimize_aggregation_with_data_hints", true, true, "Optimizing aggregation with data hints."}}},
-    {"24.2", {{"async_insert_max_data_size", 1000000, 10485760, "The previous value appeared to be too small."},
+    {"24.2", {{"optimize_sorting_with_data_hints", true, true, "Optimizing sorting with data hints."},
+              {"optimize_aggregation_with_data_hints", true, true, "Optimizing aggregation with data hints."},
+              {"async_insert_max_data_size", 1000000, 10485760, "The previous value appeared to be too small."},
               {"async_insert_poll_timeout_ms", 10, 10, "Timeout in milliseconds for polling data from asynchronous insert queue"},
               {"async_insert_use_adaptive_busy_timeout", true, true, "Use adaptive asynchronous insert timeout"},
               {"async_insert_busy_timeout_min_ms", 50, 50, "The minimum value of the asynchronous insert timeout in milliseconds; it also serves as the initial value, which may be increased later by the adaptive algorithm"},
