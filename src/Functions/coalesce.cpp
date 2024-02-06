@@ -29,7 +29,12 @@ public:
         return std::make_shared<FunctionCoalesce>(context);
     }
 
-    explicit FunctionCoalesce(ContextPtr context_) : context(context_) {}
+    explicit FunctionCoalesce(ContextPtr context_)
+        : context(context_)
+        , is_not_null(FunctionFactory::instance().get("isNotNull", context))
+        , assume_not_null(FunctionFactory::instance().get("assumeNotNull", context))
+    {
+    }
 
     std::string getName() const override
     {
@@ -110,8 +115,7 @@ public:
                 break;
         }
 
-        auto is_not_null = FunctionFactory::instance().get("isNotNull", context);
-        auto assume_not_null = FunctionFactory::instance().get("assumeNotNull", context);
+
 
         ColumnsWithTypeAndName multi_if_args;
         ColumnsWithTypeAndName tmp_args(1);
@@ -170,6 +174,8 @@ public:
 
 private:
     ContextPtr context;
+    FunctionOverloadResolverPtr is_not_null;
+    FunctionOverloadResolverPtr assume_not_null;
 };
 
 }
