@@ -21,19 +21,18 @@ std::shared_ptr<ActionsDAG> buildPredecessorActionsDag(const Block & header, con
     {
         if (hints.contains(old_key) && hints.at(old_key).isRangeLengthLessOrEqualThan(65535))
         {
-            const auto & hint = hints.at(old_key);
-            const auto new_key = "__hinted_key_" + old_key;
-
             const ActionsDAG::Node * key_column_node = dag->tryFindInOutputs(old_key);
             const auto & key_column_type = key_column_node->result_type;
             const auto & type_name = key_column_type->getName();
 
-            if (type_name == "UInt8" || type_name == "Int8" ||
-                ((type_name == "UInt16" || type_name == "Int16") && !hint.isRangeLengthLessOrEqualThan(255)))
+            if (type_name == "UInt8" || type_name == "Int8" || type_name == "UInt16" || type_name == "Int16")
             {
                 new_aggregating_keys.push_back(old_key);
                 continue;
             }
+
+            const auto & hint = hints.at(old_key);
+            const auto new_key = "__hinted_key_" + old_key;
 
             changed_aggregating_keys.push_back(old_key);
             new_aggregating_keys.push_back(new_key);

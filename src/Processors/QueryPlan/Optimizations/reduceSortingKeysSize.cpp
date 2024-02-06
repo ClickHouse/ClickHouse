@@ -18,21 +18,20 @@ std::shared_ptr<ActionsDAG> buildPredecessorActionsDag(const Block & header, con
     auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
     for (const auto & old_key : keys)
     {
-        if (hints.contains(old_key) && hints.at(old_key).isRangeLengthLessOrEqualThan(65535))
+        if (hints.contains(old_key) && hints.at(old_key).isRangeLengthLessOrEqualThan(255))
         {
-            const auto & hint = hints.at(old_key);
-            const auto new_key = "__hinted_key_" + old_key;
-
             const ActionsDAG::Node * key_column_node = dag->tryFindInOutputs(old_key);
             const auto & key_column_type = key_column_node->result_type;
             const auto & type_name = key_column_type->getName();
-
-            if (type_name == "UInt8" || type_name == "Int8" ||
-                ((type_name == "UInt16" || type_name == "Int16") && !hint.isRangeLengthLessOrEqualThan(255)))
+            
+            if (type_name == "UInt8" || type_name == "Int8")
             {
                 new_sorting_keys.push_back(old_key);
                 continue;
             }
+
+            const auto & hint = hints.at(old_key);
+            const auto new_key = "__hinted_key_" + old_key;
 
             changed_sorting_keys.push_back(old_key);
             new_sorting_keys.push_back(new_key);
@@ -51,13 +50,7 @@ std::shared_ptr<ActionsDAG> buildPredecessorActionsDag(const Block & header, con
             auto minus_function = FunctionFactory::instance().get("minus", Context::getGlobalContextInstance());
             const auto & added_function = dag->addFunction(minus_function, children, "__hinted_key_uncasted_" + old_key);
 
-            DataTypePtr result_type;
-            if (hint.isRangeLengthLessOrEqualThan(255))
-                result_type = std::make_shared<DataTypeUInt8>();
-            else if (hint.isRangeLengthLessOrEqualThan(65535))
-                result_type = std::make_shared<DataTypeUInt16>();
-            else
-                result_type = std::make_shared<DataTypeUInt32>();
+            DataTypePtr result_type = std::make_shared<DataTypeUInt8>();;
 
             dag->addOrReplaceInOutputs(dag->addCast(added_function, result_type, new_key));
         }
