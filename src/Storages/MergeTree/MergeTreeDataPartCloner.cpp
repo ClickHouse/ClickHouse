@@ -181,8 +181,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneSourcePart(
 
     LOG_DEBUG(
         &Poco::Logger::get("MergeTreeDataPartCloner"),
-        "Clone {} part {} to {}{}",
-        src_flushed_tmp_part ? "flushed" : "",
+        "Clone {}part {} to {}{}",
+        src_flushed_tmp_part ? "flushed " : "",
         src_part_storage->getFullPath(),
         std::string(fs::path(dst_part_storage->getFullRootPath()) / tmp_dst_part_name),
         false);
