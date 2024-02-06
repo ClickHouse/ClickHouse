@@ -245,7 +245,7 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserFormatIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    
+    /// Identifier in backquotes or in double quotes
     if (pos->type == TokenType::QuotedIdentifier)
     {
         ReadBufferFromMemory buf(pos->begin, pos->size());
