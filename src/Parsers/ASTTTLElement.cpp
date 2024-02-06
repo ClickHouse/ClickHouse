@@ -35,11 +35,6 @@ ASTPtr ASTTTLElement::clone() const
 
 void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    const auto format_with_parens = Context::getGlobalContextInstance()->getServerSettings().format_ttl_expressions_with_parentheses.value;
-
-    if (format_with_parens)
-        settings.ostr << "(";
-
     ttl()->formatImpl(settings, state, frame);
     if (mode == TTLMode::MOVE)
     {
@@ -93,9 +88,6 @@ void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & st
         settings.ostr << " WHERE ";
         where()->formatImpl(settings, state, frame);
     }
-
-    if (format_with_parens)
-        settings.ostr << ")";
 }
 
 void ASTTTLElement::setExpression(int & pos, ASTPtr && ast)

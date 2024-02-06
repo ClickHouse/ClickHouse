@@ -393,8 +393,7 @@ bool ParserInterpolateExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expect
 
 bool ParserTTLExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    const auto with_round_bracket = pos->type == TokenType::OpeningRoundBracket;
-    return ParserList(std::make_unique<ParserTTLElement>(with_round_bracket), std::make_unique<ParserToken>(TokenType::Comma), false)
+    return ParserList(std::make_unique<ParserTTLElement>(), std::make_unique<ParserToken>(TokenType::Comma), false)
         .parse(pos, node, expected);
 }
 

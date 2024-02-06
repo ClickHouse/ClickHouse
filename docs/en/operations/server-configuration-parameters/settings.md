@@ -2851,14 +2851,6 @@ Note that only directly dependent views are considered here, and the creation of
 
 Default value: `0`.
 
-## format_ttl_expressions_with_parentheses {#format_ttl_expressions_with_parentheses}
-
-If set to true, then TTL expressions will be surrounded by parentheses in formatted queries. This makes the parsing of formatted queries containing TTL expressions less ambiguous.
-
-Type: Bool
-
-Default: 0
-
 ## format_alter_operations_with_parentheses {#format_alter_operations_with_parentheses}
 
 If set to true, then alter operations will be surrounded by parentheses in formatted queries. This makes the parsing of formatted alter queries less ambiguous.

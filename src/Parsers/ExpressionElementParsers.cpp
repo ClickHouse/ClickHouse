@@ -2233,12 +2233,6 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserExpressionList parser_keys_list(false);
     ParserCodec parser_codec;
 
-    if (with_round_bracket)
-    {
-        if (!parser_opening_round_bracket.ignore(pos, expected))
-            return false;
-    }
-
     if (s_materialize.checkWithoutMoving(pos, expected) ||
         s_remove.checkWithoutMoving(pos, expected) ||
         s_modify.checkWithoutMoving(pos, expected))
@@ -2319,12 +2313,6 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         if (!parser_codec.parse(pos, recompression_codec, expected))
-            return false;
-    }
-
-    if (with_round_bracket)
-    {
-        if (!parser_closing_round_bracket.ignore(pos, expected))
             return false;
     }
 
