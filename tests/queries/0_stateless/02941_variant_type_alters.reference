@@ -108,6 +108,32 @@ insert after alter modify column 2
 22	str_22	\N	str_22	\N	\N	\N	\N
 23	\N	\N	\N	\N	\N	\N	\N
 24	24	24	\N	\N	\N	\N	\N
+drop variant column
+0	0	\N	\N
+1	1	\N	\N
+2	2	\N	\N
+3	3	\N	\N
+4	4	\N	\N
+5	5	\N	\N
+6	6	\N	\N
+7	7	\N	\N
+8	8	\N	\N
+9	9	\N	\N
+10	10	\N	\N
+11	11	\N	\N
+12	12	\N	\N
+13	13	\N	\N
+14	14	\N	\N
+15	15	\N	\N
+16	16	\N	\N
+17	17	\N	\N
+18	18	\N	\N
+19	19	\N	\N
+20	20	\N	\N
+21	21	\N	\N
+22	str_22	\N	str_22
+23	\N	\N	\N
+24	24	24	\N
 MergeTree compact
 initial insert
 alter add column 1
@@ -218,6 +244,32 @@ insert after alter modify column 2
 22	str_22	\N	str_22	\N	\N	\N	\N
 23	\N	\N	\N	\N	\N	\N	\N
 24	24	24	\N	\N	\N	\N	\N
+drop variant column
+0	0	0	\N
+1	1	1	\N
+2	2	2	\N
+3	3	3	\N
+4	4	4	\N
+5	5	5	\N
+6	6	6	\N
+7	7	7	\N
+8	8	8	\N
+9	9	9	\N
+10	10	10	\N
+11	11	11	\N
+12	12	12	\N
+13	13	13	\N
+14	14	14	\N
+15	15	15	\N
+16	16	16	\N
+17	17	17	\N
+18	18	18	\N
+19	19	19	\N
+20	20	20	\N
+21	21	21	\N
+22	str_22	\N	str_22
+23	\N	\N	\N
+24	24	24	\N
 MergeTree wide
 initial insert
 alter add column 1
@@ -328,11 +380,29 @@ insert after alter modify column 2
 22	str_22	\N	str_22	\N	\N	\N	\N
 23	\N	\N	\N	\N	\N	\N	\N
 24	24	24	\N	\N	\N	\N	\N
-{'a':'0','b':'str_0'}
-{}
-{'a':'2','b':'str_2'}
-{}
-{'a':'0','b':0}
-{}
-{'a':'2','b':0}
-{}
+drop variant column
+0	0	0	\N
+1	1	1	\N
+2	2	2	\N
+3	3	3	\N
+4	4	4	\N
+5	5	5	\N
+6	6	6	\N
+7	7	7	\N
+8	8	8	\N
+9	9	9	\N
+10	10	10	\N
+11	11	11	\N
+12	12	12	\N
+13	13	13	\N
+14	14	14	\N
+15	15	15	\N
+16	16	16	\N
+17	17	17	\N
+18	18	18	\N
+19	19	19	\N
+20	20	20	\N
+21	21	21	\N
+22	str_22	\N	str_22
+23	\N	\N	\N
+24	24	24	\N
