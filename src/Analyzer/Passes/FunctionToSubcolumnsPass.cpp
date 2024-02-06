@@ -199,6 +199,11 @@ private:
                 if (constant_value_type == Field::Types::String || constant_value_type == Field::Types::UInt64)
                     ++data.optimized_identifiers_count[qualified_name];
             }
+            else if (function_name == "variantElement" && column_type.isVariant() && second_argument_constant_node)
+            {
+                if (second_argument_constant_node->getValue().getType() == Field::Types::String)
+                    ++data.optimized_identifiers_count[qualified_name];
+            }
             else if (function_name == "mapContains" && column_type.isMap())
             {
                 ++data.optimized_identifiers_count[qualified_name];
@@ -373,6 +378,23 @@ public:
                 {
                     return;
                 }
+
+                column.name += '.';
+                column.name += subcolumn_name;
+                column.type = function_node->getResultType();
+
+                node = std::make_shared<ColumnNode>(column, column_source);
+            }
+            else if (function_name == "variantElement" && isVariant(column_type) && second_argument_constant_node)
+            {
+                /// Replace `variantElement(variant_argument, type_name)` with `variant_argument.type_name`.
+                const auto & variant_element_constant_value = second_argument_constant_node->getValue();
+                String subcolumn_name;
+
+                if (variant_element_constant_value.getType() != Field::Types::String)
+                    return;
+
+                subcolumn_name = variant_element_constant_value.get<const String &>();
 
                 column.name += '.';
                 column.name += subcolumn_name;

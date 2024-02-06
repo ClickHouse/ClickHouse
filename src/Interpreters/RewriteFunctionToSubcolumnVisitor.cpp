@@ -182,6 +182,21 @@ void RewriteFunctionToSubcolumnSecondPassData::visit(ASTFunction & function, AST
             ast = transformToSubcolumn(column->name, subcolumn_name);
             ast->setAlias(alias);
         }
+        else if (function.name == "variantElement" && column_type_id == TypeIndex::Variant)
+        {
+            const auto * literal = arguments[1]->as<ASTLiteral>();
+            if (!literal)
+                return;
+
+            String subcolumn_name;
+            auto value_type = literal->value.getType();
+            if (value_type != Field::Types::String)
+                return;
+
+            subcolumn_name = literal->value.get<const String &>();
+            ast = transformToSubcolumn(column->name, subcolumn_name);
+            ast->setAlias(alias);
+        }
         else if (function.name == "mapContains" && column_type_id == TypeIndex::Map)
         {
             auto subcolumn = transformToSubcolumn(column->name, "keys");

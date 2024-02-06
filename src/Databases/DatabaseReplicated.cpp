@@ -29,6 +29,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/SharedThreadPools.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -576,13 +577,30 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
             ddl_worker->startup();
             ddl_worker_initialized = true;
         });
+    std::scoped_lock lock(mutex);
     return startup_replicated_database_task = makeLoadTask(async_loader, {job});
 }
 
-void DatabaseReplicated::waitDatabaseStarted(bool no_throw) const
+void DatabaseReplicated::waitDatabaseStarted() const
 {
-    if (startup_replicated_database_task)
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_replicated_database_task, no_throw);
+    LoadTaskPtr task;
+    {
+        std::scoped_lock lock(mutex);
+        task = startup_replicated_database_task;
+    }
+    if (task)
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task);
+}
+
+void DatabaseReplicated::stopLoading()
+{
+    LoadTaskPtr stop_startup_replicated_database;
+    {
+        std::scoped_lock lock(mutex);
+        stop_startup_replicated_database.swap(startup_replicated_database_task);
+    }
+    stop_startup_replicated_database.reset();
+    DatabaseAtomic::stopLoading();
 }
 
 bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context, bool debug_check /* = true */) const
@@ -743,7 +761,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
 
 BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags)
 {
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     if (query_context->getCurrentTransaction() && query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Distributed DDL queries inside transactions are not supported");
@@ -807,7 +825,7 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
 
 void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr)
 {
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     is_recovering = true;
     SCOPE_EXIT({ is_recovering = false; });
@@ -908,6 +926,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("allow_experimental_nlp_functions", 1);
         query_context->setSetting("allow_experimental_hash_functions", 1);
         query_context->setSetting("allow_experimental_object_type", 1);
+        query_context->setSetting("allow_experimental_variant_type", 1);
         query_context->setSetting("allow_experimental_annoy_index", 1);
         query_context->setSetting("allow_experimental_usearch_index", 1);
         query_context->setSetting("allow_experimental_bigint_types", 1);
@@ -1073,31 +1092,57 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     }
 
     tables_dependencies.checkNoCyclicDependencies();
-    auto tables_to_create = tables_dependencies.getTablesSortedByDependency();
 
-    for (const auto & table_id : tables_to_create)
+    auto allow_concurrent_table_creation = getContext()->getServerSettings().max_database_replicated_create_table_thread_pool_size > 1;
+    auto tables_to_create_by_level = tables_dependencies.getTablesSortedByDependencyWithLevels();
+
+    auto create_tables_runner = threadPoolCallbackRunner<void>(getDatabaseReplicatedCreateTablesThreadPool().get(), "CreateTables");
+    std::vector<std::future<void>> create_table_futures;
+
+    for (const auto & [_, tables_to_create] : tables_to_create_by_level)
     {
-        auto table_name = table_id.getTableName();
-        auto metadata_it = table_name_to_metadata.find(table_name);
-        if (metadata_it == table_name_to_metadata.end())
+        for (const auto & table_id : tables_to_create)
         {
-            /// getTablesSortedByDependency() may return some not existing tables or tables from other databases
-            LOG_WARNING(log, "Got table name {} when resolving table dependencies, "
-                        "but database {} does not have metadata for that table. Ignoring it", table_id.getNameForLogs(), getDatabaseName());
-            continue;
+            auto task = [&]()
+            {
+                auto table_name = table_id.getTableName();
+                auto metadata_it = table_name_to_metadata.find(table_name);
+                if (metadata_it == table_name_to_metadata.end())
+                {
+                    /// getTablesSortedByDependency() may return some not existing tables or tables from other databases
+                    LOG_WARNING(log, "Got table name {} when resolving table dependencies, "
+                                "but database {} does not have metadata for that table. Ignoring it", table_id.getNameForLogs(), getDatabaseName());
+                    return;
+                }
+
+                const auto & create_query_string = metadata_it->second;
+                if (isTableExist(table_name, getContext()))
+                {
+                    assert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
+                    return;
+                }
+
+                auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_query_string);
+                LOG_INFO(log, "Executing {}", serializeAST(*query_ast));
+                auto create_query_context = make_query_context();
+                InterpreterCreateQuery(query_ast, create_query_context).execute();
+            };
+
+            if (allow_concurrent_table_creation)
+                create_table_futures.push_back(create_tables_runner(task, Priority{0}));
+            else
+                task();
         }
 
-        const auto & create_query_string = metadata_it->second;
-        if (isTableExist(table_name, getContext()))
-        {
-            assert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
-            continue;
-        }
+        /// First wait for all tasks to finish.
+        for (auto & future : create_table_futures)
+            future.wait();
 
-        auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_query_string);
-        LOG_INFO(log, "Executing {}", serializeAST(*query_ast));
-        auto create_query_context = make_query_context();
-        InterpreterCreateQuery(query_ast, create_query_context).execute();
+        /// Now rethrow the first exception if any.
+        for (auto & future : create_table_futures)
+            future.get();
+
+        create_table_futures.clear();
     }
     LOG_INFO(log, "All tables are created successfully");
 
@@ -1258,7 +1303,7 @@ void DatabaseReplicated::drop(ContextPtr context_)
         return;
     }
 
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     auto current_zookeeper = getZooKeeper();
     current_zookeeper->set(replica_path, DROPPED_MARK, -1);
@@ -1277,7 +1322,7 @@ void DatabaseReplicated::drop(ContextPtr context_)
 
 void DatabaseReplicated::stopReplication()
 {
-    waitDatabaseStarted(/* no_throw = */ true);
+    stopLoading();
     if (ddl_worker)
         ddl_worker->shutdown();
 }
@@ -1293,7 +1338,7 @@ void DatabaseReplicated::shutdown()
 
 void DatabaseReplicated::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
     assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id."));
@@ -1337,7 +1382,7 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
     if (exchange && !to_database.isTableExist(to_table_name, local_context))
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", to_table_name);
 
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     String statement = readMetadataFile(table_name);
     String statement_to;
@@ -1439,7 +1484,7 @@ bool DatabaseReplicated::canExecuteReplicatedMetadataAlter() const
 
 void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const String & table_name)
 {
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
     assert(!ddl_worker->isCurrentlyActive() || txn);
@@ -1464,7 +1509,7 @@ void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const 
 
 void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context, const String & table_name, const String & table_metadata_path, bool attach)
 {
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
     assert(!ddl_worker->isCurrentlyActive() || txn);
@@ -1502,7 +1547,7 @@ String DatabaseReplicated::readMetadataFile(const String & table_name) const
 std::vector<std::pair<ASTPtr, StoragePtr>>
 DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr &) const
 {
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     /// Here we read metadata from ZooKeeper. We could do that by simple call of DatabaseAtomic::getTablesForBackup() however
     /// reading from ZooKeeper is better because thus we won't be dependent on how fast the replication queue of this database is.
@@ -1545,7 +1590,7 @@ void DatabaseReplicated::createTableRestoredFromBackup(
     std::shared_ptr<IRestoreCoordination> restore_coordination,
     UInt64 timeout_ms)
 {
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     /// Because of the replication multiple nodes can try to restore the same tables again and failed with "Table already exists"
     /// because of some table could be restored already on other node and then replicated to this node.

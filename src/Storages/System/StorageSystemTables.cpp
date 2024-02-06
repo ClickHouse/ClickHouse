@@ -693,10 +693,15 @@ public:
     {
     }
 
+    void applyFilters() override;
+
 private:
     ContextPtr context;
     std::vector<UInt8> columns_mask;
     size_t max_block_size;
+
+    ColumnPtr filtered_databases_column;
+    ColumnPtr filtered_tables_column;
 };
 
 void StorageSystemTables::read(
@@ -723,16 +728,19 @@ void StorageSystemTables::read(
     query_plan.addStep(std::move(reading));
 }
 
-void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void ReadFromSystemTables::applyFilters()
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    ColumnPtr filtered_databases_column = getFilteredDatabases(predicate, context);
-    ColumnPtr filtered_tables_column = getFilteredTables(predicate, filtered_databases_column, context);
+    filtered_databases_column = getFilteredDatabases(predicate, context);
+    filtered_tables_column = getFilteredTables(predicate, filtered_databases_column, context);
+}
 
+void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+{
     Pipe pipe(std::make_shared<TablesBlockSource>(
         std::move(columns_mask), getOutputStream().header, max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context));
     pipeline.init(std::move(pipe));

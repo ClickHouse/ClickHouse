@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cerrno>
+#include <exception>
 #include <vector>
 #include <memory>
 
@@ -10,6 +11,8 @@
 #include <base/errnoToString.h>
 #include <base/scope_guard.h>
 #include <Common/LoggingFormatStringHelpers.h>
+#include <Common/Logger.h>
+#include <Common/AtomicLogger.h>
 #include <Common/StackTrace.h>
 
 #include <fmt/format.h>
@@ -240,8 +243,11 @@ using Exceptions = std::vector<std::exception_ptr>;
 /** Try to write an exception to the log (and forget about it).
   * Can be used in destructors in the catch-all block.
   */
+/// TODO: Logger leak constexpr overload
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message = "");
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "");
+void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message = "");
+void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message = "");
 
 
 /** Prints current exception in canonical format.
@@ -284,9 +290,10 @@ struct ExecutionStatus
     bool tryDeserializeText(const std::string & data);
 };
 
-
+/// TODO: Logger leak constexpr overload
 void tryLogException(std::exception_ptr e, const char * log_name, const std::string & start_of_message = "");
-void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::string & start_of_message = "");
+void tryLogException(std::exception_ptr e, LoggerPtr logger, const std::string & start_of_message = "");
+void tryLogException(std::exception_ptr e, const AtomicLogger & logger, const std::string & start_of_message = "");
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);
 PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);

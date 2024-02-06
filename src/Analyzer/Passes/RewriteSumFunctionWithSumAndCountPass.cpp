@@ -11,14 +11,6 @@
 namespace DB
 {
 
-/** Rewrites `sum(column +/- literal)` into two individual functions
- * `sum(column)` and `literal * count(column)`.
- * sum(column + literal) -> sum(column) + literal * count(column)
- * sum(literal + column) -> literal * count(column) + sum(column)
- * sum(column - literal) -> sum(column) - literal * count(column)
- * sum(literal - column) -> literal * count(column) - sum(column)
- */
-
 namespace
 {
 
@@ -30,6 +22,9 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (!getSettings().optimize_arithmetic_operations_in_aggregate_functions)
+            return;
+
         static const std::unordered_set<String> func_supported = {
             "plus",
             "minus"

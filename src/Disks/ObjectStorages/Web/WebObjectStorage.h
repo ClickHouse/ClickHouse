@@ -158,7 +158,7 @@ private:
     loadFiles(const String & path, const std::unique_lock<std::shared_mutex> &) const;
 
     const String url;
-    Poco::Logger * log;
+    LoggerPtr log;
     size_t min_bytes_for_seek;
 };
 

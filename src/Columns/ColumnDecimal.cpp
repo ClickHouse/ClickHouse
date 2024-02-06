@@ -159,7 +159,7 @@ void ColumnDecimal<T>::getPermutation(IColumn::PermutationSortDirection directio
     };
 
     size_t data_size = data.size();
-    res.resize(data_size);
+    res.resize_exact(data_size);
 
     if (limit >= data_size)
         limit = 0;
@@ -318,7 +318,7 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
     if (size > 0)
     {
         auto & new_col = static_cast<Self &>(*res);
-        new_col.data.resize(size);
+        new_col.data.resize_exact(size);
 
         size_t count = std::min(this->size(), size);
 

@@ -90,7 +90,7 @@ public:
 
 private:
     String key_prefix;
-    Poco::Logger * log;
+    LoggerPtr log;
     std::string description;
 };
 

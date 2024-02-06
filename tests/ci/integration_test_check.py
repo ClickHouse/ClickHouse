@@ -18,7 +18,7 @@ from commit_status_helper import (
     post_commit_status,
     post_commit_status_to_file,
 )
-from docker_images_helper import DockerImage, get_docker_image, pull_image
+from docker_images_helper import DockerImage, get_docker_image
 from download_release_packages import download_last_release
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from get_robot_token import get_best_robot_token
@@ -192,7 +192,8 @@ def main():
     gh = GitHub(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
 
-    images = [pull_image(get_docker_image(i)) for i in IMAGES]
+    images = [get_docker_image(image_) for image_ in IMAGES]
+
     result_path = temp_path / "output_dir"
     result_path.mkdir(parents=True, exist_ok=True)
 

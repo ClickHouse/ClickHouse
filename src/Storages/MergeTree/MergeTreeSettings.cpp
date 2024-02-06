@@ -65,7 +65,7 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr conte
                         if (ast && isDiskFunction(ast))
                         {
                             auto disk_name = getOrCreateDiskFromDiskAST(ast, context, is_attach);
-                            LOG_TRACE(&Poco::Logger::get("MergeTreeSettings"), "Created custom disk {}", disk_name);
+                            LOG_TRACE(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
                             value = disk_name;
                         }
                     }
@@ -210,6 +210,27 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
             ErrorCodes::BAD_ARGUMENTS,
             "The value of merge_selecting_sleep_slowdown_factor setting ({}) cannot be less than 1.0",
             merge_selecting_sleep_slowdown_factor);
+    }
+}
+
+void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
+{
+    static const MergeTreeSettings merge_tree_settings;
+    static const std::set<String> allowed_column_level_settings =
+    {
+        "min_compress_block_size",
+        "max_compress_block_size"
+    };
+
+    for (const auto & change : changes)
+    {
+        if (!allowed_column_level_settings.contains(change.name))
+            throw Exception(
+                ErrorCodes::UNKNOWN_SETTING,
+                "Setting {} is unknown or not supported at column level, supported settings: {}",
+                change.name,
+                fmt::join(allowed_column_level_settings, ", "));
+        merge_tree_settings.checkCanSet(change.name, change.value);
     }
 }
 

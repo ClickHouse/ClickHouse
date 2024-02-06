@@ -107,6 +107,12 @@ public:
     /// tables which depend on the tables which depend on the tables without dependencies, and so on.
     std::vector<StorageID> getTablesSortedByDependency() const;
 
+    /// Returns a map of lists of tables by the number of dependencies they have:
+    /// tables without dependencies first with level 0, then
+    /// tables with depend on the tables without dependencies with level 1, then
+    /// tables which depend on the tables which depend on the tables without dependencies with level 2, and so on.
+    std::map<size_t, std::vector<StorageID>> getTablesSortedByDependencyWithLevels() const;
+
     /// Outputs information about this graph as a bunch of logging messages.
     void log() const;
 
@@ -163,7 +169,7 @@ private:
     mutable bool levels_calculated = false;
 
     const String name_for_logging;
-    mutable Poco::Logger * logger = nullptr;
+    mutable LoggerPtr logger = nullptr;
 
     Node * findNode(const StorageID & table_id) const;
     Node * addOrUpdateNode(const StorageID & table_id);
@@ -175,7 +181,7 @@ private:
     void setNeedRecalculateLevels() const;
     const NodesSortedByLevel & getNodesSortedByLevel() const;
 
-    Poco::Logger * getLogger() const;
+    LoggerPtr getLogger() const;
 };
 
 }

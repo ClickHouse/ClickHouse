@@ -125,13 +125,13 @@ std::shared_ptr<TSystemLog> createSystemLog(
 {
     if (!config.has(config_prefix))
     {
-        LOG_DEBUG(&Poco::Logger::get("SystemLog"),
+        LOG_DEBUG(getLogger("SystemLog"),
                 "Not creating {}.{} since corresponding section '{}' is missing from config",
                 default_database_name, default_table_name, config_prefix);
 
         return {};
     }
-    LOG_DEBUG(&Poco::Logger::get("SystemLog"),
+    LOG_DEBUG(getLogger("SystemLog"),
               "Creating {}.{} from {}", default_database_name, default_table_name, config_prefix);
 
     SystemLogSettings log_settings;
@@ -143,7 +143,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     {
         /// System tables must be loaded before other tables, but loading order is undefined for all databases except `system`
         LOG_ERROR(
-            &Poco::Logger::get("SystemLog"),
+            getLogger("SystemLog"),
             "Custom database name for a system table specified in config."
             " Table `{}` will be created in `system` database instead of `{}`",
             log_settings.queue_settings.table,
@@ -211,16 +211,17 @@ std::shared_ptr<TSystemLog> createSystemLog(
             if (!settings.empty())
                 log_settings.engine += (storage_policy.empty() ? " " : ", ") + settings;
         }
-
-        /// Add comment to AST. So it will be saved when the table will be renamed.
-        log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment));
     }
 
     /// Validate engine definition syntax to prevent some configuration errors.
     ParserStorageWithComment storage_parser;
-
-    parseQuery(storage_parser, log_settings.engine.data(), log_settings.engine.data() + log_settings.engine.size(),
+    auto storage_ast = parseQuery(storage_parser, log_settings.engine.data(), log_settings.engine.data() + log_settings.engine.size(),
             "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    auto & storage_with_comment = storage_ast->as<StorageWithComment &>();
+
+    /// Add comment to AST. So it will be saved when the table will be renamed.
+    if (!storage_with_comment.comment || storage_with_comment.comment->as<ASTLiteral &>().value.safeGet<String>().empty())
+        log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment));
 
     log_settings.queue_settings.flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds",
                                                                                TSystemLog::getDefaultFlushIntervalMilliseconds());
@@ -395,7 +396,7 @@ SystemLog<LogElement>::SystemLog(
     std::shared_ptr<SystemLogQueue<LogElement>> queue_)
     : Base(settings_.queue_settings, queue_)
     , WithContext(context_)
-    , log(&Poco::Logger::get("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
+    , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
     , storage_def(settings_.engine)
     , create_query(serializeAST(*getCreateTableQuery()))

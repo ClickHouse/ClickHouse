@@ -43,6 +43,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
@@ -197,7 +198,7 @@ namespace ErrorCodes
   */
 struct ContextSharedPart : boost::noncopyable
 {
-    Poco::Logger * log = &Poco::Logger::get("Context");
+    LoggerPtr log = getLogger("Context");
 
     /// For access of most of shared objects.
     mutable ContextSharedMutex mutex;
@@ -290,6 +291,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable QueryCachePtr query_cache TSA_GUARDED_BY(mutex);                          /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
+    AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     ProcessList process_list;                                   /// Executing queries at the moment.
     SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
@@ -1009,7 +1011,7 @@ void Context::setFilesystemCacheUser(const String & user)
     shared->filesystem_cache_user = user;
 }
 
-static void setupTmpPath(Poco::Logger * log, const std::string & path)
+static void setupTmpPath(LoggerPtr log, const std::string & path)
 try
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
@@ -1642,6 +1644,11 @@ void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_proje
     std::lock_guard<std::mutex> lock(query_access_info.mutex);
     query_access_info.projections.emplace(fmt::format(
         "{}.{}", qualified_projection_name.storage_id.getFullTableName(), backQuoteIfNeed(qualified_projection_name.projection_name)));
+}
+
+Context::QueryFactoriesInfo Context::getQueryFactoriesInfo() const
+{
+    return query_factories_info;
 }
 
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
@@ -2858,6 +2865,18 @@ void Context::clearCaches() const
     shared->mmap_cache->clear();
 
     /// Intentionally not clearing the query cache which is transactionally inconsistent by design.
+}
+
+void Context::setAsynchronousMetrics(AsynchronousMetrics * asynchronous_metrics_)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->asynchronous_metrics = asynchronous_metrics_;
+}
+
+AsynchronousMetrics * Context::getAsynchronousMetrics() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->asynchronous_metrics;
 }
 
 ThreadPool & Context::getPrefetchThreadpool() const
@@ -4258,11 +4277,11 @@ void Context::setApplicationType(ApplicationType type)
     /// Lock isn't required, you should set it at start
     shared->application_type = type;
 
-    if (type == ApplicationType::SERVER)
-    {
+    if (type == ApplicationType::LOCAL || type == ApplicationType::SERVER)
         shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
+
+    if (type == ApplicationType::SERVER)
         shared->configureServerWideThrottling();
-    }
 }
 
 void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)
@@ -4273,7 +4292,7 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
     setCurrentProfile(shared->system_profile_name);
 
-    applySettingsQuirks(settings, &Poco::Logger::get("SettingsQuirks"));
+    applySettingsQuirks(settings, getLogger("SettingsQuirks"));
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
     buffer_context = Context::createCopy(shared_from_this());
@@ -4843,10 +4862,10 @@ AsynchronousInsertQueue * Context::getAsynchronousInsertQueue() const
 
 void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr)
 {
-    using namespace std::chrono;
+    AsynchronousInsertQueue::validateSettings(settings, getLogger("Context"));
 
-    if (std::chrono::milliseconds(settings.async_insert_busy_timeout_ms) == 0ms)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting async_insert_busy_timeout_ms can't be zero");
+    if (std::chrono::milliseconds(settings.async_insert_poll_timeout_ms) == std::chrono::milliseconds::zero())
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting async_insert_poll_timeout_ms can't be zero");
 
     shared->async_insert_queue = ptr;
 }

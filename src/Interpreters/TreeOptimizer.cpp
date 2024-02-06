@@ -803,7 +803,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     }
 
     /// Rewrite sum(column +/- literal) function with sum(column) +/- literal * count(column).
-    rewriteSumFunctionWithSumAndCount(query, tables_with_columns);
+    if (settings.optimize_arithmetic_operations_in_aggregate_functions)
+        rewriteSumFunctionWithSumAndCount(query, tables_with_columns);
 
     /// Rewrite date filters to avoid the calls of converters such as toYear, toYYYYMM, etc.
     optimizeDateFilters(select_query, tables_with_columns, context);
