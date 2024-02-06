@@ -511,10 +511,20 @@ Chunk SystemZooKeeperSource::generate()
     };
     std::vector<ListTask> list_tasks;
     std::unordered_set<String> added;
-    while (!paths.empty() && (max_block_size == 0 || row_count < max_block_size))
+    while (!paths.empty())
     {
         if (query_status)
             query_status->checkTimeLimit();
+
+        /// Check if the block is big enough already
+        if (max_block_size > 0 && row_count > 0)
+        {
+            size_t total_size = 0;
+            for (const auto & column : res_columns)
+                total_size += column->byteSize();
+            if (total_size > max_block_size)
+                break;
+        }
 
         list_tasks.clear();
         std::vector<String> paths_to_list;
