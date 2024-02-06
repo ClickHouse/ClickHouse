@@ -124,6 +124,12 @@ void RewriteFunctionToSubcolumnFirstPassMatcher::visit(const ASTFunction & funct
             if (value_type == Field::Types::UInt64 || value_type == Field::Types::String)
                 ++data.optimized_identifiers_count[column->name];
         }
+        else if (function.name == "variantElement" && column_type_id == TypeIndex::Variant)
+        {
+            const auto * literal = arguments[1]->as<ASTLiteral>();
+            if (literal && literal->value.getType() == Field::Types::String)
+                ++data.optimized_identifiers_count[column->name];
+        }
         else if (function.name == "mapContains" && column_type_id == TypeIndex::Map)
         {
             ++data.optimized_identifiers_count[column->name];
