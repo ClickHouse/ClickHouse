@@ -23,7 +23,7 @@ std::shared_ptr<ActionsDAG> buildPredecessorActionsDag(const Block & header, con
             const ActionsDAG::Node * key_column_node = dag->tryFindInOutputs(old_key);
             const auto & key_column_type = key_column_node->result_type;
             const auto & type_name = key_column_type->getName();
-            
+
             if (type_name == "UInt8" || type_name == "Int8")
             {
                 new_sorting_keys.push_back(old_key);
