@@ -306,7 +306,6 @@ static constexpr auto DBMS_MIN_FIELD_SIZE = 32;
   */
 class Field
 {
-    static constexpr int nan_direction_hint = 1; // When comparing Floats NaN are considered to be larger than all numbers
 public:
     struct Types
     {
@@ -511,6 +510,7 @@ public:
             case Types::IPv4:    return get<IPv4>()    < rhs.get<IPv4>();
             case Types::IPv6:    return get<IPv6>()    < rhs.get<IPv6>();
             case Types::Float64:
+                static constexpr int nan_direction_hint = 1; /// Put NaN at the end
                 return FloatCompareHelper<Float64>::less(get<Float64>(), rhs.get<Float64>(), nan_direction_hint);
             case Types::String:  return get<String>()  < rhs.get<String>();
             case Types::Array:   return get<Array>()   < rhs.get<Array>();
@@ -555,6 +555,7 @@ public:
             case Types::IPv6:    return get<IPv6>()    <= rhs.get<IPv6>();
             case Types::Float64:
             {
+                static constexpr int nan_direction_hint = 1; /// Put NaN at the end
                 Float64 f1 = get<Float64>();
                 Float64 f2 = get<Float64>();
                 return FloatCompareHelper<Float64>::less(f1, f2, nan_direction_hint)
@@ -595,6 +596,7 @@ public:
             case Types::UInt64: return get<UInt64>() == rhs.get<UInt64>();
             case Types::Int64:   return get<Int64>() == rhs.get<Int64>();
             case Types::Float64:
+                static constexpr int nan_direction_hint = 1; /// Put NaN at the end
                 return FloatCompareHelper<Float64>::equals(get<Float64>(), rhs.get<Float64>(), nan_direction_hint);
             case Types::UUID:    return get<UUID>()    == rhs.get<UUID>();
             case Types::IPv4:    return get<IPv4>()    == rhs.get<IPv4>();

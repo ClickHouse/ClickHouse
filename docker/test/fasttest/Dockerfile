@@ -20,7 +20,9 @@ RUN apt-get update \
         pv \
         jq \
         zstd \
-    --yes --no-install-recommends
+        --yes --no-install-recommends \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 RUN pip3 install numpy==1.26.3 scipy==1.12.0 pandas==1.5.3 Jinja2==3.1.3
 
@@ -31,11 +33,13 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && cp /tmp/clickhouse-odbc-tmp/lib64/*.so /usr/local/lib/ \
   && odbcinst -i -d -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbcinst.ini.sample \
   && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
-  && rm -rf /tmp/clickhouse-odbc-tmp \
+  && rm -rf /tmp/clickhouse-odbc-tmp
+
+# Give suid to gdb to grant it attach permissions
+# chmod 777 to make the container user independent
+RUN chmod u+s /usr/bin/gdb \
   && mkdir -p /var/lib/clickhouse \
   && chmod 777 /var/lib/clickhouse
-
-# chmod 777 to make the container user independent
 
 ENV TZ=Europe/Amsterdam
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone

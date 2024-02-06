@@ -6,6 +6,7 @@
 
 #include "throwError.h"
 
+#include <bit>
 #include <cmath>
 #include <cfloat>
 #include <cassert>

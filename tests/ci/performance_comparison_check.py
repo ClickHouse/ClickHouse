@@ -29,7 +29,7 @@ from tee_popen import TeePopen
 from clickhouse_helper import get_instance_type, get_instance_id
 from stopwatch import Stopwatch
 from build_download_helper import download_builds_filter
-from report import JobReport
+from report import SUCCESS, JobReport
 
 IMAGE_NAME = "clickhouse/performance-comparison"
 
@@ -223,7 +223,7 @@ def main():
             message = message_match.group(1).strip()
 
         # TODO: Remove me, always green mode for the first time, unless errors
-        status = "success"
+        status = SUCCESS
         if "errors" in message.lower() or too_many_slow(message.lower()):
             status = "failure"
         # TODO: Remove until here
@@ -249,7 +249,7 @@ def main():
         check_name=check_name_with_group,
     ).dump()
 
-    if status == "error":
+    if status != SUCCESS:
         sys.exit(1)
 
 
