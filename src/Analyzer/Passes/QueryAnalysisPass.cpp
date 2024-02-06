@@ -426,6 +426,7 @@ struct TableExpressionData
     bool should_qualify_columns = true;
     NamesAndTypes column_names_and_types;
     ColumnNameToColumnNodeMap column_name_to_column_node;
+    std::unordered_set<std::string> subcolumn_names; /// Subset columns that are subcolumns of other columns
     std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
 
     bool hasFullIdentifierName(IdentifierView identifier_view) const
@@ -1216,7 +1217,7 @@ private:
 
     static void expandGroupByAll(QueryNode & query_tree_node_typed);
 
-    static void expandOrderByAll(QueryNode & query_tree_node_typed, const Settings & settings);
+    void expandOrderByAll(QueryNode & query_tree_node_typed, const Settings & settings);
 
     static std::string
     rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
@@ -1306,6 +1307,12 @@ private:
 
     QueryTreeNodePtr tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
         const QueryTreeNodePtr & table_expression_node,
+        IdentifierResolveScope & scope);
+
+    QueryTreeNodePtr matchArrayJoinSubcolumns(
+        const QueryTreeNodePtr & array_join_column_inner_expression,
+        const ColumnNode & array_join_column_expression_typed,
+        const QueryTreeNodePtr & resolved_expression,
         IdentifierResolveScope & scope);
 
     QueryTreeNodePtr tryResolveExpressionFromArrayJoinExpressions(const QueryTreeNodePtr & resolved_expression,
@@ -2351,15 +2358,18 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Se
 
     for (auto & node : projection_nodes)
     {
-        if (auto * identifier_node = node->as<IdentifierNode>(); identifier_node != nullptr)
-            if (Poco::toUpper(identifier_node->getIdentifier().getFullName()) == "ALL" || Poco::toUpper(identifier_node->getAlias()) == "ALL")
-                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
-                    "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
-
-        if (auto * function_node = node->as<FunctionNode>(); function_node != nullptr)
-            if (Poco::toUpper(function_node->getAlias()) == "ALL")
+        auto resolved_expression_it = resolved_expressions.find(node);
+        if (resolved_expression_it != resolved_expressions.end())
+        {
+            auto projection_names = resolved_expression_it->second;
+            if (projection_names.size() != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Expression nodes list expected 1 projection names. Actual {}",
+                                projection_names.size());
+            if (Poco::toUpper(projection_names[0]) == "ALL")
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
                                 "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
+        }
 
         auto sort_node = std::make_shared<SortNode>(node, all_node->getSortDirection(), all_node->getNullsSortDirection());
         list_node->getNodes().push_back(sort_node);
@@ -2758,7 +2768,13 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
     {
         if (identifier_lookup.isExpressionLookup())
         {
-            return tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier, 1 /*identifier_bind_size*/, it->second, {}, scope);
+            return tryResolveIdentifierFromCompoundExpression(
+                identifier_lookup.identifier,
+                1 /*identifier_bind_size*/,
+                it->second,
+                {} /* compound_expression_source */,
+                scope,
+                identifier_resolve_settings.allow_to_check_join_tree /* can_be_not_found */);
         }
         else if (identifier_lookup.isFunctionLookup() || identifier_lookup.isTableExpressionLookup())
         {
@@ -2912,8 +2928,23 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromStorage(
     QueryTreeNodePtr result_expression;
     bool match_full_identifier = false;
 
-    auto it = table_expression_data.column_name_to_column_node.find(identifier_without_column_qualifier.getFullName());
-    if (it != table_expression_data.column_name_to_column_node.end())
+    const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
+    auto it = table_expression_data.column_name_to_column_node.find(identifier_full_name);
+    bool can_resolve_directly_from_storage = it != table_expression_data.column_name_to_column_node.end();
+    if (can_resolve_directly_from_storage && table_expression_data.subcolumn_names.contains(identifier_full_name))
+    {
+        /** In the case when we have an ARRAY JOIN, we should not resolve subcolumns directly from storage.
+          * For example, consider the following SQL query:
+          * SELECT ProfileEvents.Values FROM system.query_log ARRAY JOIN ProfileEvents
+          * In this case, ProfileEvents.Values should also be array joined, not directly resolved from storage.
+          */
+        auto * nearest_query_scope = scope.getNearestQueryScope();
+        auto * nearest_query_scope_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
+        if (nearest_query_scope_query_node && nearest_query_scope_query_node->getJoinTree()->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+            can_resolve_directly_from_storage = false;
+    }
+
+    if (can_resolve_directly_from_storage)
     {
         match_full_identifier = true;
         result_expression = it->second;
@@ -3396,6 +3427,68 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     return resolved_identifier;
 }
 
+QueryTreeNodePtr QueryAnalyzer::matchArrayJoinSubcolumns(
+    const QueryTreeNodePtr & array_join_column_inner_expression,
+    const ColumnNode & array_join_column_expression_typed,
+    const QueryTreeNodePtr & resolved_expression,
+    IdentifierResolveScope & scope)
+{
+    const auto * resolved_function = resolved_expression->as<FunctionNode>();
+    if (!resolved_function || resolved_function->getFunctionName() != "getSubcolumn")
+        return {};
+
+    const auto * array_join_parent_column = array_join_column_inner_expression.get();
+
+    /** If both resolved and array-joined expressions are subcolumns, try to match them:
+      * For example, in `SELECT t.map.values FROM (SELECT * FROM tbl) ARRAY JOIN t.map`
+      * Identifier `t.map.values` is resolved into `getSubcolumn(t, 'map.values')` and t.map is resolved into `getSubcolumn(t, 'map')`
+      * Since we need to perform array join on `getSubcolumn(t, 'map')`, `t.map.values` should become `getSubcolumn(getSubcolumn(t, 'map'), 'values')`
+      *
+      * Note: It doesn't work when subcolumn in ARRAY JOIN is transformed by another expression, for example
+      * SELECT c.map, c.map.values FROM (SELECT * FROM tbl) ARRAY JOIN mapApply(x -> x, t.map);
+      */
+    String array_join_subcolumn_prefix;
+    auto * array_join_column_inner_expression_function = array_join_column_inner_expression->as<FunctionNode>();
+    if (array_join_column_inner_expression_function &&
+        array_join_column_inner_expression_function->getFunctionName() == "getSubcolumn")
+    {
+        const auto & argument_nodes = array_join_column_inner_expression_function->getArguments().getNodes();
+        if (argument_nodes.size() == 2 && argument_nodes.at(1)->getNodeType() == QueryTreeNodeType::CONSTANT)
+        {
+            const auto & constant_node = argument_nodes.at(1)->as<ConstantNode &>();
+            const auto & constant_node_value = constant_node.getValue();
+            if (constant_node_value.getType() == Field::Types::String)
+            {
+                array_join_subcolumn_prefix = constant_node_value.get<String>() + ".";
+                array_join_parent_column = argument_nodes.at(0).get();
+            }
+        }
+    }
+
+    const auto & argument_nodes = resolved_function->getArguments().getNodes();
+    if (argument_nodes.size() != 2 && !array_join_parent_column->isEqual(*argument_nodes.at(0)))
+        return {};
+
+    const auto * second_argument = argument_nodes.at(1)->as<ConstantNode>();
+    if (!second_argument || second_argument->getValue().getType() != Field::Types::String)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected constant string as second argument of getSubcolumn function {}", resolved_function->dumpTree());
+
+    const auto & resolved_subcolumn_path = second_argument->getValue().get<String &>();
+    if (!startsWith(resolved_subcolumn_path, array_join_subcolumn_prefix))
+        return {};
+
+    auto get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
+    get_subcolumn_function->getArguments().getNodes().push_back(
+        std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(), array_join_column_expression_typed.getColumnSource()));
+    get_subcolumn_function->getArguments().getNodes().push_back(
+        std::make_shared<ConstantNode>(resolved_subcolumn_path.substr(array_join_subcolumn_prefix.size())));
+
+    QueryTreeNodePtr function_query_node = get_subcolumn_function;
+    resolveFunction(function_query_node, scope);
+
+    return function_query_node;
+}
+
 QueryTreeNodePtr QueryAnalyzer::tryResolveExpressionFromArrayJoinExpressions(const QueryTreeNodePtr & resolved_expression,
     const QueryTreeNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
@@ -3464,8 +3557,12 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveExpressionFromArrayJoinExpressions(con
                 array_join_column_expression_typed.getColumnSource());
             break;
         }
-    }
 
+        /// When we select subcolumn of array joined column it also should be array joined
+        array_join_resolved_expression = matchArrayJoinSubcolumns(array_join_column_inner_expression, array_join_column_expression_typed, resolved_expression, scope);
+        if (array_join_resolved_expression)
+            break;
+    }
     return array_join_resolved_expression;
 }
 
@@ -6426,6 +6523,8 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
           */
         for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
         {
+            for (const auto & subcolumn : columns_description.getSubcolumns(column_name_and_type.name))
+                table_expression_data.subcolumn_names.insert(subcolumn.name);
             const auto & column_default = columns_description.getDefault(column_name_and_type.name);
 
             if (column_default && column_default->kind == ColumnDefaultKind::Alias)
@@ -7182,8 +7281,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasHaving() && query_node_typed.isGroupByWithTotals() && is_rollup_or_cube)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING");
 
-    expandOrderByAll(query_node_typed, settings);
-
     /// Initialize aliases in query node scope
     QueryExpressionsAliasVisitor visitor(scope);
 
@@ -7370,6 +7467,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         if (settings.enable_positional_arguments)
             replaceNodesWithPositionalArguments(query_node_typed.getOrderByNode(), query_node_typed.getProjection().getNodes(), scope);
 
+        expandOrderByAll(query_node_typed, settings);
         resolveSortNodeList(query_node_typed.getOrderByNode(), scope);
     }
 

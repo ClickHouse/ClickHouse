@@ -154,21 +154,27 @@ def main():
     ok_cnt, fail_cnt = 0, 0
     images = get_images_oredered_list()
     for image_obj in images:
-        if image_obj.repo not in missing_images:
-            continue
         tag = image_tags[image_obj.repo]
         if image_obj.only_amd64:
             # FIXME: WA until full arm support
             tags = [f"{tag}-{arch}" for arch in archs if arch != "aarch64"]
         else:
             tags = [f"{tag}-{arch}" for arch in archs]
-        manifest, test_result = create_manifest(image_obj.repo, tag, tags, args.push)
-        test_results.append(TestResult(manifest, test_result))
+
+        # 1. update multiarch latest manifest for every image
         if args.set_latest:
             manifest, test_result = create_manifest(
                 image_obj.repo, "latest", tags, args.push
             )
             test_results.append(TestResult(manifest, test_result))
+
+        # 2. skip manifest create if not missing
+        if image_obj.repo not in missing_images:
+            continue
+
+        # 3. created image:digest multiarch manifest for changed images only
+        manifest, test_result = create_manifest(image_obj.repo, tag, tags, args.push)
+        test_results.append(TestResult(manifest, test_result))
 
         if test_result != "OK":
             status = "failure"

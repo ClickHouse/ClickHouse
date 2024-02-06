@@ -261,6 +261,12 @@ public:
     /// Frozen by ALTER TABLE ... FREEZE ... It is used for information purposes in system.parts table.
     mutable std::atomic<bool> is_frozen {false};
 
+    /// If it is a projection part, it can be broken sometimes.
+    mutable std::atomic<bool> is_broken {false};
+    mutable std::string exception;
+    mutable int exception_code = 0;
+    mutable std::mutex broken_reason_mutex;
+
     /// Indicates that the part was marked Outdated by PartCheckThread because the part was not committed to ZooKeeper
     mutable bool is_unexpected_local_part = false;
 
@@ -424,9 +430,16 @@ public:
 
     void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
 
+    void markProjectionPartAsBroken(const String & projection_name, const String & message, int code) const;
+
     bool hasProjection(const String & projection_name) const { return projection_parts.contains(projection_name); }
 
-    void loadProjections(bool require_columns_checksums, bool check_consistency, bool if_not_loaded = false);
+    bool hasBrokenProjection(const String & projection_name) const;
+
+    /// Return true, if all projections were loaded successfully and none was marked as broken.
+    void loadProjections(bool require_columns_checksums, bool check_consistency, bool & has_broken_projection, bool if_not_loaded = false);
+
+    void setBrokenReason(const String & message, int code) const;
 
     /// Return set of metadata file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
@@ -580,7 +593,7 @@ protected:
     const IMergeTreeDataPart * parent_part;
     String parent_part_name;
 
-    std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
+    mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
     mutable PartMetadataManagerPtr metadata_manager;
 
