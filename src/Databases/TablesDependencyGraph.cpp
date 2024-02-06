@@ -703,6 +703,9 @@ std::vector<std::vector<StorageID>> TablesDependencyGraph::getTablesSplitByDepen
 {
     std::vector<std::vector<StorageID>> tables_split_by_level;
     auto sorted_nodes = getNodesSortedByLevel();
+    if (sorted_nodes.empty())
+        return tables_split_by_level;
+
     tables_split_by_level.resize(sorted_nodes.back()->level + 1);
     for (const auto * node : sorted_nodes)
     {
