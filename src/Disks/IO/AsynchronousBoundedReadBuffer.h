@@ -94,8 +94,11 @@ private:
 
     IAsynchronousReader::Result readSync(char * data, size_t size);
 
+    size_t getBufferSizeForReading() const;
+
     void resetPrefetch(FilesystemPrefetchState state);
 
+    [[noreturn]] void throwReadBeyondLastOffset() const;
 };
 
 }
