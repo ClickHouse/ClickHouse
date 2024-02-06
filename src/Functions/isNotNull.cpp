@@ -14,18 +14,14 @@ namespace DB
 namespace
 {
 
-
-#define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
-DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
-DECLARE_AVX2_SPECIFIC_CODE(__VA_ARGS__)
-
-DECLARE_SEVERAL_IMPLEMENTATIONS(
 /// Implements the function isNotNull which returns true if a value
 /// is not null, false otherwise.
 class FunctionIsNotNull : public IFunction
 {
 public:
     static constexpr auto name = "isNotNull";
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsNotNull>(); }
 
     std::string getName() const override
     {
@@ -77,10 +73,7 @@ public:
             auto res_column = ColumnUInt8::create(input_rows_count);
             const auto & src_data = nullable->getNullMapData();
             auto & res_data = assert_cast<ColumnUInt8 &>(*res_column).getData();
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = !src_data[i];
-
+            vector(src_data, res_data);
             return res_column;
         }
         else
@@ -117,38 +110,6 @@ private:
         vectorImpl(null_map, res);
     }
 };
-
-) // DECLARE_SEVERAL_IMPLEMENTATIONS
-#undef DECLARE_SEVERAL_IMPLEMENTATIONS
-
-class FunctionIsNotNull : public TargetSpecific::Default::FunctionIsNotNull
-{
-public:
-    explicit FunctionIsNotNull(ContextPtr context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-            TargetSpecific::Default::FunctionIsNotNull>();
-
-    #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            TargetSpecific::AVX2::FunctionIsNotNull>();
-    #endif
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionIsNotNull>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
-};
-
 }
 
 REGISTER_FUNCTION(IsNotNull)
