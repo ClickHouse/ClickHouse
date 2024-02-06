@@ -10,11 +10,17 @@ namespace DB
 
 class Context;
 
-class   StorageSystemNumbers final : public IStorage
+class StorageSystemNumbers final : public IStorage
 {
 public:
     /// Otherwise, streams concurrently increment atomic.
-    StorageSystemNumbers(const StorageID & table_id, bool multithreaded_, const std::string& column_name, std::optional<UInt64> limit_ = std::nullopt, UInt64 offset_ = 0, UInt64 step_ = 1);
+    StorageSystemNumbers(
+        const StorageID & table_id,
+        bool multithreaded_,
+        const std::string & column_name,
+        std::optional<UInt64> limit_ = std::nullopt,
+        UInt64 offset_ = 0,
+        UInt64 step_ = 1);
 
     std::string getName() const override { return "SystemNumbers"; }
 
@@ -30,7 +36,6 @@ public:
 
     bool hasEvenlyDistributedRead() const override { return true; }
     bool isSystemStorage() const override { return true; }
-
     bool supportsTransactions() const override { return true; }
 
 private:
@@ -38,11 +43,9 @@ private:
 
     bool multithreaded;
     std::optional<UInt64> limit;
-    UInt64 offset;
+    UInt64 offset;`
     std::string column_name;
-    
     UInt64 step;
-
 };
 
 }

@@ -229,4 +229,4 @@ struct SelectQueryInfo
 
     bool isFinal() const;
 };
-    }
+}

@@ -29,7 +29,7 @@ if (TARGET ch_contrib::azure_sdk)
     target_link_libraries(clickhouse_table_functions PRIVATE ch_contrib::azure_sdk)
 endif ()
 
-if (TARGET ch_co`trib::simdjson)
+if (TARGET ch_contrib::simdjson)
     target_link_libraries(clickhouse_table_functions PRIVATE ch_contrib::simdjson)
 endif ()
 

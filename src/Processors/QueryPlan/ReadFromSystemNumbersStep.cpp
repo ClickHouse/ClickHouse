@@ -28,32 +28,37 @@ namespace
 class NumbersSource : public ISource
 {
 public:
-    NumbersSource(UInt64 block_size_, UInt64 offset_, UInt64 step_, const std::string& column_name, UInt64 inner_step_)
-        : ISource(createHeader(column_name)), block_size(block_size_), next(offset_), step(step_), inner_step(inner_step_), inner_remainder(offset_ % inner_step_)
+    NumbersSource(UInt64 block_size_, UInt64 offset_, UInt64 step_, const std::string & column_name, UInt64 inner_step_)
+        : ISource(createHeader(column_name))
+        , block_size(block_size_)
+        , next(offset_)
+        , step(step_)
+        , inner_step(inner_step_)
+        , inner_remainder(offset_ % inner_step_)
     {
     }
     String getName() const override { return "Numbers"; }
 
-
-    static Block createHeader(const std::string& column_name) { return {ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name)}; }
+    static Block createHeader(const std::string & column_name)
+    {
+        return {ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name)};
+    }
 
 protected:
     Chunk generate() override
     {
-
         UInt64 curr = next; /// The local variable for some reason works faster (>20%) than member of class.
         UInt64 first_element = (curr / inner_step) * inner_step + inner_remainder;
-        if (first_element < curr) {
+        if (first_element < curr)
             first_element += inner_step;
-        }
         UInt64 filtered_block_size = 0;
-        if (first_element - curr >= block_size) {
+        if (first_element - curr >= block_size)
+        {
             auto column = ColumnUInt64::create(0);
             return {Columns{std::move(column)}, filtered_block_size};
         }
-        if (first_element - curr < block_size) {
+        if (first_element - curr < block_size)
             filtered_block_size = (block_size - (first_element - curr) - 1) / inner_step + 1;
-        }
 
         auto column = ColumnUInt64::create(filtered_block_size);
         ColumnUInt64::Container & vec = column->getData();
@@ -76,32 +81,37 @@ private:
     UInt64 inner_remainder;
 };
 
-struct RangeWithStep {
+struct RangeWithStep
+{
     Range range;
     UInt64 step;
 };
 
 using RangesWithStep = std::vector<RangeWithStep>;
 
-std::optional<RangeWithStep> stepped_range_from_range(const Range& r, UInt64 step, UInt64 remainder) {
-    UInt64 begin = (r.left.get<UInt64>() / step) * step;
-    if (begin > std::numeric_limits<UInt64>::max() - remainder) {
+std::optional<RangeWithStep> stepped_range_from_range(const Range & r, UInt64 step, UInt64 remainder)
+{
+    if ((r.right.get<UInt64>() == 0) && (!r.right_included))
         return std::nullopt;
-    }
+    UInt64 begin = (r.left.get<UInt64>() / step) * step;
+    if (begin > std::numeric_limits<UInt64>::max() - remainder)
+        return std::nullopt;
     begin += remainder;
-    while (begin <= r.left.get<UInt128>() - r.left_included)   {
-        if (std::numeric_limits<UInt64>::max() - step < begin) {
+
+    // LOG_DEBUG(&Poco::Logger::get("stepped_range_from_range"), "Begin: {}", begin);
+    // LOG_DEBUG(&Poco::Logger::get("stepped_range_from_range"), "Begin: {}", begin);
+    while ((r.left_included <= r.left.get<UInt64>()) && (begin <= r.left.get<UInt64>() - r.left_included))
+    {
+        if (std::numeric_limits<UInt64>::max() - step < begin)
             return std::nullopt;
-        }
         begin += step;
     }
 
-    LOG_DEBUG(&Poco::Logger::get("stepped_range_from_range"), "Begin: {}", begin);
-    UInt128 right_edge = (r.right.get<UInt128>() + r.right_included);
-    if (begin >= right_edge) {
+    // LOG_DEBUG(&Poco::Logger::get("stepped_range_from_range"), "Begin: {}", begin);
+    if ((begin >= r.right_included) && (begin - r.right_included >= r.right.get<UInt64>()))
         return std::nullopt;
-    }
-    return std::optional{RangeWithStep{Range(begin, true, static_cast<UInt64>(right_edge - 1), true), step}};
+    UInt64 right_edge_included = r.right.get<UInt64>() - (1 - r.right_included);
+    return std::optional{RangeWithStep{Range(begin, true, right_edge_included, true), step}};
 }
 
 [[maybe_unused]] UInt128 sizeOfRange(const RangeWithStep & r)
@@ -144,8 +154,17 @@ public:
 
     using RangesStatePtr = std::shared_ptr<RangesState>;
 
-    [[maybe_unused]] NumbersRangedSource(const RangesWithStep & ranges_, RangesStatePtr & ranges_state_, UInt64 base_block_size_, const std::string& column_name)
-        : ISource(NumbersSource::createHeader(column_name)), ranges(ranges_), ranges_state(ranges_state_), base_block_size(base_block_size_)
+    [[maybe_unused]] NumbersRangedSource(
+        const RangesWithStep & ranges_,
+        RangesStatePtr & ranges_state_,
+        UInt64 base_block_size_,
+        UInt64 step_,
+        const std::string & column_name)
+        : ISource(NumbersSource::createHeader(column_name))
+        , ranges(ranges_)
+        , ranges_state(ranges_state_)
+        , base_block_size(base_block_size_)
+        , step(step_)
     {
     }
 
@@ -157,6 +176,7 @@ protected:
     UInt64 findRanges(RangesPos & start, RangesPos & end, UInt64 base_block_size_)
     {
         std::lock_guard lock(ranges_state->mutex);
+
 
         UInt64 need = base_block_size_;
         UInt64 size = 0; /// how many item found.
@@ -196,6 +216,10 @@ protected:
         }
 
         ranges_state->pos = end;
+
+        LOG_DEBUG(&Poco::Logger::get("Range borders"), "Begin: {} {}", start.offset_in_ranges, static_cast<size_t>(start.offset_in_range));
+        LOG_DEBUG(&Poco::Logger::get("Range borders"), "End: {} {}", end.offset_in_ranges, static_cast<size_t>(end.offset_in_range));
+
         return size;
     }
 
@@ -234,12 +258,19 @@ protected:
                 ? end.offset_in_range - cursor.offset_in_range
                 : static_cast<UInt128>(last_value(range) - first_value(range)) / range.step + 1 - cursor.offset_in_range;
 
+            LOG_DEBUG(
+                &Poco::Logger::get("Generate"),
+                "Can Provide: {}, Block size: {}",
+                static_cast<UInt64>(can_provide),
+                static_cast<UInt64>(block_size));
+
             /// set value to block
             auto set_value = [&pos, this](UInt128 & start_value, UInt128 & end_value)
             {
                 if (end_value > std::numeric_limits<UInt64>::max())
                 {
-                    while (start_value < end_value) {
+                    while (start_value < end_value)
+                    {
                         *(pos++) = start_value;
                         start_value += this->step;
                     }
@@ -248,7 +279,9 @@ protected:
                 {
                     auto start_value_64 = static_cast<UInt64>(start_value);
                     auto end_value_64 = static_cast<UInt64>(end_value);
-                    auto size = end_value_64 - start_value_64;
+                    auto size = (end_value_64 - start_value_64) / this->step;
+                    LOG_DEBUG(
+                        &Poco::Logger::get("Iota"), "Size: {}, Step: {}, Start: {}", static_cast<size_t>(size), this->step, start_value_64);
                     iota_with_step(pos, static_cast<size_t>(size), start_value_64, step);
                     pos += size;
                 }
@@ -374,7 +407,7 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context).expression}
     , max_block_size{max_block_size_}
     , num_streams{num_streams_}
-    , limit_length_and_offset(InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery&>(), context))
+    , limit_length_and_offset(InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context))
     , should_pushdown_limit(shouldPushdownLimit(query_info, limit_length_and_offset.first))
     , limit(query_info.limit)
     , storage_limits(query_info.storage_limits)
@@ -410,14 +443,28 @@ Pipe ReadFromSystemNumbersStep::makePipe()
 {
     auto & numbers_storage = storage->as<StorageSystemNumbers &>();
 
+    LOG_DEBUG(
+        &Poco::Logger::get("Parameters"),
+        "Parameters: Limit: {}, Offset: {} Step: {}",
+        numbers_storage.limit.value(),
+        numbers_storage.offset,
+        numbers_storage.step);
+
     if (!numbers_storage.multithreaded)
         num_streams = 1;
+
+    Pipe pipe;
+    Ranges ranges;
+
+    if (numbers_storage.limit.has_value() && (numbers_storage.limit.value() == 0))
+    {
+        pipe.addSource(std::make_shared<NullSource>(NumbersSource::createHeader(numbers_storage.column_name)));
+        return pipe;
+    }
 
     /// Build rpn of query filters
     KeyCondition condition(buildFilterDAG(), context, column_names, key_expression);
 
-    Pipe pipe;
-    Ranges ranges;
 
     if (condition.extractPlainRanges(ranges))
     {
@@ -430,14 +477,15 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         {
             if (std::numeric_limits<UInt64>::max() - numbers_storage.offset >= *(numbers_storage.limit))
             {
-                table_range.emplace(FieldRef(numbers_storage.offset), true, FieldRef(numbers_storage.offset + *(numbers_storage.limit)), false);
+                table_range.emplace(
+                    FieldRef(numbers_storage.offset), true, FieldRef(numbers_storage.offset + *(numbers_storage.limit)), false);
             }
             /// UInt64 overflow, for example: SELECT number FROM numbers(18446744073709551614, 5)
             else
             {
                 table_range.emplace(FieldRef(numbers_storage.offset), true, std::numeric_limits<UInt64>::max(), true);
                 auto overflow_end = UInt128(numbers_storage.offset) + UInt128(*numbers_storage.limit);
-                overflowed_table_range.emplace( 
+                overflowed_table_range.emplace(
                     FieldRef(UInt64(0)), true, FieldRef(UInt64(overflow_end - std::numeric_limits<UInt64>::max() - 1)), false);
             }
         }
@@ -451,33 +499,58 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         for (auto & r : ranges)
         {
             auto intersected_range = table_range->intersectWith(r);
-            if (intersected_range.has_value()) {
-                auto range_with_step = stepped_range_from_range(intersected_range.value(), numbers_storage.step, numbers_storage.offset % numbers_storage.step);
-                if (range_with_step.has_value()) {
+            if (intersected_range.has_value())
+            {
+                LOG_DEBUG(
+                    &Poco::Logger::get("Ranges"),
+                    "Ranges: {} {} {} {}",
+                    intersected_range->left.get<UInt64>(),
+                    intersected_range->right.get<UInt64>(),
+                    intersected_range->left_included,
+                    intersected_range->right_included);
+                auto range_with_step = stepped_range_from_range(
+                    intersected_range.value(), numbers_storage.step, numbers_storage.offset % numbers_storage.step);
+                if (range_with_step.has_value())
+                {
+                    LOG_DEBUG(
+                        &Poco::Logger::get("Ranges With Step"),
+                        "Ranges: {} {} {} {} {}",
+                        range_with_step->range.left.get<UInt64>(),
+                        range_with_step->range.right.get<UInt64>(),
+                        range_with_step->range.left_included,
+                        range_with_step->range.right_included,
+                        range_with_step->step);
                     intersected_ranges.push_back(*range_with_step);
                 }
             }
         }
 
 
-        for (const auto& range : intersected_ranges) {
-            LOG_DEBUG(&Poco::Logger::get("Ranges"), "Left: {}; Right {}, LI: {}, RI: {}, Step: {}", range.range.left.get<UInt64>(), range.range.right.get<UInt64>(), range.range.left_included, range.range.right_included, range.step);
-            // std::cout << 
-        }
         /// intersection with overflowed_table_range goes back.
         if (overflowed_table_range.has_value())
         {
             for (auto & r : ranges)
             {
                 auto intersected_range = overflowed_table_range->intersectWith(r);
-                if (intersected_range) {
-                    auto range_with_step = stepped_range_from_range(intersected_range.value(), numbers_storage.step, static_cast<UInt64>((static_cast<UInt128>(numbers_storage.offset) + std::numeric_limits<UInt64>::max() + 1) % numbers_storage.step));
-                    if (range_with_step) {
+                if (intersected_range)
+                {
+                    auto range_with_step = stepped_range_from_range(
+                        intersected_range.value(),
+                        numbers_storage.step,
+                        static_cast<UInt64>(
+                            (static_cast<UInt128>(numbers_storage.offset) + std::numeric_limits<UInt64>::max() + 1)
+                            % numbers_storage.step));
+                    if (range_with_step)
                         intersected_ranges.push_back(*range_with_step);
-                    }
                 }
             }
         }
+
+        // for (const auto& range : intersected_ranges)
+        // {
+        //     LOG_DEBUG(&Poco::Logger::get("Ranges with step"), "Left: {}; Right {}, LI: {}, RI: {}, Step: {}", range.range.left.get<UInt64>(), range.range.right.get<UInt64>(), range.range.left_included, range.range.right_included, range.step);
+        //     // std::cout <<
+        // }
 
         /// ranges is blank, return a source who has no data
         if (intersected_ranges.empty())
@@ -492,6 +565,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         if (!intersected_ranges.rbegin()->range.right.isPositiveInfinity() || should_pushdown_limit)
         {
             UInt128 total_size = sizeOfRanges(intersected_ranges);
+            LOG_DEBUG(&Poco::Logger::get("Total_Size"), "Total Size: {}", static_cast<UInt64>(total_size));
             UInt128 query_limit = limit_length + limit_offset;
 
             /// limit total_size by query_limit
@@ -515,7 +589,8 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             auto ranges_state = std::make_shared<NumbersRangedSource::RangesState>();
             for (size_t i = 0; i < num_streams; ++i)
             {
-                auto source = std::make_shared<NumbersRangedSource>(intersected_ranges, ranges_state, max_block_size, numbers_storage.column_name);
+                auto source = std::make_shared<NumbersRangedSource>(
+                    intersected_ranges, ranges_state, max_block_size, numbers_storage.step, numbers_storage.column_name);
 
                 if (i == 0)
                     source->addTotalRowsApprox(total_size);
@@ -529,12 +604,16 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     /// Fall back to NumbersSource
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto source
-            = std::make_shared<NumbersSource>(max_block_size, numbers_storage.offset + i * max_block_size, num_streams * max_block_size, numbers_storage.column_name, numbers_storage.step);
+        auto source = std::make_shared<NumbersSource>(
+            max_block_size,
+            numbers_storage.offset + i * max_block_size,
+            num_streams * max_block_size,
+            numbers_storage.column_name,
+            numbers_storage.step);
 
         if (numbers_storage.limit && i == 0)
         {
-            auto rows_appr = *(numbers_storage.limit);
+            auto rows_appr = (*numbers_storage.limit - 1) / numbers_storage.step + 1;
             if (limit > 0 && limit < rows_appr)
                 rows_appr = limit;
             source->addTotalRowsApprox(rows_appr);
@@ -546,7 +625,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     if (numbers_storage.limit)
     {
         size_t i = 0;
-        auto storage_limit = *(numbers_storage.limit);
+        auto storage_limit = (*numbers_storage.limit - 1) / numbers_storage.step + 1;
         /// This formula is how to split 'limit' elements to 'num_streams' chunks almost uniformly.
         pipe.addSimpleTransform(
             [&](const Block & header)
