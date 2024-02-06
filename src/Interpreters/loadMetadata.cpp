@@ -321,8 +321,8 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
         if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(iterator->table().get()))
         {
             /// We should not rename inner tables of MVs, because MVs are responsible for renaming it...
-            if (mv->hasInnerTable())
-                inner_mv_tables.emplace(mv->getTargetTable()->getStorageID().table_name);
+            for (const StorageID & inner_id : mv->innerTables())
+                inner_mv_tables.insert(inner_id.table_name);
         }
     }
 

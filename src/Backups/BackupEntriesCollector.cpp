@@ -569,7 +569,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
     auto filter_by_table_name = [my_database_info = &database_info](const String & table_name)
     {
         /// We skip inner tables of materialized views.
-        if (table_name.starts_with(".inner_id."))
+        if (table_name.starts_with(".inner_"))
             return false;
 
         if (my_database_info->tables.contains(table_name))

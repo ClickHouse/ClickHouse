@@ -220,6 +220,11 @@ void IStorage::checkAlterPartitionIsPossible(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitioning", getName());
 }
 
+void IStorage::transferAllDataFrom(StoragePtr, bool, bool, ContextPtr)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support atomically moving all data between tables", getName());
+}
+
 StorageID IStorage::getStorageID() const
 {
     std::lock_guard lock(id_mutex);

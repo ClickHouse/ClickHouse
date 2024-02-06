@@ -505,6 +505,18 @@ public:
         const Settings & settings,
         ContextPtr context) const;
 
+    /// Copy or move all data from `source` to this table.
+    /// The two tables should have the same structure and engine.
+    /// If `remove_from_source`, the moved data is removed from `source`.
+    /// If `replace_at_destination`, pre-existing data is removed from `this`.
+    /// All changes to the destination table (removing old data + adding new data) must be atomic.
+    /// Removing data from source table is not necessarily atomic and may happen separately from
+    /// adding data to the destination table.
+    ///
+    /// Used when refreshing a materialized view, to atomically publish the full refresh result from
+    /// internal scratch table to the user-visible table.
+    virtual void transferAllDataFrom(StoragePtr source, bool remove_from_source, bool replace_at_destination, ContextPtr context);
+
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.
       */

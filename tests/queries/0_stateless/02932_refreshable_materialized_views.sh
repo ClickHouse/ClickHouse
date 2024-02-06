@@ -99,14 +99,11 @@ do
     sleep 0.1
 done
 
-# Drop the source table, check that refresh fails and doesn't leave a temp table behind.
+# Drop the source table, check that refresh fails.
 $CLICKHOUSE_CLIENT -nq "
-    select '<9.2: dropping>', countIf(name like '%tmp%'), countIf(name like '%.inner%') from system.tables where database = currentDatabase();
     drop table src;
     system refresh view a;"
 $CLICKHOUSE_CLIENT -nq "system wait view a;" 2>/dev/null && echo "SYSTEM WAIT VIEW failed to fail at $LINENO"
-$CLICKHOUSE_CLIENT -nq "
-    select '<9.4: dropped>', countIf(name like '%tmp%'), countIf(name like '%.inner%') from system.tables where database = currentDatabase();"
 
 # Create the source table again, check that refresh succeeds (in particular that tables are looked
 # up by name rather than uuid).
@@ -335,13 +332,10 @@ $CLICKHOUSE_CLIENT -nq "
     system refresh view k;
     system wait view k;
     select '<35: append>', * from k order by x;"
-# ALTER to non-APPEND
+# ALTERing to non-APPEND is not supported
 $CLICKHOUSE_CLIENT -nq "
-    alter table k modify refresh every 10 year;
-    system wait view k;
-    system refresh view k;
-    system wait view k;
-    select '<36: not append>', * from k order by x;
+    alter table k modify refresh every 10 year;" 2>/dev/null || echo "ALTER from APPEND to non-APPEND failed, as expected"
+$CLICKHOUSE_CLIENT -nq "
     drop table k;
     truncate table src;"
 

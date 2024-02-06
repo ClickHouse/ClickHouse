@@ -100,7 +100,7 @@ public:
     ASTColumns * columns_list = nullptr;
 
     StorageID to_table_id = StorageID::createEmpty();   /// For CREATE MATERIALIZED VIEW mv TO table.
-    UUID to_inner_uuid = UUIDHelpers::Nil;      /// For materialized view with inner table
+    std::vector<UUID> to_inner_uuid;      /// For materialized view with inner table(s)
     ASTStorage * inner_storage = nullptr;      /// For window view with inner table
     ASTStorage * storage = nullptr;
     ASTPtr watermark_function;
@@ -146,12 +146,17 @@ public:
 
     bool isParameterizedView() const;
 
+    bool needsInnerTargetTable() const;
+    bool needsScratchTable() const;
+    size_t needsInnerTables() const;
+
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
     struct UUIDs
     {
         UUID uuid = UUIDHelpers::Nil;
-        UUID to_inner_uuid = UUIDHelpers::Nil;
+        std::vector<UUID> to_inner_uuid;
+
         UUIDs() = default;
         explicit UUIDs(const ASTCreateQuery & query);
         String toString() const;

@@ -975,7 +975,7 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 }
 
-void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database)
+void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & /*database*/)
 {
     /// This is not strict validation, just catches common errors that would make the view not work.
     /// It's possible to circumvent these checks by ALTERing the view or target table after creation.
@@ -1004,13 +1004,6 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
         check_columns = true;
     }
 
-    if (create.refresh_strategy && !create.refresh_strategy->append)
-    {
-        if (database && database->getEngineName() != "Atomic")
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Refreshable materialized views (except with APPEND) only support Atomic database engine, but database {} has engine {}", create.getDatabase(), database->getEngineName());
-    }
-
     if (check_columns)
     {
         Block input_block;
@@ -1026,6 +1019,15 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 {}).getSampleBlock();
         }
 
+        /// Refreshable MVs require all SELECTed columns to exist in the target table. Otherwise
+        /// refresh fails.
+        /// Regular MVs work as long as at least one of the SELECTed columns exists,
+        /// but it seems better to to be strict in CREATE to catch typos, e.g.:
+        ///
+        /// CREATE MATERIALIZED VIEW v (foo Int64, bar String) AS SELECT x AS foo, y AS bat FROM s;
+        ///                                                                         uh oh ^
+        bool strict = create.refresh_strategy || !getContext()->getSettingsRef().materialized_views_allow_unused_columns;
+
         std::unordered_map<std::string_view, DataTypePtr> output_types;
         for (const NameAndTypePair & nt : all_output_columns)
             output_types[nt.name] = nt.type;
@@ -1040,21 +1042,8 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 input_columns.push_back(input_column.cloneEmpty());
                 output_columns.push_back(ColumnWithTypeAndName(it->second->createColumn(), it->second, input_column.name));
             }
-            else if (create.refresh_strategy)
-            {
-                /// Unrecognized columns produced by SELECT query are allowed for regular materialized
-                /// views, but not for refreshable ones. This is in part because it was easier to
-                /// implement, in part because refreshable views have less concern about ALTERing target
-                /// tables.
-                ///
-                /// The motivating scenario for allowing this in regular MV is ALTERing the table+query.
-                /// Suppose the user removes a column from target table, then a minute later
-                /// correspondingly updates the view's query to not produce that column.
-                /// If MV didn't allow unrecognized columns then during that minute all INSERTs into the
-                /// source table would fail - unacceptable.
-                /// For refreshable views, during that minute refreshes will fail - acceptable.
+            else if (strict)
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "SELECT query outputs column with name '{}', which is not found in the target table. Use 'AS' to assign alias that matches a column name.", input_column.name);
-            }
         }
 
         if (input_columns.empty())
@@ -1203,7 +1192,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     }
     else
     {
-        bool has_uuid = create.uuid != UUIDHelpers::Nil || create.to_inner_uuid != UUIDHelpers::Nil;
+        bool has_uuid = create.uuid != UUIDHelpers::Nil || !create.to_inner_uuid.empty();
         if (has_uuid && !is_on_cluster && !internal)
         {
             /// We don't show the following error message either
@@ -1219,7 +1208,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
         /// a) the initiator of `ON CLUSTER` query generated it to ensure the same UUIDs are used on different hosts; or
         /// b) `RESTORE from backup` query generated it to ensure the same UUIDs are used on different hosts.
         create.uuid = UUIDHelpers::Nil;
-        create.to_inner_uuid = UUIDHelpers::Nil;
+        create.to_inner_uuid.clear();
     }
 }
 

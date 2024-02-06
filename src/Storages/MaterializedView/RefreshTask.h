@@ -89,7 +89,6 @@ private:
 
     RefreshSchedule refresh_schedule;
     RefreshSettings refresh_settings;
-    bool refresh_append;
 
     RefreshSet::Handle set_handle;
 
@@ -142,7 +141,7 @@ private:
 
     /// Perform an actual refresh: create new table, run INSERT SELECT, exchange tables, drop old table.
     /// Mutex must be unlocked. Called only from refresh_task.
-    void executeRefreshUnlocked(bool append);
+    void executeRefreshUnlocked();
 
     /// Assigns next_refresh_*
     void advanceNextRefreshTime(std::chrono::system_clock::time_point now);

@@ -217,7 +217,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         if (inside_database)
             return;
         if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table_.get()))
-            if (mv->hasInnerTable())
+            if (!mv->innerTables().empty())
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move MaterializedView with inner table to other database");
     };
 

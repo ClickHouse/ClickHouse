@@ -1385,7 +1385,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     ASTPtr table;
     ASTPtr to_table;
-    ASTPtr to_inner_uuid;
+    std::vector<Field> to_inner_uuid;
     ASTPtr columns_list;
     ASTPtr storage;
     ASTPtr as_database;
@@ -1438,26 +1438,47 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
-    if (ParserKeyword{"REFRESH"}.ignore(pos, expected))
+    if (is_materialized_view && ParserKeyword{"REFRESH"}.ignore(pos, expected))
     {
-        // REFRESH only with materialized views
-        if (!is_materialized_view)
-            return false;
         if (!ParserRefreshStrategy{}.parse(pos, refresh_strategy, expected))
             return false;
     }
 
+    /// <uuid> or (<uuid1>, <uuid2> [, ...])
+    auto parse_to_inner_uuid = [&]() -> bool {
+        ParserStringLiteral literal_p;
+        ASTPtr literal;
+        if (literal_p.parse(pos, literal, expected))
+        {
+            to_inner_uuid.push_back(literal->as<ASTLiteral>()->value);
+            return true;
+        }
+
+        ParserTupleOfLiterals tuple_p;
+        if (!tuple_p.parse(pos, literal, expected))
+            return false;
+        for (const auto & x : literal->as<ASTLiteral>()->value.get<Tuple>())
+            to_inner_uuid.push_back(x);
+        return true;
+    };
+
     if (is_materialized_view && ParserKeyword{"TO INNER UUID"}.ignore(pos, expected))
     {
-        ParserStringLiteral literal_p;
-        if (!literal_p.parse(pos, to_inner_uuid, expected))
+        if (!parse_to_inner_uuid())
             return false;
     }
     else if (is_materialized_view && ParserKeyword{"TO"}.ignore(pos, expected))
     {
-        // TO [db.]table
+        /// TO [db.]table
         if (!table_name_p.parse(pos, to_table, expected))
             return false;
+
+        /// May have both TO and TO INNER UUID.
+        if (ParserKeyword{"TO INNER UUID"}.ignore(pos, expected))
+        {
+            if (!parse_to_inner_uuid())
+                return false;
+        }
     }
 
     /// Optional - a list of columns can be specified. It must fully comply with SELECT.
@@ -1541,8 +1562,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (to_table)
         query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
-    if (to_inner_uuid)
-        query->to_inner_uuid = parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.get<String>());
+    for (const Field & field : to_inner_uuid)
+        query->to_inner_uuid.push_back(parseFromString<UUID>(field.get<String>()));
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);

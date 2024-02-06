@@ -51,6 +51,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTHelpers.h>
@@ -4890,6 +4891,34 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                 else
                     getPartitionIDFromQuery(command.partition, local_context);
             }
+        }
+    }
+}
+
+void MergeTreeData::transferAllDataFrom(StoragePtr source, bool remove_from_source, bool replace_at_destination, ContextPtr local_context)
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    if (metadata_snapshot->hasPartitionKey())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving all data between partitioned MergeTree tables is not implemented");
+
+    auto partition = std::make_shared<ASTPartition>();
+    partition->set(partition->value, makeASTFunction("tuple"));
+
+    if (remove_from_source && !replace_at_destination)
+    {
+        auto source_merge_tree = assert_cast<MergeTreeData *>(source.get());
+        source_merge_tree->movePartitionToTable(shared_from_this(), partition, local_context);
+    }
+    else
+    {
+        replacePartitionFrom(source, partition, replace_at_destination, local_context);
+
+        if (remove_from_source)
+        {
+            auto truncate_query = std::make_shared<ASTDropQuery>();
+            truncate_query->kind = ASTDropQuery::Kind::Truncate;
+            TableExclusiveLockHolder no_lock;
+            source->truncate(truncate_query, metadata_snapshot, local_context, no_lock);
         }
     }
 }

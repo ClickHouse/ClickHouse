@@ -68,6 +68,8 @@ public:
         /// See also IStorage::supportsParallelInsert()
         bool supports_parallel_insert = false;
         bool supports_schema_inference = false;
+        /// IStorage::transferAllDataFrom()
+        bool supports_moving_data_between_tables = false;
         AccessType source_access_type = AccessType::NONE;
     };
 
@@ -101,6 +103,7 @@ public:
         .supports_deduplication = false,
         .supports_parallel_insert = false,
         .supports_schema_inference = false,
+        .supports_moving_data_between_tables = false,
         .source_access_type = AccessType::NONE,
     });
 
@@ -118,14 +121,21 @@ public:
     }
 
     using FeatureMatcherFn = std::function<bool(StorageFeatures)>;
-    std::vector<String> getAllRegisteredNamesByFeatureMatcherFn(FeatureMatcherFn feature_matcher_fn) const
+    String getAllRegisteredNamesByFeatureMatcherFn(FeatureMatcherFn feature_matcher_fn) const
     {
-        std::vector<String> result;
-        for (const auto& pair : storages)
-            if (feature_matcher_fn(pair.second.features))
-                result.push_back(pair.first);
+        String result;
+        for (const auto & pair : storages)
+        {
+            if (!feature_matcher_fn(pair.second.features))
+                continue;
+            if (!result.empty())
+                result += ", ";
+            result += pair.first;
+        }
         return result;
     }
+
+    std::optional<StorageFeatures> tryGetFeatures(const String & name);
 
     AccessType getSourceAccessType(const String & table_engine) const;
 

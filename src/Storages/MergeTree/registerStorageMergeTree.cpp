@@ -760,6 +760,7 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_sort_order = true,
         .supports_ttl = true,
         .supports_parallel_insert = true,
+        .supports_moving_data_between_tables = true,
     };
 
     factory.registerStorage("MergeTree", create, features);

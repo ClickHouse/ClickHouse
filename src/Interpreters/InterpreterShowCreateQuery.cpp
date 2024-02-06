@@ -93,7 +93,7 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
     {
         auto & create = create_query->as<ASTCreateQuery &>();
         create.uuid = UUIDHelpers::Nil;
-        create.to_inner_uuid = UUIDHelpers::Nil;
+        create.to_inner_uuid.clear();
     }
 
     MutableColumnPtr column = ColumnString::create();

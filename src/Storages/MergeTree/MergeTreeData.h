@@ -736,6 +736,8 @@ public:
         const Settings & settings,
         ContextPtr local_context) const override;
 
+    void transferAllDataFrom(StoragePtr source, bool remove_from_source, bool replace_at_destination, ContextPtr local_context) override;
+
     /// Change MergeTreeSettings
     void changeSettings(
         const ASTPtr & new_settings,

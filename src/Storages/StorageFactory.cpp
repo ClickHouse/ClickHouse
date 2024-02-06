@@ -159,19 +159,9 @@ StoragePtr StorageFactory::get(
             auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
             {
                 if (!feature_matcher_fn(it->second.features))
-                {
-                    String msg;
-                    auto supporting_engines = getAllRegisteredNamesByFeatureMatcherFn(feature_matcher_fn);
-                    for (size_t index = 0; index < supporting_engines.size(); ++index)
-                    {
-                        if (index)
-                            msg += ", ";
-                        msg += supporting_engines[index];
-                    }
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support {}. "
                                     "Currently only the following engines have support for the feature: [{}]",
-                                    name, feature_description, msg);
-                }
+                                    name, feature_description, getAllRegisteredNamesByFeatureMatcherFn(feature_matcher_fn));
             };
 
             if (storage_def->settings)
@@ -244,6 +234,14 @@ StorageFactory & StorageFactory::instance()
     return ret;
 }
 
+
+std::optional<StorageFactory::StorageFeatures> StorageFactory::tryGetFeatures(const String & name)
+{
+    auto it = storages.find(table_engine);
+    if (it == storages.end())
+        return std::nullopt;
+    return it->second.features;
+}
 
 AccessType StorageFactory::getSourceAccessType(const String & table_engine) const
 {

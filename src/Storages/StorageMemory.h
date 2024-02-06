@@ -78,6 +78,8 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
+    void transferAllDataFrom(StoragePtr source, bool remove_from_source, bool replace_at_destination, ContextPtr context) override;
+
     std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
 

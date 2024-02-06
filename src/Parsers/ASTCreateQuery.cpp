@@ -349,18 +349,30 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (to_table_id)
     {
-        assert((is_materialized_view || is_window_view) && to_inner_uuid == UUIDHelpers::Nil);
+        assert(is_materialized_view || is_window_view);
         settings.ostr
             << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "")
             << (!to_table_id.database_name.empty() ? backQuoteIfNeed(to_table_id.database_name) + "." : "")
             << backQuoteIfNeed(to_table_id.table_name);
     }
 
-    if (to_inner_uuid != UUIDHelpers::Nil)
+    if (!to_inner_uuid.empty())
     {
-        assert(is_materialized_view && !to_table_id);
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO INNER UUID " << (settings.hilite ? hilite_none : "")
-                      << quoteString(toString(to_inner_uuid));
+        assert(is_materialized_view && to_inner_uuid.size() == needsInnerTables());
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO INNER UUID " << (settings.hilite ? hilite_none : "");
+        if (to_inner_uuid.size() == 1)
+            settings.ostr << quoteString(toString(to_inner_uuid[0]));
+        else
+        {
+            settings.ostr << "(";
+            for (size_t i = 0; i < to_inner_uuid.size(); ++i)
+            {
+                if (i != 0)
+                    settings.ostr << ", ";
+                settings.ostr << quoteString(toString(to_inner_uuid[i]));
+            }
+            settings.ostr << ")";
+        }
     }
 
     if (!as_table.empty())
@@ -469,6 +481,21 @@ bool ASTCreateQuery::isParameterizedView() const
     return false;
 }
 
+bool ASTCreateQuery::needsInnerTargetTable() const
+{
+    return is_materialized_view && !to_table_id;
+}
+
+bool ASTCreateQuery::needsScratchTable() const
+{
+    return is_materialized_view && refresh_strategy && !refresh_strategy->append;
+}
+
+size_t ASTCreateQuery::needsInnerTables() const
+{
+    return size_t(needsInnerTargetTable()) + size_t(needsScratchTable());
+}
+
 
 ASTCreateQuery::UUIDs::UUIDs(const ASTCreateQuery & query)
     : uuid(query.uuid)
@@ -479,7 +506,13 @@ ASTCreateQuery::UUIDs::UUIDs(const ASTCreateQuery & query)
 String ASTCreateQuery::UUIDs::toString() const
 {
     WriteBufferFromOwnString out;
-    out << "{" << uuid << "," << to_inner_uuid << "}";
+    out << "{" << uuid;
+    /// For compatibility.
+    if (to_inner_uuid.empty())
+        out << "," << UUIDHelpers::Nil;
+    for (const UUID & x : to_inner_uuid)
+        out << "," << x;
+    out << "}";
     return out.str();
 }
 
@@ -487,7 +520,15 @@ ASTCreateQuery::UUIDs ASTCreateQuery::UUIDs::fromString(const String & str)
 {
     ReadBufferFromString in{str};
     ASTCreateQuery::UUIDs res;
-    in >> "{" >> res.uuid >> "," >> res.to_inner_uuid >> "}";
+    in >> "{" >> res.uuid;
+    char c;
+    while (in.peek(c) && c == ',')
+    {
+        UUID x;
+        in >> x;
+        res.to_inner_uuid.push_back(x);
+    }
+    in >> "}";
     return res;
 }
 
@@ -501,9 +542,11 @@ ASTCreateQuery::UUIDs ASTCreateQuery::generateRandomUUID(bool always_generate_ne
 
     /// If destination table (to_table_id) is not specified for materialized view,
     /// then MV will create inner table. We should generate UUID of inner table here.
-    bool need_uuid_for_inner_table = !attach && is_materialized_view && !to_table_id;
-    if (need_uuid_for_inner_table && (to_inner_uuid == UUIDHelpers::Nil))
-        to_inner_uuid = UUIDHelpers::generateV4();
+    size_t count = needsInnerTables();
+    chassert(to_inner_uuid.empty() || to_inner_uuid.size() == count);
+    if (!attach && count != 0)
+        while (to_inner_uuid.size() < count)
+            to_inner_uuid.push_back(UUIDHelpers::generateV4());
 
     return UUIDs{*this};
 }

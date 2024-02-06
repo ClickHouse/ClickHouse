@@ -25,7 +25,7 @@ public:
     bool isView() const override { return true; }
     bool isRemote() const override;
 
-    bool hasInnerTable() const { return has_inner_table; }
+    std::vector<StorageID> innerTables() const;
 
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
@@ -102,30 +102,32 @@ public:
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
 
 private:
-    mutable std::mutex target_table_id_mutex;
-    /// Will be initialized in constructor
+    friend class RefreshTask;
+
+    mutable std::mutex inner_table_ids_mutex;
+    /// Inner table `.inner_id.<uuid>` owned by the MV, or non-owned table specified with TO.
     StorageID target_table_id = StorageID::createEmpty();
+    /// Table `.inner_scratch_id.<uuid>` owned by us, if needed.
+    StorageID scratch_table_id = StorageID::createEmpty();
 
     OwnedRefreshTask refresher;
     bool refresh_on_start = false;
 
-    bool has_inner_table = false;
+    bool has_inner_target_table = false;
+    bool has_scratch_table = false;
 
-    friend class RefreshTask;
+    bool scratch_table_is_known_to_be_empty = false;
 
     void checkStatementCanBeForwarded() const;
 
-    ContextMutablePtr createRefreshContext() const;
-    /// Prepare to refresh a refreshable materialized view: create temporary table and form the
-    /// insert-select query.
-    /// out_temp_table_id may be assigned before throwing an exception, in which case the caller
-    /// must drop the temp table before rethrowing.
-    std::shared_ptr<ASTInsertQuery> prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const;
-    StorageID exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context);
-    void dropTempTable(StorageID table, ContextMutablePtr refresh_context);
+    StorageID getScratchTableId() const;
+    StoragePtr tryGetScratchTable() const;
+    StoragePtr getScratchTable() const;
 
-    void setTargetTableId(StorageID id);
-    void updateTargetTableId(std::optional<String> database_name, std::optional<String> table_name);
+    ContextMutablePtr createRefreshContext() const;
+    /// Prepare an INSERT SELECT query for refreshing a refreshable materialized view.
+    std::shared_ptr<ASTInsertQuery> prepareRefresh(ContextMutablePtr refresh_context);
+    void transferRefreshedData(ContextPtr refresh_context);
 };
 
 }

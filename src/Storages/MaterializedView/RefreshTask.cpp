@@ -5,7 +5,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/ProcessList.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Processors/Executors/PipelineExecutor.h>
@@ -31,7 +30,6 @@ RefreshTask::RefreshTask(
     : log(getLogger("RefreshTask"))
     , view(view_)
     , refresh_schedule(strategy)
-    , refresh_append(strategy.append)
 {
     if (strategy.settings != nullptr)
         refresh_settings.applyChanges(strategy.settings->changes);
@@ -107,8 +105,6 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
     refresh_settings = {};
     if (new_strategy.settings != nullptr)
         refresh_settings.applyChanges(new_strategy.settings->changes);
-
-    refresh_append = new_strategy.append;
 }
 
 RefreshInfo RefreshTask::getInfo() const
@@ -293,7 +289,6 @@ void RefreshTask::refreshTask()
 
             /// Perform a refresh.
 
-            bool append = refresh_append;
             refresh_immediately = false;
             info.state = RefreshState::Running;
             CurrentMetrics::Increment metric_inc(CurrentMetrics::RefreshingViews);
@@ -306,7 +301,7 @@ void RefreshTask::refreshTask()
 
             try
             {
-                executeRefreshUnlocked(append);
+                executeRefreshUnlocked();
                 refreshed = true;
             }
             catch (...)
@@ -372,82 +367,67 @@ void RefreshTask::refreshTask()
     }
 }
 
-void RefreshTask::executeRefreshUnlocked(bool append)
+void RefreshTask::executeRefreshUnlocked()
 {
     LOG_DEBUG(log, "Refreshing view {}", view->getStorageID().getFullTableName());
     progress.reset();
 
     ContextMutablePtr refresh_context = view->createRefreshContext();
-    std::optional<StorageID> table_to_drop;
-    try
+
+    /// Run the query.
     {
-        /// Create a table.
-        auto refresh_query = view->prepareRefresh(append, refresh_context, table_to_drop);
+        CurrentThread::QueryScope query_scope(refresh_context); // create a thread group for the query
 
-        /// Run the query.
+        auto refresh_query = view->prepareRefresh(refresh_context);
+
+        BlockIO block_io = InterpreterInsertQuery(refresh_query, refresh_context).execute();
+        QueryPipeline & pipeline = block_io.pipeline;
+
+        pipeline.setProgressCallback([this](const Progress & prog)
         {
-            CurrentThread::QueryScope query_scope(refresh_context); // create a thread group for the query
+            /// TODO: Investigate why most fields are not populated. Change columns in system.view_refreshes as needed, update documentation (docs/en/operations/system-tables/view_refreshes.md).
+            progress.incrementPiecewiseAtomically(prog);
+        });
 
-            BlockIO block_io = InterpreterInsertQuery(refresh_query, refresh_context).execute();
-            QueryPipeline & pipeline = block_io.pipeline;
+        /// Add the query to system.processes and allow it to be killed with KILL QUERY.
+        String query_for_logging = refresh_query->formatForLogging(
+            refresh_context->getSettingsRef().log_queries_cut_to_length);
+        block_io.process_list_entry = refresh_context->getProcessList().insert(
+            query_for_logging, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
+        pipeline.setProcessListElement(block_io.process_list_entry->getQueryStatus());
+        refresh_context->setProcessListElement(block_io.process_list_entry->getQueryStatus());
 
-            pipeline.setProgressCallback([this](const Progress & prog)
-            {
-                /// TODO: Investigate why most fields are not populated. Change columns in system.view_refreshes as needed, update documentation (docs/en/operations/system-tables/view_refreshes.md).
-                progress.incrementPiecewiseAtomically(prog);
-            });
+        if (!pipeline.completed())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for view refresh must be completed");
 
-            /// Add the query to system.processes and allow it to be killed with KILL QUERY.
-            String query_for_logging = refresh_query->formatForLogging(
-                refresh_context->getSettingsRef().log_queries_cut_to_length);
-            block_io.process_list_entry = refresh_context->getProcessList().insert(
-                query_for_logging, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
-            pipeline.setProcessListElement(block_io.process_list_entry->getQueryStatus());
-            refresh_context->setProcessListElement(block_io.process_list_entry->getQueryStatus());
+        PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
+        executor.setReadProgressCallback(pipeline.getReadProgressCallback());
 
-            if (!pipeline.completed())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for view refresh must be completed");
-
-            PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
-            executor.setReadProgressCallback(pipeline.getReadProgressCallback());
-
-            {
-                std::unique_lock exec_lock(executor_mutex);
-                if (interrupt_execution.load())
-                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh cancelled");
-                running_executor = &executor;
-            }
-            SCOPE_EXIT({
-                std::unique_lock exec_lock(executor_mutex);
-                running_executor = nullptr;
-            });
-
-            executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
-
-            /// A cancelled PipelineExecutor may return without exception but with incomplete results.
-            /// In this case make sure to:
-            ///  * report exception rather than success,
-            ///  * do it before destroying the QueryPipeline; otherwise it may fail assertions about
-            ///    being unexpectedly destroyed before completion and without uncaught exception
-            ///    (specifically, the assert in ~WriteBuffer()).
+        {
+            std::unique_lock exec_lock(executor_mutex);
             if (interrupt_execution.load())
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh cancelled");
+            running_executor = &executor;
         }
+        SCOPE_EXIT({
+            std::unique_lock exec_lock(executor_mutex);
+            running_executor = nullptr;
+        });
 
-        /// Exchange tables.
-        if (!append)
-            table_to_drop = view->exchangeTargetTable(refresh_query->table_id, refresh_context);
-    }
-    catch (...)
-    {
-        if (table_to_drop.has_value())
-            view->dropTempTable(table_to_drop.value(), refresh_context);
-        throw;
+        executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+
+        /// A cancelled PipelineExecutor may return without exception but with incomplete results.
+        /// In this case make sure to:
+        ///  * report exception rather than success,
+        ///  * do it before destroying the QueryPipeline; otherwise it may fail assertions about
+        ///    being unexpectedly destroyed before completion and without uncaught exception
+        ///    (specifically, the assert in ~WriteBuffer()).
+        if (interrupt_execution.load())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh cancelled");
     }
 
-    /// Drop the old table (outside the try-catch so we don't try to drop the other table if this fails).
-    if (table_to_drop.has_value())
-        view->dropTempTable(table_to_drop.value(), refresh_context);
+    /// Move data from scratch table to target table.
+    view->transferRefreshedData(refresh_context);
 }
 
 void RefreshTask::advanceNextRefreshTime(std::chrono::system_clock::time_point now)

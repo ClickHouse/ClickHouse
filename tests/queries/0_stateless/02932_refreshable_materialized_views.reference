@@ -14,8 +14,6 @@ CREATE MATERIALIZED VIEW default.b\nREFRESH EVERY 2 YEAR DEPENDS ON default.a\n(
 <8: refreshed>	20
 <9: refreshed>	a	Scheduled	Finished	2054-01-01 00:00:00
 <9: refreshed>	b	Scheduled	Finished	2054-01-01 00:00:00
-<9.2: dropping>	0	2
-<9.4: dropped>	0	2
 <10: creating>	a	Scheduled	[]	2054-01-01 00:00:00
 <10: creating>	b	WaitingForDependencies	['default.a']	2054-01-01 00:00:00
 <11: chain-refreshed a>	4
@@ -53,8 +51,7 @@ CREATE MATERIALIZED VIEW default.h\nREFRESH EVERY 1 SECOND TO default.dest\n(\n 
 <35: append>	10
 <35: append>	20
 <35: append>	30
-<36: not append>	20
-<36: not append>	30
+ALTER from APPEND to non-APPEND failed, as expected
 <37: append chain>	100
 <38: append chain>	100
 <38: append chain>	100

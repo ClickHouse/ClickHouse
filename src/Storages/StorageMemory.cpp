@@ -513,6 +513,36 @@ void StorageMemory::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 }
 
+void StorageMemory::transferAllDataFrom(StoragePtr source, bool remove_from_source, bool replace_at_destination, ContextPtr)
+{
+    StorageMemory * from = assert_cast<StorageMemory *>(source.get());
+
+    std::scoped_lock locks {mutex, from->mutex};
+
+    if (replace_at_destination)
+    {
+        data.set(std::make_unique<Blocks>(*from->data.get()));
+        total_size_bytes.store(from->total_size_bytes, std::memory_order_relaxed);
+        total_size_rows.store(from->total_size_rows, std::memory_order_relaxed);
+    }
+    else
+    {
+        auto added = from->data.get();
+        auto merged = std::make_unique<Blocks>(*data.get());
+        merged->insert(merged->end(), added->begin(), added->end());
+        data.set(std::move(merged));
+        total_size_bytes.fetch_add(from->total_size_bytes, std::memory_order_relaxed);
+        total_size_rows.fetch_add(from->total_size_rows, std::memory_order_relaxed);
+    }
+
+    if (remove_from_source)
+    {
+        from->data.set(std::make_unique<Blocks>());
+        from->total_size_bytes.store(0, std::memory_order_relaxed);
+        from->total_size_rows.store(0, std::memory_order_relaxed);
+    }
+}
+
 std::optional<UInt64> StorageMemory::totalRows(const Settings &) const
 {
     /// All modifications of these counters are done under mutex which automatically guarantees synchronization/consistency
