@@ -290,7 +290,6 @@ ReturnType SerializationNullable::deserializeTextEscapedAndRawImpl(IColumn & col
                                                     const SerializationPtr & nested_serialization)
 {
     const String & null_representation = settings.tsv.null_representation;
-    const bool supports_crlf = settings.tsv.crlf_end_of_line_input;
 
     /// Some data types can deserialize absence of data (e.g. empty string), so eof is ok.
     if (istr.eof() || (!null_representation.empty() && *istr.position() != null_representation[0]))
@@ -310,10 +309,10 @@ ReturnType SerializationNullable::deserializeTextEscapedAndRawImpl(IColumn & col
     /// Check if we have enough data in buffer to check if it's a null.
     if (istr.available() > null_representation.size())
     {
-        auto check_for_null = [&istr, &null_representation, &supports_crlf]()
+        auto check_for_null = [&istr, &null_representation]()
         {
             auto * pos = istr.position();
-            if (checkString(null_representation, istr) && (*istr.position() == '\t' || *istr.position() == '\n' || (supports_crlf && *istr.position() == '\r')))
+            if (checkString(null_representation, istr) && (*istr.position() == '\t' || *istr.position() == '\n'))
                 return true;
             istr.position() = pos;
             return false;

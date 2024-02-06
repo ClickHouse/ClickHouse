@@ -23,9 +23,13 @@ namespace ErrorCodes
 
 /** Check for a common error case - usage of Windows line feed.
   */
+template<bool supports_crlf>
 static void checkForCarriageReturn(ReadBuffer & in)
 {
-    if (!in.eof() && (in.position()[0] == '\r' || (in.position() != in.buffer().begin() && in.position()[-1] == '\r')))
+    bool crlf_escaped = false;
+    if constexpr (supports_crlf)
+        crlf_escaped = true;
+    if (!in.eof() && (in.position()[0] == '\r' || (crlf_escaped ? false : (in.position() != in.buffer().begin() && in.position()[-1] == '\r'))))
         throw Exception(ErrorCodes::INCORRECT_DATA, "\nYou have carriage return (\\r, 0x0D, ASCII 13) at end of first row."
             "\nIt's like your input data has DOS/Windows style line separators, that are illegal in TabSeparated format."
             " You must transform your file to Unix format."
@@ -90,12 +94,13 @@ void TabSeparatedFormatReader::skipFieldDelimiter()
 
 void TabSeparatedFormatReader::skipRowEndDelimiter()
 {
+    bool supports_crfl = format_settings.tsv.crlf_end_of_line_input;
     if (buf->eof())
         return;
 
     if (unlikely(first_row))
-    {
-        checkForCarriageReturn(*buf);
+    {   
+        supports_crfl ? checkForCarriageReturn<true>(*buf) : checkForCarriageReturn<false>(*buf);
         first_row = false;
     }
 
