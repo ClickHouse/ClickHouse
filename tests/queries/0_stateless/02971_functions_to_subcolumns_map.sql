@@ -10,10 +10,22 @@ SET allow_experimental_analyzer = 0;
 EXPLAIN SYNTAX SELECT length(m) FROM t_func_to_subcolumns_map;
 SELECT length(m) FROM t_func_to_subcolumns_map;
 
+EXPLAIN SYNTAX SELECT empty(m) FROM t_func_to_subcolumns_map;
+SELECT empty(m) FROM t_func_to_subcolumns_map;
+
+EXPLAIN SYNTAX SELECT notEmpty(m) FROM t_func_to_subcolumns_map;
+SELECT notEmpty(m) FROM t_func_to_subcolumns_map;
+
 SET optimize_functions_to_subcolumns = 1;
 SET allow_experimental_analyzer = 1;
 
 EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT length(m) FROM t_func_to_subcolumns_map;
 SELECT length(m) FROM t_func_to_subcolumns_map;
+
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT empty(m) FROM t_func_to_subcolumns_map;
+SELECT empty(m) FROM t_func_to_subcolumns_map;
+
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT notEmpty(m) FROM t_func_to_subcolumns_map;
+SELECT notEmpty(m) FROM t_func_to_subcolumns_map;
 
 DROP TABLE t_func_to_subcolumns_map;

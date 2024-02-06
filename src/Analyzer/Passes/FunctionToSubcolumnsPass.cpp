@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeVariant.h>
 
 #include <Storages/IStorage.h>
 
@@ -24,6 +25,181 @@ namespace DB
 
 namespace
 {
+
+void optimizeFunctionLength(QueryTreeNodePtr & node, FunctionNode &, ColumnNode & column_node, ContextPtr)
+{
+    /// Replace `length(argument)` with `argument.size0`
+    /// `argument` may be Array or Map.
+
+    NameAndTypePair column{column_node.getColumnName() + ".size0", std::make_shared<DataTypeUInt64>()};
+    node = std::make_shared<ColumnNode>(column, column_node.getColumnSource());
+}
+
+template <bool positive>
+void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, ColumnNode & column_node, ContextPtr context)
+{
+    /// Replace `empty(argument)` with `equals(argument.size0, 0)` if positive
+    /// Replace `notEmpty(argument)` with `notEquals(argument.size0, 0)` if not positive
+    /// `argument` may be Array or Map.
+
+    NameAndTypePair column{column_node.getColumnName() + ".size0", std::make_shared<DataTypeUInt64>()};
+    auto & function_arguments_nodes = function_node.getArguments().getNodes();
+
+    function_arguments_nodes.clear();
+    function_arguments_nodes.push_back(std::make_shared<ColumnNode>(column, column_node.getColumnSource()));
+    function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
+
+    auto function_name = positive ? "equals" : "notEquals";
+    resolveOrdinaryFunctionNodeByName(function_node, function_name, std::move(context));
+}
+
+String getSubcolumnNameForElement(const Field & value, const DataTypeTuple & data_type_tuple)
+{
+    if (value.getType() == Field::Types::String)
+        return value.get<const String &>();
+
+    if (value.getType() == Field::Types::UInt64)
+        return data_type_tuple.getNameByPosition(value.get<UInt64>());
+
+    return "";
+}
+
+String getSubcolumnNameForElement(const Field & value, const DataTypeVariant &)
+{
+    if (value.getType() == Field::Types::String)
+        return value.get<const String &>();
+
+    return "";
+}
+
+template <typename DataType>
+void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnNode & column_node, ContextPtr)
+{
+    /// Replace `tupleElement(tuple_argument, string_literal)`, `tupleElement(tuple_argument, integer_literal)` with `tuple_argument.column_name`.
+    /// Replace `variantElement(variant_argument, string_literal)` with `variant_argument.column_name`.
+
+    auto & function_arguments_nodes = function_node.getArguments().getNodes();
+    if (function_arguments_nodes.size() != 2)
+        return;
+
+    const auto * second_argument_constant_node = function_arguments_nodes[1]->as<ConstantNode>();
+    if (!second_argument_constant_node)
+        return;
+
+    auto column_type = column_node.getColumnType();
+    const auto & data_type_concrete = assert_cast<const DataType &>(*column_type);
+
+    auto subcolumn_name = getSubcolumnNameForElement(second_argument_constant_node->getValue(), data_type_concrete);
+    if (subcolumn_name.empty())
+        return;
+
+    NameAndTypePair column{column_node.getColumnName() + "." + subcolumn_name, function_node.getResultType()};
+    node = std::make_shared<ColumnNode>(column, column_node.getColumnSource());
+}
+
+using NodeToSubcolumnTransformer = std::function<void(QueryTreeNodePtr &, FunctionNode &, ColumnNode &, ContextPtr)>;
+
+std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transformers =
+{
+    {
+        {TypeIndex::Array, "length"}, optimizeFunctionLength,
+    },
+    {
+        {TypeIndex::Array, "empty"}, optimizeFunctionEmpty<true>,
+    },
+    {
+        {TypeIndex::Array, "notEmpty"}, optimizeFunctionEmpty<false>,
+    },
+    {
+        {TypeIndex::Map, "length"}, optimizeFunctionLength,
+    },
+    {
+        {TypeIndex::Map, "empty"}, optimizeFunctionEmpty<true>,
+    },
+    {
+        {TypeIndex::Map, "notEmpty"}, optimizeFunctionEmpty<false>,
+    },
+    {
+        {TypeIndex::Map, "mapKeys"},
+        [](QueryTreeNodePtr & node, FunctionNode & function_node, ColumnNode & column_node, ContextPtr)
+        {
+            /// Replace `mapKeys(map_argument)` with `map_argument.keys`
+            NameAndTypePair column{column_node.getColumnName() + ".keys", function_node.getResultType()};
+            node = std::make_shared<ColumnNode>(column, column_node.getColumnSource());
+        },
+    },
+    {
+        {TypeIndex::Map, "mapValues"},
+        [](QueryTreeNodePtr & node, FunctionNode & function_node, ColumnNode & column_node, ContextPtr)
+        {
+            /// Replace `mapValues(map_argument)` with `map_argument.values`
+            NameAndTypePair column{column_node.getColumnName() + ".values", function_node.getResultType()};
+            node = std::make_shared<ColumnNode>(column, column_node.getColumnSource());
+        },
+    },
+    {
+        {TypeIndex::Map, "mapContains"},
+        [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnNode & column_node, ContextPtr context)
+        {
+            /// Replace `mapContains(map_argument, argument)` with `has(map_argument.keys, argument)`
+            auto column_type = column_node.getColumnType();
+            const auto & data_type_map = assert_cast<const DataTypeMap &>(*column_type);
+
+            NameAndTypePair column{column_node.getColumnName() + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
+            auto & function_arguments_nodes = function_node.getArguments().getNodes();
+
+            auto has_function_argument = std::make_shared<ColumnNode>(column, column_node.getColumnSource());
+            function_arguments_nodes[0] = std::move(has_function_argument);
+
+            resolveOrdinaryFunctionNodeByName(function_node, "has", context);
+        },
+    },
+    {
+        {TypeIndex::Nullable, "count"},
+        [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnNode & column_node, ContextPtr context)
+        {
+            /// Replace `count(nullable_argument)` with `sum(not(nullable_argument.null))`
+            NameAndTypePair column{column_node.getColumnName() + ".null", std::make_shared<DataTypeUInt8>()};
+            auto & function_arguments_nodes = function_node.getArguments().getNodes();
+
+            auto new_column_node = std::make_shared<ColumnNode>(column, column_node.getColumnSource());
+            auto function_node_not = std::make_shared<FunctionNode>("not");
+
+            function_node_not->getArguments().getNodes().push_back(std::move(new_column_node));
+            resolveOrdinaryFunctionNodeByName(*function_node_not, "not", context);
+
+            function_arguments_nodes = {std::move(function_node_not)};
+            resolveAggregateFunctionNodeByName(function_node, "sum");
+        },
+    },
+    {
+        {TypeIndex::Nullable, "isNull"},
+        [](QueryTreeNodePtr & node, FunctionNode &, ColumnNode & column_node, ContextPtr)
+        {
+            /// Replace `isNull(nullable_argument)` with `nullable_argument.null`
+            NameAndTypePair column{column_node.getColumnName() + ".null", std::make_shared<DataTypeUInt8>()};
+            node = std::make_shared<ColumnNode>(column, column_node.getColumnSource());
+        },
+    },
+    {
+        {TypeIndex::Nullable, "isNotNull"},
+        [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnNode & column_node, ContextPtr context)
+        {
+            /// Replace `isNotNull(nullable_argument)` with `not(nullable_argument.null)`
+            NameAndTypePair column{column_node.getColumnName() + ".null", std::make_shared<DataTypeUInt8>()};
+            auto & function_arguments_nodes = function_node.getArguments().getNodes();
+
+            function_arguments_nodes = {std::make_shared<ColumnNode>(column, column_node.getColumnSource())};
+            resolveOrdinaryFunctionNodeByName(function_node, "not", context);
+        },
+    },
+    {
+        {TypeIndex::Tuple, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeTuple>,
+    },
+    {
+        {TypeIndex::Variant, "variantElement"}, optimizeTupleOrVariantElement<DataTypeVariant>,
+    },
+};
 
 std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimization(const QueryTreeNodePtr & node)
 {
@@ -161,54 +337,13 @@ private:
 
     void enterImpl(const FunctionNode & function_node, const ColumnNode & first_argument_column_node, const TableNode & table_node)
     {
-        const auto & function_arguments_nodes = function_node.getArguments().getNodes();
-        const auto & function_name = function_node.getFunctionName();
-
         auto column = first_argument_column_node.getColumn();
-        WhichDataType column_type(column.type);
-
         auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
+
         Identifier qualified_name({table_name, column.name});
 
-        if (function_arguments_nodes.size() == 1)
-        {
-            if (column_type.isArray())
-            {
-                if (function_name == "length" || function_name == "empty" || function_name == "notEmpty")
-                    ++data.optimized_identifiers_count[qualified_name];
-            }
-            else if (column_type.isNullable())
-            {
-                if (function_name == "count" || function_name == "isNull" || function_name == "isNotNull")
-                    ++data.optimized_identifiers_count[qualified_name];
-            }
-            else if (column_type.isMap())
-            {
-                if (function_name == "length" || function_name == "mapKeys" || function_name == "mapValues")
-                    ++data.optimized_identifiers_count[qualified_name];
-            }
-        }
-        else if (function_arguments_nodes.size() == 2)
-        {
-            const auto * second_argument_constant_node = function_arguments_nodes[1]->as<ConstantNode>();
-            if (function_name == "tupleElement" && column_type.isTuple() && second_argument_constant_node)
-            {
-                const auto & constant_value = second_argument_constant_node->getValue();
-                const auto & constant_value_type = constant_value.getType();
-
-                if (constant_value_type == Field::Types::String || constant_value_type == Field::Types::UInt64)
-                    ++data.optimized_identifiers_count[qualified_name];
-            }
-            else if (function_name == "variantElement" && column_type.isVariant() && second_argument_constant_node)
-            {
-                if (second_argument_constant_node->getValue().getType() == Field::Types::String)
-                    ++data.optimized_identifiers_count[qualified_name];
-            }
-            else if (function_name == "mapContains" && column_type.isMap())
-            {
-                ++data.optimized_identifiers_count[qualified_name];
-            }
-        }
+        if (node_transformers.contains({column.type->getTypeId(), function_node.getFunctionName()}))
+            ++data.optimized_identifiers_count[qualified_name];
     }
 };
 
@@ -236,9 +371,6 @@ public:
         if (!function_node || !first_argument_column_node || !table_node)
             return;
 
-        auto & function_arguments_nodes = function_node->getArguments().getNodes();
-        const auto & function_name = function_node->getFunctionName();
-
         auto column = first_argument_column_node->getColumn();
         auto table_name = table_node->getStorage()->getStorageID().getFullTableName();
 
@@ -246,176 +378,9 @@ public:
         if (!identifiers_to_optimize.contains(qualified_name))
             return;
 
-        auto column_source = first_argument_column_node->getColumnSource();
-        WhichDataType column_type(column.type);
-
-        if (function_arguments_nodes.size() == 1)
-        {
-            if (column_type.isArray())
-            {
-                if (function_name == "length")
-                {
-                    /// Replace `length(array_argument)` with `array_argument.size0`
-                    column.name += ".size0";
-                    column.type = std::make_shared<DataTypeUInt64>();
-
-                    node = std::make_shared<ColumnNode>(column, column_source);
-                }
-                else if (function_name == "empty")
-                {
-                    /// Replace `empty(array_argument)` with `equals(array_argument.size0, 0)`
-                    column.name += ".size0";
-                    column.type = std::make_shared<DataTypeUInt64>();
-
-                    function_arguments_nodes.clear();
-                    function_arguments_nodes.push_back(std::make_shared<ColumnNode>(column, column_source));
-                    function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
-
-                    resolveOrdinaryFunctionNodeByName(*function_node, "equals", getContext());
-                }
-                else if (function_name == "notEmpty")
-                {
-                    /// Replace `notEmpty(array_argument)` with `notEquals(array_argument.size0, 0)`
-                    column.name += ".size0";
-                    column.type = std::make_shared<DataTypeUInt64>();
-
-                    function_arguments_nodes.clear();
-                    function_arguments_nodes.push_back(std::make_shared<ColumnNode>(column, column_source));
-                    function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
-
-                    resolveOrdinaryFunctionNodeByName(*function_node, "notEquals", getContext());
-                }
-            }
-            else if (column_type.isNullable())
-            {
-                if (function_name == "count")
-                {
-                    /// Replace `count(nullable_argument)` with `sum(not(nullable_argument.null))`
-                    column.name += ".null";
-                    column.type = std::make_shared<DataTypeUInt8>();
-
-                    auto column_node = std::make_shared<ColumnNode>(column, column_source);
-                    auto function_node_not = std::make_shared<FunctionNode>("not");
-
-                    function_node_not->getArguments().getNodes().push_back(std::move(column_node));
-                    resolveOrdinaryFunctionNodeByName(*function_node_not, "not", getContext());
-
-                    function_arguments_nodes = {std::move(function_node_not)};
-                    resolveAggregateFunctionNodeByName(*function_node, "sum");
-                }
-                else if (function_name == "isNull")
-                {
-                    /// Replace `isNull(nullable_argument)` with `nullable_argument.null`
-                    column.name += ".null";
-                    column.type = std::make_shared<DataTypeUInt8>();
-
-                    node = std::make_shared<ColumnNode>(column, column_source);
-                }
-                else if (function_name == "isNotNull")
-                {
-                    /// Replace `isNotNull(nullable_argument)` with `not(nullable_argument.null)`
-                    column.name += ".null";
-                    column.type = std::make_shared<DataTypeUInt8>();
-
-                    function_arguments_nodes = {std::make_shared<ColumnNode>(column, column_source)};
-
-                    resolveOrdinaryFunctionNodeByName(*function_node, "not", getContext());
-                }
-            }
-            else if (column_type.isMap())
-            {
-                if (function_name == "length")
-                {
-                    /// Replace `length(map_argument)` with `map_argument.size0`
-                    column.name += ".size0";
-                    column.type = std::make_shared<DataTypeUInt64>();
-
-                    node = std::make_shared<ColumnNode>(column, column_source);
-                }
-                else if (function_name == "mapKeys")
-                {
-                    /// Replace `mapKeys(map_argument)` with `map_argument.keys`
-                    column.name += ".keys";
-                    column.type = function_node->getResultType();
-
-                    node = std::make_shared<ColumnNode>(column, column_source);
-                }
-                else if (function_name == "mapValues")
-                {
-                    /// Replace `mapValues(map_argument)` with `map_argument.values`
-                    column.name += ".values";
-                    column.type = function_node->getResultType();
-
-                    node = std::make_shared<ColumnNode>(column, column_source);
-                }
-            }
-        }
-        else if (function_arguments_nodes.size() == 2)
-        {
-            const auto * second_argument_constant_node = function_arguments_nodes[1]->as<ConstantNode>();
-            if (function_name == "tupleElement" && column_type.isTuple() && second_argument_constant_node)
-            {
-                /** Replace `tupleElement(tuple_argument, string_literal)`, `tupleElement(tuple_argument, integer_literal)`
-                  * with `tuple_argument.column_name`.
-                  */
-                const auto & tuple_element_constant_value = second_argument_constant_node->getValue();
-                const auto & tuple_element_constant_value_type = tuple_element_constant_value.getType();
-
-                const auto & data_type_tuple = assert_cast<const DataTypeTuple &>(*column.type);
-
-                String subcolumn_name;
-
-                if (tuple_element_constant_value_type == Field::Types::String)
-                {
-                    subcolumn_name = tuple_element_constant_value.get<const String &>();
-                }
-                else if (tuple_element_constant_value_type == Field::Types::UInt64)
-                {
-                    auto tuple_column_index = tuple_element_constant_value.get<UInt64>();
-                    subcolumn_name = data_type_tuple.getNameByPosition(tuple_column_index);
-                }
-                else
-                {
-                    return;
-                }
-
-                column.name += '.';
-                column.name += subcolumn_name;
-                column.type = function_node->getResultType();
-
-                node = std::make_shared<ColumnNode>(column, column_source);
-            }
-            else if (function_name == "variantElement" && isVariant(column_type) && second_argument_constant_node)
-            {
-                /// Replace `variantElement(variant_argument, type_name)` with `variant_argument.type_name`.
-                const auto & variant_element_constant_value = second_argument_constant_node->getValue();
-                String subcolumn_name;
-
-                if (variant_element_constant_value.getType() != Field::Types::String)
-                    return;
-
-                subcolumn_name = variant_element_constant_value.get<const String &>();
-
-                column.name += '.';
-                column.name += subcolumn_name;
-                column.type = function_node->getResultType();
-
-                node = std::make_shared<ColumnNode>(column, column_source);
-            }
-            else if (function_name == "mapContains" && column_type.isMap())
-            {
-                const auto & data_type_map = assert_cast<const DataTypeMap &>(*column.type);
-
-                /// Replace `mapContains(map_argument, argument)` with `has(map_argument.keys, argument)`
-                column.name += ".keys";
-                column.type = std::make_shared<DataTypeArray>(data_type_map.getKeyType());
-
-                auto has_function_argument = std::make_shared<ColumnNode>(column, column_source);
-                function_arguments_nodes[0] = std::move(has_function_argument);
-
-                resolveOrdinaryFunctionNodeByName(*function_node, "has", getContext());
-            }
-        }
+        auto transformer_it = node_transformers.find({column.type->getTypeId(), function_node->getFunctionName()});
+        if (transformer_it != node_transformers.end())
+            transformer_it->second(node, *function_node, *first_argument_column_node, getContext());
     }
 };
 
