@@ -9,13 +9,11 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsConversion.h>
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/numLiteralChars.h>
-
-#include <Interpreters/Context.h>
-#include <Interpreters/castColumn.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -322,18 +320,6 @@ private:
             return writeNumber2(dest, ToMonthImpl::execute(source, timezone));
         }
 
-        size_t mysqlMonthWithoutLeadingZero(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
-        {
-            auto month = ToMonthImpl::execute(source, timezone);
-            if (month < 10)
-            {
-                dest[0] = '0' + month;
-                return 1;
-            }
-            else
-                return writeNumber2(dest, month);
-        }
-
         static size_t monthOfYearText(char * dest, Time source, bool abbreviate, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             auto month = ToMonthImpl::execute(source, timezone);
@@ -416,36 +402,10 @@ private:
             return writeNumber2(dest, ToHourImpl::execute(source, timezone));
         }
 
-        size_t mysqlHour24WithoutLeadingZero(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
-        {
-            auto hour = ToHourImpl::execute(source, timezone);
-            if (hour < 10)
-            {
-                dest[0] = '0' + hour;
-                return 1;
-            }
-            else
-                return writeNumber2(dest, hour);
-        }
-
         size_t mysqlHour12(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            auto hour = ToHourImpl::execute(source, timezone);
-            hour = (hour == 0) ? 12 : (hour > 12 ? hour - 12 : hour);
-            return writeNumber2(dest, hour);
-        }
-
-        size_t mysqlHour12WithoutLeadingZero(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
-        {
-            auto hour = ToHourImpl::execute(source, timezone);
-            hour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
-            if (hour < 10)
-            {
-                dest[0] = '0' + hour;
-                return 1;
-            }
-            else
-                return writeNumber2(dest, hour);
+            auto x = ToHourImpl::execute(source, timezone);
+            return writeNumber2(dest, x == 0 ? 12 : (x > 12 ? x - 12 : x));
         }
 
         size_t mysqlMinute(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -489,20 +449,6 @@ private:
         }
 
         size_t mysqlFractionalSecond(char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
-        {
-            if (scale == 0)
-                scale = 6;
-
-            for (Int64 i = scale, value = fractional_second; i > 0; --i)
-            {
-                dest[i - 1] += value % 10;
-                value /= 10;
-            }
-            return scale;
-        }
-
-        /// Same as mysqlFractionalSecond but prints a single zero if the value has no fractional seconds
-        size_t mysqlFractionalSecondSingleZero(char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
         {
             if (scale == 0)
                 scale = 1;
@@ -727,11 +673,9 @@ private:
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'%' must not be the last character in the format string, use '%%' instead");
     }
 
-    static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name, bool mysql_format_ckl_without_leading_zeros)
+    static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format)
     {
         static constexpr std::array variable_width_formatter = {'W'};
-        static constexpr std::array variable_width_formatter_M_is_month_name = {'W', 'M'};
-        static constexpr std::array variable_width_formatter_leading_zeros = {'c', 'l', 'k'};
 
         for (size_t i = 0; i < format.size(); ++i)
         {
@@ -740,27 +684,10 @@ private:
                 case '%':
                     if (i + 1 >= format.size())
                         throwLastCharacterIsPercentException();
-                    if (mysql_M_is_month_name)
-                    {
-                        if (std::any_of(
-                                variable_width_formatter_M_is_month_name.begin(), variable_width_formatter_M_is_month_name.end(),
-                                [&](char c){ return c == format[i + 1]; }))
-                            return false;
-                    }
-                    if (mysql_format_ckl_without_leading_zeros)
-                    {
-                        if (std::any_of(
-                                variable_width_formatter_leading_zeros.begin(), variable_width_formatter_leading_zeros.end(),
-                                [&](char c){ return c == format[i + 1]; }))
-                            return false;
-                    }
-                    else
-                    {
-                        if (std::any_of(
-                                variable_width_formatter.begin(), variable_width_formatter.end(),
-                                [&](char c){ return c == format[i + 1]; }))
-                            return false;
-                    }
+                    if (std::any_of(
+                            variable_width_formatter.begin(), variable_width_formatter.end(),
+                            [&](char c){ return c == format[i + 1]; }))
+                        return false;
                     i += 1;
                     continue;
                 default:
@@ -771,21 +698,10 @@ private:
         return true;
     }
 
-    const bool mysql_M_is_month_name;
-    const bool mysql_f_prints_single_zero;
-    const bool mysql_format_ckl_without_leading_zeros;
-
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionFormatDateTimeImpl>(context); }
-
-    explicit FunctionFormatDateTimeImpl(ContextPtr context)
-        : mysql_M_is_month_name(context->getSettings().formatdatetime_parsedatetime_m_is_month_name)
-        , mysql_f_prints_single_zero(context->getSettings().formatdatetime_f_prints_single_zero)
-        , mysql_format_ckl_without_leading_zeros(context->getSettings().formatdatetime_format_without_leading_zeros)
-    {
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatDateTimeImpl>(); }
 
     String getName() const override
     {
@@ -796,7 +712,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -853,7 +769,18 @@ public:
         {
             if (arguments.size() == 1)
             {
-                return castColumn(arguments[0], result_type);
+                if (!castType(arguments[0].type.get(), [&](const auto & type)
+                    {
+                        using FromDataType = std::decay_t<decltype(type)>;
+                        res = ConvertImpl<FromDataType, DataTypeDateTime, Name>::execute(arguments, result_type, input_rows_count);
+                        return true;
+                    }))
+                {
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                    "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime "
+                                    "or DateTime64 when arguments size is 1.",
+                                    arguments[0].column->getName(), getName());
+                }
             }
             else
             {
@@ -894,25 +821,17 @@ public:
     template <typename DataType>
     ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
     {
-        auto non_const_datetime = arguments[0].column->convertToFullColumnIfConst();
-        auto * times = checkAndGetColumn<typename DataType::ColumnType>(non_const_datetime.get());
+        auto * times = checkAndGetColumn<typename DataType::ColumnType>(arguments[0].column.get());
         if (!times)
             return nullptr;
 
-        String format;
-        if (const auto * format_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
-            format = format_column->getValue<String>();
-        else
+        const ColumnConst * format_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+        if (!format_column)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of second ('format') argument of function {}. Must be constant string.",
                 arguments[1].column->getName(), getName());
 
-        const ColumnConst * const_time_zone_column = nullptr;
-        const DateLUTImpl * time_zone = nullptr;
-        if (arguments.size() == 2)
-            time_zone = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
-        else if (arguments.size() > 2)
-            const_time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[2].column.get());
+        String format = format_column->getValue<String>();
 
         UInt32 scale [[maybe_unused]] = 0;
         if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
@@ -933,26 +852,22 @@ public:
         ///   column rows are NOT populated with the template and left uninitialized. We run the normal instructions for formatters AND
         ///   instructions that copy literal characters before/between/after formatters. As a result, each byte of each result row is
         ///   written which is obviously slow.
-        bool mysql_with_only_fixed_length_formatters = (format_syntax == FormatSyntax::MySQL) ? containsOnlyFixedWidthMySQLFormatters(format, mysql_M_is_month_name, mysql_format_ckl_without_leading_zeros) : false;
+        bool mysql_with_only_fixed_length_formatters = (format_syntax == FormatSyntax::MySQL) ? containsOnlyFixedWidthMySQLFormatters(format) : false;
 
         using T = typename InstructionValueTypeMap<DataType>::InstructionValueType;
         std::vector<Instruction<T>> instructions;
         String out_template;
         size_t out_template_size = parseFormat(format, instructions, scale, mysql_with_only_fixed_length_formatters, out_template);
 
+        const DateLUTImpl * time_zone_tmp = nullptr;
         if (castType(arguments[0].type.get(), [&]([[maybe_unused]] const auto & type) { return true; }))
-        {
-            if (const_time_zone_column)
-                time_zone = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
-        }
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
         else if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
-        {
-            if (const_time_zone_column)
-                time_zone = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
-        }
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
         else
-            time_zone = &DateLUT::instance();
+            time_zone_tmp = &DateLUT::instance();
 
+        const DateLUTImpl & time_zone = *time_zone_tmp;
         const auto & vec = times->getData();
 
         auto col_res = ColumnString::create();
@@ -992,32 +907,16 @@ public:
         auto * pos = begin;
         for (size_t i = 0; i < vec.size(); ++i)
         {
-            if (!const_time_zone_column && arguments.size() > 2)
-            {
-                if (!arguments[2].column.get()->getDataAt(i).toString().empty())
-                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i).toString());
-                else
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
-            }
             if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
             {
-                auto c = DecimalUtils::split(vec[i], scale);
-
-                // -1.123 splits to -1 /  0.123
-                if (vec[i].value < 0 && c.fractional)
-                {
-                    using F = typename DataType::FieldType;
-                    c.fractional = DecimalUtils::scaleMultiplier<F>(scale) + (c.whole ? F(-1) : F(1)) * c.fractional;
-                    --c.whole;
-                }
-
+                const auto c = DecimalUtils::split(vec[i], scale);
                 for (auto & instruction : instructions)
-                    instruction.perform(pos, static_cast<Int64>(c.whole), c.fractional, scale, *time_zone);
+                    instruction.perform(pos, static_cast<Int64>(c.whole), c.fractional, scale, time_zone);
             }
             else
             {
                 for (auto & instruction : instructions)
-                    instruction.perform(pos, static_cast<UInt32>(vec[i]), 0, 0, *time_zone);
+                    instruction.perform(pos, static_cast<UInt32>(vec[i]), 0, 0, time_zone);
             }
             *pos++ = '\0';
 
@@ -1061,15 +960,15 @@ public:
             instructions.push_back(std::move(instruction));
         };
 
-        auto add_extra_shift_or_literal_instruction = [&](std::string_view literal)
+        auto add_extra_shift_or_literal_instruction = [&](size_t amount, std::string_view literal)
         {
             if (mysql_with_only_fixed_length_formatters)
-                add_extra_shift(literal.size());
+                add_extra_shift(amount);
             else
                 add_literal_instruction(literal);
         };
 
-        auto add_time_instruction = [&]([[maybe_unused]] typename Instruction<T>::FuncMysql && func, [[maybe_unused]] std::string_view literal)
+        auto add_time_instruction = [&]([[maybe_unused]] typename Instruction<T>::FuncMysql && func, [[maybe_unused]] size_t amount, [[maybe_unused]] std::string_view literal)
         {
             /// DateTime/DateTime64 --> insert instruction
             /// Other types cannot provide the requested data --> write out template
@@ -1080,7 +979,7 @@ public:
                 instructions.push_back(std::move(instruction));
             }
             else
-                add_extra_shift_or_literal_instruction(literal);
+                add_extra_shift_or_literal_instruction(amount, literal);
         };
 
         Pos pos = format.data();
@@ -1095,7 +994,7 @@ public:
                 if (pos < percent_pos)
                 {
                     /// Handle characters before next %
-                    add_extra_shift_or_literal_instruction(std::string_view(pos, percent_pos - pos));
+                    add_extra_shift_or_literal_instruction(percent_pos - pos, std::string_view(pos, percent_pos - pos));
                     out_template += String(pos, percent_pos - pos);
                 }
 
@@ -1125,22 +1024,12 @@ public:
                         break;
                     }
 
-                    // Month as a integer number:
-                    // - if formatdatetime_format_without_leading_zeros = true: prints without leading zero, i.e. 1-12
-                    // - otherwise: print with leading zeros: i.e. 01-12
+                    // Month as a integer number (01-12)
                     case 'c':
                     {
                         Instruction<T> instruction;
-                        if (mysql_format_ckl_without_leading_zeros)
-                        {
-                            instruction.setMysqlFunc(&Instruction<T>::mysqlMonthWithoutLeadingZero);
-                            instructions.push_back(std::move(instruction));
-                        }
-                        else
-                        {
-                            instruction.setMysqlFunc(&Instruction<T>::mysqlMonth);
-                            instructions.push_back(std::move(instruction));
-                        }
+                        instruction.setMysqlFunc(&Instruction<T>::mysqlMonth);
+                        instructions.push_back(std::move(instruction));
                         out_template += "00";
                         break;
                     }
@@ -1185,45 +1074,14 @@ public:
                         break;
                     }
 
-                    // Depending on a setting
-                    // - Full month [January-December] OR
-                    // - Minute of hour range [0, 59]
-                    case 'M':
-                    {
-                        Instruction<T> instruction;
-                        if (mysql_M_is_month_name)
-                        {
-                            instruction.setMysqlFunc(&Instruction<T>::mysqlMonthOfYearTextLong);
-                            instructions.push_back(std::move(instruction));
-                            out_template += "September"; /// longest possible month name
-                        }
-                        else
-                        {
-                            static constexpr std::string_view val = "00";
-                            add_time_instruction(&Instruction<T>::mysqlMinute, val);
-                            out_template += val;
-                        }
-                        break;
-                    }
-
                     // Fractional seconds
                     case 'f':
                     {
-                        /// If the time data type has no fractional part, we print (default) '000000' or (deprecated) '0' as fractional part.
-                        if (mysql_f_prints_single_zero)
-                        {
-                            Instruction<T> instruction;
-                            instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecondSingleZero);
-                            instructions.push_back(std::move(instruction));
-                            out_template += String(scale == 0 ? 1 : scale, '0');
-                        }
-                        else
-                        {
-                            Instruction<T> instruction;
-                            instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecond);
-                            instructions.push_back(std::move(instruction));
-                            out_template += String(scale == 0 ? 6 : scale, '0');
-                        }
+                        /// If the time data type has no fractional part, then we print '0' as the fractional part.
+                        Instruction<T> instruction;
+                        instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecond);
+                        instructions.push_back(std::move(instruction));
+                        out_template += String(std::max<UInt32>(1, scale), '0');
                         break;
                     }
 
@@ -1359,11 +1217,20 @@ public:
 
                     /// Time components. If the argument is Date, not a DateTime, then this components will have default value.
 
+                    // Minute (00-59)
+                    case 'M':
+                    {
+                        static constexpr std::string_view val = "00";
+                        add_time_instruction(&Instruction<T>::mysqlMinute, 2, val);
+                        out_template += val;
+                        break;
+                    }
+
                     // AM or PM
                     case 'p':
                     {
                         static constexpr std::string_view val = "AM";
-                        add_time_instruction(&Instruction<T>::mysqlAMPM, val);
+                        add_time_instruction(&Instruction<T>::mysqlAMPM, 2, val);
                         out_template += val;
                         break;
                     }
@@ -1372,7 +1239,7 @@ public:
                     case 'r':
                     {
                         static constexpr std::string_view val = "12:00 AM";
-                        add_time_instruction(&Instruction<T>::mysqlHHMM12, val);
+                        add_time_instruction(&Instruction<T>::mysqlHHMM12, 8, val);
                         out_template += val;
                         break;
                     }
@@ -1381,7 +1248,7 @@ public:
                     case 'R':
                     {
                         static constexpr std::string_view val = "00:00";
-                        add_time_instruction(&Instruction<T>::mysqlHHMM24, val);
+                        add_time_instruction(&Instruction<T>::mysqlHHMM24, 5, val);
                         out_template += val;
                         break;
                     }
@@ -1390,7 +1257,7 @@ public:
                     case 's':
                     {
                         static constexpr std::string_view val = "00";
-                        add_time_instruction(&Instruction<T>::mysqlSecond, val);
+                        add_time_instruction(&Instruction<T>::mysqlSecond, 2, val);
                         out_template += val;
                         break;
                     }
@@ -1399,7 +1266,7 @@ public:
                     case 'S':
                     {
                         static constexpr std::string_view val = "00";
-                        add_time_instruction(&Instruction<T>::mysqlSecond, val);
+                        add_time_instruction(&Instruction<T>::mysqlSecond, 2, val);
                         out_template += val;
                         break;
                     }
@@ -1408,7 +1275,7 @@ public:
                     case 'T':
                     {
                         static constexpr std::string_view val = "00:00:00";
-                        add_time_instruction(&Instruction<T>::mysqlISO8601Time, val);
+                        add_time_instruction(&Instruction<T>::mysqlISO8601Time, 8, val);
                         out_template += val;
                         break;
                     }
@@ -1417,7 +1284,7 @@ public:
                     case 'h':
                     {
                         static constexpr std::string_view val = "12";
-                        add_time_instruction(&Instruction<T>::mysqlHour12, val);
+                        add_time_instruction(&Instruction<T>::mysqlHour12, 2, val);
                         out_template += val;
                         break;
                     }
@@ -1426,7 +1293,7 @@ public:
                     case 'H':
                     {
                         static constexpr std::string_view val = "00";
-                        add_time_instruction(&Instruction<T>::mysqlHour24, val);
+                        add_time_instruction(&Instruction<T>::mysqlHour24, 2, val);
                         out_template += val;
                         break;
                     }
@@ -1435,7 +1302,7 @@ public:
                     case 'i':
                     {
                         static constexpr std::string_view val = "00";
-                        add_time_instruction(&Instruction<T>::mysqlMinute, val);
+                        add_time_instruction(&Instruction<T>::mysqlMinute, 2, val);
                         out_template += val;
                         break;
                     }
@@ -1444,35 +1311,25 @@ public:
                     case 'I':
                     {
                         static constexpr std::string_view val = "12";
-                        add_time_instruction(&Instruction<T>::mysqlHour12, val);
+                        add_time_instruction(&Instruction<T>::mysqlHour12, 2, val);
                         out_template += val;
                         break;
                     }
 
-                    // Hour in 24h format:
-                    // - if formatdatetime_format_without_leading_zeros = true: prints without leading zero, i.e. 0-23
-                    // - otherwise: print with leading zeros: i.e. 00-23
+                    // Hour in 24h format (00-23)
                     case 'k':
                     {
                         static constexpr std::string_view val = "00";
-                        if (mysql_format_ckl_without_leading_zeros)
-                            add_time_instruction(&Instruction<T>::mysqlHour24WithoutLeadingZero, val);
-                        else
-                            add_time_instruction(&Instruction<T>::mysqlHour24, val);
+                        add_time_instruction(&Instruction<T>::mysqlHour24, 2, val);
                         out_template += val;
                         break;
                     }
 
-                    // Hour in 12h format:
-                    // - if formatdatetime_format_without_leading_zeros = true: prints without leading zero, i.e. 0-12
-                    // - otherwise: print with leading zeros: i.e. 00-12
+                    // Hour in 12h format (01-12)
                     case 'l':
                     {
                         static constexpr std::string_view val = "12";
-                        if (mysql_format_ckl_without_leading_zeros)
-                            add_time_instruction(&Instruction<T>::mysqlHour12WithoutLeadingZero, val);
-                        else
-                            add_time_instruction(&Instruction<T>::mysqlHour12, val);
+                        add_time_instruction(&Instruction<T>::mysqlHour12, 2, val);
                         out_template += val;
                         break;
                     }
@@ -1480,7 +1337,7 @@ public:
                     case 't':
                     {
                         static constexpr std::string_view val = "\t";
-                        add_extra_shift_or_literal_instruction(val);
+                        add_extra_shift_or_literal_instruction(1, val);
                         out_template += val;
                         break;
                     }
@@ -1488,7 +1345,7 @@ public:
                     case 'n':
                     {
                         static constexpr std::string_view val = "\n";
-                        add_extra_shift_or_literal_instruction(val);
+                        add_extra_shift_or_literal_instruction(1, val);
                         out_template += val;
                         break;
                     }
@@ -1497,7 +1354,7 @@ public:
                     case '%':
                     {
                         static constexpr std::string_view val = "%";
-                        add_extra_shift_or_literal_instruction(val);
+                        add_extra_shift_or_literal_instruction(1, val);
                         out_template += val;
                         break;
                     }
@@ -1524,7 +1381,7 @@ public:
             else
             {
                 /// Handle characters after last %
-                add_extra_shift_or_literal_instruction(std::string_view(pos, end - pos));
+                add_extra_shift_or_literal_instruction(end - pos, std::string_view(pos, end - pos));
                 out_template += String(pos, end - pos);
                 break;
             }
@@ -1835,7 +1692,7 @@ REGISTER_FUNCTION(FormatDateTime)
     factory.registerAlias("DATE_FORMAT", FunctionFormatDateTime::name);
 
     factory.registerFunction<FunctionFromUnixTimestamp>();
-    factory.registerAlias("FROM_UNIXTIME", FunctionFromUnixTimestamp::name);
+    factory.registerAlias("FROM_UNIXTIME", "fromUnixTimestamp");
 
     factory.registerFunction<FunctionFormatDateTimeInJodaSyntax>();
     factory.registerFunction<FunctionFromUnixTimestampInJodaSyntax>();

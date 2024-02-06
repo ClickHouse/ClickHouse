@@ -3,13 +3,11 @@
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Access/ContextAccess.h>
-#include <Access/SettingsProfilesInfo.h>
 #include <Access/User.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
-#include <Interpreters/SessionTracker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/Cluster.h>
@@ -109,10 +107,11 @@ public:
         if (it == sessions.end())
         {
             if (throw_if_not_found)
-                throw Exception(ErrorCodes::SESSION_NOT_FOUND, "Session {} not found", session_id);
+                throw Exception(ErrorCodes::SESSION_NOT_FOUND, "Session not found.");
 
             /// Create a new session from current context.
-            it = sessions.insert(std::make_pair(key, std::make_shared<NamedSessionData>(key, global_context, timeout, *this))).first;
+            auto context = Context::createCopy(global_context);
+            it = sessions.insert(std::make_pair(key, std::make_shared<NamedSessionData>(key, context, timeout, *this))).first;
             const auto & session = it->second;
 
             if (!thread.joinable())
@@ -127,10 +126,10 @@ public:
             /// Use existing session.
             const auto & session = it->second;
 
-            LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
+            LOG_TEST(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
 
             if (!session.unique())
-                throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
+                throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session is locked by a concurrent client.");
             return {session, false};
         }
     }
@@ -201,6 +200,7 @@ private:
 
         LOG_TEST(log, "Schedule closing session with session_id: {}, user_id: {}",
                  session.key.second, session.key.first);
+
     }
 
     void cleanThread()
@@ -240,7 +240,7 @@ private:
 
             if (session != sessions.end() && session->second->close_cycle <= current_cycle)
             {
-                if (session->second.use_count() != 1)
+                if (!session->second.unique())
                 {
                     LOG_TEST(log, "Delay closing session with session_id: {}, user_id: {}", key.second, key.first);
 
@@ -265,7 +265,7 @@ private:
     ThreadFromGlobalPool thread;
     bool quit = false;
 
-    LoggerPtr log = getLogger("NamedSessionsStorage");
+    Poco::Logger * log = &Poco::Logger::get("NamedSessionsStorage");
 };
 
 
@@ -282,7 +282,7 @@ void Session::shutdownNamedSessions()
 Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure, const std::string & certificate)
     : auth_id(UUIDHelpers::generateV4()),
       global_context(global_context_),
-      log(getLogger(String{magic_enum::enum_name(interface_)} + "-Session"))
+      log(&Poco::Logger::get(String{magic_enum::enum_name(interface_)} + "-Session"))
 {
     prepared_client_info.emplace();
     prepared_client_info->interface = interface_;
@@ -298,11 +298,8 @@ Session::~Session()
 
     if (notified_session_log_about_login)
     {
-        LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(*user_id));
         if (auto session_log = getSessionLog())
-        {
             session_log->addLogOut(auth_id, user, getClientInfo());
-        }
     }
 }
 
@@ -319,7 +316,6 @@ AuthenticationType Session::getAuthenticationTypeOrLogInFailure(const String & u
     }
     catch (const Exception & e)
     {
-        LOG_ERROR(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
         if (auto session_log = getSessionLog())
             session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e);
 
@@ -337,9 +333,6 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     if (session_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "If there is a session context it must be created after authentication");
 
-    if (session_tracker_handle)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session tracker handle was created before authentication finish");
-
     auto address = address_;
     if ((address == Poco::Net::SocketAddress{}) && (prepared_client_info->interface == ClientInfo::Interface::LOCAL))
         address = Poco::Net::SocketAddress{"127.0.0.1", 0};
@@ -349,9 +342,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     try
     {
-        auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo().getLastForwardedFor());
-        user_id = auth_result.user_id;
-        settings_from_auth_server = auth_result.settings;
+        user_id = global_context->getAccessControl().authenticate(credentials_, address.host());
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
     }
@@ -377,115 +368,15 @@ void Session::onAuthenticationFailure(const std::optional<String> & user_name, c
     }
 }
 
-const ClientInfo & Session::getClientInfo() const
+ClientInfo & Session::getClientInfo()
 {
+    /// FIXME it may produce different info for LoginSuccess and the corresponding Logout entries in the session log
     return session_context ? session_context->getClientInfo() : *prepared_client_info;
 }
 
-void Session::setClientInfo(const ClientInfo & client_info)
+const ClientInfo & Session::getClientInfo() const
 {
-    if (session_context)
-        session_context->setClientInfo(client_info);
-    else
-        prepared_client_info = client_info;
-}
-
-void Session::setClientName(const String & client_name)
-{
-    if (session_context)
-        session_context->setClientName(client_name);
-    else
-        prepared_client_info->client_name = client_name;
-}
-
-void Session::setClientInterface(ClientInfo::Interface interface)
-{
-    if (session_context)
-        session_context->setClientInterface(interface);
-    else
-        prepared_client_info->interface = interface;
-}
-
-void Session::setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version)
-{
-    if (session_context)
-    {
-        session_context->setClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
-    }
-    else
-    {
-        prepared_client_info->client_version_major = client_version_major;
-        prepared_client_info->client_version_minor = client_version_minor;
-        prepared_client_info->client_version_patch = client_version_patch;
-        prepared_client_info->client_tcp_protocol_version = client_tcp_protocol_version;
-    }
-}
-
-void Session::setClientConnectionId(uint32_t connection_id)
-{
-    if (session_context)
-        session_context->setClientConnectionId(connection_id);
-    else
-        prepared_client_info->connection_id = connection_id;
-}
-
-void Session::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
-{
-    if (session_context)
-    {
-        session_context->setHttpClientInfo(http_method, http_user_agent, http_referer);
-    }
-    else
-    {
-        prepared_client_info->http_method = http_method;
-        prepared_client_info->http_user_agent = http_user_agent;
-        prepared_client_info->http_referer = http_referer;
-    }
-}
-
-void Session::setForwardedFor(const String & forwarded_for)
-{
-    if (session_context)
-        session_context->setForwardedFor(forwarded_for);
-    else
-        prepared_client_info->forwarded_for = forwarded_for;
-}
-
-void Session::setQuotaClientKey(const String & quota_key)
-{
-    if (session_context)
-        session_context->setQuotaClientKey(quota_key);
-    else
-        prepared_client_info->quota_key = quota_key;
-}
-
-void Session::setConnectionClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version)
-{
-    if (session_context)
-    {
-        session_context->setConnectionClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
-    }
-    else
-    {
-        prepared_client_info->connection_client_version_major = client_version_major;
-        prepared_client_info->connection_client_version_minor = client_version_minor;
-        prepared_client_info->connection_client_version_patch = client_version_patch;
-        prepared_client_info->connection_tcp_protocol_version = client_tcp_protocol_version;
-    }
-}
-
-const OpenTelemetry::TracingContext & Session::getClientTraceContext() const
-{
-    if (session_context)
-        return session_context->getClientTraceContext();
-    return prepared_client_info->client_trace_context;
-}
-
-OpenTelemetry::TracingContext & Session::getClientTraceContext()
-{
-    if (session_context)
-        return session_context->getClientTraceContext();
-    return prepared_client_info->client_trace_context;
+    return session_context ? session_context->getClientInfo() : *prepared_client_info;
 }
 
 ContextMutablePtr Session::makeSessionContext()
@@ -496,8 +387,6 @@ ContextMutablePtr Session::makeSessionContext()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created before any query context");
     if (!user_id)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created after authentication");
-    if (session_tracker_handle)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session tracker handle was created before making session");
 
     LOG_DEBUG(log, "{} Creating session context with user_id: {}",
             toString(auth_id), toString(*user_id));
@@ -507,26 +396,17 @@ ContextMutablePtr Session::makeSessionContext()
     new_session_context->makeSessionContext();
 
     /// Copy prepared client info to the new session context.
-    new_session_context->setClientInfo(*prepared_client_info);
+    auto & res_client_info = new_session_context->getClientInfo();
+    res_client_info = std::move(prepared_client_info).value();
     prepared_client_info.reset();
 
     /// Set user information for the new context: current profiles, roles, access rights.
-    new_session_context->setUser(*user_id);
+    if (user_id)
+        new_session_context->setUser(*user_id);
 
     /// Session context is ready.
     session_context = new_session_context;
     user = session_context->getUser();
-
-    session_tracker_handle = session_context->getSessionTracker().trackSession(
-        *user_id,
-        {},
-        session_context->getSettingsRef().max_sessions_for_user);
-
-    // Use QUERY source as for SET query for a session
-    session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
-    session_context->applySettingsChanges(settings_from_auth_server);
-
-    recordLoginSucess(session_context);
 
     return session_context;
 }
@@ -539,8 +419,6 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created before any query context");
     if (!user_id)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created after authentication");
-    if (session_tracker_handle)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session tracker handle was created before making session");
 
     LOG_DEBUG(log, "{} Creating named session context with name: {}, user_id: {}",
             toString(auth_id), session_name_, toString(*user_id));
@@ -558,39 +436,19 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     /// Copy prepared client info to the session context, no matter it's been just created or not.
     /// If we continue using a previously created session context found by session ID
     /// it's necessary to replace the client info in it anyway, because it contains actual connection information (client address, etc.)
-    new_session_context->setClientInfo(*prepared_client_info);
+    auto & res_client_info = new_session_context->getClientInfo();
+    res_client_info = std::move(prepared_client_info).value();
     prepared_client_info.reset();
 
-    auto access = new_session_context->getAccess();
-    UInt64 max_sessions_for_user = 0;
     /// Set user information for the new context: current profiles, roles, access rights.
-    if (!access->tryGetUser())
-    {
+    if (user_id && !new_session_context->getAccess()->tryGetUser())
         new_session_context->setUser(*user_id);
-        max_sessions_for_user = new_session_context->getSettingsRef().max_sessions_for_user;
-    }
-    else
-    {
-        // Always get setting from profile
-        // profile can be changed by ALTER PROFILE during single session
-        auto settings = access->getDefaultSettings();
-        const Field * max_session_for_user_field = settings.tryGet("max_sessions_for_user");
-        if (max_session_for_user_field)
-            max_sessions_for_user = max_session_for_user_field->safeGet<UInt64>();
-    }
 
     /// Session context is ready.
     session_context = std::move(new_session_context);
     named_session = new_named_session;
     named_session_created = new_named_session_created;
     user = session_context->getUser();
-
-    session_tracker_handle = session_context->getSessionTracker().trackSession(
-        *user_id,
-        { session_name_ },
-        max_sessions_for_user);
-
-    recordLoginSucess(session_context);
 
     return session_context;
 }
@@ -626,7 +484,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     if (auto query_context_user = query_context->getAccess()->tryGetUser())
     {
-        LOG_TRACE(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
+        LOG_DEBUG(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
                   toString(auth_id),
                   from_session_context ? "session" : "global",
                   toString(*user_id),
@@ -634,27 +492,31 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     }
 
     /// Copy the specified client info to the new query context.
+    auto & res_client_info = query_context->getClientInfo();
     if (client_info_to_move)
-        query_context->setClientInfo(*client_info_to_move);
+        res_client_info = std::move(*client_info_to_move);
     else if (client_info_to_copy && (client_info_to_copy != &getClientInfo()))
-        query_context->setClientInfo(*client_info_to_copy);
+        res_client_info = *client_info_to_copy;
 
     /// Copy current user's name and address if it was authenticated after query_client_info was initialized.
     if (prepared_client_info && !prepared_client_info->current_user.empty())
     {
-        query_context->setCurrentUserName(prepared_client_info->current_user);
-        query_context->setCurrentAddress(prepared_client_info->current_address);
+        res_client_info.current_user = prepared_client_info->current_user;
+        res_client_info.current_address = prepared_client_info->current_address;
     }
 
     /// Set parameters of initial query.
-    if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::NO_QUERY)
-        query_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+    if (res_client_info.query_kind == ClientInfo::QueryKind::NO_QUERY)
+        res_client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
 
-    if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    if (res_client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
-        query_context->setInitialUserName(query_context->getClientInfo().current_user);
-        query_context->setInitialAddress(query_context->getClientInfo().current_address);
+        res_client_info.initial_user = res_client_info.current_user;
+        res_client_info.initial_address = res_client_info.current_address;
     }
+
+    /// Sets that row policies of the initial user should be used too.
+    query_context->enableRowPoliciesOfInitialUser();
 
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !query_context->getAccess()->tryGetUser())
@@ -665,35 +527,21 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     if (user_id)
         user = query_context->getUser();
 
-    /// Interserver does not create session context
-    recordLoginSucess(query_context);
-
-    return query_context;
-}
-
-
-void Session::recordLoginSucess(ContextPtr login_context) const
-{
-    if (notified_session_log_about_login)
-        return;
-
-    if (!login_context)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session or query context must be created");
-
-    if (auto session_log = getSessionLog())
+    if (!notified_session_log_about_login)
     {
-        const auto & settings   = login_context->getSettingsRef();
-        const auto access       = login_context->getAccess();
+        if (auto session_log = getSessionLog())
+        {
+            session_log->addLoginSuccess(
+                    auth_id,
+                    named_session ? std::optional<std::string>(named_session->key.second) : std::nullopt,
+                    *query_context,
+                    user);
 
-        session_log->addLoginSuccess(auth_id,
-                                     named_session ? named_session->key.second : "",
-                                     settings,
-                                     access,
-                                     getClientInfo(),
-                                     user);
+            notified_session_log_about_login = true;
+        }
     }
 
-    notified_session_log_about_login = true;
+    return query_context;
 }
 
 
@@ -701,10 +549,6 @@ void Session::releaseSessionID()
 {
     if (!named_session)
         return;
-
-    prepared_client_info = getClientInfo();
-    session_context.reset();
-
     named_session->release();
     named_session = nullptr;
 }
@@ -722,3 +566,4 @@ void Session::closeSession(const String & session_id)
 }
 
 }
+

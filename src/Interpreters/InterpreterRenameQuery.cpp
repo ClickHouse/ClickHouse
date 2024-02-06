@@ -1,7 +1,6 @@
 #include <Parsers/ASTRenameQuery.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -137,24 +136,15 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 std::tie(ref_dependencies, loading_dependencies) = database_catalog.removeDependencies(from_table_id, check_ref_deps, check_loading_deps);
             }
 
-            try
-            {
-                database->renameTable(
-                    getContext(),
-                    elem.from_table_name,
-                    *database_catalog.getDatabase(elem.to_database_name),
-                    elem.to_table_name,
-                    exchange_tables,
-                    rename.dictionary);
+            database->renameTable(
+                getContext(),
+                elem.from_table_name,
+                *database_catalog.getDatabase(elem.to_database_name),
+                elem.to_table_name,
+                exchange_tables,
+                rename.dictionary);
 
-                DatabaseCatalog::instance().addDependencies(to_table_id, ref_dependencies, loading_dependencies);
-            }
-            catch (...)
-            {
-                /// Restore dependencies if RENAME fails
-                DatabaseCatalog::instance().addDependencies(from_table_id, ref_dependencies, loading_dependencies);
-                throw;
-            }
+            DatabaseCatalog::instance().addDependencies(to_table_id, ref_dependencies, loading_dependencies);
         }
     }
 
@@ -194,7 +184,7 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRename
             required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.to.getDatabase(), elem.to.getTable());
             if (rename.exchange)
             {
-                required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.from.getDatabase(), elem.from.getTable());
+                required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT , elem.from.getDatabase(), elem.from.getTable());
                 required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.to.getDatabase(), elem.to.getTable());
             }
         }
@@ -227,15 +217,6 @@ void InterpreterRenameQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
             elem.query_tables.insert(database + "." + backQuoteIfNeed(element.to.getTable()));
         }
     }
-}
-
-void registerInterpreterRenameQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterRenameQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterRenameQuery", create_fn);
 }
 
 }

@@ -1,19 +1,37 @@
 #!/usr/bin/env python3
-import argparse
-import csv
-import logging
-import os
-import subprocess
-import sys
-from pathlib import Path
-from typing import Tuple
 
-from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
+import logging
+import subprocess
+import os
+import csv
+import sys
+import atexit
+from pathlib import Path
+from typing import List, Tuple
+
+from github import Github
+
+from clickhouse_helper import (
+    ClickHouseHelper,
+    prepare_tests_results_for_clickhouse,
+)
+from commit_status_helper import (
+    RerunHelper,
+    get_commit,
+    post_commit_status,
+    update_mergeable_check,
+)
+from docker_pull_helper import get_image_with_version, DockerImage
+from env_helper import S3_BUILDS_BUCKET, TEMP_PATH, REPORTS_PATH
+from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
-from report import JobReport, TestResult, TestResults, read_test_results
+from report import TestResults, read_test_results
+from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from upload_result_helper import upload_results
+
+NAME = "Fast test"
 
 # Will help to avoid errors like _csv.Error: field larger than field limit (131072)
 csv.field_size_limit(sys.maxsize)
@@ -28,7 +46,7 @@ def get_fasttest_cmd(
     image: DockerImage,
 ) -> str:
     return (
-        f"docker run --cap-add=SYS_PTRACE --user={os.geteuid()}:{os.getegid()} "
+        f"docker run --cap-add=SYS_PTRACE "
         "--network=host "  # required to get access to IAM credentials
         f"-e FASTTEST_WORKSPACE=/fasttest-workspace -e FASTTEST_OUTPUT=/test_output "
         f"-e FASTTEST_SOURCE=/ClickHouse --cap-add=SYS_PTRACE "
@@ -36,7 +54,6 @@ def get_fasttest_cmd(
         f"-e PULL_REQUEST_NUMBER={pr_number} -e COMMIT_SHA={commit_sha} "
         f"-e COPY_CLICKHOUSE_BINARY_TO_OUTPUT=1 "
         f"-e SCCACHE_BUCKET={S3_BUILDS_BUCKET} -e SCCACHE_S3_KEY_PREFIX=ccache/sccache "
-        "-e stage=clone_submodules "
         f"--volume={workspace}:/fasttest-workspace --volume={repo_path}:/ClickHouse "
         f"--volume={output_path}:/test_output {image}"
     )
@@ -51,7 +68,7 @@ def process_results(result_directory: Path) -> Tuple[str, str, TestResults]:
     status = []
     status_path = result_directory / "check_status.tsv"
     if status_path.exists():
-        logging.info("Found %s", status_path.name)
+        logging.info("Found test_results.tsv")
         with open(status_path, "r", encoding="utf-8") as status_file:
             status = list(csv.reader(status_file, delimiter="\t"))
     if len(status) != 1 or len(status[0]) != 2:
@@ -70,37 +87,31 @@ def process_results(result_directory: Path) -> Tuple[str, str, TestResults]:
     return state, description, test_results
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="FastTest script",
-    )
-
-    parser.add_argument(
-        "--timeout",
-        type=int,
-        # Fast tests in most cases done within 10 min and 40 min timout should be sufficient,
-        # though due to cold cache build time can be much longer
-        # https://pastila.nl/?146195b6/9bb99293535e3817a9ea82c3f0f7538d.link#5xtClOjkaPLEjSuZ92L2/g==
-        default=40,
-        help="Timeout in minutes",
-    )
-    args = parser.parse_args()
-    args.timeout = args.timeout * 60
-    return args
-
-
 def main():
     logging.basicConfig(level=logging.INFO)
+
     stopwatch = Stopwatch()
-    args = parse_args()
 
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
+    reports_path = Path(REPORTS_PATH)
+    reports_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
 
-    docker_image = pull_image(get_docker_image("clickhouse/fasttest"))
+    gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
+
+    atexit.register(update_mergeable_check, gh, pr_info, NAME)
+
+    rerun_helper = RerunHelper(commit, NAME)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
+
+    docker_image = get_image_with_version(reports_path, "clickhouse/fasttest")
+
+    s3_helper = S3Helper()
 
     workspace = temp_path / "fasttest-workspace"
     workspace.mkdir(parents=True, exist_ok=True)
@@ -108,7 +119,8 @@ def main():
     output_path = temp_path / "fasttest-output"
     output_path.mkdir(parents=True, exist_ok=True)
 
-    repo_path = Path(REPO_COPY)
+    repo_path = temp_path / "fasttest-repo"
+    repo_path.mkdir(parents=True, exist_ok=True)
 
     run_cmd = get_fasttest_cmd(
         workspace,
@@ -124,14 +136,9 @@ def main():
     logs_path.mkdir(parents=True, exist_ok=True)
 
     run_log_path = logs_path / "run.log"
-    timeout_expired = False
-
-    with TeePopen(run_cmd, run_log_path, timeout=args.timeout) as process:
+    with TeePopen(run_cmd, run_log_path, timeout=40 * 60) as process:
         retcode = process.wait()
-        if process.timeout_exceeded:
-            logging.info("Timeout expired for command: %s", run_cmd)
-            timeout_expired = True
-        elif retcode == 0:
+        if retcode == 0:
             logging.info("Run successfully")
         else:
             logging.info("Run failed")
@@ -165,28 +172,34 @@ def main():
     else:
         state, description, test_results = process_results(output_path)
 
-    if timeout_expired:
-        test_results.append(TestResult.create_check_timeout_expired(args.timeout))
-        state = "failure"
-        description = test_results[-1].name
+    ch_helper = ClickHouseHelper()
 
-    JobReport(
-        description=description,
-        test_results=test_results,
-        status=state,
-        start_time=stopwatch.start_time_str,
-        duration=stopwatch.duration_seconds,
-        additional_files=additional_logs,
-        build_dir_for_upload=str(output_path / "binaries"),
-    ).dump()
+    report_url = upload_results(
+        s3_helper,
+        pr_info.number,
+        pr_info.sha,
+        test_results,
+        additional_logs,
+        NAME,
+    )
+    print(f"::notice ::Report url: {report_url}")
+    post_commit_status(commit, state, report_url, description, NAME, pr_info)
+
+    prepared_events = prepare_tests_results_for_clickhouse(
+        pr_info,
+        test_results,
+        state,
+        stopwatch.duration_seconds,
+        stopwatch.start_time_str,
+        report_url,
+        NAME,
+    )
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     # Refuse other checks to run if fast test failed
     if state != "success":
-        if state == "error":
-            print("The status is 'error', report failure disregard the labels")
-            sys.exit(1)
-        elif FORCE_TESTS_LABEL in pr_info.labels:
-            print(f"'{FORCE_TESTS_LABEL}' enabled, reporting success")
+        if FORCE_TESTS_LABEL in pr_info.labels and state != "error":
+            print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
             sys.exit(1)
 

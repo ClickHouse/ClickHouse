@@ -2,11 +2,10 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Common/quoteString.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
 
 
 namespace DB
@@ -339,12 +338,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         formatOnCluster(settings);
     }
 
-    if (refresh_strategy)
-    {
-        settings.ostr << settings.nl_or_ws;
-        refresh_strategy->formatImpl(settings, state, frame);
-    }
-
     if (to_table_id)
     {
         assert((is_materialized_view || is_window_view) && to_inner_uuid == UUIDHelpers::Nil);
@@ -447,10 +440,10 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     if (select)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS"
-                      << settings.nl_or_ws
-                      << (comment ? "(" : "") << (settings.hilite ? hilite_none : "");
+                      << (comment ? "(" : "")
+                      << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (comment ? ")" : "") << (settings.hilite ? hilite_none : "");
+        settings.ostr << (comment ? ")" : "");
     }
 
     if (comment)
@@ -465,51 +458,6 @@ bool ASTCreateQuery::isParameterizedView() const
     if (is_ordinary_view && select && select->hasQueryParameters())
         return true;
     return false;
-}
-
-
-ASTCreateQuery::UUIDs::UUIDs(const ASTCreateQuery & query)
-    : uuid(query.uuid)
-    , to_inner_uuid(query.to_inner_uuid)
-{
-}
-
-String ASTCreateQuery::UUIDs::toString() const
-{
-    WriteBufferFromOwnString out;
-    out << "{" << uuid << "," << to_inner_uuid << "}";
-    return out.str();
-}
-
-ASTCreateQuery::UUIDs ASTCreateQuery::UUIDs::fromString(const String & str)
-{
-    ReadBufferFromString in{str};
-    ASTCreateQuery::UUIDs res;
-    in >> "{" >> res.uuid >> "," >> res.to_inner_uuid >> "}";
-    return res;
-}
-
-ASTCreateQuery::UUIDs ASTCreateQuery::generateRandomUUID(bool always_generate_new_uuid)
-{
-    if (always_generate_new_uuid)
-        setUUID({});
-
-    if (uuid == UUIDHelpers::Nil)
-        uuid = UUIDHelpers::generateV4();
-
-    /// If destination table (to_table_id) is not specified for materialized view,
-    /// then MV will create inner table. We should generate UUID of inner table here.
-    bool need_uuid_for_inner_table = !attach && is_materialized_view && !to_table_id;
-    if (need_uuid_for_inner_table && (to_inner_uuid == UUIDHelpers::Nil))
-        to_inner_uuid = UUIDHelpers::generateV4();
-
-    return UUIDs{*this};
-}
-
-void ASTCreateQuery::setUUID(const UUIDs & uuids)
-{
-    uuid = uuids.uuid;
-    to_inner_uuid = uuids.to_inner_uuid;
 }
 
 }

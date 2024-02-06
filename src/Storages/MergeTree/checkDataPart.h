@@ -10,11 +10,17 @@ namespace DB
 IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     bool require_checksums,
-    bool & is_broken_projection,
-    std::function<bool()> is_cancelled = []{ return false; },
-    bool throw_on_broken_projection = false);
+    std::function<bool()> is_cancelled = []{ return false; });
+
+IMergeTreeDataPart::Checksums checkDataPart(
+    const DiskPtr & disk,
+    const String & full_relative_path,
+    const NamesAndTypesList & columns_list,
+    const MergeTreeDataPartType & part_type,
+    const NameSet & files_without_checksums,
+    bool require_checksums,
+    std::function<bool()> is_cancelled = []{ return false; });
 
 bool isNotEnoughMemoryErrorCode(int code);
-bool isRetryableException(const std::exception_ptr exception_ptr);
 
 }

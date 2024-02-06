@@ -3,6 +3,7 @@
 #include <DataTypes/getMostSubtype.h>
 
 #include <sstream>
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 #include <gtest/gtest.h>
 
 namespace DB

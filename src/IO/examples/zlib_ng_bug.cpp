@@ -4,6 +4,9 @@
 
 #include <zlib.h>
 
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+
+
 /// https://github.com/zlib-ng/zlib-ng/issues/494
 int main(int, char **)
 {

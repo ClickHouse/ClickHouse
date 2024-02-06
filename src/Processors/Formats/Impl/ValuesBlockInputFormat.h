@@ -42,9 +42,6 @@ public:
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
-
-    static bool skipToNextRow(ReadBuffer * buf, size_t min_chunk_bytes, int balance);
-
 private:
     ValuesBlockInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, const RowInputFormatParams & params_,
                            const FormatSettings & format_settings_);
@@ -58,7 +55,7 @@ private:
 
     using ConstantExpressionTemplates = std::vector<std::optional<ConstantExpressionTemplate>>;
 
-    Chunk read() override;
+    Chunk generate() override;
 
     void readRow(MutableColumns & columns, size_t row_num);
     void readUntilTheEndOfRowAndReTokenize(size_t current_column_idx);
@@ -74,8 +71,6 @@ private:
 
     void readPrefix();
     void readSuffix();
-
-    size_t countRows(size_t max_block_size);
 
     std::unique_ptr<PeekableReadBuffer> buf;
     std::optional<IParser::Pos> token_iterator{};
@@ -102,7 +97,7 @@ private:
     Serializations serializations;
 
     BlockMissingValues block_missing_values;
-    size_t approx_bytes_read_for_chunk = 0;
+    size_t approx_bytes_read_for_chunk;
 };
 
 class ValuesSchemaReader : public IRowSchemaReader
@@ -111,8 +106,7 @@ public:
     ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
 
 private:
-    std::optional<DataTypes> readRowAndGetDataTypes() override;
-    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    DataTypes readRowAndGetDataTypes() override;
 
     PeekableReadBuffer buf;
     ParserExpression parser;

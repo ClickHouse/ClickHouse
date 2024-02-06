@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -ue
 
+unset CLICKHOUSE_LOG_COMMENT
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -13,7 +15,7 @@ ${CLICKHOUSE_CURL} \
      from numbers_mt(1e6)
      where number = 42
      group by number
-     settings max_threads = 10, max_bytes_before_external_group_by = 1, group_by_two_level_threshold = 1, output_format_pretty_color=1
+     settings max_threads = 10, max_bytes_before_external_group_by = 1, group_by_two_level_threshold = 1
      format PrettyCompact"
 
 ${CLICKHOUSE_CURL} \
@@ -24,5 +26,5 @@ ${CLICKHOUSE_CURL} \
     from numbers_mt(1e6)
     where number = 42
     group by number
-    settings max_threads = 10, max_bytes_before_external_group_by = 0, group_by_two_level_threshold = 1, output_format_pretty_color=1
+    settings max_threads = 10, max_bytes_before_external_group_by = 0, group_by_two_level_threshold = 1
     format PrettyCompact"

@@ -4,16 +4,15 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Common/logger_useful.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/JSON/Parser.h>
+#include "Storages/MergeTree/DataPartStorageOnDiskFull.h"
 #include <sys/time.h>
 
 namespace DB
@@ -36,7 +35,7 @@ MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
     , name(name_)
     , path(storage.getRelativeDataPath() + name_)
     , pool(storage.getContext()->getSchedulePool())
-    , log(getLogger(storage.getLogName() + " (WriteAheadLog)"))
+    , log(&Poco::Logger::get(storage.getLogName() + " (WriteAheadLog)"))
 {
     init();
     sync_task = pool.createTask("MergeTreeWriteAheadLog::sync", [this]
@@ -84,6 +83,31 @@ void MergeTreeWriteAheadLog::init()
     bytes_at_last_sync = 0;
 }
 
+void MergeTreeWriteAheadLog::addPart(DataPartInMemoryPtr & part)
+{
+    std::unique_lock lock(write_mutex);
+
+    auto part_info = MergeTreePartInfo::fromPartName(part->name, storage.format_version);
+    min_block_number = std::min(min_block_number, part_info.min_block);
+    max_block_number = std::max(max_block_number, part_info.max_block);
+
+    writeIntBinary(WAL_VERSION, *out);
+
+    ActionMetadata metadata{};
+    metadata.part_uuid = part->uuid;
+    metadata.write(*out);
+
+    writeIntBinary(static_cast<UInt8>(ActionType::ADD_PART), *out);
+    writeStringBinary(part->name, *out);
+    block_out->write(part->block);
+    block_out->flush();
+    sync(lock);
+
+    auto max_wal_bytes = storage.getSettings()->write_ahead_log_max_bytes;
+    if (out->count() > max_wal_bytes)
+        rotate(lock);
+}
+
 void MergeTreeWriteAheadLog::dropPart(const String & part_name)
 {
     std::unique_lock lock(write_mutex);
@@ -96,6 +120,7 @@ void MergeTreeWriteAheadLog::dropPart(const String & part_name)
     writeIntBinary(static_cast<UInt8>(ActionType::DROP_PART), *out);
     writeStringBinary(part_name, *out);
     out->next();
+    sync(lock);
 }
 
 void MergeTreeWriteAheadLog::rotate(const std::unique_lock<std::mutex> &)
@@ -113,7 +138,7 @@ void MergeTreeWriteAheadLog::rotate(const std::unique_lock<std::mutex> &)
 MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
-    DataPartsLock & parts_lock,
+    std::unique_lock<std::mutex> & parts_lock,
     bool readonly)
 {
     std::unique_lock lock(write_mutex);
@@ -198,13 +223,13 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
                 part,
                 metadata_snapshot,
                 block.getNamesAndTypesList(),
-                {}, {},
+                {},
                 CompressionCodecFactory::instance().get("NONE", {}),
                 NO_TRANSACTION_PTR);
 
             part->minmax_idx->update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
             part->partition.create(metadata_snapshot, block, 0, context);
-            part->setColumns(block.getNamesAndTypesList(), {}, metadata_snapshot->getMetadataVersion());
+            part->setColumns(block.getNamesAndTypesList(), {});
             if (metadata_snapshot->hasSortingKey())
                 metadata_snapshot->getSortingKey().expression->execute(block);
 
@@ -241,6 +266,27 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
     }
 
     return result;
+}
+
+void MergeTreeWriteAheadLog::sync(std::unique_lock<std::mutex> & lock)
+{
+    size_t bytes_to_sync = storage.getSettings()->write_ahead_log_bytes_to_fsync;
+    time_t time_to_sync = storage.getSettings()->write_ahead_log_interval_ms_to_fsync;
+    size_t current_bytes = out->count();
+
+    if (bytes_to_sync && current_bytes - bytes_at_last_sync > bytes_to_sync)
+    {
+        sync_task->schedule();
+        bytes_at_last_sync = current_bytes;
+    }
+    else if (time_to_sync && !sync_scheduled)
+    {
+        sync_task->scheduleAfter(time_to_sync);
+        sync_scheduled = true;
+    }
+
+    if (storage.getSettings()->in_memory_parts_insert_sync)
+        sync_cv.wait(lock, [this] { return !sync_scheduled; });
 }
 
 void MergeTreeWriteAheadLog::shutdown()

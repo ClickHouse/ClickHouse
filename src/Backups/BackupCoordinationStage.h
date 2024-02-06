@@ -15,7 +15,7 @@ namespace BackupCoordinationStage
     /// Finding all tables and databases which we're going to put to the backup and collecting their metadata.
     constexpr const char * GATHERING_METADATA = "gathering metadata";
 
-    String formatGatheringMetadata(int attempt_no);
+    String formatGatheringMetadata(size_t pass);
 
     /// Making temporary hard links and prepare backup entries.
     constexpr const char * EXTRACTING_DATA_FROM_TABLES = "extracting data from tables";
@@ -43,10 +43,6 @@ namespace BackupCoordinationStage
 
     /// Coordination stage meaning that a host finished its work.
     constexpr const char * COMPLETED = "completed";
-
-    /// Coordination stage meaning that backup/restore has failed due to an error
-    /// Check '/error' for the error message
-    constexpr const char * ERROR = "error";
 }
 
 }

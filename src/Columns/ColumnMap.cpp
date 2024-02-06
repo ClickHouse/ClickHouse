@@ -111,7 +111,7 @@ void ColumnMap::popBack(size_t n)
     nested->popBack(n);
 }
 
-StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
+StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return nested->serializeValueIntoArena(n, arena, begin);
 }
@@ -139,11 +139,6 @@ void ColumnMap::updateWeakHash32(WeakHash32 & hash) const
 void ColumnMap::updateHashFast(SipHash & hash) const
 {
     nested->updateHashFast(hash);
-}
-
-void ColumnMap::insertFrom(const IColumn & src, size_t n)
-{
-    nested->insertFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), n);
 }
 
 void ColumnMap::insertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -234,11 +229,6 @@ void ColumnMap::reserve(size_t n)
     nested->reserve(n);
 }
 
-void ColumnMap::shrinkToFit()
-{
-    nested->shrinkToFit();
-}
-
 void ColumnMap::ensureOwnership()
 {
     nested->ensureOwnership();
@@ -283,12 +273,12 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
     max = std::move(map_max_value);
 }
 
-void ColumnMap::forEachSubcolumn(MutableColumnCallback callback)
+void ColumnMap::forEachSubcolumn(ColumnCallback callback) const
 {
     callback(nested);
 }
 
-void ColumnMap::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnMap::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
     callback(*nested);
     nested->forEachSubcolumnRecursively(callback);
@@ -322,9 +312,9 @@ ColumnPtr ColumnMap::compress() const
     const auto byte_size = compressed->byteSize();
     /// The order of evaluation of function arguments is unspecified
     /// and could cause interacting with object in moved-from state
-    return ColumnCompressed::create(size(), byte_size, [my_compressed = std::move(compressed)]
+    return ColumnCompressed::create(size(), byte_size, [compressed = std::move(compressed)]
     {
-        return ColumnMap::create(my_compressed->decompress());
+        return ColumnMap::create(compressed->decompress());
     });
 }
 

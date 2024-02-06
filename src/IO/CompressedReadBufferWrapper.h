@@ -1,12 +1,11 @@
 #pragma once
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadBufferWrapperBase.h>
 
 namespace DB
 {
 
-class CompressedReadBufferWrapper : public BufferWithOwnMemory<ReadBuffer>, public ReadBufferWrapperBase
+class CompressedReadBufferWrapper : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
     CompressedReadBufferWrapper(
@@ -17,10 +16,10 @@ public:
     : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
     , in(std::move(in_)) {}
 
-    const ReadBuffer & getWrappedReadBuffer() const override { return *in; }
+    const ReadBuffer & getWrappedReadBuffer() const { return *in; }
     ReadBuffer & getWrappedReadBuffer() { return *in; }
 
-    void prefetch(Priority priority) override { in->prefetch(priority); }
+    void prefetch(int64_t priority) override { in->prefetch(priority); }
 
 protected:
     std::unique_ptr<ReadBuffer> in;

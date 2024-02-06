@@ -16,6 +16,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Storages/TableLockHolder.h>
+#include <Common/logger_useful.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -146,23 +147,20 @@ public:
 class HashJoin : public IJoin
 {
 public:
-    HashJoin(
-        std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block,
-        bool any_take_last_row_ = false, size_t reserve_num = 0, const String & instance_id_ = "");
+    HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
 
     ~HashJoin() override;
 
-    std::string getName() const override { return "HashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
-    bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
+    bool addJoinedBlock(const Block & block, bool check_limits) override;
 
     void checkTypesOfKeys(const Block & block) const override;
 
-    /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
+    /** Join data from the map (that was previously built by calls to addJoinedBlock) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
     void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
@@ -220,15 +218,6 @@ public:
         M(keys256)                     \
         M(hashed)
 
-    /// Only for maps using hash table.
-    #define APPLY_FOR_HASH_JOIN_VARIANTS(M) \
-        M(key32)                            \
-        M(key64)                            \
-        M(key_string)                       \
-        M(key_fixed_string)                 \
-        M(keys128)                          \
-        M(keys256)                          \
-        M(hashed)
 
     /// Used for reading from StorageJoin and applying joinGet function
     #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
@@ -274,22 +263,6 @@ public:
             #define M(NAME) \
                 case Type::NAME: NAME = std::make_unique<typename decltype(NAME)::element_type>(); break;
                 APPLY_FOR_JOIN_VARIANTS(M)
-            #undef M
-            }
-        }
-
-        void reserve(Type which, size_t num)
-        {
-            switch (which)
-            {
-                case Type::EMPTY:            break;
-                case Type::CROSS:            break;
-                case Type::key8:             break;
-                case Type::key16:            break;
-
-            #define M(NAME) \
-                case Type::NAME: NAME->reserve(num); break;
-                APPLY_FOR_HASH_JOIN_VARIANTS(M)
             #undef M
             }
         }
@@ -394,12 +367,8 @@ public:
 
     void debugKeys() const;
 
-    void shrinkStoredBlocksToFit(size_t & total_bytes_in_join);
-
-    void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
-
 private:
-    friend class NotJoinedHash;
+    template<bool> friend class NotJoinedHash;
 
     friend class JoinSource;
 
@@ -435,29 +404,18 @@ private:
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;
 
-    /// Maximum number of rows in result block. If it is 0, then no limits.
-    size_t max_joined_block_rows = 0;
-
-    /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
-    bool shrink_blocks = false;
-    Int64 memory_usage_before_adding_blocks = 0;
-
-    /// Identifier to distinguish different HashJoin instances in logs
-    /// Several instances can be created, for example, in GraceHashJoin to handle different buckets
-    String instance_log_id;
-
-    LoggerPtr log;
+    Poco::Logger * log;
 
     /// Should be set via setLock to protect hash table from modification from StorageJoin
-    /// If set HashJoin instance is not available for modification (addBlockToJoin)
+    /// If set HashJoin instance is not available for modification (addJoinedBlock)
     TableLockHolder storage_join_lock = nullptr;
 
-    void dataMapInit(MapsVariant &, size_t);
+    void dataMapInit(MapsVariant &);
 
     void initRightBlockStructure(Block & saved_block_sample);
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
-    Block joinBlockImpl(
+    void joinBlockImpl(
         Block & block,
         const Block & block_with_columns_to_add,
         const std::vector<const Maps *> & maps_,

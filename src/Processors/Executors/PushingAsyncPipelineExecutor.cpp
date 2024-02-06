@@ -5,9 +5,8 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
-#include <Common/scope_guard_safe.h>
-#include <Common/CurrentThread.h>
 #include <Poco/Event.h>
+#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
@@ -98,8 +97,7 @@ struct PushingAsyncPipelineExecutor::Data
     }
 };
 
-static void threadFunction(
-    PushingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
+static void threadFunction(PushingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
@@ -112,7 +110,7 @@ static void threadFunction(
         if (thread_group)
             CurrentThread::attachToGroup(thread_group);
 
-        data.executor->execute(num_threads, concurrency_control);
+        data.executor->execute(num_threads);
     }
     catch (...)
     {
@@ -173,7 +171,7 @@ void PushingAsyncPipelineExecutor::start()
 
     auto func = [&, thread_group = CurrentThread::getGroup()]()
     {
-        threadFunction(*data, thread_group, pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+        threadFunction(*data, thread_group, pipeline.getNumThreads());
     };
 
     data->thread = ThreadFromGlobalPool(std::move(func));

@@ -6,7 +6,6 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <Common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -32,7 +31,7 @@ PoolWithFailover::PoolWithFailover(
     , max_tries(max_tries_)
     , auto_close_connection(auto_close_connection_)
 {
-    LOG_TRACE(getLogger("PostgreSQLConnectionPool"), "PostgreSQL connection pool size: {}, connection wait timeout: {}, max failover tries: {}",
+    LOG_TRACE(&Poco::Logger::get("PostgreSQLConnectionPool"), "PostgreSQL connection pool size: {}, connection wait timeout: {}, max failover tries: {}",
               pool_size, pool_wait_timeout, max_tries_);
 
     for (const auto & [priority, configurations] : configurations_by_priority)
@@ -56,13 +55,13 @@ PoolWithFailover::PoolWithFailover(
     , max_tries(max_tries_)
     , auto_close_connection(auto_close_connection_)
 {
-    LOG_TRACE(getLogger("PostgreSQLConnectionPool"), "PostgreSQL connection pool size: {}, connection wait timeout: {}, max failover tries: {}",
+    LOG_TRACE(&Poco::Logger::get("PostgreSQLConnectionPool"), "PostgreSQL connection pool size: {}, connection wait timeout: {}, max failover tries: {}",
               pool_size, pool_wait_timeout, max_tries_);
 
     /// Replicas have the same priority, but traversed replicas are moved to the end of the queue.
     for (const auto & [host, port] : configuration.addresses)
     {
-        LOG_DEBUG(getLogger("PostgreSQLPoolWithFailover"), "Adding address host: {}, port: {} to connection pool", host, port);
+        LOG_DEBUG(&Poco::Logger::get("PostgreSQLPoolWithFailover"), "Adding address host: {}, port: {} to connection pool", host, port);
         auto connection_string = formatConnectionString(configuration.database, host, port, configuration.username, configuration.password);
         replicas_with_priority[0].emplace_back(connection_string, pool_size);
     }

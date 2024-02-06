@@ -18,7 +18,7 @@ namespace DB
 
 StorageSystemProjectionParts::StorageSystemProjectionParts(const StorageID & table_id_)
     : StorageSystemPartsBase(table_id_,
-    ColumnsDescription{
+    {
         {"partition",                                   std::make_shared<DataTypeString>()},
         {"name",                                        std::make_shared<DataTypeString>()},
         {"part_type",                                   std::make_shared<DataTypeString>()},
@@ -83,11 +83,7 @@ StorageSystemProjectionParts::StorageSystemProjectionParts(const StorageID & tab
 
         {"rows_where_ttl_info.expression",              std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"rows_where_ttl_info.min",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
-        {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
-
-        {"is_broken",                                   std::make_shared<DataTypeUInt8>()},
-        {"exception_code",                              std::make_shared<DataTypeInt32>()},
-        {"exception",                                   std::make_shared<DataTypeString>()},
+        {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())}
     }
     )
 {
@@ -225,17 +221,17 @@ void StorageSystemProjectionParts::processNextStorage(
             if (columns_mask[src_index++])
             {
                 auto checksum = helper.hash_of_all_files;
-                columns[res_index++]->insert(getHexUIntLowercase(checksum));
+                columns[res_index++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
             }
             if (columns_mask[src_index++])
             {
                 auto checksum = helper.hash_of_uncompressed_files;
-                columns[res_index++]->insert(getHexUIntLowercase(checksum));
+                columns[res_index++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
             }
             if (columns_mask[src_index++])
             {
                 auto checksum = helper.uncompressed_hash_of_compressed_files;
-                columns[res_index++]->insert(getHexUIntLowercase(checksum));
+                columns[res_index++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
             }
         }
 
@@ -276,37 +272,11 @@ void StorageSystemProjectionParts::processNextStorage(
         add_ttl_info_map(part->ttl_infos.moves_ttl);
 
         if (columns_mask[src_index++])
-        {
-            if (part->default_codec)
-                columns[res_index++]->insert(queryToString(part->default_codec->getCodecDesc()));
-            else
-                columns[res_index++]->insertDefault();
-        }
+            columns[res_index++]->insert(queryToString(part->default_codec->getCodecDesc()));
 
         add_ttl_info_map(part->ttl_infos.recompression_ttl);
         add_ttl_info_map(part->ttl_infos.group_by_ttl);
         add_ttl_info_map(part->ttl_infos.rows_where_ttl);
-
-        {
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->is_broken.load(std::memory_order_relaxed));
-
-            if (part->is_broken)
-            {
-                std::lock_guard lock(part->broken_reason_mutex);
-                if (columns_mask[src_index++])
-                    columns[res_index++]->insert(part->exception_code);
-                if (columns_mask[src_index++])
-                    columns[res_index++]->insert(part->exception);
-            }
-            else
-            {
-                if (columns_mask[src_index++])
-                    columns[res_index++]->insertDefault();
-                if (columns_mask[src_index++])
-                    columns[res_index++]->insertDefault();
-            }
-        }
 
         /// _state column should be the latest.
         /// Do not use part->getState*, it can be changed from different thread

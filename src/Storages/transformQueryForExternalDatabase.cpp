@@ -285,7 +285,6 @@ String transformQueryForExternalDatabaseImpl(
     Names used_columns,
     const NamesAndTypesList & available_columns,
     IdentifierQuotingStyle identifier_quoting_style,
-    LiteralEscapingStyle literal_escaping_style,
     const String & database,
     const String & table,
     ContextPtr context)
@@ -329,26 +328,14 @@ String transformQueryForExternalDatabaseImpl(
         }
         else if (auto * function = original_where->as<ASTFunction>())
         {
-            if (function->name == "and" || function->name == "tuple")
+            if (function->name == "and")
             {
                 auto new_function_and = makeASTFunction("and");
-                std::queue<const ASTFunction *> predicates;
-                predicates.push(function);
-
-                while (!predicates.empty())
+                for (auto & elem : function->arguments->children)
                 {
-                    const auto * func = predicates.front();
-                    predicates.pop();
-
-                    for (auto & elem : func->arguments->children)
-                    {
-                        if (isCompatible(elem))
-                            new_function_and->arguments->children.push_back(elem);
-                        else if (const auto * child = elem->as<ASTFunction>(); child && (child->name == "and" || child->name == "tuple"))
-                            predicates.push(child);
-                    }
+                    if (isCompatible(elem))
+                        new_function_and->arguments->children.push_back(elem);
                 }
-
                 if (new_function_and->arguments->children.size() == 1)
                     select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(new_function_and->arguments->children[0]));
                 else if (new_function_and->arguments->children.size() > 1)
@@ -378,11 +365,9 @@ String transformQueryForExternalDatabaseImpl(
     dropAliases(select_ptr);
 
     WriteBufferFromOwnString out;
-    IAST::FormatSettings settings(
-            out, /*one_line*/ true, /*hilite*/ false,
-            /*always_quote_identifiers*/ identifier_quoting_style != IdentifierQuotingStyle::None,
-            /*identifier_quoting_style*/ identifier_quoting_style, /*show_secrets_*/ true,
-            /*literal_escaping_style*/ literal_escaping_style);
+    IAST::FormatSettings settings(out, true);
+    settings.identifier_quoting_style = identifier_quoting_style;
+    settings.always_quote_identifiers = identifier_quoting_style != IdentifierQuotingStyle::None;
 
     select->format(settings);
 
@@ -396,7 +381,6 @@ String transformQueryForExternalDatabase(
     const Names & column_names,
     const NamesAndTypesList & available_columns,
     IdentifierQuotingStyle identifier_quoting_style,
-    LiteralEscapingStyle literal_escaping_style,
     const String & database,
     const String & table,
     ContextPtr context)
@@ -421,7 +405,6 @@ String transformQueryForExternalDatabase(
             column_names,
             available_columns,
             identifier_quoting_style,
-            literal_escaping_style,
             database,
             table,
             context);
@@ -433,7 +416,6 @@ String transformQueryForExternalDatabase(
         query_info.syntax_analyzer_result->requiredSourceColumns(),
         available_columns,
         identifier_quoting_style,
-        literal_escaping_style,
         database,
         table,
         context);

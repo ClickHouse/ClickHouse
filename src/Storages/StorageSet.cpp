@@ -9,9 +9,6 @@
 #include <Disks/IDisk.h>
 #include <Common/formatReadable.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Interpreters/Context.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <Common/logger_useful.h>
 #include <Interpreters/Set.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -106,7 +103,7 @@ void SetOrJoinSink::onFinish()
 }
 
 
-SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
+SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     UInt64 id = ++increment;
     return std::make_shared<SetOrJoinSink>(
@@ -147,7 +144,7 @@ StorageSet::StorageSet(
     const String & comment,
     bool persistent_)
     : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
-    , set(std::make_shared<Set>(SizeLimits(), 0, true))
+    , set(std::make_shared<Set>(SizeLimits(), false, true))
 {
     Block header = getInMemoryMetadataPtr()->getSampleBlock();
     set->setHeader(header.getColumnsWithTypeAndName());
@@ -156,69 +153,19 @@ StorageSet::StorageSet(
 }
 
 
-SetPtr StorageSet::getSet() const
-{
-    std::lock_guard lock(mutex);
-    return set;
-}
+void StorageSet::insertBlock(const Block & block, ContextPtr) { set->insertFromBlock(block.getColumnsWithTypeAndName()); }
+void StorageSet::finishInsert() { set->finishInsert(); }
 
-
-void StorageSet::insertBlock(const Block & block, ContextPtr)
-{
-    SetPtr current_set;
-    {
-        std::lock_guard lock(mutex);
-        current_set = set;
-    }
-    current_set->insertFromBlock(block.getColumnsWithTypeAndName());
-}
-
-void StorageSet::finishInsert()
-{
-    SetPtr current_set;
-    {
-        std::lock_guard lock(mutex);
-        current_set = set;
-    }
-    current_set->finishInsert();
-}
-
-size_t StorageSet::getSize(ContextPtr) const
-{
-    SetPtr current_set;
-    {
-        std::lock_guard lock(mutex);
-        current_set = set;
-    }
-    return current_set->getTotalRowCount();
-}
-
-std::optional<UInt64> StorageSet::totalRows(const Settings &) const
-{
-    SetPtr current_set;
-    {
-        std::lock_guard lock(mutex);
-        current_set = set;
-    }
-    return current_set->getTotalRowCount();
-}
-
-std::optional<UInt64> StorageSet::totalBytes(const Settings &) const
-{
-    SetPtr current_set;
-    {
-        std::lock_guard lock(mutex);
-        current_set = set;
-    }
-    return current_set->getTotalByteCount();
-}
+size_t StorageSet::getSize(ContextPtr) const { return set->getTotalRowCount(); }
+std::optional<UInt64> StorageSet::totalRows(const Settings &) const { return set->getTotalRowCount(); }
+std::optional<UInt64> StorageSet::totalBytes(const Settings &) const { return set->getTotalByteCount(); }
 
 void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
 {
     if (disk->exists(path))
         disk->removeRecursive(path);
     else
-        LOG_INFO(getLogger("StorageSet"), "Path {} is already removed from disk {}", path, disk->getName());
+        LOG_INFO(&Poco::Logger::get("StorageSet"), "Path {} is already removed from disk {}", path, disk->getName());
 
     disk->createDirectories(path);
     disk->createDirectories(fs::path(path) / "tmp/");
@@ -226,13 +173,8 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
     Block header = metadata_snapshot->getSampleBlock();
 
     increment = 0;
-
-    auto new_set = std::make_shared<Set>(SizeLimits(), 0, true);
-    new_set->setHeader(header.getColumnsWithTypeAndName());
-    {
-        std::lock_guard lock(mutex);
-        set = new_set;
-    }
+    set = std::make_shared<Set>(SizeLimits(), false, true);
+    set->setHeader(header.getColumnsWithTypeAndName());
 }
 
 
@@ -284,7 +226,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
     finishInsert();
 
     /// TODO Add speed, compressed bytes, data volume in memory, compression ratio ... Generalize all statistics logging in project.
-    LOG_INFO(getLogger("StorageSetOrJoinBase"), "Loaded from backup file {}. {} rows, {}. State has {} unique rows.",
+    LOG_INFO(&Poco::Logger::get("StorageSetOrJoinBase"), "Loaded from backup file {}. {} rows, {}. State has {} unique rows.",
         file_path, info.rows, ReadableSize(info.bytes), getSize(ctx));
 }
 

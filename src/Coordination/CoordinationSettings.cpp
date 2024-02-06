@@ -1,5 +1,6 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Common/logger_useful.h>
+#include <filesystem>
 #include <Coordination/Defines.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteIntText.h>
@@ -41,7 +42,7 @@ const String KeeperConfigurationAndSettings::DEFAULT_FOUR_LETTER_WORD_CMD =
 #if USE_JEMALLOC
 "jmst,jmfp,jmep,jmdp,"
 #endif
-"conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,rclc,clrs,ftfl,ydld";
+"conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,rclc,clrs";
 
 KeeperConfigurationAndSettings::KeeperConfigurationAndSettings()
     : server_id(NOT_EXIST)
@@ -88,6 +89,14 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
 
     writeText("four_letter_word_allow_list=", buf);
     writeText(four_letter_word_allow_list, buf);
+    buf.write('\n');
+
+    writeText("log_storage_path=", buf);
+    writeText(log_storage_path, buf);
+    buf.write('\n');
+
+    writeText("snapshot_storage_path=", buf);
+    writeText(snapshot_storage_path, buf);
     buf.write('\n');
 
     /// coordination_settings
@@ -139,8 +148,6 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     write_int(coordination_settings->max_requests_batch_size);
     writeText("max_requests_batch_bytes_size=", buf);
     write_int(coordination_settings->max_requests_batch_bytes_size);
-    writeText("max_flush_batch_size=", buf);
-    write_int(coordination_settings->max_flush_batch_size);
     writeText("max_request_queue_size=", buf);
     write_int(coordination_settings->max_request_queue_size);
     writeText("max_requests_quick_batch_size=", buf);
@@ -156,12 +163,6 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     write_bool(coordination_settings->compress_snapshots_with_zstd_format);
     writeText("configuration_change_tries_count=", buf);
     write_int(coordination_settings->configuration_change_tries_count);
-
-    writeText("raft_limits_reconnect_limit=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->raft_limits_reconnect_limit));
-
-    writeText("async_replication=", buf);
-    write_bool(coordination_settings->async_replication);
 }
 
 KeeperConfigurationAndSettingsPtr
@@ -193,9 +194,61 @@ KeeperConfigurationAndSettings::loadFromConfig(const Poco::Util::AbstractConfigu
                          DEFAULT_FOUR_LETTER_WORD_CMD));
 
 
+    ret->log_storage_path = getLogsPathFromConfig(config, standalone_keeper_);
+    ret->snapshot_storage_path = getSnapshotsPathFromConfig(config, standalone_keeper_);
+
+    ret->state_file_path = getStateFilePathFromConfig(config, standalone_keeper_);
+
     ret->coordination_settings->loadFromConfig("keeper_server.coordination_settings", config);
 
     return ret;
+}
+
+String KeeperConfigurationAndSettings::getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_)
+{
+    /// the most specialized path
+    if (config.has("keeper_server.log_storage_path"))
+        return config.getString("keeper_server.log_storage_path");
+
+    if (config.has("keeper_server.storage_path"))
+        return std::filesystem::path{config.getString("keeper_server.storage_path")} / "logs";
+
+    if (standalone_keeper_)
+        return std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "logs";
+    else
+        return std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/logs";
+}
+
+String KeeperConfigurationAndSettings::getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_)
+{
+    /// the most specialized path
+    if (config.has("keeper_server.snapshot_storage_path"))
+        return config.getString("keeper_server.snapshot_storage_path");
+
+    if (config.has("keeper_server.storage_path"))
+        return std::filesystem::path{config.getString("keeper_server.storage_path")} / "snapshots";
+
+    if (standalone_keeper_)
+        return std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "snapshots";
+    else
+        return std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/snapshots";
+}
+
+String KeeperConfigurationAndSettings::getStateFilePathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_)
+{
+    if (config.has("keeper_server.storage_path"))
+        return std::filesystem::path{config.getString("keeper_server.storage_path")} / "state";
+
+    if (config.has("keeper_server.snapshot_storage_path"))
+        return std::filesystem::path(config.getString("keeper_server.snapshot_storage_path")).parent_path() / "state";
+
+    if (config.has("keeper_server.log_storage_path"))
+        return std::filesystem::path(config.getString("keeper_server.log_storage_path")).parent_path() / "state";
+
+    if (standalone_keeper_)
+        return std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "state";
+    else
+        return std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/state";
 }
 
 }

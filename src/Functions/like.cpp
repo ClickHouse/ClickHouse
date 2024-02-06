@@ -1,3 +1,4 @@
+#include "FunctionsStringSearch.h"
 #include "FunctionFactory.h"
 #include "like.h"
 

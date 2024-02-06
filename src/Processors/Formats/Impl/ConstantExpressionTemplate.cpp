@@ -393,7 +393,7 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
     SipHash hash_state;
     hash_state.update(result_column_type->getName());
 
-    expression->updateTreeHash(hash_state, /*ignore_aliases=*/ true);
+    expression->updateTreeHash(hash_state);
 
     for (const auto & info : replaced_literals)
         hash_state.update(info.type->getName());
@@ -402,10 +402,11 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
     /// Allows distinguish expression in the last column in Values format
     hash_state.update(salt);
 
-    const auto res128 = getSipHash128AsPair(hash_state);
+    IAST::Hash res128;
+    hash_state.get128(res128);
     size_t res = 0;
-    boost::hash_combine(res, res128.low64);
-    boost::hash_combine(res, res128.high64);
+    boost::hash_combine(res, res128.first);
+    boost::hash_combine(res, res128.second);
     return res;
 }
 
@@ -603,8 +604,6 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
             memcpy(buf, istr.position(), bytes_to_copy);
             buf[bytes_to_copy] = 0;
 
-            const bool hex_like = bytes_to_copy >= 2 && buf[0] == '0' && (buf[1] == 'x' || buf[1] == 'X');
-
             char * pos_double = buf;
             errno = 0;
             Float64 float_value = std::strtod(buf, &pos_double);
@@ -616,13 +615,13 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
 
             char * pos_integer = buf;
             errno = 0;
-            UInt64 uint_value = std::strtoull(buf, &pos_integer, hex_like ? 16 : 10);
+            UInt64 uint_value = std::strtoull(buf, &pos_integer, 0);
             if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
             {
                 istr.position() += pos_integer - buf;
                 if (negative && type_info.main_type == Type::Int64)
                     number = static_cast<Int64>(-uint_value);
-                else if (type_info.main_type == Type::UInt64 && (!negative || uint_value == 0))
+                else if (!negative && type_info.main_type == Type::UInt64)
                     number = uint_value;
                 else
                     return false;

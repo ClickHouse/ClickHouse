@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <iostream>
 #include <cassert>
 #include <cstring>
 
@@ -31,22 +32,17 @@ class WriteBuffer : public BufferBase
 public:
     using BufferBase::set;
     using BufferBase::position;
+    WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); }
 
     /** write the data in the buffer (from the beginning of the buffer to the current position);
-      * set the position to the beginning; throw an exception, if something is wrong.
-      *
-      * Next call doesn't guarantee that buffer capacity is regained after.
-      * Some buffers (i.g WriteBufferFromS3) flush its data only after certain amount of consumed data.
-      * If direct write is performed into [position(), buffer().end()) and its length is not enough,
-      * you need to fill it first (i.g with write call), after it the capacity is regained.
+      * set the position to the beginning; throw an exception, if something is wrong
       */
     inline void next()
     {
         if (!offset())
             return;
-
-        auto bytes_in_buffer = offset();
+        bytes += offset();
 
         try
         {
@@ -58,16 +54,16 @@ public:
               * so that later (for example, when the stack was expanded) there was no second attempt to write data.
               */
             pos = working_buffer.begin();
-            bytes += bytes_in_buffer;
             throw;
         }
 
-        bytes += bytes_in_buffer;
         pos = working_buffer.begin();
     }
 
-    /// Calling finalize() in the destructor of derived classes is a bad practice.
-    virtual ~WriteBuffer();
+    /** it is desirable in the derived classes to place the finalize() call in the destructor,
+      * so that the last data is written (if finalize() wasn't called explicitly)
+      */
+    virtual ~WriteBuffer() = default;
 
     inline void nextIfAtEnd()
     {
@@ -96,6 +92,7 @@ public:
         }
     }
 
+
     inline void write(char x)
     {
         if (finalized)
@@ -121,6 +118,7 @@ public:
         if (finalized)
             return;
 
+        /// finalize() is often called from destructors.
         LockMemoryExceptionInThread lock(VariableContext::Global);
         try
         {
@@ -143,8 +141,6 @@ public:
     }
 
 protected:
-    WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
-
     virtual void finalizeImpl()
     {
         next();
@@ -156,31 +152,11 @@ private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).
       * Throw an exception if something is wrong.
       */
-    virtual void nextImpl()
-    {
-        throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER, "Cannot write after end of buffer.");
-    }
+    virtual void nextImpl() { throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER, "Cannot write after end of buffer."); }
 };
 
 
 using WriteBufferPtr = std::shared_ptr<WriteBuffer>;
 
-
-class WriteBufferFromPointer : public WriteBuffer
-{
-public:
-    WriteBufferFromPointer(Position ptr, size_t size) : WriteBuffer(ptr, size) {}
-
-private:
-    virtual void finalizeImpl() override
-    {
-        /// no op
-    }
-
-    virtual void sync() override
-    {
-        /// no on
-    }
-};
 
 }

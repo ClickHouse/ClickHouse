@@ -82,13 +82,6 @@ std::string DataTypeMap::doGetName() const
     return s.str();
 }
 
-std::string DataTypeMap::doGetPrettyName(size_t indent) const
-{
-    WriteBufferFromOwnString s;
-    s << "Map(" << key_type->getPrettyName(indent) << ", " << value_type->getPrettyName(indent) << ')';
-    return s.str();
-}
-
 MutableColumnPtr DataTypeMap::createColumn() const
 {
     return ColumnMap::create(nested->createColumn());
@@ -134,13 +127,6 @@ bool DataTypeMap::checkKeyType(DataTypePtr key_type)
     }
 
     return true;
-}
-
-DataTypePtr DataTypeMap::getNestedTypeWithUnnamedTuple() const
-{
-    const auto & from_array = assert_cast<const DataTypeArray &>(*nested);
-    const auto & from_tuple = assert_cast<const DataTypeTuple &>(*from_array.getNestedType());
-    return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(from_tuple.getElements()));
 }
 
 static DataTypePtr create(const ASTPtr & arguments)

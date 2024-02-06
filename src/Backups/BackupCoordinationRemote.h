@@ -5,9 +5,8 @@
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationReplicatedSQLObjects.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
-#include <Backups/BackupCoordinationKeeperMapTables.h>
 #include <Backups/BackupCoordinationStageSync.h>
-#include <Backups/WithRetries.h>
+#include <Storages/MergeTree/ZooKeeperRetries.h>
 
 
 namespace DB
@@ -20,7 +19,13 @@ constexpr size_t MAX_ZOOKEEPER_ATTEMPTS = 10;
 class BackupCoordinationRemote : public IBackupCoordination
 {
 public:
-    using BackupKeeperSettings = WithRetries::KeeperSettings;
+    struct BackupKeeperSettings
+    {
+        UInt64 keeper_max_retries;
+        UInt64 keeper_retry_initial_backoff_ms;
+        UInt64 keeper_retry_max_backoff_ms;
+        UInt64 keeper_value_max_size;
+    };
 
     BackupCoordinationRemote(
         zkutil::GetZooKeeper get_zookeeper_,
@@ -30,8 +35,7 @@ public:
         const Strings & all_hosts_,
         const String & current_host_,
         bool plain_backup_,
-        bool is_internal_,
-        QueryStatusPtr process_list_element_);
+        bool is_internal_);
 
     ~BackupCoordinationRemote() override;
 
@@ -65,9 +69,6 @@ public:
     void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path) override;
     Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const override;
 
-    void addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup) override;
-    String getKeeperMapDataPath(const String & table_zookeeper_root_path) const override;
-
     void addFileInfos(BackupFileInfos && file_infos) override;
     BackupFileInfos getFileInfos() const override;
     BackupFileInfos getFileInfosForAllHosts() const override;
@@ -78,6 +79,7 @@ public:
     static size_t findCurrentHostIndex(const Strings & all_hosts, const String & current_host);
 
 private:
+    zkutil::ZooKeeperPtr getZooKeeper() const;
     void createRootNodes();
     void removeAllNodes();
 
@@ -90,9 +92,9 @@ private:
     void prepareReplicatedTables() const TSA_REQUIRES(replicated_tables_mutex);
     void prepareReplicatedAccess() const TSA_REQUIRES(replicated_access_mutex);
     void prepareReplicatedSQLObjects() const TSA_REQUIRES(replicated_sql_objects_mutex);
-    void prepareKeeperMapTables() const TSA_REQUIRES(keeper_map_tables_mutex);
     void prepareFileInfos() const TSA_REQUIRES(file_infos_mutex);
 
+    const zkutil::GetZooKeeper get_zookeeper;
     const String root_zookeeper_path;
     const String zookeeper_path;
     const BackupKeeperSettings keeper_settings;
@@ -102,26 +104,21 @@ private:
     const size_t current_host_index;
     const bool plain_backup;
     const bool is_internal;
-    LoggerPtr const log;
 
-    /// The order of these two fields matters, because stage_sync holds a reference to with_retries object
-    mutable WithRetries with_retries;
+    mutable ZooKeeperRetriesInfo zookeeper_retries_info;
     std::optional<BackupCoordinationStageSync> stage_sync;
 
+    mutable zkutil::ZooKeeperPtr TSA_GUARDED_BY(zookeeper_mutex) zookeeper;
     mutable std::optional<BackupCoordinationReplicatedTables> TSA_GUARDED_BY(replicated_tables_mutex) replicated_tables;
     mutable std::optional<BackupCoordinationReplicatedAccess> TSA_GUARDED_BY(replicated_access_mutex) replicated_access;
     mutable std::optional<BackupCoordinationReplicatedSQLObjects> TSA_GUARDED_BY(replicated_sql_objects_mutex) replicated_sql_objects;
     mutable std::optional<BackupCoordinationFileInfos> TSA_GUARDED_BY(file_infos_mutex) file_infos;
-    mutable std::optional<BackupCoordinationKeeperMapTables> keeper_map_tables TSA_GUARDED_BY(keeper_map_tables_mutex);
-    std::unordered_set<size_t> TSA_GUARDED_BY(writing_files_mutex) writing_files;
 
     mutable std::mutex zookeeper_mutex;
     mutable std::mutex replicated_tables_mutex;
     mutable std::mutex replicated_access_mutex;
     mutable std::mutex replicated_sql_objects_mutex;
     mutable std::mutex file_infos_mutex;
-    mutable std::mutex writing_files_mutex;
-    mutable std::mutex keeper_map_tables_mutex;
 };
 
 }
