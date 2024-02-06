@@ -13,7 +13,7 @@ from clickhouse_helper import (
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPORT_PATH, TEMP_PATH
 from pr_info import PRInfo
-from report import JobReport
+from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
@@ -144,12 +144,16 @@ def main():
         with open(workspace_path / "description.txt", "r", encoding="utf-8") as desc_f:
             description = desc_f.readline().rstrip("\n")
     except:
-        status = "failure"
+        status = FAILURE
         description = "Task failed: $?=" + str(retcode)
+
+    test_result = TestResult(description, OK)
+    if "fail" in status:
+        test_result.status = FAIL
 
     JobReport(
         description=description,
-        test_results=[],
+        test_results=[test_result],
         status=status,
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
@@ -158,7 +162,7 @@ def main():
     ).dump()
 
     logging.info("Result: '%s', '%s'", status, description)
-    if status == "failure":
+    if status != SUCCESS:
         sys.exit(1)
 
 
