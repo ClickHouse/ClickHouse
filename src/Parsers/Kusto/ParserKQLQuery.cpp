@@ -373,7 +373,10 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     uint16_t bracket_count = 0;
 
-    while (!pos->isEnd() && pos->type != TokenType::Semicolon)
+    while ((pos->type < TokenType::EndOfStream ||
+            pos->type == TokenType::ErrorSingleExclamationMark || // enable kql negative operators
+            String(pos->begin, pos->end) == "~") &&  // enable kql Case-Sensitive operators
+            pos->type != TokenType::Semicolon)
     {
         if (pos->type == TokenType::OpeningRoundBracket)
             ++bracket_count;
