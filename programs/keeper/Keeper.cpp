@@ -544,7 +544,7 @@ try
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
-        config().getString("path", ""),
+        config().getString("path", KEEPER_DEFAULT_PATH),
         std::move(unused_cache),
         unused_event,
         [&](ConfigurationPtr config, bool /* initial_loading */)
