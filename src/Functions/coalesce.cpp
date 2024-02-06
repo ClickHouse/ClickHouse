@@ -116,7 +116,6 @@ public:
         }
 
 
-
         ColumnsWithTypeAndName multi_if_args;
         ColumnsWithTypeAndName tmp_args(1);
 
