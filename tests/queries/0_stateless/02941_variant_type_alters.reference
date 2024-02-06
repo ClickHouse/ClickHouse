@@ -328,3 +328,11 @@ insert after alter modify column 2
 22	str_22	\N	str_22	\N	\N	\N	\N
 23	\N	\N	\N	\N	\N	\N	\N
 24	24	24	\N	\N	\N	\N	\N
+{'a':'0','b':'str_0'}
+{}
+{'a':'2','b':'str_2'}
+{}
+{'a':'0','b':0}
+{}
+{'a':'2','b':0}
+{}

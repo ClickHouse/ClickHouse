@@ -35,4 +35,3 @@ echo "MergeTree wide"
 $CH_CLIENT -q "create table test (id UInt64, v Variant(UInt64, Array(Variant(String, UInt64)))) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1;"
 test
 $CH_CLIENT -q "drop table test;"
-
