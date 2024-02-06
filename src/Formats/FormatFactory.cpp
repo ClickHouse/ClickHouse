@@ -573,7 +573,7 @@ void FormatFactory::genAllKeywords()
     }
 }
 
-String FormatFactory::getKeyword(const String & name) const 
+String FormatFactory::getKeyword(const String & name) const
 {
     String upper_name = name;
     std::transform(upper_name.begin(), upper_name.end(), upper_name.begin(), [](unsigned char c) { return std::toupper(c); });
