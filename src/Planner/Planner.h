@@ -65,6 +65,8 @@ public:
         return planner_context;
     }
 
+    /// We support mapping QueryNode -> QueryPlanStep (the last step added to plan from this query)
+    /// It is useful for parallel replicas analysis.
     using QueryNodeToPlanStepMapping = std::unordered_map<const QueryNode *, const QueryPlan::Node *>;
     const QueryNodeToPlanStepMapping & getQueryNodeToPlanStepMapping() const { return query_node_to_plan_step_mapping; }
 

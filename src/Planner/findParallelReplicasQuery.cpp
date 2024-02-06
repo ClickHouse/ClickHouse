@@ -6,17 +6,17 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Planner/PlannerJoinTree.h>
 #include <Planner/Utils.h>
-#include "Analyzer/ArrayJoinNode.h"
-#include "Analyzer/InDepthQueryTreeVisitor.h"
-#include "Analyzer/JoinNode.h"
-#include "Analyzer/QueryNode.h"
-#include "Analyzer/TableNode.h"
-#include "Analyzer/UnionNode.h"
-#include "Parsers/ASTSubquery.h"
-#include "Parsers/queryToString.h"
-#include "Processors/QueryPlan/ExpressionStep.h"
-#include "Processors/QueryPlan/FilterStep.h"
-#include "Storages/MergeTree/MergeTreeData.h"
+#include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/JoinNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/queryToString.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDummy.h>
 
 namespace DB
@@ -28,6 +28,11 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+/// Returns a list of (sub)queries (candidates) which may support parallel replicas.
+/// The rule is :
+/// subquery has only LEFT or ALL INNER JOIN (or none), and left part is MergeTree table or subquery candidate as well.
+///
+/// Additional checks are required, so we return many candidates. The innermost subquery is on top.
 std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTreeNode * query_tree_node)
 {
     std::stack<const QueryNode *> res;
@@ -42,6 +47,7 @@ std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTre
             {
                 const auto & table_node = query_tree_node->as<TableNode &>();
                 const auto & storage = table_node.getStorage();
+                /// Here we check StorageDummy as well, to support a query tree with replaced storages.
                 if (std::dynamic_pointer_cast<MergeTreeData>(storage) || typeid_cast<const StorageDummy *>(storage.get()))
                     return res;
 
@@ -143,6 +149,9 @@ QueryTreeNodePtr replaceTablesWithDummyTables(const QueryTreeNodePtr & query, co
     return query->cloneAndReplace(visitor.replacement_map);
 }
 
+/// Find the best candidate for parallel replicas execution by verifying query plan.
+/// If query plan has only Expression, Filter of Join steps, we can execute it fully remotely and check the next query.
+/// Otherwise we can execute current query up to WithMergableStage only.
 const QueryNode * findParallelReplicasQuery(
     std::stack<const QueryNode *> stack,
     const std::unordered_map<const QueryNode *, const QueryPlan::Node *> & mapping)
@@ -155,12 +164,6 @@ const QueryNode * findParallelReplicasQuery(
         const QueryNode * subquery_node = stack.top();
         stack.pop();
 
-        // std::cerr << "----- trying " << reinterpret_cast<const void *>(subquery_node) << std::endl;
-
-        // const QueryNode * mapped_node = subquery_node;
-        // if (auto it = replacement_map.find(subquery_node); it != replacement_map.end())
-        //     mapped_node = it->second.get();
-
         auto it = mapping.find(subquery_node);
         /// This should not happen ideally.
         if (it == mapping.end())
@@ -169,8 +172,6 @@ const QueryNode * findParallelReplicasQuery(
         const QueryPlan::Node * curr_node = it->second;
         const QueryPlan::Node * next_node_to_check = curr_node;
         bool can_distribute_full_node = true;
-
-        // std::cerr << "trying " << curr_node->step->getName() << '\n' << subquery_node->dumpTree() << std::endl;
 
         while (next_node_to_check && next_node_to_check != prev_checked_node)
         {
@@ -210,8 +211,8 @@ const QueryNode * findParallelReplicasQuery(
         /// Will try to execute query up to WithMergableStage
         if (!can_distribute_full_node)
         {
-            /// Current query node does not contain subqueries already.
-            /// We can execute parallel replicas over storage.
+            /// Current query node does not contain subqueries.
+            /// We can execute parallel replicas over storage::read.
             if (!res)
                 return nullptr;
 
@@ -240,15 +241,11 @@ const QueryNode * findParallelReplicasQuery(const QueryTreeNodePtr & query_tree_
             query_tree_node->formatASTForErrorMessage());
 
     auto context = query_node ? query_node->getContext() : union_node->getContext();
-    // const auto & settings = context->getSettingsRef();
 
     if (!context->canUseParallelReplicasOnInitiator())
         return nullptr;
 
     auto stack = getSupportingParallelReplicasQuery(query_tree_node.get());
-    // std::cerr << "=============== findParallelReplicasQuery stack size " << stack.size() << std::endl;
-    // std::cerr << "=============== findParallelReplicasQuery tree\n " << query_tree_node->dumpTree() << std::endl;
-    // std::cerr << "=============== findParallelReplicasQuery trace \n" << StackTrace().toString() << std::endl;
     /// Empty stack means that storage does not support parallel replicas.
     if (stack.empty())
         return nullptr;
@@ -257,37 +254,27 @@ const QueryNode * findParallelReplicasQuery(const QueryTreeNodePtr & query_tree_
     if (stack.top() == query_tree_node.get())
         return nullptr;
 
+    /// This is needed to avoid infinite recursion.
     auto mutable_context = Context::createCopy(context);
     mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
 
+    /// Here we replace tables to dummy, in order to build a temporary query plan for parallel replicas analysis.
     ResultReplacementMap replacement_map;
     auto updated_query_tree = replaceTablesWithDummyTables(query_tree_node, mutable_context);
 
-    // std::cerr << "=============== findParallelReplicasQuery updated tree\n " << updated_query_tree->dumpTree() << std::endl;
-
     SelectQueryOptions options;
-    //options.only_analyze = true;
     Planner planner(updated_query_tree, options, std::make_shared<GlobalPlannerContext>(nullptr, nullptr));
     planner.buildQueryPlanIfNeeded();
 
-    // WriteBufferFromOwnString buf;
-    // planner.getQueryPlan().explainPlan(buf, {.actions = true});
-    // std::cerr << buf.str() << std::endl;
-
+    /// This part is a bit clumsy.
+    /// We updated a query_tree with dummy storages, and mapping is using updated_query_tree now.
+    /// But QueryNode result should be taken from initial query tree.
+    /// So that we build a list of candidates again, and call findParallelReplicasQuery for it.
     auto new_stack = getSupportingParallelReplicasQuery(updated_query_tree.get());
-
-    //const auto & result_query_plan = planner.getQueryPlan();
     const auto & mapping = planner.getQueryNodeToPlanStepMapping();
-
-    // for (const auto & [k, v] : mapping)
-    //     std::cerr << "----- " << v->step->getName() << '\n' << reinterpret_cast<const void *>(k) << std::endl;
-
     const auto * res = findParallelReplicasQuery(new_stack, mapping);
-    // if (res)
-    //     std::cerr << "Result subtree " << res->dumpTree() << std::endl;
-    // else
-    //     std::cerr << "Result subtree is empty" << std::endl;
 
+    /// Now, return a query from initial stack.
     if (res)
     {
         while (!new_stack.empty())
@@ -383,7 +370,6 @@ const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tr
             query_tree_node->formatASTForErrorMessage());
 
     auto context = query_node ? query_node->getContext() : union_node->getContext();
-    // const auto & settings = context->getSettingsRef();
 
     if (!context->canUseParallelReplicasOnFollower())
         return nullptr;
@@ -396,9 +382,6 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     const PlannerContextPtr & planner_context,
     std::shared_ptr<const StorageLimitsList> storage_limits)
 {
-    // std::cerr << "buildQueryPlanForParallelReplicas 1 " << query_node.dumpTree() << std::endl;
-    ASTPtr modified_query_ast;
-    Block header;
     auto processed_stage = QueryProcessingStage::WithMergeableState;
     auto context = planner_context->getQueryContext();
 
@@ -408,23 +391,10 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
     rewriteJoinToGlobalJoin(modified_query_tree, context);
-    // std::cerr << "buildQueryPlanForParallelReplicas 1 " << modified_query_tree->dumpTree() << std::endl;
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree);
-    // std::cerr << "buildQueryPlanForParallelReplicas 2 " << modified_query_tree->dumpTree() << std::endl;
-    modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
+    ASTPtr modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
-    // std::cerr << "buildQueryPlanForParallelReplicas AST " << queryToString(modified_query_ast) << std::endl;
-    // std::cerr << "buildQueryPlanForParallelReplicas AST " << modified_query_ast->dumpTree() << std::endl;
-
-    // SelectQueryOptions opt(processed_stage);
-    // Planner planner(modified_query_tree, opt, std::make_shared<GlobalPlannerContext>(nullptr));
-    // planner.buildQueryPlanIfNeeded();
-    // header = planner.getQueryPlan().getCurrentDataStream().header;
-
-    // InterpreterSelectQueryAnalyzer interpreter(modified_query_tree, context, SelectQueryOptions(processed_stage));
-    // header = interpreter.getSampleBlock();
-
-    header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+    Block header = InterpreterSelectQueryAnalyzer::getSampleBlock(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
     ClusterProxy::SelectStreamFactory select_stream_factory =
@@ -447,6 +417,10 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
         initial_header.getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Position);
 
+    /// initial_header is a header expected by initial query.
+    /// header is a header which is returned by the follower.
+    /// They are different because tables will have different aliases (e.g. _table1 or _table5).
+    /// Here we just rename columns by position, with the hope the types would match.
     auto step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(converting));
     step->setStepDescription("Convert distributed names");
     query_plan.addStep(std::move(step));

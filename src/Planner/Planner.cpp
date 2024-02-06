@@ -482,11 +482,6 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         settings.max_block_size,
         settings.min_hit_rate_to_use_consecutive_keys_optimization);
 
-    // WriteBufferFromOwnString buf;
-    // params.explain(buf, 0);
-    // std::cerr << "........... " << buf.str() << std::endl;
-    // std::cerr << query_plan.getCurrentDataStream().header.dumpStructure() << std::endl;
-
     bool is_remote_storage = false;
     bool parallel_replicas_from_merge_tree = false;
 
@@ -1072,7 +1067,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         Planner subquery_planner(
             query_tree,
             subquery_options,
-            std::make_shared<GlobalPlannerContext>(nullptr, nullptr)); //planner_context->getGlobalPlannerContext());
+            std::make_shared<GlobalPlannerContext>(nullptr, nullptr));
         subquery_planner.buildQueryPlanIfNeeded();
 
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
@@ -1443,10 +1438,6 @@ void Planner::buildPlanForQueryNode()
     used_row_policies = std::move(join_tree_query_plan.used_row_policies);
     auto & mapping = join_tree_query_plan.query_node_to_plan_step_mapping;
     query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
-
-    // WriteBufferFromOwnString buf;
-    // query_plan.explainPlan(buf, {.header = true});
-    // LOG_TRACE(&Poco::Logger::get("Planner"), "Plan\n{}", buf.str());
 
     LOG_TRACE(getLogger("Planner"), "Query {} from stage {} to stage {}{}",
         query_tree->formatConvertedASTForErrorMessage(),

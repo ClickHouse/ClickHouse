@@ -152,6 +152,10 @@ static void removeCTEs(ASTPtr & ast)
 ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
 {
     auto ast = queryNodeToSelectQuery(query_node);
+    /// Remove CTEs information from distributed queries.
+    /// Now, if cte_name is set for subquery node, AST -> String serialization will only print cte name.
+    /// But CTE is defined only for top-level query part, so may not be sent.
+    /// Removing cte_name forces subquery to be always printed.
     removeCTEs(ast);
     return ast;
 }
