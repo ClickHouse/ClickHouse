@@ -210,9 +210,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             contains(desired_zero_copy_disk_types, disk_type))
         {
             response.addCookie({DISK_ZERO_COPY, disk_type});
-            sendPartFromDisk(part, out, client_protocol_version,
-                send_projections,
-                RemoteDiskFeature::Zerocopy);
+            sendPartFromDisk(part, out, client_protocol_version, RemoteDiskFeature::Zerocopy, send_projections);
             return;
         }
 
@@ -240,7 +238,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
         if (isInMemoryPart(part))
             sendPartFromMemory(part, out, send_projections);
         else
-            sendPartFromDisk(part, out, client_protocol_version, send_projections, disk_feature);
+            sendPartFromDisk(part, out, client_protocol_version, disk_feature, send_projections);
 
         data.addLastSentPart(part->info);
     }
@@ -298,8 +296,8 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     const MergeTreeData::DataPartPtr & part,
     WriteBuffer & out,
     int client_protocol_version,
-    bool send_projections,
-    RemoteDiskFeature feature)
+    RemoteDiskFeature feature,
+    bool send_projections)
 {
     LOG_TRACE(log, "Sending part {} using disk feature {}", part->name, feature);
     NameSet files_to_replicate;
@@ -340,8 +338,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         {
             writeStringBinary(name, out);
             MergeTreeData::DataPart::Checksums projection_checksum = sendPartFromDisk(
-                projection, out, client_protocol_version,
-                false, feature);
+                projection, out, client_protocol_version, feature, false);
             data_checksums.addFile(name + ".proj", projection_checksum.getTotalSizeOnDisk(), projection_checksum.getTotalChecksumUInt128());
         }
         else if (part->checksums.has(name + ".proj"))
@@ -448,23 +445,16 @@ Fetcher::Fetcher(StorageReplicatedMergeTree & data_)
 {}
 
 Strings getCapableDiskIdentifiers(
-    DiskPtr disk, const Disks & other,
-    Fn<bool(DiskPtr)> auto && capability_checker,
-    Fn<String(DiskPtr)> auto && get_disk_identifier)
+    const Disks & disks,
+    Fn<bool(const IDisk &)> auto && filter,
+    Fn<String(const IDisk &)> auto && map)
 {
     Strings out;
-    if (!disk)
-    {
-        for (const auto & data_disk : other)
-            if (capability_checker(data_disk))
-                out.emplace_back(get_disk_identifier(data_disk));
-
-        std::ranges::sort(out);
-        out.erase(std::unique(out.begin(), out.end()), out.end());
-    }
-    else if (capability_checker(disk))
-        out.emplace_back(get_disk_identifier(disk));
-
+    for (const auto & disk : disks)
+        if ((*disk.*filter)())
+            out.emplace_back(map(*disk));
+    std::ranges::sort(out);
+    out.erase(std::unique(out.begin(), out.end()), out.end());
     return out;
 }
 
@@ -484,7 +474,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     bool to_detached,
     const String & tmp_prefix_,
     std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
-    RemoteDiskFeature feature,
+    bool try_use_zero_copy,
+    bool try_use_vfs,
     DiskPtr disk)
 {
     if (blocker.isCancelled())
@@ -493,7 +484,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     const auto data_settings = data.getSettings();
 
     using enum RemoteDiskFeature;
-    if (data.canUseZeroCopyReplication() && feature != Zerocopy)
+    if (data.canUseZeroCopyReplication() && !try_use_zero_copy)
         LOG_INFO(log, "Zero copy replication enabled, but trying to fetch part {} without zero copy", part_name);
 
     /// It should be "tmp-fetch_" and not "tmp_fetch_", because we can fetch part to detached/,
@@ -531,33 +522,25 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
             uri.addQueryParameter("disk_revision", toString(revision));
     }
 
+    const Disks disks = disk ? Disks{disk} : data.getDisks();
     Strings zero_copy_disk_types, vfs_disk_ids;
-    if (feature == VFS)
+    if (try_use_vfs)
     {
-        vfs_disk_ids = getCapableDiskIdentifiers(disk, data.getDisks(),
-                [](DiskPtr d) { return d->isObjectStorageVFS(); },
-                [](DiskPtr d) { return d->getName(); });
-        if (vfs_disk_ids.empty())
-        {
-            LOG_INFO(log, "Cannot select any VFS disk for {}", part_name);
-            feature = None;
-        }
-        else
+        vfs_disk_ids = getCapableDiskIdentifiers(disks, &IDisk::isObjectStorageVFS,
+            [](const IDisk & d) { return d.getName(); });
+        if ((try_use_vfs = !vfs_disk_ids.empty()))
             uri.addQueryParameter(DISK_VFS, fmt::format("{}", fmt::join(vfs_disk_ids, ", ")));
-    }
-    else if (feature == Zerocopy && data_settings->allow_remote_fs_zero_copy_replication)
-    {
-        zero_copy_disk_types = getCapableDiskIdentifiers(disk, data.getDisks(),
-            [](DiskPtr d) { return d->supportZeroCopyReplication(); },
-            [](DiskPtr d) { return d->getDataSourceDescription().toString(); });
-        if (zero_copy_disk_types.empty())
-        {
-            if (data.canUseZeroCopyReplication())
-                LOG_INFO(log, "Cannot select any zero-copy disk for {}", part_name);
-            feature = None;
-        }
         else
+            LOG_INFO(log, "Cannot select any VFS disk for {}", part_name);
+    }
+    if ((try_use_zero_copy &= data_settings->allow_remote_fs_zero_copy_replication))
+    {
+        zero_copy_disk_types = getCapableDiskIdentifiers(disks, &IDisk::supportZeroCopyReplication,
+            [](const IDisk & d) { return d.getDataSourceDescription().toString(); });
+        if ((try_use_zero_copy = !zero_copy_disk_types.empty()))
             uri.addQueryParameter(DISK_ZERO_COPY, fmt::format("{}", fmt::join(zero_copy_disk_types, ", ")));
+        else
+            LOG_INFO(log, "Cannot select any zero-copy disk for {}", part_name);
     }
 
     Poco::Net::HTTPBasicCredentials creds{};
@@ -576,14 +559,15 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         0, /* no redirects */
         context->getCommonFetchesSessionFactory());
 
-    int server_protocol_version = parse<int>(in->getResponseCookie("server_protocol_version", "0"));
-    const String response_disk_type_with_zero_copy = in->getResponseCookie(DISK_ZERO_COPY, "");
     DiskPtr preffered_disk = disk;
-    if (feature == Zerocopy
+    int server_protocol_version = parse<int>(in->getResponseCookie("server_protocol_version", "0"));
+
+    const String response_disk_type_with_zero_copy = in->getResponseCookie(DISK_ZERO_COPY, "");
+    if (try_use_zero_copy
         && !response_disk_type_with_zero_copy.empty()
         && !preffered_disk)
     {
-        for (const auto & disk_candidate : data.getDisks())
+        for (const auto & disk_candidate : disks)
         {
             if (disk_candidate->getDataSourceDescription().toString() == response_disk_type_with_zero_copy)
             {
@@ -594,10 +578,10 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     }
 
     const String response_disk_id_with_vfs = in->getResponseCookie(DISK_VFS, "");
-    if (feature == VFS
+    if (try_use_vfs
         && !response_disk_id_with_vfs.empty()
         && !preffered_disk)
-        for (const auto & candidate : data.getDisks())
+        for (const auto & candidate : disks)
             if (candidate->getName() == response_disk_id_with_vfs)
             {
                 preffered_disk = candidate;
@@ -686,7 +670,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
 
     if (!response_disk_type_with_zero_copy.empty())
     {
-        if (feature != Zerocopy)
+        if (!try_use_zero_copy)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected '{}' cookie",
                 DISK_ZERO_COPY);
         if (!contains(zero_copy_disk_types, response_disk_type_with_zero_copy))
@@ -719,7 +703,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
             return
             {
                 downloadPartToDisk(
-                    part_name, replica_path, to_detached, tmp_prefix, disk, feature, *in,
+                    part_name, replica_path, to_detached, tmp_prefix, disk, RemoteDiskFeature::Zerocopy, *in,
                     output_buffer_getter, projections, throttler, sync),
                 std::move(temporary_directory_lock)
             };
@@ -766,13 +750,14 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
                 host,
                 port,
                 timeouts,
-                user, password, interserver_scheme, throttler, to_detached, tmp_prefix, nullptr, None, disk);
+                user, password, interserver_scheme, throttler, to_detached, tmp_prefix, nullptr,
+                false, try_use_vfs, disk);
         }
     }
 
     if (!response_disk_id_with_vfs.empty())
     {
-        if (feature != VFS)
+        if (!try_use_vfs)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected '{}' cookie", DISK_VFS);
         if (!contains(vfs_disk_ids, response_disk_id_with_vfs))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -798,7 +783,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         return
         {
             downloadPartToDisk(
-                part_name, replica_path, to_detached, tmp_prefix, disk, feature, *in,
+                part_name, replica_path, to_detached, tmp_prefix, disk, RemoteDiskFeature::VFS, *in,
                 output_buffer_getter, projections, throttler, sync),
             std::move(temporary_directory_lock)
         };

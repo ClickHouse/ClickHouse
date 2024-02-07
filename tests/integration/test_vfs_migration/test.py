@@ -53,7 +53,7 @@ def test_to_vfs(started_cluster):
     validate(node1, 3, 3)
 
     def migrate(i):
-        print(f"Migrating node {i}");
+        print(f"Migrating node {i}")
         node: ClickHouseInstance = cluster.instances[f"node{i}"]
         node.query("SYSTEM SYNC REPLICA test")
         node.copy_file_to_container(

@@ -50,8 +50,8 @@ private:
         const MergeTreeData::DataPartPtr & part,
         WriteBuffer & out,
         int client_protocol_version,
-        bool send_projections,
-        RemoteDiskFeature feature);
+        RemoteDiskFeature feature,
+        bool send_projections);
 
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
     /// so Service will never access dangling reference to storage
@@ -83,7 +83,12 @@ public:
         bool to_detached = false,
         const String & tmp_prefix_ = "",
         std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr = nullptr,
-        RemoteDiskFeature feature = RemoteDiskFeature::Zerocopy,
+        // Why not RemoteDiskFeature? Throughout other code, features are distinct --
+        // VFS is incompatible with 0copy. However, here we want to check both features
+        // so we either need to transform RemoteDiskFeature into a bitset (which is bad
+        // as in other places it's not a bitset logically) or use explicit bool flags
+        bool try_use_zero_copy = true,
+        bool try_use_vfs = true,
         DiskPtr dest_disk = nullptr);
 
     /// You need to stop the data transfer.

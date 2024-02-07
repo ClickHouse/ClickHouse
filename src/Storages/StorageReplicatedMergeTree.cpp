@@ -4856,7 +4856,7 @@ bool StorageReplicatedMergeTree::fetchPart(
                 to_detached,
                 "",
                 &tagger_ptr,
-                try_fetch_shared ? RemoteDiskFeature::Zerocopy : RemoteDiskFeature::None);
+                try_fetch_shared);
             part_directory_lock = std::move(lock);
             return fetched_part;
         };
@@ -5015,7 +5015,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
             metadata_snapshot, getContext(), part_name, zookeeper_name, source_replica_path,
             address.host, address.replication_port,
             timeouts, credentials->getUser(), credentials->getPassword(),
-            interserver_scheme, replicated_fetches_throttler, false, "", nullptr, RemoteDiskFeature::Zerocopy,
+            interserver_scheme, replicated_fetches_throttler, false, "", nullptr, true, true,
             replaced_disk);
         part_temp_directory_lock = std::move(lock);
         return fetched_part;
