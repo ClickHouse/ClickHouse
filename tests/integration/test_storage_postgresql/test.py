@@ -7,15 +7,12 @@ from helpers.postgres_utility import get_postgres_conn
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
-    "node1",
-    main_configs=["configs/named_collections.xml"],
-    user_configs=["configs/users.xml"],
-    with_postgres=True,
+    "node1", main_configs=["configs/named_collections.xml"], with_postgres=True
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/named_collections.xml"],
-    user_configs=["configs/settings.xml", "configs/users.xml"],
+    user_configs=["configs/settings.xml"],
     with_postgres_cluster=True,
 )
 
@@ -26,10 +23,6 @@ def started_cluster():
         cluster.start()
         node1.query("CREATE DATABASE test")
         node2.query("CREATE DATABASE test")
-        # Wait for the PostgreSQL handler to start.
-        # cluster.start waits until port 9000 becomes accessible.
-        # Server opens the PostgreSQL compatibility port a bit later.
-        node1.wait_for_log_line("PostgreSQL compatibility protocol")
         yield cluster
 
     finally:
@@ -69,40 +62,6 @@ def test_postgres_select_insert(started_cluster):
     # for i in range(1, 1000):
     #     assert (node1.query(check1)).rstrip() == '10000', f"Failed on {i}"
 
-    result = node1.query(
-        f"""
-        INSERT INTO TABLE FUNCTION {table}
-        SELECT number, concat('name_', toString(number)), 3 from numbers(1000000)"""
-    )
-    check1 = f"SELECT count() FROM {table}"
-    check2 = f"SELECT count() FROM (SELECT * FROM {table} LIMIT 10)"
-    assert (node1.query(check1)).rstrip() == "1010000"
-    assert (node1.query(check2)).rstrip() == "10"
-
-    cursor.execute(f"DROP TABLE {table_name} ")
-
-
-def test_postgres_addresses_expr(started_cluster):
-    cursor = started_cluster.postgres_conn.cursor()
-    table_name = "test_table"
-    table = f"""postgresql(`postgres5`)"""
-    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
-    cursor.execute(f"CREATE TABLE {table_name} (a integer, b text, c integer)")
-
-    node1.query(
-        f"""
-        INSERT INTO TABLE FUNCTION {table}
-        SELECT number, concat('name_', toString(number)), 3 from numbers(10000)"""
-    )
-    check1 = f"SELECT count() FROM {table}"
-    check2 = f"SELECT Sum(c) FROM {table}"
-    check3 = f"SELECT count(c) FROM {table} WHERE a % 2 == 0"
-    check4 = f"SELECT count() FROM {table} WHERE b LIKE concat('name_', toString(1))"
-    assert (node1.query(check1)).rstrip() == "10000"
-    assert (node1.query(check2)).rstrip() == "30000"
-    assert (node1.query(check3)).rstrip() == "5000"
-    assert (node1.query(check4)).rstrip() == "1"
-
     cursor.execute(f"DROP TABLE {table_name} ")
 
 
@@ -114,20 +73,20 @@ def test_postgres_conversions(started_cluster):
     cursor.execute(
         """CREATE TABLE test_types (
         a smallint, b integer, c bigint, d real, e double precision, f serial, g bigserial,
-        h timestamp, i date, j decimal(5, 3), k numeric, l boolean, "M" integer)"""
+        h timestamp, i date, j decimal(5, 3), k numeric, l boolean)"""
     )
     node1.query(
         """
         INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_types', 'postgres', 'mysecretpassword') VALUES
-        (-32768, -2147483648, -9223372036854775808, 1.12345, 1.1234567890, 2147483647, 9223372036854775807, '2000-05-12 12:12:12.012345', '2000-05-12', 22.222, 22.222, 1, 42)"""
+        (-32768, -2147483648, -9223372036854775808, 1.12345, 1.1234567890, 2147483647, 9223372036854775807, '2000-05-12 12:12:12.012345', '2000-05-12', 22.222, 22.222, 1)"""
     )
     result = node1.query(
         """
-        SELECT a, b, c, d, e, f, g, h, i, j, toDecimal128(k, 3), l, "M" FROM postgresql('postgres1:5432', 'postgres', 'test_types', 'postgres', 'mysecretpassword')"""
+        SELECT a, b, c, d, e, f, g, h, i, j, toDecimal128(k, 3), l FROM postgresql('postgres1:5432', 'postgres', 'test_types', 'postgres', 'mysecretpassword')"""
     )
     assert (
         result
-        == "-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12.012345\t2000-05-12\t22.222\t22.222\t1\t42\n"
+        == "-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12.012345\t2000-05-12\t22.222\t22.222\t1\n"
     )
 
     cursor.execute(
@@ -154,10 +113,7 @@ def test_postgres_conversions(started_cluster):
                 g Text[][][][][] NOT NULL,                  -- String
                 h Integer[][][],                            -- Nullable(Int32)
                 i Char(2)[][][][],                          -- Nullable(String)
-                j Char(2)[],                                -- Nullable(String)
-                k UUID[],                                   -- Nullable(UUID)
-                l UUID[][],                                 -- Nullable(UUID)
-                "M" integer[] NOT NULL                      -- Int32 (mixed-case identifier)
+                k Char(2)[]                                 -- Nullable(String)
            )"""
     )
 
@@ -167,19 +123,15 @@ def test_postgres_conversions(started_cluster):
     )
     expected = (
         "a\tArray(Date)\t\t\t\t\t\n"
-        "b\tArray(DateTime64(6))\t\t\t\t\t\n"
-        "c\tArray(Array(Float32))\t\t\t\t\t\n"
-        "d\tArray(Array(Float64))\t\t\t\t\t\n"
-        "e\tArray(Array(Array(Decimal(5, 5))))\t\t\t\t\t\n"
-        "f\tArray(Array(Array(Int32)))\t\t\t\t\t\n"
-        "g\tArray(Array(Array(Array(Array(String)))))\t\t\t\t\t\n"
-        "h\tArray(Array(Array(Nullable(Int32))))\t\t\t\t\t\n"
-        "i\tArray(Array(Array(Array(Nullable(String)))))\t\t\t\t\t\n"
-        "j\tArray(Nullable(String))\t\t\t\t\t\n"
-        "k\tArray(Nullable(UUID))\t\t\t\t\t\n"
-        "l\tArray(Array(Nullable(UUID)))\t\t\t\t\t\n"
-        "M\tArray(Int32)"
-        ""
+        + "b\tArray(DateTime64(6))\t\t\t\t\t\n"
+        + "c\tArray(Array(Float32))\t\t\t\t\t\n"
+        + "d\tArray(Array(Float64))\t\t\t\t\t\n"
+        + "e\tArray(Array(Array(Decimal(5, 5))))\t\t\t\t\t\n"
+        + "f\tArray(Array(Array(Int32)))\t\t\t\t\t\n"
+        + "g\tArray(Array(Array(Array(Array(String)))))\t\t\t\t\t\n"
+        + "h\tArray(Array(Array(Nullable(Int32))))\t\t\t\t\t\n"
+        + "i\tArray(Array(Array(Array(Nullable(String)))))\t\t\t\t\t\n"
+        + "k\tArray(Nullable(String))"
     )
     assert result.rstrip() == expected
 
@@ -195,10 +147,7 @@ def test_postgres_conversions(started_cluster):
         "[[[[['winx', 'winx', 'winx']]]]], "
         "[[[1, NULL], [NULL, 1]], [[NULL, NULL], [NULL, NULL]], [[4, 4], [5, 5]]], "
         "[[[[NULL]]]], "
-        "[], "
-        "['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a', '42209d53-d641-4d73-a8b6-c038db1e75d6', NULL], "
-        "[[NULL, '42209d53-d641-4d73-a8b6-c038db1e75d6'], ['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a', NULL], [NULL, NULL]],"
-        "[42, 42, 42]"
+        "[]"
         ")"
     )
 
@@ -208,18 +157,15 @@ def test_postgres_conversions(started_cluster):
     )
     expected = (
         "['2000-05-12','2000-05-12']\t"
-        "['2000-05-12 12:12:12.012345','2000-05-12 12:12:12.012345']\t"
-        "[[1.12345],[1.12345],[1.12345]]\t"
-        "[[1.1234567891],[1.1234567891],[1.1234567891]]\t"
-        "[[[0.11111,0.11111]],[[0.22222,0.22222]],[[0.33333,0.33333]]]\t"
+        + "['2000-05-12 12:12:12.012345','2000-05-12 12:12:12.012345']\t"
+        + "[[1.12345],[1.12345],[1.12345]]\t"
+        + "[[1.1234567891],[1.1234567891],[1.1234567891]]\t"
+        + "[[[0.11111,0.11111]],[[0.22222,0.22222]],[[0.33333,0.33333]]]\t"
         "[[[1,1],[1,1]],[[3,3],[3,3]],[[4,4],[5,5]]]\t"
         "[[[[['winx','winx','winx']]]]]\t"
         "[[[1,NULL],[NULL,1]],[[NULL,NULL],[NULL,NULL]],[[4,4],[5,5]]]\t"
         "[[[[NULL]]]]\t"
-        "[]\t"
-        "['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a','42209d53-d641-4d73-a8b6-c038db1e75d6',NULL]\t"
-        "[[NULL,'42209d53-d641-4d73-a8b6-c038db1e75d6'],['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a',NULL],[NULL,NULL]]\t"
-        "[42,42,42]\n"
+        "[]\n"
     )
     assert result == expected
 
@@ -227,67 +173,7 @@ def test_postgres_conversions(started_cluster):
     cursor.execute(f"DROP TABLE test_array_dimensions")
 
 
-def test_postgres_array_ndim_error_messges(started_cluster):
-    cursor = started_cluster.postgres_conn.cursor()
-
-    # cleanup
-    cursor.execute("DROP VIEW  IF EXISTS array_ndim_view;")
-    cursor.execute("DROP TABLE IF EXISTS array_ndim_table;")
-
-    # setup
-    cursor.execute(
-        'CREATE TABLE array_ndim_table (x INTEGER, "Mixed-case with spaces" INTEGER[]);'
-    )
-    cursor.execute("CREATE VIEW  array_ndim_view AS SELECT * FROM array_ndim_table;")
-    describe_table = """
-    DESCRIBE TABLE postgresql(
-        'postgres1:5432', 'postgres', 'array_ndim_view',
-        'postgres', 'mysecretpassword'
-    )
-    """
-
-    # View with array column cannot be empty. Should throw a useful error message.
-    # (Cannot infer array dimension.)
-    try:
-        node1.query(describe_table)
-        assert False
-    except Exception as error:
-        assert (
-            "PostgreSQL relation containing arrays cannot be empty: array_ndim_view"
-            in str(error)
-        )
-
-    # View cannot have empty array. Should throw useful error message.
-    # (Cannot infer array dimension.)
-    cursor.execute("TRUNCATE array_ndim_table;")
-    cursor.execute("INSERT INTO array_ndim_table VALUES (1234, '{}');")
-    try:
-        node1.query(describe_table)
-        assert False
-    except Exception as error:
-        assert (
-            'PostgreSQL cannot infer dimensions of an empty array: array_ndim_view."Mixed-case with spaces"'
-            in str(error)
-        )
-
-    # View cannot have NULL array value. Should throw useful error message.
-    cursor.execute("TRUNCATE array_ndim_table;")
-    cursor.execute("INSERT INTO array_ndim_table VALUES (1234, NULL);")
-    try:
-        node1.query(describe_table)
-        assert False
-    except Exception as error:
-        assert (
-            'PostgreSQL array cannot be NULL: array_ndim_view."Mixed-case with spaces"'
-            in str(error)
-        )
-
-    # cleanup
-    cursor.execute("DROP VIEW  IF EXISTS array_ndim_view;")
-    cursor.execute("DROP TABLE IF EXISTS array_ndim_table;")
-
-
-def test_non_default_schema(started_cluster):
+def test_non_default_scema(started_cluster):
     node1.query("DROP TABLE IF EXISTS test_pg_table_schema")
     node1.query("DROP TABLE IF EXISTS test_pg_table_schema_with_dots")
 
@@ -312,9 +198,7 @@ def test_non_default_schema(started_cluster):
     expected = node1.query("SELECT number FROM numbers(100)")
     assert result == expected
 
-    parameters = "'postgres1:5432', 'postgres', 'test_table', 'postgres', 'mysecretpassword', 'test_schema'"
-    table_function = f"postgresql({parameters})"
-    table_engine = f"PostgreSQL({parameters})"
+    table_function = """postgresql('postgres1:5432', 'postgres', 'test_table', 'postgres', 'mysecretpassword', 'test_schema')"""
     result = node1.query(f"SELECT * FROM {table_function}")
     assert result == expected
 
@@ -340,19 +224,10 @@ def test_non_default_schema(started_cluster):
     expected = node1.query("SELECT number FROM numbers(200)")
     assert result == expected
 
-    node1.query(f"CREATE TABLE test.test_pg_auto_schema_engine ENGINE={table_engine}")
-    node1.query(f"CREATE TABLE test.test_pg_auto_schema_function AS {table_function}")
-
-    expected = "a\tNullable(Int32)\t\t\t\t\t\n"
-    assert node1.query("DESCRIBE TABLE test.test_pg_auto_schema_engine") == expected
-    assert node1.query("DESCRIBE TABLE test.test_pg_auto_schema_function") == expected
-
     cursor.execute("DROP SCHEMA test_schema CASCADE")
     cursor.execute('DROP SCHEMA "test.nice.schema" CASCADE')
     node1.query("DROP TABLE test.test_pg_table_schema")
     node1.query("DROP TABLE test.test_pg_table_schema_with_dots")
-    node1.query("DROP TABLE test.test_pg_auto_schema_engine")
-    node1.query("DROP TABLE test.test_pg_auto_schema_function")
 
 
 def test_concurrent_queries(started_cluster):
@@ -418,7 +293,7 @@ def test_concurrent_queries(started_cluster):
         )
     )
     print(count)
-    assert count <= 18  # 16 for test.test_table + 1 for conn + 1 for test.stat
+    assert count <= 18
 
     busy_pool = Pool(30)
     p = busy_pool.map_async(node_insert, range(30))
@@ -430,7 +305,7 @@ def test_concurrent_queries(started_cluster):
         )
     )
     print(count)
-    assert count <= 19  # 16 for test.test_table + 1 for conn + at most 2 for test.stat
+    assert count <= 18
 
     busy_pool = Pool(30)
     p = busy_pool.map_async(node_insert_select, range(30))
@@ -442,7 +317,7 @@ def test_concurrent_queries(started_cluster):
         )
     )
     print(count)
-    assert count <= 20  # 16 for test.test_table + 1 for conn + at most 3 for test.stat
+    assert count <= 18
 
     node1.query("DROP TABLE test.test_table;")
     node1.query("DROP TABLE test.stat;")
@@ -816,22 +691,6 @@ def test_auto_close_connection(started_cluster):
 
     # Connection from python + pg_stat table also has a connection at the moment of current query
     assert count == 2
-
-
-def test_literal_escaping(started_cluster):
-    cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS escaping")
-    cursor.execute(f"CREATE TABLE escaping(text varchar(255))")
-    node1.query(
-        "CREATE TABLE default.escaping (text String) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'escaping', 'postgres', 'mysecretpassword')"
-    )
-    node1.query("SELECT * FROM escaping WHERE text = ''''")  # ' -> ''
-    node1.query("SELECT * FROM escaping WHERE text = '\\''")  # ' -> ''
-    node1.query("SELECT * FROM escaping WHERE text = '\\\\\\''")  # \' -> \''
-    node1.query("SELECT * FROM escaping WHERE text = '\\\\\\''")  # \' -> \''
-    node1.query("SELECT * FROM escaping WHERE text like '%a''a%'")  # %a'a% -> %a''a%
-    node1.query("SELECT * FROM escaping WHERE text like '%a\\'a%'")  # %a'a% -> %a''a%
-    cursor.execute(f"DROP TABLE escaping")
 
 
 if __name__ == "__main__":

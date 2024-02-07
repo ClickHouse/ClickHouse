@@ -2,148 +2,34 @@
 slug: /en/operations/named-collections
 sidebar_position: 69
 sidebar_label: "Named collections"
-title: "Named collections"
 ---
 
-Named collections provide a way to store collections of key-value pairs to be
-used to configure integrations with external sources. You can use named collections with
-dictionaries, tables, table functions, and object storage.
+# Storing details for connecting to external sources in configuration files
 
-Named collections can be configured with DDL or in configuration files and are applied
-when ClickHouse starts. They simplify the creation of objects and the hiding of credentials
-from users without administrative access.
+Details for connecting to external sources (dictionaries, tables, table functions) can be saved
+in configuration files and thus simplify the creation of objects and hide credentials
+from users with only SQL access.
 
-The keys in a named collection must match the parameter names of the corresponding
-function, table engine, database, etc. In the examples below the parameter list is
-linked to for each type.
+Parameters can be set in XML `<format>CSV</format>` and overridden in SQL `, format = 'TSV'`.
+The parameters in SQL can be overridden using format `key` = `value`: `compression_method = 'gzip'`.
 
-Parameters set in a named collection can be overridden in SQL, this is shown in the examples
-below. This ability can be limited using `[NOT] OVERRIDABLE` keywords and XML attributes
-and/or the configuration option `allow_named_collection_override_by_default`.
+Named collections are stored in the `config.xml` file of the ClickHouse server in the `<named_collections>` section and are applied when ClickHouse starts.
 
-:::warning
-If override is allowed, it may be possible for users without administrative access to
-figure out the credentials that you are trying to hide.
-If you are using named collections with that purpose, you should disable
-`allow_named_collection_override_by_default` (which is enabled by default).
-:::
-
-## Storing named collections in the system database
-
-### DDL example
-
-```sql
-CREATE NAMED COLLECTION name AS
-key_1 = 'value' OVERRIDABLE,
-key_2 = 'value2' NOT OVERRIDABLE,
-url = 'https://connection.url/'
-```
-
-In the above example:
-
- * `key_1` can always be overridden.
- * `key_2` can never be overridden.
- * `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
-
-### Permissions to create named collections with DDL
-
-To manage named collections with DDL a user must have the `named_control_collection` privilege.  This can be assigned by adding a file to `/etc/clickhouse-server/users.d/`.  The example gives the user `default` both the `access_management` and `named_collection_control` privileges:
-
-```xml title='/etc/clickhouse-server/users.d/user_default.xml'
-<clickhouse>
-  <users>
-    <default>
-      <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex replace=true>
-      <access_management>1</access_management>
-      <!-- highlight-start -->
-      <named_collection_control>1</named_collection_control>
-      <!-- highlight-end -->
-    </default>
-  </users>
-</clickhouse>
-```
-
-:::tip
-In the above example the `password_sha256_hex` value is the hexadecimal representation of the SHA256 hash of the password.  This configuration for the user `default` has the attribute `replace=true` as in the default configuration has a plain text `password` set, and it is not possible to have both plain text and sha256 hex passwords set for a user.
-:::
-
-## Storing named collections in configuration files
-
-### XML example
-
-```xml title='/etc/clickhouse-server/config.d/named_collections.xml'
+Example of configuration:
+```xml
+$ cat /etc/clickhouse-server/config.d/named_collections.xml
 <clickhouse>
      <named_collections>
-        <name>
-            <key_1 overridable="true">value</key_1>
-            <key_2 overridable="false">value_2</key_2>
-            <url>https://connection.url/</url>
-        </name>
+     ...
      </named_collections>
 </clickhouse>
 ```
 
-In the above example:
-
- * `key_1` can always be overridden.
- * `key_2` can never be overridden.
- * `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
-
-## Modifying named collections
-
-Named collections that are created with DDL queries can be altered or dropped with DDL. Named collections created with XML files can be managed by editing or deleting the corresponding XML.
-
-### Alter a DDL named collection
-
-Change or add the keys `key1` and `key3` of the collection `collection2`
-(this will not change the value of the `overridable` flag for those keys):
-```sql
-ALTER NAMED COLLECTION collection2 SET key1=4, key3='value3'
-```
-
-Change or add the key `key1` and allow it to be always overridden:
-```sql
-ALTER NAMED COLLECTION collection2 SET key1=4 OVERRIDABLE
-```
-
-Remove the key `key2` from `collection2`:
-```sql
-ALTER NAMED COLLECTION collection2 DELETE key2
-```
-
-Change or add the key `key1` and delete the key `key3` of the collection `collection2`:
-```sql
-ALTER NAMED COLLECTION collection2 SET key1=4, DELETE key3
-```
-
-To force a key to use the default settings for the `overridable` flag, you have to
-remove and re-add the key.
-```sql
-ALTER NAMED COLLECTION collection2 DELETE key1;
-ALTER NAMED COLLECTION collection2 SET key1=4;
-```
-
-### Drop the DDL named collection `collection2`:
-```sql
-DROP NAMED COLLECTION collection2
-```
-
-## Named collections for accessing S3
+## Named collections for accessing S3.
 
 The description of parameters see [s3 Table Function](../sql-reference/table-functions/s3.md).
 
-### DDL example
-
-```sql
-CREATE NAMED COLLECTION s3_mydata AS
-access_key_id = 'AKIAIOSFODNN7EXAMPLE',
-secret_access_key = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
-format = 'CSV',
-url = 'https://s3.us-east-1.amazonaws.com/yourbucket/mydata/'
-```
-
-### XML example
-
+Example of configuration:
 ```xml
 <clickhouse>
     <named_collections>
@@ -157,23 +43,23 @@ url = 'https://s3.us-east-1.amazonaws.com/yourbucket/mydata/'
 </clickhouse>
 ```
 
-### s3() function and S3 Table named collection examples
-
-Both of the following examples use the same named collection `s3_mydata`:
-
-#### s3() function
+### Example of using named collections with the s3 function
 
 ```sql
 INSERT INTO FUNCTION s3(s3_mydata, filename = 'test_file.tsv.gz',
    format = 'TSV', structure = 'number UInt64', compression_method = 'gzip')
 SELECT * FROM numbers(10000);
+
+SELECT count()
+FROM s3(s3_mydata, filename = 'test_file.tsv.gz')
+
+┌─count()─┐
+│   10000 │
+└─────────┘
+1 rows in set. Elapsed: 0.279 sec. Processed 10.00 thousand rows, 90.00 KB (35.78 thousand rows/s., 322.02 KB/s.)
 ```
 
-:::tip
-The first argument to the `s3()` function above is the name of the collection, `s3_mydata`.  Without named collections, the access key ID, secret, format, and URL would all be passed in every call to the `s3()` function.
-:::
-
-#### S3 table
+### Example of using named collections with an S3 table
 
 ```sql
 CREATE TABLE s3_engine_table (number Int64)
@@ -192,21 +78,7 @@ SELECT * FROM s3_engine_table LIMIT 3;
 
 The description of parameters see [mysql](../sql-reference/table-functions/mysql.md).
 
-### DDL example
-
-```sql
-CREATE NAMED COLLECTION mymysql AS
-user = 'myuser',
-password = 'mypass',
-host = '127.0.0.1',
-port = 3306,
-database = 'test',
-connection_pool_size = 8,
-replace_query = 1
-```
-
-### XML example
-
+Example of configuration:
 ```xml
 <clickhouse>
     <named_collections>
@@ -217,17 +89,14 @@ replace_query = 1
             <port>3306</port>
             <database>test</database>
             <connection_pool_size>8</connection_pool_size>
+            <on_duplicate_clause>1</on_duplicate_clause>
             <replace_query>1</replace_query>
         </mymysql>
     </named_collections>
 </clickhouse>
 ```
 
-### mysql() function, MySQL table, MySQL database, and Dictionary named collection examples
-
-The four following examples use the same named collection `mymysql`:
-
-#### mysql() function
+### Example of using named collections with the mysql function
 
 ```sql
 SELECT count() FROM mysql(mymysql, table = 'test');
@@ -236,11 +105,8 @@ SELECT count() FROM mysql(mymysql, table = 'test');
 │       3 │
 └─────────┘
 ```
-:::note
-The named collection does not specify the `table` parameter, so it is specified in the function call as `table = 'test'`.
-:::
 
-#### MySQL table
+### Example of using named collections with an MySQL table
 
 ```sql
 CREATE TABLE mytable(A Int64) ENGINE = MySQL(mymysql, table = 'test', connection_pool_size=3, replace_query=0);
@@ -251,11 +117,7 @@ SELECT count() FROM mytable;
 └─────────┘
 ```
 
-:::note
-The DDL overrides the named collection setting for connection_pool_size.
-:::
-
-#### MySQL database
+### Example of using named collections with database with engine MySQL
 
 ```sql
 CREATE DATABASE mydatabase ENGINE = MySQL(mymysql);
@@ -268,7 +130,7 @@ SHOW TABLES FROM mydatabase;
 └────────┘
 ```
 
-#### MySQL Dictionary
+### Example of using named collections with a dictionary with source MySQL
 
 ```sql
 CREATE DICTIONARY dict (A Int64, B String)
@@ -288,16 +150,6 @@ SELECT dictGet('dict', 'B', 2);
 
 The description of parameters see [postgresql](../sql-reference/table-functions/postgresql.md).
 
-```sql
-CREATE NAMED COLLECTION mypg AS
-user = 'pguser',
-password = 'jw8s0F4',
-host = '127.0.0.1',
-port = 5432,
-database = 'test',
-schema = 'test_schema',
-```
-
 Example of configuration:
 ```xml
 <clickhouse>
@@ -309,6 +161,7 @@ Example of configuration:
             <port>5432</port>
             <database>test</database>
             <schema>test_schema</schema>
+            <connection_pool_size>8</connection_pool_size>
         </mypg>
     </named_collections>
 </clickhouse>
@@ -376,21 +229,11 @@ SELECT dictGet('dict', 'b', 2);
 └─────────────────────────┘
 ```
 
-## Named collections for accessing a remote ClickHouse database
+## Named collections for accessing remote ClickHouse database
 
 The description of parameters see [remote](../sql-reference/table-functions/remote.md/#parameters).
 
 Example of configuration:
-
-```sql
-CREATE NAMED COLLECTION remote1 AS
-host = 'remote_host',
-port = 9000,
-database = 'system',
-user = 'foo',
-password = 'secret',
-secure = 1
-```
 
 ```xml
 <clickhouse>
@@ -401,12 +244,10 @@ secure = 1
             <database>system</database>
             <user>foo</user>
             <password>secret</password>
-            <secure>1</secure>
         </remote1>
     </named_collections>
 </clickhouse>
 ```
-`secure` is not needed for connection because of `remoteSecure`, but it can be used for dictionaries.
 
 ### Example of using named collections with the `remote`/`remoteSecure` functions
 

@@ -19,13 +19,6 @@ SHA_REGEXP = re.compile(r"\A([0-9]|[a-f]){40}\Z")
 CWD = p.dirname(p.realpath(__file__))
 TWEAK = 1
 
-GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
-    "git -c user.email=robot-clickhouse@users.noreply.github.com "
-    "-c user.name=robot-clickhouse -c commit.gpgsign=false "
-    "-c core.sshCommand="
-    "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
-)
-
 
 # Py 3.8 removeprefix and removesuffix
 def removeprefix(string: str, prefix: str) -> str:
@@ -92,7 +85,7 @@ class Runner:
             return
         self._cwd = value
 
-    def __call__(self, *args: Any, **kwargs: Any) -> str:
+    def __call__(self, *args, **kwargs):
         return self.run(*args, **kwargs)
 
 

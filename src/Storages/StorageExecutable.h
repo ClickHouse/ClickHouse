@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/logger_useful.h>
 #include <Storages/IStorage.h>
 #include <Processors/Sources/ShellCommandSource.h>
 #include <Storages/ExecutableSettings.h>
@@ -45,7 +46,7 @@ public:
 private:
     ExecutableSettings settings;
     std::vector<ASTPtr> input_queries;
-    LoggerPtr log;
+    Poco::Logger * log;
     std::unique_ptr<ShellCommandSourceCoordinator> coordinator;
 };
 

@@ -1,21 +1,17 @@
-#include <base/getFQDNOrHostName.h>
+#include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/FilesystemReadPrefetchesLog.h>
 
 
 namespace DB
 {
 
-ColumnsDescription FilesystemReadPrefetchesLogElement::getColumnsDescription()
+NamesAndTypesList FilesystemReadPrefetchesLogElement::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+    return {
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"query_id", std::make_shared<DataTypeString>()},
@@ -23,7 +19,7 @@ ColumnsDescription FilesystemReadPrefetchesLogElement::getColumnsDescription()
         {"offset", std::make_shared<DataTypeUInt64>()},
         {"size", std::make_shared<DataTypeInt64>()},
         {"prefetch_submit_time", std::make_shared<DataTypeDateTime64>(6)},
-        {"priority", std::make_shared<DataTypeInt64>()},
+        {"priority", std::make_shared<DataTypeUInt64>()},
         {"prefetch_execution_start_time", std::make_shared<DataTypeDateTime64>(6)},
         {"prefetch_execution_end_time", std::make_shared<DataTypeDateTime64>(6)},
         {"prefetch_execution_time_us", std::make_shared<DataTypeUInt64>()},
@@ -37,19 +33,18 @@ void FilesystemReadPrefetchesLogElement::appendToBlock(MutableColumns & columns)
 {
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(query_id);
     columns[i++]->insert(path);
     columns[i++]->insert(offset);
     columns[i++]->insert(size);
-    columns[i++]->insert(std::chrono::duration_cast<std::chrono::microseconds>(prefetch_submit_time.time_since_epoch()).count());
-    columns[i++]->insert(priority.value);
+    columns[i++]->insert(prefetch_submit_time);
+    columns[i++]->insert(priority);
     if (execution_watch)
     {
-        columns[i++]->insert(execution_watch->getStart() / 1000);
-        columns[i++]->insert(execution_watch->getEnd() / 1000);
+        columns[i++]->insert(execution_watch->getStart());
+        columns[i++]->insert(execution_watch->getEnd());
         columns[i++]->insert(execution_watch->elapsedMicroseconds());
     }
     else

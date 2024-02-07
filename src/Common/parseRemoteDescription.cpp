@@ -52,8 +52,19 @@ static bool parseNumber(const String & description, size_t l, size_t r, size_t &
 }
 
 
-std::vector<String> parseRemoteDescription(
-    const String & description, size_t l, size_t r, char separator, size_t max_addresses, const String & func_name)
+/* Parse a string that generates shards and replicas. Separator - one of two characters | or ,
+ *  depending on whether shards or replicas are generated.
+ * For example:
+ * host1,host2,...      - generates set of shards from host1, host2, ...
+ * host1|host2|...      - generates set of replicas from host1, host2, ...
+ * abc{8..10}def        - generates set of shards abc8def, abc9def, abc10def.
+ * abc{08..10}def       - generates set of shards abc08def, abc09def, abc10def.
+ * abc{x,yy,z}def       - generates set of shards abcxdef, abcyydef, abczdef.
+ * abc{x|yy|z} def      - generates set of replicas abcxdef, abcyydef, abczdef.
+ * abc{1..9}de{f,g,h}   - is a direct product, 27 shards.
+ * abc{1..9}de{0|1}     - is a direct product, 9 shards, in each 2 replicas.
+ */
+std::vector<String> parseRemoteDescription(const String & description, size_t l, size_t r, char separator, size_t max_addresses)
 {
     std::vector<String> res;
     std::vector<String> cur;
@@ -86,41 +97,28 @@ std::vector<String> parseRemoteDescription(
                 if (cnt == 0) break;
             }
             if (cnt != 0)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}': incorrect brace sequence in first argument", func_name);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'remote': incorrect brace sequence in first argument");
             /// The presence of a dot - numeric interval
             if (last_dot != -1)
             {
                 size_t left, right;
                 if (description[last_dot - 1] != '.')
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Table function '{}': incorrect argument in braces (only one dot): {}",
-                        func_name,
-                        description.substr(i, m - i + 1));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'remote': incorrect argument in braces (only one dot): {}",
+                                    description.substr(i, m - i + 1));
                 if (!parseNumber(description, i + 1, last_dot - 1, left))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Table function '{}': "
-                        "incorrect argument in braces (Incorrect left number): {}",
-                        func_name,
-                        description.substr(i, m - i + 1));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'remote': "
+                                    "incorrect argument in braces (Incorrect left number): {}",
+                                    description.substr(i, m - i + 1));
                 if (!parseNumber(description, last_dot + 1, m, right))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Table function '{}': "
-                        "incorrect argument in braces (Incorrect right number): {}",
-                        func_name,
-                        description.substr(i, m - i + 1));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'remote': "
+                                    "incorrect argument in braces (Incorrect right number): {}",
+                                    description.substr(i, m - i + 1));
                 if (left > right)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Table function '{}': "
-                        "incorrect argument in braces (left number is greater then right): {}",
-                        func_name,
-                        description.substr(i, m - i + 1));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'remote': "
+                                    "incorrect argument in braces (left number is greater then right): {}",
+                                    description.substr(i, m - i + 1));
                 if (right - left + 1 >  max_addresses)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS, "Table function '{}': first argument generates too many result addresses", func_name);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'remote': first argument generates too many result addresses");
                 bool add_leading_zeroes = false;
                 size_t len = last_dot - 1 - (i + 1);
                 /// If the left and right borders have equal numbers, then you must add leading zeros.
@@ -163,7 +161,7 @@ std::vector<String> parseRemoteDescription(
 
     res.insert(res.end(), cur.begin(), cur.end());
     if (res.size() > max_addresses)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}': first argument generates too many result addresses", func_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'remote': first argument generates too many result addresses");
 
     return res;
 }
@@ -179,12 +177,12 @@ std::vector<std::pair<String, uint16_t>> parseRemoteDescriptionForExternalDataba
         size_t colon = address.find(':');
         if (colon == String::npos)
         {
-            LOG_WARNING(getLogger("ParseRemoteDescription"), "Port is not found for host: {}. Using default port {}", address, default_port);
+            LOG_WARNING(&Poco::Logger::get("ParseRemoteDescription"), "Port is not found for host: {}. Using default port {}", address, default_port);
             result.emplace_back(std::make_pair(address, default_port));
         }
         else
         {
-            result.emplace_back(std::make_pair(address.substr(0, colon), parseFromString<UInt16>(address.substr(colon + 1))));
+            result.emplace_back(std::make_pair(address.substr(0, colon), DB::parseFromString<UInt16>(address.substr(colon + 1))));
         }
     }
 

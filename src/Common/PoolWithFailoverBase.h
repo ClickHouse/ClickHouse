@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ctime>
+#include <time.h>
 #include <cstdlib>
 #include <climits>
 #include <random>
@@ -13,7 +13,6 @@
 #include <Common/NetException.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
-#include <Common/Priority.h>
 
 
 namespace DB
@@ -35,7 +34,7 @@ namespace ProfileEvents
 /// This class provides a pool with fault tolerance. It is used for pooling of connections to replicated DB.
 /// Initialized by several PoolBase objects.
 /// When a connection is requested, tries to create or choose an alive connection from one of the nested pools.
-/// Pools are tried in the order consistent with lexicographical order of (error count, slowdown count, config priority, priority, random number) tuples.
+/// Pools are tried in the order consistent with lexicographical order of (error count, priority, random number) tuples.
 /// Number of tries for a single pool is limited by max_tries parameter.
 /// The client can set nested pool priority by passing a GetPriority functor.
 ///
@@ -58,7 +57,7 @@ public:
             NestedPools nested_pools_,
             time_t decrease_error_period_,
             size_t max_error_cap_,
-            LoggerPtr log_)
+            Poco::Logger * log_)
         : nested_pools(std::move(nested_pools_))
         , decrease_error_period(decrease_error_period_)
         , max_error_cap(max_error_cap_)
@@ -73,20 +72,26 @@ public:
     {
         TryResult() = default;
 
+        explicit TryResult(Entry entry_)
+            : entry(std::move(entry_))
+            , is_usable(true)
+            , is_up_to_date(true)
+        {
+        }
+
         void reset()
         {
             entry = Entry();
             is_usable = false;
             is_up_to_date = false;
-            delay = 0;
+            staleness = 0.0;
         }
 
-        Entry entry; /// use isNull() to check if connection is established
-        bool is_usable = false; /// if connection is established, then can be false only with table check
-                                /// if table is not present on remote peer, -> it'll be false
-        bool is_up_to_date = false; /// If true, the entry is a connection to up-to-date replica
-                                    /// Depends on max_replica_delay_for_distributed_queries setting
-        UInt32 delay = 0; /// Helps choosing the "least stale" option when all replicas are stale.
+        Entry entry;
+        bool is_usable = false; /// If false, the entry is unusable for current request
+                                /// (but may be usable for other requests, so error counts are not incremented)
+        bool is_up_to_date = false; /// If true, the entry is a connection to up-to-date replica.
+        double staleness = 0.0; /// Helps choosing the "least stale" option when all replicas are stale.
     };
 
     struct PoolState;
@@ -95,8 +100,8 @@ public:
 
     struct ShuffledPool
     {
-        NestedPoolPtr pool{};
-        const PoolState * state{}; // WARNING: valid only during initial ordering, dangling
+        NestedPool * pool{};
+        const PoolState * state{};
         size_t index = 0;
         size_t error_count = 0;
         size_t slowdown_count = 0;
@@ -104,11 +109,12 @@ public:
 
     /// This functor must be provided by a client. It must perform a single try that takes a connection
     /// from the provided pool and checks that it is good.
-    using TryGetEntryFunc = std::function<TryResult(const NestedPoolPtr & pool, std::string & fail_message)>;
+    using TryGetEntryFunc = std::function<TryResult(NestedPool & pool, std::string & fail_message)>;
 
     /// The client can provide this functor to affect load balancing - the index of a pool is passed to
     /// this functor. The pools with lower result value will be tried first.
-    using GetPriorityFunc = std::function<Priority(size_t index)>;
+    using GetPriorityFunc = std::function<size_t(size_t index)>;
+
 
     /// Returns at least min_entries and at most max_entries connections (at most one connection per nested pool).
     /// The method will throw if it is unable to get min_entries alive connections or
@@ -118,9 +124,7 @@ public:
             size_t max_ignored_errors,
             bool fallback_to_stale_replicas,
             const TryGetEntryFunc & try_get_entry,
-            const GetPriorityFunc & get_priority);
-
-    size_t getPoolSize() const { return nested_pools.size(); }
+            const GetPriorityFunc & get_priority = GetPriorityFunc());
 
 protected:
 
@@ -143,7 +147,7 @@ protected:
         return std::make_tuple(shared_pool_states, nested_pools, last_error_decrease_time);
     }
 
-    const NestedPools nested_pools;
+    NestedPools nested_pools;
 
     const time_t decrease_error_period;
     const size_t max_error_cap;
@@ -153,7 +157,7 @@ protected:
     /// The time when error counts were last decreased.
     time_t last_error_decrease_time = 0;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 
@@ -171,12 +175,10 @@ PoolWithFailoverBase<TNestedPool>::getShuffledPools(
     }
 
     /// Sort the pools into order in which they will be tried (based on respective PoolStates).
-    /// Note that `error_count` and `slowdown_count` are used for ordering, but set to zero in the resulting ShuffledPool
     std::vector<ShuffledPool> shuffled_pools;
     shuffled_pools.reserve(nested_pools.size());
     for (size_t i = 0; i < nested_pools.size(); ++i)
-        shuffled_pools.push_back(ShuffledPool{nested_pools[i], &pool_states[i], i, /* error_count = */ 0, /* slowdown_count = */ 0});
-
+        shuffled_pools.push_back(ShuffledPool{nested_pools[i].get(), &pool_states[i], i, 0});
     ::sort(
         shuffled_pools.begin(), shuffled_pools.end(),
         [](const ShuffledPool & lhs, const ShuffledPool & rhs)
@@ -225,10 +227,6 @@ PoolWithFailoverBase<TNestedPool>::getMany(
 {
     std::vector<ShuffledPool> shuffled_pools = getShuffledPools(max_ignored_errors, get_priority);
 
-    /// Limit `max_tries` value by `max_error_cap` to avoid unlimited number of retries
-    if (max_tries > max_error_cap)
-        max_tries = max_error_cap;
-
     /// We will try to get a connection from each pool until a connection is produced or max_tries is reached.
     std::vector<TryResult> try_results(shuffled_pools.size());
     size_t entries_count = 0;
@@ -261,7 +259,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                 continue;
 
             std::string fail_message;
-            result = try_get_entry(shuffled_pool.pool, fail_message);
+            result = try_get_entry(*shuffled_pool.pool, fail_message);
 
             if (!fail_message.empty())
                 fail_messages += fail_message + '\n';
@@ -303,8 +301,8 @@ PoolWithFailoverBase<TNestedPool>::getMany(
             try_results.begin(), try_results.end(),
             [](const TryResult & left, const TryResult & right)
             {
-                return std::forward_as_tuple(!left.is_up_to_date, left.delay)
-                    < std::forward_as_tuple(!right.is_up_to_date, right.delay);
+                return std::forward_as_tuple(!left.is_up_to_date, left.staleness)
+                    < std::forward_as_tuple(!right.is_up_to_date, right.staleness);
             });
 
     if (fallback_to_stale_replicas)
@@ -334,9 +332,9 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
     /// The number of slowdowns that led to changing replica in HedgedRequestsFactory
     UInt64 slowdown_count = 0;
     /// Priority from the <remote_server> configuration.
-    Priority config_priority{1};
+    Int64 config_priority = 1;
     /// Priority from the GetPriorityFunc.
-    Priority priority{0};
+    Int64 priority = 0;
     UInt64 random = 0;
 
     void randomize()
@@ -373,7 +371,7 @@ PoolWithFailoverBase<TNestedPool>::updatePoolStates(size_t max_ignored_errors)
 
     /// distributed_replica_max_ignored_errors
     for (auto & state : result)
-        state.error_count = state.error_count > max_ignored_errors ? state.error_count - max_ignored_errors : 0;
+        state.error_count = std::max<UInt64>(0, state.error_count - max_ignored_errors);
 
     return result;
 }

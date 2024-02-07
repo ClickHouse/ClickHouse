@@ -118,7 +118,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
         block_key_columns.clear();
     }
 
-    LOG_DEBUG(getLogger("DirectDictionary"), "read {} blocks with {} rows from pipeline in {} ms",
+    LOG_DEBUG(&Poco::Logger::get("DirectDictionary"), "read {} blocks with {} rows from pipeline in {} ms",
         block_num, rows_num, watch.elapsedMilliseconds());
 
     Field value_to_insert;
@@ -288,8 +288,7 @@ public:
         : ISource(pipeline_.getHeader())
         , pipeline(std::move(pipeline_))
         , executor(pipeline)
-    {
-    }
+    {}
 
     std::string getName() const override
     {
@@ -353,7 +352,7 @@ Pipe DirectDictionary<dictionary_key_type>::getSourcePipe(
             pipe = Pipe(std::make_shared<SourceFromQueryPipeline<PullingPipelineExecutor>>(std::move(pipeline)));
     }
 
-    LOG_DEBUG(getLogger("DirectDictionary"), "building pipeline for loading keys done in {} ms", watch.elapsedMilliseconds());
+    LOG_DEBUG(&Poco::Logger::get("DirectDictionary"), "building pipeline for loading keys done in {} ms", watch.elapsedMilliseconds());
     return pipe;
 }
 
@@ -366,10 +365,10 @@ Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names *
 template <DictionaryKeyType dictionary_key_type>
 void DirectDictionary<dictionary_key_type>::applySettings(const Settings & settings)
 {
-    if (const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get()))
+    if (dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get()))
     {
         /// Only applicable for CLICKHOUSE dictionary source.
-        use_async_executor = settings.dictionary_use_async_executor && clickhouse_source->isLocal();
+        use_async_executor = settings.dictionary_use_async_executor;
     }
 }
 

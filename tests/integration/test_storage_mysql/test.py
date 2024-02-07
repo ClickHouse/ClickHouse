@@ -13,7 +13,6 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/remote_servers.xml", "configs/named_collections.xml"],
-    user_configs=["configs/users.xml"],
     with_mysql=True,
 )
 node2 = cluster.add_instance(
@@ -308,32 +307,6 @@ def test_table_function(started_cluster):
     conn.close()
 
 
-def test_schema_inference(started_cluster):
-    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
-    drop_mysql_table(conn, "inference_table")
-
-    with conn.cursor() as cursor:
-        cursor.execute(
-            "CREATE TABLE clickhouse.inference_table (id INT PRIMARY KEY, data BINARY(16) NOT NULL)"
-        )
-
-    parameters = "'mysql57:3306', 'clickhouse', 'inference_table', 'root', 'clickhouse'"
-
-    node1.query(
-        f"CREATE TABLE mysql_schema_inference_engine ENGINE=MySQL({parameters})"
-    )
-    node1.query(f"CREATE TABLE mysql_schema_inference_function AS mysql({parameters})")
-
-    expected = "id\tInt32\t\t\t\t\t\ndata\tFixedString(16)\t\t\t\t\t\n"
-    assert node1.query("DESCRIBE TABLE mysql_schema_inference_engine") == expected
-    assert node1.query("DESCRIBE TABLE mysql_schema_inference_function") == expected
-
-    node1.query("DROP TABLE mysql_schema_inference_engine")
-    node1.query("DROP TABLE mysql_schema_inference_function")
-
-    drop_mysql_table(conn, "inference_table")
-
-
 def test_binary_type(started_cluster):
     conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
     drop_mysql_table(conn, "binary_type")
@@ -356,7 +329,6 @@ def test_binary_type(started_cluster):
         node1.query("SELECT * FROM {}".format(table_function))
         == "42\tclickhouse\\0\\0\\0\\0\\0\\0\n"
     )
-    drop_mysql_table(conn, "binary_type")
 
 
 def test_enum_type(started_cluster):
@@ -547,21 +519,13 @@ def test_settings_connection_wait_timeout(started_cluster):
         )
     )
 
-    worker_started_event = threading.Event()
-
     def worker():
-        worker_started_event.set()
-        node1.query(
-            "SELECT 1, sleepEachRow(1) FROM {} SETTINGS max_threads=1".format(
-                table_name
-            )
-        )
+        node1.query("SELECT sleepEachRow(1) FROM {}".format(table_name))
 
     worker_thread = threading.Thread(target=worker)
     worker_thread.start()
 
     # ensure that first query started in worker_thread
-    assert worker_started_event.wait(10)
     time.sleep(1)
 
     started = time.time()
@@ -569,11 +533,7 @@ def test_settings_connection_wait_timeout(started_cluster):
         QueryRuntimeException,
         match=r"Exception: mysqlxx::Pool is full \(connection_wait_timeout is exceeded\)",
     ):
-        node1.query(
-            "SELECT 2, sleepEachRow(1) FROM {} SETTINGS max_threads=1".format(
-                table_name
-            )
-        )
+        node1.query("SELECT sleepEachRow(1) FROM {}".format(table_name))
     ended = time.time()
     assert (ended - started) >= wait_timeout
 
@@ -854,55 +814,6 @@ def test_settings(started_cluster):
     assert node1.contains_in_log(
         f"with settings: connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}"
     )
-
-    drop_mysql_table(conn, table_name)
-    conn.close()
-
-
-def test_mysql_point(started_cluster):
-    table_name = "test_mysql_point"
-    node1.query(f"DROP TABLE IF EXISTS {table_name}")
-
-    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
-    drop_mysql_table(conn, table_name)
-    with conn.cursor() as cursor:
-        cursor.execute(
-            f"""
-            CREATE TABLE `clickhouse`.`{table_name}` (
-            `id` int NOT NULL,
-            `point` Point NOT NULL,
-            PRIMARY KEY (`id`)) ENGINE=InnoDB;
-        """
-        )
-        cursor.execute(
-            f"INSERT INTO `clickhouse`.`{table_name}` SELECT 1, Point(15, 20)"
-        )
-        assert 1 == cursor.execute(f"SELECT count(*) FROM `clickhouse`.`{table_name}`")
-
-    conn.commit()
-
-    result = node1.query(
-        f"DESCRIBE mysql('mysql57:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse')"
-    )
-    assert result.strip() == "id\tInt32\t\t\t\t\t\npoint\tPoint"
-
-    assert 1 == int(
-        node1.query(
-            f"SELECT count() FROM mysql('mysql57:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse')"
-        )
-    )
-    assert (
-        "(15,20)"
-        == node1.query(
-            f"SELECT point FROM mysql('mysql57:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse')"
-        ).strip()
-    )
-
-    node1.query("DROP TABLE IF EXISTS test")
-    node1.query(
-        f"CREATE TABLE test (id Int32, point Point) Engine=MySQL('mysql57:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse')"
-    )
-    assert "(15,20)" == node1.query(f"SELECT point FROM test").strip()
 
     drop_mysql_table(conn, table_name)
     conn.close()

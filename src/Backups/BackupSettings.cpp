@@ -21,19 +21,11 @@ namespace ErrorCodes
     M(String, id) \
     M(String, compression_method) \
     M(String, password) \
-    M(String, s3_storage_class) \
     M(Bool, structure_only) \
     M(Bool, async) \
-    M(Bool, decrypt_files_from_encrypted_disks) \
     M(Bool, deduplicate_files) \
-    M(Bool, allow_s3_native_copy) \
-    M(Bool, use_same_s3_credentials_for_base_backup) \
-    M(Bool, read_from_filesystem_cache) \
     M(UInt64, shard_num) \
     M(UInt64, replica_num) \
-    M(Bool, check_parts) \
-    M(Bool, check_projection_parts) \
-    M(Bool, allow_backup_broken_projections) \
     M(Bool, internal) \
     M(String, host_id) \
     M(OptionalUUID, backup_uuid)

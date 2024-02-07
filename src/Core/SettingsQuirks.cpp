@@ -1,11 +1,10 @@
-#include <base/defines.h>
 #include <Core/SettingsQuirks.h>
 #include <Core/Settings.h>
 #include <Poco/Environment.h>
 #include <Poco/Platform.h>
 #include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
-
+#include <cstdlib>
 
 namespace
 {
@@ -17,7 +16,7 @@ namespace
 ///
 ///   [1]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=339ddb53d373
 ///   [2]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=0c54a6a44bf3
-bool nestedEpollWorks(LoggerPtr log)
+bool nestedEpollWorks(Poco::Logger * log)
 {
     if (Poco::Environment::os() != POCO_OS_LINUX)
         return true;
@@ -48,7 +47,7 @@ namespace DB
 {
 
 /// Update some settings defaults to avoid some known issues.
-void applySettingsQuirks(Settings & settings, LoggerPtr log)
+void applySettingsQuirks(Settings & settings, Poco::Logger * log)
 {
     if (!nestedEpollWorks(log))
     {
@@ -57,12 +56,6 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
             settings.async_socket_for_remote = false;
             if (log)
                 LOG_WARNING(log, "async_socket_for_remote has been disabled (you can explicitly enable it still)");
-        }
-        if (!settings.async_query_sending_for_remote.changed && settings.async_query_sending_for_remote)
-        {
-            settings.async_query_sending_for_remote = false;
-            if (log)
-                LOG_WARNING(log, "async_query_sending_for_remote has been disabled (you can explicitly enable it still)");
         }
         if (!settings.use_hedged_requests.changed && settings.use_hedged_requests)
         {

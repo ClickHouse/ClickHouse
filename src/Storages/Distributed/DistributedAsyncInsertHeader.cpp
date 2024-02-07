@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int CHECKSUM_DOESNT_MATCH;
 }
 
-DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFile & in, LoggerPtr log)
+DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFile & in, Poco::Logger * log)
 {
     DistributedAsyncInsertHeader distributed_header;
 
@@ -39,8 +39,9 @@ DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFi
         if (expected_checksum != calculated_checksum)
         {
             throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH,
-                            "Checksum of extra info doesn't match: corrupted data. Reference: {}. Actual: {}.",
-                            getHexUIntLowercase(expected_checksum), getHexUIntLowercase(calculated_checksum));
+                            "Checksum of extra info doesn't match: corrupted data. Reference: {}{}. Actual: {}{}.",
+                            getHexUIntLowercase(expected_checksum.first), getHexUIntLowercase(expected_checksum.second),
+                            getHexUIntLowercase(calculated_checksum.first), getHexUIntLowercase(calculated_checksum.second));
         }
 
         /// Read the parts of the header.

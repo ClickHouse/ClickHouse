@@ -611,13 +611,6 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
                 res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
-                if (res_column.column->getDataType() != res_column.type->getColumnType())
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Unexpected return type from {}. Expected {}. Got {}",
-                        action.node->function->getName(),
-                        res_column.type->getColumnType(),
-                        res_column.column->getDataType());
             }
             break;
         }
@@ -943,12 +936,14 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
         for (const auto & action : actions)
         {
             if (action.node->type == ActionsDAG::ActionType::COLUMN && action.node->result_name == set_to_check)
+            {
                 // Constant ColumnSet cannot be empty, so we only need to check non-constant ones.
                 if (const auto * column_set = checkAndGetColumn<const ColumnSet>(action.node->column.get()))
-                    if (auto future_set = column_set->getData())
-                        if (auto set = future_set->get())
-                            if (set->getTotalRowCount() == 0)
-                                return true;
+                {
+                    if (column_set->getData()->isCreated() && column_set->getData()->getTotalRowCount() == 0)
+                        return true;
+                }
+            }
         }
     }
 

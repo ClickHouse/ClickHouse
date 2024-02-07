@@ -28,9 +28,8 @@ class TraceSender
 public:
     struct Extras
     {
-        /// size, ptr - for memory tracing is the amount of memory allocated; for other trace types it is 0.
+        /// size - for memory tracing is the amount of memory allocated; for other trace types it is 0.
         Int64 size{};
-        void * ptr = nullptr;
         /// Event type and increment for 'ProfileEvent' trace type; for other trace types defaults.
         ProfileEvents::Event event{ProfileEvents::end()};
         ProfileEvents::Count increment{};

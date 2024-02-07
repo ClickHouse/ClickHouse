@@ -5,7 +5,6 @@
 #include <Processors/ISource.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
-#include <Common/ZooKeeper/ZooKeeperRetries.h>
 
 
 namespace zkutil
@@ -21,7 +20,7 @@ class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
 /// Returns true if provided ALTER type can be executed ON CLUSTER
-bool isSupportedAlterTypeForOnClusterDDLQuery(int type);
+bool isSupportedAlterType(int type);
 
 struct DDLQueryOnClusterParams
 {
@@ -43,7 +42,8 @@ struct DDLQueryOnClusterParams
 /// Returns DDLQueryStatusSource, which reads results of query execution on each host in the cluster.
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context, const DDLQueryOnClusterParams & params = {});
 
-BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & entry, ContextPtr context, const Strings * hosts_to_wait);
+BlockIO getDistributedDDLStatus(
+    const String & node_path, const DDLLogEntry & entry, ContextPtr context, const std::optional<Strings> & hosts_to_wait = {});
 
 bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context);
 

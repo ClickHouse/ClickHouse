@@ -1,5 +1,4 @@
 #include <Common/GetPriorityForLoadBalancing.h>
-#include <Common/Priority.h>
 
 namespace DB
 {
@@ -9,51 +8,38 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-GetPriorityForLoadBalancing::Func
-GetPriorityForLoadBalancing::getPriorityFunc(LoadBalancing load_balance, size_t offset, size_t pool_size) const
+std::function<size_t(size_t index)> GetPriorityForLoadBalancing::getPriorityFunc(LoadBalancing load_balance, size_t offset, size_t pool_size) const
 {
-    std::function<Priority(size_t index)> get_priority;
+    std::function<size_t(size_t index)> get_priority;
     switch (load_balance)
     {
         case LoadBalancing::NEAREST_HOSTNAME:
-            if (hostname_prefix_distance.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: hostname_prefix_distance is not initialized");
-            get_priority = [this](size_t i) { return Priority{static_cast<Int64>(hostname_prefix_distance[i])}; };
-            break;
-        case LoadBalancing::HOSTNAME_LEVENSHTEIN_DISTANCE:
-            if (hostname_levenshtein_distance.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: hostname_levenshtein_distance is not initialized");
-            get_priority = [this](size_t i) { return Priority{static_cast<Int64>(hostname_levenshtein_distance[i])}; };
+            if (hostname_differences.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: hostname_differences is not initialized");
+            get_priority = [this](size_t i) { return hostname_differences[i]; };
             break;
         case LoadBalancing::IN_ORDER:
-            get_priority = [](size_t i) { return Priority{static_cast<Int64>(i)}; };
+            get_priority = [](size_t i) { return i; };
             break;
         case LoadBalancing::RANDOM:
             break;
         case LoadBalancing::FIRST_OR_RANDOM:
-            get_priority = [offset](size_t i) { return i != offset ? Priority{1} : Priority{0}; };
+            get_priority = [offset](size_t i) -> size_t { return i != offset; };
             break;
         case LoadBalancing::ROUND_ROBIN:
-            auto local_last_used = last_used % pool_size;
+            if (last_used >= pool_size)
+                last_used = 0;
             ++last_used;
-
-            // Example: pool_size = 5
-            // | local_last_used | i=0 | i=1 | i=2 | i=3 | i=4 |
-            // | 0               | 4   | 0   | 1   | 2   | 3   |
-            // | 1               | 3   | 4   | 0   | 1   | 2   |
-            // | 2               | 2   | 3   | 4   | 0   | 1   |
-            // | 3               | 1   | 2   | 3   | 4   | 0   |
-            // | 4               | 0   | 1   | 2   | 3   | 4   |
-
-            get_priority = [pool_size, local_last_used](size_t i)
+            /* Consider pool_size equals to 5
+             * last_used = 1 -> get_priority: 0 1 2 3 4
+             * last_used = 2 -> get_priority: 4 0 1 2 3
+             * last_used = 3 -> get_priority: 4 3 0 1 2
+             * ...
+             * */
+            get_priority = [this, pool_size](size_t i)
             {
-                size_t priority = pool_size - 1;
-                if (i < local_last_used)
-                    priority = pool_size - 1 - (local_last_used - i);
-                if (i > local_last_used)
-                    priority = i - local_last_used - 1;
-
-                return Priority{static_cast<Int64>(priority)};
+                ++i;
+                return i < last_used ? pool_size - i : i - last_used;
             };
             break;
     }

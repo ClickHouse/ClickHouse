@@ -1,11 +1,9 @@
 #pragma once
 
-#include <Common/Priority.h>
-#include <Common/Stopwatch.h>
 #include <Core/NamesAndAliases.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
-#include <Storages/ColumnsDescription.h>
+#include <Common/Stopwatch.h>
 
 namespace DB
 {
@@ -25,16 +23,16 @@ struct FilesystemReadPrefetchesLogElement
     String path;
     UInt64 offset;
     Int64 size; /// -1 means unknown
-    std::chrono::system_clock::time_point prefetch_submit_time;
+    Decimal64 prefetch_submit_time{};
     std::optional<Stopwatch> execution_watch;
-    Priority priority;
+    size_t priority;
     FilesystemPrefetchState state;
     UInt64 thread_id;
     String reader_id;
 
     static std::string name() { return "FilesystemReadPrefetchesLog"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
@@ -46,7 +44,5 @@ class FilesystemReadPrefetchesLog : public SystemLog<FilesystemReadPrefetchesLog
 public:
     using SystemLog<FilesystemReadPrefetchesLogElement>::SystemLog;
 };
-
-using FilesystemReadPrefetchesLogPtr = std::shared_ptr<FilesystemReadPrefetchesLog>;
 
 }

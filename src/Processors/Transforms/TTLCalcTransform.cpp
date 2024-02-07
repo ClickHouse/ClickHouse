@@ -13,7 +13,7 @@ TTLCalcTransform::TTLCalcTransform(
     bool force_)
     : IAccumulatingTransform(header_, header_)
     , data_part(data_part_)
-    , log(getLogger(storage_.getLogName() + " (TTLCalcTransform)"))
+    , log(&Poco::Logger::get(storage_.getLogName() + " (TTLCalcTransform)"))
 {
     auto old_ttl_infos = data_part->ttl_infos;
 

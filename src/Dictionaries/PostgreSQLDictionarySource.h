@@ -8,6 +8,7 @@
 #include "ExternalQueryBuilder.h"
 #include <Core/Block.h>
 #include <Common/LocalDateTime.h>
+#include <Common/logger_useful.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
 
@@ -61,7 +62,7 @@ private:
     const Configuration configuration;
     postgres::PoolWithFailoverPtr pool;
     Block sample_block;
-    LoggerPtr log;
+    Poco::Logger * log;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
     std::chrono::time_point<std::chrono::system_clock> update_time;

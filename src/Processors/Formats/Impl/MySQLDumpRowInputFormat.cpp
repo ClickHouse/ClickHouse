@@ -1,5 +1,4 @@
-#include <Processors/Formats/Impl/MySQLDumpRowInputFormat.h>
-#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
+#include "MySQLDumpRowInputFormat.h"
 #include <IO/ReadHelpers.h>
 #include <IO/PeekableReadBuffer.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -304,19 +303,6 @@ static void skipFieldDelimiter(ReadBuffer & in)
     skipWhitespaceIfAny(in);
 }
 
-static void skipEndOfInsertQueryIfNeeded(ReadBuffer & in, String & table_name)
-{
-    skipWhitespaceIfAny(in);
-    if (!in.eof() && *in.position() == ';')
-    {
-        /// ';' means end of INSERT query, skip until data from
-        /// next INSERT query into the same table or until EOF.
-        ++in.position();
-        if (skipToInsertQuery(table_name, in))
-            skipToDataInInsertQuery(in);
-    }
-}
-
 static void skipEndOfRow(ReadBuffer & in, String & table_name)
 {
     skipWhitespaceIfAny(in);
@@ -326,7 +312,15 @@ static void skipEndOfRow(ReadBuffer & in, String & table_name)
     if (!in.eof() && *in.position() == ',')
         ++in.position();
 
-    skipEndOfInsertQueryIfNeeded(in, table_name);
+    skipWhitespaceIfAny(in);
+    if (!in.eof() && *in.position() == ';')
+    {
+        /// ';' means end of INSERT query, skip until data from
+        /// next INSERT query into the same table or until EOF.
+        ++in.position();
+        if (skipToInsertQuery(table_name, in))
+            skipToDataInInsertQuery(in);
+    }
 }
 
 static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name, NamesAndTypesList & structure_from_create, Names & column_names)
@@ -391,25 +385,12 @@ bool MySQLDumpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
     return true;
 }
 
-size_t MySQLDumpRowInputFormat::countRows(size_t max_block_size)
-{
-    size_t num_rows = 0;
-    while (!in->eof() && num_rows < max_block_size)
-    {
-        ValuesBlockInputFormat::skipToNextRow(in, 1, 0);
-        skipEndOfInsertQueryIfNeeded(*in, table_name);
-        ++num_rows;
-    }
-
-    return num_rows;
-}
-
 bool MySQLDumpRowInputFormat::readField(IColumn & column, size_t column_idx)
 {
     const auto & type = types[column_idx];
     const auto & serialization = serializations[column_idx];
     if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-        return SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *in, format_settings, serialization);
+        return SerializationNullable::deserializeTextQuotedImpl(column, *in, format_settings, serialization);
 
     serialization->deserializeTextQuoted(column, *in, format_settings);
     return true;
@@ -441,7 +422,7 @@ NamesAndTypesList MySQLDumpSchemaReader::readSchema()
     return IRowSchemaReader::readSchema();
 }
 
-std::optional<DataTypes> MySQLDumpSchemaReader::readRowAndGetDataTypes()
+DataTypes MySQLDumpSchemaReader::readRowAndGetDataTypes()
 {
     if (in.eof())
         return {};
@@ -460,11 +441,6 @@ std::optional<DataTypes> MySQLDumpSchemaReader::readRowAndGetDataTypes()
     }
     skipEndOfRow(in, table_name);
     return data_types;
-}
-
-void MySQLDumpSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
-{
-    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 void registerInputFormatMySQLDump(FormatFactory & factory)

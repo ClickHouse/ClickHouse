@@ -127,8 +127,7 @@ static void checkOld(
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info,
         query_info.syntax_analyzer_result->requiredSourceColumns(),
-        state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
-        LiteralEscapingStyle::Regular, "test", "table", state.context);
+        state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes, "test", "table", state.context);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -181,8 +180,7 @@ static void checkNewAnalyzer(
     query_info.table_expression = findTableExpression(query_node->getJoinTree(), "table");
 
     std::string transformed_query = transformQueryForExternalDatabase(
-        query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
-        LiteralEscapingStyle::Regular, "test", "table", state.context);
+        query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes, "test", "table", state.context);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -318,18 +316,6 @@ TEST(TransformQueryForExternalDatabase, ForeignColumnInWhere)
           "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
           "WHERE column > 2 AND apply_id = 1 AND table2.num = 1 AND table2.attr != ''",
           R"(SELECT "column", "apply_id" FROM "test"."table" WHERE ("column" > 2) AND ("apply_id" = 1))");
-}
-
-TEST(TransformQueryForExternalDatabase, TupleSurroundPredicates)
-{
-    const State & state = State::instance();
-
-    check(
-        state,
-        1,
-        {"column", "field", "a"},
-        "SELECT column, field, a FROM table WHERE ((column > 10) AND (length(field) > 0)) AND a > 0",
-        R"(SELECT "column", "field", "a" FROM "test"."table" WHERE ("a" > 0) AND ("column" > 10))");
 }
 
 TEST(TransformQueryForExternalDatabase, NoStrict)

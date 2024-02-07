@@ -4,23 +4,14 @@
 
 #if USE_LIBURING
 
-#include <Common/Exception.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 #include <IO/AsynchronousReader.h>
 #include <deque>
 #include <unordered_map>
 #include <liburing.h>
 
-namespace Poco { class Logger; }
-
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
-class Exception;
 
 /** Perform reads using the io_uring Linux subsystem.
   *
@@ -39,7 +30,7 @@ private:
     uint32_t cq_entries;
 
     std::atomic<bool> cancelled{false};
-    std::unique_ptr<ThreadFromGlobalPool> ring_completion_monitor;
+    ThreadFromGlobalPool ring_completion_monitor;
 
     struct EnqueuedRequest
     {
@@ -73,18 +64,17 @@ private:
         return promise.get_future();
     }
 
-    const LoggerPtr log;
+    const Poco::Logger * log;
 
 public:
     IOUringReader(uint32_t entries_);
 
     inline bool isSupported() { return is_supported; }
     std::future<Result> submit(Request request) override;
-    Result execute(Request /* request */) override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `execute` not implemented for IOUringReader"); }
 
     void wait() override {}
 
-    ~IOUringReader() override;
+    virtual ~IOUringReader() override;
 };
 
 }

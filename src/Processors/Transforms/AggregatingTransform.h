@@ -7,13 +7,11 @@
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
 
 namespace CurrentMetrics
 {
     extern const Metric DestroyAggregatesThreads;
     extern const Metric DestroyAggregatesThreadsActive;
-    extern const Metric DestroyAggregatesThreadsScheduled;
 }
 
 namespace DB
@@ -96,7 +94,6 @@ struct ManyAggregatedData
             const auto pool = std::make_unique<ThreadPool>(
                 CurrentMetrics::DestroyAggregatesThreads,
                 CurrentMetrics::DestroyAggregatesThreadsActive,
-                CurrentMetrics::DestroyAggregatesThreadsScheduled,
                 variants.size());
 
             for (auto && variant : variants)
@@ -109,7 +106,7 @@ struct ManyAggregatedData
                 {
                     // variant is moved here and will be destroyed in the destructor of the lambda function.
                     pool->trySchedule(
-                        [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
+                        [variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
                         {
                             SCOPE_EXIT_SAFE(
                                 if (thread_group)
@@ -180,7 +177,7 @@ private:
     Processors processors;
 
     AggregatingTransformParamsPtr params;
-    LoggerPtr log = getLogger("AggregatingTransform");
+    Poco::Logger * log = &Poco::Logger::get("AggregatingTransform");
 
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
@@ -205,7 +202,7 @@ private:
     UInt64 src_rows = 0;
     UInt64 src_bytes = 0;
 
-    std::atomic_flag is_generate_initialized;
+    bool is_generate_initialized = false;
     bool is_consume_finished = false;
     bool is_pipeline_created = false;
 

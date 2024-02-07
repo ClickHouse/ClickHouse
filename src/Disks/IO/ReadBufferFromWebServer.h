@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadSettings.h>
@@ -13,6 +12,8 @@ namespace DB
 
 /* Read buffer, which reads via http, but is used as ReadBufferFromFileBase.
  * Used to read files, hosted on a web server with static files.
+ *
+ * Usage: ReadIndirectBufferFromRemoteFS -> SeekAvoidingReadBuffer -> ReadBufferFromWebServer -> ReadWriteBufferFromHTTP.
  */
 class ReadBufferFromWebServer : public ReadBufferFromFileBase
 {
@@ -34,14 +35,16 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
-    size_t getFileOffsetOfBufferEnd() const override { return offset.load(std::memory_order_relaxed); }
+    size_t getFileOffsetOfBufferEnd() const override { return offset; }
+
+    Range getRemainingReadRange() const override;
 
     bool supportsRightBoundedReads() const override { return true; }
 
 private:
     std::unique_ptr<ReadBuffer> initialize();
 
-    LoggerPtr log;
+    Poco::Logger * log;
     ContextPtr context;
 
     const String url;
@@ -55,10 +58,7 @@ private:
 
     bool use_external_buffer;
 
-    /// atomic is required for CachedOnDiskReadBufferFromFile, which can access
-    /// to this variable via getFileOffsetOfBufferEnd()/seek() from multiple
-    /// threads.
-    std::atomic<off_t> offset = 0;
+    off_t offset = 0;
     off_t read_until_position = 0;
 };
 

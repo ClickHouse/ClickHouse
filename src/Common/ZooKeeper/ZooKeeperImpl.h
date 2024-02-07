@@ -9,14 +9,11 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Coordination/KeeperConstants.h>
-#include <Coordination/KeeperFeatureFlags.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
 
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketAddress.h>
@@ -105,7 +102,6 @@ public:
     struct Node
     {
         Poco::Net::SocketAddress address;
-        UInt8 original_index;
         bool secure;
     };
 
@@ -125,14 +121,6 @@ public:
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
     bool isExpired() const override { return requests_queue.isFinished(); }
-
-    Int8 getConnectedNodeIdx() const override { return original_index; }
-    String getConnectedHostPort() const override { return (original_index == -1) ? "" : args.hosts[original_index]; }
-    int32_t getConnectionXid() const override { return next_xid.load(); }
-
-    /// A ZooKeeper session can have an optional deadline set on it.
-    /// After it has been reached, the session needs to be finalized.
-    bool hasReachedDeadline() const override;
 
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
@@ -159,12 +147,12 @@ public:
     void exists(
         const String & path,
         ExistsCallback callback,
-        WatchCallbackPtr watch) override;
+        WatchCallback watch) override;
 
     void get(
         const String & path,
         GetCallback callback,
-        WatchCallbackPtr watch) override;
+        WatchCallback watch) override;
 
     void set(
         const String & path,
@@ -176,7 +164,7 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallbackPtr watch) override;
+        WatchCallback watch) override;
 
     void check(
         const String & path,
@@ -187,18 +175,11 @@ public:
          const String & path,
          SyncCallback callback) override;
 
-    void reconfig(
-        std::string_view joining,
-        std::string_view leaving,
-        std::string_view new_members,
-        int32_t version,
-        ReconfigCallback callback) final;
-
     void multi(
         const Requests & requests,
         MultiCallback callback) override;
 
-    bool isFeatureEnabled(KeeperFeatureFlag feature_flag) const override;
+    DB::KeeperApiVersion getApiVersion() override;
 
     /// Without forcefully invalidating (finalizing) ZooKeeper session before
     /// establishing a new one, there was a possibility that server is using
@@ -218,13 +199,10 @@ public:
 
     void setServerCompletelyStarted();
 
-    const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
-
 private:
     ACLs default_acls;
 
     zkutil::ZooKeeperArgs args;
-    Int8 original_index = -1;
 
     /// Fault injection
     void maybeInjectSendFault();
@@ -241,13 +219,8 @@ private:
     Poco::Net::StreamSocket socket;
     /// To avoid excessive getpeername(2) calls.
     Poco::Net::SocketAddress socket_address;
-
     std::optional<ReadBufferFromPocoSocket> in;
     std::optional<WriteBufferFromPocoSocket> out;
-    std::optional<CompressedReadBuffer> compressed_in;
-    std::optional<CompressedWriteBuffer> compressed_out;
-
-    bool use_compression = false;
 
     int64_t session_id = 0;
 
@@ -262,11 +235,10 @@ private:
     {
         ZooKeeperRequestPtr request;
         ResponseCallback callback;
-        WatchCallbackPtr watch;
+        WatchCallback watch;
         clock::time_point time;
     };
 
-    std::optional<clock::time_point> client_session_deadline {};
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
     RequestsQueue requests_queue{1024};
@@ -277,38 +249,16 @@ private:
     Operations operations TSA_GUARDED_BY(operations_mutex);
     std::mutex operations_mutex;
 
-    using WatchCallbacks = std::unordered_set<WatchCallbackPtr>;
+    using WatchCallbacks = std::vector<WatchCallback>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
     Watches watches TSA_GUARDED_BY(watches_mutex);
     std::mutex watches_mutex;
 
-    /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
-    class ThreadReference
-    {
-    public:
-        const ThreadReference & operator = (ThreadFromGlobalPool && thread_)
-        {
-            std::lock_guard<std::mutex> l(lock);
-            thread = std::move(thread_);
-            return *this;
-        }
+    ThreadFromGlobalPool send_thread;
+    ThreadFromGlobalPool receive_thread;
 
-        void join()
-        {
-            std::lock_guard<std::mutex> l(lock);
-            if (thread.joinable())
-                thread.join();
-        }
-    private:
-        std::mutex lock;
-        ThreadFromGlobalPool thread;
-    };
-
-    ThreadReference send_thread;
-    ThreadReference receive_thread;
-
-    LoggerPtr log;
+    Poco::Logger * log;
 
     void connect(
         const Nodes & node,
@@ -335,20 +285,14 @@ private:
     template <typename T>
     void read(T &);
 
-    WriteBuffer & getWriteBuffer();
-    void flushWriteBuffer();
-    ReadBuffer & getReadBuffer();
-
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_ms = 0);
 
-    void initFeatureFlags();
-
-    void checkSessionDeadline() const;
+    void initApiVersion();
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
 
-    DB::KeeperFeatureFlags keeper_feature_flags;
+    DB::KeeperApiVersion keeper_api_version{DB::KeeperApiVersion::ZOOKEEPER_COMPATIBLE};
 };
 
 }

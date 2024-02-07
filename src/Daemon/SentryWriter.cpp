@@ -3,6 +3,7 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
+#include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/getMemoryAmount.h>
 #include <Common/logger_useful.h>
@@ -12,11 +13,12 @@
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Core/ServerUUID.h>
+#include <base/hex.h>
 
 #include "config.h"
-#include <Common/config_version.h>
+#include "config_version.h"
 
-#if USE_SENTRY && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_SENTRY && !defined(KEEPER_STANDALONE_BUILD)
 
 #    include <sentry.h>
 #    include <cstdio>
@@ -68,7 +70,7 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
 {
     bool enabled = false;
     bool debug = config.getBool("send_crash_reports.debug", false);
-    auto logger = getLogger("SentryWriter");
+    auto * logger = &Poco::Logger::get("SentryWriter");
 
     if (config.getBool("send_crash_reports.enabled", false))
     {
@@ -140,7 +142,7 @@ void SentryWriter::shutdown()
 
 void SentryWriter::onFault(int sig, const std::string & error_message, const StackTrace & stack_trace)
 {
-    auto logger = getLogger("SentryWriter");
+    auto * logger = &Poco::Logger::get("SentryWriter");
     if (initialized)
     {
         sentry_value_t event = sentry_value_new_message_event(SENTRY_LEVEL_FATAL, "fault", error_message.c_str());
@@ -148,7 +150,7 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
         sentry_set_extra("signal_number", sentry_value_new_int32(sig));
 
         #if defined(__ELF__) && !defined(OS_FREEBSD)
-            const String & build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
+            const String & build_id_hex = DB::SymbolIndex::instance()->getBuildIDHex();
             sentry_set_tag("build_id", build_id_hex.c_str());
         #endif
 
@@ -169,9 +171,11 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
             };
 
             StackTrace::Frames frames;
+            StackTrace::symbolize(stack_trace.getFramePointers(), offset, stack_size, frames);
 
-            auto sentry_add_stack_trace = [&](const StackTrace::Frame & current_frame)
+            for (ssize_t i = stack_size - 1; i >= offset; --i)
             {
+                const StackTrace::Frame & current_frame = frames[i];
                 sentry_value_t sentry_frame = sentry_value_new_object();
                 UInt64 frame_ptr = reinterpret_cast<UInt64>(current_frame.virtual_addr);
 
@@ -188,9 +192,7 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
                     sentry_value_set_by_key(sentry_frame, "lineno", sentry_value_new_int32(static_cast<int32_t>(current_frame.line.value())));
 
                 sentry_value_append(sentry_frames, sentry_frame);
-            };
-
-            StackTrace::forEachFrame(stack_trace.getFramePointers(), offset, stack_size, sentry_add_stack_trace, /* fatal= */ true);
+            }
         }
 
         /// Prepare data for https://develop.sentry.dev/sdk/event-payloads/threads/

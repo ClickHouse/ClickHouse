@@ -31,9 +31,7 @@
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
-#include <Backups/BackupEntryFromMemory.h>
 #include <Backups/BackupEntryFromSmallFile.h>
-#include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -52,7 +50,6 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int TIMEOUT_EXCEEDED;
     extern const int CANNOT_RESTORE_TABLE;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -277,7 +274,7 @@ StorageStripeLog::StorageStripeLog(
     , index_file_path(table_path + "index.mrk")
     , file_checker(disk, table_path + "sizes.json")
     , max_compress_block_size(context_->getSettings().max_compress_block_size)
-    , log(getLogger("StorageStripeLog"))
+    , log(&Poco::Logger::get("StorageStripeLog"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -395,7 +392,7 @@ Pipe StorageStripeLog::read(
 }
 
 
-SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
@@ -404,22 +401,16 @@ SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const Storage
     return std::make_shared<StripeLogSink>(*this, metadata_snapshot, std::move(lock));
 }
 
-IStorage::DataValidationTasksPtr StorageStripeLog::getCheckTaskList(
-    const std::variant<std::monostate, ASTPtr, String> & check_task_filter, ContextPtr local_context)
-{
-    if (!std::holds_alternative<std::monostate>(check_task_filter))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CHECK PART/PARTITION are not supported for {}", getName());
 
+CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, ContextPtr local_context)
+{
     ReadLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
-    return std::make_unique<DataValidationTasks>(file_checker.getDataValidationTasks(), std::move(lock));
+
+    return file_checker.check();
 }
 
-std::optional<CheckResult> StorageStripeLog::checkDataNext(DataValidationTasksPtr & check_task_list)
-{
-    return file_checker.checkNextEntry(assert_cast<DataValidationTasks *>(check_task_list.get())->file_checker_tasks);
-}
 
 void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
@@ -433,7 +424,7 @@ void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     num_indices_saved = 0;
     total_rows = 0;
     total_bytes = 0;
-    getContext()->clearMMappedFileCache();
+    getContext()->dropMMappedFileCache();
 }
 
 
@@ -539,7 +530,6 @@ std::optional<UInt64> StorageStripeLog::totalBytes(const Settings &) const
 void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
     auto lock_timeout = getLockTimeout(backup_entries_collector.getContext());
-
     loadIndices(lock_timeout);
 
     ReadLock lock{rwlock, lock_timeout};
@@ -551,11 +541,8 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
     auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/");
-    fs::path temp_dir = temp_dir_owner->getRelativePath();
+    fs::path temp_dir = temp_dir_owner->getPath();
     disk->createDirectories(temp_dir);
-
-    const auto & read_settings = backup_entries_collector.getReadSettings();
-    bool copy_encrypted = !backup_entries_collector.getBackupSettings().decrypt_files_from_encrypted_disks;
 
     /// data.bin
     {
@@ -563,10 +550,10 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         String data_file_name = fileName(data_file_path);
         String hardlink_file_path = temp_dir / data_file_name;
         disk->createHardLink(data_file_path, hardlink_file_path);
-        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file_path));
-        backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
-        backup_entries_collector.addBackupEntry(data_path_in_backup_fs / data_file_name, std::move(backup_entry));
+        backup_entries_collector.addBackupEntry(
+            data_path_in_backup_fs / data_file_name,
+            std::make_unique<BackupEntryFromAppendOnlyFile>(
+                disk, hardlink_file_path, file_checker.getFileSize(data_file_path), std::nullopt, temp_dir_owner));
     }
 
     /// index.mrk
@@ -575,16 +562,16 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         String index_file_name = fileName(index_file_path);
         String hardlink_file_path = temp_dir / index_file_name;
         disk->createHardLink(index_file_path, hardlink_file_path);
-        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(index_file_path));
-        backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
-        backup_entries_collector.addBackupEntry(data_path_in_backup_fs / index_file_name, std::move(backup_entry));
+        backup_entries_collector.addBackupEntry(
+            data_path_in_backup_fs / index_file_name,
+            std::make_unique<BackupEntryFromAppendOnlyFile>(
+                disk, hardlink_file_path, file_checker.getFileSize(index_file_path), std::nullopt, temp_dir_owner));
     }
 
     /// sizes.json
     String files_info_path = file_checker.getPath();
     backup_entries_collector.addBackupEntry(
-        data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, read_settings, copy_encrypted));
+        data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path));
 
     /// columns.txt
     backup_entries_collector.addBackupEntry(

@@ -9,6 +9,7 @@
 #include <boost/noncopyable.hpp>
 #include <Poco/Event.h>
 #include <base/types.h>
+#include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/CheckResults.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -18,27 +19,6 @@ namespace DB
 
 class StorageReplicatedMergeTree;
 
-struct ReplicatedCheckResult
-{
-    enum Action
-    {
-        None,
-
-        Cancelled,
-        DoNothing,
-        RecheckLater,
-
-        DetachUnexpected,
-        TryFetchMissing,
-    };
-
-    CheckResult status;
-    Action action = None;
-
-    bool exists_in_zookeeper;
-    MergeTreeDataPartPtr part;
-    time_t recheck_after_seconds = 0;
-};
 
 /** Checks the integrity of the parts requested for validation.
   *
@@ -57,6 +37,30 @@ public:
     void start();
     void stop();
 
+    /// Don't create more than one instance of this object simultaneously.
+    struct TemporarilyStop : private boost::noncopyable
+    {
+        ReplicatedMergeTreePartCheckThread * parent;
+
+        explicit TemporarilyStop(ReplicatedMergeTreePartCheckThread * parent_) : parent(parent_)
+        {
+            parent->stop();
+        }
+
+        TemporarilyStop(TemporarilyStop && old) noexcept : parent(old.parent)
+        {
+            old.parent = nullptr;
+        }
+
+        ~TemporarilyStop()
+        {
+            if (parent)
+                parent->start();
+        }
+    };
+
+    TemporarilyStop temporarilyStop() { return TemporarilyStop(this); }
+
     /// Add a part (for which there are suspicions that it is missing, damaged or not needed) in the queue for check.
     /// delay_to_check_seconds - check no sooner than the specified number of seconds.
     void enqueuePart(const String & name, time_t delay_to_check_seconds = 0);
@@ -65,9 +69,7 @@ public:
     size_t size() const;
 
     /// Check part by name
-    CheckResult checkPartAndFix(const String & part_name, std::optional<time_t> * recheck_after = nullptr, bool throw_on_broken_projection = true);
-
-    ReplicatedCheckResult checkPartImpl(const String & part_name, bool throw_on_broken_projection);
+    CheckResult checkPart(const String & part_name);
 
     std::unique_lock<std::mutex> pausePartsCheck();
 
@@ -77,25 +79,33 @@ public:
 private:
     void run();
 
-    bool onPartIsLostForever(const String & part_name);
+    /// Search for missing part and queue fetch if possible. Otherwise
+    /// remove part from zookeeper and queue.
+    void searchForMissingPartAndFetchIfPossible(const String & part_name, bool exists_in_zookeeper);
 
     std::pair<bool, MergeTreeDataPartPtr> findLocalPart(const String & part_name);
 
+    enum MissingPartSearchResult
+    {
+        /// We found this part on other replica, let's fetch it.
+        FoundAndNeedFetch,
+        /// We found covering part or source part with same min and max block number
+        /// don't need to fetch because we should do it during normal queue processing.
+        FoundAndDontNeedFetch,
+        /// Covering part not found anywhere and exact part_name doesn't found on other
+        /// replicas.
+        LostForever,
+    };
+
     /// Search for missing part on other replicas or covering part on all replicas (including our replica).
-    /// Returns false if the part is lost forever.
-    bool searchForMissingPartOnOtherReplicas(const String & part_name) const;
+    MissingPartSearchResult searchForMissingPartOnOtherReplicas(const String & part_name);
 
     StorageReplicatedMergeTree & storage;
     String log_name;
-    LoggerPtr log;
+    Poco::Logger * log;
 
     using StringSet = std::set<String>;
-    struct PartToCheck
-    {
-        using TimePoint = std::chrono::steady_clock::time_point;
-        String name;
-        TimePoint time;
-    };
+    using PartToCheck = std::pair<String, time_t>;    /// The name of the part and the minimum time to check (or zero, if not important).
     using PartsToCheckQueue = std::list<PartToCheck>;
 
     /** Parts for which you want to check one of two:

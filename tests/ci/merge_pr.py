@@ -4,23 +4,21 @@
 
 import argparse
 import logging
+
 from datetime import datetime
 from os import getenv
 from pprint import pformat
 from typing import Dict, List
 
-# isort: off
 from github.PaginatedList import PaginatedList
 from github.PullRequestReview import PullRequestReview
 from github.WorkflowRun import WorkflowRun
-
-# isort: on
 
 from commit_status_helper import get_commit_filtered_statuses
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub, NamedUser, PullRequest, Repository
 from pr_info import PRInfo
-from report import SUCCESS
+
 
 # The team name for accepted approvals
 TEAM_NAME = getenv("GITHUB_TEAM_NAME", "core")
@@ -156,7 +154,7 @@ def get_workflows_for_head(repo: Repository, head_sha: str) -> List[WorkflowRun]
     return list(
         PaginatedList(
             WorkflowRun,
-            repo._requester,  # pylint:disable=protected-access
+            repo._requester,  # type:ignore # pylint:disable=protected-access
             f"{repo.url}/actions/runs",
             {"head_sha": head_sha},
             list_item="workflow_runs",
@@ -248,12 +246,6 @@ def main():
 
     if args.check_running_workflows:
         workflows = get_workflows_for_head(repo, pr.head.sha)
-        logging.info(
-            "The PR #%s has following workflows:\n%s",
-            pr.number,
-            "\n".join(f"{wf.html_url}: status is {wf.status}" for wf in workflows),
-        )
-
         workflows_in_progress = [wf for wf in workflows if wf.status != "completed"]
         # At most one workflow in progress is fine. We check that there no
         # cases like, e.g. PullRequestCI and DocksCheck in progress at once
@@ -271,7 +263,7 @@ def main():
         failed_statuses = [
             status.context
             for status in get_commit_filtered_statuses(commit)
-            if status.state != SUCCESS
+            if status.state != "success"
         ]
         if failed_statuses:
             logging.warning(

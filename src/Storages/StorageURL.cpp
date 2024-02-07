@@ -1,8 +1,9 @@
 #include <Storages/StorageURL.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/VirtualColumnUtils.h>
+#include <Storages/ReadFromStorageProgress.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
@@ -13,8 +14,11 @@
 #include <Parsers/ASTIdentifier.h>
 
 #include <IO/ConnectionTimeouts.h>
+#include <IO/IOThreadPool.h>
+#include <IO/ParallelReadBuffer.h>
 #include <IO/WriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WithFileSize.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -22,34 +26,20 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
-#include <Processors/Sources/NullSource.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <Processors/Transforms/ExtractColumnsTransform.h>
-#include <Processors/Sources/ConstChunkGenerator.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Common/ThreadStatus.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>
-#include <Common/ProxyConfigurationResolverProvider.h>
-#include <Common/ProfileEvents.h>
-#include <Common/thread_local_rng.h>
-#include <Common/logger_useful.h>
-#include <Common/re2.h>
+#include <IO/HTTPCommon.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 
 #include <algorithm>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/logger_useful.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
+#include <regex>
 
-namespace ProfileEvents
-{
-    extern const Event EngineFileLikeReadFiles;
-}
 
 namespace DB
 {
@@ -58,12 +48,12 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NETWORK_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int LOGICAL_ERROR;
 }
 
 static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 arguments: "
-                                                    "url, name of used format (taken from file extension by default), "
-                                                    "optional compression method, optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
+    "url, name of used format (taken from file extension by default), "
+    "optional compression method, optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
 static const std::unordered_set<std::string_view> required_configuration_keys = {
     "url",
@@ -84,9 +74,9 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
 
 /// Headers in config file will have structure "headers.header.name" and "headers.header.value".
 /// But Poco::AbstractConfiguration converts them into "header", "header[1]", "header[2]".
-static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys = {
-    std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].name)"),
-    std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].value)"),
+static const std::vector<std::regex> optional_regex_keys = {
+    std::regex(R"(headers.header\[[\d]*\].name)"),
+    std::regex(R"(headers.header\[[\d]*\].value)"),
 };
 
 static bool urlWithGlobs(const String & uri)
@@ -96,7 +86,7 @@ static bool urlWithGlobs(const String & uri)
 
 static ConnectionTimeouts getHTTPTimeouts(ContextPtr context)
 {
-    return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings().keep_alive_timeout);
+    return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), {context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0});
 }
 
 IStorageURLBase::IStorageURLBase(
@@ -111,8 +101,7 @@ IStorageURLBase::IStorageURLBase(
     const String & compression_method_,
     const HTTPHeaderEntries & headers_,
     const String & http_method_,
-    ASTPtr partition_by_,
-    bool distributed_processing_)
+    ASTPtr partition_by_)
     : IStorage(table_id_)
     , uri(uri_)
     , compression_method(chooseCompressionMethod(Poco::URI(uri_).getPath(), compression_method_))
@@ -121,7 +110,6 @@ IStorageURLBase::IStorageURLBase(
     , headers(headers_)
     , http_method(http_method_)
     , partition_by(partition_by_)
-    , distributed_processing(distributed_processing_)
 {
     FormatFactory::instance().checkFormatName(format_name);
     StorageInMemoryMetadata storage_metadata;
@@ -132,18 +120,11 @@ IStorageURLBase::IStorageURLBase(
         storage_metadata.setColumns(columns);
     }
     else
-    {
-        /// We don't allow special columns in URL storage.
-        if (!columns_.hasOnlyOrdinary())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine URL doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
         storage_metadata.setColumns(columns_);
-    }
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-
-    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 
@@ -154,7 +135,7 @@ namespace
         HTTPHeaderEntries headers(headers_.begin(), headers_.end());
 
         // Propagate OpenTelemetry trace context, if any, downstream.
-        const auto & current_trace_context = OpenTelemetry::CurrentContext();
+        const auto &current_trace_context = OpenTelemetry::CurrentContext();
         if (current_trace_context.isTraceEnabled())
         {
             headers.emplace_back("traceparent", current_trace_context.composeTraceparentHeader());
@@ -168,356 +149,341 @@ namespace
         return headers;
     }
 
-    StorageURLSource::FailoverOptions getFailoverOptions(const String & uri, size_t max_addresses)
+
+    class StorageURLSource : public ISource
     {
-        return parseRemoteDescription(uri, 0, uri.size(), '|', max_addresses);
-    }
+        using URIParams = std::vector<std::pair<String, String>>;
 
-    auto getProxyConfiguration(const std::string & protocol_string)
-    {
-        auto protocol = protocol_string == "https" ? ProxyConfigurationResolver::Protocol::HTTPS
-                                             : ProxyConfigurationResolver::Protocol::HTTP;
-        return ProxyConfigurationResolverProvider::get(protocol, Context::getGlobalContextInstance()->getConfigRef())->resolve();
-    }
-}
-
-class StorageURLSource::DisclosedGlobIterator::Impl
-{
-public:
-    Impl(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
-    {
-        uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses);
-
-        ActionsDAGPtr filter_dag;
-        if (!uris.empty())
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
-
-        if (filter_dag)
+    public:
+        struct URIInfo
         {
-            std::vector<String> paths;
-            paths.reserve(uris.size());
-            for (const auto & uri : uris)
-                paths.push_back(Poco::URI(uri).getPath());
+            using FailoverOptions = std::vector<String>;
+            std::vector<FailoverOptions> uri_list_to_read;
+            std::atomic<size_t> next_uri_to_read = 0;
+        };
+        using URIInfoPtr = std::shared_ptr<URIInfo>;
 
-            VirtualColumnUtils::filterByPathOrFile(uris, paths, filter_dag, virtual_columns, context);
-        }
-    }
-
-    String next()
-    {
-        size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
-        if (current_index >= uris.size())
-            return {};
-
-        return uris[current_index];
-    }
-
-    size_t size()
-    {
-        return uris.size();
-    }
-
-private:
-    Strings uris;
-    std::atomic_size_t index = 0;
-};
-
-StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
-    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, max_addresses, predicate, virtual_columns, context)) {}
-
-String StorageURLSource::DisclosedGlobIterator::next()
-{
-    return pimpl->next();
-}
-
-size_t StorageURLSource::DisclosedGlobIterator::size()
-{
-    return pimpl->size();
-}
-
-void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
-{
-    const auto & user_info = request_uri.getUserInfo();
-    if (!user_info.empty())
-    {
-        std::size_t n = user_info.find(':');
-        if (n != std::string::npos)
+        static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
         {
-            credentials.setUsername(user_info.substr(0, n));
-            credentials.setPassword(user_info.substr(n + 1));
-        }
-    }
-}
-
-StorageURLSource::StorageURLSource(
-    const ReadFromFormatInfo & info,
-    std::shared_ptr<IteratorWrapper> uri_iterator_,
-    const std::string & http_method,
-    std::function<void(std::ostream &)> callback,
-    const String & format_,
-    const std::optional<FormatSettings> & format_settings_,
-    String name_,
-    ContextPtr context_,
-    UInt64 max_block_size,
-    const ConnectionTimeouts & timeouts,
-    CompressionMethod compression_method,
-    size_t max_parsing_threads,
-    const HTTPHeaderEntries & headers_,
-    const URIParams & params,
-    bool glob_url,
-    bool need_only_count_)
-    : SourceWithKeyCondition(info.source_header, false), WithContext(context_)
-    , name(std::move(name_))
-    , columns_description(info.columns_description)
-    , requested_columns(info.requested_columns)
-    , requested_virtual_columns(info.requested_virtual_columns)
-    , block_for_format(info.format_header)
-    , uri_iterator(uri_iterator_)
-    , format(format_)
-    , format_settings(format_settings_)
-    , headers(getHeaders(headers_))
-    , need_only_count(need_only_count_)
-{
-    /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
-    initialize = [=, this]()
-    {
-        std::vector<String> current_uri_options;
-        std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> uri_and_buf;
-        do
-        {
-            current_uri_options = (*uri_iterator)();
-            if (current_uri_options.empty())
-                return false;
-
-            auto first_option = current_uri_options.cbegin();
-            uri_and_buf = getFirstAvailableURIAndReadBuffer(
-                first_option,
-                current_uri_options.end(),
-                getContext(),
-                params,
-                http_method,
-                callback,
-                timeouts,
-                credentials,
-                headers,
-                glob_url,
-                current_uri_options.size() == 1);
-
-            /// If file is empty and engine_url_skip_empty_files=1, skip it and go to the next file.
-        }
-        while (getContext()->getSettingsRef().engine_url_skip_empty_files && uri_and_buf.second->eof());
-
-        curr_uri = uri_and_buf.first;
-        auto last_mod_time = uri_and_buf.second->tryGetLastModificationTime();
-        read_buf = std::move(uri_and_buf.second);
-        current_file_size = tryGetFileSizeFromReadBuffer(*read_buf);
-
-        if (auto file_progress_callback = getContext()->getFileProgressCallback())
-            file_progress_callback(FileProgress(0, current_file_size.value_or(0)));
-
-        QueryPipelineBuilder builder;
-        std::optional<size_t> num_rows_from_cache = std::nullopt;
-        if (need_only_count && getContext()->getSettingsRef().use_cache_for_count_from_files)
-            num_rows_from_cache = tryGetNumRowsFromCache(curr_uri.toString(), last_mod_time);
-
-        if (num_rows_from_cache)
-        {
-            /// We should not return single chunk with all number of rows,
-            /// because there is a chance that this chunk will be materialized later
-            /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
-            /// Instead, we use special ConstChunkGenerator that will generate chunks
-            /// with max_block_size rows until total number of rows is reached.
-            auto source = std::make_shared<ConstChunkGenerator>(block_for_format, *num_rows_from_cache, max_block_size);
-            builder.init(Pipe(source));
-        }
-        else
-        {
-            // TODO: Pass max_parsing_threads and max_download_threads adjusted for num_streams.
-            input_format = FormatFactory::instance().getInput(
-                format,
-                *read_buf,
-                block_for_format,
-                getContext(),
-                max_block_size,
-                format_settings,
-                max_parsing_threads,
-                /*max_download_threads*/ std::nullopt,
-                /* is_remote_ fs */ true,
-                compression_method,
-                need_only_count);
-
-            if (key_condition)
-                input_format->setKeyCondition(key_condition);
-
-            if (need_only_count)
-                input_format->needOnlyCount();
-
-          builder.init(Pipe(input_format));
-
-            if (columns_description.hasDefaults())
+            const auto & user_info = request_uri.getUserInfo();
+            if (!user_info.empty())
             {
-                builder.addSimpleTransform([&](const Block & cur_header)
+                std::size_t n = user_info.find(':');
+                if (n != std::string::npos)
                 {
-                    return std::make_shared<AddingDefaultsTransform>(cur_header, columns_description, *input_format, getContext());
-                });
+                    credentials.setUsername(user_info.substr(0, n));
+                    credentials.setPassword(user_info.substr(n + 1));
+                }
             }
         }
 
-        /// Add ExtractColumnsTransform to extract requested columns/subcolumns
-        /// from chunk read by IInputFormat.
-        builder.addSimpleTransform([&](const Block & header)
+        StorageURLSource(
+            URIInfoPtr uri_info_,
+            const std::string & http_method,
+            std::function<void(std::ostream &)> callback,
+            const String & format,
+            const std::optional<FormatSettings> & format_settings,
+            String name_,
+            const Block & sample_block,
+            ContextPtr context,
+            const ColumnsDescription & columns,
+            UInt64 max_block_size,
+            const ConnectionTimeouts & timeouts,
+            CompressionMethod compression_method,
+            size_t download_threads,
+            const HTTPHeaderEntries & headers_ = {},
+            const URIParams & params = {},
+            bool glob_url = false)
+            : ISource(sample_block), name(std::move(name_)), uri_info(uri_info_)
         {
-            return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
-        });
+            auto headers = getHeaders(headers_);
 
-        pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
-        reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
-
-        ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
-        return true;
-    };
-}
-
-Chunk StorageURLSource::generate()
-{
-    while (true)
-    {
-        if (isCancelled())
-        {
-            if (reader)
-                reader->cancel();
-            break;
-        }
-
-        if (!reader && !initialize())
-            return {};
-
-        Chunk chunk;
-        if (reader->pull(chunk))
-        {
-            UInt64 num_rows = chunk.getNumRows();
-            total_rows_in_file += num_rows;
-            size_t chunk_size = 0;
-            if (input_format)
-                chunk_size = input_format->getApproxBytesReadForChunk();
-            progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
-            VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(chunk, requested_virtual_columns, curr_uri.getPath(), current_file_size);
-            return chunk;
-        }
-
-        if (input_format && getContext()->getSettingsRef().use_cache_for_count_from_files)
-            addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
-
-        pipeline->reset();
-        reader.reset();
-        input_format.reset();
-        read_buf.reset();
-        total_rows_in_file = 0;
-    }
-    return {};
-}
-
-std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource::getFirstAvailableURIAndReadBuffer(
-    std::vector<String>::const_iterator & option,
-    const std::vector<String>::const_iterator & end,
-    ContextPtr context_,
-    const URIParams & params,
-    const String & http_method,
-    std::function<void(std::ostream &)> callback,
-    const ConnectionTimeouts & timeouts,
-    Poco::Net::HTTPBasicCredentials & credentials,
-    const HTTPHeaderEntries & headers,
-    bool glob_url,
-    bool delay_initialization)
-{
-    String first_exception_message;
-    ReadSettings read_settings = context_->getReadSettings();
-
-    size_t options = std::distance(option, end);
-    std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> last_skipped_empty_res;
-    for (; option != end; ++option)
-    {
-        bool skip_url_not_found_error = glob_url && read_settings.http_skip_not_found_url_for_globs && option == std::prev(end);
-        auto request_uri = Poco::URI(*option, context_->getSettingsRef().enable_url_encoding);
-
-        for (const auto & [param, value] : params)
-            request_uri.addQueryParameter(param, value);
-
-        setCredentials(credentials, request_uri);
-
-        const auto settings = context_->getSettings();
-
-        auto proxy_config = getProxyConfiguration(http_method);
-
-        try
-        {
-            auto res = std::make_unique<ReadWriteBufferFromHTTP>(
-                request_uri,
-                http_method,
-                callback,
-                timeouts,
-                credentials,
-                settings.max_http_get_redirects,
-                settings.max_read_buffer_size,
-                read_settings,
-                headers,
-                &context_->getRemoteHostFilter(),
-                delay_initialization,
-                /* use_external_buffer */ false,
-                /* skip_url_not_found_error */ skip_url_not_found_error,
-                /* file_info */ std::nullopt,
-                proxy_config);
-
-            if (context_->getSettingsRef().engine_url_skip_empty_files && res->eof() && option != std::prev(end))
+            /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
+            initialize = [=, this](const URIInfo::FailoverOptions & uri_options)
             {
-                last_skipped_empty_res = {request_uri, std::move(res)};
-                continue;
+                if (uri_options.empty())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty url list");
+
+                auto first_option = uri_options.begin();
+                read_buf = getFirstAvailableURLReadBuffer(
+                    first_option,
+                    uri_options.end(),
+                    context,
+                    params,
+                    http_method,
+                    callback,
+                    timeouts,
+                    compression_method,
+                    credentials,
+                    headers,
+                    glob_url,
+                    uri_options.size() == 1,
+                    download_threads);
+
+                size_t file_size = 0;
+                try
+                {
+                    file_size = getFileSizeFromReadBuffer(*read_buf);
+                }
+                catch (...)
+                {
+                    // we simply continue without total_size
+                }
+
+                if (file_size)
+                {
+                    /// Adjust total_rows_approx_accumulated with new total size.
+                    if (total_size)
+                        total_rows_approx_accumulated = static_cast<size_t>(std::ceil(static_cast<double>(total_size + file_size) / total_size * total_rows_approx_accumulated));
+                    total_size += file_size;
+                }
+
+                input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
+                QueryPipelineBuilder builder;
+                builder.init(Pipe(input_format));
+
+                builder.addSimpleTransform(
+                    [&](const Block & cur_header)
+                    { return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *input_format, context); });
+
+                pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+                reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+            };
+        }
+
+        String getName() const override { return name; }
+
+        Chunk generate() override
+        {
+            while (true)
+            {
+                if (isCancelled())
+                {
+                    if (reader)
+                        reader->cancel();
+                    break;
+                }
+
+                if (!reader)
+                {
+                    auto current_uri_pos = uri_info->next_uri_to_read.fetch_add(1);
+                    if (current_uri_pos >= uri_info->uri_list_to_read.size())
+                        return {};
+
+                    auto current_uri = uri_info->uri_list_to_read[current_uri_pos];
+
+                    initialize(current_uri);
+                }
+
+                Chunk chunk;
+                if (reader->pull(chunk))
+                {
+                    UInt64 num_rows = chunk.getNumRows();
+                    size_t chunk_size = input_format->getApproxBytesReadForChunk();
+                    if (!chunk_size)
+                        chunk_size = chunk.bytes();
+                    updateRowsProgressApprox(
+                        *this, num_rows, chunk_size, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+
+                    return chunk;
+                }
+
+                pipeline->reset();
+                reader.reset();
+                input_format.reset();
+            }
+            return {};
+        }
+
+        static std::unique_ptr<ReadBuffer> getFirstAvailableURLReadBuffer(
+            std::vector<String>::const_iterator & option,
+            const std::vector<String>::const_iterator & end,
+            ContextPtr context,
+            const URIParams & params,
+            const String & http_method,
+            std::function<void(std::ostream &)> callback,
+            const ConnectionTimeouts & timeouts,
+            CompressionMethod compression_method,
+            Poco::Net::HTTPBasicCredentials & credentials,
+            const HTTPHeaderEntries & headers,
+            bool glob_url,
+            bool delay_initialization,
+            size_t download_threads)
+        {
+            String first_exception_message;
+            ReadSettings read_settings = context->getReadSettings();
+
+            size_t options = std::distance(option, end);
+            for (; option != end; ++option)
+            {
+                bool skip_url_not_found_error = glob_url && read_settings.http_skip_not_found_url_for_globs && option == std::prev(end);
+                auto request_uri = Poco::URI(*option);
+
+                for (const auto & [param, value] : params)
+                    request_uri.addQueryParameter(param, value);
+
+                setCredentials(credentials, request_uri);
+
+                const auto settings = context->getSettings();
+                int zstd_window_log_max = static_cast<int>(settings.zstd_window_log_max);
+                try
+                {
+                    if (download_threads > 1)
+                    {
+                        try
+                        {
+                            ReadWriteBufferFromHTTP buffer(
+                                request_uri,
+                                Poco::Net::HTTPRequest::HTTP_HEAD,
+                                callback,
+                                timeouts,
+                                credentials,
+                                settings.max_http_get_redirects,
+                                settings.max_read_buffer_size,
+                                read_settings,
+                                headers,
+                                ReadWriteBufferFromHTTP::Range{0, std::nullopt},
+                                &context->getRemoteHostFilter(),
+                                true,
+                                /* use_external_buffer */ false,
+                                /* skip_url_not_found_error */ skip_url_not_found_error);
+
+                            Poco::Net::HTTPResponse res;
+
+                            for (size_t i = 0; i < settings.http_max_tries; ++i)
+                            {
+                                try
+                                {
+                                    buffer.callWithRedirects(res, Poco::Net::HTTPRequest::HTTP_HEAD, true);
+                                    break;
+                                }
+                                catch (const Poco::Exception & e)
+                                {
+                                    LOG_TRACE(
+                                        &Poco::Logger::get("StorageURLSource"),
+                                        "HTTP HEAD request to `{}` failed at try {}/{}. "
+                                        "Error: {}.",
+                                        request_uri.toString(),
+                                        i + 1,
+                                        settings.http_max_tries,
+                                        e.displayText());
+                                    if (!ReadWriteBufferFromHTTP::isRetriableError(res.getStatus()))
+                                    {
+                                        throw;
+                                    }
+                                }
+                            }
+
+                            // to check if Range header is supported, we need to send a request with it set
+                            const bool supports_ranges = (res.has("Accept-Ranges") && res.get("Accept-Ranges") == "bytes")
+                                || (res.has("Content-Range") && res.get("Content-Range").starts_with("bytes"));
+
+                            if (supports_ranges)
+                                LOG_TRACE(&Poco::Logger::get("StorageURLSource"), "HTTP Range is supported");
+                            else
+                                LOG_TRACE(&Poco::Logger::get("StorageURLSource"), "HTTP Range is not supported");
+
+
+                            if (supports_ranges && res.getStatus() == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT
+                                && res.hasContentLength())
+                            {
+                                LOG_TRACE(
+                                    &Poco::Logger::get("StorageURLSource"),
+                                    "Using ParallelReadBuffer with {} workers with chunks of {} bytes",
+                                    download_threads,
+                                    settings.max_download_buffer_size);
+
+                                auto read_buffer_factory = std::make_unique<RangedReadWriteBufferFromHTTPFactory>(
+                                    res.getContentLength(),
+                                    settings.max_download_buffer_size,
+                                    request_uri,
+                                    http_method,
+                                    callback,
+                                    timeouts,
+                                    credentials,
+                                    settings.max_http_get_redirects,
+                                    settings.max_read_buffer_size,
+                                    read_settings,
+                                    headers,
+                                    &context->getRemoteHostFilter(),
+                                    delay_initialization,
+                                    /* use_external_buffer */ false,
+                                    /* skip_url_not_found_error */ skip_url_not_found_error);
+
+                                return wrapReadBufferWithCompressionMethod(
+                                    std::make_unique<ParallelReadBuffer>(
+                                        std::move(read_buffer_factory),
+                                        threadPoolCallbackRunner<void>(IOThreadPool::get(), "URLParallelRead"),
+                                        download_threads),
+                                    compression_method,
+                                    zstd_window_log_max);
+                            }
+                        }
+                        catch (const Poco::Exception & e)
+                        {
+                            LOG_TRACE(
+                                &Poco::Logger::get("StorageURLSource"),
+                                "Failed to setup ParallelReadBuffer because of an exception:\n{}.\nFalling back to the single-threaded "
+                                "buffer",
+                                e.displayText());
+                        }
+                    }
+
+                    LOG_TRACE(&Poco::Logger::get("StorageURLSource"), "Using single-threaded read buffer");
+
+                    return wrapReadBufferWithCompressionMethod(
+                        std::make_unique<ReadWriteBufferFromHTTP>(
+                            request_uri,
+                            http_method,
+                            callback,
+                            timeouts,
+                            credentials,
+                            settings.max_http_get_redirects,
+                            settings.max_read_buffer_size,
+                            read_settings,
+                            headers,
+                            ReadWriteBufferFromHTTP::Range{},
+                            &context->getRemoteHostFilter(),
+                            delay_initialization,
+                            /* use_external_buffer */ false,
+                            /* skip_url_not_found_error */ skip_url_not_found_error),
+                            compression_method,
+                        zstd_window_log_max);
+                }
+                catch (...)
+                {
+                    if (first_exception_message.empty())
+                        first_exception_message = getCurrentExceptionMessage(false);
+
+                    if (options == 1)
+                        throw;
+
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
             }
 
-            return std::make_tuple(request_uri, std::move(res));
+            throw Exception(ErrorCodes::NETWORK_ERROR, "All uri ({}) options are unreachable: {}", options, first_exception_message);
         }
-        catch (...)
-        {
-            if (options == 1)
-                throw;
 
-            if (first_exception_message.empty())
-                first_exception_message = getCurrentExceptionMessage(false);
+    private:
+        using InitializeFunc = std::function<void(const URIInfo::FailoverOptions &)>;
+        InitializeFunc initialize;
 
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+        String name;
+        URIInfoPtr uri_info;
 
-            continue;
-        }
-    }
+        std::unique_ptr<ReadBuffer> read_buf;
+        std::shared_ptr<IInputFormat> input_format;
+        std::unique_ptr<QueryPipeline> pipeline;
+        std::unique_ptr<PullingPipelineExecutor> reader;
 
-    /// If all options are unreachable except empty ones that we skipped,
-    /// return last empty result. It will be skipped later.
-    if (last_skipped_empty_res.second)
-        return last_skipped_empty_res;
+        Poco::Net::HTTPBasicCredentials credentials;
 
-    throw Exception(ErrorCodes::NETWORK_ERROR, "All uri ({}) options are unreachable: {}", options, first_exception_message);
-}
-
-void StorageURLSource::addNumRowsToCache(const String & uri, size_t num_rows)
-{
-    auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
-    StorageURL::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
-}
-
-std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time)
-{
-    auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
-    auto get_last_mod_time = [&]() -> std::optional<time_t>
-    {
-        /// Some URLs could not have Last-Modified header, in this case we cannot be sure that
-        /// data wasn't changed after adding it's schema to cache. Use schema from cache only if
-        /// special setting for this case is enabled.
-        if (!last_mod_time && !getContext()->getSettingsRef().schema_inference_cache_require_modification_time_for_url)
-            return 0;
-        return last_mod_time;
+        size_t total_size = 0;
+        UInt64 total_rows_approx_max = 0;
+        size_t total_rows_count_times = 0;
+        UInt64 total_rows_approx_accumulated = 0;
     };
-
-    return StorageURL::getSchemaCache(getContext()).tryGetNumRows(cache_key, get_last_mod_time);
 }
 
 StorageURLSink::StorageURLSink(
@@ -535,18 +501,10 @@ StorageURLSink::StorageURLSink(
     std::string content_type = FormatFactory::instance().getContentType(format, context, format_settings);
     std::string content_encoding = toContentEncodingName(compression_method);
 
-    auto proxy_config = getProxyConfiguration(http_method);
-
-    auto write_buffer = std::make_unique<WriteBufferFromHTTP>(
-        Poco::URI(uri), http_method, content_type, content_encoding, headers, timeouts, DBMS_DEFAULT_BUFFER_SIZE, proxy_config
-    );
-
-    const auto & settings = context->getSettingsRef();
     write_buf = wrapWriteBufferWithCompressionMethod(
-        std::move(write_buffer),
+        std::make_unique<WriteBufferFromHTTP>(Poco::URI(uri), http_method, content_type, content_encoding, headers, timeouts),
         compression_method,
-        static_cast<int>(settings.output_format_compression_level),
-        static_cast<int>(settings.output_format_compression_zstd_window_log));
+        3);
     writer = FormatFactory::instance().getOutputFormat(format, *write_buf, sample_block, context, format_settings);
 }
 
@@ -566,18 +524,10 @@ void StorageURLSink::onCancel()
     cancelled = true;
 }
 
-void StorageURLSink::onException(std::exception_ptr exception)
+void StorageURLSink::onException()
 {
     std::lock_guard lock(cancel_mutex);
-    try
-    {
-        std::rethrow_exception(exception);
-    }
-    catch (...)
-    {
-        /// An exception context is needed to proper delete write buffers without finalization
-        release();
-    }
+    finalize();
 }
 
 void StorageURLSink::onFinish()
@@ -600,15 +550,9 @@ void StorageURLSink::finalize()
     catch (...)
     {
         /// Stop ParallelFormattingOutputFormat correctly.
-        release();
+        writer.reset();
         throw;
     }
-}
-
-void StorageURLSink::release()
-{
-    writer.reset();
-    write_buf->finalize();
 }
 
 class PartitionedStorageURLSink : public PartitionedSink
@@ -686,158 +630,6 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
     return nullptr;
 }
 
-namespace
-{
-    class ReadBufferIterator : public IReadBufferIterator, WithContext
-    {
-    public:
-        ReadBufferIterator(
-            const std::vector<String> & urls_to_check_,
-            const String & format_,
-            const CompressionMethod & compression_method_,
-            const HTTPHeaderEntries & headers_,
-            const std::optional<FormatSettings> & format_settings_,
-            const ContextPtr & context_)
-            : WithContext(context_), format(format_), compression_method(compression_method_), headers(headers_), format_settings(format_settings_)
-        {
-            url_options_to_check.reserve(urls_to_check_.size());
-            for (const auto & url : urls_to_check_)
-                url_options_to_check.push_back(getFailoverOptions(url, getContext()->getSettingsRef().glob_expansion_max_elements));
-        }
-
-        std::pair<std::unique_ptr<ReadBuffer>, std::optional<ColumnsDescription>> next() override
-        {
-            bool is_first = (current_index == 0);
-            /// For default mode check cached columns for all urls on first iteration.
-            if (is_first && getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT)
-            {
-                for (const auto & options : url_options_to_check)
-                {
-                    if (auto cached_columns = tryGetColumnsFromCache(options))
-                        return {nullptr, cached_columns};
-                }
-            }
-
-            std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> uri_and_buf;
-            do
-            {
-                if (current_index == url_options_to_check.size())
-                {
-                    if (is_first)
-                        throw Exception(
-                            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                            "Cannot extract table structure from {} format file, because all files are empty. "
-                            "You must specify table structure manually",
-                            format);
-                    return {nullptr, std::nullopt};
-                }
-
-                if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::UNION)
-                {
-                    if (auto cached_columns = tryGetColumnsFromCache(url_options_to_check[current_index]))
-                    {
-                        ++current_index;
-                        return {nullptr, cached_columns};
-                    }
-                }
-
-                auto first_option = url_options_to_check[current_index].cbegin();
-                uri_and_buf = StorageURLSource::getFirstAvailableURIAndReadBuffer(
-                    first_option,
-                    url_options_to_check[current_index].cend(),
-                    getContext(),
-                    {},
-                    Poco::Net::HTTPRequest::HTTP_GET,
-                    {},
-                    getHTTPTimeouts(getContext()),
-                    credentials,
-                    headers,
-                    false,
-                    false);
-
-                ++current_index;
-            } while (getContext()->getSettingsRef().engine_url_skip_empty_files && uri_and_buf.second->eof());
-
-            current_url_option = uri_and_buf.first.toString();
-            return {wrapReadBufferWithCompressionMethod(
-                std::move(uri_and_buf.second),
-                compression_method,
-                static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max)), std::nullopt};
-        }
-
-        void setNumRowsToLastFile(size_t num_rows) override
-        {
-            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_url)
-                return;
-
-            auto key = getKeyForSchemaCache(current_url_option, format, format_settings, getContext());
-            StorageURL::getSchemaCache(getContext()).addNumRows(key, num_rows);
-        }
-
-        void setSchemaToLastFile(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_url
-                || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::UNION)
-                return;
-
-            auto key = getKeyForSchemaCache(current_url_option, format, format_settings, getContext());
-            StorageURL::getSchemaCache(getContext()).addColumns(key, columns);
-        }
-
-        void setResultingSchema(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_url
-                || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::DEFAULT)
-                return;
-
-            for (const auto & options : url_options_to_check)
-            {
-                auto keys = getKeysForSchemaCache(options, format, format_settings, getContext());
-                StorageURL::getSchemaCache(getContext()).addManyColumns(keys, columns);
-            }
-        }
-
-        String getLastFileName() const override { return current_url_option; }
-
-    private:
-        std::optional<ColumnsDescription> tryGetColumnsFromCache(const Strings & urls)
-        {
-            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_url)
-                return std::nullopt;
-
-            auto & schema_cache = StorageURL::getSchemaCache(getContext());
-            for (const auto & url : urls)
-            {
-                auto get_last_mod_time = [&]() -> std::optional<time_t>
-                {
-                    auto last_mod_time = StorageURL::tryGetLastModificationTime(url, headers, credentials, getContext());
-                    /// Some URLs could not have Last-Modified header, in this case we cannot be sure that
-                    /// data wasn't changed after adding it's schema to cache. Use schema from cache only if
-                    /// special setting for this case is enabled.
-                    if (!last_mod_time && !getContext()->getSettingsRef().schema_inference_cache_require_modification_time_for_url)
-                        return 0;
-                    return last_mod_time;
-                };
-
-                auto cache_key = getKeyForSchemaCache(url, format, format_settings, getContext());
-                auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
-                if (columns)
-                    return columns;
-            }
-
-            return std::nullopt;
-        }
-
-        std::vector<std::vector<String>> url_options_to_check;
-        size_t current_index = 0;
-        String current_url_option;
-        const String & format;
-        const CompressionMethod & compression_method;
-        const HTTPHeaderEntries & headers;
-        Poco::Net::HTTPBasicCredentials credentials;
-        const std::optional<FormatSettings> & format_settings;
-    };
-}
 
 ColumnsDescription IStorageURLBase::getTableStructureFromData(
     const String & format,
@@ -853,12 +645,57 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
 
     std::vector<String> urls_to_check;
     if (urlWithGlobs(uri))
-        urls_to_check = parseRemoteDescription(uri, 0, uri.size(), ',', context->getSettingsRef().glob_expansion_max_elements, "url");
+    {
+        size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
+        auto uri_descriptions = parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses);
+        for (const auto & description : uri_descriptions)
+        {
+            auto options = parseRemoteDescription(description, 0, description.size(), '|', max_addresses);
+            urls_to_check.insert(urls_to_check.end(), options.begin(), options.end());
+        }
+    }
     else
+    {
         urls_to_check = {uri};
+    }
 
-    ReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
-    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, urls_to_check.size() > 1, context);
+    std::optional<ColumnsDescription> columns_from_cache;
+    if (context->getSettingsRef().schema_inference_use_cache_for_url)
+        columns_from_cache = tryGetColumnsFromCache(urls_to_check, headers, credentials, format, format_settings, context);
+
+    ReadBufferIterator read_buffer_iterator = [&, it = urls_to_check.cbegin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
+    {
+        if (it == urls_to_check.cend())
+            return nullptr;
+
+        auto buf = StorageURLSource::getFirstAvailableURLReadBuffer(
+            it,
+            urls_to_check.cend(),
+            context,
+            {},
+            Poco::Net::HTTPRequest::HTTP_GET,
+            {},
+            getHTTPTimeouts(context),
+            compression_method,
+            credentials,
+            headers,
+            false,
+            false,
+            context->getSettingsRef().max_download_threads);\
+        ++it;
+        return buf;
+    };
+
+    ColumnsDescription columns;
+    if (columns_from_cache)
+        columns = *columns_from_cache;
+    else
+        columns = readSchemaFromFormat(format, format_settings, read_buffer_iterator, urls_to_check.size() > 1, context);
+
+    if (context->getSettingsRef().schema_inference_use_cache_for_url)
+        addColumnsToCache(urls_to_check, columns, format, format_settings, context);
+
+    return columns;
 }
 
 bool IStorageURLBase::supportsSubsetOfColumns(const ContextPtr & context) const
@@ -866,80 +703,7 @@ bool IStorageURLBase::supportsSubsetOfColumns(const ContextPtr & context) const
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
 }
 
-bool IStorageURLBase::prefersLargeBlocks() const
-{
-    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(format_name);
-}
-
-bool IStorageURLBase::parallelizeOutputAfterReading(ContextPtr context) const
-{
-    return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context);
-}
-
-class ReadFromURL : public SourceStepWithFilter
-{
-public:
-    std::string getName() const override { return "ReadFromURL"; }
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters() override;
-
-    ReadFromURL(
-        Block sample_block,
-        std::shared_ptr<IStorageURLBase> storage_,
-        std::vector<String> * uri_options_,
-        ReadFromFormatInfo info_,
-        const bool need_only_count_,
-        std::vector<std::pair<std::string, std::string>> read_uri_params_,
-        std::function<void(std::ostream &)> read_post_data_callback_,
-        ContextPtr context_,
-        size_t max_block_size_,
-        size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
-        , storage(std::move(storage_))
-        , uri_options(uri_options_)
-        , info(std::move(info_))
-        , need_only_count(need_only_count_)
-        , read_uri_params(std::move(read_uri_params_))
-        , read_post_data_callback(std::move(read_post_data_callback_))
-        , context(std::move(context_))
-        , max_block_size(max_block_size_)
-        , num_streams(num_streams_)
-    {
-    }
-
-private:
-    std::shared_ptr<IStorageURLBase> storage;
-    std::vector<String> * uri_options;
-
-    ReadFromFormatInfo info;
-    const bool need_only_count;
-    std::vector<std::pair<std::string, std::string>> read_uri_params;
-    std::function<void(std::ostream &)> read_post_data_callback;
-
-    ContextPtr context;
-
-    size_t max_block_size;
-    size_t num_streams;
-
-    std::shared_ptr<StorageURLSource::IteratorWrapper> iterator_wrapper;
-    bool is_url_with_globs = false;
-    bool is_empty_glob = false;
-
-    void createIterator(const ActionsDAG::Node * predicate);
-};
-
-void ReadFromURL::applyFilters()
-{
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
-    const ActionsDAG::Node * predicate = nullptr;
-    if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
-
-    createIterator(predicate);
-}
-
-void IStorageURLBase::read(
-    QueryPlan & query_plan,
+Pipe IStorageURLBase::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -949,206 +713,134 @@ void IStorageURLBase::read(
     size_t num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
 
-    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
-        && local_context->getSettingsRef().optimize_count_from_files;
-
-    auto read_post_data_callback = getReadPOSTDataCallback(
-        read_from_format_info.columns_description.getNamesOfPhysical(),
-        read_from_format_info.columns_description,
-        query_info,
-        local_context,
-        processed_stage,
-        max_block_size);
-
-    auto this_ptr = std::static_pointer_cast<IStorageURLBase>(shared_from_this());
-
-    auto reading = std::make_unique<ReadFromURL>(
-        read_from_format_info.source_header,
-        std::move(this_ptr),
-        nullptr,
-        std::move(read_from_format_info),
-        need_only_count,
-        std::move(params),
-        std::move(read_post_data_callback),
-        local_context,
-        max_block_size,
-        num_streams);
-
-    query_plan.addStep(std::move(reading));
-}
-
-void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
-{
-    if (iterator_wrapper || is_empty_glob)
-        return;
-
-    if (uri_options)
+    ColumnsDescription columns_description;
+    Block block_for_format;
+    if (supportsSubsetOfColumns(local_context))
     {
-        iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([&, done = false]() mutable
-        {
-            if (done)
-                return StorageURLSource::FailoverOptions{};
-            done = true;
-            return *uri_options;
-        });
-
-        return;
-    }
-
-    size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
-    is_url_with_globs = urlWithGlobs(storage->uri);
-
-    if (storage->distributed_processing)
-    {
-        iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>(
-            [callback = context->getReadTaskCallback(), max_addresses]()
-            {
-                String next_uri = callback();
-                if (next_uri.empty())
-                    return StorageURLSource::FailoverOptions{};
-                return getFailoverOptions(next_uri, max_addresses);
-            });
-    }
-    else if (is_url_with_globs)
-    {
-        /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage->virtual_columns, context);
-
-        /// check if we filtered out all the paths
-        if (glob_iterator->size() == 0)
-        {
-            is_empty_glob = true;
-            return;
-        }
-
-        iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([glob_iterator, max_addresses]()
-        {
-            String next_uri = glob_iterator->next();
-            if (next_uri.empty())
-                return StorageURLSource::FailoverOptions{};
-            return getFailoverOptions(next_uri, max_addresses);
-        });
-
-        if (num_streams > glob_iterator->size())
-            num_streams = glob_iterator->size();
+        columns_description = storage_snapshot->getDescriptionForColumns(column_names);
+        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
     {
-        iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([max_addresses, done = false, &uri = storage->uri]() mutable
+        columns_description = storage_snapshot->metadata->getColumns();
+        block_for_format = storage_snapshot->metadata->getSampleBlock();
+    }
+
+    size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
+
+    if (urlWithGlobs(uri))
+    {
+        size_t max_addresses = local_context->getSettingsRef().glob_expansion_max_elements;
+        auto uri_descriptions = parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses);
+
+        if (num_streams > uri_descriptions.size())
+            num_streams = uri_descriptions.size();
+
+        /// For each uri (which acts like shard) check if it has failover options
+        auto uri_info = std::make_shared<StorageURLSource::URIInfo>();
+        for (const auto & description : uri_descriptions)
+            uri_info->uri_list_to_read.emplace_back(parseRemoteDescription(description, 0, description.size(), '|', max_addresses));
+
+        Pipes pipes;
+        pipes.reserve(num_streams);
+
+        size_t download_threads = num_streams >= max_download_threads ? 1 : (max_download_threads / num_streams);
+        for (size_t i = 0; i < num_streams; ++i)
         {
-            if (done)
-                return StorageURLSource::FailoverOptions{};
-            done = true;
-            return getFailoverOptions(uri, max_addresses);
-        });
-        num_streams = 1;
+            pipes.emplace_back(std::make_shared<StorageURLSource>(
+                uri_info,
+                getReadMethod(),
+                getReadPOSTDataCallback(column_names, columns_description, query_info, local_context, processed_stage, max_block_size),
+                format_name,
+                format_settings,
+                getName(),
+                block_for_format,
+                local_context,
+                columns_description,
+                max_block_size,
+                getHTTPTimeouts(local_context),
+                compression_method,
+                download_threads,
+                headers,
+                params,
+                /* glob_url */ true));
+        }
+        return Pipe::unitePipes(std::move(pipes));
     }
-}
-
-void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
-{
-    createIterator(nullptr);
-
-    if (is_empty_glob)
+    else
     {
-        pipeline.init(Pipe(std::make_shared<NullSource>(info.source_header)));
-        return;
-    }
-
-    Pipes pipes;
-    pipes.reserve(num_streams);
-
-    const size_t max_threads = context->getSettingsRef().max_threads;
-    const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / num_streams);
-
-    for (size_t i = 0; i < num_streams; ++i)
-    {
-        auto source = std::make_shared<StorageURLSource>(
-            info,
-            iterator_wrapper,
-            storage->getReadMethod(),
-            read_post_data_callback,
-            storage->format_name,
-            storage->format_settings,
-            storage->getName(),
-            context,
+        auto uri_info = std::make_shared<StorageURLSource::URIInfo>();
+        uri_info->uri_list_to_read.emplace_back(std::vector<String>{uri});
+        return Pipe(std::make_shared<StorageURLSource>(
+            uri_info,
+            getReadMethod(),
+            getReadPOSTDataCallback(column_names, columns_description, query_info, local_context, processed_stage, max_block_size),
+            format_name,
+            format_settings,
+            getName(),
+            block_for_format,
+            local_context,
+            columns_description,
             max_block_size,
-            getHTTPTimeouts(context),
-            storage->compression_method,
-            max_parsing_threads,
-            storage->headers,
-            read_uri_params,
-            is_url_with_globs,
-            need_only_count);
-
-        source->setKeyCondition(filter_nodes.nodes, context);
-        pipes.emplace_back(std::move(source));
+            getHTTPTimeouts(local_context),
+            compression_method,
+            max_download_threads,
+            headers,
+            params));
     }
-
-    if (uri_options)
-        std::shuffle(uri_options->begin(), uri_options->end(), thread_local_rng);
-
-    auto pipe = Pipe::unitePipes(std::move(pipes));
-    size_t output_ports = pipe.numOutputPorts();
-    const bool parallelize_output = context->getSettingsRef().parallelize_output_from_storages;
-    if (parallelize_output && storage->parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < num_streams)
-        pipe.resize(num_streams);
-
-    if (pipe.empty())
-        pipe = Pipe(std::make_shared<NullSource>(info.source_header));
-
-    for (const auto & processor : pipe.getProcessors())
-        processors.emplace_back(processor);
-
-    pipeline.init(std::move(pipe));
 }
 
 
-void StorageURLWithFailover::read(
-    QueryPlan & query_plan,
+Pipe StorageURLWithFailover::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    size_t num_streams)
+    size_t /*num_streams*/)
 {
+    ColumnsDescription columns_description;
+    Block block_for_format;
+    if (supportsSubsetOfColumns(local_context))
+    {
+        columns_description = storage_snapshot->getDescriptionForColumns(column_names);
+        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+    }
+    else
+    {
+        columns_description = storage_snapshot->metadata->getColumns();
+        block_for_format = storage_snapshot->metadata->getSampleBlock();
+    }
+
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
 
-    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
-        && local_context->getSettingsRef().optimize_count_from_files;
+    auto uri_info = std::make_shared<StorageURLSource::URIInfo>();
+    uri_info->uri_list_to_read.emplace_back(uri_options);
 
-    auto read_post_data_callback = getReadPOSTDataCallback(
-        read_from_format_info.columns_description.getNamesOfPhysical(),
-        read_from_format_info.columns_description,
-        query_info,
+    auto pipe = Pipe(std::make_shared<StorageURLSource>(
+        uri_info,
+        getReadMethod(),
+        getReadPOSTDataCallback(column_names, columns_description, query_info, local_context, processed_stage, max_block_size),
+        format_name,
+        format_settings,
+        getName(),
+        block_for_format,
         local_context,
-        processed_stage,
-        max_block_size);
-
-    auto this_ptr = std::static_pointer_cast<StorageURL>(shared_from_this());
-
-    auto reading = std::make_unique<ReadFromURL>(
-        read_from_format_info.source_header,
-        std::move(this_ptr),
-        &uri_options,
-        std::move(read_from_format_info),
-        need_only_count,
-        std::move(params),
-        std::move(read_post_data_callback),
-        local_context,
+        columns_description,
         max_block_size,
-        num_streams);
-
-    query_plan.addStep(std::move(reading));
+        getHTTPTimeouts(local_context),
+        compression_method,
+        local_context->getSettingsRef().max_download_threads,
+        headers,
+        params));
+    std::shuffle(uri_options.begin(), uri_options.end(), thread_local_rng);
+    return pipe;
 }
 
 
-SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
+SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     if (http_method.empty())
         http_method = Poco::Net::HTTPRequest::HTTP_POST;
@@ -1187,23 +879,56 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
     }
 }
 
-NamesAndTypesList IStorageURLBase::getVirtuals() const
-{
-    return virtual_columns;
-}
-
-Names IStorageURLBase::getVirtualColumnNames()
-{
-    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
-}
-
 SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)
 {
     static SchemaCache schema_cache(context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_url", DEFAULT_SCHEMA_CACHE_ELEMENTS));
     return schema_cache;
 }
 
-std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
+std::optional<ColumnsDescription> IStorageURLBase::tryGetColumnsFromCache(
+    const Strings & urls,
+    const HTTPHeaderEntries & headers,
+    const Poco::Net::HTTPBasicCredentials & credentials,
+    const String & format_name,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context)
+{
+    auto & schema_cache = getSchemaCache(context);
+    for (const auto & url : urls)
+    {
+        auto get_last_mod_time = [&]() -> std::optional<time_t>
+        {
+            auto last_mod_time = getLastModificationTime(url, headers, credentials, context);
+            /// Some URLs could not have Last-Modified header, in this case we cannot be sure that
+            /// data wasn't changed after adding it's schema to cache. Use schema from cache only if
+            /// special setting for this case is enabled.
+            if (!last_mod_time && !context->getSettingsRef().schema_inference_cache_require_modification_time_for_url)
+                return 0;
+            return last_mod_time;
+        };
+
+        auto cache_key = getKeyForSchemaCache(url, format_name, format_settings, context);
+        auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);
+        if (columns)
+            return columns;
+    }
+
+    return std::nullopt;
+}
+
+void IStorageURLBase::addColumnsToCache(
+    const Strings & urls,
+    const ColumnsDescription & columns,
+    const String & format_name,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context)
+{
+    auto & schema_cache = getSchemaCache(context);
+    auto cache_keys = getKeysForSchemaCache(urls, format_name, format_settings, context);
+    schema_cache.addMany(cache_keys, columns);
+}
+
+std::optional<time_t> IStorageURLBase::getLastModificationTime(
     const String & url,
     const HTTPHeaderEntries & headers,
     const Poco::Net::HTTPBasicCredentials & credentials,
@@ -1211,28 +936,30 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
 {
     auto settings = context->getSettingsRef();
 
-    auto uri = Poco::URI(url);
+    try
+    {
+        ReadWriteBufferFromHTTP buf(
+            Poco::URI(url),
+            Poco::Net::HTTPRequest::HTTP_GET,
+            {},
+            getHTTPTimeouts(context),
+            credentials,
+            settings.max_http_get_redirects,
+            settings.max_read_buffer_size,
+            context->getReadSettings(),
+            headers,
+            ReadWriteBufferFromHTTP::Range{},
+            &context->getRemoteHostFilter(),
+            true,
+            false,
+            false);
 
-    auto proxy_config = getProxyConfiguration(uri.getScheme());
-
-    ReadWriteBufferFromHTTP buf(
-        uri,
-        Poco::Net::HTTPRequest::HTTP_GET,
-        {},
-        getHTTPTimeouts(context),
-        credentials,
-        settings.max_http_get_redirects,
-        settings.max_read_buffer_size,
-        context->getReadSettings(),
-        headers,
-        &context->getRemoteHostFilter(),
-        true,
-        false,
-        false,
-        std::nullopt,
-        proxy_config);
-
-    return buf.tryGetLastModificationTime();
+        return buf.getLastModificationTime();
+    }
+    catch (...)
+    {
+        return std::nullopt;
+    }
 }
 
 StorageURL::StorageURL(
@@ -1247,8 +974,7 @@ StorageURL::StorageURL(
     const String & compression_method_,
     const HTTPHeaderEntries & headers_,
     const String & http_method_,
-    ASTPtr partition_by_,
-    bool distributed_processing_)
+    ASTPtr partition_by_)
     : IStorageURLBase(
         uri_,
         context_,
@@ -1261,11 +987,9 @@ StorageURL::StorageURL(
         compression_method_,
         headers_,
         http_method_,
-        partition_by_,
-        distributed_processing_)
+        partition_by_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
-    context_->getHTTPHeaderFilter().checkHeaders(headers);
 }
 
 
@@ -1284,7 +1008,7 @@ StorageURLWithFailover::StorageURLWithFailover(
     {
         Poco::URI poco_uri(uri_option);
         context_->getRemoteHostFilter().checkURL(poco_uri);
-        LOG_DEBUG(getLogger("StorageURLDistributed"), "Adding URL option: {}", uri_option);
+        LOG_DEBUG(&Poco::Logger::get("StorageURLDistributed"), "Adding URL option: {}", uri_option);
         uri_options.emplace_back(uri_option);
     }
 }
@@ -1324,7 +1048,7 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
     return format_settings;
 }
 
-size_t StorageURL::evalArgsAndCollectHeaders(
+ASTs::iterator StorageURL::collectHeaders(
     ASTs & url_function_args, HTTPHeaderEntries & header_entries, ContextPtr context)
 {
     ASTs::iterator headers_it = url_function_args.end();
@@ -1382,11 +1106,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
         (*arg_it) = evaluateConstantExpressionOrIdentifierAsLiteral((*arg_it), context);
     }
 
-    if (headers_it == url_function_args.end())
-        return url_function_args.size();
-
-    std::rotate(headers_it, std::next(headers_it), url_function_args.end());
-    return url_function_args.size() - 1;
+    return headers_it;
 }
 
 void StorageURL::processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection)
@@ -1416,19 +1136,21 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, ContextPtr l
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, local_context))
     {
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
-        evalArgsAndCollectHeaders(args, configuration.headers, local_context);
+        collectHeaders(args, configuration.headers, local_context);
     }
     else
     {
-        size_t count = evalArgsAndCollectHeaders(args, configuration.headers, local_context);
-
-        if (count == 0 || count > 3)
+        if (args.empty() || args.size() > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, bad_arguments_error_message);
 
+        auto * header_it = collectHeaders(args, configuration.headers, local_context);
+        if (header_it != args.end())
+            args.erase(header_it);
+
         configuration.url = checkAndGetLiteralArgument<String>(args[0], "url");
-        if (count > 1)
+        if (args.size() > 1)
             configuration.format = checkAndGetLiteralArgument<String>(args[1], "format");
-        if (count == 3)
+        if (args.size() == 3)
             configuration.compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
     }
 

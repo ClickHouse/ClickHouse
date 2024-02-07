@@ -63,9 +63,6 @@ namespace DB
 class StorageMaterializedPostgreSQL final : public IStorage, WithContext
 {
 public:
-    static constexpr auto NESTED_TABLE_SUFFIX = "_nested";
-    static constexpr auto TMP_SUFFIX = "_tmp";
-
     StorageMaterializedPostgreSQL(const StorageID & table_id_, ContextPtr context_,
                                 const String & postgres_database_name, const String & postgres_table_name);
 
@@ -84,7 +81,7 @@ public:
 
     String getName() const override { return "MaterializedPostgreSQL"; }
 
-    void shutdown(bool is_drop) override;
+    void shutdown() override;
 
     /// Used only for single MaterializedPostgreSQL storage.
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
@@ -112,8 +109,7 @@ public:
 
     ASTPtr getCreateNestedTableQuery(PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
 
-    std::shared_ptr<ASTExpressionList> getColumnsExpressionList(
-        const NamesAndTypesList & columns, std::unordered_map<std::string, ASTPtr> defaults = {}) const;
+    std::shared_ptr<ASTExpressionList> getColumnsExpressionList(const NamesAndTypesList & columns) const;
 
     StoragePtr getNested() const;
 
@@ -142,7 +138,7 @@ private:
 
     String getNestedTableName() const;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     /// Not nullptr only for single MaterializedPostgreSQL storage, because for MaterializedPostgreSQL
     /// database engine there is one replication handler for all tables.
