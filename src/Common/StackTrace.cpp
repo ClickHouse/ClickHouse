@@ -15,16 +15,14 @@
 #include <IO/Operators.h>
 
 #include <atomic>
-#include <filesystem>
 #include <map>
 #include <mutex>
-#include <sstream>
-#include <unordered_map>
 #include <fmt/format.h>
 #include <libunwind.h>
 
 #include "config.h"
 
+#include <boost/algorithm/string/split.hpp>
 
 #if defined(OS_DARWIN)
 /// This header contains functions like `backtrace` and `backtrace_symbols`
@@ -276,32 +274,6 @@ void StackTrace::forEachFrame(
 #elif defined(OS_DARWIN)
     UNUSED(fatal);
 
-    auto split_by_whitespace = [](const std::string & str)
-    {
-        std::vector<std::string> split;
-        ssize_t prev = -1;
-        for (size_t pos = 0; pos < str.size(); ++pos)
-        {
-            if (!isWhitespaceASCII(str[pos]))
-            {
-                if (prev == -1)
-                    prev = pos;
-                continue;
-            }
-
-            if (prev != -1)
-            {
-                split.push_back(str.substr(prev, pos - prev));
-                prev = -1;
-            }
-        }
-
-        if (prev != -1)
-            split.push_back(str.substr(prev, str.size() - prev));
-
-        return split;
-    };
-
     /// This function returns an array of string in a special (a little bit weird format)
     /// The frame number, library name, address in hex, mangled symbol name, `+` sign, the offset.
     char** strs = ::backtrace_symbols(frame_pointers.data(), static_cast<int>(size));
@@ -310,10 +282,18 @@ void StackTrace::forEachFrame(
     for (size_t i = offset; i < size; ++i)
     {
         StackTrace::Frame current_frame;
+
+        std::vector<std::string> split;
+        boost::split(split, strs[i], isWhitespaceASCII);
+        split.erase(
+            std::remove_if(
+                split.begin(), split.end(),
+                [](const std::string & x) { return x.empty(); }),
+            split.end());
+        assert(split.size() == 6);
+
         current_frame.virtual_addr = frame_pointers[i];
         current_frame.physical_addr = frame_pointers[i];
-        auto split = split_by_whitespace(strs[i]);
-        assert(split.size() >= 6);
         current_frame.object = split[1];
         current_frame.symbol = split[3];
         callback(current_frame);
@@ -360,11 +340,7 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
 
 void StackTrace::tryCapture()
 {
-#if defined(OS_DARWIN)
-    size = ::backtrace(frame_pointers.data(), capacity);
-#else
-    size = unw_backtrace(frame_pointers.data(), capacity);
-#endif
+    size = backtrace(frame_pointers.data(), capacity);
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 }
 
