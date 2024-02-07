@@ -105,7 +105,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             connection_entries.emplace_back(std::move(result.entry));
         }
 
-        auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), context->getSettingsRef(), throttler);
+        auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), current_settings, throttler);
         if (extension_ && extension_->replica_info)
             res->setReplicaInfo(*extension_->replica_info);
 

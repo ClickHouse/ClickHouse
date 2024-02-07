@@ -375,10 +375,11 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , storage_limits(std::move(storage_limits_))
     , log(log_)
 {
-    std::vector<String> description;
+    chassert(cluster->getShardCount() == 1);
 
-    for (const auto & address : cluster->getShardsAddresses())
-        description.push_back(fmt::format("Replica: {}", address[0].host_name));
+    std::vector<String> description;
+    for (const auto & pool : cluster->getShardsInfo().front().per_replica_pools)
+        description.push_back(fmt::format("Replica: {}", pool->getHost()));
 
     setStepDescription(boost::algorithm::join(description, ", "));
 }
@@ -412,7 +413,6 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         all_replicas_count = shard.getAllNodeCount();
     }
 
-    chassert(cluster->getShardCount() == 1);
     auto shuffled_pool = shard.pool->getShuffledPools(current_settings);
     shuffled_pool.resize(all_replicas_count);
 
