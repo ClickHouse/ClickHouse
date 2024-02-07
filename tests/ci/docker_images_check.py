@@ -3,24 +3,27 @@ import argparse
 import json
 import logging
 import os
-import time
 import sys
+import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+# isort: off
 from github import Github
+
+# isort: on
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import format_description, get_commit, post_commit_status
-from env_helper import RUNNER_TEMP, GITHUB_RUN_URL
+from docker_images_helper import DockerImageData, docker_login, get_images_oredered_list
+from env_helper import GITHUB_RUN_URL, RUNNER_TEMP
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResults, TestResult
+from report import FAILURE, SUCCESS, StatusType, TestResult, TestResults
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from upload_result_helper import upload_results
-from docker_images_helper import DockerImageData, docker_login, get_images_oredered_list
 
 NAME = "Push to Dockerhub"
 TEMP_PATH = Path(RUNNER_TEMP) / "docker_images_check"
@@ -189,7 +192,7 @@ def main():
     #     additional_cache.append(str(pr_info.merged_pr))
 
     ok_cnt = 0
-    status = "success"
+    status = SUCCESS  # type: StatusType
     image_tags = (
         json.loads(args.image_tags)
         if not os.path.isfile(args.image_tags)
@@ -233,7 +236,7 @@ def main():
         if all(x.status == "OK" for x in res):
             ok_cnt += 1
         else:
-            status = "failure"
+            status = FAILURE
             break  # No need to continue with next images
 
     description = format_description(
@@ -268,7 +271,7 @@ def main():
     ch_helper = ClickHouseHelper()
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
-    if status == "failure":
+    if status == FAILURE:
         sys.exit(1)
 
 
