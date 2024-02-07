@@ -59,11 +59,11 @@ static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeLis
 */
 static void splitAndModifyMutationCommands(
     MergeTreeData::DataPartPtr part,
-    StorageMetadataPtr ,
+    StorageMetadataPtr,
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
-    LoggerPtr )
+    LoggerPtr)
 {
     auto part_columns = part->getColumnsDescription();
 
