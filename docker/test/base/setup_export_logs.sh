@@ -163,9 +163,10 @@ function setup_logs_replication
                 EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION_TRACE_LOG}"
             fi
         elif [[ "$table" = "coverage_log" ]]
+        then
             EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS_COVERAGE_LOG}"
             EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION_COVERAGE_LOG}"
-        then
+        else
             EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS}"
             EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
         fi
