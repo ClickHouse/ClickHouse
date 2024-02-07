@@ -60,7 +60,7 @@
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
-#include "Core/NamesAndTypes.h"
+#include <Core/NamesAndTypes.h>
 #include <Functions/FunctionFactory.h>
 
 namespace
@@ -625,17 +625,25 @@ namespace
 class ApplyAliasColumnExpressionsVisitor : public InDepthQueryTreeVisitor<ApplyAliasColumnExpressionsVisitor>
 {
 public:
-    ApplyAliasColumnExpressionsVisitor() = default;
+    explicit ApplyAliasColumnExpressionsVisitor(QueryTreeNodePtr replacement_table_expression_)
+        : replacement_table_expression(replacement_table_expression_)
+    {}
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (auto * column = node->as<ColumnNode>();
-            column != nullptr && column->hasExpression())
+        if (auto * column = node->as<ColumnNode>(); column != nullptr)
         {
-            node = column->getExpressionOrThrow();
-            node->setAlias(column->getColumnName());
+            if (column->hasExpression())
+            {
+                node = column->getExpressionOrThrow();
+                node->setAlias(column->getColumnName());
+            }
+            else
+                column->setColumnSource(replacement_table_expression);
         }
     }
+private:
+    QueryTreeNodePtr replacement_table_expression;
 };
 
 bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr replacement_table_expression)
@@ -783,7 +791,7 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Required column '{}' is not resolved", column_name);
         auto fake_column = resolved_column->getColumn();
 
-        ApplyAliasColumnExpressionsVisitor visitor;
+        ApplyAliasColumnExpressionsVisitor visitor(replacement_table_expression);
         visitor.visit(fake_node);
 
         projection.push_back(fake_node);
@@ -865,7 +873,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
                     auto * resolved_column = fake_node->as<ColumnNode>();
 
                     column_node = fake_node;
-                    ApplyAliasColumnExpressionsVisitor visitor;
+                    ApplyAliasColumnExpressionsVisitor visitor(replacement_table_expression);
                     visitor.visit(column_node);
 
                     if (!resolved_column || !resolved_column->getExpression())
