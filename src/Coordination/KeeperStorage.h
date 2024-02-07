@@ -50,7 +50,6 @@ public:
             int64_t mtime : 63;
         } is_ephemeral_and_mtime{false, 0};
 
-
         union
         {
             int64_t ephemeral_owner;
@@ -89,7 +88,9 @@ public:
 
         int64_t ephemeralOwner() const
         {
-            return isEphemeral() ? ephemeral_or_children_data.ephemeral_owner : 0;
+            if (isEphemeral())
+                return ephemeral_or_children_data.ephemeral_owner;
+            return 0;
         }
 
         void setEphemeralOwner(int64_t ephemeral_owner)
@@ -100,7 +101,15 @@ public:
 
         int32_t numChildren() const
         {
+            if (isEphemeral())
+                return 0;
+
             return ephemeral_or_children_data.children_info.num_children;
+        }
+
+        void setNumChildren(int32_t num_children)
+        {
+            ephemeral_or_children_data.children_info.num_children = num_children;
         }
 
         void increaseNumChildren()
@@ -111,6 +120,9 @@ public:
 
         int32_t seqNum() const
         {
+            if (isEphemeral())
+                return 0;
+
             return ephemeral_or_children_data.children_info.seq_num;
         }
 
@@ -121,6 +133,7 @@ public:
 
         void increaseSeqNum()
         {
+            chassert(!isEphemeral());
             ++ephemeral_or_children_data.children_info.seq_num;
         }
 
@@ -175,8 +188,10 @@ public:
         ChildrenSet children{};
     };
 
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
     static_assert(
         sizeof(ListNode<Node>) <= 144, "std::list node containing ListNode<Node> is > 160 bytes which will increase memory consumption");
+#endif
 
     enum DigestVersion : uint8_t
     {

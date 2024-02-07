@@ -123,11 +123,13 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, LoggerP
         int64_t ephemeral_owner;
         Coordination::read(ephemeral_owner, in);
         if (ephemeral_owner != 0)
-          node.setEphemeralOwner(ephemeral_owner);
+            node.setEphemeralOwner(ephemeral_owner);
         Coordination::read(node.pzxid, in);
         if (!path.empty())
         {
-            node.setSeqNum(node.cversion);
+            if (ephemeral_owner == 0)
+                node.setSeqNum(node.cversion);
+
             storage.container.insertOrReplace(path, node);
 
             if (ephemeral_owner != 0)

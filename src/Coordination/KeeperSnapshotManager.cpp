@@ -16,7 +16,7 @@
 #include <Coordination/pathUtils.h>
 #include <Coordination/KeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include "Core/Field.h"
+#include <Core/Field.h>
 #include <Disks/DiskLocal.h>
 
 
@@ -86,10 +86,10 @@ namespace
         writeBinary(node.version, out);
         writeBinary(node.cversion, out);
         writeBinary(node.aversion, out);
-        const bool is_ephemeral = node.isEphemeral();
-        writeBinary(is_ephemeral ? node.ephemeralOwner() : 0, out);
+        writeBinary(node.ephemeralOwner(), out);
         if (version < SnapshotVersion::V6)
             writeBinary(static_cast<int32_t>(node.data_size), out);
+        const bool is_ephemeral = node.isEphemeral();
         writeBinary(is_ephemeral ? 0 : node.numChildren(), out);
         writeBinary(node.pzxid, out);
 
@@ -162,15 +162,15 @@ namespace
         }
         int32_t num_children = 0;
         readBinary(num_children, in);
-        if (num_children != 0)
-            node.ephemeral_or_children_data.children_info.num_children = num_children;
+        if (ephemeral_owner == 0)
+            node.setNumChildren(num_children);
 
         readBinary(node.pzxid, in);
 
         int32_t seq_num = 0;
         readBinary(seq_num, in);
-        if (seq_num != 0)
-            node.ephemeral_or_children_data.children_info.seq_num = seq_num;
+        if (ephemeral_owner == 0)
+            node.setSeqNum(seq_num);
 
         if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
         {

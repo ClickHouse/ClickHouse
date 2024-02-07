@@ -172,7 +172,11 @@ uint64_t calculateDigest(std::string_view path, const KeeperStorage::Node & node
 
     hash.update(path);
 
-    hash.update(node.data, node.data_size);
+    if (node.data_size != 0)
+    {
+        chassert(node.data != nullptr);
+        hash.update(node.data, node.data_size);
+    }
 
     hash.update(node.czxid);
     hash.update(node.mzxid);
@@ -369,7 +373,7 @@ void KeeperStorage::initializeSystemNodes()
 
         // update root and the digest based on it
         auto current_root_it = container.find("/");
-        assert(current_root_it != container.end());
+        chassert(current_root_it != container.end());
         removeDigest(current_root_it->value, "/");
         auto updated_root_it = container.updateValue(
             "/",
@@ -385,7 +389,7 @@ void KeeperStorage::initializeSystemNodes()
     // insert child system nodes
     for (const auto & [path, data] : keeper_context->getSystemNodesWithData())
     {
-        assert(path.starts_with(keeper_system_path));
+        chassert(path.starts_with(keeper_system_path));
         Node child_system_node;
         child_system_node.setData(data);
         auto [map_key, _] = container.insert(std::string{path}, child_system_node);
@@ -430,7 +434,7 @@ std::shared_ptr<KeeperStorage::Node> KeeperStorage::UncommittedState::tryGetNode
 
 void KeeperStorage::UncommittedState::applyDelta(const Delta & delta)
 {
-    assert(!delta.path.empty());
+    chassert(!delta.path.empty());
     if (!nodes.contains(delta.path))
     {
         if (auto storage_node = tryGetNodeFromStorage(delta.path))
@@ -446,7 +450,7 @@ void KeeperStorage::UncommittedState::applyDelta(const Delta & delta)
 
             if constexpr (std::same_as<DeltaType, CreateNodeDelta>)
             {
-                assert(!node);
+                chassert(!node);
                 node = std::make_shared<Node>();
                 node->copyStats(operation.stat);
                 node->setData(operation.data);
@@ -455,13 +459,13 @@ void KeeperStorage::UncommittedState::applyDelta(const Delta & delta)
             }
             else if constexpr (std::same_as<DeltaType, RemoveNodeDelta>)
             {
-                assert(node);
+                chassert(node);
                 node = nullptr;
                 last_applied_zxid = delta.zxid;
             }
             else if constexpr (std::same_as<DeltaType, UpdateNodeDelta>)
             {
-                assert(node);
+                chassert(node);
                 node->invalidateDigestCache();
                 operation.update_fn(*node);
                 last_applied_zxid = delta.zxid;
@@ -499,7 +503,7 @@ void KeeperStorage::UncommittedState::addDeltas(std::vector<Delta> new_deltas)
 
 void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
 {
-    assert(deltas.empty() || deltas.front().zxid >= commit_zxid);
+    chassert(deltas.empty() || deltas.front().zxid >= commit_zxid);
 
     // collect nodes that have no further modification in the current transaction
     std::unordered_set<std::string> modified_nodes;
@@ -517,7 +521,7 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
         if (!front_delta.path.empty())
         {
             auto & path_deltas = deltas_for_path.at(front_delta.path);
-            assert(path_deltas.front() == &front_delta);
+            chassert(path_deltas.front() == &front_delta);
             path_deltas.pop_front();
             if (path_deltas.empty())
             {
@@ -535,7 +539,7 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
         else if (auto * add_auth = std::get_if<AddAuthDelta>(&front_delta.operation))
         {
             auto & uncommitted_auth = session_and_auth[add_auth->session_id];
-            assert(!uncommitted_auth.empty() && uncommitted_auth.front() == &add_auth->auth_id);
+            chassert(!uncommitted_auth.empty() && uncommitted_auth.front() == &add_auth->auth_id);
             uncommitted_auth.pop_front();
             if (uncommitted_auth.empty())
                 session_and_auth.erase(add_auth->session_id);
@@ -575,7 +579,7 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
         if (delta_it->zxid < rollback_zxid)
             break;
 
-        assert(delta_it->zxid == rollback_zxid);
+        chassert(delta_it->zxid == rollback_zxid);
         if (!delta_it->path.empty())
         {
             std::visit(
@@ -1917,7 +1921,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
             }
         }
 
-        assert(request.requests.empty() || operation_type.has_value());
+        chassert(request.requests.empty() || operation_type.has_value());
     }
 
     std::vector<KeeperStorage::Delta>
@@ -1966,7 +1970,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
 
         auto & deltas = storage.uncommitted_state.deltas;
         // the deltas will have at least SubDeltaEnd or FailedMultiDelta
-        assert(!deltas.empty());
+        chassert(!deltas.empty());
         if (auto * failed_multi = std::get_if<KeeperStorage::FailedMultiDelta>(&deltas.front().operation))
         {
             for (size_t i = 0; i < concrete_requests.size(); ++i)
@@ -2393,7 +2397,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
 
         if (is_local)
         {
-            assert(zk_request->isReadRequest());
+            chassert(zk_request->isReadRequest());
             if (check_acl && !request_processor->checkAuth(*this, session_id, true))
             {
                 response = zk_request->makeResponse();
