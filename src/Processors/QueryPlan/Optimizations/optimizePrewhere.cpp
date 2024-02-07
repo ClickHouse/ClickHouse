@@ -142,15 +142,17 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     // if (!settings.allow_experimental_analyzer)
     //     return;
 
-    const auto & table_expression_modifiers = read_from_merge_tree->getQueryInfo().table_expression_modifiers;
-    bool is_final = table_expression_modifiers && table_expression_modifiers->hasFinal();
+    //const auto & table_expression_modifiers = read_from_merge_tree->getQueryInfo().table_expression_modifiers;
+    bool is_final = read_from_merge_tree->isQueryWithFinal(); //table_expression_modifiers && table_expression_modifiers->hasFinal();
     bool optimize_move_to_prewhere = settings.optimize_move_to_prewhere && (!is_final || settings.optimize_move_to_prewhere_if_final);
+    // std::cerr << "============ !!! << " << is_final << ' ' << settings.optimize_move_to_prewhere_if_final << std::endl;
     if (!optimize_move_to_prewhere)
         return;
 
     const auto & storage_snapshot = read_from_merge_tree->getStorageSnapshot();
 
-    if (table_expression_modifiers && table_expression_modifiers->hasSampleSizeRatio())
+    //if (table_expression_modifiers && table_expression_modifiers->hasSampleSizeRatio())
+    if (read_from_merge_tree->isQueryWithSampling())
     {
         const auto & sampling_key = storage_snapshot->getMetadataForQuery()->getSamplingKey();
         const auto & sampling_source_columns = sampling_key.expression->getRequiredColumnsWithTypes();
@@ -225,6 +227,46 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     //     std::cerr << "in 1" << input->result_name << std::endl;
     // for (const auto * input : split_result.second->getInputs())
     //     std::cerr << "in 2" << input->result_name << std::endl;
+
+
+    /// This is the leak of abstraction.
+    /// Splited actions may have inputs which are needed only for PREWHERE.
+    /// This is fine for ActionsDAG to have such a split, but it breakes defaults calculation.
+    ///
+    /// See 00950_default_prewhere for example.
+    /// Table has structure `APIKey UInt8, SessionType UInt8` and default `OperatingSystem = SessionType+1`
+    /// For a query with `SELECT OperatingSystem WHERE APIKey = 42 AND SessionType = 42` we push everything to PREWHERE
+    /// and columns APIKey, SessionType are removed from inputs (cause only OperatingSystem is needed).
+    /// However, column OperatingSystem is calculated after PREWHERE stage, based on SessionType value.
+    /// If column SessionType is removed by PREWHERE actions, we use zero as defaut, and get a wrong result.
+    ///
+    /// So, here we restore removed inputs for PREWHERE actions
+    {
+        // const auto & virtuals = read_from_merge_tree->getVirtualColumnNames();
+        // NameSet virtual_names(virtuals.begin(), virtuals.end());
+
+        //std::unordered_set<const ActionsDAG::Node *> first_inputs(split_result.first->getInputs().begin(), split_result.first->getInputs().end());
+        std::unordered_set<const ActionsDAG::Node *> first_outputs(split_result.first->getOutputs().begin(), split_result.first->getOutputs().end());
+        ///std::unordered_set<const ActionsDAG::Node *> second_inputs(split_result.second->getInputs().begin(), split_result.second->getInputs().end());
+
+        for (const auto * input : split_result.first->getInputs())
+        {
+            if (!first_outputs.contains(input))
+            {
+                split_result.first->getOutputs().push_back(input);
+                /// Add column to second actions as input.
+                /// Do not add it to result, so it would be removed.
+                split_result.second->addInput(input->result_name, input->result_type);
+            }
+        }
+
+        // NameSet input_columns;
+        // for (const auto * input : split_result.first->getInputs())
+        //     input_columns.insert(input->result_name);
+
+        // auto header = read_from_merge_tree->getStorageSnapshot()->getSampleBlockForColumns(read_from_merge_tree->getRealColumnNames());
+        // header = MergeTreeSelectProcessor::transformHeader(std::move(header), prewhere_info, {}, {});
+    }
 
     ActionsDAG::NodeRawConstPtrs conditions;
     conditions.reserve(split_result.split_nodes_mapping.size());
