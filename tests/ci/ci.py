@@ -1,21 +1,21 @@
 import argparse
 import concurrent.futures
-from dataclasses import asdict, dataclass
-from enum import Enum
 import json
 import logging
 import os
 import re
 import subprocess
 import sys
-from pathlib import Path
 import time
+from dataclasses import asdict, dataclass
+from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
-from ci_config import CI_CONFIG, Build, Labels, JobNames
+from ci_config import CI_CONFIG, Build, JobNames, Labels
 from ci_utils import GHActions, is_hex
 from clickhouse_helper import (
     CiLogsCredentials,
@@ -859,7 +859,7 @@ def _mark_success_action(
         # there is no status for build jobs
         # create dummy success to mark it as done
         # FIXME: consider creating commit status for build jobs too, to treat everything the same way
-        CommitStatusData("success", "dummy description", "dummy_url").dump_status()
+        CommitStatusData(SUCCESS, "dummy description", "dummy_url").dump_status()
 
     job_status = None
     if CommitStatusData.exist():
@@ -1142,7 +1142,7 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
         if not job_status:
             return
         print(f"Going to re-create GH status for job [{job}] sha [{pr_info.sha}]")
-        assert job_status.status == "success", "BUG!"
+        assert job_status.status == SUCCESS, "BUG!"
         commit.create_status(
             state=job_status.status,
             target_url=job_status.report_url,
