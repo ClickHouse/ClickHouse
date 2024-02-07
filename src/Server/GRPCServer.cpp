@@ -413,19 +413,12 @@ namespace
                   grpc::ServerCompletionQueue & notification_queue,
                   const CompletionCallback & callback) override
         {
-            grpc_service.RequestExecuteQuery(&grpc_context, &query_info.emplace(), &response_writer, &new_call_queue, &notification_queue, getCallbackPtr(callback));
+            grpc_service.RequestExecuteQuery(&grpc_context, &query_info, &response_writer, &new_call_queue, &notification_queue, getCallbackPtr(callback));
         }
 
         void read(GRPCQueryInfo & query_info_, const CompletionCallback & callback) override
         {
-            if (!query_info.has_value())
-            {
-                callback(false);
-                return;
-            }
-
-            query_info_ = std::move(query_info).value();
-            query_info.reset();
+            query_info_ = std::move(query_info);
             callback(true);
         }
 
@@ -441,7 +434,7 @@ namespace
 
     private:
         grpc::ServerAsyncResponseWriter<GRPCResult> response_writer{&grpc_context};
-        std::optional<GRPCQueryInfo> query_info;
+        GRPCQueryInfo query_info;
     };
 
     template<>
@@ -484,19 +477,12 @@ namespace
                   grpc::ServerCompletionQueue & notification_queue,
                   const CompletionCallback & callback) override
         {
-            grpc_service.RequestExecuteQueryWithStreamOutput(&grpc_context, &query_info.emplace(), &writer, &new_call_queue, &notification_queue, getCallbackPtr(callback));
+            grpc_service.RequestExecuteQueryWithStreamOutput(&grpc_context, &query_info, &writer, &new_call_queue, &notification_queue, getCallbackPtr(callback));
         }
 
         void read(GRPCQueryInfo & query_info_, const CompletionCallback & callback) override
         {
-            if (!query_info.has_value())
-            {
-                callback(false);
-                return;
-            }
-
-            query_info_ = std::move(query_info).value();
-            query_info.reset();
+            query_info_ = std::move(query_info);
             callback(true);
         }
 
@@ -512,7 +498,7 @@ namespace
 
     private:
         grpc::ServerAsyncWriter<GRPCResult> writer{&grpc_context};
-        std::optional<GRPCQueryInfo> query_info;
+        GRPCQueryInfo query_info;
     };
 
     template<>
