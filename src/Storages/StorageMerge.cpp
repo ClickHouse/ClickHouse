@@ -800,8 +800,6 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
 
     query_node->resolveProjectionColumns(std::move(projection_columns));
 
-    LOG_DEBUG(&Poco::Logger::get("removeJoin"), "Result:\n{}", modified_query->dumpTree());
-
     return modified_query;
 }
 
