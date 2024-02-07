@@ -450,7 +450,7 @@ class BuildResult:
         return self.build_config.sanitizer
 
     @property
-    def coverage(self) -> str:
+    def coverage(self) -> bool:
         if self.build_config is None:
             return self._wrong_config_message
         return self.build_config.coverage
