@@ -142,16 +142,13 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     // if (!settings.allow_experimental_analyzer)
     //     return;
 
-    //const auto & table_expression_modifiers = read_from_merge_tree->getQueryInfo().table_expression_modifiers;
-    bool is_final = read_from_merge_tree->isQueryWithFinal(); //table_expression_modifiers && table_expression_modifiers->hasFinal();
+    bool is_final = read_from_merge_tree->isQueryWithFinal();
     bool optimize_move_to_prewhere = settings.optimize_move_to_prewhere && (!is_final || settings.optimize_move_to_prewhere_if_final);
-    // std::cerr << "============ !!! << " << is_final << ' ' << settings.optimize_move_to_prewhere_if_final << std::endl;
     if (!optimize_move_to_prewhere)
         return;
 
     const auto & storage_snapshot = read_from_merge_tree->getStorageSnapshot();
 
-    //if (table_expression_modifiers && table_expression_modifiers->hasSampleSizeRatio())
     if (read_from_merge_tree->isQueryWithSampling())
     {
         const auto & sampling_key = storage_snapshot->getMetadataForQuery()->getSamplingKey();
