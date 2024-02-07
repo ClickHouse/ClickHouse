@@ -1,4 +1,4 @@
--- Tags: distributed, replica, shard, zookeeper
+-- Tags: no-fasttest, distributed, replica, shard, zookeeper
 
 DROP TABLE IF EXISTS shared_test_table;
 DROP TABLE IF EXISTS distributed_test_table;
