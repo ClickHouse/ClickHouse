@@ -265,6 +265,7 @@ void FilterTransform::doTransform(Chunk & chunk)
 {
     size_t num_rows_before_filtration = chunk.getNumRows();
     auto columns = chunk.detachColumns();
+    DataTypes types;
     auto select_final_indices_info = getSelectByFinalIndices(chunk);
 
     {
@@ -275,6 +276,7 @@ void FilterTransform::doTransform(Chunk & chunk)
             expression->execute(block, num_rows_before_filtration);
 
         columns = block.getColumns();
+        types = block.getDataTypes();
     }
 
     if (constant_filter_description.always_true || on_totals)
@@ -325,7 +327,8 @@ void FilterTransform::doTransform(Chunk & chunk)
     size_t first_non_constant_column = num_columns;
     for (size_t i = 0; i < num_columns; ++i)
     {
-        if (i != filter_column_position && !isColumnConst(*columns[i]))
+        if (i != filter_column_position && !isColumnConst(*columns[i])
+            && removeNullableOrLowCardinalityNullable(types[i])->isValueRepresentedByNumber())
         {
             first_non_constant_column = i;
             break;
