@@ -22,7 +22,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
         const Names & columns,
-        LoggerPtr log_,
+        Poco::Logger * log_,
         size_t max_block_size_,
         bool commit_in_suffix = false);
     ~KafkaSource() override;
@@ -41,7 +41,7 @@ private:
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
     Names column_names;
-    LoggerPtr log;
+    Poco::Logger * log;
     UInt64 max_block_size;
 
     KafkaConsumerPtr consumer;

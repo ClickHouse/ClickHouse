@@ -209,7 +209,7 @@ namespace
         }
         else if (has_ssh_keys)
         {
-#if USE_SSH
+#if USE_SSL
             user->auth_data = AuthenticationData{AuthenticationType::SSH_KEY};
 
             Poco::Util::AbstractConfiguration::Keys entries;

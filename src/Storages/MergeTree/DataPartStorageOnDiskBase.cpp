@@ -57,7 +57,7 @@ std::string DataPartStorageOnDiskBase::getRelativePath() const
     return fs::path(root_path) / part_dir / "";
 }
 
-std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(LoggerPtr log, const String & prefix, bool detached, bool broken) const
+std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached, bool broken) const
 {
     assert(!broken || detached);
     String res;
@@ -195,7 +195,7 @@ std::string DataPartStorageOnDiskBase::getDiskName() const
 
 std::string DataPartStorageOnDiskBase::getDiskType() const
 {
-    return volume->getDisk()->getDataSourceDescription().toString();
+    return toString(volume->getDisk()->getDataSourceDescription().type);
 }
 
 bool DataPartStorageOnDiskBase::isStoredOnRemoteDisk() const
@@ -335,9 +335,7 @@ void DataPartStorageOnDiskBase::backup(
     const ReadSettings & read_settings,
     bool make_temporary_hard_links,
     BackupEntries & backup_entries,
-    TemporaryFilesOnDisks * temp_dirs,
-    bool is_projection_part,
-    bool allow_backup_broken_projection) const
+    TemporaryFilesOnDisks * temp_dirs) const
 {
     fs::path part_path_on_disk = fs::path{root_path} / part_dir;
     fs::path part_path_in_backup = fs::path{path_in_backup} / part_dir;
@@ -379,7 +377,7 @@ void DataPartStorageOnDiskBase::backup(
 
     bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
 
-    auto backup_file = [&](const String & filepath)
+    for (const auto & filepath : files_to_backup)
     {
         auto filepath_on_disk = part_path_on_disk / filepath;
         auto filepath_in_backup = part_path_in_backup / filepath;
@@ -387,10 +385,8 @@ void DataPartStorageOnDiskBase::backup(
         if (files_without_checksums.contains(filepath))
         {
             backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk, read_settings, copy_encrypted));
-            return;
+            continue;
         }
-        else if (is_projection_part && allow_backup_broken_projection && !disk->exists(filepath_on_disk))
-            return;
 
         if (make_temporary_hard_links)
         {
@@ -415,31 +411,6 @@ void DataPartStorageOnDiskBase::backup(
             backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
 
         backup_entries.emplace_back(filepath_in_backup, std::move(backup_entry));
-    };
-
-    auto * log = &Poco::Logger::get("DataPartStorageOnDiskBase::backup");
-
-    for (const auto & filepath : files_to_backup)
-    {
-        if (is_projection_part && allow_backup_broken_projection)
-        {
-            try
-            {
-                backup_file(filepath);
-            }
-            catch (Exception & e)
-            {
-                if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
-                    throw;
-
-                LOG_ERROR(log, "Cannot backup file {} of projection part {}. Will try to ignore it", filepath, part_dir);
-                continue;
-            }
-        }
-        else
-        {
-            backup_file(filepath);
-        }
     }
 }
 
@@ -500,7 +471,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     const DiskPtr & dst_disk,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
-    LoggerPtr log,
+    Poco::Logger * log,
     const std::function<void()> & cancellation_hook) const
 {
     String path_to_clone = fs::path(to) / dir_path / "";
@@ -534,7 +505,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
 void DataPartStorageOnDiskBase::rename(
     std::string new_root_path,
     std::string new_part_dir,
-    LoggerPtr log,
+    Poco::Logger * log,
     bool remove_new_dir_if_exists,
     bool fsync_part_dir)
 {
@@ -593,7 +564,7 @@ void DataPartStorageOnDiskBase::remove(
     const MergeTreeDataPartChecksums & checksums,
     std::list<ProjectionChecksums> projections,
     bool is_temp,
-    LoggerPtr log)
+    Poco::Logger * log)
 {
     /// NOTE We rename part to delete_tmp_<relative_path> instead of delete_tmp_<name> to avoid race condition
     /// when we try to remove two parts with the same name, but different relative paths,
@@ -751,7 +722,7 @@ void DataPartStorageOnDiskBase::clearDirectory(
     const CanRemoveDescription & can_remove_description,
     const MergeTreeDataPartChecksums & checksums,
     bool is_temp,
-    LoggerPtr log)
+    Poco::Logger * log)
 {
     auto disk = volume->getDisk();
     auto [can_remove_shared_data, names_not_to_remove] = can_remove_description;

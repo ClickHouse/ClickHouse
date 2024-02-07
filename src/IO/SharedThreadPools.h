@@ -64,7 +64,4 @@ StaticThreadPool & getPartsCleaningThreadPool();
 /// the number of threads by calling enableTurboMode() :-)
 StaticThreadPool & getOutdatedPartsLoadingThreadPool();
 
-/// ThreadPool used for creating tables in DatabaseReplicated.
-StaticThreadPool & getDatabaseReplicatedCreateTablesThreadPool();
-
 }

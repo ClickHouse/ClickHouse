@@ -6,18 +6,34 @@ import logging
 import os
 import subprocess
 import sys
+import atexit
 from pathlib import Path
 from typing import List, Tuple
 
+from github import Github
+
 from build_download_helper import download_all_deb_packages
-from clickhouse_helper import CiLogsCredentials
-from commit_status_helper import override_status
-from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPORT_PATH, TEMP_PATH
+from clickhouse_helper import (
+    CiLogsCredentials,
+    ClickHouseHelper,
+    prepare_tests_results_for_clickhouse,
+)
+from commit_status_helper import (
+    RerunHelper,
+    get_commit,
+    override_status,
+    post_commit_status,
+    update_mergeable_check,
+)
+from docker_images_helper import get_docker_image, pull_image, DockerImage
+from env_helper import TEMP_PATH, REPORT_PATH
+from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
-from report import ERROR, SUCCESS, JobReport, StatusType, TestResults
+from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from upload_result_helper import upload_results
+from report import TestResults
 
 
 def get_image_name() -> str:
@@ -48,7 +64,7 @@ def get_run_command(
 def process_results(
     result_directory: Path,
     server_log_path: Path,
-) -> Tuple[StatusType, str, TestResults, List[Path]]:
+) -> Tuple[str, str, TestResults, List[Path]]:
     test_results = []  # type: TestResults
     additional_files = []  # type: List[Path]
     # Just upload all files from result_directory.
@@ -70,7 +86,7 @@ def process_results(
 
     if len(status) != 1 or len(status[0]) != 2:
         logging.info("Files in result folder %s", os.listdir(result_directory))
-        return ERROR, "Invalid check_status.tsv", test_results, additional_files
+        return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     try:
@@ -80,17 +96,17 @@ def process_results(
             logging.info("Found %s", results_path.name)
         else:
             logging.info("Files in result folder %s", os.listdir(result_directory))
-            return ERROR, "Not found test_results.tsv", test_results, additional_files
+            return "error", "Not found test_results.tsv", test_results, additional_files
 
     except Exception as e:
         return (
-            ERROR,
+            "error",
             f"Cannot parse test_results.tsv ({e})",
             test_results,
             additional_files,
         )
 
-    return state, description, test_results, additional_files  # type: ignore
+    return state, description, test_results, additional_files
 
 
 def parse_args():
@@ -112,7 +128,17 @@ def main():
     args = parse_args()
     check_name = args.check_name
 
+    gh = Github(get_best_robot_token(), per_page=100)
+
     pr_info = PRInfo()
+
+    commit = get_commit(gh, pr_info.sha)
+    atexit.register(update_mergeable_check, commit, pr_info, check_name)
+
+    rerun_helper = RerunHelper(commit, check_name)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     image_name = get_image_name()
     docker_image = pull_image(get_docker_image(image_name))
@@ -160,22 +186,41 @@ def main():
         logging.warning("Failed to change files owner in %s, ignoring it", temp_path)
 
     ci_logs_credentials.clean_ci_logs_from_credentials(run_log_path)
+    s3_helper = S3Helper()
 
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path
     )
     state = override_status(state, check_name)
 
-    JobReport(
-        description=description,
-        test_results=test_results,
-        status=state,
-        start_time=stopwatch.start_time_str,
-        duration=stopwatch.duration_seconds,
-        additional_files=[run_log_path] + additional_logs,
-    ).dump()
+    ch_helper = ClickHouseHelper()
 
-    if state != SUCCESS:
+    report_url = upload_results(
+        s3_helper,
+        pr_info.number,
+        pr_info.sha,
+        test_results,
+        [run_log_path] + additional_logs,
+        check_name,
+    )
+
+    print(f"::notice:: {check_name} Report url: {report_url}")
+    post_commit_status(
+        commit, state, report_url, description, check_name, pr_info, dump_to_file=True
+    )
+
+    prepared_events = prepare_tests_results_for_clickhouse(
+        pr_info,
+        test_results,
+        state,
+        stopwatch.duration_seconds,
+        stopwatch.start_time_str,
+        report_url,
+        check_name,
+    )
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+
+    if state != "success":
         if FORCE_TESTS_LABEL in pr_info.labels:
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:

@@ -109,7 +109,7 @@ void JSONColumnsBlockInputFormatBase::setReadBuffer(ReadBuffer & in_)
     IInputFormat::setReadBuffer(in_);
 }
 
-Chunk JSONColumnsBlockInputFormatBase::read()
+Chunk JSONColumnsBlockInputFormatBase::generate()
 {
     MutableColumns columns = getPort().getHeader().cloneEmptyColumns();
     block_missing_values.clear();

@@ -84,7 +84,7 @@ private:
     Int32 current_schema_id;
     NamesAndTypesList schema;
     Strings data_files;
-    LoggerPtr log;
+    Poco::Logger * log;
 
 };
 

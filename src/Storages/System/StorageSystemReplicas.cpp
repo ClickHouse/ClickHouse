@@ -56,12 +56,12 @@ private:
     /// Used to assign unique incremental ids to requests.
     UInt64 request_id TSA_GUARDED_BY(mutex) = 0;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
 public:
     explicit StatusRequestsPool(size_t max_threads)
         : thread_pool(CurrentMetrics::SystemReplicasThreads, CurrentMetrics::SystemReplicasThreadsActive, CurrentMetrics::SystemReplicasThreadsScheduled, max_threads)
-        , log(getLogger("StatusRequestsPool"))
+        , log(&Poco::Logger::get("StatusRequestsPool"))
     {}
 
     ~StatusRequestsPool()

@@ -208,7 +208,7 @@ private:
     MultiRegexps::DataBasePtr origin_db;
     #endif
 
-    LoggerPtr logger;
+    Poco::Logger * logger;
 };
 
 }

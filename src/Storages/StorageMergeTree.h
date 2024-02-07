@@ -66,7 +66,7 @@ public:
         size_t num_streams) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override;
-    std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr) const override;
+    std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings &) const override;
 
@@ -272,8 +272,6 @@ private:
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
     PreparedSetsCachePtr getPreparedSetsCache(Int64 mutation_id);
-
-    void assertNotReadonly() const;
 
     friend class MergeTreeSink;
     friend class MergeTreeData;

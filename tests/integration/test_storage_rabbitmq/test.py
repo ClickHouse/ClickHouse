@@ -3156,7 +3156,7 @@ def test_block_based_formats_1(rabbitmq_cluster):
     )
 
     instance.query(
-        "INSERT INTO test.rabbitmq SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0, output_format_pretty_color=1;"
+        "INSERT INTO test.rabbitmq SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0;"
     )
     insert_messages = []
 
@@ -3538,14 +3538,3 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
 
     expected = "".join(sorted(expected))
     assert broken_messages == expected
-
-
-def test_attach_broken_table(rabbitmq_cluster):
-    instance.query(
-        "ATTACH TABLE rabbit_queue UUID '2d1cdf1a-f060-4a61-a7c9-5b59e59992c6' (`payload` String) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'nonexisting:5671', rabbitmq_format = 'JSONEachRow', rabbitmq_username = 'test', rabbitmq_password = 'test'"
-    )
-
-    error = instance.query_and_get_error("SELECT * FROM rabbit_queue")
-    assert "CANNOT_CONNECT_RABBITMQ" in error
-    error = instance.query_and_get_error("INSERT INTO rabbit_queue VALUES ('test')")
-    assert "CANNOT_CONNECT_RABBITMQ" in error

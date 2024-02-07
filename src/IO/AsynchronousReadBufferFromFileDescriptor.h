@@ -29,6 +29,7 @@ protected:
     size_t bytes_to_ignore = 0;           /// How many bytes should we ignore upon a new read request.
     int fd;
     ThrottlerPtr throttler;
+    bool use_external_buffer;
 
     bool nextImpl() override;
 
@@ -46,7 +47,8 @@ public:
         char * existing_memory = nullptr,
         size_t alignment = 0,
         std::optional<size_t> file_size_ = std::nullopt,
-        ThrottlerPtr throttler_ = {});
+        ThrottlerPtr throttler_ = {},
+        bool use_external_buffer_ = false);
 
     ~AsynchronousReadBufferFromFileDescriptor() override;
 

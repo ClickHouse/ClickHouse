@@ -4,7 +4,7 @@
 
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/HDFS/HDFSCommon.h>
-#include <Common/Scheduler/ResourceGuard.h>
+#include <IO/ResourceGuard.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
 #include <hdfs/hdfs.h>

@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 RefreshTask::RefreshTask(
     const ASTRefreshStrategy & strategy)
-    : log(getLogger("RefreshTask"))
+    : log(&Poco::Logger::get("RefreshTask"))
     , refresh_schedule(strategy)
 {}
 

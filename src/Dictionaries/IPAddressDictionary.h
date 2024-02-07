@@ -234,7 +234,7 @@ private:
     mutable std::atomic<size_t> query_count{0};
     mutable std::atomic<size_t> found_count{0};
 
-    LoggerPtr logger;
+    Poco::Logger * logger;
 };
 
 }

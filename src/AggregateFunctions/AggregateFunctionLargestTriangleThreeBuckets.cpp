@@ -14,9 +14,8 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
-#include <Common/assert_cast.h>
 #include <Common/PODArray.h>
-#include <Common/iota.h>
+#include <Common/assert_cast.h>
 #include <base/types.h>
 
 #include <boost/math/distributions/normal.hpp>
@@ -49,7 +48,7 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
         // sort the this->x and this->y in ascending order of this->x using index
         std::vector<size_t> index(this->x.size());
 
-        iota(index.data(), index.size(), size_t(0));
+        std::iota(index.begin(), index.end(), 0);
         ::sort(index.begin(), index.end(), [&](size_t i1, size_t i2) { return this->x[i1] < this->x[i2]; });
 
         SampleX temp_x{};

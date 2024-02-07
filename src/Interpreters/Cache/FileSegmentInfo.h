@@ -78,7 +78,5 @@ namespace DB
         uint64_t references;
         bool is_unbound;
         FileCacheQueueEntryType queue_entry_type;
-        std::string user_id;
-        uint64_t user_weight;
     };
 }

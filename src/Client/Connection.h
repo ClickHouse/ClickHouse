@@ -4,7 +4,6 @@
 #include <Poco/Net/StreamSocket.h>
 
 #include <Common/SSH/Wrappers.h>
-#include <Common/callOnce.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
@@ -245,18 +244,16 @@ private:
         {
         }
 
-        LoggerPtr get()
+        Poco::Logger * get()
         {
-            callOnce(log_initialized, [&] {
-                log = getLogger("Connection (" + parent.getDescription() + ")");
-            });
+            if (!log)
+                log = &Poco::Logger::get("Connection (" + parent.getDescription() + ")");
 
             return log;
         }
 
     private:
-        OnceFlag log_initialized;
-        LoggerPtr log;
+        std::atomic<Poco::Logger *> log;
         Connection & parent;
     };
 

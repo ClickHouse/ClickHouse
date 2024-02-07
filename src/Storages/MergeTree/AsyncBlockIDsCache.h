@@ -43,7 +43,7 @@ private:
     BackgroundSchedulePool::TaskHolder task;
 
     const String log_name;
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

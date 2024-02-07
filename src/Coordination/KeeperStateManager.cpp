@@ -227,7 +227,7 @@ KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host,
           keeper_context_))
     , server_state_file_name("state")
     , keeper_context(keeper_context_)
-    , logger(getLogger("KeeperStateManager"))
+    , logger(&Poco::Logger::get("KeeperStateManager"))
 {
     auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
     configuration_wrapper.cluster_config = nuraft::cs_new<nuraft::cluster_config>();
@@ -262,7 +262,7 @@ KeeperStateManager::KeeperStateManager(
           keeper_context_))
     , server_state_file_name(server_state_file_name_)
     , keeper_context(keeper_context_)
-    , logger(getLogger("KeeperStateManager"))
+    , logger(&Poco::Logger::get("KeeperStateManager"))
 {
 }
 
@@ -495,7 +495,7 @@ ClusterUpdateActions KeeperStateManager::getRaftConfigurationDiff(
             if (old_endpoint != server_config->get_endpoint())
             {
                 LOG_WARNING(
-                    getLogger("RaftConfiguration"),
+                    &Poco::Logger::get("RaftConfiguration"),
                     "Config will be ignored because a server with ID {} is already present in the cluster on a different endpoint ({}). "
                     "The endpoint of the current servers should not be changed. For servers on a new endpoint, please use a new ID.",
                     new_id,

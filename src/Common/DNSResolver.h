@@ -73,7 +73,7 @@ private:
 
     struct Impl;
     std::unique_ptr<Impl> impl;
-    LoggerPtr log;
+    Poco::Logger * log;
 
     /// Updates cached value and returns true it has been changed.
     bool updateHost(const String & host);

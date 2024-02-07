@@ -166,7 +166,7 @@ private:
     Writes lifetime_writes;
     Writes total_writes;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     void flushAllBuffers(bool check_thresholds = true);
     bool flushBuffer(Buffer & buffer, bool check_thresholds, bool locked = false);

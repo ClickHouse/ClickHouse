@@ -747,8 +747,15 @@ void NotJoinedBlocks::extractColumnChanges(size_t right_pos, size_t result_pos)
 
 void NotJoinedBlocks::correctLowcardAndNullability(Block & block)
 {
-    /// First correct LowCardinality, then Nullability,
-    /// because LowCardinality(Nullable(T)) is possible, but not Nullable(LowCardinality(T))
+    for (auto & [pos, added] : right_nullability_changes)
+    {
+        auto & col = block.getByPosition(pos);
+        if (added)
+            JoinCommon::convertColumnToNullable(col);
+        else
+            JoinCommon::removeColumnNullability(col);
+    }
+
     for (auto & [pos, added] : right_lowcard_changes)
     {
         auto & col = block.getByPosition(pos);
@@ -763,15 +770,6 @@ void NotJoinedBlocks::correctLowcardAndNullability(Block & block)
             col.column = recursiveRemoveLowCardinality(col.column);
             col.type = recursiveRemoveLowCardinality(col.type);
         }
-    }
-
-    for (auto & [pos, added] : right_nullability_changes)
-    {
-        auto & col = block.getByPosition(pos);
-        if (added)
-            JoinCommon::convertColumnToNullable(col);
-        else
-            JoinCommon::removeColumnNullability(col);
     }
 }
 

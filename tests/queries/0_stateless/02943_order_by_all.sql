@@ -87,23 +87,3 @@ SET allow_experimental_analyzer = 1;
 SELECT a, b, all FROM order_by_all ORDER BY all, a;
 
 DROP TABLE order_by_all;
-
-SELECT '-- test SELECT * ORDER BY ALL with no "all" column in the SELECT clause';
-
-CREATE TABLE order_by_all
-(
-    a String,
-    b Nullable(Int32),
-    c UInt64,
-)
-    ENGINE = Memory;
-
-INSERT INTO order_by_all VALUES ('B', 3, 10), ('C', NULL, 40), ('D', 1, 20), ('A', 2, 30);
-
-SET allow_experimental_analyzer = 0;
-SELECT * FROM order_by_all ORDER BY ALL;
-
-SET allow_experimental_analyzer = 1;
-SELECT * FROM order_by_all ORDER BY ALL;
-
-DROP TABLE order_by_all;

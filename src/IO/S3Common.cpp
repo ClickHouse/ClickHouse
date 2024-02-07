@@ -6,12 +6,21 @@
 
 #if USE_AWS_S3
 
-#    include <IO/HTTPHeaderEntries.h>
-#    include <IO/S3/Client.h>
-#    include <IO/S3/Requests.h>
 #    include <Common/quoteString.h>
+
+#    include <IO/WriteBufferFromString.h>
+#    include <IO/HTTPHeaderEntries.h>
+#    include <Storages/StorageS3Settings.h>
+
+#    include <IO/S3/PocoHTTPClientFactory.h>
+#    include <IO/S3/PocoHTTPClient.h>
+#    include <IO/S3/Client.h>
+#    include <IO/S3/URI.h>
+#    include <IO/S3/Requests.h>
+#    include <IO/S3/Credentials.h>
 #    include <Common/logger_useful.h>
 
+#    include <fstream>
 
 namespace ProfileEvents
 {
@@ -138,12 +147,6 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
     };
 }
 
-bool AuthSettings::hasUpdates(const AuthSettings & other) const
-{
-    AuthSettings copy = *this;
-    copy.updateFrom(other);
-    return *this != copy;
-}
 
 void AuthSettings::updateFrom(const AuthSettings & from)
 {
@@ -172,7 +175,7 @@ void AuthSettings::updateFrom(const AuthSettings & from)
         expiration_window_seconds = from.expiration_window_seconds;
 
     if (from.no_sign_request.has_value())
-        no_sign_request = from.no_sign_request;
+        no_sign_request = *from.no_sign_request;
 }
 
 }

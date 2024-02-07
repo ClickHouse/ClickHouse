@@ -120,7 +120,7 @@ private:
     /// Structure block to store in the HashJoin according to sample_block.
     Block prepareRightBlock(const Block & block);
 
-    LoggerPtr log;
+    Poco::Logger * log;
     ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
     Block left_sample_block;

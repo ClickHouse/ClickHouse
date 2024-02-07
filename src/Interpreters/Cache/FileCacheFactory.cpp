@@ -173,10 +173,4 @@ void FileCacheFactory::updateSettingsFromConfig(const Poco::Util::AbstractConfig
     }
 }
 
-void FileCacheFactory::clear()
-{
-    std::lock_guard lock(mutex);
-    caches_by_name.clear();
-}
-
 }

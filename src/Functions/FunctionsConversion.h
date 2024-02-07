@@ -28,7 +28,6 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/DataTypeNested.h>
-#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <Formats/FormatSettings.h>
 #include <Columns/ColumnString.h>
@@ -41,7 +40,6 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Common/assert_cast.h>
 #include <Common/Concepts.h>
@@ -49,6 +47,7 @@
 #include <Common/Exception.h>
 #include <Core/AccurateComparison.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/toFixedString.h>
@@ -61,6 +60,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Common/IPv6ToBinary.h>
+#include "DataTypes/IDataType.h"
 #include <Core/Types.h>
 
 
@@ -1132,9 +1132,6 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
 
                 ColumnUInt8::MutablePtr null_map = copyNullMap(datetime_arg.column);
 
-                if (!null_map && arguments.size() > 1)
-                    null_map = copyNullMap(arguments[1].column->convertToFullColumnIfConst());
-
                 if (null_map)
                 {
                     for (size_t i = 0; i < size; ++i)
@@ -1159,7 +1156,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
                         if (!time_zone_column && arguments.size() > 1)
                         {
                             if (!arguments[1].column.get()->getDataAt(i).toString().empty())
-                                time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i).toString());
+                            time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i).toString());
                             else
                                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                         }
@@ -4068,259 +4065,6 @@ arguments, result_type, input_rows_count); \
             "Cast to Object can be performed only from flatten named Tuple, Map or String. Got: {}", from_type->getName());
     }
 
-    WrapperType createVariantToVariantWrapper(const DataTypeVariant & from_variant, const DataTypeVariant & to_variant) const
-    {
-        /// We support only extension of variant type, so, only new types can be added.
-        /// For example: Variant(T1, T2) -> Variant(T1, T2, T3) is supported, but Variant(T1, T2) -> Variant(T1, T3) is not supported.
-        /// We want to extend Variant type for free without rewriting the data, but we sort data types inside Variant during type creation
-        /// (we do it because we want Variant(T1, T2) to be the same as Variant(T2, T1)), but after extension the order of variant types
-        /// (and so their discriminators) can be different. For example: Variant(T1, T3) -> Variant(T1, T2, T3).
-        /// To avoid full rewrite of discriminators column, ColumnVariant supports it's local order of variant columns (and so local
-        /// discriminators) and stores mapping global order -> local order.
-        /// So, to extend Variant with new types for free, we should keep old local order for old variants, append new variants and change
-        /// mapping global order -> local order according to the new global order.
-
-        /// Create map (new variant type) -> (it's global discriminator in new order).
-        const auto & new_variants = to_variant.getVariants();
-        std::unordered_map<String, ColumnVariant::Discriminator> new_variant_types_to_new_global_discriminator;
-        new_variant_types_to_new_global_discriminator.reserve(new_variants.size());
-        for (size_t i = 0; i != new_variants.size(); ++i)
-            new_variant_types_to_new_global_discriminator[new_variants[i]->getName()] = i;
-
-        /// Create set of old variant types.
-        const auto & old_variants = from_variant.getVariants();
-        std::unordered_map<String, ColumnVariant::Discriminator> old_variant_types_to_old_global_discriminator;
-        old_variant_types_to_old_global_discriminator.reserve(old_variants.size());
-        for (size_t i = 0; i != old_variants.size(); ++i)
-            old_variant_types_to_old_global_discriminator[old_variants[i]->getName()] = i;
-
-        /// Check that the set of old variants types is a subset of new variant types and collect new global discriminator for each old global discriminator.
-        std::unordered_map<ColumnVariant::Discriminator, ColumnVariant::Discriminator> old_global_discriminator_to_new;
-        old_global_discriminator_to_new.reserve(old_variants.size());
-        for (const auto & [old_variant_type, old_discriminator] : old_variant_types_to_old_global_discriminator)
-        {
-            auto it = new_variant_types_to_new_global_discriminator.find(old_variant_type);
-            if (it == new_variant_types_to_new_global_discriminator.end())
-                throw Exception(
-                    ErrorCodes::CANNOT_CONVERT_TYPE,
-                    "Cannot convert type {} to {}. Conversion between Variant types is allowed only when new Variant type is an extension "
-                    "of an initial one", from_variant.getName(), to_variant.getName());
-            old_global_discriminator_to_new[old_discriminator] = it->second;
-        }
-
-        /// Collect variant types and their global discriminators that should be added to the old Variant to get the new Variant.
-        std::vector<std::pair<DataTypePtr, ColumnVariant::Discriminator>> variant_types_and_discriminators_to_add;
-        variant_types_and_discriminators_to_add.reserve(new_variants.size() - old_variants.size());
-        for (size_t i = 0; i != new_variants.size(); ++i)
-        {
-            if (!old_variant_types_to_old_global_discriminator.contains(new_variants[i]->getName()))
-                variant_types_and_discriminators_to_add.emplace_back(new_variants[i], i);
-        }
-
-        return [old_global_discriminator_to_new, variant_types_and_discriminators_to_add]
-               (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
-        {
-            const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
-            size_t num_old_variants = column_variant.getNumVariants();
-            Columns new_variant_columns;
-            new_variant_columns.reserve(num_old_variants + variant_types_and_discriminators_to_add.size());
-            std::vector<ColumnVariant::Discriminator> new_local_to_global_discriminators;
-            new_local_to_global_discriminators.reserve(num_old_variants + variant_types_and_discriminators_to_add.size());
-            for (size_t i = 0; i != num_old_variants; ++i)
-            {
-                new_variant_columns.push_back(column_variant.getVariantPtrByLocalDiscriminator(i));
-                new_local_to_global_discriminators.push_back(old_global_discriminator_to_new.at(column_variant.globalDiscriminatorByLocal(i)));
-            }
-
-            for (const auto & [new_variant_type, new_global_discriminator] : variant_types_and_discriminators_to_add)
-            {
-                new_variant_columns.push_back(new_variant_type->createColumn());
-                new_local_to_global_discriminators.push_back(new_global_discriminator);
-            }
-
-            return ColumnVariant::create(column_variant.getLocalDiscriminatorsPtr(), column_variant.getOffsetsPtr(), new_variant_columns, new_local_to_global_discriminators);
-        };
-    }
-
-    WrapperType createVariantToColumnWrapper(const DataTypeVariant & from_variant, const DataTypePtr & to_type) const
-    {
-        const auto & variant_types = from_variant.getVariants();
-        std::vector<WrapperType> variant_wrappers;
-        variant_wrappers.reserve(variant_types.size());
-
-        /// Create conversion wrapper for each variant.
-        for (const auto & variant_type : variant_types)
-            variant_wrappers.push_back(prepareUnpackDictionaries(variant_type, to_type));
-
-        return [variant_wrappers, variant_types, to_type]
-               (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
-        {
-            const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
-
-            /// First, cast each variant to the result type.
-            std::vector<ColumnPtr> casted_variant_columns;
-            casted_variant_columns.reserve(variant_types.size());
-            for (size_t i = 0; i != variant_types.size(); ++i)
-            {
-                auto variant_col = column_variant.getVariantPtrByLocalDiscriminator(i);
-                ColumnsWithTypeAndName variant = {{variant_col, variant_types[i], "" }};
-                const auto & variant_wrapper = variant_wrappers[column_variant.globalDiscriminatorByLocal(i)];
-                casted_variant_columns.push_back(variant_wrapper(variant, result_type, nullptr, variant_col->size()));
-            }
-
-            /// Second, construct resulting column from casted variant columns according to discriminators.
-            const auto & local_discriminators = column_variant.getLocalDiscriminators();
-            auto res = result_type->createColumn();
-            res->reserve(input_rows_count);
-            for (size_t i = 0; i != input_rows_count; ++i)
-            {
-                auto local_discr = local_discriminators[i];
-                if (local_discr == ColumnVariant::NULL_DISCRIMINATOR)
-                    res->insertDefault();
-                else
-                    res->insertFrom(*casted_variant_columns[local_discr], column_variant.offsetAt(i));
-            }
-
-            return res;
-        };
-    }
-
-    static ColumnPtr createVariantFromDescriptorsAndOneNonEmptyVariant(const DataTypes & variant_types, const ColumnPtr & discriminators, const ColumnPtr & variant, ColumnVariant::Discriminator variant_discr)
-    {
-        Columns variants;
-        variants.reserve(variant_types.size());
-        for (size_t i = 0; i != variant_types.size(); ++i)
-        {
-            if (i == variant_discr)
-                variants.emplace_back(variant);
-            else
-                variants.push_back(variant_types[i]->createColumn());
-        }
-
-        return ColumnVariant::create(discriminators, variants);
-    }
-
-    WrapperType createColumnToVariantWrapper(const DataTypePtr & from_type, const DataTypeVariant & to_variant) const
-    {
-        /// We allow converting NULL to Variant(...) as Variant can store NULLs.
-        if (from_type->onlyNull())
-        {
-            return [](ColumnsWithTypeAndName &, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
-            {
-                auto result_column = result_type->createColumn();
-                result_column->insertManyDefaults(input_rows_count);
-                return result_column;
-            };
-        }
-
-        auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(removeNullableOrLowCardinalityNullable(from_type));
-        if (!variant_discr_opt)
-            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert type {} to {}. Conversion to Variant allowed only for types from this Variant", from_type->getName(), to_variant.getName());
-
-        return [variant_discr = *variant_discr_opt]
-               (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t) -> ColumnPtr
-        {
-            const auto & result_variant_type = assert_cast<const DataTypeVariant &>(*result_type);
-            const auto & variant_types = result_variant_type.getVariants();
-            if (const ColumnNullable * col_nullable = typeid_cast<const ColumnNullable *>(arguments.front().column.get()))
-            {
-                const auto & column = col_nullable->getNestedColumnPtr();
-                const auto & null_map = col_nullable->getNullMapData();
-                IColumn::Filter filter;
-                filter.reserve(column->size());
-                auto discriminators = ColumnVariant::ColumnDiscriminators::create();
-                auto & discriminators_data = discriminators->getData();
-                discriminators_data.reserve(column->size());
-                size_t variant_size_hint = 0;
-                for (size_t i = 0; i != column->size(); ++i)
-                {
-                    if (null_map[i])
-                    {
-                        discriminators_data.push_back(ColumnVariant::NULL_DISCRIMINATOR);
-                        filter.push_back(0);
-                    }
-                    else
-                    {
-                        discriminators_data.push_back(variant_discr);
-                        filter.push_back(1);
-                        ++variant_size_hint;
-                    }
-                }
-
-                ColumnPtr variant_column;
-                /// If there were no NULLs, just use the column.
-                if (variant_size_hint == column->size())
-                    variant_column = column;
-                /// Otherwise we should use filtered column.
-                else
-                    variant_column = column->filter(filter, variant_size_hint);
-                return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), variant_column, variant_discr);
-            }
-            else if (isColumnLowCardinalityNullable(*arguments.front().column))
-            {
-                const auto & column = arguments.front().column;
-
-                /// Variant column cannot have LowCardinality(Nullable(...)) variant, as Variant column stores NULLs itself.
-                /// We should create a null-map, insert NULL_DISCRIMINATOR on NULL values and filter initial column.
-                const auto & col_lc = assert_cast<const ColumnLowCardinality &>(*column);
-                const auto & indexes = col_lc.getIndexes();
-                auto null_index = col_lc.getDictionary().getNullValueIndex();
-                IColumn::Filter filter;
-                filter.reserve(col_lc.size());
-                auto discriminators = ColumnVariant::ColumnDiscriminators::create();
-                auto & discriminators_data = discriminators->getData();
-                discriminators_data.reserve(col_lc.size());
-                size_t variant_size_hint = 0;
-                for (size_t i = 0; i != col_lc.size(); ++i)
-                {
-                    if (indexes.getUInt(i) == null_index)
-                    {
-                        discriminators_data.push_back(ColumnVariant::NULL_DISCRIMINATOR);
-                        filter.push_back(0);
-                    }
-                    else
-                    {
-                        discriminators_data.push_back(variant_discr);
-                        filter.push_back(1);
-                        ++variant_size_hint;
-                    }
-                }
-
-                MutableColumnPtr variant_column;
-                /// If there were no NULLs, we can just clone the column.
-                if (variant_size_hint == col_lc.size())
-                    variant_column = IColumn::mutate(column);
-                /// Otherwise we should filter column.
-                else
-                    variant_column = column->filter(filter, variant_size_hint)->assumeMutable();
-
-                assert_cast<ColumnLowCardinality &>(*variant_column).nestedRemoveNullable();
-                return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), std::move(variant_column), variant_discr);
-            }
-            else
-            {
-                const auto & column = arguments.front().column;
-                auto discriminators = ColumnVariant::ColumnDiscriminators::create();
-                discriminators->getData().resize_fill(column->size(), variant_discr);
-                return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), column, variant_discr);
-            }
-        };
-    }
-
-    /// Wrapper for conversion to/from Variant type
-    WrapperType createVariantWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type) const
-    {
-        if (const auto * from_variant = checkAndGetDataType<DataTypeVariant>(from_type.get()))
-        {
-            if (const auto * to_variant = checkAndGetDataType<DataTypeVariant>(to_type.get()))
-                return createVariantToVariantWrapper(*from_variant, *to_variant);
-
-            return createVariantToColumnWrapper(*from_variant, to_type);
-        }
-
-        return createColumnToVariantWrapper(from_type, assert_cast<const DataTypeVariant &>(*to_type));
-    }
-
     template <typename FieldType>
     WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type) const
     {
@@ -4500,11 +4244,6 @@ arguments, result_type, input_rows_count); \
 
     WrapperType prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const
     {
-        /// Conversion from/to Variant data type is processed in a special way.
-        /// We don't need to remove LowCardinality/Nullable.
-        if (isVariant(to_type) || isVariant(from_type))
-            return createVariantWrapper(from_type, to_type);
-
         const auto * from_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(from_type.get());
         const auto * to_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(to_type.get());
         const auto & from_nested = from_low_cardinality ? from_low_cardinality->getDictionaryType() : from_type;
@@ -4512,7 +4251,7 @@ arguments, result_type, input_rows_count); \
 
         if (from_type->onlyNull())
         {
-            if (!to_nested->isNullable() && !isVariant(to_type))
+            if (!to_nested->isNullable())
             {
                 if (cast_type == CastType::accurateOrNull)
                 {

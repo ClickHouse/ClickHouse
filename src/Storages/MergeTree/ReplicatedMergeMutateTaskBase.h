@@ -17,7 +17,7 @@ class ReplicatedMergeMutateTaskBase : public IExecutableTask
 {
 public:
     ReplicatedMergeMutateTaskBase(
-        LoggerPtr log_,
+        Poco::Logger * log_,
         StorageReplicatedMergeTree & storage_,
         ReplicatedMergeTreeQueue::SelectedEntryPtr & selected_entry_,
         IExecutableTask::TaskResultCallback & task_result_callback_)
@@ -66,7 +66,7 @@ protected:
     ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry;
     ReplicatedMergeTreeLogEntry & entry;
     MergeList::EntryPtr merge_mutate_entry{nullptr};
-    LoggerPtr log;
+    Poco::Logger * log;
     /// ProfileEvents for current part will be stored here
     ProfileEvents::Counters profile_counters;
     ContextMutablePtr task_context;

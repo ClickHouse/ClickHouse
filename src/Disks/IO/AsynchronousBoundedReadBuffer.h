@@ -67,7 +67,7 @@ private:
     const std::string query_id;
     const std::string current_reader_id;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     AsyncReadCountersPtr async_read_counters;
     FilesystemReadPrefetchesLogPtr prefetches_log;

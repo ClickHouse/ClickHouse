@@ -53,8 +53,7 @@ public:
 
     std::string getName() const override { return "File"; }
 
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -138,7 +137,6 @@ public:
 protected:
     friend class StorageFileSource;
     friend class StorageFileSink;
-    friend class ReadFromFile;
 
 private:
     void setStorageMetadata(CommonArguments args);
@@ -163,7 +161,7 @@ private:
 
     mutable std::shared_timed_mutex rwlock;
 
-    LoggerPtr log = getLogger("StorageFile");
+    Poco::Logger * log = &Poco::Logger::get("StorageFile");
 
     /// Total number of bytes to read (sums for multiple files in case of globs). Needed for progress bar.
     size_t total_bytes_to_read = 0;
@@ -196,7 +194,7 @@ public:
         explicit FilesIterator(
             const Strings & files_,
             std::optional<StorageFile::ArchiveInfo> archive_info_,
-            const ActionsDAG::Node * predicate,
+            ASTPtr query,
             const NamesAndTypesList & virtual_columns,
             ContextPtr context_,
             bool distributed_processing_ = false);
@@ -236,7 +234,9 @@ private:
     StorageFileSource(
         const ReadFromFormatInfo & info,
         std::shared_ptr<StorageFile> storage_,
+        const StorageSnapshotPtr & storage_snapshot_,
         ContextPtr context_,
+        const SelectQueryInfo & query_info_,
         UInt64 max_block_size_,
         FilesIteratorPtr files_iterator_,
         std::unique_ptr<ReadBuffer> read_buf_,
@@ -256,6 +256,8 @@ private:
         return storage->getName();
     }
 
+    void setKeyCondition(const SelectQueryInfo & query_info_, ContextPtr context_) override;
+
     void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override;
 
     bool tryGetCountFromCache(const struct stat & file_stat);
@@ -267,6 +269,7 @@ private:
     std::optional<size_t> tryGetNumRowsFromCache(const String & path, time_t last_mod_time) const;
 
     std::shared_ptr<StorageFile> storage;
+    StorageSnapshotPtr storage_snapshot;
     FilesIteratorPtr files_iterator;
     String current_path;
     std::optional<size_t> current_file_size;
@@ -287,6 +290,7 @@ private:
     Block block_for_format;
 
     ContextPtr context;    /// TODO Untangle potential issues with context lifetime.
+    SelectQueryInfo query_info;
     UInt64 max_block_size;
 
     bool finished_generate = false;

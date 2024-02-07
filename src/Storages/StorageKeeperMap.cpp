@@ -321,7 +321,7 @@ StorageKeeperMap::StorageKeeperMap(
     , primary_key(primary_key_)
     , zookeeper_name(zkutil::extractZooKeeperName(zk_root_path_))
     , keys_limit(keys_limit_)
-    , log(getLogger(fmt::format("StorageKeeperMap ({})", table_id.getNameForLogs())))
+    , log(&Poco::Logger::get(fmt::format("StorageKeeperMap ({})", table_id.getNameForLogs())))
 {
     std::string path_prefix = context_->getConfigRef().getString("keeper_map_path_prefix", "");
     if (path_prefix.empty())
@@ -776,10 +776,9 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
 
         auto with_retries = std::make_shared<WithRetries>
         (
-            getLogger(fmt::format("StorageKeeperMapBackup ({})", getStorageID().getNameForLogs())),
+            &Poco::Logger::get(fmt::format("StorageKeeperMapBackup ({})", getStorageID().getNameForLogs())),
             [&] { return getClient(); },
             WithRetries::KeeperSettings::fromContext(backup_entries_collector.getContext()),
-            backup_entries_collector.getContext()->getProcessListElement(),
             [](WithRetries::FaultyKeeper &) {}
         );
 
@@ -808,10 +807,9 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
 
     auto with_retries = std::make_shared<WithRetries>
     (
-        getLogger(fmt::format("StorageKeeperMapRestore ({})", getStorageID().getNameForLogs())),
+        &Poco::Logger::get(fmt::format("StorageKeeperMapRestore ({})", getStorageID().getNameForLogs())),
         [&] { return getClient(); },
         WithRetries::KeeperSettings::fromContext(restorer.getContext()),
-        restorer.getContext()->getProcessListElement(),
         [](WithRetries::FaultyKeeper &) {}
     );
 

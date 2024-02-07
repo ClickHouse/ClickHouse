@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterGrantQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
@@ -479,15 +478,6 @@ void InterpreterGrantQuery::updateUserFromQuery(User & user, const ASTGrantQuery
 void InterpreterGrantQuery::updateRoleFromQuery(Role & role, const ASTGrantQuery & query)
 {
     updateFromQuery(role, query);
-}
-
-void registerInterpreterGrantQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterGrantQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterGrantQuery", create_fn);
 }
 
 }

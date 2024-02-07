@@ -116,7 +116,7 @@ public:
         : existing_changelogs(existing_changelogs_)
         , log_file_settings(log_file_settings_)
         , keeper_context(std::move(keeper_context_))
-        , log(getLogger("Changelog"))
+        , log(&Poco::Logger::get("Changelog"))
     {
     }
 
@@ -454,7 +454,7 @@ private:
 
     KeeperContextPtr keeper_context;
 
-    LoggerPtr const log;
+    Poco::Logger * const log;
 };
 
 struct ChangelogReadResult
@@ -493,7 +493,7 @@ public:
     }
 
     /// start_log_index -- all entries with index < start_log_index will be skipped, but accounted into total_entries_read_from_log
-    ChangelogReadResult readChangelog(IndexToLogEntry & logs, uint64_t start_log_index, LoggerPtr log)
+    ChangelogReadResult readChangelog(IndexToLogEntry & logs, uint64_t start_log_index, Poco::Logger * log)
     {
         ChangelogReadResult result{};
         result.compressed_log = compression_method != CompressionMethod::None;
@@ -592,7 +592,7 @@ private:
 };
 
 Changelog::Changelog(
-    LoggerPtr log_, LogFileSettings log_file_settings, FlushSettings flush_settings_, KeeperContextPtr keeper_context_)
+    Poco::Logger * log_, LogFileSettings log_file_settings, FlushSettings flush_settings_, KeeperContextPtr keeper_context_)
     : changelogs_detached_dir("detached")
     , rotate_interval(log_file_settings.rotate_interval)
     , compress_logs(log_file_settings.compress_logs)

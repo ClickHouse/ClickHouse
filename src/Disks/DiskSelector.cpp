@@ -124,7 +124,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         if (num_disks_removed_from_config > 0)
         {
             LOG_WARNING(
-                getLogger("DiskSelector"),
+                &Poco::Logger::get("DiskSelector"),
                 "{} disappeared from configuration, this change will be applied after restart of ClickHouse",
                 warning.str());
         }

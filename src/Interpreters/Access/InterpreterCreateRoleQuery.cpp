@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateRoleQuery.h>
 
 #include <Access/AccessControl.h>
@@ -123,14 +122,4 @@ void InterpreterCreateRoleQuery::updateRoleFromQuery(Role & role, const ASTCreat
 {
     updateRoleFromQueryImpl(role, query, {}, {});
 }
-
-void registerInterpreterCreateRoleQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterCreateRoleQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterCreateRoleQuery", create_fn);
-}
-
 }

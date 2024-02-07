@@ -3,11 +3,18 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/Exception.h>
-#include <Common/re2.h>
 #include <optional>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Interpreters/Context.h>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 using namespace Azure::Storage::Blobs;
 
@@ -66,14 +73,8 @@ AzureBlobStorageEndpoint processAzureBlobStorageEndpoint(const Poco::Util::Abstr
     }
     else
     {
-        if (config.has(config_prefix + ".connection_string"))
-            storage_url = config.getString(config_prefix + ".connection_string");
-        else if (config.has(config_prefix + ".endpoint"))
-            storage_url = config.getString(config_prefix + ".endpoint");
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected either `connection_string` or `endpoint` in config");
+        storage_url = config.getString(config_prefix + ".connection_string");
     }
-
     String container_name = config.getString(config_prefix + ".container_name", "default-container");
     validateContainerName(container_name);
     std::optional<bool> container_already_exists {};
@@ -107,12 +108,11 @@ template <class T>
 std::unique_ptr<T> getAzureBlobStorageClientWithAuth(
     const String & url, const String & container_name, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    std::string connection_str;
     if (config.has(config_prefix + ".connection_string"))
-        connection_str = config.getString(config_prefix + ".connection_string");
-
-    if (!connection_str.empty())
+    {
+        String connection_str = config.getString(config_prefix + ".connection_string");
         return getClientWithConnectionString<T>(connection_str, container_name);
+    }
 
     if (config.has(config_prefix + ".account_key") && config.has(config_prefix + ".account_name"))
     {
@@ -133,15 +133,14 @@ std::unique_ptr<BlobContainerClient> getAzureBlobContainerClient(
 {
     auto endpoint = processAzureBlobStorageEndpoint(config, config_prefix);
     auto container_name = endpoint.container_name;
-    auto final_url = container_name.empty()
-        ? endpoint.storage_account_url
-        : (std::filesystem::path(endpoint.storage_account_url) / container_name).string();
+    auto final_url = endpoint.storage_account_url
+        + (endpoint.storage_account_url.back() == '/' ? "" : "/")
+        + container_name;
 
     if (endpoint.container_already_exists.value_or(false))
         return getAzureBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
 
-    auto blob_service_client = getAzureBlobStorageClientWithAuth<BlobServiceClient>(
-        endpoint.storage_account_url, container_name, config, config_prefix);
+    auto blob_service_client = getAzureBlobStorageClientWithAuth<BlobServiceClient>(endpoint.storage_account_url, container_name, config, config_prefix);
 
     try
     {
@@ -158,15 +157,14 @@ std::unique_ptr<BlobContainerClient> getAzureBlobContainerClient(
     }
 }
 
-std::unique_ptr<AzureObjectStorageSettings> getAzureBlobStorageSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
+std::unique_ptr<AzureObjectStorageSettings> getAzureBlobStorageSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr /*context*/)
 {
     return std::make_unique<AzureObjectStorageSettings>(
         config.getUInt64(config_prefix + ".max_single_part_upload_size", 100 * 1024 * 1024),
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getInt(config_prefix + ".max_single_read_retries", 3),
         config.getInt(config_prefix + ".max_single_download_retries", 3),
-        config.getInt(config_prefix + ".list_object_keys_size", 1000),
-        config.getUInt64(config_prefix + ".max_unexpected_write_error_retries", context->getSettings().azure_max_unexpected_write_error_retries)
+        config.getInt(config_prefix + ".list_object_keys_size", 1000)
     );
 }
 

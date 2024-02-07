@@ -19,7 +19,6 @@
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/KeyHolderHelpers.h>
 
 
 namespace DB
@@ -154,6 +153,8 @@ private:
     UInt64 threshold;
     UInt64 reserved;
 
+    static void deserializeAndInsert(StringRef str, IColumn & data_to);
+
 public:
     AggregateFunctionTopKGeneric(
         UInt64 threshold_, UInt64 load_factor, const DataTypes & argument_types_, const Array & params)
@@ -253,7 +254,12 @@ public:
         offsets_to.push_back(offsets_to.back() + result_vec.size());
 
         for (auto & elem : result_vec)
-            deserializeAndInsert<is_plain_column>(elem.key, data_to);
+        {
+            if constexpr (is_plain_column)
+                data_to.insertData(elem.key.data, elem.key.size);
+            else
+                data_to.deserializeAndInsertFromArena(elem.key.data);
+        }
     }
 };
 

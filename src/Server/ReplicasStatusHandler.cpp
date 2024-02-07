@@ -22,7 +22,7 @@ ReplicasStatusHandler::ReplicasStatusHandler(IServer & server) : WithContext(ser
 {
 }
 
-void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     try
     {
@@ -113,12 +113,12 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             if (!response.sent())
             {
                 /// We have not sent anything yet and we don't even know if we need to compress response.
-                *response.send() << getCurrentExceptionMessage(false) << '\n';
+                *response.send() << getCurrentExceptionMessage(false) << std::endl;
             }
         }
         catch (...)
         {
-            LOG_ERROR((getLogger("ReplicasStatusHandler")), "Cannot send exception to client");
+            LOG_ERROR((&Poco::Logger::get("ReplicasStatusHandler")), "Cannot send exception to client");
         }
     }
 }

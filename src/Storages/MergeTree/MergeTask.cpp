@@ -570,7 +570,6 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
     {
         Pipe pipe = createMergeTreeSequentialSource(
-            MergeTreeSequentialSourceType::Merge,
             *global_ctx->data,
             global_ctx->storage_snapshot,
             global_ctx->future_part->parts[part_num],
@@ -588,15 +587,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
     ctx->rows_sources_read_buf->seek(0, 0);
-
-    const auto data_settings = global_ctx->data->getSettings();
-    auto transform = std::make_unique<ColumnGathererTransform>(
-        pipe.getHeader(),
-        pipe.numOutputPorts(),
-        *ctx->rows_sources_read_buf,
-        data_settings->merge_max_block_size,
-        data_settings->merge_max_block_size_bytes);
-
+    auto transform = std::make_unique<ColumnGathererTransform>(pipe.getHeader(), pipe.numOutputPorts(), *ctx->rows_sources_read_buf);
     pipe.addTransform(std::move(transform));
 
     ctx->column_parts_pipeline = QueryPipeline(std::move(pipe));
@@ -728,9 +719,8 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
         MergeTreeData::DataPartsVector projection_parts;
         for (const auto & part : global_ctx->future_part->parts)
         {
-            auto actual_projection_parts = part->getProjectionParts();
-            auto it = actual_projection_parts.find(projection.name);
-            if (it != actual_projection_parts.end() && !it->second->is_broken)
+            auto it = part->getProjectionParts().find(projection.name);
+            if (it != part->getProjectionParts().end())
                 projection_parts.push_back(it->second);
         }
         if (projection_parts.size() < global_ctx->future_part->parts.size())
@@ -935,7 +925,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     for (const auto & part : global_ctx->future_part->parts)
     {
         Pipe pipe = createMergeTreeSequentialSource(
-            MergeTreeSequentialSourceType::Merge,
             *global_ctx->data,
             global_ctx->storage_snapshot,
             part,

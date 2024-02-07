@@ -9,7 +9,7 @@ ZooKeeperWithFaultInjection::ZooKeeperWithFaultInjection(
     double fault_injection_probability,
     UInt64 fault_injection_seed,
     std::string name_,
-    LoggerPtr logger_)
+    Poco::Logger * logger_)
     : keeper(keeper_)
     , fault_policy(std::make_unique<RandomFaultInjection>(fault_injection_probability, fault_injection_seed))
     , name(std::move(name_))

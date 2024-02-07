@@ -444,10 +444,10 @@ create view query_logs as
 create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-arrays.tsv')
     as
     with (
-        -- sumMapState with the list of all keys with nullable '0' values because sumMap removes keys with default values
-        -- and 0::Nullable != NULL
+        -- sumMapState with the list of all keys with '-0.' values. Negative zero is because
+        -- sumMap removes keys with positive zeros.
         with (select groupUniqArrayArray(mapKeys(ProfileEvents)) from query_logs) as all_names
-            select arrayReduce('sumMapState', [(all_names, arrayMap(x->0::Nullable(Float64), all_names))])
+            select arrayReduce('sumMapState', [(all_names, arrayMap(x->-0., all_names))])
         ) as all_metrics
     select test, query_index, version, query_id,
         (finalizeAggregation(
@@ -456,15 +456,17 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
                     all_metrics,
                     arrayReduce('sumMapState',
                         [(mapKeys(ProfileEvents),
-                            arrayMap(x->toNullable(toFloat64(x)), mapValues(ProfileEvents)))]
+                            arrayMap(x->toFloat64(x), mapValues(ProfileEvents)))]
                     ),
                     arrayReduce('sumMapState', [(
                         ['client_time', 'server_time', 'memory_usage'],
-                        [toNullable(toFloat64(query_runs.time)), toNullable(toFloat64(query_duration_ms / 1000.)), toNullable(toFloat64(memory_usage))]
-                      )])
+                        arrayMap(x->if(x != 0., x, -0.), [
+                            toFloat64(query_runs.time),
+                            toFloat64(query_duration_ms / 1000.),
+                            toFloat64(memory_usage)]))])
                 ]
             )) as metrics_tuple).1 metric_names,
-        arrayMap(x->if(isNaN(x),0,x), metrics_tuple.2) metric_values
+        metrics_tuple.2 metric_values
     from query_logs
     right join query_runs
         on query_logs.query_id = query_runs.query_id
@@ -1218,23 +1220,15 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
             0 test_duration_ms,
             'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#fail1' report_url
         union all
-            select
-                test || ' #' || toString(query_index) || '::' || test_desc_.1 test_name,
-                'slower' test_status,
-                test_desc_.2*1e3 test_duration_ms,
-                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#changes-in-performance.' || test || '.' || toString(query_index) report_url
-            from queries
-            array join map('old', left, 'new', right) as test_desc_
-            where changed_fail != 0 and diff > 0
+            select test || ' #' || toString(query_index), 'slower' test_status, 0 test_duration_ms,
+                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#changes-in-performance.'
+                    || test || '.' || toString(query_index) report_url
+            from queries where changed_fail != 0 and diff > 0
         union all
-            select
-                test || ' #' || toString(query_index) || '::' || test_desc_.1 test_name,
-                'unstable' test_status,
-                test_desc_.2*1e3 test_duration_ms,
-                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#unstable-queries.' || test || '.' || toString(query_index) report_url
-            from queries
-            array join map('old', left, 'new', right) as test_desc_
-            where unstable_fail != 0
+            select test || ' #' || toString(query_index), 'unstable' test_status, 0 test_duration_ms,
+                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#unstable-queries.'
+                    || test || '.' || toString(query_index) report_url
+            from queries where unstable_fail != 0
     )
 ;
     "

@@ -121,7 +121,7 @@ class GraceHashJoin::FileBucket : boost::noncopyable
 public:
     using BucketLock = std::unique_lock<std::mutex>;
 
-    explicit FileBucket(size_t bucket_index_, TemporaryFileStream & left_file_, TemporaryFileStream & right_file_, LoggerPtr log_)
+    explicit FileBucket(size_t bucket_index_, TemporaryFileStream & left_file_, TemporaryFileStream & right_file_, Poco::Logger * log_)
         : idx{bucket_index_}
         , left_file{left_file_}
         , right_file{right_file_}
@@ -223,7 +223,7 @@ private:
 
     std::atomic<State> state;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 namespace
@@ -261,7 +261,7 @@ GraceHashJoin::GraceHashJoin(
     const Block & right_sample_block_,
     TemporaryDataOnDiskScopePtr tmp_data_,
     bool any_take_last_row_)
-    : log{getLogger("GraceHashJoin")}
+    : log{&Poco::Logger::get("GraceHashJoin")}
     , context{context_}
     , table_join{std::move(table_join_)}
     , left_sample_block{left_sample_block_}
@@ -403,7 +403,7 @@ void GraceHashJoin::addBuckets(const size_t bucket_count)
         catch (...)
         {
             LOG_ERROR(
-                getLogger("GraceHashJoin"),
+                &Poco::Logger::get("GraceHashJoin"),
                 "Can't create bucket {} due to error: {}",
                 current_size + i,
                 getCurrentExceptionMessage(false));

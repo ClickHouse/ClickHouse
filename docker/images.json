@@ -62,6 +62,7 @@
         "dependent": []
     },
     "docker/test/integration/runner": {
+        "only_amd64": true,
         "name": "clickhouse/integration-tests-runner",
         "dependent": []
     },

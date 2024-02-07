@@ -99,7 +99,7 @@
 	url = https://github.com/awslabs/aws-c-event-stream
 [submodule "aws-c-common"]
 	path = contrib/aws-c-common
-	url = https://github.com/awslabs/aws-c-common.git
+	url = https://github.com/ClickHouse/aws-c-common
 [submodule "aws-checksums"]
 	path = contrib/aws-checksums
 	url = https://github.com/awslabs/aws-checksums
@@ -245,12 +245,6 @@
 [submodule "contrib/idxd-config"]
 	path = contrib/idxd-config
 	url = https://github.com/intel/idxd-config
-[submodule "contrib/QAT-ZSTD-Plugin"]
-	path = contrib/QAT-ZSTD-Plugin
-	url = https://github.com/intel/QAT-ZSTD-Plugin
-[submodule "contrib/qatlib"]
-	path = contrib/qatlib
-	url = https://github.com/intel/qatlib
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash
@@ -366,6 +360,3 @@
 [submodule "contrib/sqids-cpp"]
 	path = contrib/sqids-cpp
 	url = https://github.com/sqids/sqids-cpp.git
-[submodule "contrib/idna"]
-	path = contrib/idna
-	url = https://github.com/ada-url/idna.git

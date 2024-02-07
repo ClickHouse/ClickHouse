@@ -54,9 +54,9 @@ ShellCommand::ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd
 {
 }
 
-LoggerPtr ShellCommand::getLogger()
+Poco::Logger * ShellCommand::getLogger()
 {
-    return ::getLogger("ShellCommand");
+    return &Poco::Logger::get("ShellCommand");
 }
 
 ShellCommand::~ShellCommand()
