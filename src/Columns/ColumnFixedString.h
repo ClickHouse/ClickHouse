@@ -130,7 +130,7 @@ public:
     int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
     {
         const ColumnFixedString & rhs = assert_cast<const ColumnFixedString &>(rhs_);
-        return memcmpSmallAllowOverflow15(chars.data() + p1 * n, rhs.chars.data() + p2 * n, n);
+        return memcmpSmallLikeZeroPaddedAllowOverflow15(chars.data() + p1 * n, n, rhs.chars.data() + p2 * n, rhs.n);
     }
 
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
