@@ -1,21 +1,21 @@
 import argparse
 import concurrent.futures
-from dataclasses import asdict, dataclass
-from enum import Enum
 import json
 import logging
 import os
 import re
 import subprocess
 import sys
-from pathlib import Path
 import time
+from dataclasses import asdict, dataclass
+from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
-from ci_config import CI_CONFIG, Build, Labels, JobNames
+from ci_config import CI_CONFIG, Build, JobNames, Labels
 from ci_utils import GHActions, is_hex
 from clickhouse_helper import (
     CiLogsCredentials,
@@ -734,12 +734,6 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         default=False,
         help="skip fetching data about job runs, used in --configure action (for debugging and nigthly ci)",
     )
-    parser.add_argument(
-        "--rebuild-all-docker",
-        action="store_true",
-        default=False,
-        help="will create run config for rebuilding all dockers, used in --configure action (for nightly docker job)",
-    )
     # FIXME: remove, not used
     parser.add_argument(
         "--rebuild-all-binaries",
@@ -865,7 +859,7 @@ def _mark_success_action(
         # there is no status for build jobs
         # create dummy success to mark it as done
         # FIXME: consider creating commit status for build jobs too, to treat everything the same way
-        CommitStatusData("success", "dummy description", "dummy_url").dump_status()
+        CommitStatusData(SUCCESS, "dummy description", "dummy_url").dump_status()
 
     job_status = None
     if CommitStatusData.exist():
@@ -939,9 +933,7 @@ def _update_config_for_docs_only(jobs_data: dict) -> None:
     }
 
 
-def _configure_docker_jobs(
-    rebuild_all_dockers: bool, docker_digest_or_latest: bool = False
-) -> Dict:
+def _configure_docker_jobs(docker_digest_or_latest: bool) -> Dict:
     print("::group::Docker images check")
     # generate docker jobs data
     docker_digester = DockerDigester()
@@ -950,50 +942,33 @@ def _configure_docker_jobs(
     )  # 'image name - digest' mapping
     images_info = docker_images_helper.get_images_info()
 
-    # a. check missing images
-    if not rebuild_all_dockers:
-        # FIXME: we need login as docker manifest inspect goes directly to one of the *.docker.com hosts instead of "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
-        #         find if it's possible to use the setting of /etc/docker/daemon.json
-        docker_images_helper.docker_login()
-        missing_multi_dict = check_missing_images_on_dockerhub(imagename_digest_dict)
-        missing_multi = list(missing_multi_dict)
-        missing_amd64 = []
-        missing_aarch64 = []
-        if not docker_digest_or_latest:
-            # look for missing arm and amd images only among missing multiarch manifests @missing_multi_dict
-            # to avoid extra dockerhub api calls
-            missing_amd64 = list(
-                check_missing_images_on_dockerhub(missing_multi_dict, "amd64")
-            )
-            # FIXME: WA until full arm support: skip not supported arm images
-            missing_aarch64 = list(
-                check_missing_images_on_dockerhub(
-                    {
-                        im: digest
-                        for im, digest in missing_multi_dict.items()
-                        if not images_info[im]["only_amd64"]
-                    },
-                    "aarch64",
-                )
-            )
-        # FIXME: temporary hack, remove after transition to docker digest as tag
-        else:
-            if missing_multi:
-                print(
-                    f"WARNING: Missing images {list(missing_multi)} - fallback to latest tag"
-                )
-                for image in missing_multi:
-                    imagename_digest_dict[image] = "latest"
-    else:
-        # add all images to missing
-        missing_multi = list(imagename_digest_dict)
-        missing_amd64 = missing_multi
+    # FIXME: we need login as docker manifest inspect goes directly to one of the *.docker.com hosts instead of "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
+    #   find if it's possible to use the setting of /etc/docker/daemon.json (https://github.com/docker/cli/issues/4484#issuecomment-1688095463)
+    docker_images_helper.docker_login()
+    missing_multi_dict = check_missing_images_on_dockerhub(imagename_digest_dict)
+    missing_multi = list(missing_multi_dict)
+    missing_amd64 = []
+    missing_aarch64 = []
+    if not docker_digest_or_latest:
+        # look for missing arm and amd images only among missing multiarch manifests @missing_multi_dict
+        # to avoid extra dockerhub api calls
+        missing_amd64 = list(
+            check_missing_images_on_dockerhub(missing_multi_dict, "amd64")
+        )
         # FIXME: WA until full arm support: skip not supported arm images
-        missing_aarch64 = [
-            name
-            for name in imagename_digest_dict
-            if not images_info[name]["only_amd64"]
-        ]
+        missing_aarch64 = list(
+            check_missing_images_on_dockerhub(
+                {
+                    im: digest
+                    for im, digest in missing_multi_dict.items()
+                    if not images_info[im]["only_amd64"]
+                },
+                "aarch64",
+            )
+        )
+    else:
+        if missing_multi:
+            assert False, f"Missing images [{missing_multi}], cannot proceed"
     print("::endgroup::")
 
     return {
@@ -1072,12 +1047,13 @@ def _configure_jobs(
 
         if batches_to_do:
             jobs_to_do.append(job)
-            jobs_params[job] = {
-                "batches": batches_to_do,
-                "num_batches": num_batches,
-            }
-        else:
+        elif not job_config.run_by_label:
+            # treat job as being skipped only if it's controlled by digest
             jobs_to_skip.append(job)
+        jobs_params[job] = {
+            "batches": batches_to_do,
+            "num_batches": num_batches,
+        }
 
     ## c. check CI controlling labels and commit messages
     if pr_info.labels:
@@ -1136,7 +1112,7 @@ def _configure_jobs(
                 f"NOTE: Only specific job(s) were requested by commit message tokens: [{jobs_to_do_requested}]"
             )
             jobs_to_do = list(
-                set(job for job in jobs_to_do_requested if job in jobs_to_do)
+                set(job for job in jobs_to_do_requested if job not in jobs_to_skip)
             )
 
     return {
@@ -1166,7 +1142,7 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
         if not job_status:
             return
         print(f"Going to re-create GH status for job [{job}] sha [{pr_info.sha}]")
-        assert job_status.status == "success", "BUG!"
+        assert job_status.status == SUCCESS, "BUG!"
         commit.create_status(
             state=job_status.status,
             target_url=job_status.report_url,
@@ -1501,9 +1477,7 @@ def main() -> int:
         print(f"Got CH version for this commit: [{version}]")
 
         docker_data = (
-            _configure_docker_jobs(
-                args.rebuild_all_docker, args.docker_digest_or_latest
-            )
+            _configure_docker_jobs(args.docker_digest_or_latest)
             if not args.skip_docker
             else {}
         )
@@ -1527,17 +1501,16 @@ def main() -> int:
             else {}
         )
 
-        # FIXME: Early style check manipulates with job names might be not robust with await feature
-        if pr_info.number != 0 and not args.docker_digest_or_latest:
-            # FIXME: it runs style check before docker build if possible (style-check images is not changed)
-            #    find a way to do style check always before docker build and others
-            _check_and_update_for_early_style_check(jobs_data, docker_data)
-        if args.skip_jobs and pr_info.has_changes_in_documentation_only():
+        # # FIXME: Early style check manipulates with job names might be not robust with await feature
+        # if pr_info.number != 0:
+        #     # FIXME: it runs style check before docker build if possible (style-check images is not changed)
+        #     #    find a way to do style check always before docker build and others
+        #     _check_and_update_for_early_style_check(jobs_data, docker_data)
+        if not args.skip_jobs and pr_info.has_changes_in_documentation_only():
             _update_config_for_docs_only(jobs_data)
 
         # TODO: await pending jobs
         # wait for pending jobs to be finished, await_jobs is a long blocking call if any job has to be awaited
-        ci_cache = CiCache(s3, jobs_data["digests"])
         # awaited_jobs = ci_cache.await_jobs(jobs_data.get("jobs_to_wait", {}))
         # for job in awaited_jobs:
         #     jobs_to_do = jobs_data["jobs_to_do"]
@@ -1547,7 +1520,8 @@ def main() -> int:
         #         assert False, "BUG"
 
         # set planned jobs as pending in the CI cache if on the master
-        if pr_info.is_master():
+        if pr_info.is_master() and not args.skip_jobs:
+            ci_cache = CiCache(s3, jobs_data["digests"])
             for job in jobs_data["jobs_to_do"]:
                 config = CI_CONFIG.get_job_config(job)
                 if config.run_always or config.run_by_label:

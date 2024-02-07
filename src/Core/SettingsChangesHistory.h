@@ -84,7 +84,8 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
-    {"24.2", {{"async_insert_poll_timeout_ms", 10, 10, "Timeout in milliseconds for polling data from asynchronous insert queue"},
+    {"24.2", {{"async_insert_max_data_size", 1000000, 10485760, "The previous value appeared to be too small."},
+              {"async_insert_poll_timeout_ms", 10, 10, "Timeout in milliseconds for polling data from asynchronous insert queue"},
               {"async_insert_use_adaptive_busy_timeout", true, true, "Use adaptive asynchronous insert timeout"},
               {"async_insert_busy_timeout_min_ms", 50, 50, "The minimum value of the asynchronous insert timeout in milliseconds; it also serves as the initial value, which may be increased later by the adaptive algorithm"},
               {"async_insert_busy_timeout_max_ms", 200, 200, "The minimum value of the asynchronous insert timeout in milliseconds; async_insert_busy_timeout_ms is aliased to async_insert_busy_timeout_max_ms"},
@@ -114,7 +115,9 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
     {"23.12", {{"allow_suspicious_ttl_expressions", true, false, "It is a new setting, and in previous versions the behavior was equivalent to allowing."},
               {"input_format_parquet_allow_missing_columns", false, true, "Allow missing columns in Parquet files by default"},
               {"input_format_orc_allow_missing_columns", false, true, "Allow missing columns in ORC files by default"},
-              {"input_format_arrow_allow_missing_columns", false, true, "Allow missing columns in Arrow files by default"}}},
+              {"input_format_arrow_allow_missing_columns", false, true, "Allow missing columns in Arrow files by default"},
+              {"split_parts_ranges_into_intersecting_and_non_intersecting_final", false, true, "Allow to split parts ranges into intersecting and non intersecting during FINAL optimization"},
+              {"split_intersecting_parts_ranges_into_layers_final", true, true, "Allow to split intersecting parts ranges into layers during FINAL optimization"}}},
     {"23.9", {{"optimize_group_by_constant_keys", false, true, "Optimize group by constant keys by default"},
               {"input_format_json_try_infer_named_tuples_from_objects", false, true, "Try to infer named Tuples from JSON objects by default"},
               {"input_format_json_read_numbers_as_strings", false, true, "Allow to read numbers as strings in JSON formats by default"},
