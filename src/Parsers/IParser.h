@@ -79,7 +79,7 @@ public:
               * but we still want to avoid stack overflow.
               * For this purpose, we can use the checkStackSize function, but it is too heavy.
               * The solution is to check not too frequently.
-              * The frequency 128 is arbitrary, but not too large, not too small,
+              * The frequency is arbitrary, but not too large, not too small,
               * and a power of two to simplify the division.
               */
             if (depth % 8192 == 0)
