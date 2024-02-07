@@ -8,6 +8,7 @@
 #include <fsst.h>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <exception>
 #include <stdexcept>
@@ -40,9 +41,6 @@ protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override {
         params = FsstParams(reinterpret_cast<const unsigned char*>(source), source_size);
         std::cerr << "params.n: " << params.n << std::endl;
-
-        params.len_in[0] = strlen(source);
-        params.str_in[0] = reinterpret_cast<const unsigned char*>(source);
         fsst_encoder_t *encoder = fsst_create(params.n, params.len_in,
                     const_cast<unsigned char**>(params.str_in), 1);
 
@@ -62,7 +60,7 @@ protected:
         }
 
         std::cerr << "compressed" << std::endl;
-        // fsst_destroy(encoder);
+        fsst_destroy(encoder);
 
         // auto compressed_size = params.len_out[params.n - 1] + (params.str_out[params.n - 1] - reinterpret_cast<const unsigned char*>(source));
         UInt32 compressed_size = 0;
@@ -90,6 +88,10 @@ protected:
             reinterpret_cast<unsigned char *>(dest));
 
         std::cout << "decompressed size: " << decompressed_size << std::endl;
+    }
+
+    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override { 
+        return uncompressed_size + FSST_MAXHEADER;
     }
 
     bool isCompression() const override { return true; }
@@ -120,6 +122,17 @@ private:
             len_out = new size_t[n];
             str_in = new const unsigned char*[n];
             str_out = new const unsigned char*[n];
+            UInt32 ptr = 0;
+            str_in[ptr] = start;
+
+            for (UInt32 i = 0; i <= size; ++i) {
+                if (start[i] == '\0') {
+                    ++ptr;
+                    str_in[ptr] = start + i + 1;
+                    len_in[ptr - 1] = str_in[ptr] - str_in[ptr - 1] - 1;
+                }
+            }
+            len_in[ptr] = (start + size) - str_in[ptr - 1] - 1;
         }
     };
 
