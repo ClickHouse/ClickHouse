@@ -229,24 +229,34 @@ std::optional<Chain> generateViewChain(
     else if (insert_settings.update_insert_deduplication_token_in_dependent_materialized_views &&
         !insert_settings.insert_deduplication_token.value.empty())
     {
-        /** Update deduplication token passed to dependent MV with current table id. So it is possible to properly handle
-          * deduplication in complex INSERT flows.
-          *
-          * Example:
-          *
-          * landing -┬--> mv_1_1 ---> ds_1_1 ---> mv_2_1 --┬-> ds_2_1 ---> mv_3_1 ---> ds_3_1
-          *          |                                     |
-          *          └--> mv_1_2 ---> ds_1_2 ---> mv_2_2 --┘
-          *
-          * Here we want to avoid deduplication for two different blocks generated from `mv_2_1` and `mv_2_2` that will
-          * be inserted into `ds_2_1`.
-          */
+        /** Update deduplication token passed to dependent MV with current view id. So it is possible to properly handle
+              * deduplication in complex INSERT flows.
+              *
+              * Example:
+              *
+              * landing -┬--> mv_1_1 ---> ds_1_1 ---> mv_2_1 --┬-> ds_2_1 ---> mv_3_1 ---> ds_3_1
+              *          |                                     |
+              *          └--> mv_1_2 ---> ds_1_2 ---> mv_2_2 --┘
+              *
+              * Here we want to avoid deduplication for two different blocks generated from `mv_2_1` and `mv_2_2` that will
+              * be inserted into `ds_2_1`.
+              *
+              * We are forced to use view id instead of table id because there are some possible INSERT flows where no tables
+              * are involved.
+              *
+              * Example:
+              *
+              * landing -┬--> mv_1_1 --┬-> ds_1_1
+              *          |             |
+              *          └--> mv_1_2 --┘
+              *
+              */
         auto insert_deduplication_token = insert_settings.insert_deduplication_token.value;
 
-        if (views_data->source_storage_id.hasUUID())
-            insert_deduplication_token += "_" + toString(views_data->source_storage_id.uuid);
+        if (view_id.hasUUID())
+            insert_deduplication_token += "_" + toString(view_id.uuid);
         else
-            insert_deduplication_token += "_" + views_data->source_storage_id.getFullNameNotQuoted();
+            insert_deduplication_token += "_" + view_id.getFullNameNotQuoted();
 
         insert_context->setSetting("insert_deduplication_token", insert_deduplication_token);
     }

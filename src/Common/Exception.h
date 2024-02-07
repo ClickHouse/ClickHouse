@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cerrno>
+#include <exception>
 #include <vector>
 #include <memory>
 
