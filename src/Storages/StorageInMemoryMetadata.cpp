@@ -131,6 +131,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames());
     new_context->setProgressCallback(context->getProgressCallback());
     new_context->setProcessListElement(context->getProcessListElement());
+    new_context->setQueryAccessInfo(context->getQueryAccessInfoPtr());
 
     if (context->getCurrentTransaction())
         new_context->setCurrentTransaction(context->getCurrentTransaction());
