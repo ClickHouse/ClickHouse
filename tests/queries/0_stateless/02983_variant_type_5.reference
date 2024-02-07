@@ -1,0 +1,282 @@
+Memory
+Integer Types
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+Floating Point Types
+0.5108
+0.5108
+0.2599
+0.65667885
+0.65667885
+0.50860063
+Boolean Types
+true
+String Types
+Hello
+Date Types
+2019-01-01
+1969-01-01
+2019-01-01 00:00:00
+JSON Types
+UUID Types
+48a339db-6464-4743-82cb-1ed31f6b3547
+Low Cardinality Types
+str_0
+str_1
+str_2
+str_3
+str_4
+str_5
+str_6
+str_7
+str_8
+str_9
+Array Types
+[]
+[0]
+[0,1]
+[0,1,2]
+[0,1,2,3]
+Map Types
+{'a':'0','b':'str_0'}
+{}
+{'a':'2','b':'str_2'}
+{}
+{'a':'4','b':'str_4'}
+Nested Types
+Tuple Types
+(0,'str_0')
+(1,'str_1')
+(2,'str_2')
+(3,'str_3')
+(4,'str_4')
+IP Address Types
+116.253.40.133
+2001:44c8:129:2632:33:0:252:2
+Geographical Types
+(45,89)
+[(0,0),(10,0),(10,10),(0,10)]
+[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]
+[[[(0,0),(10,0),(10,10),(0,10)]],[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]]
+MergeTree order by id settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000
+Integer Types
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+Floating Point Types
+0.0016
+0.0016
+0.7457
+0.31130143
+0.31130143
+0.76102853
+Boolean Types
+true
+String Types
+Hello
+Date Types
+2019-01-01
+1969-01-01
+2019-01-01 00:00:00
+JSON Types
+UUID Types
+a98b6dcb-25ff-4d6c-b631-627bd3ea0f70
+Low Cardinality Types
+str_0
+str_1
+str_2
+str_3
+str_4
+str_5
+str_6
+str_7
+str_8
+str_9
+Array Types
+[]
+[0]
+[0,1]
+[0,1,2]
+[0,1,2,3]
+Map Types
+{'a':'0','b':'str_0'}
+{}
+{'a':'2','b':'str_2'}
+{}
+{'a':'4','b':'str_4'}
+Nested Types
+Tuple Types
+(0,'str_0')
+(1,'str_1')
+(2,'str_2')
+(3,'str_3')
+(4,'str_4')
+IP Address Types
+116.253.40.133
+2001:44c8:129:2632:33:0:252:2
+Geographical Types
+(45,89)
+[(0,0),(10,0),(10,10),(0,10)]
+[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]
+[[[(0,0),(10,0),(10,10),(0,10)]],[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]]
+MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1
+Integer Types
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+0
+\N
+2
+Floating Point Types
+0.9849
+0.2808
+0.5805
+0.94216039
+0.96966524
+0.25875363
+Boolean Types
+true
+String Types
+Hello
+Date Types
+2019-01-01
+1969-01-01
+2019-01-01 00:00:00
+JSON Types
+UUID Types
+2db703f0-993d-4b5d-8aa9-b513aa40ada5
+Low Cardinality Types
+str_0
+str_1
+str_2
+str_3
+str_4
+str_5
+str_6
+str_7
+str_8
+str_9
+Array Types
+[]
+[0]
+[0,1]
+[0,1,2]
+[0,1,2,3]
+Map Types
+{'a':'0','b':'str_0'}
+{}
+{'a':'2','b':'str_2'}
+{}
+{'a':'4','b':'str_4'}
+Nested Types
+Tuple Types
+(0,'str_0')
+(1,'str_1')
+(2,'str_2')
+(3,'str_3')
+(4,'str_4')
+IP Address Types
+116.253.40.133
+2001:44c8:129:2632:33:0:252:2
+Geographical Types
+(45,89)
+[(0,0),(10,0),(10,10),(0,10)]
+[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]
+[[[(0,0),(10,0),(10,10),(0,10)]],[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]]
