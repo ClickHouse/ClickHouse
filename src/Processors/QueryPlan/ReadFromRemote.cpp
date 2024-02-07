@@ -413,7 +413,17 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         all_replicas_count = shard.getAllNodeCount();
     }
 
-    auto shuffled_pool = shard.pool->getShuffledPools(current_settings);
+
+    std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> shuffled_pool;
+    if (all_replicas_count < shard.getAllNodeCount())
+        shuffled_pool = shard.pool->getShuffledPools(current_settings);
+    else
+    {
+        /// try to preserve replicas order if all replicas in cluster are used for query execution
+        /// it's important for data locality during query execution
+        auto priority_func = [](size_t i) { return Priority{static_cast<Int64>(i)}; };
+        shuffled_pool = shard.pool->getShuffledPools(current_settings, priority_func);
+    }
     shuffled_pool.resize(all_replicas_count);
 
     for (size_t i=0; i < all_replicas_count; ++i)
