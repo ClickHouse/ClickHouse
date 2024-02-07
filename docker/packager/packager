@@ -115,8 +115,12 @@ def run_docker_image_with_env(
     subprocess.check_call(cmd, shell=True)
 
 
-def is_release_build(debug_build: bool, package_type: str, sanitizer: str, coverage: bool) -> bool:
-    return not debug_build and package_type == "deb" and sanitizer == "" and not coverage
+def is_release_build(
+    debug_build: bool, package_type: str, sanitizer: str, coverage: bool
+) -> bool:
+    return (
+        not debug_build and package_type == "deb" and sanitizer == "" and not coverage
+    )
 
 
 def parse_env_variables(
