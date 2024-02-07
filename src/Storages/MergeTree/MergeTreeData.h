@@ -232,6 +232,7 @@ public:
         }
     };
 
+
     using DataParts = std::set<DataPartPtr, LessDataPart>;
     using MutableDataParts = std::set<MutableDataPartPtr, LessDataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
@@ -468,8 +469,13 @@ public:
 
     struct ProjectionPartsVector
     {
-        DataPartsVector projection_parts;
         DataPartsVector data_parts;
+
+        DataPartsVector projection_parts;
+        DataPartStateVector projection_parts_states;
+
+        DataPartsVector broken_projection_parts;
+        DataPartStateVector broken_projection_parts_states;
     };
 
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
@@ -484,7 +490,7 @@ public:
         const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
     /// Same as above but only returns projection parts
     ProjectionPartsVector getProjectionPartsVectorForInternalUsage(
-        const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
+        const DataPartStates & affordable_states, MergeTreeData::DataPartStateVector * out_states) const;
 
 
     /// Returns absolutely all parts (and snapshot of their states)
@@ -848,6 +854,23 @@ public:
         const IDataPartStorage::ClonePartParams & params,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings);
+
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
+        const MergeTreeData::DataPartPtr & src_part,
+        const MergeTreePartition & new_partition,
+        const String & partition_id,
+        const IMergeTreeDataPart::MinMaxIndex & min_max_index,
+        const String & tmp_part_prefix,
+        const StorageMetadataPtr & my_metadata_snapshot,
+        const IDataPartStorage::ClonePartParams & clone_params,
+        ContextPtr local_context,
+        Int64 min_block,
+        Int64 max_block);
+
+    static std::pair<MergeTreePartition, IMergeTreeDataPart::MinMaxIndex> createPartitionAndMinMaxIndexFromSourcePart(
+        const MergeTreeData::DataPartPtr & src_part,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr local_context);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
