@@ -109,6 +109,7 @@ namespace ErrorCodes
     extern const int USER_SESSION_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int ABORTED;
 }
 
 }
@@ -2371,6 +2372,32 @@ void ClientBase::runInteractive()
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "query_id could be specified only in non-interactive mode");
     if (print_time_to_stderr)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "time option could be specified only in non-interactive mode");
+
+    if (format == "Parquet" and stdout_is_a_tty)
+    {
+        // Confirm the user wants to dump binary data to their terminal.
+        std::cout << "This will dump the binary Parquet output to your terminal. "
+                  << "Did you mean to redirect to a file with e.g. '>output.parquet'?"
+                  << std::endl;
+        std::string response;
+        while (true)
+        {
+            std::cout << "Dump binary output to terminal? (y/n): ";
+            std::getline(std::cin, response);
+            if (!std::cin.good())
+                throw Exception(ErrorCodes::ABORTED, "Binary output confirmation prompt aborted by user.");
+            trim(response);
+	    if (response.empty())
+		continue;
+            if (response.size() == 1)
+            {
+                if (response[0] == 'y' || response[0] == 'Y')
+                    break;
+                if (response[0] == 'n' || response[0] == 'N')
+                    throw Exception(ErrorCodes::ABORTED, "Binary output to terminal declined by user.");
+            }
+        }
+    }
 
     initQueryIdFormats();
 
