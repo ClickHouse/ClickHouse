@@ -37,11 +37,8 @@ RUN apt-get update \
     libkrb5-dev \
     krb5-user \
     g++ \
-    && rm -rf \
-        /var/lib/apt/lists/* \
-        /var/cache/debconf \
-        /tmp/* \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -62,6 +59,8 @@ RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
     && dockerd --version; docker --version
 
 
+# kazoo 2.10.0 is broken
+# https://s3.amazonaws.com/clickhouse-test-reports/59337/524625a1d2f4cc608a3f1059e3df2c30f353a649/integration_tests__asan__analyzer__[5_6].html
 RUN python3 -m pip install --no-cache-dir \
     PyMySQL \
     aerospike==11.1.0 \
@@ -70,7 +69,7 @@ RUN python3 -m pip install --no-cache-dir \
     azure-storage-blob \
     boto3 \
     cassandra-driver \
-    confluent-kafka==1.9.2 \
+    confluent-kafka==2.3.0 \
     delta-spark==2.3.0 \
     dict2xml \
     dicttoxml \
@@ -79,7 +78,7 @@ RUN python3 -m pip install --no-cache-dir \
     grpcio \
     grpcio-tools \
     kafka-python \
-    kazoo \
+    kazoo==2.9.0 \
     lz4 \
     minio \
     nats-py \

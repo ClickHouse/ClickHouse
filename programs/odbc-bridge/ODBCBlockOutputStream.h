@@ -30,7 +30,7 @@ protected:
     void consume(Chunk chunk) override;
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
 
     nanodbc::ConnectionHolderPtr connection_holder;
     std::string db_name;

@@ -167,6 +167,8 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
                 continue;
             }
         }
+        else if (prev_comma && (token.type == TokenType::Plus || token.type == TokenType::Minus))
+            continue;
         else
         {
             if (num_literals_in_sequence > 1)

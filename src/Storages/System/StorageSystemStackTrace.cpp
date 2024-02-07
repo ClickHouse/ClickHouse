@@ -173,7 +173,7 @@ bool wait(int timeout_ms)
 }
 
 using ThreadIdToName = std::unordered_map<UInt64, String, DefaultHash<UInt64>>;
-ThreadIdToName getFilteredThreadNames(const ActionsDAG::Node * predicate, ContextPtr context, const PaddedPODArray<UInt64> & thread_ids, Poco::Logger * log)
+ThreadIdToName getFilteredThreadNames(const ActionsDAG::Node * predicate, ContextPtr context, const PaddedPODArray<UInt64> & thread_ids, LoggerPtr log)
 {
     ThreadIdToName tid_to_name;
     MutableColumnPtr all_thread_names = ColumnString::create();
@@ -274,7 +274,7 @@ bool isSignalBlocked(UInt64 tid, int signal)
 class StackTraceSource : public ISource
 {
 public:
-    StackTraceSource(const Names & column_names, Block header_, ASTPtr && query_, ActionsDAGPtr && filter_dag_, ContextPtr context_, UInt64 max_block_size_, Poco::Logger * log_)
+    StackTraceSource(const Names & column_names, Block header_, ASTPtr && query_, ActionsDAGPtr && filter_dag_, ContextPtr context_, UInt64 max_block_size_, LoggerPtr log_)
         : ISource(header_)
         , context(context_)
         , header(std::move(header_))
@@ -426,7 +426,7 @@ private:
     bool send_signal = false;
     bool read_thread_names = false;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::filesystem::directory_iterator proc_it;
     std::filesystem::directory_iterator end;
@@ -463,7 +463,7 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
         Pipe pipe(std::make_shared<StackTraceSource>(
             column_names,
             getOutputStream().header,
@@ -481,7 +481,7 @@ public:
         ASTPtr && query_,
         ContextPtr context_,
         size_t max_block_size_,
-        Poco::Logger * log_)
+        LoggerPtr log_)
         : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
         , column_names(column_names_)
         , query(query_)
@@ -496,7 +496,7 @@ private:
     ASTPtr query;
     ContextPtr context;
     size_t max_block_size;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }
@@ -504,7 +504,7 @@ private:
 
 StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
     : IStorage(table_id_)
-    , log(&Poco::Logger::get("StorageSystemStackTrace"))
+    , log(getLogger("StorageSystemStackTrace"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription({

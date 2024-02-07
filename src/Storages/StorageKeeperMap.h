@@ -146,7 +146,7 @@ private:
     mutable std::mutex init_mutex;
     mutable std::optional<bool> table_is_valid;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

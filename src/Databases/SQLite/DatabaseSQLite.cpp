@@ -33,7 +33,7 @@ DatabaseSQLite::DatabaseSQLite(
     , WithContext(context_->getGlobalContext())
     , database_engine_define(database_engine_define_->clone())
     , database_path(database_path_)
-    , log(&Poco::Logger::get("DatabaseSQLite"))
+    , log(getLogger("DatabaseSQLite"))
 {
     sqlite_db = openSQLiteDB(database_path_, context_, !is_attach_);
 }

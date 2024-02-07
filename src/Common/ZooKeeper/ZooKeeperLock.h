@@ -46,7 +46,7 @@ private:
 
     std::string lock_path;
     std::string lock_message;
-    Poco::Logger * log;
+    LoggerPtr log;
     bool locked = false;
 
 };

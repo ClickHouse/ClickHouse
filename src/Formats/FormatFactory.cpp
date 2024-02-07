@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/WriteHelpers.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
@@ -394,7 +395,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
         {
             parallel_read = false;
             LOG_TRACE(
-                &Poco::Logger::get("FormatFactory"),
+                getLogger("FormatFactory"),
                 "Failed to setup ParallelReadBuffer because of an exception:\n{}.\n"
                 "Falling back to the single-threaded buffer",
                 e.displayText());
@@ -404,7 +405,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
     if (parallel_read)
     {
         LOG_TRACE(
-            &Poco::Logger::get("FormatFactory"),
+            getLogger("FormatFactory"),
             "Using ParallelReadBuffer with {} workers with chunks of {} bytes",
             max_download_threads,
             settings.max_download_buffer_size);
@@ -451,6 +452,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output", name);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+    format_settings.is_writing_to_terminal = isWritingToTerminal(buf);
 
     const Settings & settings = context->getSettingsRef();
 
@@ -492,6 +494,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     format_settings.max_threads = context->getSettingsRef().max_threads;
+    format_settings.is_writing_to_terminal = format_settings.is_writing_to_terminal = isWritingToTerminal(buf);
 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.

@@ -6,32 +6,26 @@ import json
 import logging
 import sys
 import time
+from os import makedirs
+from os import path as p
 from pathlib import Path
-from os import path as p, makedirs
 from typing import Dict, List
 
-from github import Github
-
 from build_check import get_release_or_pr
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import format_description, get_commit, post_commit_status
+from build_download_helper import read_build_urls
 from docker_images_helper import DockerImageData, docker_login
 from env_helper import (
     GITHUB_RUN_URL,
     REPORT_PATH,
-    TEMP_PATH,
     S3_BUILDS_BUCKET,
     S3_DOWNLOAD,
+    TEMP_PATH,
 )
-from get_robot_token import get_best_robot_token
 from git_helper import Git
 from pr_info import PRInfo
-from report import TestResults, TestResult
-from s3_helper import S3Helper
+from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from build_download_helper import read_build_urls
-from upload_result_helper import upload_results
 from version_helper import (
     ClickHouseVersion,
     get_tagged_versions,
@@ -346,7 +340,6 @@ def main():
     image = DockerImageData(args.image_path, args.image_repo, False)
     args.release_type = auto_release_type(args.version, args.release_type)
     tags = gen_tags(args.version, args.release_type)
-    NAME = f"Docker image {image.repo} building check"
     pr_info = None
     repo_urls = dict()
     direct_urls: Dict[str, List[str]] = dict()
@@ -384,10 +377,9 @@ def main():
 
     if args.push:
         docker_login()
-        NAME = f"Docker image {image.repo} build and push"
 
     logging.info("Following tags will be created: %s", ", ".join(tags))
-    status = "success"
+    status = SUCCESS
     test_results = []  # type: TestResults
     for os in args.os:
         for tag in tags:
@@ -397,40 +389,20 @@ def main():
                 )
             )
             if test_results[-1].status != "OK":
-                status = "failure"
-
+                status = FAILURE
     pr_info = pr_info or PRInfo()
-    s3_helper = S3Helper()
-
-    url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
-
-    print(f"::notice ::Report url: {url}")
-
-    if not args.reports:
-        return
 
     description = f"Processed tags: {', '.join(tags)}"
+    JobReport(
+        description=description,
+        test_results=test_results,
+        status=status,
+        start_time=stopwatch.start_time_str,
+        duration=stopwatch.duration_seconds,
+        additional_files=[],
+    ).dump()
 
-    description = format_description(description)
-
-    gh = Github(get_best_robot_token(), per_page=100)
-    commit = get_commit(gh, pr_info.sha)
-    post_commit_status(
-        commit, status, url, description, NAME, pr_info, dump_to_file=True
-    )
-
-    prepared_events = prepare_tests_results_for_clickhouse(
-        pr_info,
-        test_results,
-        status,
-        stopwatch.duration_seconds,
-        stopwatch.start_time_str,
-        url,
-        NAME,
-    )
-    ch_helper = ClickHouseHelper()
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-    if status != "success":
+    if status != SUCCESS:
         sys.exit(1)
 
 

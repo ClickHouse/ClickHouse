@@ -1,18 +1,28 @@
 # -*- coding: utf-8 -*-
-from ast import literal_eval
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Dict, Final, Iterable, List, Literal, Optional, Tuple
-from html import escape
 import csv
 import datetime
 import json
 import logging
 import os
+from ast import literal_eval
+from dataclasses import asdict, dataclass
+from html import escape
+from pathlib import Path
+from typing import (
+    Dict,
+    Final,
+    Iterable,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 from build_download_helper import get_gh_api
-from ci_config import BuildConfig, CI_CONFIG
-
+from ci_config import CI_CONFIG, BuildConfig
+from env_helper import REPORT_PATH, TEMP_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -25,26 +35,28 @@ OK: Final = "OK"
 FAIL: Final = "FAIL"
 
 StatusType = Literal["error", "failure", "pending", "success"]
+STATUSES = [ERROR, FAILURE, PENDING, SUCCESS]  # type: List[StatusType]
+
+
 # The order of statuses from the worst to the best
-_STATES = {ERROR: 0, FAILURE: 1, PENDING: 2, SUCCESS: 3}
+def _state_rank(status: str) -> int:
+    "return the index of status or index of SUCCESS in case of wrong status"
+    try:
+        return STATUSES.index(status)  # type: ignore
+    except ValueError:
+        return 3
 
 
-def get_worst_status(statuses: Iterable[str]) -> str:
-    worst_status = None
+def get_worst_status(statuses: Iterable[str]) -> StatusType:
+    worst_status = SUCCESS  # type: StatusType
     for status in statuses:
-        if _STATES.get(status) is None:
-            continue
-        if worst_status is None:
-            worst_status = status
-            continue
-        if _STATES.get(status) < _STATES.get(worst_status):
-            worst_status = status
+        ind = _state_rank(status)
+        if ind < _state_rank(worst_status):
+            worst_status = STATUSES[ind]
 
         if worst_status == ERROR:
             break
 
-    if worst_status is None:
-        return ""
     return worst_status
 
 
@@ -221,6 +233,7 @@ HTML_TEST_PART = """
 """
 
 BASE_HEADERS = ["Test name", "Test status"]
+JOB_REPORT_FILE = Path(TEMP_PATH) / "job_report.json"
 
 
 @dataclass
@@ -229,10 +242,10 @@ class TestResult:
     status: str
     # the following fields are optional
     time: Optional[float] = None
-    log_files: Optional[List[Path]] = None
+    log_files: Optional[Union[Sequence[str], Sequence[Path]]] = None
     raw_logs: Optional[str] = None
     # the field for uploaded logs URLs
-    log_urls: Optional[List[str]] = None
+    log_urls: Optional[Sequence[str]] = None
 
     def set_raw_logs(self, raw_logs: str) -> None:
         self.raw_logs = raw_logs
@@ -245,9 +258,8 @@ class TestResult:
                 f"Malformed input: must be a list literal: {log_files_literal}"
             )
         for log_path in log_paths:
-            file = Path(log_path)
-            assert file.exists(), file
-            self.log_files.append(file)
+            assert Path(log_path).exists(), log_path
+            self.log_files.append(log_path)
 
     @staticmethod
     def create_check_timeout_expired(timeout: float) -> "TestResult":
@@ -255,6 +267,53 @@ class TestResult:
 
 
 TestResults = List[TestResult]
+
+
+@dataclass
+class JobReport:
+    status: str
+    description: str
+    test_results: TestResults
+    start_time: str
+    duration: float
+    additional_files: Union[Sequence[str], Sequence[Path]]
+    # clcikhouse version, build job only
+    version: str = ""
+    # checkname to set in commit status, set if differs from jjob name
+    check_name: str = ""
+    # directory with artifacts to upload on s3
+    build_dir_for_upload: Union[Path, str] = ""
+    # if False no GH commit status will be created by CI
+    need_commit_status: bool = True
+
+    @classmethod
+    def exist(cls) -> bool:
+        return JOB_REPORT_FILE.is_file()
+
+    @classmethod
+    def load(cls):  # type: ignore
+        res = {}
+        with open(JOB_REPORT_FILE, "r") as json_file:
+            res = json.load(json_file)
+            # Deserialize the nested lists of TestResult
+            test_results_data = res.get("test_results", [])
+            test_results = [TestResult(**result) for result in test_results_data]
+            del res["test_results"]
+        return JobReport(test_results=test_results, **res)
+
+    @classmethod
+    def cleanup(cls):
+        if JOB_REPORT_FILE.exists():
+            JOB_REPORT_FILE.unlink()
+
+    def dump(self):
+        def path_converter(obj):
+            if isinstance(obj, Path):
+                return str(obj)
+            raise TypeError("Type not serializable")
+
+        with open(JOB_REPORT_FILE, "w") as json_file:
+            json.dump(asdict(self), json_file, default=path_converter, indent=2)
 
 
 def read_test_results(results_path: Path, with_raw_logs: bool = True) -> TestResults:
@@ -296,13 +355,71 @@ class BuildResult:
     log_url: str
     build_urls: List[str]
     version: str
-    status: StatusType
+    status: str
     elapsed_seconds: int
     job_api_url: str
+    pr_number: int = 0
+    head_ref: str = "dummy_branch_name"
     _job_name: Optional[str] = None
     _job_html_url: Optional[str] = None
     _job_html_link: Optional[str] = None
     _grouped_urls: Optional[List[List[str]]] = None
+
+    @classmethod
+    def cleanup(cls):
+        if Path(REPORT_PATH).exists():
+            for file in Path(REPORT_PATH).iterdir():
+                if "build_report" in file.name and file.name.endswith(".json"):
+                    file.unlink()
+
+    @classmethod
+    def load(cls, build_name: str, pr_number: int, head_ref: str):  # type: ignore
+        """
+        loads report from a report file matched with given @pr_number and/or a @head_ref
+        """
+        report_path = Path(REPORT_PATH) / BuildResult.get_report_name(
+            build_name, pr_number or head_ref
+        )
+        return cls.load_from_file(report_path)
+
+    @classmethod
+    def load_any(cls, build_name: str, pr_number: int, head_ref: str):  # type: ignore
+        """
+        loads report from suitable report file with the following priority:
+            1. report from PR with the same @pr_number
+            2. report from branch with the same @head_ref
+            3. report from the master
+            4. any other report
+        """
+        reports = []
+        for file in Path(REPORT_PATH).iterdir():
+            if f"{build_name}.json" in file.name:
+                reports.append(file)
+        if not reports:
+            return None
+        file_path = None
+        for file in reports:
+            if pr_number and f"_{pr_number}_" in file.name:
+                file_path = file
+                break
+            if f"_{head_ref}_" in file.name:
+                file_path = file
+                break
+            if "_master_" in file.name:
+                file_path = file
+                break
+        return cls.load_from_file(file_path or reports[-1])
+
+    @classmethod
+    def load_from_file(cls, file: Union[Path, str]):  # type: ignore
+        if not Path(file).exists():
+            return None
+        with open(file, "r") as json_file:
+            res = json.load(json_file)
+        return BuildResult(**res)
+
+    def as_json(self) -> str:
+        return json.dumps(asdict(self), indent=2)
 
     @property
     def build_config(self) -> Optional[BuildConfig]:
@@ -374,10 +491,6 @@ class BuildResult:
         return "missing"
 
     @property
-    def file_name(self) -> Path:
-        return self.get_report_name(self.build_name)
-
-    @property
     def is_missing(self) -> bool:
         "The report is created for missing json file"
         return not (
@@ -427,37 +540,18 @@ class BuildResult:
         self._job_html_url = job_data.get("html_url", "")
 
     @staticmethod
-    def get_report_name(name: str) -> Path:
-        return Path(f"build_report_{name}.json")
-
-    @staticmethod
-    def read_json(directory: Path, build_name: str) -> "BuildResult":
-        path = directory / BuildResult.get_report_name(build_name)
-        try:
-            with open(path, "r", encoding="utf-8") as pf:
-                data = json.load(pf)  # type: dict
-        except FileNotFoundError:
-            logger.warning(
-                "File %s for build named '%s' is not found", path, build_name
-            )
-            return BuildResult.missing_result(build_name)
-
-        return BuildResult(
-            data.get("build_name", build_name),
-            data.get("log_url", ""),
-            data.get("build_urls", []),
-            data.get("version", ""),
-            data.get("status", ERROR),
-            data.get("elapsed_seconds", 0),
-            data.get("job_api_url", ""),
-        )
+    def get_report_name(name: str, suffix: Union[str, int]) -> Path:
+        assert "/" not in str(suffix)
+        return Path(f"build_report_{suffix}_{name}.json")
 
     @staticmethod
     def missing_result(build_name: str) -> "BuildResult":
         return BuildResult(build_name, "", [], "missing", ERROR, 0, "missing")
 
-    def write_json(self, directory: Path) -> Path:
-        path = directory / self.file_name
+    def write_json(self, directory: Union[Path, str] = REPORT_PATH) -> Path:
+        path = Path(directory) / self.get_report_name(
+            self.build_name, self.pr_number or self.head_ref
+        )
         path.write_text(
             json.dumps(
                 {
@@ -468,6 +562,8 @@ class BuildResult:
                     "status": self.status,
                     "elapsed_seconds": self.elapsed_seconds,
                     "job_api_url": self.job_api_url,
+                    "pr_number": self.pr_number,
+                    "head_ref": self.head_ref,
                 }
             ),
             encoding="utf-8",
@@ -532,10 +628,17 @@ def _get_status_style(status: str, colortheme: Optional[ColorTheme] = None) -> s
 
 
 def _get_html_url_name(url):
+    base_name = ""
     if isinstance(url, str):
-        return os.path.basename(url).replace("%2B", "+").replace("%20", " ")
+        base_name = os.path.basename(url)
     if isinstance(url, tuple):
-        return url[1].replace("%2B", "+").replace("%20", " ")
+        base_name = url[1]
+
+    if "?" in base_name:
+        base_name = base_name.split("?")[0]
+
+    if base_name is not None:
+        return base_name.replace("%2B", "+").replace("%20", " ")
     return None
 
 
@@ -744,7 +847,7 @@ def create_build_html_report(
                 build_result.build_config is not None
                 and build_result.build_config.sparse_checkout
             ):
-                comment += " (note: sparse checkout is used)"
+                comment += " (note: sparse checkout is used, see update-submodules.sh)"
             row.append(f"<td>{comment}</td>")
 
             row.append("</tr>")
