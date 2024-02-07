@@ -11,10 +11,16 @@ from integration_test_images import IMAGES
 
 
 class Labels(metaclass=WithIter):
+    """
+    Label names or commit tokens in normalized form
+    """
+
     DO_NOT_TEST_LABEL = "do_not_test"
     NO_MERGE_COMMIT = "no_merge_commit"
     NO_CI_CACHE = "no_ci_cache"
     CI_SET_REDUCED = "ci_set_reduced"
+    CI_SET_ARM = "ci_set_arm"
+    CI_SET_INTEGRATION = "ci_set_integration"
 
 
 class Build(metaclass=WithIter):
@@ -86,6 +92,7 @@ class JobNames(metaclass=WithIter):
     INTEGRATION_TEST_ASAN = "Integration tests (asan)"
     INTEGRATION_TEST_ASAN_ANALYZER = "Integration tests (asan, analyzer)"
     INTEGRATION_TEST_TSAN = "Integration tests (tsan)"
+    INTEGRATION_TEST_ARM = "Integration tests (aarch64)"
     INTEGRATION_TEST_FLAKY = "Integration tests flaky check (asan)"
 
     UPGRADE_TEST_DEBUG = "Upgrade check (debug)"
@@ -111,7 +118,6 @@ class JobNames(metaclass=WithIter):
     PERFORMANCE_TEST_AMD64 = "Performance Comparison"
     PERFORMANCE_TEST_ARM64 = "Performance Comparison Aarch64"
 
-    SQL_LANCER_TEST = "SQLancer (release)"
     SQL_LOGIC_TEST = "Sqllogic test (release)"
 
     SQLANCER = "SQLancer (release)"
@@ -131,6 +137,8 @@ class JobNames(metaclass=WithIter):
 
     DOCS_CHECK = "Docs check"
     BUGFIX_VALIDATE = "tests bugfix validate check"
+
+    MARK_RELEASE_READY = "Mark Commit Release Ready"
 
 
 # dynamically update JobName with Build jobs
@@ -156,7 +164,7 @@ class DigestConfig:
 @dataclass
 class LabelConfig:
     """
-    class to configure different CI scenarious per GH label or commit message token
+    configures different CI scenarious per GH label
     """
 
     run_jobs: Iterable[str] = frozenset()
@@ -165,19 +173,26 @@ class LabelConfig:
 @dataclass
 class JobConfig:
     """
-    contains config parameter relevant for job execution in CI workflow
-    @digest - configures digest calculation for the job
-    @run_command - will be triggered for the job if omited in CI workflow yml
-    @timeout
-    @num_batches - sets number of batches for multi-batch job
+    contains config parameters for job execution in CI workflow
     """
 
+    # configures digest calculation for the job
     digest: DigestConfig = field(default_factory=DigestConfig)
+    # will be triggered for the job if omited in CI workflow yml
     run_command: str = ""
+    # job timeout
     timeout: Optional[int] = None
+    # sets number of batches for multi-batch job
     num_batches: int = 1
+    # label that enables job in CI, if set digest won't be used
     run_by_label: str = ""
+    # to run always regardless of the job digest or/and label
     run_always: bool = False
+    # if the job needs to be run on the release branch, including master (e.g. building packages, docker server).
+    # NOTE: Subsequent runs on the same branch with the similar digest are still considered skippable.
+    required_on_release_branch: bool = False
+    # job is for pr workflow only
+    pr_only: bool = False
 
 
 @dataclass
@@ -194,6 +209,7 @@ class BuildConfig:
     static_binary_name: str = ""
     job_config: JobConfig = field(
         default_factory=lambda: JobConfig(
+            required_on_release_branch=True,
             digest=DigestConfig(
                 include_paths=[
                     "./src",
@@ -280,6 +296,7 @@ stateless_check_digest = DigestConfig(
     include_paths=[
         "./tests/queries/0_stateless/",
         "./tests/clickhouse-test",
+        "./tests/config",
         "./tests/*.txt",
     ],
     exclude_files=[".md"],
@@ -289,6 +306,7 @@ stateful_check_digest = DigestConfig(
     include_paths=[
         "./tests/queries/1_stateful/",
         "./tests/clickhouse-test",
+        "./tests/config",
         "./tests/*.txt",
     ],
     exclude_files=[".md"],
@@ -300,6 +318,7 @@ stress_check_digest = DigestConfig(
         "./tests/queries/0_stateless/",
         "./tests/queries/1_stateful/",
         "./tests/clickhouse-test",
+        "./tests/config",
         "./tests/*.txt",
     ],
     exclude_files=[".md"],
@@ -602,6 +621,28 @@ class CiConfig:
 CI_CONFIG = CiConfig(
     label_configs={
         Labels.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
+        Labels.CI_SET_ARM: LabelConfig(
+            run_jobs=[
+                # JobNames.STYLE_CHECK,
+                Build.PACKAGE_AARCH64,
+                JobNames.INTEGRATION_TEST_ARM,
+            ]
+        ),
+        Labels.CI_SET_INTEGRATION: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                Build.PACKAGE_ASAN,
+                Build.PACKAGE_RELEASE,
+                Build.PACKAGE_TSAN,
+                Build.PACKAGE_AARCH64,
+                JobNames.INTEGRATION_TEST_ASAN,
+                JobNames.INTEGRATION_TEST_ARM,
+                JobNames.INTEGRATION_TEST,
+                JobNames.INTEGRATION_TEST_ASAN_ANALYZER,
+                JobNames.INTEGRATION_TEST_TSAN,
+                JobNames.INTEGRATION_TEST_FLAKY,
+            ]
+        ),
         Labels.CI_SET_REDUCED: LabelConfig(
             run_jobs=[
                 job
@@ -614,6 +655,8 @@ CI_CONFIG = CiConfig(
                             "tsan",
                             "msan",
                             "ubsan",
+                            # skip build report jobs as not all builds will be done
+                            "build check",
                         )
                     ]
                 )
@@ -780,15 +823,19 @@ CI_CONFIG = CiConfig(
         ),
     },
     other_jobs_configs={
+        JobNames.MARK_RELEASE_READY: TestConfig(
+            "", job_config=JobConfig(required_on_release_branch=True)
+        ),
         JobNames.DOCKER_SERVER: TestConfig(
             "",
             job_config=JobConfig(
+                required_on_release_branch=True,
                 digest=DigestConfig(
                     include_paths=[
                         "tests/ci/docker_server.py",
                         "./docker/server",
                     ]
-                )
+                ),
             ),
         ),
         JobNames.DOCKER_KEEPER: TestConfig(
@@ -799,7 +846,7 @@ CI_CONFIG = CiConfig(
                         "tests/ci/docker_server.py",
                         "./docker/keeper",
                     ]
-                )
+                ),
             ),
         ),
         JobNames.DOCS_CHECK: TestConfig(
@@ -814,11 +861,12 @@ CI_CONFIG = CiConfig(
         JobNames.FAST_TEST: TestConfig(
             "",
             job_config=JobConfig(
+                pr_only=True,
                 digest=DigestConfig(
                     include_paths=["./tests/queries/0_stateless/"],
                     exclude_files=[".md"],
                     docker=["clickhouse/fasttest"],
-                )
+                ),
             ),
         ),
         JobNames.STYLE_CHECK: TestConfig(
@@ -917,10 +965,6 @@ CI_CONFIG = CiConfig(
         JobNames.STATELESS_TEST_ANALYZER_RELEASE: TestConfig(
             Build.PACKAGE_RELEASE, job_config=JobConfig(**statless_test_common_params)  # type: ignore
         ),
-        # delete?
-        # "Stateless tests (release, DatabaseOrdinary)": TestConfig(
-        #     Build.PACKAGE_RELEASE, job_config=JobConfig(**statless_test_common_params)  # type: ignore
-        # ),
         JobNames.STATELESS_TEST_DB_REPL_RELEASE: TestConfig(
             Build.PACKAGE_RELEASE,
             job_config=JobConfig(num_batches=4, **statless_test_common_params),  # type: ignore
@@ -976,6 +1020,11 @@ CI_CONFIG = CiConfig(
             Build.PACKAGE_TSAN,
             job_config=JobConfig(num_batches=6, **integration_test_common_params),  # type: ignore
         ),
+        JobNames.INTEGRATION_TEST_ARM: TestConfig(
+            Build.PACKAGE_AARCH64,
+            # add [run_by_label="test arm"] to not run in regular pr workflow by default
+            job_config=JobConfig(num_batches=6, **integration_test_common_params, run_by_label="test arm"),  # type: ignore
+        ),
         # FIXME: currently no wf has this job. Try to enable
         # "Integration tests (msan)": TestConfig(Build.PACKAGE_MSAN, job_config=JobConfig(num_batches=6, **integration_test_common_params) # type: ignore
         # ),
@@ -988,11 +1037,15 @@ CI_CONFIG = CiConfig(
         ),
         JobNames.COMPATIBILITY_TEST: TestConfig(
             Build.PACKAGE_RELEASE,
-            job_config=JobConfig(digest=compatibility_check_digest),
+            job_config=JobConfig(
+                required_on_release_branch=True, digest=compatibility_check_digest
+            ),
         ),
         JobNames.COMPATIBILITY_TEST_ARM: TestConfig(
             Build.PACKAGE_AARCH64,
-            job_config=JobConfig(digest=compatibility_check_digest),
+            job_config=JobConfig(
+                required_on_release_branch=True, digest=compatibility_check_digest
+            ),
         ),
         JobNames.UNIT_TEST: TestConfig(
             Build.BINARY_RELEASE, job_config=JobConfig(**unit_test_common_params)  # type: ignore
@@ -1058,7 +1111,7 @@ CI_CONFIG = CiConfig(
         JobNames.SQL_LOGIC_TEST: TestConfig(
             Build.PACKAGE_RELEASE, job_config=JobConfig(**sqllogic_test_params)  # type: ignore
         ),
-        JobNames.SQL_LOGIC_TEST: TestConfig(
+        JobNames.SQLTEST: TestConfig(
             Build.PACKAGE_RELEASE, job_config=JobConfig(**sql_test_params)  # type: ignore
         ),
         JobNames.CLCIKBENCH_TEST: TestConfig(Build.PACKAGE_RELEASE),

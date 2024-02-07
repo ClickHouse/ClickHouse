@@ -24,7 +24,7 @@ git config --file .gitmodules --get-regexp '.*path' | sed 's/[^ ]* //' | xargs -
 # We don't want to depend on any third-party CMake files.
 # To check it, find and delete them.
 grep -o -P '"contrib/[^"]+"' .gitmodules |
-  grep -v -P 'contrib/(llvm-project|google-protobuf|grpc|abseil-cpp|corrosion)' |
+  grep -v -P 'contrib/(llvm-project|google-protobuf|grpc|abseil-cpp|corrosion|aws-crt-cpp)' |
   xargs -I@ find @ \
     -'(' -name 'CMakeLists.txt' -or -name '*.cmake' -')' -and -not -name '*.h.cmake' \
     -delete

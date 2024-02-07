@@ -35,7 +35,7 @@ jobs:
       - name: PrepareRunConfig
         id: runconfig
         run: |
-            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --rebuild-all-binaries --outfile ${{ runner.temp }}/ci_run_data.json
+            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --outfile ${{ runner.temp }}/ci_run_data.json
 
             echo "::group::CI configuration"
             python3 -m json.tool ${{ runner.temp }}/ci_run_data.json
@@ -55,7 +55,6 @@ jobs:
     uses: ./.github/workflows/reusable_docker.yml
     with:
       data: ${{ needs.RunConfig.outputs.data }}
-      set_latest: true
   StyleCheck:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -319,22 +318,15 @@ jobs:
       run_command: |
         python3 build_report_check.py "$CHECK_NAME"
   MarkReleaseReady:
+    needs: [RunConfig, BuilderBinDarwin, BuilderBinDarwinAarch64, BuilderDebRelease, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
-    needs:
-      - BuilderBinDarwin
-      - BuilderBinDarwinAarch64
-      - BuilderDebRelease
-      - BuilderDebAarch64
-    runs-on: [self-hosted, style-checker]
-    steps:
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-      - name: Mark Commit Release Ready
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 mark_release_ready.py
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Mark Commit Release Ready
+      runner_type: style-checker
+      data: ${{ needs.RunConfig.outputs.data }}
+      run_command: |
+        python3 mark_release_ready.py
 ############################################################################################
 #################################### INSTALL PACKAGES ######################################
 ############################################################################################
@@ -367,14 +359,6 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateless tests (release)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestReleaseDatabaseOrdinary:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (release, DatabaseOrdinary)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestReleaseDatabaseReplicated:
@@ -740,7 +724,6 @@ jobs:
       - MarkReleaseReady
       - FunctionalStatelessTestDebug
       - FunctionalStatelessTestRelease
-      - FunctionalStatelessTestReleaseDatabaseOrdinary
       - FunctionalStatelessTestReleaseDatabaseReplicated
       - FunctionalStatelessTestReleaseAnalyzer
       - FunctionalStatelessTestReleaseS3

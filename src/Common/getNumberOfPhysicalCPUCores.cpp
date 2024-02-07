@@ -1,7 +1,6 @@
 #include "getNumberOfPhysicalCPUCores.h"
 #include <filesystem>
 
-#include "config.h"
 #if defined(OS_LINUX)
 #    include <cmath>
 #    include <fstream>
@@ -34,9 +33,9 @@ int32_t readFrom(const std::filesystem::path & filename, int default_value)
 uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
 {
     uint32_t quota_count = default_cpu_count;
-    std::filesystem::path prefix = "/sys/fs/cgroup";
+    std::filesystem::path default_cgroups_mount = "/sys/fs/cgroup";
     /// cgroupsv2
-    std::ifstream contr_file(prefix / "cgroup.controllers");
+    std::ifstream contr_file(default_cgroups_mount / "cgroup.controllers");
     if (contr_file.is_open())
     {
         /// First, we identify the cgroup the process belongs
@@ -51,16 +50,15 @@ uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
 
         std::filesystem::path current_cgroup;
         if (cgroup_name.empty())
-            current_cgroup = prefix;
+            current_cgroup = default_cgroups_mount;
         else
-            current_cgroup = prefix / cgroup_name;
+            current_cgroup = default_cgroups_mount / cgroup_name;
 
         // Looking for cpu.max in directories from the current cgroup to the top level
         // It does not stop on the first time since the child could have a greater value than parent
-        while (current_cgroup != prefix.parent_path())
+        while (current_cgroup != default_cgroups_mount.parent_path())
         {
             std::ifstream cpu_max_file(current_cgroup / "cpu.max");
-            current_cgroup = current_cgroup.parent_path();
             if (cpu_max_file.is_open())
             {
                 std::string cpu_limit_str;
@@ -72,10 +70,11 @@ uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
                     quota_count = std::min(static_cast<uint32_t>(ceil(cpu_limit / cpu_period)), quota_count);
                 }
             }
+            current_cgroup = current_cgroup.parent_path();
         }
-        current_cgroup = prefix / cgroup_name;
+        current_cgroup = default_cgroups_mount / cgroup_name;
         // Looking for cpuset.cpus.effective in directories from the current cgroup to the top level
-        while (current_cgroup != prefix.parent_path())
+        while (current_cgroup != default_cgroups_mount.parent_path())
         {
             std::ifstream cpuset_cpus_file(current_cgroup / "cpuset.cpus.effective");
             current_cgroup = current_cgroup.parent_path();
@@ -113,8 +112,8 @@ uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
     /// cgroupsv1
     /// Return the number of milliseconds per period process is guaranteed to run.
     /// -1 for no quota
-    int cgroup_quota = readFrom(prefix / "cpu/cpu.cfs_quota_us", -1);
-    int cgroup_period = readFrom(prefix / "cpu/cpu.cfs_period_us", -1);
+    int cgroup_quota = readFrom(default_cgroups_mount / "cpu/cpu.cfs_quota_us", -1);
+    int cgroup_period = readFrom(default_cgroups_mount / "cpu/cpu.cfs_period_us", -1);
     if (cgroup_quota > -1 && cgroup_period > 0)
         quota_count = static_cast<uint32_t>(ceil(static_cast<float>(cgroup_quota) / static_cast<float>(cgroup_period)));
 
@@ -178,24 +177,25 @@ catch (...)
 
 unsigned getNumberOfPhysicalCPUCoresImpl()
 {
-    unsigned cpu_count = std::thread::hardware_concurrency(); /// logical cores (with SMT/HyperThreading)
+    unsigned cores = std::thread::hardware_concurrency(); /// logical cores (with SMT/HyperThreading)
 
+
+#if defined(__x86_64__) && defined(OS_LINUX)
     /// Most x86_64 CPUs have 2-way SMT (Hyper-Threading).
     /// Aarch64 and RISC-V don't have SMT so far.
     /// POWER has SMT and it can be multi-way (e.g. 8-way), but we don't know how ClickHouse really behaves, so use all of them.
-
-#if defined(__x86_64__) && defined(OS_LINUX)
+    ///
     /// On really big machines, SMT is detrimental to performance (+ ~5% overhead in ClickBench). On such machines, we limit ourself to the physical cores.
     /// Few cores indicate it is a small machine, runs in a VM or is a limited cloud instance --> it is reasonable to use all the cores.
-    if (cpu_count >= 32)
-        cpu_count = physical_concurrency();
+    if (cores >= 32)
+        cores = physical_concurrency();
 #endif
 
 #if defined(OS_LINUX)
-    cpu_count = getCGroupLimitedCPUCores(cpu_count);
+    cores = getCGroupLimitedCPUCores(cores);
 #endif
 
-    return cpu_count;
+    return cores;
 }
 
 }
@@ -203,6 +203,6 @@ unsigned getNumberOfPhysicalCPUCoresImpl()
 unsigned getNumberOfPhysicalCPUCores()
 {
     /// Calculate once.
-    static auto res = getNumberOfPhysicalCPUCoresImpl();
-    return res;
+    static auto cores = getNumberOfPhysicalCPUCoresImpl();
+    return cores;
 }
