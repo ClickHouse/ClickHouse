@@ -217,6 +217,8 @@ std::optional<Chain> generateViewChain(
 
     auto view_metadata_snapshot = view->getInMemoryMetadataPtr();
     auto select_context = view_metadata_snapshot->getSQLSecurityOverriddenContext(context);
+    select_context->setQueryAccessInfo(context->getQueryAccessInfoPtr());
+
     auto insert_context = Context::createCopy(select_context);
 
     const auto & insert_settings = insert_context->getSettingsRef();
