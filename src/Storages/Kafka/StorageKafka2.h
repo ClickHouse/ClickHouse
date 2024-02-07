@@ -54,7 +54,7 @@ public:
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
     void drop() override;
 
@@ -77,7 +77,7 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
     Names getVirtualColumnNames() const;
-    HandleKafkaErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
+    StreamingHandleErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
 
 private:
     // Configuration and state

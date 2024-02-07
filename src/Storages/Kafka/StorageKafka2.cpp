@@ -48,7 +48,7 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include "Storages/Kafka/KafkaConsumer2.h"
-#include "config_version.h"
+#include "Common/config_version.h"
 
 #if USE_KRB5
 #    include <Access/KerberosInit.h>
@@ -136,7 +136,7 @@ StorageKafka2::StorageKafka2(
     if (thread_per_consumer)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The new Kafka storage cannot use multiple threads yet!");
 
-    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
+    if (kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
         kafka_settings->input_format_allow_errors_num = 0;
         kafka_settings->input_format_allow_errors_ratio = 0;
@@ -278,7 +278,7 @@ void StorageKafka2::startup()
 }
 
 
-void StorageKafka2::shutdown()
+void StorageKafka2::shutdown(bool)
 {
     for (auto & task : tasks)
     {
@@ -654,7 +654,7 @@ StorageKafka2::pollConsumer(KafkaConsumer2 & consumer, const TopicPartition & to
     // otherwise external iteration will reuse that and logic will became even more fuzzy
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
-    auto put_error_to_stream = kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM;
+    auto put_error_to_stream = kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM;
 
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
@@ -1095,7 +1095,7 @@ NamesAndTypesList StorageKafka2::getVirtuals() const
         {"_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3))},
         {"_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}};
-    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
+    if (kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
         result.push_back({"_raw_message", std::make_shared<DataTypeString>()});
         result.push_back({"_error", std::make_shared<DataTypeString>()});
@@ -1115,7 +1115,7 @@ Names StorageKafka2::getVirtualColumnNames() const
         "_headers.name",
         "_headers.value",
     };
-    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
+    if (kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
         result.push_back({"_raw_message"});
         result.push_back({"_error"});
