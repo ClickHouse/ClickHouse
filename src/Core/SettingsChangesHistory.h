@@ -109,6 +109,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"function_visible_width_behavior", 0, 1, "We changed the default behavior of `visibleWidth` to be more precise"},
               {"max_estimated_execution_time", 0, 0, "Separate max_execution_time and max_estimated_execution_time"},
               {"iceberg_engine_ignore_schema_evolution", false, false, "Allow to ignore schema evolution in Iceberg table engine"},
+              {"default_table_engine", "None", "MergeTree", "Set default table engine to MergeTree for better usability"},
               {"optimize_injective_functions_in_group_by", false, true, "Replace injective functions by it's arguments in GROUP BY section in analyzer"},
               {"update_insert_deduplication_token_in_dependent_materialized_views", false, false, "Allow to update insert deduplication token with table identifier during insert in dependent materialized views"},
               {"azure_max_unexpected_write_error_retries", 4, 4, "The maximum number of retries in case of unexpected errors during Azure blob storage write"}}},
