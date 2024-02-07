@@ -2380,6 +2380,16 @@ void Server::createServers(
         }
 
 #if USE_GRPC
+        using GRPCQueryInfo = clickhouse::grpc::QueryInfo;
+        GRPCQueryInfo local_query_info;
+        chassert(local_query_info.settings().size() == 0); /// NOLINT
+
+        SettingsChanges settings_changes;
+        for (const auto & [key, value] : local_query_info.settings())
+            settings_changes.push_back({key, value});
+
+        chassert(settings_changes.size() == 0); /// NOLINT
+
         if (server_type.shouldStart(ServerType::Type::GRPC))
         {
             port_name = "grpc_port";
