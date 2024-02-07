@@ -111,9 +111,9 @@ public:
     SetPtr get() const override;
     DataTypes getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
-    SetPtr buildSetInplace(const ContextPtr & context);
 
     std::unique_ptr<QueryPlan> build(const ContextPtr & context);
+    void buildSetInplace(const ContextPtr & context);
 
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
