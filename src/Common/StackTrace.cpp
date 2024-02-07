@@ -24,6 +24,11 @@
 
 #include "config.h"
 
+
+#if defined(__APPLE__)
+#include "execinfo.h"
+#endif
+
 namespace
 {
 /// Currently this variable is set up once on server startup.
@@ -267,12 +272,45 @@ void StackTrace::forEachFrame(
 #else
     UNUSED(fatal);
 
+    auto split_by_whitespace = [](const std::string & str)
+    {
+        std::vector<std::string> splitted;
+        ssize_t prev = -1;
+        for (size_t pos = 0; pos < str.size(); ++pos)
+        {
+            if (!isWhitespaceASCII(str[pos]))
+            {
+                if (prev == -1)
+                    prev = pos;
+                continue;
+            }
+
+            if (prev != -1)
+            {
+                splitted.push_back(str.substr(prev, pos - prev));
+                prev = -1;
+            }
+        }
+
+        if (prev != -1)
+            splitted.push_back(str.substr(prev, str.size() - prev));
+
+        return splitted;
+    };
+
+    char** strs = ::backtrace_symbols(frame_pointers.data(), static_cast<int>(size));
+
     for (size_t i = offset; i < size; ++i)
     {
         StackTrace::Frame current_frame;
         current_frame.virtual_addr = frame_pointers[i];
+        auto splitted = split_by_whitespace(strs[i]);
+        assert(splitted.size() >= 6);
+        current_frame.symbol = splitted[3];
         callback(current_frame);
     }
+
+    free(strs);
 #endif
 }
 
@@ -306,7 +344,11 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
 
 void StackTrace::tryCapture()
 {
+#ifdef __APPLE__
+    size = ::backtrace(frame_pointers.data(), capacity);
+#else
     size = unw_backtrace(frame_pointers.data(), capacity);
+#endif
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 }
 
@@ -376,7 +418,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         return callback("<Empty trace>");
 
     size_t frame_index = stack_trace.offset;
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(__APPLE__)
     size_t inline_frame_index = 0;
     auto callback_wrapper = [&](const StackTrace::Frame & frame)
     {
