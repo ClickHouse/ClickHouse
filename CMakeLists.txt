@@ -254,10 +254,17 @@ endif()
 
 include(cmake/cpu_features.cmake)
 
-# Asynchronous unwind tables are needed for Query Profiler.
-# They are already by default on some platforms but possibly not on all platforms.
-# Enable it explicitly.
-set (COMPILER_FLAGS "${COMPILER_FLAGS} -fasynchronous-unwind-tables")
+
+# Query Profiler doesn't work on MacOS for several reasons
+# - PHDR cache is not available
+# - We use native functionality to get stacktraces which is not async signal safe
+# and thus we don't need to generate asynchronous unwind tables
+if (NOT OS_DARWIN)
+    # Asynchronous unwind tables are needed for Query Profiler.
+    # They are already by default on some platforms but possibly not on all platforms.
+    # Enable it explicitly.
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fasynchronous-unwind-tables")
+endif()
 
 # Reproducible builds.
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")

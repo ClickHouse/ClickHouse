@@ -4,6 +4,7 @@
 #include <base/constexpr_helpers.h>
 #include <base/demangle.h>
 
+#include <Common/scope_guard_safe.h>
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
 #include <Common/MemorySanitizer.h>
@@ -26,6 +27,9 @@
 
 
 #if defined(__APPLE__)
+/// This header contains functions like `backtrace` and `backtrace_symbols`
+/// Which will be used for stack unwinding on Mac.
+/// Read: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/backtrace.3.html
 #include "execinfo.h"
 #endif
 
@@ -269,7 +273,7 @@ void StackTrace::forEachFrame(
 
         callback(current_frame);
     }
-#else
+#elif defined(OS_DARWIN)
     UNUSED(fatal);
 
     auto split_by_whitespace = [](const std::string & str)
@@ -298,19 +302,31 @@ void StackTrace::forEachFrame(
         return split;
     };
 
+    /// This function returns an array of string in a special (a little bit weird format)
+    /// The frame number, library name, address in hex, mangled symbol name, `+` sign, the offset.
     char** strs = ::backtrace_symbols(frame_pointers.data(), static_cast<int>(size));
+    SCOPE_EXIT_SAFE({free(strs);});
 
     for (size_t i = offset; i < size; ++i)
     {
         StackTrace::Frame current_frame;
         current_frame.virtual_addr = frame_pointers[i];
+        current_frame.physical_addr = frame_pointers[i];
         auto split = split_by_whitespace(strs[i]);
         assert(split.size() >= 6);
+        current_frame.object = split[1];
         current_frame.symbol = split[3];
         callback(current_frame);
     }
+#else
+    UNUSED(fatal);
 
-    free(strs);
+    for (size_t i = offset; i < size; ++i)
+    {
+        StackTrace::Frame current_frame;
+        current_frame.virtual_addr = frame_pointers[i];
+        callback(current_frame);
+    }
 #endif
 }
 
@@ -418,7 +434,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         return callback("<Empty trace>");
 
     size_t frame_index = stack_trace.offset;
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(__APPLE__)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     size_t inline_frame_index = 0;
     auto callback_wrapper = [&](const StackTrace::Frame & frame)
     {
