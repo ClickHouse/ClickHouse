@@ -292,7 +292,7 @@ void registerFormats()
     registerOneSchemaReader(factory);
     registerNpySchemaReader(factory);
 
-    factory.genAllKeywords();
+    factory.registerAllFormatNames();
 }
 
 }

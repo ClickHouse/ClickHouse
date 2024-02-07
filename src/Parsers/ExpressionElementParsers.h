@@ -4,6 +4,8 @@
 #include <Core/MultiEnum.h>
 #include <Parsers/IParserBase.h>
 
+#include <unordered_map>
+
 
 namespace DB
 {
@@ -39,10 +41,15 @@ class ParserFormatIdentifier : public IParserBase
 {
 public:
     explicit ParserFormatIdentifier() {}
+    static void registerFormatName(const String & name);
+    String getFormatName(const String & name) const;
 
 protected:
     const char * getName() const override { return "format identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+private:
+    static std::unordered_map<String, String> format_names;
 };
 
 
