@@ -15,8 +15,11 @@
 #include <IO/Operators.h>
 
 #include <atomic>
+#include <filesystem>
 #include <map>
 #include <mutex>
+#include <sstream>
+#include <unordered_map>
 #include <fmt/format.h>
 #include <libunwind.h>
 
