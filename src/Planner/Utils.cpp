@@ -179,7 +179,6 @@ StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQue
     limits.speed_limits.max_execution_rps = settings.max_execution_speed;
     limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
     limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
-    limits.speed_limits.max_estimated_execution_time = settings.max_estimated_execution_time;
 
     return limits;
 }
@@ -358,7 +357,6 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
 
 QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr & query_node,
     const ContextPtr & context,
-    //PlannerContext & planner_context,
     ResultReplacementMap * result_replacement_map)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
@@ -399,7 +397,7 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr &
                     storage_dummy_columns.emplace_back(projection_column);
             }
 
-            storage_dummy = std::make_shared<StorageDummy>(StorageID{"dummy", "subquery_" + std::to_string(subquery_index)}, ColumnsDescription::fromNamesAndTypes(storage_dummy_columns));
+            storage_dummy = std::make_shared<StorageDummy>(StorageID{"dummy", "subquery_" + std::to_string(subquery_index)}, ColumnsDescription(storage_dummy_columns));
             ++subquery_index;
         }
 
@@ -407,13 +405,6 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr &
 
         if (result_replacement_map)
             result_replacement_map->emplace(table_expression, dummy_table_node);
-
-        dummy_table_node->setAlias(table_expression->getAlias());
-
-        // auto & src_table_expression_data = planner_context.getOrCreateTableExpressionData(table_expression);
-        // auto & dst_table_expression_data = planner_context.getOrCreateTableExpressionData(dummy_table_node);
-
-        // dst_table_expression_data = src_table_expression_data;
 
         replacement_map.emplace(table_expression.get(), std::move(dummy_table_node));
     }
@@ -456,7 +447,8 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
 SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
 {
     SelectQueryInfo select_query_info;
-    select_query_info.query = queryNodeToSelectQuery(query_tree);
+    select_query_info.original_query = queryNodeToSelectQuery(query_tree);
+    select_query_info.query = select_query_info.original_query;
     select_query_info.query_tree = query_tree;
     select_query_info.planner_context = planner_context;
     return select_query_info;

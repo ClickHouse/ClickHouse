@@ -83,7 +83,7 @@ struct SocketInterruptablePollWrapper
 #if defined(POCO_HAVE_FD_EPOLL)
         epollfd = epoll_create(2);
         if (epollfd < 0)
-            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot epoll_create");
+            throwFromErrno("Cannot epoll_create", ErrorCodes::SYSTEM_ERROR);
 
         socket_event.events = EPOLLIN | EPOLLERR | EPOLLPRI;
         socket_event.data.fd = sockfd;
@@ -92,7 +92,7 @@ struct SocketInterruptablePollWrapper
             int err = ::close(epollfd);
             chassert(!err || errno == EINTR);
 
-            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot insert socket into epoll queue");
+            throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
         }
         pipe_event.events = EPOLLIN | EPOLLERR | EPOLLPRI;
         pipe_event.data.fd = pipe.fds_rw[0];
@@ -101,7 +101,7 @@ struct SocketInterruptablePollWrapper
             int err = ::close(epollfd);
             chassert(!err || errno == EINTR);
 
-            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot insert socket into epoll queue");
+            throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
         }
 #endif
     }
@@ -220,7 +220,7 @@ KeeperTCPHandler::KeeperTCPHandler(
     Poco::Timespan send_timeout_,
     const Poco::Net::StreamSocket & socket_)
     : Poco::Net::TCPServerConnection(socket_)
-    , log(getLogger("KeeperTCPHandler"))
+    , log(&Poco::Logger::get("KeeperTCPHandler"))
     , keeper_dispatcher(keeper_dispatcher_)
     , operation_timeout(
           0,

@@ -28,7 +28,9 @@ struct NetworkInterfaces : public boost::noncopyable
     NetworkInterfaces()
     {
         if (getifaddrs(&ifaddr) == -1)
-            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot getifaddrs");
+        {
+            throwFromErrno("Cannot getifaddrs", ErrorCodes::SYSTEM_ERROR);
+        }
     }
 
     bool hasAddress(const Poco::Net::IPAddress & address) const

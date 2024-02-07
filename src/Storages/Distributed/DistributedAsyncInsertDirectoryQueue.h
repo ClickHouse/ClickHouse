@@ -4,7 +4,6 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Client/ConnectionPool.h>
 #include <IO/ReadBufferFromFile.h>
-#include <Interpreters/Cluster.h>
 #include <Disks/IDisk.h>
 #include <atomic>
 #include <mutex>
@@ -57,7 +56,7 @@ public:
 
     ~DistributedAsyncInsertDirectoryQueue();
 
-    static ConnectionPoolPtr createPool(const Cluster::Addresses & addresses, const StorageDistributed & storage);
+    static ConnectionPoolPtr createPool(const std::string & name, const StorageDistributed & storage);
 
     void updatePath(const std::string & new_relative_path);
 
@@ -145,7 +144,7 @@ private:
     const std::chrono::milliseconds max_sleep_time;
     std::chrono::time_point<std::chrono::system_clock> last_decrease_time {std::chrono::system_clock::now()};
     std::mutex mutex;
-    LoggerPtr log;
+    Poco::Logger * log;
     ActionBlocker & monitor_blocker;
 
     BackgroundSchedulePoolTaskHolder task_handle;

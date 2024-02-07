@@ -1,5 +1,5 @@
 #include <Common/SSH/Wrappers.h>
-# if USE_SSH
+# if USE_SSL
 #    include <stdexcept>
 
 #    pragma GCC diagnostic push

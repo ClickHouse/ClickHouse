@@ -329,26 +329,14 @@ String transformQueryForExternalDatabaseImpl(
         }
         else if (auto * function = original_where->as<ASTFunction>())
         {
-            if (function->name == "and" || function->name == "tuple")
+            if (function->name == "and")
             {
                 auto new_function_and = makeASTFunction("and");
-                std::queue<const ASTFunction *> predicates;
-                predicates.push(function);
-
-                while (!predicates.empty())
+                for (auto & elem : function->arguments->children)
                 {
-                    const auto * func = predicates.front();
-                    predicates.pop();
-
-                    for (auto & elem : func->arguments->children)
-                    {
-                        if (isCompatible(elem))
-                            new_function_and->arguments->children.push_back(elem);
-                        else if (const auto * child = elem->as<ASTFunction>(); child && (child->name == "and" || child->name == "tuple"))
-                            predicates.push(child);
-                    }
+                    if (isCompatible(elem))
+                        new_function_and->arguments->children.push_back(elem);
                 }
-
                 if (new_function_and->arguments->children.size() == 1)
                     select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(new_function_and->arguments->children[0]));
                 else if (new_function_and->arguments->children.size() > 1)

@@ -1,10 +1,9 @@
 #!/usr/bin/env python
 """Helper for GitHub API requests"""
 import logging
-import re
 from datetime import date, datetime, timedelta
-from os import path as p
 from pathlib import Path
+from os import path as p
 from time import sleep
 from typing import List, Optional, Tuple, Union
 
@@ -144,9 +143,7 @@ class GitHub(github.Github):
     def get_pull_cached(
         self, repo: Repository, number: int, obj_updated_at: Optional[datetime] = None
     ) -> PullRequest:
-        # clean any special symbol from the repo name, especially '/'
-        repo_name = re.sub(r"\W", "_", repo.full_name)
-        cache_file = self.cache_path / f"pr-{repo_name}-{number}.pickle"
+        cache_file = self.cache_path / f"pr-{number}.pickle"
 
         if cache_file.is_file():
             is_updated, cached_pr = self._is_cache_updated(cache_file, obj_updated_at)
@@ -194,32 +191,6 @@ class GitHub(github.Github):
     def _get_cached(self, path: Path):  # type: ignore
         with open(path, "rb") as ob_fd:
             return self.load(ob_fd)  # type: ignore
-
-    # pylint: disable=protected-access
-    @staticmethod
-    def toggle_pr_draft(pr: PullRequest) -> None:
-        """GH rest API does not provide a way to toggle the draft status for PR"""
-        node_id = pr._rawData["node_id"]
-        if pr.draft:
-            action = (
-                "mutation PullRequestReadyForReview($input:MarkPullRequestReadyForReviewInput!)"
-                "{markPullRequestReadyForReview(input: $input){pullRequest{id}}}"
-            )
-        else:
-            action = (
-                "mutation ConvertPullRequestToDraft($input:ConvertPullRequestToDraftInput!)"
-                "{convertPullRequestToDraft(input: $input){pullRequest{id}}}"
-            )
-        query = {
-            "query": action,
-            "variables": {"input": {"pullRequestId": node_id}},
-        }
-        url = f"{pr._requester.base_url}/graphql"
-        _, data = pr._requester.requestJsonAndCheck("POST", url, input=query)
-        if data.get("data"):
-            pr._draft = pr._makeBoolAttribute(not pr.draft)
-
-    # pylint: enable=protected-access
 
     def _is_cache_updated(
         self, cache_file: Path, obj_updated_at: Optional[datetime]

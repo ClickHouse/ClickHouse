@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
 
 import argparse
-import atexit
 import csv
 import logging
 import os
 import re
 import subprocess
 import sys
+import atexit
 from pathlib import Path
 from typing import List, Tuple
 
-# isort: off
 from github import Github
-
-# isort: on
 
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import (
@@ -23,18 +20,20 @@ from clickhouse_helper import (
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
+    NotSet,
+    RerunHelper,
     get_commit,
     override_status,
     post_commit_status,
     post_commit_status_to_file,
     update_mergeable_check,
 )
-from docker_images_helper import DockerImage, get_docker_image, pull_image
+from docker_pull_helper import DockerImage, get_image_with_version
 from download_release_packages import download_last_release
-from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
-from report import ERROR, SUCCESS, StatusType, TestResults, read_test_results
+from report import TestResults, read_test_results
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -57,7 +56,6 @@ def get_additional_envs(
         result.append("USE_PARALLEL_REPLICAS=1")
     if "s3 storage" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
-        result.append("RANDOMIZE_OBJECT_KEY_TYPE=1")
     if "analyzer" in check_name:
         result.append("USE_NEW_ANALYZER=1")
 
@@ -155,7 +153,7 @@ def get_tests_to_run(pr_info: PRInfo) -> List[str]:
 def process_results(
     result_directory: Path,
     server_log_path: Path,
-) -> Tuple[StatusType, str, TestResults, List[Path]]:
+) -> Tuple[str, str, TestResults, List[Path]]:
     test_results = []  # type: TestResults
     additional_files = []
     # Just upload all files from result_directory.
@@ -171,13 +169,13 @@ def process_results(
     status = []
     status_path = result_directory / "check_status.tsv"
     if status_path.exists():
-        logging.info("Found %s", status_path.name)
+        logging.info("Found test_results.tsv")
         with open(status_path, "r", encoding="utf-8") as status_file:
             status = list(csv.reader(status_file, delimiter="\t"))
 
     if len(status) != 1 or len(status[0]) != 2:
         logging.info("Files in result folder %s", os.listdir(result_directory))
-        return ERROR, "Invalid check_status.tsv", test_results, additional_files
+        return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     try:
@@ -187,20 +185,20 @@ def process_results(
             logging.info("Found test_results.tsv")
         else:
             logging.info("Files in result folder %s", os.listdir(result_directory))
-            return ERROR, "Not found test_results.tsv", test_results, additional_files
+            return "error", "Not found test_results.tsv", test_results, additional_files
 
         test_results = read_test_results(results_path)
         if len(test_results) == 0:
-            return ERROR, "Empty test_results.tsv", test_results, additional_files
+            return "error", "Empty test_results.tsv", test_results, additional_files
     except Exception as e:
         return (
-            ERROR,
+            "error",
             f"Cannot parse test_results.tsv ({e})",
             test_results,
             additional_files,
         )
 
-    return state, description, test_results, additional_files  # type: ignore
+    return state, description, test_results, additional_files
 
 
 def parse_args():
@@ -227,45 +225,36 @@ def main():
     stopwatch = Stopwatch()
 
     temp_path = Path(TEMP_PATH)
-    reports_path = Path(REPORT_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
-    reports_path.mkdir(parents=True, exist_ok=True)
 
     repo_path = Path(REPO_COPY)
+    reports_path = Path(REPORTS_PATH)
     post_commit_path = temp_path / "functional_commit_status.tsv"
 
     args = parse_args()
-    check_name = args.check_name or os.getenv("CHECK_NAME")
-    assert (
-        check_name
-    ), "Check name must be provided as an input arg or in CHECK_NAME env"
-    kill_timeout = args.kill_timeout or int(os.getenv("KILL_TIMEOUT", "0"))
-    assert (
-        kill_timeout > 0
-    ), "kill timeout must be provided as an input arg or in KILL_TIMEOUT env"
+    check_name = args.check_name
+    kill_timeout = args.kill_timeout
     validate_bugfix_check = args.validate_bugfix
-    print(f"Runnin check [{check_name}] with timeout [{kill_timeout}]")
 
     flaky_check = "flaky" in check_name.lower()
 
     run_changed_tests = flaky_check or validate_bugfix_check
+    gh = Github(get_best_robot_token(), per_page=100)
 
     # For validate_bugfix_check we need up to date information about labels, so pr_event_from_api is used
     pr_info = PRInfo(
         need_changed_files=run_changed_tests, pr_event_from_api=validate_bugfix_check
     )
 
-    # FIXME: move to job report and remove
-    gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
-    atexit.register(update_mergeable_check, commit, pr_info, check_name)
+    atexit.register(update_mergeable_check, gh, pr_info, check_name)
 
     if validate_bugfix_check and "pr-bugfix" not in pr_info.labels:
         if args.post_commit_status == "file":
             post_commit_status_to_file(
                 post_commit_path,
                 f"Skipped (no pr-bugfix in {pr_info.labels})",
-                SUCCESS,
+                "success",
                 "null",
             )
         logging.info("Skipping '%s' (no pr-bugfix in %s)", check_name, pr_info.labels)
@@ -282,20 +271,24 @@ def main():
         run_by_hash_total = 0
         check_name_with_group = check_name
 
+    rerun_helper = RerunHelper(commit, check_name_with_group)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
+
     tests_to_run = []
     if run_changed_tests:
         tests_to_run = get_tests_to_run(pr_info)
         if not tests_to_run:
-            state = override_status(SUCCESS, check_name, validate_bugfix_check)
+            state = override_status("success", check_name, validate_bugfix_check)
             if args.post_commit_status == "commit_status":
                 post_commit_status(
                     commit,
                     state,
-                    "",
+                    NotSet,
                     NO_CHANGES_MSG,
                     check_name_with_group,
                     pr_info,
-                    dump_to_file=True,
                 )
             elif args.post_commit_status == "file":
                 post_commit_status_to_file(
@@ -307,8 +300,7 @@ def main():
             sys.exit(0)
 
     image_name = get_image_name(check_name)
-
-    docker_image = pull_image(get_docker_image(image_name))
+    docker_image = get_image_with_version(reports_path, image_name)
 
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
@@ -387,13 +379,7 @@ def main():
     print(f"::notice:: {check_name} Report url: {report_url}")
     if args.post_commit_status == "commit_status":
         post_commit_status(
-            commit,
-            state,
-            report_url,
-            description,
-            check_name_with_group,
-            pr_info,
-            dump_to_file=True,
+            commit, state, report_url, description, check_name_with_group, pr_info
         )
     elif args.post_commit_status == "file":
         post_commit_status_to_file(
@@ -418,7 +404,7 @@ def main():
     )
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
-    if state != SUCCESS:
+    if state != "success":
         if FORCE_TESTS_LABEL in pr_info.labels:
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:

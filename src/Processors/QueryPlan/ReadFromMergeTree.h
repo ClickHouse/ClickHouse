@@ -55,6 +55,9 @@ struct UsefulSkipIndexes
     std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
 };
 
+struct MergeTreeDataSelectAnalysisResult;
+using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelectAnalysisResult>;
+
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
 class ReadFromMergeTree final : public SourceStepWithFilter
@@ -105,8 +108,6 @@ public:
         void checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const;
     };
 
-    using AnalysisResultPtr = std::shared_ptr<AnalysisResult>;
-
     ReadFromMergeTree(
         MergeTreeData::DataPartsVector parts_,
         std::vector<AlterConversionsPtr> alter_conversions_,
@@ -120,9 +121,10 @@ public:
         size_t num_streams_,
         bool sample_factor_column_queried_,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
-        LoggerPtr log_,
-        AnalysisResultPtr analyzed_result_ptr_,
-        bool enable_parallel_reading);
+        Poco::Logger * log_,
+        MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_,
+        bool enable_parallel_reading
+    );
 
     static constexpr auto name = "ReadFromMergeTree";
     String getName() const override { return name; }
@@ -149,17 +151,17 @@ public:
         KeyCondition key_condition;
         std::optional<PartitionPruner> partition_pruner;
         std::optional<KeyCondition> minmax_idx_condition;
-        std::optional<KeyCondition> part_offset_condition;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
         std::optional<std::unordered_set<String>> part_values;
     };
 
-    static AnalysisResultPtr selectRangesToRead(
+    static MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
         std::vector<AlterConversionsPtr> alter_conversions,
         const PrewhereInfoPtr & prewhere_info,
         const ActionDAGNodes & added_filter_nodes,
+        const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -168,10 +170,10 @@ public:
         const MergeTreeData & data,
         const Names & real_column_names,
         bool sample_factor_column_queried,
-        LoggerPtr log,
+        Poco::Logger * log,
         std::optional<Indexes> & indexes);
 
-    AnalysisResultPtr selectRangesToRead(
+    MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
         std::vector<AlterConversionsPtr> alter_conversions) const;
 
@@ -193,7 +195,7 @@ public:
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
     bool hasAnalyzedResult() const { return analyzed_result_ptr != nullptr; }
-    void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
+    void setAnalyzedResult(MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
     const MergeTreeData::DataPartsVector & getParts() const { return prepared_parts; }
     const std::vector<AlterConversionsPtr> & getAlterConvertionsForParts() const { return alter_conversions_for_parts; }
@@ -206,9 +208,10 @@ public:
     void applyFilters() override;
 
 private:
-    static AnalysisResultPtr selectRangesToReadImpl(
+    static MergeTreeDataSelectAnalysisResultPtr selectRangesToReadImpl(
         MergeTreeData::DataPartsVector parts,
         std::vector<AlterConversionsPtr> alter_conversions,
+        const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -217,13 +220,14 @@ private:
         const MergeTreeData & data,
         const Names & real_column_names,
         bool sample_factor_column_queried,
-        LoggerPtr log,
+        Poco::Logger * log,
         std::optional<Indexes> & indexes);
 
     int getSortDirection() const
     {
-        if (query_info.input_order_info)
-            return query_info.input_order_info->direction;
+        const InputOrderInfoPtr & order_info = query_info.getInputOrderInfo();
+        if (order_info)
+            return order_info->direction;
 
         return 1;
     }
@@ -259,7 +263,7 @@ private:
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
 
-    LoggerPtr log;
+    Poco::Logger * log;
     UInt64 selected_parts = 0;
     UInt64 selected_rows = 0;
     UInt64 selected_marks = 0;
@@ -284,18 +288,25 @@ private:
         ActionsDAGPtr & out_projection,
         const InputOrderInfoPtr & input_order_info);
 
-    bool doNotMergePartsAcrossPartitionsFinal() const;
-
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection);
 
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
-    AnalysisResultPtr analyzed_result_ptr;
+    MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr;
 
     bool is_parallel_reading_from_replicas;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
-    bool enable_vertical_final = false;
+};
+
+struct MergeTreeDataSelectAnalysisResult
+{
+    std::variant<std::exception_ptr, ReadFromMergeTree::AnalysisResult> result;
+
+    bool error() const;
+    size_t marks() const;
+    UInt64 rows() const;
+    const RangesInDataParts & partsWithRanges() const;
 };
 
 }

@@ -5,7 +5,6 @@
     <title>ClickHouse Dashboard</title>
     <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
     <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
     <style>
         :root {
             --color: black;
@@ -456,7 +455,6 @@
             <div id="username-password">
                 <input spellcheck="false" id="user" type="text" value="" placeholder="user" />
                 <input spellcheck="false" id="password" type="password" placeholder="password" />
-                <input id="hidden-submit" type="submit" hidden="true"/>
             </div>
         </div>
         <div id="button-options">
@@ -485,6 +483,7 @@
   *
   * TODO:
   * - zoom on the graphs should work on touch devices;
+  * - compress the state for URL's #hash;
   * - footer with "about" or a link to source code;
   * - allow to configure a table on a server to save the dashboards;
   * - if a query returned one value, display this value instead of a diagram;
@@ -721,7 +720,7 @@ function insertChart(i) {
     query_editor_confirm.addEventListener('click', editConfirm);
 
     /// Ctrl+Enter (or Cmd+Enter on Mac) will also confirm editing.
-    query_editor.addEventListener('keydown', event => {
+    query_editor.addEventListener('keydown', e => {
         if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
             editConfirm();
         }
@@ -896,7 +895,7 @@ document.getElementById('add').addEventListener('click', e => {
 });
 
 document.getElementById('reload').addEventListener('click', e => {
-    reloadAll(queries.length == 0);
+    reloadAll(false);
 });
 
 document.getElementById('search').addEventListener('click', e => {
@@ -965,10 +964,12 @@ document.getElementById('mass-editor-textarea').addEventListener('input', e => {
 
 function legendAsTooltipPlugin({ className, style = { background: "var(--legend-background)" } } = {}) {
     let legendEl;
-    let multiline;
+    let showTop = false;
+    const showLimit = 5;
 
     function init(u, opts) {
         legendEl = u.root.querySelector(".u-legend");
+
         legendEl.classList.remove("u-inline");
         className && legendEl.classList.add(className);
 
@@ -984,19 +985,18 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
             ...style
         });
 
-        const nodes = legendEl.querySelectorAll("th");
-        for (let i = 0; i < nodes.length; i++)
-            nodes[i]._order = i;
-
         if (opts.series.length == 2) {
-            multiline = false;
+            const nodes = legendEl.querySelectorAll("th");
             for (let i = 0; i < nodes.length; i++)
                 nodes[i].style.display = "none";
         } else {
-            multiline = true;
             legendEl.querySelector("th").remove();
             legendEl.querySelector("td").setAttribute('colspan', '2');
             legendEl.querySelector("td").style.textAlign = 'center';
+        }
+
+        if (opts.series.length - 1 > showLimit) {
+            showTop = true;
             let footer = legendEl.insertRow().insertCell();
             footer.setAttribute('colspan', '2');
             footer.style.textAlign = 'center';
@@ -1023,20 +1023,18 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
         left -= legendEl.clientWidth / 2;
         top -= legendEl.clientHeight / 2;
         legendEl.style.transform = "translate(" + left + "px, " + top + "px)";
-
-        if (multiline) {
+        if (showTop) {
             let nodes = nodeListToArray(legendEl.querySelectorAll("tr"));
             let header = nodes.shift();
             let footer = nodes.pop();
-            let showLimit = Math.floor(u.height / 30);
-            nodes.forEach(function (node) { node._sort_key = nodes.length > showLimit ? +node.querySelector("td").textContent.replace(/,/g,'') : node._order; });
-            nodes.sort((a, b) => b._sort_key - a._sort_key);
+            nodes.forEach(function (node) { node._sort_key = +node.querySelector("td").textContent; });
+            nodes.sort((a, b) => +b._sort_key - +a._sort_key);
             nodes.forEach(function (node) { node.parentNode.appendChild(node); });
             for (let i = 0; i < nodes.length; i++) {
                 nodes[i].style.display = i < showLimit ? null : "none";
+                delete nodes[i]._sort_key;
             }
             footer.parentNode.appendChild(footer);
-            footer.style.display = nodes.length > showLimit ? null : "none";
         }
     }
 
@@ -1293,7 +1291,6 @@ async function drawAll() {
             document.getElementById('add').style.display = 'inline-block';
             document.getElementById('edit').style.display = 'inline-block';
             document.getElementById('search-span').style.display = '';
-            hideError();
         }
         else {
             const charts = document.getElementById('charts')
@@ -1320,11 +1317,9 @@ function disableButtons() {
     reloadButton.classList.add('disabled');
 
     const runButton = document.getElementById('run');
-    if (runButton) {
-        runButton.value = 'Reloading…';
-        runButton.disabled = true;
-        runButton.classList.add('disabled');
-    }
+    runButton.value = 'Reloading…';
+    runButton.disabled = true;
+    runButton.classList.add('disabled');
 
     const searchButton = document.getElementById('search');
     searchButton.value = '…';
@@ -1339,11 +1334,9 @@ function enableButtons() {
     reloadButton.classList.remove('disabled');
 
     const runButton = document.getElementById('run');
-    if (runButton) {
-        runButton.value = 'Ok';
-        runButton.disabled = false;
-        runButton.classList.remove('disabled');
-    }
+    runButton.value = 'Ok';
+    runButton.disabled = false;
+    runButton.classList.remove('disabled');
 
     const searchButton = document.getElementById('search');
     searchButton.value = '🔎';
@@ -1366,27 +1359,22 @@ async function reloadAll(do_search) {
         }
         await drawAll();
     } catch (e) {
-        showError(e.message);
+        showError(e.toString());
     }
     enableButtons();
 }
 
 document.getElementById('params').onsubmit = function(event) {
-    if (document.activeElement === document.getElementById('search-query')) {
-        reloadAll(true);
-    } else {
-        reloadAll(queries.length == 0);
-    }
+    let do_search = document.activeElement === document.getElementById('search-query');
+    reloadAll(do_search);
     event.preventDefault();
 }
 
-const decodeState = (x) => JSON.parse(LZString.decompressFromEncodedURIComponent(x) || atob(x));
-const encodeState = (x) => LZString.compressToEncodedURIComponent(JSON.stringify(x));
 
 function saveState() {
     const state = { host, user, queries, params, search_query, customized };
     history.pushState(state, '',
-        window.location.pathname + (window.location.search || '') + '#' + encodeState(state));
+        window.location.pathname + (window.location.search || '') + '#' + btoa(JSON.stringify(state)));
 }
 
 async function searchQueries() {
@@ -1417,15 +1405,13 @@ function refreshCustomized(value) {
     document.getElementById('search-span').style.opacity = customized ? 0.5 : 1.0;
 }
 
-function updateFromState() {
+function regenerate() {
     document.getElementById('url').value = host;
     document.getElementById('user').value = user;
     document.getElementById('password').value = password;
     document.getElementById('search-query').value = search_query;
     refreshCustomized();
-}
 
-function regenerate() {
     findParamsInQueries();
     buildParams();
 
@@ -1444,7 +1430,7 @@ function regenerate() {
 window.onpopstate = function(event) {
     if (!event.state) { return; }
     ({host, user, queries, params, search_query, customized} = event.state);
-    updateFromState();
+
     regenerate();
     drawAll();
 };
@@ -1452,8 +1438,7 @@ window.onpopstate = function(event) {
 if (window.location.hash) {
     try {
         let search_query_, customized_;
-        ({host, user, queries, params, search_query_, customized_} = decodeState(window.location.hash.substring(1)));
-
+        ({host, user, queries, params, search_query_, customized_} = JSON.parse(atob(window.location.hash.substring(1))));
         // For compatibility with old URLs' hashes
         search_query = search_query_ !== undefined ? search_query_ : search_query;
         customized = customized_ !== undefined ? customized_ : true;
@@ -1462,7 +1447,6 @@ if (window.location.hash) {
 
 async function start() {
     try {
-        updateFromState();
         if (queries.length == 0) {
             await searchQueries();
         } else {
@@ -1476,7 +1460,7 @@ async function start() {
             drawAll();
         }
     } catch (e) {
-        showError(e.message);
+        showError(e.toString());
     }
 }
 

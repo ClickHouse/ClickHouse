@@ -117,7 +117,7 @@ struct NetlinkMessage
                 if (errno == EAGAIN)
                     continue;
                 else
-                    throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Can't send a Netlink command");
+                    throwFromErrno("Can't send a Netlink command", ErrorCodes::NETLINK_ERROR);
             }
 
             if (bytes_sent > request_size)
@@ -216,7 +216,7 @@ bool checkPermissionsImpl()
         {
             /// This error happens all the time when running inside Docker - consider it ok,
             /// don't create noise with this error.
-            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
+            LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
         }
         else
         {
@@ -255,7 +255,7 @@ NetlinkMetricsProvider::NetlinkMetricsProvider()
 {
     netlink_socket_fd = ::socket(PF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
     if (netlink_socket_fd < 0)
-        throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Can't create PF_NETLINK socket");
+        throwFromErrno("Can't create PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
 
     try
     {
@@ -267,7 +267,7 @@ NetlinkMetricsProvider::NetlinkMetricsProvider()
         tv.tv_usec = 50000;
 
         if (0 != ::setsockopt(netlink_socket_fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&tv), sizeof(tv)))
-            throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Can't set timeout on PF_NETLINK socket");
+            throwFromErrno("Can't set timeout on PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
 
         union
         {
@@ -277,7 +277,7 @@ NetlinkMetricsProvider::NetlinkMetricsProvider()
         addr.nl_family = AF_NETLINK;
 
         if (::bind(netlink_socket_fd, &sockaddr, sizeof(addr)) < 0)
-            throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Can't bind PF_NETLINK socket");
+            throwFromErrno("Can't bind PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
 
         taskstats_family_id = getFamilyId(netlink_socket_fd);
     }

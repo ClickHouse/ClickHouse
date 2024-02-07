@@ -109,7 +109,7 @@ namespace detail
         bool http_skip_not_found_url;
 
         ReadSettings settings;
-        LoggerPtr log;
+        Poco::Logger * log;
 
         ProxyConfiguration proxy_config;
 
@@ -265,8 +265,6 @@ private:
     size_t per_endpoint_pool_size;
 };
 
-using PooledSessionFactoryPtr = std::shared_ptr<PooledSessionFactory>;
-
 class PooledReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession<PooledSessionFactory>>>
 {
     using SessionType = UpdatableSession<PooledSessionFactory>;
@@ -275,12 +273,13 @@ class PooledReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase
 public:
     explicit PooledReadWriteBufferFromHTTP(
         Poco::URI uri_,
-        const std::string & method_,
-        OutStreamCallback out_stream_callback_,
-        const Poco::Net::HTTPBasicCredentials & credentials_,
-        size_t buffer_size_,
-        const UInt64 max_redirects,
-        PooledSessionFactoryPtr session_factory);
+        const std::string & method_ = {},
+        OutStreamCallback out_stream_callback_ = {},
+        const ConnectionTimeouts & timeouts_ = {},
+        const Poco::Net::HTTPBasicCredentials & credentials_ = {},
+        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+        const UInt64 max_redirects = 0,
+        size_t max_connections_per_endpoint = DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT);
 };
 
 

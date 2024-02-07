@@ -160,7 +160,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No config-file specified");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No config-file specifiged");
     }
 
     if (config().has("save-logs"))

@@ -7,7 +7,6 @@
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnDefault.h>
-#include <Common/SettingsChanges.h>
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
 
@@ -84,7 +83,6 @@ struct ColumnDescription
     ColumnDefault default_desc;
     String comment;
     ASTPtr codec;
-    SettingsChanges settings;
     ASTPtr ttl;
     std::optional<StatisticDescription> stat;
 
@@ -92,8 +90,6 @@ struct ColumnDescription
     ColumnDescription(ColumnDescription &&) = default;
     ColumnDescription(const ColumnDescription &) = default;
     ColumnDescription(String name_, DataTypePtr type_);
-    ColumnDescription(String name_, DataTypePtr type_, String comment_);
-    ColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_);
 
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
@@ -109,15 +105,13 @@ class ColumnsDescription : public IHints<>
 public:
     ColumnsDescription() = default;
 
-    static ColumnsDescription fromNamesAndTypes(NamesAndTypes ordinary);
+    ColumnsDescription(std::initializer_list<NameAndTypePair> ordinary);
+
+    explicit ColumnsDescription(NamesAndTypes ordinary);
 
     explicit ColumnsDescription(NamesAndTypesList ordinary);
 
-    explicit ColumnsDescription(std::initializer_list<ColumnDescription> ordinary);
-
     explicit ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases);
-
-    void setAliases(NamesAndAliases aliases);
 
     /// `after_column` can be a Nested column name;
     void add(ColumnDescription column, const String & after_column = String(), bool first = false, bool add_subcolumns = true);
@@ -188,7 +182,6 @@ public:
     Names getNamesOfPhysical() const;
 
     bool hasPhysical(const String & column_name) const;
-    bool hasNotAlias(const String & column_name) const;
     bool hasAlias(const String & column_name) const;
     bool hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     bool hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const;

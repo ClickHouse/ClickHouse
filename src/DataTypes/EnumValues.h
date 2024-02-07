@@ -7,7 +7,7 @@
 namespace DB
 {
 
-namespace ErrorCodesEnumValues
+namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
@@ -42,11 +42,6 @@ public:
         return it;
     }
 
-    bool hasValue(const T & value) const
-    {
-        return value_to_name_map.contains(value);
-    }
-
     /// throws exception if value is not valid
     const StringRef & getNameForValue(const T & value) const
     {
@@ -65,7 +60,6 @@ public:
     }
 
     T getValue(StringRef field_name, bool try_treat_as_id = false) const;
-    bool tryGetValue(T & x, StringRef field_name, bool try_treat_as_id = false) const;
 
     template <typename TValues>
     bool containsAll(const TValues & rhs_values) const

@@ -20,7 +20,6 @@
 
 #include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
-#include <Common/thread_local_rng.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -291,17 +290,8 @@ public:
         const UInt64 size = value.size();
         checkArraySize(size, max_elems);
         writeVarUInt(size, buf);
-
-
-        if constexpr (std::endian::native == std::endian::little)
-        {
-            buf.write(reinterpret_cast<const char *>(value.data()), size * sizeof(value[0]));
-        }
-        else
-        {
-            for (const auto & element : value)
-                writeBinaryLittleEndian(element, buf);
-        }
+        for (const auto & element : value)
+            writeBinaryLittleEndian(element, buf);
 
         if constexpr (Trait::last)
             writeBinaryLittleEndian(this->data(place).total_values, buf);
@@ -324,16 +314,8 @@ public:
         auto & value = this->data(place).value;
 
         value.resize_exact(size, arena);
-
-        if constexpr (std::endian::native == std::endian::little)
-        {
-            buf.readStrict(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
-        }
-        else
-        {
-            for (auto & element : value)
-                readBinaryLittleEndian(element, buf);
-        }
+        for (auto & element : value)
+            readBinaryLittleEndian(element, buf);
 
         if constexpr (Trait::last)
             readBinaryLittleEndian(this->data(place).total_values, buf);
@@ -457,7 +439,7 @@ struct GroupArrayNodeGeneral : public GroupArrayNodeBase<GroupArrayNodeGeneral>
         return node;
     }
 
-    void insertInto(IColumn & column) { std::ignore = column.deserializeAndInsertFromArena(data()); }
+    void insertInto(IColumn & column) { column.deserializeAndInsertFromArena(data()); }
 };
 
 template <typename Node, bool has_sampler>

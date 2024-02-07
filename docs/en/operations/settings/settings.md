@@ -460,12 +460,6 @@ Possible values:
 
 Default value: 1048576.
 
-## http_make_head_request {#http-make-head-request}
-
-The `http_make_head_request` setting allows the execution of a `HEAD` request while reading data from HTTP to retrieve information about the file to be read, such as its size. Since it's enabled by default, it may be desirable to disable this setting in cases where the server does not support `HEAD` requests.
-
-Default value: `true`.
-
 ## table_function_remote_max_addresses {#table_function_remote_max_addresses}
 
 Sets the maximum number of addresses generated from patterns for the [remote](../../sql-reference/table-functions/remote.md) function.
@@ -1584,15 +1578,9 @@ Default value: `default`.
 
 ## allow_experimental_parallel_reading_from_replicas
 
-Enables or disables sending SELECT queries to all replicas of a table (up to `max_parallel_replicas`). Reading is parallelized and coordinated dynamically. It will work for any kind of MergeTree table.
+If true, ClickHouse will send a SELECT query to all replicas of a table (up to `max_parallel_replicas`) . It will work for any kind of MergeTree table.
 
-Possible values:
-
-- 0 - Disabled.
-- 1 - Enabled, silently disabled in case of failure.
-- 2 - Enabled, throws an exception in case of failure.
-
-Default value: `0`.
+Default value: `false`.
 
 ## compile_expressions {#compile-expressions}
 
@@ -1716,7 +1704,7 @@ Default value: `1`
 
 ## query_cache_squash_partial_results {#query-cache-squash-partial-results}
 
-Squash partial result blocks to blocks of size [max_block_size](#setting-max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query-cache-compress-entries)).
+Squash partial result blocks to blocks of size [max_block_size](#setting-max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
 
 Possible values:
 
@@ -1922,7 +1910,7 @@ Possible values:
 - Positive integer.
 - 0 — Asynchronous insertions are disabled.
 
-Default value: `1000000`.
+Default value: `100000`.
 
 ### async_insert_max_query_number {#async-insert-max-query-number}
 
@@ -1935,7 +1923,7 @@ Possible values:
 
 Default value: `450`.
 
-### async_insert_busy_timeout_max_ms {#async-insert-busy-timeout-max-ms}
+### async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
 
 The maximum timeout in milliseconds since the first `INSERT` query before inserting collected data.
 
@@ -1945,61 +1933,6 @@ Possible values:
 - 0 — Timeout disabled.
 
 Default value: `200`.
-
-### async_insert_poll_timeout_ms {#async-insert-poll-timeout-ms}
-
-Timeout in milliseconds for polling data from asynchronous insert queue.
-
-Possible values:
-
-- Positive integer.
-
-Default value: `10`.
-
-### async_insert_use_adaptive_busy_timeout {#allow-experimental-async-insert-adaptive-busy-timeout}
-
-Use adaptive asynchronous insert timeout.
-
-Possible values:
-
-- 0 - Disabled.
-- 1 - Enabled.
-
-Default value: `0`.
-
-### async_insert_busy_timeout_min_ms {#async-insert-busy-timeout-min-ms}
-
-If adaptive asynchronous insert timeout is allowed through [async_insert_use_adaptive_busy_timeout](#allow-experimental-async-insert-adaptive-busy-timeout), the setting specifies the minimum value of the asynchronous insert timeout in milliseconds. It also serves as the initial value, which may be increased later by the adaptive algorithm, up to the [async_insert_busy_timeout_ms](#async_insert_busy_timeout_ms).
-
-Possible values:
-
-- Positive integer.
-
-Default value: `50`.
-
-### async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
-
-Alias for [`async_insert_busy_timeout_max_ms`](#async_insert_busy_timeout_max_ms).
-
-### async_insert_busy_timeout_increase_rate {#async-insert-busy-timeout-increase-rate}
-
-If adaptive asynchronous insert timeout is allowed through [async_insert_use_adaptive_busy_timeout](#allow-experimental-async-insert-adaptive-busy-timeout), the setting specifies the exponential growth rate at which the adaptive asynchronous insert timeout increases.
-
-Possible values:
-
-- A positive floating-point number.
-
-Default value: `0.2`.
-
-### async_insert_busy_timeout_decrease_rate {#async-insert-busy-timeout-decrease-rate}
-
-If adaptive asynchronous insert timeout is allowed through [async_insert_use_adaptive_busy_timeout](#allow-experimental-async-insert-adaptive-busy-timeout), the setting specifies the exponential growth rate at which the adaptive asynchronous insert timeout decreases.
-
-Possible values:
-
-- A positive floating-point number.
-
-Default value: `0.2`.
 
 ### async_insert_stale_timeout_ms {#async-insert-stale-timeout-ms}
 
@@ -2094,32 +2027,6 @@ SELECT * FROM test_table
 │ 1 │
 └───┘
 ```
-
-## update_insert_deduplication_token_in_dependent_materialized_views {#update-insert-deduplication-token-in-dependent-materialized-views}
-
-Allows to update `insert_deduplication_token` with view identifier during insert in dependent materialized views, if setting `deduplicate_blocks_in_dependent_materialized_views` is enabled and `insert_deduplication_token` is set.
-
-Possible values:
-
-      0 — Disabled.
-      1 — Enabled.
-
-Default value: 0.
-
-Usage:
-
-If setting `deduplicate_blocks_in_dependent_materialized_views` is enabled, `insert_deduplication_token` is passed to dependent materialized views. But in complex INSERT flows it is possible that we want to avoid deduplication for dependent materialized views.
-
-Example:
-```
-landing -┬--> mv_1_1 ---> ds_1_1 ---> mv_2_1 --┬-> ds_2_1 ---> mv_3_1 ---> ds_3_1
-         |                                     |
-         └--> mv_1_2 ---> ds_1_2 ---> mv_2_2 --┘
-```
-
-In this example we want to avoid deduplication for two different blocks generated from `mv_2_1` and `mv_2_2` that will be inserted into `ds_2_1`. Without `update_insert_deduplication_token_in_dependent_materialized_views` setting enabled, those two different blocks will be deduplicated, because different blocks from `mv_2_1` and `mv_2_2` will have the same `insert_deduplication_token`.
-
-If setting `update_insert_deduplication_token_in_dependent_materialized_views` is enabled, during each insert into dependent materialized views `insert_deduplication_token` is updated with table identifier, so block from `mv_2_1` and block from `mv_2_2` will have different `insert_deduplication_token` and will not be deduplicated.
 
 ## insert_keeper_max_retries
 
@@ -2567,7 +2474,7 @@ See also:
 - [load_balancing](#load_balancing-round_robin)
 - [Table engine Distributed](../../engines/table-engines/special/distributed.md)
 - [distributed_replica_error_cap](#distributed_replica_error_cap)
-- [distributed_replica_error_half_life](#distributed_replica_error_half_life)
+- [distributed_replica_error_half_life](#settings-distributed_replica_error_half_life)
 
 ## distributed_background_insert_sleep_time_ms {#distributed_background_insert_sleep_time_ms}
 
@@ -2740,7 +2647,7 @@ Default value: 0.
 
 ## input_format_parallel_parsing {#input-format-parallel-parsing}
 
-Enables or disables order-preserving parallel parsing of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
+Enables or disables order-preserving parallel parsing of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TKSV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
 
 Possible values:
 
@@ -2751,7 +2658,7 @@ Default value: `1`.
 
 ## output_format_parallel_formatting {#output-format-parallel-formatting}
 
-Enables or disables parallel formatting of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
+Enables or disables parallel formatting of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TKSV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
 
 Possible values:
 
@@ -3928,8 +3835,6 @@ Possible values:
 - `none` — Is similar to throw, but distributed DDL query returns no result set.
 - `null_status_on_timeout` — Returns `NULL` as execution status in some rows of result set instead of throwing `TIMEOUT_EXCEEDED` if query is not finished on the corresponding hosts.
 - `never_throw` — Do not throw `TIMEOUT_EXCEEDED` and do not rethrow exceptions if query has failed on some hosts.
-- `null_status_on_timeout_only_active` — similar to `null_status_on_timeout`, but doesn't wait for inactive replicas of the `Replicated` database
-- `throw_only_active` — similar to `throw`, but doesn't wait for inactive replicas of the `Replicated` database
 
 Default value: `throw`.
 
@@ -4247,41 +4152,6 @@ Result:
 └─────┴─────┴───────┘
 ```
 
-## enable_order_by_all {#enable-order-by-all}
-
-Enables or disables sorting by `ALL` columns, i.e. [ORDER BY](../../sql-reference/statements/select/order-by.md)
-
-Possible values:
-
-- 0 — Disable ORDER BY ALL.
-- 1 — Enable ORDER BY ALL.
-
-Default value: `1`.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE TAB(C1 Int, C2 Int, ALL Int) ENGINE=Memory();
-
-INSERT INTO TAB VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
-
-SELECT * FROM TAB ORDER BY ALL; -- returns an error that ALL is ambiguous
-
-SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all;
-```
-
-Result:
-
-```text
-┌─C1─┬─C2─┬─ALL─┐
-│ 20 │ 20 │  10 │
-│ 30 │ 10 │  20 │
-│ 10 │ 20 │  30 │
-└────┴────┴─────┘
-```
-
 ## splitby_max_substrings_includes_remaining_string {#splitby_max_substrings_includes_remaining_string}
 
 Controls whether function [splitBy*()](../../sql-reference/functions/splitting-merging-functions.md) with argument `max_substrings` > 0 will include the remaining string in the last element of the result array.
@@ -4479,8 +4349,6 @@ Default value: `1GiB`.
 
 ## Schema Inference settings
 
-See [schema inference](../../interfaces/schema-inference.md#schema-inference-modes) documentation for more details.
-
 ### schema_inference_use_cache_for_file {schema_inference_use_cache_for_file}
 
 Enable schemas cache for schema inference in `file` table function.
@@ -4521,13 +4389,6 @@ Possible values:
 - 2 - auto
 
 Default value: 2.
-
-### schema_inference_mode {schema_inference_mode}
-
-The mode of schema inference. Possible values: `default` and `union`.
-See [schema inference modes](../../interfaces/schema-inference.md#schema-inference-modes) section for more details.
-
-Default value: `default`.
 
 ## compatibility {#compatibility}
 
@@ -4798,7 +4659,7 @@ Possible values:
 
 Default value: `false`.
 
-## rename_files_after_processing {#rename_files_after_processing}
+## rename_files_after_processing
 
 - **Type:** String
 
@@ -4853,45 +4714,6 @@ Allows you to select the max window log of ZSTD (it will not be used for MergeTr
 Type: Int64
 
 Default: 0
-
-## enable_deflate_qpl_codec {#enable_deflate_qpl_codec}
-
-If turned on, the DEFLATE_QPL codec may be used to compress columns.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-
-Type: Bool
-
-## enable_zstd_qat_codec {#enable_zstd_qat_codec}
-
-If turned on, the ZSTD_QAT codec may be used to compress columns.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-
-Type: Bool
-
-## output_format_compression_level
-
-Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`.
-
-Possible values: from `1` to `22`
-
-Default: `3`
-
-
-## output_format_compression_zstd_window_log
-
-Can be used when the output compression method is `zstd`. If greater than `0`, this setting explicitly sets compression window size (power of `2`) and enables a long-range mode for zstd compression. This can help to achieve a better compression ratio.
-
-Possible values: non-negative numbers. Note that if the value is too small or too big, `zstdlib` will throw an exception. Typical values are from `20` (window size = `1MB`) to `30` (window size = `1GB`).
-
-Default: `0`
 
 ## rewrite_count_distinct_if_with_count_distinct_implementation
 
@@ -5246,7 +5068,7 @@ SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 ## storage_metadata_write_full_object_key {#storage_metadata_write_full_object_key}
 
 When set to `true` the metadata files are written with `VERSION_FULL_OBJECT_KEY` format version. With that format full object storage key names are written to the metadata files.
-When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section.
+When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section. 
 
 Default value: `false`.
 
@@ -5256,117 +5078,6 @@ When set to `true` than for all s3 requests first two attempts are made with low
 When set to `false` than all attempts are made with identical timeouts.
 
 Default value: `true`.
-
-## allow_experimental_variant_type {#allow_experimental_variant_type}
-
-Allows creation of experimental [Variant](../../sql-reference/data-types/variant.md).
-
-Default value: `false`.
-
-## use_variant_as_common_type {#use_variant_as_common_type}
-
-Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiif)/[array](../../sql-reference/functions/array-functions.md)/[map](../../sql-reference/functions/tuple-map-functions.md) functions when there is no common type for argument types.
-
-Example:
-
-```sql
-SET use_variant_as_common_type = 1;
-SELECT toTypeName(if(number % 2, number, range(number))) as variant_type FROM numbers(1);
-SELECT if(number % 2, number, range(number)) as variant FROM numbers(5);
-```
-
-```text
-┌─variant_type───────────────────┐
-│ Variant(Array(UInt64), UInt64) │
-└────────────────────────────────┘
-┌─variant───┐
-│ []        │
-│ 1         │
-│ [0,1]     │
-│ 3         │
-│ [0,1,2,3] │
-└───────────┘
-```
-
-```sql
-SET use_variant_as_common_type = 1;
-SELECT toTypeName(multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) = 2, 'Hello, World!', NULL)) AS variant_type FROM numbers(1);
-SELECT multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) = 2, 'Hello, World!', NULL) AS variant FROM numbers(4);
-```
-
-```text
-─variant_type─────────────────────────┐
-│ Variant(Array(UInt8), String, UInt8) │
-└──────────────────────────────────────┘
-
-┌─variant───────┐
-│ 42            │
-│ [1,2,3]       │
-│ Hello, World! │
-│ ᴺᵁᴸᴸ          │
-└───────────────┘
-```
-
-```sql
-SET use_variant_as_common_type = 1;
-SELECT toTypeName(array(range(number), number, 'str_' || toString(number))) as array_of_variants_type from numbers(1);
-SELECT array(range(number), number, 'str_' || toString(number)) as array_of_variants FROM numbers(3);
-```
-
-```text
-┌─array_of_variants_type────────────────────────┐
-│ Array(Variant(Array(UInt64), String, UInt64)) │
-└───────────────────────────────────────────────┘
-
-┌─array_of_variants─┐
-│ [[],0,'str_0']    │
-│ [[0],1,'str_1']   │
-│ [[0,1],2,'str_2'] │
-└───────────────────┘
-```
-
-```sql
-SET use_variant_as_common_type = 1;
-SELECT toTypeName(map('a', range(number), 'b', number, 'c', 'str_' || toString(number))) as map_of_variants_type from numbers(1);
-SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as map_of_variants FROM numbers(3);
-```
-
-```text
-┌─map_of_variants_type────────────────────────────────┐
-│ Map(String, Variant(Array(UInt64), String, UInt64)) │
-└─────────────────────────────────────────────────────┘
-
-┌─map_of_variants───────────────┐
-│ {'a':[],'b':0,'c':'str_0'}    │
-│ {'a':[0],'b':1,'c':'str_1'}   │
-│ {'a':[0,1],'b':2,'c':'str_2'} │
-└───────────────────────────────┘
-```
-
-
-Default value: `false`.
-
-## max_partition_size_to_drop
-
-Restriction on dropping partitions in query time.
-
-Default value: 50 GB.
-The value 0 means that you can drop partitions without any restrictions.
-
-:::note
-This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-partition-size-to-drop)
-:::
-
-## max_table_size_to_drop
-
-Restriction on deleting tables in query time.
-
-Default value: 50 GB.
-The value 0 means that you can delete all tables without any restrictions.
-
-:::note
-This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop)
-:::
 
 ## iceberg_engine_ignore_schema_evolution {#iceberg_engine_ignore_schema_evolution}
 

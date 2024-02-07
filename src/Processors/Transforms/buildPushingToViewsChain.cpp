@@ -39,7 +39,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_TABLE;
 }
 
 ThreadStatusesHolder::~ThreadStatusesHolder()
@@ -244,9 +243,7 @@ Chain buildPushingToViewsChain(
 
         // Do not deduplicate insertions into MV if the main insertion is Ok
         if (disable_deduplication_for_children)
-        {
             insert_context->setSetting("insert_deduplicate", Field{false});
-        }
 
         // Processing of blocks for MVs is done block by block, and there will
         // be no parallel reading after (plus it is not a costless operation)
@@ -269,7 +266,7 @@ Chain buildPushingToViewsChain(
         if (view == nullptr)
         {
             LOG_WARNING(
-                getLogger("PushingToViews"), "Trying to access table {} but it doesn't exist", view_id.getFullTableName());
+                &Poco::Logger::get("PushingToViews"), "Trying to access table {} but it doesn't exist", view_id.getFullTableName());
             continue;
         }
 
@@ -303,46 +300,6 @@ Chain buildPushingToViewsChain(
         auto & target_name = runtime_stats->target_name;
         auto * view_counter_ms = &runtime_stats->elapsed_ms;
 
-        const auto & insert_settings = insert_context->getSettingsRef();
-        ContextMutablePtr view_insert_context = insert_context;
-
-        if (!disable_deduplication_for_children &&
-            insert_settings.update_insert_deduplication_token_in_dependent_materialized_views &&
-            !insert_settings.insert_deduplication_token.value.empty())
-        {
-            /** Update deduplication token passed to dependent MV with current view id. So it is possible to properly handle
-              * deduplication in complex INSERT flows.
-              *
-              * Example:
-              *
-              * landing -┬--> mv_1_1 ---> ds_1_1 ---> mv_2_1 --┬-> ds_2_1 ---> mv_3_1 ---> ds_3_1
-              *          |                                     |
-              *          └--> mv_1_2 ---> ds_1_2 ---> mv_2_2 --┘
-              *
-              * Here we want to avoid deduplication for two different blocks generated from `mv_2_1` and `mv_2_2` that will
-              * be inserted into `ds_2_1`.
-              *
-              * We are forced to use view id instead of table id because there are some possible INSERT flows where no tables
-              * are involved.
-              *
-              * Example:
-              *
-              * landing -┬--> mv_1_1 --┬-> ds_1_1
-              *          |             |
-              *          └--> mv_1_2 --┘
-              *
-              */
-            auto insert_deduplication_token = insert_settings.insert_deduplication_token.value;
-
-            if (view_id.hasUUID())
-                insert_deduplication_token += "_" + toString(view_id.uuid);
-            else
-                insert_deduplication_token += "_" + view_id.getFullNameNotQuoted();
-
-            view_insert_context = Context::createCopy(insert_context);
-            view_insert_context->setSetting("insert_deduplication_token", insert_deduplication_token);
-        }
-
         if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get()))
         {
             auto lock = materialized_view->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
@@ -352,28 +309,14 @@ Chain buildPushingToViewsChain(
                 // In case the materialized view is dropped/detached at this point, we register a warning and ignore it
                 assert(materialized_view->is_dropped || materialized_view->is_detached);
                 LOG_WARNING(
-                    getLogger("PushingToViews"), "Trying to access table {} but it doesn't exist", view_id.getFullTableName());
+                    &Poco::Logger::get("PushingToViews"), "Trying to access table {} but it doesn't exist", view_id.getFullTableName());
                 continue;
             }
 
             type = QueryViewsLogElement::ViewType::MATERIALIZED;
             result_chain.addTableLock(lock);
 
-            StoragePtr inner_table = materialized_view->tryGetTargetTable();
-            /// If target table was dropped, ignore this materialized view.
-            if (!inner_table)
-            {
-                if (context->getSettingsRef().ignore_materialized_views_with_dropped_target_table)
-                    continue;
-
-                throw Exception(
-                    ErrorCodes::UNKNOWN_TABLE,
-                    "Target table '{}' of view '{}' doesn't exists. To ignore this view use setting "
-                    "ignore_materialized_views_with_dropped_target_table",
-                    materialized_view->getTargetTableId().getFullTableName(),
-                    view_id.getFullTableName());
-            }
-
+            StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
             auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
 
@@ -383,7 +326,7 @@ Chain buildPushingToViewsChain(
                 /// It may happen if materialize view query was changed and it doesn't depend on this source table anymore.
                 /// See setting `allow_experimental_alter_materialized_view_structure`
                 LOG_DEBUG(
-                    getLogger("PushingToViews"), "Table '{}' is not a source for view '{}' anymore, current source is '{}'",
+                    &Poco::Logger::get("PushingToViews"), "Table '{}' is not a source for view '{}' anymore, current source is '{}'",
                         select_query.select_table_id.getFullTableName(), view_id.getFullTableName(), table_id);
                 continue;
             }
@@ -398,7 +341,7 @@ Chain buildPushingToViewsChain(
             if (select_context->getSettingsRef().allow_experimental_analyzer)
                 header = InterpreterSelectQueryAnalyzer::getSampleBlock(query, select_context);
             else
-                header = InterpreterSelectQuery(query, select_context, SelectQueryOptions()).getSampleBlock();
+                header = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze()).getSampleBlock();
 
             /// Insert only columns returned by select.
             Names insert_columns;
@@ -406,11 +349,11 @@ Chain buildPushingToViewsChain(
             for (const auto & column : header)
             {
                 /// But skip columns which storage doesn't have.
-                if (inner_table_columns.hasNotAlias(column.name))
+                if (inner_table_columns.hasPhysical(column.name))
                     insert_columns.emplace_back(column.name);
             }
 
-            InterpreterInsertQuery interpreter(nullptr, view_insert_context, false, false, false);
+            InterpreterInsertQuery interpreter(nullptr, insert_context, false, false, false);
             out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms);
             out.addStorageHolder(view);
             out.addStorageHolder(inner_table);
@@ -420,7 +363,7 @@ Chain buildPushingToViewsChain(
             runtime_stats->type = QueryViewsLogElement::ViewType::LIVE;
             query = live_view->getInnerQuery(); // Used only to log in system.query_views_log
             out = buildPushingToViewsChain(
-                view, view_metadata_snapshot, view_insert_context, ASTPtr(),
+                view, view_metadata_snapshot, insert_context, ASTPtr(),
                 /* no_destination= */ true,
                 thread_status_holder, running_group, view_counter_ms, async_insert, storage_header);
         }
@@ -429,13 +372,13 @@ Chain buildPushingToViewsChain(
             runtime_stats->type = QueryViewsLogElement::ViewType::WINDOW;
             query = window_view->getMergeableQuery(); // Used only to log in system.query_views_log
             out = buildPushingToViewsChain(
-                view, view_metadata_snapshot, view_insert_context, ASTPtr(),
+                view, view_metadata_snapshot, insert_context, ASTPtr(),
                 /* no_destination= */ true,
                 thread_status_holder, running_group, view_counter_ms, async_insert);
         }
         else
             out = buildPushingToViewsChain(
-                view, view_metadata_snapshot, view_insert_context, ASTPtr(),
+                view, view_metadata_snapshot, insert_context, ASTPtr(),
                 /* no_destination= */ false,
                 thread_status_holder, running_group, view_counter_ms, async_insert);
 
@@ -462,11 +405,7 @@ Chain buildPushingToViewsChain(
         if (!no_destination && context->hasQueryContext())
         {
             context->getQueryContext()->addQueryAccessInfo(
-                backQuoteIfNeed(view_id.getDatabaseName()),
-                views_data->views.back().runtime_stats->target_name,
-                /*column_names=*/ {});
-
-            context->getQueryContext()->addViewAccessInfo(view_id.getFullTableName());
+                backQuoteIfNeed(view_id.getDatabaseName()), views_data->views.back().runtime_stats->target_name, {}, "", view_id.getFullTableName());
         }
     }
 
@@ -877,14 +816,14 @@ void FinalizingViewsTransform::work()
 
             /// Exception will be ignored, it is saved here for the system.query_views_log
             if (materialized_views_ignore_errors)
-                tryLogException(view.exception, getLogger("PushingToViews"), "Cannot push to the storage, ignoring the error");
+                tryLogException(view.exception, &Poco::Logger::get("PushingToViews"), "Cannot push to the storage, ignoring the error");
         }
         else
         {
             view.runtime_stats->setStatus(QueryViewsLogElement::ViewStatus::QUERY_FINISH);
 
             LOG_TRACE(
-                getLogger("PushingToViews"),
+                &Poco::Logger::get("PushingToViews"),
                 "Pushing ({}) from {} to {} took {} ms.",
                 views_data->max_threads <= 1 ? "sequentially" : ("parallel " + std::to_string(views_data->max_threads)),
                 views_data->source_storage_id.getNameForLogs(),

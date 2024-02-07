@@ -393,6 +393,40 @@ Reverses the sequence of bytes in a string.
 
 Reverses a sequence of Unicode code points in a string. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
+## format
+
+Format the `pattern` string with the strings listed in the arguments, similar to formatting in Python. The pattern string can contain replacement fields surrounded by curly braces `{}`. Anything not contained in braces is considered literal text and copied verbatim into the output. Literal brace character can be escaped by two braces: `{{ '{{' }}` and `{{ '}}' }}`. Field names can be numbers (starting from zero) or empty (then they are implicitly given monotonically increasing numbers).
+
+**Syntax**
+
+```sql
+format(pattern, s0, s1, …)
+```
+
+**Example**
+
+``` sql
+SELECT format('{1} {0} {1}', 'World', 'Hello')
+```
+
+```result
+┌─format('{1} {0} {1}', 'World', 'Hello')─┐
+│ Hello World Hello                       │
+└─────────────────────────────────────────┘
+```
+
+With implicit numbers:
+
+``` sql
+SELECT format('{} {}', 'Hello', 'World')
+```
+
+```result
+┌─format('{} {}', 'Hello', 'World')─┐
+│ Hello World                       │
+└───────────────────────────────────┘
+```
+
 ## concat
 
 Concatenates the given arguments.
@@ -515,7 +549,7 @@ Alias: `concat_ws`
 **Arguments**
 
 - sep — separator. Const [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- exprN — expression to be concatenated. Arguments which are not of types [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
+- exprN — expression to be concatenated. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
 
 **Returned values**
 
@@ -533,8 +567,8 @@ Result:
 
 ```result
 ┌─concatWithSeparator('a', '1', '2', '3', '4')─┐
-│ 1a2a3a4                                      │
-└──────────────────────────────────────────────┘
+│ 1a2a3a4                           │
+└───────────────────────────────────┘
 ```
 
 ## concatWithSeparatorAssumeInjective
@@ -543,52 +577,26 @@ Like `concatWithSeparator` but assumes that `concatWithSeparator(sep, expr1, exp
 
 A function is called injective if it returns for different arguments different results. In other words: different arguments never produce identical result.
 
-## substring
+## substring(s, offset, length)
 
-Returns the substring of a string `s` which starts at the specified byte index `offset`. Byte counting starts from 1. If `offset` is 0, an empty string is returned. If `offset` is negative, the substring starts `pos` characters from the end of the string, rather than from the beginning. An optional argument `length` specifies the maximum number of bytes the returned substring may have.
+Returns a substring with `length` many bytes, starting at the byte at index `offset`. Character indexing starts from 1.
 
 **Syntax**
 
 ```sql
-substring(s, offset[, length])
+substring(s, offset, length)
 ```
 
 Alias:
 - `substr`
 - `mid`
 
-**Arguments**
-
-- `s` — The string to calculate a substring from. [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md) or [Enum](../../sql-reference/data-types/enum.md)
-- `offset` — The starting position of the substring in `s` . [(U)Int*](../../sql-reference/data-types/int-uint.md).
-- `length` — The maximum length of the substring. [(U)Int*](../../sql-reference/data-types/int-uint.md). Optional.
-
-**Returned value**
-
-A substring of `s` with `length` many bytes, starting at index `offset`.
-
-Type: `String`.
-
-**Example**
-
-``` sql
-SELECT 'database' AS db, substr(db, 5), substr(db, 5, 1)
-```
-
-Result:
-
-```result
-┌─db───────┬─substring('database', 5)─┬─substring('database', 5, 1)─┐
-│ database │ base                     │ b                           │
-└──────────┴──────────────────────────┴─────────────────────────────┘
-```
-
 ## substringUTF8
 
 Like `substring` but for Unicode code points. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
 
-## substringIndex
+## substringIndex(s, delim, count)
 
 Returns the substring of `s` before `count` occurrences of the delimiter `delim`, as in Spark or MySQL.
 
@@ -619,7 +627,7 @@ Result:
 └──────────────────────────────────────────────┘
 ```
 
-## substringIndexUTF8
+## substringIndexUTF8(s, delim, count)
 
 Like `substringIndex` but for Unicode code points. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
@@ -731,7 +739,7 @@ Alias: `FROM_BASE64`.
 
 Like `base64Decode` but returns an empty string in case of error.
 
-## endsWith {#endswith}
+## endsWith
 
 Returns whether string `str` ends with `suffix`.
 
@@ -765,7 +773,7 @@ Result:
 └──────────────────────────┴──────────────────────┘
 ```
 
-## startsWith {#startswith}
+## startsWith
 
 Returns whether string `str` starts with `prefix`.
 
@@ -1251,7 +1259,7 @@ This function also replaces numeric character references with Unicode characters
 **Syntax**
 
 ``` sql
-decodeHTMLComponent(x)
+decodeHTMComponent(x)
 ```
 
 **Arguments**
@@ -1268,7 +1276,7 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 ``` sql
 SELECT decodeHTMLComponent(''CH');
-SELECT decodeHTMLComponent('I&heartsuit;ClickHouse');
+SELECT decodeHMLComponent('I&heartsuit;ClickHouse');
 ```
 
 Result:
@@ -1383,148 +1391,6 @@ Result:
 └──────────────────┘
 ```
 
-## punycodeEncode
-
-Returns the [Punycode](https://en.wikipedia.org/wiki/Punycode) representation of a string.
-The string must be UTF8-encoded, otherwise the behavior is undefined.
-
-**Syntax**
-
-``` sql
-punycodeEncode(val)
-```
-
-**Arguments**
-
-- `val` - Input value. [String](../data-types/string.md)
-
-**Returned value**
-
-- A Punycode representation of the input value. [String](../data-types/string.md)
-
-**Example**
-
-``` sql
-select punycodeEncode('München');
-```
-
-Result:
-
-```result
-┌─punycodeEncode('München')─┐
-│ Mnchen-3ya                │
-└───────────────────────────┘
-```
-
-## punycodeDecode
-
-Returns the UTF8-encoded plaintext of a [Punycode](https://en.wikipedia.org/wiki/Punycode)-encoded string.
-If no valid Punycode-encoded string is given, an exception is thrown.
-
-**Syntax**
-
-``` sql
-punycodeEncode(val)
-```
-
-**Arguments**
-
-- `val` - Punycode-encoded string. [String](../data-types/string.md)
-
-**Returned value**
-
-- The plaintext of the input value. [String](../data-types/string.md)
-
-**Example**
-
-``` sql
-select punycodeDecode('Mnchen-3ya');
-```
-
-Result:
-
-```result
-┌─punycodeDecode('Mnchen-3ya')─┐
-│ München                      │
-└──────────────────────────────┘
-```
-
-## tryPunycodeDecode
-
-Like `punycodeDecode` but returns an empty string if no valid Punycode-encoded string is given.
-
-## idnaEncode
-
-Returns the the ASCII representation (ToASCII algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
-The input string must be UTF-encoded and translatable to an ASCII string, otherwise an exception is thrown.
-Note: No percent decoding or trimming of tabs, spaces or control characters is performed.
-
-**Syntax**
-
-```sql
-idnaEncode(val)
-```
-
-**Arguments**
-
-- `val` - Input value. [String](../data-types/string.md)
-
-**Returned value**
-
-- A ASCII representation according to the IDNA mechanism of the input value. [String](../data-types/string.md)
-
-**Example**
-
-``` sql
-select idnaEncode('straße.münchen.de');
-```
-
-Result:
-
-```result
-┌─idnaEncode('straße.münchen.de')─────┐
-│ xn--strae-oqa.xn--mnchen-3ya.de     │
-└─────────────────────────────────────┘
-```
-
-## tryIdnaEncode
-
-Like `idnaEncode` but returns an empty string in case of an error instead of throwing an exception.
-
-## idnaDecode
-
-Returns the the Unicode (UTF-8) representation (ToUnicode algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
-In case of an error (e.g. because the input is invalid), the input string is returned.
-Note that repeated application of `idnaEncode()` and `idnaDecode()` does not necessarily return the original string due to case normalization.
-
-**Syntax**
-
-```sql
-idnaDecode(val)
-```
-
-**Arguments**
-
-- `val` - Input value. [String](../data-types/string.md)
-
-**Returned value**
-
-- A Unicode (UTF-8) representation according to the IDNA mechanism of the input value. [String](../data-types/string.md)
-
-**Example**
-
-``` sql
-select idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de');
-```
-
-Result:
-
-```result
-┌─idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de')─┐
-│ straße.münchen.de                             │
-└───────────────────────────────────────────────┘
-```
-
 ## byteHammingDistance
 
 Calculates the [hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) between two byte strings.
@@ -1604,78 +1470,6 @@ Result:
 ```
 
 Alias: levenshteinDistance
-
-## damerauLevenshteinDistance
-
-Calculates the [Damerau-Levenshtein distance](https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance) between two byte strings.
-
-**Syntax**
-
-```sql
-damerauLevenshteinDistance(string1, string2)
-```
-
-**Examples**
-
-``` sql
-SELECT damerauLevenshteinDistance('clickhouse', 'mouse');
-```
-
-Result:
-
-``` text
-┌─damerauLevenshteinDistance('clickhouse', 'mouse')─┐
-│                                                 6 │
-└───────────────────────────────────────────────────┘
-```
-
-## jaroSimilarity
-
-Calculates the [Jaro similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance#Jaro_similarity) between two byte strings.
-
-**Syntax**
-
-```sql
-jaroSimilarity(string1, string2)
-```
-
-**Examples**
-
-``` sql
-SELECT jaroSimilarity('clickhouse', 'click');
-```
-
-Result:
-
-``` text
-┌─jaroSimilarity('clickhouse', 'click')─┐
-│                    0.8333333333333333 │
-└───────────────────────────────────────┘
-```
-
-## jaroWinklerSimilarity
-
-Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance#Jaro%E2%80%93Winkler_similarity) between two byte strings.
-
-**Syntax**
-
-```sql
-jaroWinklerSimilarity(string1, string2)
-```
-
-**Examples**
-
-``` sql
-SELECT jaroWinklerSimilarity('clickhouse', 'click');
-```
-
-Result:
-
-``` text
-┌─jaroWinklerSimilarity('clickhouse', 'click')─┐
-│                           0.8999999999999999 │
-└──────────────────────────────────────────────┘
-```
 
 ## initcap
 

@@ -139,7 +139,7 @@ class IDatabase : public std::enable_shared_from_this<IDatabase>
 {
 public:
     IDatabase() = delete;
-    explicit IDatabase(String database_name_);
+    explicit IDatabase(String database_name_) : database_name(std::move(database_name_)) {}
 
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
@@ -219,11 +219,8 @@ public:
     virtual void waitTableStarted(const String & /*name*/) const {}
 
     /// Waits for the database to be started up, i.e. task returned by `startupDatabaseAsync()` is done
-    virtual void waitDatabaseStarted() const {}
-
-    /// Cancels all load and startup tasks and waits for currently running tasks to finish.
-    /// Should be used during shutdown to (1) prevent race with startup, (2) stop any not yet started task and (3) avoid exceptions if startup failed
-    virtual void stopLoading() {}
+    /// NOTE: `no_throw` wait should be used during shutdown to (1) prevent race with startup and (2) avoid exceptions if startup failed
+    virtual void waitDatabaseStarted(bool /*no_throw*/) const {}
 
     /// Check the existence of the table in memory (attached).
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
@@ -423,7 +420,7 @@ public:
     /// Creates a table restored from backup.
     virtual void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms);
 
-    virtual ~IDatabase();
+    virtual ~IDatabase() = default;
 
 protected:
     virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*context*/, bool throw_on_error) const

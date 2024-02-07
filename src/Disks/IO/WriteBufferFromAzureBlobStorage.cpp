@@ -6,7 +6,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
-#include <Common/Scheduler/ResourceGuard.h>
+#include <IO/ResourceGuard.h>
 
 
 namespace ProfileEvents
@@ -18,17 +18,17 @@ namespace ProfileEvents
 namespace DB
 {
 
+static constexpr auto DEFAULT_RETRY_NUM = 3;
+
 WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & blob_path_,
     size_t max_single_part_upload_size_,
-    size_t max_unexpected_write_error_retries_,
     size_t buf_size_,
     const WriteSettings & write_settings_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
-    , log(getLogger("WriteBufferFromAzureBlobStorage"))
+    , log(&Poco::Logger::get("WriteBufferFromAzureBlobStorage"))
     , max_single_part_upload_size(max_single_part_upload_size_)
-    , max_unexpected_write_error_retries(max_unexpected_write_error_retries_)
     , blob_path(blob_path_)
     , write_settings(write_settings_)
     , blob_container_client(blob_container_client_)
@@ -77,13 +77,13 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, 
 
 void WriteBufferFromAzureBlobStorage::finalizeImpl()
 {
-    execWithRetry([this](){ next(); }, max_unexpected_write_error_retries);
+    execWithRetry([this](){ next(); }, DEFAULT_RETRY_NUM);
 
     if (tmp_buffer_write_offset > 0)
         uploadBlock(tmp_buffer->data(), tmp_buffer_write_offset);
 
     auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
-    execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, max_unexpected_write_error_retries);
+    execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, DEFAULT_RETRY_NUM);
 
     LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
 }
@@ -94,7 +94,7 @@ void WriteBufferFromAzureBlobStorage::uploadBlock(const char * data, size_t size
     const std::string & block_id = block_ids.emplace_back(getRandomASCIIString(64));
 
     Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(data), size);
-    execWithRetry([&](){ block_blob_client.StageBlock(block_id, memory_stream); }, max_unexpected_write_error_retries, size);
+    execWithRetry([&](){ block_blob_client.StageBlock(block_id, memory_stream); }, DEFAULT_RETRY_NUM, size);
     tmp_buffer_write_offset = 0;
 
     LOG_TRACE(log, "Staged block (id: {}) of size {} (blob path: {}).", block_id, size, blob_path);

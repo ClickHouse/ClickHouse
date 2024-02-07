@@ -12,7 +12,6 @@
 #include <optional>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Disks/IDiskTransaction.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 
 namespace DB
 {
@@ -151,12 +150,12 @@ public:
         const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
         bool is_temp,
-        LoggerPtr log) = 0;
+        Poco::Logger * log) = 0;
 
     /// Get a name like 'prefix_partdir_tryN' which does not exist in a root dir.
     /// TODO: remove it.
     virtual std::optional<String> getRelativePathForPrefix(
-        LoggerPtr log, const String & prefix, bool detached, bool broken) const = 0;
+        Poco::Logger * log, const String & prefix, bool detached, bool broken) const = 0;
 
     /// Reset part directory, used for in-memory parts.
     /// TODO: remove it.
@@ -223,9 +222,7 @@ public:
         const ReadSettings & read_settings,
         bool make_temporary_hard_links,
         BackupEntries & backup_entries,
-        TemporaryFilesOnDisks * temp_dirs,
-        bool is_projection_part,
-        bool allow_backup_broken_projection) const = 0;
+        TemporaryFilesOnDisks * temp_dirs) const = 0;
 
     /// Creates hardlinks into 'to/dir_path' for every file in data part.
     /// Callback is called after hardlinks are created, but before 'delete-on-destroy.txt' marker is removed.
@@ -265,7 +262,7 @@ public:
         const DiskPtr & disk,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
-        LoggerPtr log,
+        Poco::Logger * log,
         const std::function<void()> & cancellation_hook
         ) const = 0;
 
@@ -307,7 +304,6 @@ public:
     virtual SyncGuardPtr getDirectorySyncGuard() const { return nullptr; }
 
     virtual void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;
-    virtual void copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;
 
     /// Rename part.
     /// Ideally, new_root_path should be the same as current root (but it is not true).
@@ -316,7 +312,7 @@ public:
     virtual void rename(
         std::string new_root_path,
         std::string new_part_dir,
-        LoggerPtr log,
+        Poco::Logger * log,
         bool remove_new_dir_if_exists,
         bool fsync_part_dir) = 0;
 

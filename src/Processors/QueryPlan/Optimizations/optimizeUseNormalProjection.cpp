@@ -142,7 +142,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
 
     auto ordinary_reading_select_result = reading->selectRangesToRead(parts, alter_conversions);
-    size_t ordinary_reading_marks = ordinary_reading_select_result->selected_marks;
+    size_t ordinary_reading_marks = ordinary_reading_select_result->marks();
 
     /// Nothing to read. Ignore projections.
     if (ordinary_reading_marks == 0)
@@ -151,7 +151,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
         return false;
     }
 
-    const auto & parts_with_ranges = ordinary_reading_select_result->parts_with_ranges;
+    const auto & parts_with_ranges = ordinary_reading_select_result->partsWithRanges();
 
     std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks = getMaxAddedBlocks(reading);
 
@@ -173,6 +173,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
             reader,
             required_columns,
             parts_with_ranges,
+            metadata,
             query_info,
             context,
             max_added_blocks,
@@ -195,7 +196,8 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     }
 
     auto storage_snapshot = reading->getStorageSnapshot();
-    auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, storage_snapshot->metadata);
+    auto proj_snapshot = std::make_shared<StorageSnapshot>(
+        storage_snapshot->storage, storage_snapshot->metadata, storage_snapshot->object_columns); //, storage_snapshot->data);
     proj_snapshot->addProjection(best_candidate->projection);
 
     auto query_info_copy = query_info;
@@ -217,16 +219,16 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     if (!projection_reading)
     {
         Pipe pipe(std::make_shared<NullSource>(proj_snapshot->getSampleBlockForColumns(required_columns)));
-        projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-    }
-
-    if (!query_info.is_internal && context->hasQueryContext())
-    {
-        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
-        {
-            .storage_id = reading->getMergeTreeData().getStorageID(),
-            .projection_name = best_candidate->projection->name,
-        });
+        projection_reading = std::make_unique<ReadFromPreparedSource>(
+            std::move(pipe),
+            context,
+            query_info.is_internal
+                ? Context::QualifiedProjectionName{}
+                : Context::QualifiedProjectionName
+                  {
+                      .storage_id = reading->getMergeTreeData().getStorageID(),
+                      .projection_name = best_candidate->projection->name,
+                  });
     }
 
     bool has_ordinary_parts = best_candidate->merge_tree_ordinary_select_result_ptr != nullptr;

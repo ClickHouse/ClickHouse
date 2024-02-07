@@ -17,7 +17,6 @@ set (SRCS
     getMemoryAmount.cpp
     getPageSize.cpp
     getThreadId.cpp
-    int8_to_string.cpp
     JSON.cpp
     mremap.cpp
     phdr_cache.cpp

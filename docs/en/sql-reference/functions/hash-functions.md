@@ -319,9 +319,9 @@ This is a relatively fast non-cryptographic hash function of average quality for
 Calculates a 64-bit hash code from any type of integer.
 It works faster than intHash32. Average quality.
 
-## SHA1, SHA224, SHA256, SHA512, SHA512_256
+## SHA1, SHA224, SHA256, SHA512
 
-Calculates SHA-1, SHA-224, SHA-256, SHA-512, SHA-512-256 hash from a string and returns the resulting set of bytes as [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
+Calculates SHA-1, SHA-224, SHA-256, SHA-512 hash from a string and returns the resulting set of bytes as [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
 
 **Syntax**
 
@@ -1775,69 +1775,4 @@ Result:
 ┌─Tuple──────────────────────────────────────────────────────────────────┐
 │ (('queries','database','analytical'),('oriented','processing','DBMS')) │
 └────────────────────────────────────────────────────────────────────────┘
-```
-
-## sqidEncode
-
-Encodes numbers as a [Sqid](https://sqids.org/) which is a YouTube-like ID string.
-The output alphabet is `abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`.
-Do not use this function for hashing - the generated IDs can be decoded back into the original numbers.
-
-**Syntax**
-
-```sql
-sqidEncode(number1, ...)
-```
-
-Alias: `sqid`
-
-**Arguments**
-
-- A variable number of UInt8, UInt16, UInt32 or UInt64 numbers.
-
-**Returned Value**
-
-A sqid [String](/docs/en/sql-reference/data-types/string.md).
-
-**Example**
-
-```sql
-SELECT sqidEncode(1, 2, 3, 4, 5);
-```
-
-```response
-┌─sqidEncode(1, 2, 3, 4, 5)─┐
-│ gXHfJ1C6dN                │
-└───────────────────────────┘
-```
-
-## sqidDecode
-
-Decodes a [Sqid](https://sqids.org/) back into its original numbers.
-Returns an empty array in case the input string is not a valid sqid.
-
-**Syntax**
-
-```sql
-sqidDecode(sqid)
-```
-
-**Arguments**
-
-- A sqid - [String](/docs/en/sql-reference/data-types/string.md)
-
-**Returned Value**
-
-The sqid transformed to numbers [Array(UInt64)](/docs/en/sql-reference/data-types/array.md).
-
-**Example**
-
-```sql
-SELECT sqidDecode('gXHfJ1C6dN');
-```
-
-```response
-┌─sqidDecode('gXHfJ1C6dN')─┐
-│ [1,2,3,4,5]              │
-└──────────────────────────┘
 ```

@@ -51,8 +51,7 @@ public:
     void beforeLoadingMetadata(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
 
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
-    void waitDatabaseStarted() const override;
-    void stopLoading() override;
+    void waitDatabaseStarted(bool no_throw) const override;
 
     /// Atomic database cannot be detached if there is detached table which still in use
     void assertCanBeDetached(bool cleanup) override;
@@ -88,7 +87,7 @@ protected:
     String path_to_metadata_symlink;
     const UUID db_uuid;
 
-    LoadTaskPtr startup_atomic_database_task TSA_GUARDED_BY(mutex);
+    LoadTaskPtr startup_atomic_database_task;
 };
 
 }

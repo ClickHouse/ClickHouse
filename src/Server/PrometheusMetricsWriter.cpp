@@ -1,8 +1,9 @@
 #include "PrometheusMetricsWriter.h"
 
 #include <IO/WriteHelpers.h>
-#include <Common/re2.h>
+#include <regex>    /// TODO: this library is harmful.
 #include <algorithm>
+
 
 namespace
 {
@@ -25,11 +26,9 @@ void writeOutLine(DB::WriteBuffer & wb, T && val, TArgs &&... args)
 /// Returns false if name is not valid
 bool replaceInvalidChars(std::string & metric_name)
 {
-    /// dirty solution:
-    static const re2::RE2 regexp1("[^a-zA-Z0-9_:]");
-    static const re2::RE2 regexp2("^[^a-zA-Z]*");
-    re2::RE2::GlobalReplace(&metric_name, regexp1, "_");
-    re2::RE2::GlobalReplace(&metric_name, regexp2, "");
+    /// dirty solution
+    metric_name = std::regex_replace(metric_name, std::regex("[^a-zA-Z0-9_:]"), "_");
+    metric_name = std::regex_replace(metric_name, std::regex("^[^a-zA-Z]*"), "");
     return !metric_name.empty();
 }
 
@@ -122,8 +121,6 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
 
     if (send_errors)
     {
-        size_t total_count = 0;
-
         for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
         {
             const auto & error = ErrorCodes::values[i].get();
@@ -139,15 +136,7 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
             writeOutLine(wb, "# TYPE", key, "counter");
             /// We are interested in errors which are happened only on this server.
             writeOutLine(wb, key, error.local.count);
-
-            total_count += error.local.count;
         }
-
-        /// Write the total number of errors as a separate metric
-        std::string key{error_metrics_prefix + toString("ALL")};
-        writeOutLine(wb, "# HELP", key, "The total number of errors since last server restart");
-        writeOutLine(wb, "# TYPE", key, "counter");
-        writeOutLine(wb, key, total_count);
     }
 
 }

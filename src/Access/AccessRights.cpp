@@ -443,7 +443,7 @@ public:
             optimizeTree();
     }
 
-    void logTree(LoggerPtr log, const String & title) const
+    void logTree(Poco::Logger * log, const String & title) const
     {
         LOG_TRACE(log, "Tree({}): level={}, name={}, flags={}, min_flags={}, max_flags={}, num_children={}",
             title, level, node_name ? *node_name : "NULL", flags.toString(),
@@ -1158,7 +1158,7 @@ AccessRights AccessRights::getFullAccess()
 
 void AccessRights::logTree() const
 {
-    auto log = getLogger("AccessRights");
+    auto * log = &Poco::Logger::get("AccessRights");
     if (root)
     {
         root->logTree(log, "");

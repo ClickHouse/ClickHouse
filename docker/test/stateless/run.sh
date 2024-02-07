@@ -58,7 +58,6 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
 
     # it contains some new settings, but we can safely remove it
     rm /etc/clickhouse-server/users.d/s3_cache_new.xml
-    rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
 fi
 
 # For flaky check we also enable thread fuzzer
@@ -96,16 +95,6 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
 
     sudo cat /etc/clickhouse-server2/config.d/filesystem_caches_path.xml \
     | sed "s|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches_2/</filesystem_caches_path>|" \
-    > /etc/clickhouse-server2/config.d/filesystem_caches_path.xml.tmp
-    mv /etc/clickhouse-server2/config.d/filesystem_caches_path.xml.tmp /etc/clickhouse-server2/config.d/filesystem_caches_path.xml
-
-    sudo cat /etc/clickhouse-server1/config.d/filesystem_caches_path.xml \
-    | sed "s|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches/</custom_cached_disks_base_directory>|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches_1/</custom_cached_disks_base_directory>|" \
-    > /etc/clickhouse-server1/config.d/filesystem_caches_path.xml.tmp
-    mv /etc/clickhouse-server1/config.d/filesystem_caches_path.xml.tmp /etc/clickhouse-server1/config.d/filesystem_caches_path.xml
-
-    sudo cat /etc/clickhouse-server2/config.d/filesystem_caches_path.xml \
-    | sed "s|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches/</custom_cached_disks_base_directory>|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches_2/</custom_cached_disks_base_directory>|" \
     > /etc/clickhouse-server2/config.d/filesystem_caches_path.xml.tmp
     mv /etc/clickhouse-server2/config.d/filesystem_caches_path.xml.tmp /etc/clickhouse-server2/config.d/filesystem_caches_path.xml
 
@@ -227,11 +216,11 @@ export -f run_tests
 if [ "$NUM_TRIES" -gt "1" ]; then
     # We don't run tests with Ordinary database in PRs, only in master.
     # So run new/changed tests with Ordinary at least once in flaky check.
-    timeout_with_logging "$MAX_RUN_TIME" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
+    timeout "$MAX_RUN_TIME" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
       | sed 's/All tests have finished//' | sed 's/No tests were run//' ||:
 fi
 
-timeout_with_logging "$MAX_RUN_TIME" bash -c run_tests ||:
+timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 
 echo "Files in current directory"
 ls -la ./
@@ -244,23 +233,6 @@ clickhouse-client -q "system flush logs" ||:
 
 # stop logs replication to make it possible to dump logs tables via clickhouse-local
 stop_logs_replication
-
-# Try to get logs while server is running
-failed_to_save_logs=0
-for table in query_log zookeeper_log trace_log transactions_info_log metric_log
-do
-    err=$( { clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst; } 2>&1 )
-    echo "$err"
-    [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
-    if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-        err=$( { clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst; } 2>&1 )
-        echo "$err"
-        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
-        err=$( { clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst; } 2>&1 )
-        echo "$err"
-        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
-    fi
-done
 
 # Stop server so we can safely read data with clickhouse-local.
 # Why do we read data with clickhouse-local?
@@ -281,25 +253,21 @@ if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TR
     data_path_config="--config-file=/etc/clickhouse-server/config.xml"
 fi
 
-
-# If server crashed dump system logs with clickhouse-local
-if [ $failed_to_save_logs -ne 0 ]; then
-    # Compress tables.
-    #
-    # NOTE:
-    # - that due to tests with s3 storage we cannot use /var/lib/clickhouse/data
-    #   directly
-    # - even though ci auto-compress some files (but not *.tsv) it does this only
-    #   for files >64MB, we want this files to be compressed explicitly
-    for table in query_log zookeeper_log trace_log transactions_info_log metric_log
-    do
-        clickhouse-local "$data_path_config" --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
-        if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-            clickhouse-local --path /var/lib/clickhouse1/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
-            clickhouse-local --path /var/lib/clickhouse2/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst ||:
-        fi
-    done
-fi
+# Compress tables.
+#
+# NOTE:
+# - that due to tests with s3 storage we cannot use /var/lib/clickhouse/data
+#   directly
+# - even though ci auto-compress some files (but not *.tsv) it does this only
+#   for files >64MB, we want this files to be compressed explicitly
+for table in query_log zookeeper_log trace_log transactions_info_log
+do
+    clickhouse-local "$data_path_config" --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
+    if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+        clickhouse-local --path /var/lib/clickhouse1/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
+        clickhouse-local --path /var/lib/clickhouse2/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst ||:
+    fi
+done
 
 # Also export trace log in flamegraph-friendly format.
 for trace_type in CPU Memory Real
@@ -332,6 +300,9 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server2.log ||:
     zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.zst ||:
     zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.zst ||:
+    # FIXME: remove once only github actions will be left
+    rm /var/log/clickhouse-server/clickhouse-server1.log
+    rm /var/log/clickhouse-server/clickhouse-server2.log
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
     mv /var/log/clickhouse-server/stderr2.log /test_output/ ||:
     tar -chf /test_output/coordination1.tar /var/lib/clickhouse1/coordination ||:

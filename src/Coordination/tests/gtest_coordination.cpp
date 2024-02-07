@@ -45,7 +45,10 @@ struct ChangelogDirTest
     bool drop;
     explicit ChangelogDirTest(std::string path_, bool drop_ = true) : path(path_), drop(drop_)
     {
-        EXPECT_FALSE(fs::exists(path)) << "Path " << path << " already exists, remove it to run test";
+        if (fs::exists(path))
+        {
+            EXPECT_TRUE(false) << "Path " << path << " already exists, remove it to run test";
+        }
         fs::create_directory(path);
     }
 
@@ -66,7 +69,7 @@ class CoordinationTest : public ::testing::TestWithParam<CompressionParam>
 {
 protected:
     DB::KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true);
-    LoggerPtr log{getLogger("CoordinationTest")};
+    Poco::Logger * log{&Poco::Logger::get("CoordinationTest")};
 
     void SetUp() override
     {
@@ -74,7 +77,7 @@ protected:
         Poco::Logger::root().setChannel(channel);
         Poco::Logger::root().setLevel("trace");
 
-        keeper_context->setLocalLogsPreprocessed();
+        keeper_context->local_logs_preprocessed = true;
     }
 
     void setLogDirectory(const std::string & path) { keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", path)); }
@@ -997,7 +1000,7 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin" + params.extension));
 
     DB::WriteBufferFromFile plain_buf(
-        "./logs/changelog_11_15.bin" + params.extension, DB::DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        "./logs/changelog_11_15.bin" + params.extension, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
     plain_buf.truncate(0);
 
     DB::KeeperLogStore changelog_reader(
@@ -1070,7 +1073,7 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
     EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin" + params.extension));
 
     DB::WriteBufferFromFile plain_buf(
-        "./logs/changelog_1_20.bin" + params.extension, DB::DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        "./logs/changelog_1_20.bin" + params.extension, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
     plain_buf.truncate(30);
 
     DB::KeeperLogStore changelog_reader(
@@ -1101,7 +1104,7 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
 }
 
 /// Truncating only some entries from the end
-/// For compressed logs we have no reliable way of knowing how many log entries were lost
+/// For compressed logs we have no reliable way of knowing how many log entries were lost 
 /// after we truncate some bytes from the end
 TEST_F(CoordinationTest, ChangelogTestReadAfterBrokenTruncate3)
 {
@@ -1127,7 +1130,7 @@ TEST_F(CoordinationTest, ChangelogTestReadAfterBrokenTruncate3)
     EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin"));
 
     DB::WriteBufferFromFile plain_buf(
-        "./logs/changelog_1_20.bin", DB::DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        "./logs/changelog_1_20.bin", DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
     plain_buf.truncate(plain_buf.size() - 30);
 
     DB::KeeperLogStore changelog_reader(
@@ -1364,11 +1367,11 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     auto itr = map_snp.begin();
     EXPECT_EQ(itr->key, "/hello");
     EXPECT_EQ(itr->value, 7);
-    EXPECT_EQ(itr->isActiveInMap(), false);
+    EXPECT_EQ(itr->active_in_map, false);
     itr = std::next(itr);
     EXPECT_EQ(itr->key, "/hello");
     EXPECT_EQ(itr->value, 554);
-    EXPECT_EQ(itr->isActiveInMap(), true);
+    EXPECT_EQ(itr->active_in_map, true);
     itr = std::next(itr);
     EXPECT_EQ(itr, map_snp.end());
     for (int i = 0; i < 5; ++i)
@@ -1384,7 +1387,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     {
         EXPECT_EQ(itr->key, "/hello" + std::to_string(i));
         EXPECT_EQ(itr->value, i);
-        EXPECT_EQ(itr->isActiveInMap(), true);
+        EXPECT_EQ(itr->active_in_map, true);
         itr = std::next(itr);
     }
 
@@ -1398,7 +1401,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     {
         EXPECT_EQ(itr->key, "/hello" + std::to_string(i));
         EXPECT_EQ(itr->value, i);
-        EXPECT_EQ(itr->isActiveInMap(), i != 3 && i != 2);
+        EXPECT_EQ(itr->active_in_map, i != 3 && i != 2);
         itr = std::next(itr);
     }
     map_snp.clearOutdatedNodes();
@@ -1408,19 +1411,19 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     itr = map_snp.begin();
     EXPECT_EQ(itr->key, "/hello");
     EXPECT_EQ(itr->value, 554);
-    EXPECT_EQ(itr->isActiveInMap(), true);
+    EXPECT_EQ(itr->active_in_map, true);
     itr = std::next(itr);
     EXPECT_EQ(itr->key, "/hello0");
     EXPECT_EQ(itr->value, 0);
-    EXPECT_EQ(itr->isActiveInMap(), true);
+    EXPECT_EQ(itr->active_in_map, true);
     itr = std::next(itr);
     EXPECT_EQ(itr->key, "/hello1");
     EXPECT_EQ(itr->value, 1);
-    EXPECT_EQ(itr->isActiveInMap(), true);
+    EXPECT_EQ(itr->active_in_map, true);
     itr = std::next(itr);
     EXPECT_EQ(itr->key, "/hello4");
     EXPECT_EQ(itr->value, 4);
-    EXPECT_EQ(itr->isActiveInMap(), true);
+    EXPECT_EQ(itr->active_in_map, true);
     itr = std::next(itr);
     EXPECT_EQ(itr, map_snp.end());
     map_snp.disableSnapshotMode();
@@ -1730,7 +1733,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotBroken)
 
     /// Let's corrupt file
     DB::WriteBufferFromFile plain_buf(
-        "./snapshots/snapshot_50.bin" + params.extension, DB::DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        "./snapshots/snapshot_50.bin" + params.extension, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
     plain_buf.truncate(34);
     plain_buf.sync();
 
@@ -1801,7 +1804,7 @@ void testLogAndStateMachine(
                 = [&snapshot_created](bool & ret, nuraft::ptr<std::exception> & /*exception*/)
             {
                 snapshot_created = ret;
-                LOG_INFO(getLogger("CoordinationTest"), "Snapshot finished");
+                LOG_INFO(&Poco::Logger::get("CoordinationTest"), "Snapshot finished");
             };
 
             state_machine->create_snapshot(s, when_done);
@@ -2767,7 +2770,7 @@ TEST_P(CoordinationTest, TestDurableState)
     {
         SCOPED_TRACE("Read from corrupted file");
         state_manager.reset();
-        DB::WriteBufferFromFile write_buf("./state", DB::DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY);
+        DB::WriteBufferFromFile write_buf("./state", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY);
         write_buf.seek(20, SEEK_SET);
         DB::writeIntBinary(31, write_buf);
         write_buf.sync();
@@ -2784,7 +2787,7 @@ TEST_P(CoordinationTest, TestDurableState)
         SCOPED_TRACE("Read from file with invalid size");
         state_manager.reset();
 
-        DB::WriteBufferFromFile write_buf("./state", DB::DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+        DB::WriteBufferFromFile write_buf("./state", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
         DB::writeIntBinary(20, write_buf);
         write_buf.sync();
         write_buf.close();

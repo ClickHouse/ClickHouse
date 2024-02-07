@@ -17,6 +17,7 @@ SYSTEM SYNC REPLICA quorum2;
 
 SET select_sequential_consistency=1;
 SET insert_quorum=2, insert_quorum_parallel=0;
+SET insert_keeper_fault_injection_probability=0;
 
 SET insert_quorum_timeout=0;
 

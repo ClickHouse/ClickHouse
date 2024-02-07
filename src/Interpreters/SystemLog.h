@@ -25,9 +25,9 @@ namespace DB
         /// fields
 
         static std::string name();
-        static ColumnsDescription getColumnsDescription();
-        /// TODO: Remove this method, we can return aliases directly from getColumnsDescription().
+        static NamesAndTypesList getNamesAndTypes();
         static NamesAndAliases getNamesAndAliases();
+        static const char * getCustomColumnList();
         void appendToBlock(MutableColumns & columns) const;
     };
     */
@@ -131,7 +131,7 @@ public:
     void stopFlushThread() override;
 
 protected:
-    LoggerPtr log;
+    Poco::Logger * log;
 
     using ISystemLog::is_shutdown;
     using ISystemLog::saving_thread;

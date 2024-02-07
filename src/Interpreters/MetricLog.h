@@ -6,7 +6,6 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-#include <Storages/ColumnsDescription.h>
 
 #include <vector>
 #include <atomic>
@@ -28,7 +27,7 @@ struct MetricLogElement
     std::vector<CurrentMetrics::Metric> current_metrics;
 
     static std::string name() { return "MetricLog"; }
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
     static const char * getCustomColumnList() { return nullptr; }

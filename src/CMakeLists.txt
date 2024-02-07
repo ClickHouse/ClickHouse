@@ -83,11 +83,10 @@ add_subdirectory (Formats)
 
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
-add_headers_and_sources(clickhouse_common_io Common/Scheduler)
-add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes)
 add_headers_and_sources(clickhouse_common_io Common/SSH)
 add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/Archives)
+add_headers_and_sources(clickhouse_common_io IO/Resource)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
@@ -227,7 +226,6 @@ add_object_library(clickhouse_storages_statistics Storages/Statistics)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_storages_windowview Storages/WindowView)
 add_object_library(clickhouse_storages_s3queue Storages/S3Queue)
-add_object_library(clickhouse_storages_materializedview Storages/MaterializedView)
 add_object_library(clickhouse_client Client)
 add_object_library(clickhouse_bridge BridgeHelper)
 add_object_library(clickhouse_server Server)
@@ -294,14 +292,12 @@ if (TARGET ch_contrib::gwp_asan)
 endif()
 
 # Otherwise it will slow down stack traces printing too much.
-if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
-    set_source_files_properties(
-            Common/Elf.cpp
-            Common/Dwarf.cpp
-            Common/SymbolIndex.cpp
-            Common/ThreadFuzzer.cpp
-            PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE_FLAGS}")
-endif()
+set_source_files_properties(
+        Common/Elf.cpp
+        Common/Dwarf.cpp
+        Common/SymbolIndex.cpp
+        Common/ThreadFuzzer.cpp
+        PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE_FLAGS}")
 
 target_link_libraries (clickhouse_common_io
         PRIVATE
@@ -440,10 +436,6 @@ dbms_target_link_libraries(PRIVATE ch_contrib::zstd)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::zstd)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::xz)
 
-if (TARGET ch_contrib::pocketfft)
-    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::pocketfft)
-endif ()
-
 if (TARGET ch_contrib::icu)
     dbms_target_link_libraries (PRIVATE ch_contrib::icu)
 endif ()
@@ -554,16 +546,11 @@ endif ()
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 
 if (TARGET ch_contrib::qpl)
-    dbms_target_link_libraries(PUBLIC ch_contrib::qpl)
+dbms_target_link_libraries(PUBLIC ch_contrib::qpl)
 endif ()
 
 if (TARGET ch_contrib::accel-config)
     dbms_target_link_libraries(PUBLIC ch_contrib::accel-config)
-endif ()
-
-if (TARGET ch_contrib::qatzstd_plugin)
-    dbms_target_link_libraries(PUBLIC ch_contrib::qatzstd_plugin)
-    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::qatzstd_plugin)
 endif ()
 
 target_link_libraries(clickhouse_common_io PUBLIC boost::context)

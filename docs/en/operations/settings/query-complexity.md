@@ -139,7 +139,7 @@ Limit on the number of bytes in the result. The same as the previous setting.
 
 What to do if the volume of the result exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
 
-Using ‘break’ is similar to using LIMIT. `Break` interrupts execution only at the block level. This means that amount of returned rows is greater than [max_result_rows](#setting-max_result_rows), multiple of [max_block_size](../../operations/settings/settings.md#setting-max_block_size) and depends on [max_threads](../../operations/settings/settings.md#max_threads).
+Using ‘break’ is similar to using LIMIT. `Break` interrupts execution only at the block level. This means that amount of returned rows is greater than [max_result_rows](#setting-max_result_rows), multiple of [max_block_size](../../operations/settings/settings.md#setting-max_block_size) and depends on [max_threads](../../operations/settings/settings.md#settings-max_threads).
 
 Example:
 
@@ -172,7 +172,7 @@ If you set `timeout_before_checking_execution_speed `to 0, ClickHouse will use c
 
 ## timeout_overflow_mode {#timeout-overflow-mode}
 
-What to do if the query is run longer than `max_execution_time` or the estimated running time is longer than `max_estimated_execution_time`: `throw` or `break`. By default, `throw`.
+What to do if the query is run longer than `max_execution_time`: `throw` or `break`. By default, `throw`.
 
 # max_execution_time_leaf
 
@@ -213,10 +213,6 @@ A maximum number of execution bytes per second. Checked on every data block when
 ## timeout_before_checking_execution_speed {#timeout-before-checking-execution-speed}
 
 Checks that execution speed is not too slow (no less than ‘min_execution_speed’), after the specified time in seconds has expired.
-
-## max_estimated_execution_time {#max_estimated_execution_time}
-
-Maximum query estimate execution time in seconds. Checked on every data block when ‘timeout_before_checking_execution_speed’ expires.
 
 ## max_columns_to_read {#max-columns-to-read}
 

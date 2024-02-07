@@ -1,5 +1,3 @@
-#include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/thread_local_rng.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 
 #include <IO/Operators.h>
@@ -342,7 +340,7 @@ ZooKeeper::ZooKeeper(
     std::shared_ptr<ZooKeeperLog> zk_log_)
     : args(args_)
 {
-    log = getLogger("ZooKeeperClient");
+    log = &Poco::Logger::get("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
 
     if (!args.chroot.empty())
@@ -554,13 +552,12 @@ void ZooKeeper::connect(
 
 void ZooKeeper::sendHandshake()
 {
-    int32_t handshake_length = 45;
+    int32_t handshake_length = 44;
     int64_t last_zxid_seen = 0;
     int32_t timeout = args.session_timeout_ms;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
     constexpr int32_t passwd_len = 16;
     std::array<char, passwd_len> passwd {};
-    bool read_only = true;
 
     write(handshake_length);
     if (use_compression)
@@ -571,7 +568,6 @@ void ZooKeeper::sendHandshake()
     write(timeout);
     write(previous_session_id);
     write(passwd);
-    write(read_only);
     flushWriteBuffer();
 }
 
@@ -581,10 +577,9 @@ void ZooKeeper::receiveHandshake()
     int32_t protocol_version_read;
     int32_t timeout;
     std::array<char, PASSWORD_LENGTH> passwd;
-    bool read_only;
 
     read(handshake_length);
-    if (handshake_length != SERVER_HANDSHAKE_LENGTH && handshake_length != SERVER_HANDSHAKE_LENGTH_WITH_READONLY)
+    if (handshake_length != SERVER_HANDSHAKE_LENGTH)
         throw Exception(Error::ZMARSHALLINGERROR, "Unexpected handshake length received: {}", handshake_length);
 
     read(protocol_version_read);
@@ -612,8 +607,6 @@ void ZooKeeper::receiveHandshake()
 
     read(session_id);
     read(passwd);
-    if (handshake_length == SERVER_HANDSHAKE_LENGTH_WITH_READONLY)
-        read(read_only);
 }
 
 

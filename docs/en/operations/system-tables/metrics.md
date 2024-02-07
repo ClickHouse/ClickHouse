@@ -287,7 +287,7 @@ Number of threads in the HashedDictionary thread pool running a task.
 
 ### IOPrefetchThreads
 
-Number of threads in the IO prefetch thread pool.
+Number of threads in the IO prefertch thread pool.
 
 ### IOPrefetchThreadsActive
 

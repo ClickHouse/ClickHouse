@@ -4,14 +4,13 @@ import argparse
 import logging
 import os
 
-from commit_status_helper import get_commit, post_commit_status
+from commit_status_helper import NotSet, get_commit, post_commit_status
 from env_helper import GITHUB_JOB_URL
 from get_robot_token import get_best_robot_token
-from git_helper import commit as commit_arg
 from github_helper import GitHub
 from pr_info import PRInfo
 from release import RELEASE_READY_STATUS
-from report import SUCCESS
+from git_helper import commit as commit_arg
 
 
 def main():
@@ -50,13 +49,7 @@ def main():
     commit = get_commit(gh, args.commit)
     gh.get_rate_limit()
     post_commit_status(
-        commit,
-        SUCCESS,
-        url,
-        description,
-        RELEASE_READY_STATUS,
-        pr_info,
-        dump_to_file=True,
+        commit, "success", url or NotSet, description, RELEASE_READY_STATUS, pr_info
     )
 
 

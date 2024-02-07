@@ -1,4 +1,3 @@
-SET output_format_pretty_color=1;
 SELECT 'привет' AS x, 'мир' AS y FORMAT Pretty;
 
 SET output_format_pretty_max_value_width = 5;

@@ -1,10 +1,9 @@
 #include "ReadBufferFromRemoteFSGather.h"
 
-#include <IO/ReadBufferFromFileBase.h>
+#include <IO/SeekableReadBuffer.h>
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
-#include <Interpreters/Cache/FileCache.h>
 #include <IO/ReadSettings.h>
 #include <IO/SwapHelper.h>
 #include <Interpreters/FilesystemCacheLog.h>
@@ -56,13 +55,13 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     , query_id(CurrentThread::getQueryId())
     , use_external_buffer(use_external_buffer_)
     , with_cache(withCache(settings))
-    , log(getLogger("ReadBufferFromRemoteFSGather"))
+    , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
 {
     if (!blobs_to_read.empty())
         current_object = blobs_to_read.front();
 }
 
-std::unique_ptr<ReadBufferFromFileBase> ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object)
+SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object)
 {
     if (current_buf && !with_cache)
     {
@@ -79,11 +78,10 @@ std::unique_ptr<ReadBufferFromFileBase> ReadBufferFromRemoteFSGather::createImpl
     if (with_cache)
     {
         auto cache_key = settings.remote_fs_cache->createKeyForPath(object_path);
-        return std::make_unique<CachedOnDiskReadBufferFromFile>(
+        return std::make_shared<CachedOnDiskReadBufferFromFile>(
             object_path,
             cache_key,
             settings.remote_fs_cache,
-            FileCache::getCommonUser(),
             std::move(current_read_buffer_creator),
             settings,
             query_id,
