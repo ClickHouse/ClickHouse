@@ -450,6 +450,12 @@ class BuildResult:
         return self.build_config.sanitizer
 
     @property
+    def coverage(self) -> str:
+        if self.build_config is None:
+            return self._wrong_config_message
+        return self.build_config.coverage
+
+    @property
     def grouped_urls(self) -> List[List[str]]:
         "Combine and preserve build_urls by artifact types"
         if self._grouped_urls is not None:
@@ -775,6 +781,7 @@ HTML_BASE_BUILD_TEMPLATE = (
 <th>Build type</th>
 <th>Version</th>
 <th>Sanitizer</th>
+<th>Coverage</th>
 <th>Status</th>
 <th>Build log</th>
 <th>Build time</th>
@@ -815,6 +822,8 @@ def create_build_html_report(
                 row.append(f"<td>{build_result.sanitizer}</td>")
             else:
                 row.append("<td>none</td>")
+
+            row.append(f"<td>{build_result.coverage}</td>")
 
             if build_result.status:
                 style = _get_status_style(build_result.status)

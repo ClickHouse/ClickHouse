@@ -115,8 +115,8 @@ def run_docker_image_with_env(
     subprocess.check_call(cmd, shell=True)
 
 
-def is_release_build(debug_build: bool, package_type: str, sanitizer: str) -> bool:
-    return not debug_build and package_type == "deb" and sanitizer == ""
+def is_release_build(debug_build: bool, package_type: str, sanitizer: str, coverage: bool) -> bool:
+    return not debug_build and package_type == "deb" and sanitizer == "" and not coverage
 
 
 def parse_env_variables(
@@ -262,7 +262,7 @@ def parse_env_variables(
         build_target = (
             f"{build_target} clickhouse-odbc-bridge clickhouse-library-bridge"
         )
-        if is_release_build(debug_build, package_type, sanitizer):
+        if is_release_build(debug_build, package_type, sanitizer, coverage):
             cmake_flags.append("-DSPLIT_DEBUG_SYMBOLS=ON")
             result.append("WITH_PERFORMANCE=1")
             if is_cross_arm:
