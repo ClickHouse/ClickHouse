@@ -50,7 +50,7 @@ std::shared_ptr<ActionsDAG> buildPredecessorActionsDag(const Block & header, con
             auto minus_function = FunctionFactory::instance().get("minus", Context::getGlobalContextInstance());
             const auto & added_function = dag->addFunction(minus_function, children, "__hinted_key_uncasted_" + old_key);
 
-            DataTypePtr result_type = std::make_shared<DataTypeUInt8>();;
+            DataTypePtr result_type = std::make_shared<DataTypeUInt8>();
 
             dag->addOrReplaceInOutputs(dag->addCast(added_function, result_type, new_key));
         }
