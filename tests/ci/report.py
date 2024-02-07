@@ -450,10 +450,10 @@ class BuildResult:
         return self.build_config.sanitizer
 
     @property
-    def coverage(self) -> bool:
+    def coverage(self) -> str:
         if self.build_config is None:
             return self._wrong_config_message
-        return self.build_config.coverage
+        return str(self.build_config.coverage)
 
     @property
     def grouped_urls(self) -> List[List[str]]:
