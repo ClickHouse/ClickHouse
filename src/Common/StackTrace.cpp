@@ -274,7 +274,7 @@ void StackTrace::forEachFrame(
 
     auto split_by_whitespace = [](const std::string & str)
     {
-        std::vector<std::string> splitted;
+        std::vector<std::string> split;
         ssize_t prev = -1;
         for (size_t pos = 0; pos < str.size(); ++pos)
         {
@@ -287,15 +287,15 @@ void StackTrace::forEachFrame(
 
             if (prev != -1)
             {
-                splitted.push_back(str.substr(prev, pos - prev));
+                split.push_back(str.substr(prev, pos - prev));
                 prev = -1;
             }
         }
 
         if (prev != -1)
-            splitted.push_back(str.substr(prev, str.size() - prev));
+            split.push_back(str.substr(prev, str.size() - prev));
 
-        return splitted;
+        return split;
     };
 
     char** strs = ::backtrace_symbols(frame_pointers.data(), static_cast<int>(size));
@@ -304,9 +304,9 @@ void StackTrace::forEachFrame(
     {
         StackTrace::Frame current_frame;
         current_frame.virtual_addr = frame_pointers[i];
-        auto splitted = split_by_whitespace(strs[i]);
-        assert(splitted.size() >= 6);
-        current_frame.symbol = splitted[3];
+        auto split = split_by_whitespace(strs[i]);
+        assert(split.size() >= 6);
+        current_frame.symbol = split[3];
         callback(current_frame);
     }
 
