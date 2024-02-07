@@ -59,11 +59,11 @@ static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeLis
 */
 static void splitAndModifyMutationCommands(
     MergeTreeData::DataPartPtr part,
-    StorageMetadataPtr metadata_snapshot,
+    StorageMetadataPtr ,
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
-    LoggerPtr log)
+    LoggerPtr )
 {
     auto part_columns = part->getColumnsDescription();
 
@@ -149,50 +149,50 @@ static void splitAndModifyMutationCommands(
 
         /// If it's compact part, then we don't need to actually remove files
         /// from disk we just don't read dropped columns
-        for (const auto & column : part_columns)
-        {
-            if (!mutated_columns.contains(column.name))
-            {
-                if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtuals().contains(column.name))
-                {
-                    /// We cannot add the column because there's no such column in table.
-                    /// It's okay if the column was dropped. It may also absent in dropped_columns
-                    /// if the corresponding MUTATE_PART entry was not created yet or was created separately from current MUTATE_PART.
-                    /// But we don't know for sure what happened.
-                    auto part_metadata_version = part->getMetadataVersion();
-                    auto table_metadata_version = metadata_snapshot->getMetadataVersion();
-
-                    bool allow_equal_versions = part_metadata_version == table_metadata_version && part->old_part_with_no_metadata_version_on_disk;
-                    if (part_metadata_version < table_metadata_version || allow_equal_versions)
-                    {
-                        LOG_WARNING(log, "Ignoring column {} from part {} with metadata version {} because there is no such column "
-                                         "in table {} with metadata version {}. Assuming the column was dropped", column.name, part->name,
-                                    part_metadata_version, part->storage.getStorageID().getNameForLogs(), table_metadata_version);
-                        continue;
-                    }
-
-                    /// StorageMergeTree does not have metadata version
-                    if (part->storage.supportsReplication())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
-                                        "in table {} with metadata version {}",
-                                        part->name, part_metadata_version, column.name,
-                                        part->storage.getStorageID().getNameForLogs(), table_metadata_version);
-                }
-
-                for_interpreter.emplace_back(
-                    MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
-            }
-            else if (dropped_columns.contains(column.name))
-            {
-                /// Not needed for compact parts (not executed), added here only to produce correct
-                /// set of columns for new part and their serializations
-                for_file_renames.push_back(
-                {
-                     .type = MutationCommand::Type::DROP_COLUMN,
-                     .column_name = column.name,
-                });
-            }
-        }
+//        for (const auto & column : part_columns)
+//        {
+//            if (!mutated_columns.contains(column.name))
+//            {
+//                if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtuals().contains(column.name))
+//                {
+//                    /// We cannot add the column because there's no such column in table.
+//                    /// It's okay if the column was dropped. It may also absent in dropped_columns
+//                    /// if the corresponding MUTATE_PART entry was not created yet or was created separately from current MUTATE_PART.
+//                    /// But we don't know for sure what happened.
+//                    auto part_metadata_version = part->getMetadataVersion();
+//                    auto table_metadata_version = metadata_snapshot->getMetadataVersion();
+//
+//                    bool allow_equal_versions = part_metadata_version == table_metadata_version && part->old_part_with_no_metadata_version_on_disk;
+//                    if (part_metadata_version < table_metadata_version || allow_equal_versions)
+//                    {
+//                        LOG_WARNING(log, "Ignoring column {} from part {} with metadata version {} because there is no such column "
+//                                         "in table {} with metadata version {}. Assuming the column was dropped", column.name, part->name,
+//                                    part_metadata_version, part->storage.getStorageID().getNameForLogs(), table_metadata_version);
+//                        continue;
+//                    }
+//
+//                    /// StorageMergeTree does not have metadata version
+//                    if (part->storage.supportsReplication())
+//                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
+//                                        "in table {} with metadata version {}",
+//                                        part->name, part_metadata_version, column.name,
+//                                        part->storage.getStorageID().getNameForLogs(), table_metadata_version);
+//                }
+//
+//                for_interpreter.emplace_back(
+//                    MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
+//            }
+//            else if (dropped_columns.contains(column.name))
+//            {
+//                /// Not needed for compact parts (not executed), added here only to produce correct
+//                /// set of columns for new part and their serializations
+//                for_file_renames.push_back(
+//                {
+//                     .type = MutationCommand::Type::DROP_COLUMN,
+//                     .column_name = column.name,
+//                });
+//            }
+//        }
     }
     else
     {
@@ -1928,7 +1928,6 @@ private:
     {
         const auto ttl = ctx->new_data_part->ttl_infos.table_ttl;
         return ttl.max && ttl.max <= ctx->time_of_mutation;
-//        return ctx->new_data_part->ttl_infos.part_max_ttl <= ctx->time_of_mutation;
     }
 
     void replacePartWithEmpty()
@@ -2233,7 +2232,12 @@ bool MutateTask::prepare()
         /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
         ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
-        task = std::make_unique<MutateAllPartColumnsTask>(ctx);
+        bool suitable_for_ttl_optimization = ctx->metadata_snapshot->isRowsTTLTheOnlyTTL() && ctx->data->getSettings()->ttl_only_drop_parts;
+        bool drop_expired_parts = suitable_for_ttl_optimization && !ctx->data->getSettings()->materialize_ttl_recalculate_only;
+        if (drop_expired_parts)
+            task = std::make_unique<ExecutableTaskDropTTLExpiredPartsDecorator>(std::make_unique<MutateAllPartColumnsTask>(ctx), ctx);
+        else
+            task = std::make_unique<MutateAllPartColumnsTask>(ctx);
     }
     else /// TODO: check that we modify only non-key columns in this case.
     {
