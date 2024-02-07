@@ -15,6 +15,7 @@
 
 #include <base/bit_cast.h>
 #include <base/extended_types.h>
+#include <base/sort.h>
 #include <Core/Defines.h>
 
 
@@ -213,6 +214,22 @@ private:
 
     static KeyBits keyToBits(Key x) { return bit_cast<KeyBits>(x); }
     static Key bitsToKey(KeyBits x) { return bit_cast<Key>(x); }
+
+    struct LessComparator
+    {
+        ALWAYS_INLINE bool operator()(Element & lhs, Element & rhs)
+        {
+            return Traits::less(Traits::extractKey(lhs), Traits::extractKey(rhs));
+        }
+    };
+
+    struct GreaterComparator
+    {
+        ALWAYS_INLINE bool operator()(Element & lhs, Element & rhs)
+        {
+            return !Traits::less(Traits::extractKey(lhs), Traits::extractKey(rhs));
+        }
+    };
 
     static ALWAYS_INLINE KeyBits getPart(size_t N, KeyBits x)
     {
@@ -504,6 +521,24 @@ private:
             radixSortMSDInternal<PASS>(arr, size, limit);
     }
 
+    template <bool DIRECT_WRITE_TO_DESTINATION, typename Comparator>
+    static void executeLSDWithPDQSortInternal(Element * arr, size_t size, bool reverse, Comparator comparator, Result * destination)
+    {
+        bool try_sort = ::trySort(arr, arr + size, comparator);
+        if (try_sort)
+        {
+            if constexpr (DIRECT_WRITE_TO_DESTINATION)
+            {
+                for (size_t i = 0; i < size; ++i)
+                    destination[i] = Traits::extractResult(arr[i]);
+            }
+
+            return;
+        }
+
+        radixSortLSDInternal<DIRECT_WRITE_TO_DESTINATION>(arr, size, reverse, destination);
+    }
+
 public:
     /** Least significant digit radix sort (stable).
       * This function will sort inplace (modify 'arr')
@@ -527,6 +562,38 @@ public:
     static void executeLSD(Element * arr, size_t size, bool reverse, Result * destination)
     {
         radixSortLSDInternal<true>(arr, size, reverse, destination);
+    }
+
+    /** Tries to fast sort elements for common sorting patterns (unstable).
+      * If fast sort cannot be performed, execute least significant digit radix sort.
+      */
+    static void executeLSDWithPDQSort(Element * arr, size_t size)
+    {
+        return executeLSDWithPDQSort(arr, size, false);
+    }
+
+    static void executeLSDWithPDQSort(Element * arr, size_t size, bool reverse)
+    {
+        return executeLSDWithPDQSort(arr, size, reverse, nullptr);
+    }
+
+    static void executeLSDWithPDQSort(Element * arr, size_t size, bool reverse, Result * destination)
+    {
+        if (reverse)
+        {
+
+            if (destination)
+                return executeLSDWithPDQSortInternal<true>(arr, size, reverse, GreaterComparator(), destination);
+            else
+                return executeLSDWithPDQSortInternal<false>(arr, size, reverse, GreaterComparator(), destination);
+        }
+        else
+        {
+            if (destination)
+                return executeLSDWithPDQSortInternal<true>(arr, size, reverse, LessComparator(), destination);
+            else
+                return executeLSDWithPDQSortInternal<false>(arr, size, reverse, LessComparator(), destination);
+        }
     }
 
     /* Most significant digit radix sort
