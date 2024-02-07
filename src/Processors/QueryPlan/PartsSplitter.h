@@ -34,5 +34,6 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     size_t max_layers,
     ContextPtr context,
     ReadingInOrderStepGetter && in_order_reading_step_getter,
-    bool force_process_all_ranges);
+    bool split_parts_ranges_into_intersecting_and_non_intersecting,
+    bool split_intersecting_parts_ranges_into_layers);
 }
