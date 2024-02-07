@@ -699,14 +699,19 @@ std::vector<StorageID> TablesDependencyGraph::getTablesSortedByDependency() cons
 }
 
 
-std::map<size_t, std::vector<StorageID>> TablesDependencyGraph::getTablesSortedByDependencyWithLevels() const
+std::vector<std::vector<StorageID>> TablesDependencyGraph::getTablesSortedByDependencyForParallel() const
 {
-    std::map<size_t, std::vector<StorageID>> tables_by_level;
+    std::vector<std::vector<StorageID>> res;
+    std::optional<size_t> last_level;
     for (const auto * node : getNodesSortedByLevel())
     {
-        tables_by_level[node->level].emplace_back(node->storage_id);
+        if (node->level != last_level)
+            res.emplace_back();
+        auto & table_ids = res.back();
+        table_ids.emplace_back(node->storage_id);
+        last_level = node->level;
     }
-    return tables_by_level;
+    return res;
 }
 
 
@@ -731,10 +736,10 @@ void TablesDependencyGraph::log() const
 }
 
 
-LoggerPtr TablesDependencyGraph::getLogger() const
+Poco::Logger * TablesDependencyGraph::getLogger() const
 {
     if (!logger)
-        logger = ::getLogger(name_for_logging);
+        logger = &Poco::Logger::get(name_for_logging);
     return logger;
 }
 

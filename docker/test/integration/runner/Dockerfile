@@ -37,8 +37,11 @@ RUN apt-get update \
     libkrb5-dev \
     krb5-user \
     g++ \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+    && rm -rf \
+        /var/lib/apt/lists/* \
+        /var/cache/debconf \
+        /tmp/* \
+    && apt-get clean
 
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -67,9 +70,8 @@ RUN python3 -m pip install --no-cache-dir \
     asyncio \
     avro==1.10.2 \
     azure-storage-blob \
-    boto3 \
     cassandra-driver \
-    confluent-kafka==2.3.0 \
+    confluent-kafka==1.9.2 \
     delta-spark==2.3.0 \
     dict2xml \
     dicttoxml \
@@ -80,6 +82,7 @@ RUN python3 -m pip install --no-cache-dir \
     kafka-python \
     kazoo==2.9.0 \
     lz4 \
+    meilisearch==0.18.3 \
     minio \
     nats-py \
     protobuf \

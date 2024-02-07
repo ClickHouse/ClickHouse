@@ -15,7 +15,6 @@ void registerTableFunctions()
     registerTableFunctionZeros(factory);
     registerTableFunctionExecutable(factory);
     registerTableFunctionFile(factory);
-    registerTableFunctionFileCluster(factory);
     registerTableFunctionURL(factory);
     registerTableFunctionURLCluster(factory);
     registerTableFunctionValues(factory);
@@ -23,9 +22,8 @@ void registerTableFunctions()
     registerTableFunctionGenerate(factory);
     registerTableFunctionMongoDB(factory);
     registerTableFunctionRedis(factory);
-#if USE_RAPIDJSON || USE_SIMDJSON
-    registerTableFunctionFuzzJSON(factory);
-#endif
+
+    registerTableFunctionMeiliSearch(factory);
 
 #if USE_AWS_S3
     registerTableFunctionS3(factory);

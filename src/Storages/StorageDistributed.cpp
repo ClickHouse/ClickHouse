@@ -51,7 +51,6 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/WindowFunctionsUtils.h>
 
 #include <Planner/Planner.h>
 #include <Planner/Utils.h>
@@ -91,7 +90,6 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sinks/EmptySink.h>
@@ -103,8 +101,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
-
-#include <Storages/BlockNumberColumn.h>
 
 #include <memory>
 #include <filesystem>
@@ -135,7 +131,6 @@ namespace CurrentMetrics
 {
     extern const Metric StorageDistributedThreads;
     extern const Metric StorageDistributedThreadsActive;
-    extern const Metric StorageDistributedThreadsScheduled;
 }
 
 namespace DB
@@ -303,7 +298,6 @@ NamesAndTypesList StorageDistributed::getVirtuals() const
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
         NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
         NameAndTypePair("_row_exists", std::make_shared<DataTypeUInt8>()),
-        NameAndTypePair(BlockNumberColumn::name, BlockNumberColumn::type),
         NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()), /// deprecated
     };
 }
@@ -329,7 +323,7 @@ StorageDistributed::StorageDistributed(
     , remote_database(remote_database_)
     , remote_table(remote_table_)
     , remote_table_function_ptr(remote_table_function_ptr_)
-    , log(getLogger("StorageDistributed (" + id_.table_name + ")"))
+    , log(&Poco::Logger::get("StorageDistributed (" + id_.table_name + ")"))
     , owned_cluster(std::move(owned_cluster_))
     , cluster_name(getContext()->getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
@@ -337,8 +331,8 @@ StorageDistributed::StorageDistributed(
     , distributed_settings(distributed_settings_)
     , rng(randomSeed())
 {
-    if (!distributed_settings.flush_on_detach && distributed_settings.background_insert_batch)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and background_insert_batch=1 are incompatible");
+    if (!distributed_settings.flush_on_detach && distributed_settings.monitor_batch_inserts)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and monitor_batch_inserts=1 are incompatible");
 
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
@@ -425,20 +419,25 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     SelectQueryInfo & query_info) const
 {
     const auto & settings = local_context->getSettingsRef();
+
     ClusterPtr cluster = getCluster();
 
     size_t nodes = getClusterQueriedNodes(settings, cluster);
 
-    query_info.cluster = cluster;
-
-    if (!local_context->canUseParallelReplicasCustomKey(*cluster))
+    if (query_info.use_custom_key)
     {
+        LOG_INFO(log, "Single shard cluster used with custom_key, transforming replicas into virtual shards");
+        query_info.cluster = cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
+    }
+    else
+    {
+        query_info.cluster = cluster;
+
         if (nodes > 1 && settings.optimize_skip_unused_shards)
         {
             /// Always calculate optimized cluster here, to avoid conditions during read()
             /// (Anyway it will be calculated in the read())
-            auto syntax_analyzer_result = query_info.syntax_analyzer_result;
-            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info, syntax_analyzer_result);
+            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info);
             if (optimized_cluster)
             {
                 LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
@@ -500,11 +499,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         return QueryProcessingStage::FetchColumns;
     }
 
-    std::optional<QueryProcessingStage::Enum> optimized_stage;
-    if (settings.allow_experimental_analyzer)
-        optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings);
-    else
-        optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
+    auto optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
     if (optimized_stage)
     {
         if (*optimized_stage == QueryProcessingStage::Complete)
@@ -513,93 +508,6 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     }
 
     return QueryProcessingStage::WithMergeableState;
-}
-
-std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const
-{
-    bool optimize_sharding_key_aggregation =
-        settings.optimize_skip_unused_shards &&
-        settings.optimize_distributed_group_by_sharding_key &&
-        has_sharding_key &&
-        (settings.allow_nondeterministic_optimize_skip_unused_shards || sharding_key_is_deterministic);
-
-    QueryProcessingStage::Enum default_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
-    if (settings.distributed_push_down_limit)
-        default_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-
-    const auto & query_node = query_info.query_tree->as<const QueryNode &>();
-
-    auto expr_contains_sharding_key = [&](const ListNode & exprs) -> bool
-    {
-        std::unordered_set<std::string> expr_columns;
-        for (const auto & expr : exprs)
-        {
-            const auto * id = expr->as<const ColumnNode>();
-            if (!id)
-                continue;
-            auto source = id->getColumnSourceOrNull();
-            if (!source)
-                continue;
-
-            if (source.get() != query_info.table_expression.get())
-                continue;
-
-            expr_columns.emplace(id->getColumnName());
-        }
-        for (const auto & column : sharding_key_expr->getRequiredColumns())
-        {
-            if (!expr_columns.contains(column))
-                return false;
-        }
-
-        return true;
-    };
-
-    // GROUP BY qualifiers
-    // - TODO: WITH TOTALS can be implemented
-    // - TODO: WITH ROLLUP can be implemented (I guess)
-    if (query_node.isGroupByWithTotals() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube())
-        return {};
-
-    // Window functions are not supported.
-    if (hasWindowFunctionNodes(query_info.query_tree))
-        return {};
-    // TODO: extremes support can be implemented
-    if (settings.extremes)
-        return {};
-
-    // DISTINCT
-    if (query_node.isDistinct())
-    {
-        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(query_node.getProjection()))
-            return {};
-    }
-
-    // GROUP BY
-    if (query_info.has_aggregates || query_node.hasGroupBy())
-    {
-        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || !expr_contains_sharding_key(query_node.getGroupBy()))
-            return {};
-    }
-
-    // LIMIT BY
-    if (query_node.hasLimitBy())
-    {
-        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(query_node.getLimitBy()))
-            return {};
-    }
-
-    // ORDER BY
-    if (query_node.hasOrderBy())
-        return default_stage;
-
-    // LIMIT
-    // OFFSET
-    if (query_node.hasLimit() || query_node.hasOffset())
-        return default_stage;
-
-    // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
-    return QueryProcessingStage::Complete;
 }
 
 std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const
@@ -779,11 +687,18 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     }
     else
     {
+        auto resolved_remote_storage_id = remote_storage_id;
+        // In case of cross-replication we don't know what database is used for the table.
+        // `storage_id.hasDatabase()` can return false only on the initiator node.
+        // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
+        if (remote_storage_id.hasDatabase())
+            resolved_remote_storage_id = query_context->resolveStorageID(remote_storage_id);
+
         auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
 
         auto column_names_and_types = distributed_storage_snapshot->getColumns(get_column_options);
 
-        auto storage = std::make_shared<StorageDummy>(remote_storage_id, ColumnsDescription{column_names_and_types});
+        auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, ColumnsDescription{column_names_and_types});
         auto table_node = std::make_shared<TableNode>(std::move(storage), query_context);
 
         if (table_expression_modifiers)
@@ -825,16 +740,12 @@ void StorageDistributed::read(
             remote_storage_id,
             remote_table_function_ptr);
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
-        /** For distributed tables we do not need constants in header, since we don't send them to remote servers.
-          * Moreover, constants can break some functions like `hostName` that are constants only for local queries.
-          */
-        for (auto & column : header)
-            column.column = column.column->convertToFullColumnIfConst();
         query_ast = queryNodeToSelectQuery(query_tree_distributed);
     }
     else
     {
-        header = InterpreterSelectQuery(query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+        header =
+            InterpreterSelectQuery(query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
         query_ast = query_info.query;
     }
 
@@ -845,9 +756,6 @@ void StorageDistributed::read(
     /// Return directly (with correct header) if no shard to query.
     if (query_info.getCluster()->getShardsInfo().empty())
     {
-        if (local_context->getSettingsRef().allow_experimental_analyzer)
-            return;
-
         Pipe pipe(std::make_shared<NullSource>(header));
         auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
@@ -868,42 +776,36 @@ void StorageDistributed::read(
             storage_snapshot,
             processed_stage);
 
-    const auto & settings = local_context->getSettingsRef();
+    auto settings = local_context->getSettingsRef();
 
     ClusterProxy::AdditionalShardFilterGenerator additional_shard_filter_generator;
-    if (local_context->canUseParallelReplicasCustomKey(*query_info.getCluster()))
+    if (query_info.use_custom_key)
     {
         if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *local_context))
         {
+            if (query_info.getCluster()->getShardCount() == 1)
+            {
+                // we are reading from single shard with multiple replicas but didn't transform replicas
+                // into virtual shards with custom_key set
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Replicas weren't transformed into virtual shards");
+            }
+
             additional_shard_filter_generator =
-                [my_custom_key_ast = std::move(custom_key_ast),
-                 column_description = this->getInMemoryMetadataPtr()->columns,
-                 custom_key_type = settings.parallel_replicas_custom_key_filter_type.value,
-                 context = local_context,
-                 replica_count = query_info.getCluster()->getShardsInfo().front().per_replica_pools.size()](uint64_t replica_num) -> ASTPtr
+                [&, my_custom_key_ast = std::move(custom_key_ast), shard_count = query_info.cluster->getShardCount()](uint64_t shard_num) -> ASTPtr
             {
                 return getCustomKeyFilterForParallelReplica(
-                    replica_count, replica_num - 1, my_custom_key_ast, custom_key_type, column_description, context);
+                    shard_count, shard_num - 1, my_custom_key_ast, settings.parallel_replicas_custom_key_filter_type, *this, local_context);
             };
         }
     }
 
     ClusterProxy::executeQuery(
-        query_plan,
-        header,
-        processed_stage,
-        main_table,
-        remote_table_function_ptr,
-        select_stream_factory,
-        log,
-        modified_query_ast,
-        local_context,
-        query_info,
-        sharding_key_expr,
-        sharding_key_column_name,
-        query_info.cluster,
-        distributed_settings,
-        additional_shard_filter_generator);
+        query_plan, header, processed_stage,
+        main_table, remote_table_function_ptr,
+        select_stream_factory, log, modified_query_ast,
+        local_context, query_info,
+        sharding_key_expr, sharding_key_column_name,
+        query_info.cluster, additional_shard_filter_generator);
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
@@ -931,8 +833,8 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     }
 
     /// Force sync insertion if it is remote() table function
-    bool insert_sync = settings.distributed_foreground_insert || settings.insert_shard_id || owned_cluster;
-    auto timeout = settings.distributed_background_insert_timeout;
+    bool insert_sync = settings.insert_distributed_sync || settings.insert_shard_id || owned_cluster;
+    auto timeout = settings.insert_distributed_timeout;
 
     Names columns_to_send;
     if (settings.insert_allow_materialized_columns)
@@ -1031,7 +933,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         else
         {
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
-            auto connections = shard_info.pool->getMany(timeouts, settings, PoolMode::GET_ONE);
+            auto connections = shard_info.pool->getMany(timeouts, &settings, PoolMode::GET_ONE);
             if (connections.empty() || connections.front().isNull())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection for shard {}",
                     shard_info.shard_num);
@@ -1049,67 +951,15 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     return pipeline;
 }
 
-static ActionsDAGPtr getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
-{
-    QueryPlan plan;
-    SelectQueryOptions options;
-    options.only_analyze = true;
-    if (context->getSettingsRef().allow_experimental_analyzer)
-    {
-        InterpreterSelectQueryAnalyzer interpreter(ast, context, options);
-        plan = std::move(interpreter).extractQueryPlan();
-    }
-    else
-    {
-        InterpreterSelectWithUnionQuery interpreter(ast, context, options);
-        interpreter.buildQueryPlan(plan);
-    }
-
-    plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
-
-    std::stack<QueryPlan::Node *> nodes;
-    nodes.push(plan.getRootNode());
-
-    SourceStepWithFilter * source = nullptr;
-
-    while (!nodes.empty())
-    {
-        const auto * node = nodes.top();
-        nodes.pop();
-
-        if (auto * with_filter = dynamic_cast<SourceStepWithFilter *>(node->step.get()))
-        {
-            if (source)
-            {
-                WriteBufferFromOwnString buf;
-                plan.explainPlan(buf, {});
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Found multiple source steps for query\n{}\nPlan\n{}",
-                    queryToString(ast), buf.str());
-            }
-
-            source = with_filter;
-        }
-    }
-
-    if (!source)
-        return nullptr;
-
-    return ActionsDAG::buildFilterActionsDAG(source->getFilterNodes().nodes);
-}
-
 
 std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
-
-    auto filter = getFilterFromQuery(query.select, local_context);
-    const ActionsDAG::Node * predicate = nullptr;
-    if (filter)
-        predicate = filter->getOutputs().at(0);
-
+    auto & select = query.select->as<ASTSelectWithUnionQuery &>();
     /// Select query is needed for pruining on virtual columns
-    auto extension = src_storage_cluster.getTaskIteratorExtension(predicate, local_context);
+    auto extension = src_storage_cluster.getTaskIteratorExtension(
+        select.list_of_selects->children.at(0)->as<ASTSelectQuery>()->clone(),
+        local_context);
 
     auto dst_cluster = getCluster();
 
@@ -1133,20 +983,22 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
 
-    const auto & current_settings = query_context->getSettingsRef();
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
-
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
-    for (const auto & replicas : getCluster()->getShardsInfo())
+    for (const auto & replicas : getCluster()->getShardsAddresses())
     {
-        /// Skip unavailable hosts if necessary
-        auto try_results = replicas.pool->getMany(timeouts, current_settings, PoolMode::GET_MANY, /*async_callback*/ {}, /*skip_unavailable_endpoints*/ true);
-
         /// There will be only one replica, because we consider each replica as a shard
-        for (const auto & try_result : try_results)
+        for (const auto & node : replicas)
         {
+            auto connection = std::make_shared<Connection>(
+                node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
+                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
+                "ParallelInsertSelectInititiator",
+                node.compression,
+                node.secure
+            );
+
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                std::vector<IConnectionPool::Entry>{try_result},
+                connection,
                 new_query_str,
                 Block{},
                 query_context,
@@ -1260,7 +1112,7 @@ void StorageDistributed::initializeFromDisk()
     const auto & disks = data_volume->getDisks();
 
     /// Make initialization for large number of disks parallel.
-    ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, disks.size());
+    ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, disks.size());
 
     for (const DiskPtr & disk : disks)
     {
@@ -1291,9 +1143,9 @@ void StorageDistributed::initializeFromDisk()
 }
 
 
-void StorageDistributed::shutdown(bool)
+void StorageDistributed::shutdown()
 {
-    async_insert_blocker.cancelForever();
+    monitors_blocker.cancelForever();
 
     std::lock_guard lock(cluster_nodes_mutex);
 
@@ -1310,9 +1162,9 @@ void StorageDistributed::drop()
     // parallel.
     //
     // And second time shutdown() should be fast, since none of
-    // DirectoryMonitor should not do anything, because ActionBlocker is
-    // canceled (in shutdown()).
-    shutdown(true);
+    // DirectoryMonitor should do anything, because ActionBlocker is canceled
+    // (in shutdown()).
+    shutdown();
 
     // Distributed table without sharding_key does not allows INSERTs
     if (relative_data_path.empty())
@@ -1331,6 +1183,8 @@ void StorageDistributed::drop()
 
         disk->removeRecursive(relative_data_path);
     }
+
+    LOG_DEBUG(log, "Removed");
 }
 
 Strings StorageDistributed::getDataPaths() const
@@ -1354,9 +1208,11 @@ void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, Co
 
     for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end();)
     {
-        it->second.directory_queue->shutdownAndDropAllData();
+        it->second.directory_monitor->shutdownAndDropAllData();
         it = cluster_nodes_data.erase(it);
     }
+
+    LOG_DEBUG(log, "Removed");
 }
 
 StoragePolicyPtr StorageDistributed::getStoragePolicy() const
@@ -1407,20 +1263,16 @@ DistributedAsyncInsertDirectoryQueue & StorageDistributed::getDirectoryQueue(con
 
     std::lock_guard lock(cluster_nodes_mutex);
     auto & node_data = cluster_nodes_data[key];
-    /// If the node changes, you need to recreate the DistributedAsyncInsertDirectoryQueue
-    if (!node_data.directory_queue
-        || (node_data.clusters_version < getContext()->getClustersVersion() && node_data.addresses != parseAddresses(name)))
+    if (!node_data.directory_monitor)
     {
-        node_data.addresses = parseAddresses(name);
-        node_data.clusters_version = getContext()->getClustersVersion();
-        node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(node_data.addresses, *this);
-        node_data.directory_queue = std::make_unique<DistributedAsyncInsertDirectoryQueue>(
+        node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(name, *this);
+        node_data.directory_monitor = std::make_unique<DistributedAsyncInsertDirectoryQueue>(
             *this, disk, relative_data_path + name,
             node_data.connection_pool,
-            async_insert_blocker,
+            monitors_blocker,
             getContext()->getDistributedSchedulePool());
     }
-    return *node_data.directory_queue;
+    return *node_data.directory_monitor;
 }
 
 std::vector<DistributedAsyncInsertDirectoryQueue::Status> StorageDistributed::getDirectoryQueueStatuses() const
@@ -1429,55 +1281,8 @@ std::vector<DistributedAsyncInsertDirectoryQueue::Status> StorageDistributed::ge
     std::lock_guard lock(cluster_nodes_mutex);
     statuses.reserve(cluster_nodes_data.size());
     for (const auto & node : cluster_nodes_data)
-        statuses.push_back(node.second.directory_queue->getStatus());
+        statuses.push_back(node.second.directory_monitor->getStatus());
     return statuses;
-}
-
-Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) const
-{
-    Cluster::Addresses addresses;
-
-    const auto & cluster = getCluster();
-    const auto & shards_info = cluster->getShardsInfo();
-    const auto & shards_addresses = cluster->getShardsAddresses();
-
-    for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
-    {
-        const std::string & dirname = boost::copy_range<std::string>(*it);
-        Cluster::Address address = Cluster::Address::fromFullString(dirname);
-
-        /// Check new format shard{shard_index}_replica{replica_index}
-        /// (shard_index and replica_index starts from 1).
-        if (address.shard_index)
-        {
-            if (address.shard_index > shards_info.size())
-            {
-                LOG_ERROR(log, "No shard with shard_index={} ({})", address.shard_index, name);
-                continue;
-            }
-
-            const auto & replicas_addresses = shards_addresses[address.shard_index - 1];
-            size_t replicas = replicas_addresses.size();
-
-            if (dirname.ends_with("_all_replicas"))
-            {
-                for (const auto & replica_address : replicas_addresses)
-                    addresses.push_back(replica_address);
-                continue;
-            }
-
-            if (address.replica_index > replicas)
-            {
-                LOG_ERROR(log, "No shard with replica_index={} ({})", address.replica_index, name);
-                continue;
-            }
-
-            addresses.push_back(replicas_addresses[address.replica_index - 1]);
-        }
-        else
-            addresses.push_back(address);
-    }
-    return addresses;
 }
 
 std::optional<UInt64> StorageDistributed::totalBytes(const Settings &) const
@@ -1499,10 +1304,7 @@ ClusterPtr StorageDistributed::getCluster() const
 }
 
 ClusterPtr StorageDistributed::getOptimizedCluster(
-    ContextPtr local_context,
-    const StorageSnapshotPtr & storage_snapshot,
-    const SelectQueryInfo & query_info,
-    const TreeRewriterResultPtr & syntax_analyzer_result) const
+    ContextPtr local_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
 {
     ClusterPtr cluster = getCluster();
     const Settings & settings = local_context->getSettingsRef();
@@ -1511,7 +1313,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
 
     if (has_sharding_key && sharding_key_is_usable)
     {
-        ClusterPtr optimized = skipUnusedShards(cluster, query_info, syntax_analyzer_result, storage_snapshot, local_context);
+        ClusterPtr optimized = skipUnusedShards(cluster, query_info, storage_snapshot, local_context);
         if (optimized)
             return optimized;
     }
@@ -1533,15 +1335,14 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
 IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
 {
     const auto & slot_to_shard = cluster->getSlotToShard();
-    const IColumn * column = result.column.get();
 
 // If result.type is DataTypeLowCardinality, do shard according to its dictionaryType
 #define CREATE_FOR_TYPE(TYPE)                                                                                       \
     if (typeid_cast<const DataType##TYPE *>(result.type.get()))                                                     \
-        return createBlockSelector<TYPE>(*column, slot_to_shard);                                            \
+        return createBlockSelector<TYPE>(*result.column, slot_to_shard);                                            \
     else if (auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(result.type.get()))          \
         if (typeid_cast<const DataType ## TYPE *>(type_low_cardinality->getDictionaryType().get()))                 \
-            return createBlockSelector<TYPE>(*column->convertToFullColumnIfLowCardinality(), slot_to_shard);
+            return createBlockSelector<TYPE>(*result.column->convertToFullColumnIfLowCardinality(), slot_to_shard);
 
     CREATE_FOR_TYPE(UInt8)
     CREATE_FOR_TYPE(UInt16)
@@ -1557,87 +1358,20 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
     throw Exception(ErrorCodes::TYPE_MISMATCH, "Sharding key expression does not evaluate to an integer type");
 }
 
-ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
-    ClusterPtr cluster,
-    const SelectQueryInfo & query_info,
-    [[maybe_unused]] const StorageSnapshotPtr & storage_snapshot,
-    ContextPtr local_context) const
-{
-
-    ActionsDAG::NodeRawConstPtrs nodes;
-
-    const auto & prewhere_info = query_info.prewhere_info;
-    if (prewhere_info)
-    {
-        {
-            const auto & node = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
-            nodes.push_back(&node);
-        }
-
-        if (prewhere_info->row_level_filter)
-        {
-            const auto & node = prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name);
-            nodes.push_back(&node);
-        }
-    }
-
-    if (query_info.filter_actions_dag)
-        nodes.push_back(query_info.filter_actions_dag->getOutputs().at(0));
-
-    if (nodes.empty())
-        return nullptr;
-
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes);
-
-    size_t limit = local_context->getSettingsRef().optimize_skip_unused_shards_limit;
-    if (!limit || limit > SSIZE_MAX)
-    {
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "optimize_skip_unused_shards_limit out of range (0, {}]", SSIZE_MAX);
-    }
-
-    const auto & sharding_key_dag = sharding_key_expr->getActionsDAG();
-    const auto * expr_node = sharding_key_dag.tryFindInOutputs(sharding_key_column_name);
-    if (!expr_node)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Cannot find sharding key column {} in expression {}",
-            sharding_key_column_name, sharding_key_dag.dumpDAG());
-
-    const auto * predicate = filter_actions_dag->getOutputs().at(0);
-    const auto variants = evaluateExpressionOverConstantCondition(predicate, {expr_node}, local_context, limit);
-
-    // Can't get a definite answer if we can skip any shards
-    if (!variants)
-        return nullptr;
-
-    std::set<int> shards;
-
-    for (const auto & variant : *variants)
-    {
-        const auto selector = createSelector(cluster, variant.at(0));
-        shards.insert(selector.begin(), selector.end());
-    }
-
-    return cluster->getClusterWithMultipleShards({shards.begin(), shards.end()});
-}
-
 /// Returns a new cluster with fewer shards if constant folding for `sharding_key_expr` is possible
 /// using constraints from "PREWHERE" and "WHERE" conditions, otherwise returns `nullptr`
 ClusterPtr StorageDistributed::skipUnusedShards(
     ClusterPtr cluster,
     const SelectQueryInfo & query_info,
-    const TreeRewriterResultPtr & syntax_analyzer_result,
     const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
-    if (local_context->getSettingsRef().allow_experimental_analyzer)
-        return skipUnusedShardsWithAnalyzer(cluster, query_info, storage_snapshot, local_context);
-
     const auto & select = query_info.query->as<ASTSelectQuery &>();
     if (!select.prewhere() && !select.where())
         return nullptr;
 
     /// FIXME: support analyzer
-    if (!syntax_analyzer_result)
+    if (!query_info.syntax_analyzer_result)
         return nullptr;
 
     ASTPtr condition_ast;
@@ -1646,7 +1380,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
     {
         ASTPtr select_without_join_ptr = select.clone();
         ASTSelectQuery select_without_join = select_without_join_ptr->as<ASTSelectQuery &>();
-        TreeRewriterResult analyzer_result_without_join = *syntax_analyzer_result;
+        TreeRewriterResult analyzer_result_without_join = *query_info.syntax_analyzer_result;
 
         removeJoin(select_without_join, analyzer_result_without_join, local_context);
         if (!select_without_join.prewhere() && !select_without_join.where())
@@ -1701,7 +1435,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
 ActionLock StorageDistributed::getActionLock(StorageActionBlockType type)
 {
     if (type == ActionLocks::DistributedSend)
-        return async_insert_blocker.cancel();
+        return monitors_blocker.cancel();
     return {};
 }
 
@@ -1722,14 +1456,14 @@ void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
     /// Sync SYSTEM FLUSH DISTRIBUTED with TRUNCATE
     auto table_lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
-    std::vector<std::shared_ptr<DistributedAsyncInsertDirectoryQueue>> directory_queues;
+    std::vector<std::shared_ptr<DistributedAsyncInsertDirectoryQueue>> directory_monitors;
 
     {
         std::lock_guard lock(cluster_nodes_mutex);
 
-        directory_queues.reserve(cluster_nodes_data.size());
+        directory_monitors.reserve(cluster_nodes_data.size());
         for (auto & node : cluster_nodes_data)
-            directory_queues.push_back(node.second.directory_queue);
+            directory_monitors.push_back(node.second.directory_monitor);
     }
 
     bool need_flush = getDistributedSettingsRef().flush_on_detach;
@@ -1737,7 +1471,7 @@ void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
         LOG_INFO(log, "Skip flushing data (due to flush_on_detach=0)");
 
     /// TODO: Maybe it should be executed in parallel
-    for (auto & node : directory_queues)
+    for (auto & node : directory_monitors)
     {
         if (need_flush)
             node->flushAllData();
@@ -1793,7 +1527,7 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 
         std::lock_guard lock(cluster_nodes_mutex);
         for (auto & node : cluster_nodes_data)
-            node.second.directory_queue->updatePath(new_path_to_table_data);
+            node.second.directory_monitor->updatePath(new_path_to_table_data);
     }
 
     relative_data_path = new_path_to_table_data;
@@ -1929,15 +1663,15 @@ void registerStorageDistributed(StorageFactory & factory)
                 "bytes_to_throw_insert cannot be less or equal to bytes_to_delay_insert (since it is handled first)");
         }
 
-        /// Set default values from the distributed_background_insert_* global context settings.
-        if (!distributed_settings.background_insert_batch.changed)
-            distributed_settings.background_insert_batch = context->getSettingsRef().distributed_background_insert_batch;
-        if (!distributed_settings.background_insert_split_batch_on_failure.changed)
-            distributed_settings.background_insert_split_batch_on_failure = context->getSettingsRef().distributed_background_insert_split_batch_on_failure;
-        if (!distributed_settings.background_insert_sleep_time_ms.changed)
-            distributed_settings.background_insert_sleep_time_ms = context->getSettingsRef().distributed_background_insert_sleep_time_ms;
-        if (!distributed_settings.background_insert_max_sleep_time_ms.changed)
-            distributed_settings.background_insert_max_sleep_time_ms = context->getSettingsRef().distributed_background_insert_max_sleep_time_ms;
+        /// Set default values from the distributed_directory_monitor_* global context settings.
+        if (!distributed_settings.monitor_batch_inserts.changed)
+            distributed_settings.monitor_batch_inserts = context->getSettingsRef().distributed_directory_monitor_batch_inserts;
+        if (!distributed_settings.monitor_split_batch_on_failure.changed)
+            distributed_settings.monitor_split_batch_on_failure = context->getSettingsRef().distributed_directory_monitor_split_batch_on_failure;
+        if (!distributed_settings.monitor_sleep_time_ms.changed)
+            distributed_settings.monitor_sleep_time_ms = context->getSettingsRef().distributed_directory_monitor_sleep_time_ms;
+        if (!distributed_settings.monitor_max_sleep_time_ms.changed)
+            distributed_settings.monitor_max_sleep_time_ms = context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms;
 
         return std::make_shared<StorageDistributed>(
             args.table_id,
@@ -1962,19 +1696,4 @@ void registerStorageDistributed(StorageFactory & factory)
     });
 }
 
-bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)
-{
-    if (!data_volume)
-        return true;
-
-    for (auto & disk : data_volume->getDisks())
-    {
-        if (new_added_disks.contains(disk->getName()))
-        {
-            initializeDirectoryQueuesForDisk(disk);
-        }
-    }
-
-    return true;
-}
 }

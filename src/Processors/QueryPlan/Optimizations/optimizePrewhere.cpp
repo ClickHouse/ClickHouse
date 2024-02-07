@@ -161,10 +161,9 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes)
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),
         storage_metadata,
-        storage.getConditionEstimatorByPredicate(read_from_merge_tree->getQueryInfo(), storage_snapshot, context),
         queried_columns,
         storage.supportedPrewhereColumns(),
-        getLogger("QueryPlanOptimizePrewhere")};
+        &Poco::Logger::get("QueryPlanOptimizePrewhere")};
 
     auto optimize_result = where_optimizer.optimize(filter_step->getExpression(),
         filter_step->getFilterColumnName(),

@@ -15,16 +15,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
-namespace ProfileEvents
-{
-    extern const Event USearchAddCount;
-    extern const Event USearchAddVisitedMembers;
-    extern const Event USearchAddComputedDistances;
-    extern const Event USearchSearchCount;
-    extern const Event USearchSearchVisitedMembers;
-    extern const Event USearchSearchComputedDistances;
-}
-
 namespace DB
 {
 
@@ -36,23 +26,11 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
-}
-
-namespace
-{
-
-std::unordered_map<String, unum::usearch::scalar_kind_t> nameToScalarKind = {
-    {"f64", unum::usearch::scalar_kind_t::f64_k},
-    {"f32", unum::usearch::scalar_kind_t::f32_k},
-    {"f16", unum::usearch::scalar_kind_t::f16_k},
-    {"i8", unum::usearch::scalar_kind_t::i8_k}};
-
 }
 
 template <unum::usearch::metric_kind_t Metric>
-USearchIndexWithSerialization<Metric>::USearchIndexWithSerialization(size_t dimensions, unum::usearch::scalar_kind_t scalar_kind)
-    : Base(Base::make(unum::usearch::metric_punned_t(dimensions, Metric, scalar_kind)))
+USearchIndexWithSerialization<Metric>::USearchIndexWithSerialization(size_t dimensions)
+    : Base(Base::make(unum::usearch::metric_punned_t(dimensions, Metric)))
 {
 }
 
@@ -89,11 +67,9 @@ size_t USearchIndexWithSerialization<Metric>::getDimensions() const
 template <unum::usearch::metric_kind_t Metric>
 MergeTreeIndexGranuleUSearch<Metric>::MergeTreeIndexGranuleUSearch(
     const String & index_name_,
-    const Block & index_sample_block_,
-    unum::usearch::scalar_kind_t scalar_kind_)
+    const Block & index_sample_block_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
-    , scalar_kind(scalar_kind_)
     , index(nullptr)
 {
 }
@@ -102,11 +78,9 @@ template <unum::usearch::metric_kind_t Metric>
 MergeTreeIndexGranuleUSearch<Metric>::MergeTreeIndexGranuleUSearch(
     const String & index_name_,
     const Block & index_sample_block_,
-    unum::usearch::scalar_kind_t scalar_kind_,
     USearchIndexWithSerializationPtr<Metric> index_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
-    , scalar_kind(scalar_kind_)
     , index(std::move(index_))
 {
 }
@@ -125,25 +99,23 @@ void MergeTreeIndexGranuleUSearch<Metric>::deserializeBinary(ReadBuffer & istr, 
 {
     UInt64 dimension;
     readIntBinary(dimension, istr);
-    index = std::make_shared<USearchIndexWithSerialization<Metric>>(dimension, scalar_kind);
+    index = std::make_shared<USearchIndexWithSerialization<Metric>>(dimension);
     index->deserialize(istr);
 }
 
 template <unum::usearch::metric_kind_t Metric>
 MergeTreeIndexAggregatorUSearch<Metric>::MergeTreeIndexAggregatorUSearch(
     const String & index_name_,
-    const Block & index_sample_block_,
-    unum::usearch::scalar_kind_t scalar_kind_)
+    const Block & index_sample_block_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
-    , scalar_kind(scalar_kind_)
 {
 }
 
 template <unum::usearch::metric_kind_t Metric>
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorUSearch<Metric>::getGranuleAndReset()
 {
-    auto granule = std::make_shared<MergeTreeIndexGranuleUSearch<Metric>>(index_name, index_sample_block, scalar_kind, index);
+    auto granule = std::make_shared<MergeTreeIndexGranuleUSearch<Metric>>(index_name, index_sample_block, index);
     index = nullptr;
     return granule;
 }
@@ -159,12 +131,8 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
             block.rows());
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
-
     if (rows_read == 0)
         return;
-
-    if (rows_read > std::numeric_limits<uint32_t>::max())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Index granularity is too big: more than 4B rows per index granule.");
 
     if (index_sample_block.columns() > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected block with single column");
@@ -174,57 +142,41 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
 
     if (const auto & column_array = typeid_cast<const ColumnArray *>(column_cut.get()))
     {
-        const auto & column_array_data = column_array->getData();
-        const auto & column_array_data_float = typeid_cast<const ColumnFloat32 &>(column_array_data);
-        const auto & column_array_data_float_data = column_array_data_float.getData();
+        const auto & data = column_array->getData();
+        const auto & array = typeid_cast<const ColumnFloat32 &>(data).getData();
 
-        const auto & column_array_offsets = column_array->getOffsets();
-        const size_t num_rows = column_array_offsets.size();
+        if (array.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Array has 0 rows, {} rows expected", rows_read);
 
-        if (column_array->empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Array is unexpectedly empty");
+        const auto & offsets = column_array->getOffsets();
+        const size_t num_rows = offsets.size();
 
-        /// The Usearch algorithm naturally assumes that the indexed vectors have dimension >= 1. This condition is violated if empty arrays
-        /// are INSERTed into an Usearch-indexed column or if no value was specified at all in which case the arrays take on their default
-        /// values which is also empty.
-        if (column_array->isDefaultAt(0))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "The arrays in column '{}' must not be empty. Did you try to INSERT default values?", index_column_name);
 
         /// Check all sizes are the same
-        size_t dimension = column_array_offsets[0];
+        size_t size = offsets[0];
         for (size_t i = 0; i < num_rows - 1; ++i)
-            if (column_array_offsets[i + 1] - column_array_offsets[i] != dimension)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column '{}' must have equal length", index_column_name);
-
-        /// Also check that previously inserted blocks have the same size as this block.
-        /// Note that this guarantees consistency of dimension only within parts. We are unable to detect inconsistent dimensions across
-        /// parts - for this, a little help from the user is needed, e.g. CONSTRAINT cnstr CHECK length(array) = 42.
-        if (index && index->getDimensions() != dimension)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column '{}' must have equal length", index_column_name);
+            if (offsets[i + 1] - offsets[i] != size)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column {} must have equal length", index_column_name);
 
         if (!index)
-            index = std::make_shared<USearchIndexWithSerialization<Metric>>(dimension, scalar_kind);
+            index = std::make_shared<USearchIndexWithSerialization<Metric>>(size);
 
         /// Add all rows of block
         if (!index->reserve(unum::usearch::ceil2(index->size() + num_rows)))
             throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for usearch index");
 
-        for (size_t current_row = 0; current_row < num_rows; ++current_row)
-        {
-            auto rc = index->add(static_cast<uint32_t>(index->size()), &column_array_data_float_data[column_array_offsets[current_row - 1]]);
-            if (!rc)
-                throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, rc.error.release());
+        if (auto rc = index->add(index->size(), array.data()); !rc)
+            throw Exception(ErrorCodes::INCORRECT_DATA, rc.error.release());
+        for (size_t current_row = 1; current_row < num_rows; ++current_row)
+            if (auto rc = index->add(index->size(), &array[offsets[current_row - 1]]); !rc)
+                throw Exception(ErrorCodes::INCORRECT_DATA, rc.error.release());
 
-            ProfileEvents::increment(ProfileEvents::USearchAddCount);
-            ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, rc.visited_members);
-            ProfileEvents::increment(ProfileEvents::USearchAddComputedDistances, rc.computed_distances);
-        }
     }
     else if (const auto & column_tuple = typeid_cast<const ColumnTuple *>(column_cut.get()))
     {
-        const auto & column_tuple_columns = column_tuple->getColumns();
-        std::vector<std::vector<Float32>> data(column_tuple->size(), std::vector<Float32>());
-        for (const auto & column : column_tuple_columns)
+        const auto & columns = column_tuple->getColumns();
+        std::vector<std::vector<Float32>> data{column_tuple->size(), std::vector<Float32>()};
+        for (const auto & column : columns)
         {
             const auto & pod_array = typeid_cast<const ColumnFloat32 *>(column.get())->getData();
             for (size_t i = 0; i < pod_array.size(); ++i)
@@ -235,21 +187,14 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple has 0 rows, {} rows expected", rows_read);
 
         if (!index)
-            index = std::make_shared<USearchIndexWithSerialization<Metric>>(data[0].size(), scalar_kind);
+            index = std::make_shared<USearchIndexWithSerialization<Metric>>(data[0].size());
 
         if (!index->reserve(unum::usearch::ceil2(index->size() + data.size())))
             throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for usearch index");
 
         for (const auto & item : data)
-        {
-            auto rc = index->add(static_cast<uint32_t>(index->size()), item.data());
-            if (!rc)
-                throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, rc.error.release());
-
-            ProfileEvents::increment(ProfileEvents::USearchAddCount);
-            ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, rc.visited_members);
-            ProfileEvents::increment(ProfileEvents::USearchAddComputedDistances, rc.computed_distances);
-        }
+            if (auto rc = index->add(index->size(), item.data()); !rc)
+                throw Exception(ErrorCodes::INCORRECT_DATA, rc.error.release());
     }
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array or Tuple column");
@@ -312,53 +257,47 @@ std::vector<size_t> MergeTreeIndexConditionUSearch::getUsefulRangesImpl(MergeTre
             ann_condition.getDimensions(), index->dimensions());
 
     auto result = index->search(reference_vector.data(), limit);
-
-    ProfileEvents::increment(ProfileEvents::USearchSearchCount);
-    ProfileEvents::increment(ProfileEvents::USearchSearchVisitedMembers, result.visited_members);
-    ProfileEvents::increment(ProfileEvents::USearchSearchComputedDistances, result.computed_distances);
-
-    std::vector<UInt32> neighbors(result.size()); /// indexes of dots which were closest to the reference vector
+    std::vector<UInt64> neighbors(result.size()); /// indexes of dots which were closest to the reference vector
     std::vector<Float32> distances(result.size());
     result.dump_to(neighbors.data(), distances.data());
 
-    std::vector<size_t> granules;
-    granules.reserve(neighbors.size());
+    std::vector<size_t> granule_numbers;
+    granule_numbers.reserve(neighbors.size());
     for (size_t i = 0; i < neighbors.size(); ++i)
     {
         if (comparison_distance && distances[i] > comparison_distance)
             continue;
-        granules.push_back(neighbors[i] / index_granularity);
+        granule_numbers.push_back(neighbors[i] / index_granularity);
     }
 
     /// make unique
-    std::sort(granules.begin(), granules.end());
-    granules.erase(std::unique(granules.begin(), granules.end()), granules.end());
+    std::sort(granule_numbers.begin(), granule_numbers.end());
+    granule_numbers.erase(std::unique(granule_numbers.begin(), granule_numbers.end()), granule_numbers.end());
 
-    return granules;
+    return granule_numbers;
 }
 
-MergeTreeIndexUSearch::MergeTreeIndexUSearch(const IndexDescription & index_, const String & distance_function_, unum::usearch::scalar_kind_t scalar_kind_)
+MergeTreeIndexUSearch::MergeTreeIndexUSearch(const IndexDescription & index_, const String & distance_function_)
     : IMergeTreeIndex(index_)
     , distance_function(distance_function_)
-    , scalar_kind(scalar_kind_)
 {
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexUSearch::createIndexGranule() const
 {
     if (distance_function == DISTANCE_FUNCTION_L2)
-        return std::make_shared<MergeTreeIndexGranuleUSearch<unum::usearch::metric_kind_t::l2sq_k>>(index.name, index.sample_block, scalar_kind);
+        return std::make_shared<MergeTreeIndexGranuleUSearch<unum::usearch::metric_kind_t::l2sq_k>>(index.name, index.sample_block);
     else if (distance_function == DISTANCE_FUNCTION_COSINE)
-        return std::make_shared<MergeTreeIndexGranuleUSearch<unum::usearch::metric_kind_t::cos_k>>(index.name, index.sample_block, scalar_kind);
+        return std::make_shared<MergeTreeIndexGranuleUSearch<unum::usearch::metric_kind_t::cos_k>>(index.name, index.sample_block);
     std::unreachable();
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexUSearch::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexUSearch::createIndexAggregator() const
 {
     if (distance_function == DISTANCE_FUNCTION_L2)
-        return std::make_shared<MergeTreeIndexAggregatorUSearch<unum::usearch::metric_kind_t::l2sq_k>>(index.name, index.sample_block, scalar_kind);
+        return std::make_shared<MergeTreeIndexAggregatorUSearch<unum::usearch::metric_kind_t::l2sq_k>>(index.name, index.sample_block);
     else if (distance_function == DISTANCE_FUNCTION_COSINE)
-        return std::make_shared<MergeTreeIndexAggregatorUSearch<unum::usearch::metric_kind_t::cos_k>>(index.name, index.sample_block, scalar_kind);
+        return std::make_shared<MergeTreeIndexAggregatorUSearch<unum::usearch::metric_kind_t::cos_k>>(index.name, index.sample_block);
     std::unreachable();
 }
 
@@ -367,11 +306,6 @@ MergeTreeIndexConditionPtr MergeTreeIndexUSearch::createIndexCondition(const Sel
     return std::make_shared<MergeTreeIndexConditionUSearch>(index, query, distance_function, context);
 };
 
-MergeTreeIndexConditionPtr MergeTreeIndexUSearch::createIndexCondition(const ActionsDAGPtr &, ContextPtr) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeIndexAnnoy cannot be created with ActionsDAG");
-}
-
 MergeTreeIndexPtr usearchIndexCreator(const IndexDescription & index)
 {
     static constexpr auto default_distance_function = DISTANCE_FUNCTION_L2;
@@ -379,25 +313,18 @@ MergeTreeIndexPtr usearchIndexCreator(const IndexDescription & index)
     if (!index.arguments.empty())
         distance_function = index.arguments[0].get<String>();
 
-    static constexpr auto default_scalar_kind = unum::usearch::scalar_kind_t::f16_k;
-    auto scalar_kind = default_scalar_kind;
-    if (index.arguments.size() > 1)
-        scalar_kind = nameToScalarKind.at(index.arguments[1].get<String>());
-
-    return std::make_shared<MergeTreeIndexUSearch>(index, distance_function, scalar_kind);
+    return std::make_shared<MergeTreeIndexUSearch>(index, distance_function);
 }
 
 void usearchIndexValidator(const IndexDescription & index, bool /* attach */)
 {
     /// Check number and type of USearch index arguments:
 
-    if (index.arguments.size() > 2)
+    if (index.arguments.size() > 1)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "USearch index must not have more than one parameters");
 
     if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::String)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "First argument of USearch index (distance function) must be of type String");
-    if (index.arguments.size() > 1 && index.arguments[1].getType() != Field::Types::String)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of USearch index (scalar type) must be of type String");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Distance function argument of USearch index must be of type String");
 
     /// Check that the index is created on a single column
 
@@ -413,27 +340,12 @@ void usearchIndexValidator(const IndexDescription & index, bool /* attach */)
             throw Exception(ErrorCodes::INCORRECT_DATA, "USearch index only supports distance functions '{}' and '{}'", DISTANCE_FUNCTION_L2, DISTANCE_FUNCTION_COSINE);
     }
 
-    /// Check that a supported kind was passed as a second argument
-
-    if (index.arguments.size() > 1 && !nameToScalarKind.contains(index.arguments[1].get<String>()))
-    {
-        String supported_kinds;
-        for (const auto & [name, kind] : nameToScalarKind)
-        {
-            if (!supported_kinds.empty())
-                supported_kinds += ", ";
-            supported_kinds += name;
-        }
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unrecognized scalar kind (second argument) for USearch index. Supported kinds are: {}", supported_kinds);
-    }
-
     /// Check data type of indexed column:
 
     auto throw_unsupported_underlying_column_exception = []()
     {
         throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "USearch can only be created on columns of type Array(Float32) and Tuple(Float32[, Float32[, ...]])");
+            ErrorCodes::ILLEGAL_COLUMN, "USearch indexes can only be created on columns of type Array(Float32) and Tuple(Float32)");
     };
 
     DataTypePtr data_type = index.sample_block.getDataTypes()[0];

@@ -1,4 +1,3 @@
-#include <base/getFQDNOrHostName.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -6,49 +5,20 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/AsynchronousMetricLog.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Common/AsynchronousMetrics.h>
 
 
 namespace DB
 {
 
-ColumnsDescription AsynchronousMetricLogElement::getColumnsDescription()
+NamesAndTypesList AsynchronousMetricLogElement::getNamesAndTypes()
 {
-    ParserCodec codec_parser;
-    return ColumnsDescription
+    return
     {
-        {
-            "hostname",
-            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-            parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH),
-            "Hostname of the server executing the query."
-        },
-        {
-            "event_date",
-            std::make_shared<DataTypeDate>(),
-            parseQuery(codec_parser, "(Delta(2), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH),
-            "Event date."
-        },
-        {
-            "event_time",
-            std::make_shared<DataTypeDateTime>(),
-            parseQuery(codec_parser, "(Delta(4), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH),
-            "Event time."
-        },
-        {
-            "metric",
-            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-            parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH),
-            "Metric name."
-        },
-        {
-            "value",
-            std::make_shared<DataTypeFloat64>(),
-            parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH),
-            "Metric value."
-        }
+        {"event_date", std::make_shared<DataTypeDate>()},
+        {"event_time", std::make_shared<DataTypeDateTime>()},
+        {"metric", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"value", std::make_shared<DataTypeFloat64>(),}
     };
 }
 
@@ -56,7 +26,6 @@ void AsynchronousMetricLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t column_idx = 0;
 
-    columns[column_idx++]->insert(getFQDNOrHostName());
     columns[column_idx++]->insert(event_date);
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(metric_name);

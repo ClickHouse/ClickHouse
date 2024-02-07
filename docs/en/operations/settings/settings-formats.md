@@ -377,22 +377,9 @@ Allow parsing bools as numbers in JSON input formats.
 
 Enabled by default.
 
-## input_format_json_read_bools_as_strings {#input_format_json_read_bools_as_strings}
-
-Allow parsing bools as strings in JSON input formats.
-
-Enabled by default.
-
 ## input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
 
 Allow parsing numbers as strings in JSON input formats.
-
-Enabled by default.
-
-## input_format_json_try_infer_numbers_from_strings {#input_format_json_try_infer_numbers_from_strings}
-
-If enabled, during schema inference ClickHouse will try to infer numbers from string fields.
-It can be useful if JSON data contains quoted UInt64 numbers.
 
 Disabled by default.
 
@@ -417,76 +404,7 @@ Result:
 └────┴──────────────────────────┴────────────┘
 ```
 
-Enabled by default.
-
-## input_format_json_try_infer_named_tuples_from_objects {#input_format_json_try_infer_named_tuples_from_objects}
-
-If enabled, during schema inference ClickHouse will try to infer named Tuple from JSON objects.
-The resulting named Tuple will contain all elements from all corresponding JSON objects from sample data.
-
-Example:
-
-```sql
-SET input_format_json_try_infer_named_tuples_from_objects = 1;
-DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 43, "c" : [1, 2, 3]}}, {"obj" : {"d" : {"e" : 42}}}')
-```
-
-Result:
-
-```
-┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ obj  │ Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Tuple(e Nullable(Int64))) │              │                    │         │                  │                │
-└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-```
-
-Enabled by default.
-
-## input_format_json_read_arrays_as_strings {#input_format_json_read_arrays_as_strings}
-
-Allow parsing JSON arrays as strings in JSON input formats.
-
-Example:
-
-```sql
-SET input_format_json_read_arrays_as_strings = 1;
-SELECT arr, toTypeName(arr), JSONExtractArrayRaw(arr)[3] from format(JSONEachRow, 'arr String', '{"arr" : [1, "Hello", [1,2,3]]}');
-```
-
-Result:
-```
-┌─arr───────────────────┬─toTypeName(arr)─┬─arrayElement(JSONExtractArrayRaw(arr), 3)─┐
-│ [1, "Hello", [1,2,3]] │ String          │ [1,2,3]                                   │
-└───────────────────────┴─────────────────┴───────────────────────────────────────────┘
-```
-
-Enabled by default.
-
-## input_format_json_infer_incomplete_types_as_strings {#input_format_json_infer_incomplete_types_as_strings}
-
-Allow to use String type for JSON keys that contain only `Null`/`{}`/`[]` in data sample during schema inference.
-In JSON formats any value can be read as String, and we can avoid errors like `Cannot determine type for column 'column_name' by first 25000 rows of data, most likely this column contains only Nulls or empty Arrays/Maps` during schema inference
-by using String type for keys with unknown types. 
-
-Example:
-
-```sql
-SET input_format_json_infer_incomplete_types_as_strings = 1, input_format_json_try_infer_named_tuples_from_objects = 1;
-DESCRIBE format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" : null, "d" : {}, "e" : []}}');
-SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" : null, "d" : {}, "e" : []}}');
-```
-
-Result:
-```
-┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ obj  │ Tuple(a Array(Nullable(Int64)), b Nullable(String), c Nullable(String), d Nullable(String), e Array(Nullable(String))) │              │                    │         │                  │                │
-└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-
-┌─obj────────────────────────────┐
-│ ([1,2,3],'hello',NULL,'{}',[]) │
-└────────────────────────────────┘
-```
-
-Enabled by default.
+Disabled by default.
 
 ## input_format_json_validate_types_from_metadata {#input_format_json_validate_types_from_metadata}
 
@@ -716,23 +634,6 @@ Ignore extra columns in rows with more columns than expected and treat missing c
 
 Disabled by default.
 
-### output_format_markdown_escape_special_characters {#output_format_markdown_escape_special_characters}
-
-When enabled, escape special characters in Markdown.
-
-[Common Mark](https://spec.commonmark.org/0.30/#example-12) defines the following special characters that can be escaped by \:
-
-```
-! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~
-```
-
-Possible values:
-
-+ 0 — Disable.
-+ 1 — Enable.
-
-Default value: 0.
-
 ## TSV format settings {#tsv-format-settings}
 
 ### input_format_tsv_empty_as_default {#input_format_tsv_empty_as_default}
@@ -900,12 +801,6 @@ Enabled by default.
 ### output_format_csv_crlf_end_of_line {#output_format_csv_crlf_end_of_line}
 
 Use DOS/Windows-style line separator (CRLF) in CSV instead of Unix style (LF).
-
-Disabled by default.
-
-### input_format_csv_allow_cr_end_of_line {#input_format_csv_allow_cr_end_of_line}
-
-If it is set true, CR(\\r) will be allowed at end of line not followed by LF(\\n)
 
 Disabled by default.
 
@@ -1136,13 +1031,6 @@ Result
 a  0  1971-01-01
 ```
 
-## input_format_csv_try_infer_numbers_from_strings {#input_format_csv_try_infer_numbers_from_strings}
-
-If enabled, during schema inference ClickHouse will try to infer numbers from string fields.
-It can be useful if CSV data contains quoted UInt64 numbers.
-
-Disabled by default.
-
 ## Values format settings {#values-format-settings}
 
 ### input_format_values_interpret_expressions {#input_format_values_interpret_expressions}
@@ -1266,28 +1154,6 @@ Possible values:
 
 - 0 — The `LowCardinality` type is not converted to the `DICTIONARY` type.
 - 1 — The `LowCardinality` type is converted to the `DICTIONARY` type.
-
-Default value: `0`.
-
-### output_format_arrow_use_signed_indexes_for_dictionary {#output_format_arrow_use_signed_indexes_for_dictionary}
-
-Use signed integer types instead of unsigned in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
-
-Possible values:
-
-- 0 — Unsigned integer types are used for indexes in `DICTIONARY` type.
-- 1 — Signed integer types are used for indexes in `DICTIONARY` type.
-
-Default value: `1`.
-
-### output_format_arrow_use_64_bit_indexes_for_dictionary {#output_format_arrow_use_64_bit_indexes_for_dictionary}
-
-Use 64-bit integer type in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
-
-Possible values:
-
-- 0 — Type for indexes in `DICTIONARY` type is determined automatically.
-- 1 — 64-bit integer type is used for indexes in `DICTIONARY` type.
 
 Default value: `0`.
 
@@ -1597,13 +1463,7 @@ Result:
 
 Use ANSI escape sequences to paint colors in Pretty formats.
 
-possible values:
-
--   `0` — Disabled. Pretty formats do not use ANSI escape sequences.
--   `1` — Enabled. Pretty formats will use ANSI escape sequences except for `NoEscapes` formats.
--   `auto` - Enabled if `stdout` is a terminal except for `NoEscapes` formats.
-
-Default value is `auto`. 
+Enabled by default.
 
 ### output_format_pretty_grid_charset {#output_format_pretty_grid_charset}
 

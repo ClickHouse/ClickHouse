@@ -24,7 +24,7 @@ function thread {
         while true; do
             $CLICKHOUSE_CLIENT --query "DETACH TABLE r$1"
             $CLICKHOUSE_CLIENT --query "ATTACH TABLE r$1"
-            $CLICKHOUSE_CLIENT --insert_quorum 3 --insert_quorum_parallel 0 --query "INSERT INTO r$1 SELECT $x" 2>&1 | grep -qE "$valid_exceptions_to_retry" || break
+            $CLICKHOUSE_CLIENT --insert_quorum 3 --insert_quorum_parallel 0 --insert_keeper_fault_injection_probability=0 --query "INSERT INTO r$1 SELECT $x" 2>&1 | grep -qE "$valid_exceptions_to_retry" || break
         done
     done
 }

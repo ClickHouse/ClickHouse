@@ -239,10 +239,6 @@ The amount of virtual memory mapped for the pages of machine code of the server 
 
 The amount of virtual memory mapped for the use of stack and for the allocated memory, in bytes. It is unspecified whether it includes the per-thread stacks and most of the allocated memory, that is allocated with the 'mmap' system call. This metric exists only for completeness reasons. I recommend to use the `MemoryResident` metric for monitoring.
 
-### MemoryResidentMax
-
-Maximum amount of physical memory used by the server process, in bytes.
-
 ### MemoryResident
 
 The amount of physical memory used by the server process, in bytes.
@@ -550,14 +546,6 @@ Total amount of bytes (compressed, including data and indices) stored in all tab
 ### TotalPartsOfMergeTreeTables
 
 Total amount of data parts in all tables of MergeTree family. Numbers larger than 10 000 will negatively affect the server startup time and it may indicate unreasonable choice of the partition key.
-
-### TotalPrimaryKeyBytesInMemory
-
-The total amount of memory (in bytes) used by primary key values (only takes active parts into account).
-
-### TotalPrimaryKeyBytesInMemoryAllocated
-
-The total amount of memory (in bytes) reserved for primary key values (only takes active parts into account).
 
 ### TotalRowsOfMergeTreeTables
 

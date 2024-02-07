@@ -61,8 +61,6 @@ public:
             return;
 
         auto & count_distinct_argument_column = count_distinct_arguments_nodes[0];
-        if (count_distinct_argument_column->getNodeType() != QueryTreeNodeType::COLUMN)
-            return;
         auto & count_distinct_argument_column_typed = count_distinct_argument_column->as<ColumnNode &>();
 
         /// Build subquery SELECT count_distinct_argument_column FROM table_expression GROUP BY count_distinct_argument_column
@@ -78,8 +76,7 @@ public:
         /// Replace `countDistinct` of initial query into `count`
         auto result_type = function_node->getResultType();
         AggregateFunctionProperties properties;
-        auto action = NullsAction::EMPTY;
-        auto aggregate_function = AggregateFunctionFactory::instance().get("count", action, {}, {}, properties);
+        auto aggregate_function = AggregateFunctionFactory::instance().get("count", {}, {}, properties);
         function_node->resolveAsAggregateFunction(std::move(aggregate_function));
         function_node->getArguments().getNodes().clear();
     }

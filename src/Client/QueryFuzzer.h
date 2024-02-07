@@ -10,7 +10,6 @@
 #include <Core/Field.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/IAST.h>
-#include <Parsers/NullsAction.h>
 #include <Common/randomSeed.h>
 #include "Parsers/IAST_fwd.h"
 
@@ -87,7 +86,6 @@ struct QueryFuzzer
     void fuzzOrderByElement(ASTOrderByElement * elem);
     void fuzzOrderByList(IAST * ast);
     void fuzzColumnLikeExpressionList(IAST * ast);
-    void fuzzNullsAction(NullsAction & action);
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
     void fuzzExplainQuery(ASTExplainQuery & explain);
@@ -95,9 +93,6 @@ struct QueryFuzzer
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
     void fuzzTableName(ASTTableExpression & table);
-    ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
-    ASTPtr reverseLiteralFuzzing(ASTPtr child);
-    void fuzzExpressionList(ASTExpressionList & expr_list);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(ASTPtr ast);

@@ -10,8 +10,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/Stopwatch.h>
-#include <Common/AsyncLoader.h>
-
+#include <Common/ThreadPool.h>
 
 namespace Poco
 {
@@ -22,6 +21,9 @@ class AtomicStopwatch;
 
 namespace DB
 {
+
+void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch);
+
 
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
@@ -55,13 +57,8 @@ public:
     TablesLoader(ContextMutablePtr global_context_, Databases databases_, LoadingStrictnessLevel strictness_mode_);
     TablesLoader() = delete;
 
-    /// Create tasks for async loading of all tables in `databases` after specified jobs `load_after`.
-    [[nodiscard]] LoadTaskPtrs loadTablesAsync(LoadJobSet load_after = {});
-
-    /// Create tasks for async startup of all tables in `databases` after specified jobs `startup_after`.
-    /// Note that for every table startup an extra dependency on that table loading will be added along with `startup_after`.
-    /// Must be called only after `loadTablesAsync()`.
-    [[nodiscard]] LoadTaskPtrs startupTablesAsync(LoadJobSet startup_after = {});
+    void loadTables();
+    void startupTables();
 
 private:
     ContextMutablePtr global_context;
@@ -73,15 +70,16 @@ private:
     TablesDependencyGraph referential_dependencies;
     TablesDependencyGraph loading_dependencies;
     TablesDependencyGraph all_loading_dependencies;
-    LoggerPtr log;
+    Poco::Logger * log;
     std::atomic<size_t> tables_processed{0};
     AtomicStopwatch stopwatch;
 
-    AsyncLoader & async_loader;
-    std::unordered_map<String, LoadTaskPtr> load_table; /// table_id -> load task
+    ThreadPool pool;
 
     void buildDependencyGraph();
     void removeUnresolvableDependencies();
+    void loadTablesInTopologicalOrder(ThreadPool & pool);
+    void startLoadingTables(ThreadPool & pool, ContextMutablePtr load_context, const std::vector<StorageID> & tables_to_load, size_t level);
 };
 
 }

@@ -5,13 +5,9 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Operators.h>
 #include <Interpreters/ClientInfo.h>
-#include <base/getThreadId.h>
-#include <base/hex.h>
 
 namespace DB
 {
-
-// NOLINTBEGIN(bugprone-undefined-memory-manipulation)
 
 namespace ErrorCodes
 {
@@ -264,7 +260,7 @@ Packet MultiplexedConnections::drain()
         switch (packet.type)
         {
             case Protocol::Server::TimezoneUpdate:
-            case Protocol::Server::MergeTreeAllRangesAnnouncement:
+            case Protocol::Server::MergeTreeAllRangesAnnounecement:
             case Protocol::Server::MergeTreeReadTaskRequest:
             case Protocol::Server::ReadTaskRequest:
             case Protocol::Server::PartUUIDs:
@@ -343,7 +339,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     switch (packet.type)
     {
         case Protocol::Server::TimezoneUpdate:
-        case Protocol::Server::MergeTreeAllRangesAnnouncement:
+        case Protocol::Server::MergeTreeAllRangesAnnounecement:
         case Protocol::Server::MergeTreeReadTaskRequest:
         case Protocol::Server::ReadTaskRequest:
         case Protocol::Server::PartUUIDs:
@@ -471,7 +467,5 @@ void MultiplexedConnections::setAsyncCallback(AsyncCallback async_callback)
             state.connection->setAsyncCallback(async_callback);
     }
 }
-
-// NOLINTEND(bugprone-undefined-memory-manipulation)
 
 }

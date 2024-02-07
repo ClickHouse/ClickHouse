@@ -90,7 +90,7 @@ void deserializeACLMap(KeeperStorage & storage, ReadBuffer & in)
     }
 }
 
-int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, LoggerPtr log)
+int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, Poco::Logger * log)
 {
     int64_t max_zxid = 0;
     std::string path;
@@ -120,6 +120,7 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, LoggerP
         Coordination::read(node.stat.pzxid, in);
         if (!path.empty())
         {
+            node.stat.dataLength = static_cast<Int32>(node.getData().length());
             node.seq_num = node.stat.cversion;
             storage.container.insertOrReplace(path, node);
 
@@ -146,7 +147,7 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, LoggerP
     return max_zxid;
 }
 
-void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::string & snapshot_path, LoggerPtr log)
+void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::string & snapshot_path, Poco::Logger * log)
 {
     LOG_INFO(log, "Deserializing storage snapshot {}", snapshot_path);
     int64_t zxid = getZxidFromName(snapshot_path);
@@ -185,7 +186,7 @@ void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::st
     LOG_INFO(log, "Finished, snapshot ZXID {}", storage.zxid);
 }
 
-void deserializeKeeperStorageFromSnapshotsDir(KeeperStorage & storage, const std::string & path, LoggerPtr log)
+void deserializeKeeperStorageFromSnapshotsDir(KeeperStorage & storage, const std::string & path, Poco::Logger * log)
 {
     namespace fs = std::filesystem;
     std::map<int64_t, std::string> existing_snapshots;
@@ -283,7 +284,7 @@ void deserializeLogMagic(ReadBuffer & in)
 ///     strange, that this 550 bytes obviously was a part of Create transaction,
 ///     but the operation code was -1. We have added debug prints to original
 ///     zookeeper (3.6.3) and found that it just reads 550 bytes of this "Error"
-///     transaction, took the first 4 bytes as an error code (it was 79, non
+///     transaction, tooks the first 4 bytes as an error code (it was 79, non
 ///     existing code) and skip all remaining 546 bytes. NOTE: it looks like a bug
 ///     in ZooKeeper.
 ///
@@ -473,7 +474,7 @@ bool hasErrorsInMultiRequest(Coordination::ZooKeeperRequestPtr request)
 
 }
 
-bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, LoggerPtr /*log*/)
+bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, Poco::Logger * /*log*/)
 {
     int64_t checksum;
     Coordination::read(checksum, in);
@@ -528,7 +529,7 @@ bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, LoggerPtr /*log*/)
     return true;
 }
 
-void deserializeLogAndApplyToStorage(KeeperStorage & storage, const std::string & log_path, LoggerPtr log)
+void deserializeLogAndApplyToStorage(KeeperStorage & storage, const std::string & log_path, Poco::Logger * log)
 {
     ReadBufferFromFile reader(log_path);
 
@@ -552,7 +553,7 @@ void deserializeLogAndApplyToStorage(KeeperStorage & storage, const std::string 
     LOG_INFO(log, "Finished {} deserialization, totally read {} records", log_path, counter);
 }
 
-void deserializeLogsAndApplyToStorage(KeeperStorage & storage, const std::string & path, LoggerPtr log)
+void deserializeLogsAndApplyToStorage(KeeperStorage & storage, const std::string & path, Poco::Logger * log)
 {
     namespace fs = std::filesystem;
     std::map<int64_t, std::string> existing_logs;

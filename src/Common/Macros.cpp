@@ -1,5 +1,3 @@
-#include <algorithm>
-#include <unordered_map>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Macros.h>
 #include <Common/Exception.h>
@@ -36,15 +34,6 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
             enable_special_macros = false;
         }
     }
-}
-
-Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & root_key, LoggerPtr log)
-    : Macros(config, root_key, log.get())
-{}
-
-Macros::Macros(std::map<String, String> map)
-{
-    macros = std::move(map);
 }
 
 String Macros::expand(const String & s,
@@ -124,7 +113,7 @@ String Macros::expand(const String & s,
             auto uuid = ServerUUID::get();
             if (UUIDHelpers::Nil == uuid)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Macro {{server_uuid}} expanded to zero, which means the UUID is not initialized (most likely it's not a server application)");
+                    "Macro {server_uuid} expanded to zero, which means the UUID is not initialized (most likely it's not a server application)");
             res += toString(uuid);
             info.expanded_other = true;
         }

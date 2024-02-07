@@ -20,7 +20,9 @@ class StorageSystemClusters final : public IStorageSystemOneBlock<StorageSystemC
 public:
     std::string getName() const override { return "SystemClusters"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
+
+    static NamesAndAliases getNamesAndAliases();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

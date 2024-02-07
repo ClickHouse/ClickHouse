@@ -276,37 +276,6 @@ def test_table_with_parts_in_queue_considered_non_empty():
     )
 
 
-def test_replicated_table_with_uuid_in_zkpath():
-    node1.query(
-        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
-        "x UInt8, y String"
-        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/{uuid}','{replica}')"
-        "ORDER BY x"
-    )
-
-    node1.query("INSERT INTO tbl VALUES (1, 'AA')")
-    node2.query("INSERT INTO tbl VALUES (2, 'BB')")
-
-    backup_name = new_backup_name()
-    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
-
-    # The table `tbl2` is expected to have a different UUID so it's ok to have both `tbl` and `tbl2` at the same time.
-    node2.query(f"RESTORE TABLE tbl AS tbl2 ON CLUSTER 'cluster' FROM {backup_name}")
-
-    node1.query("INSERT INTO tbl2 VALUES (3, 'CC')")
-
-    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
-    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl2")
-
-    for instance in [node1, node2]:
-        assert instance.query("SELECT * FROM tbl ORDER BY x") == TSV(
-            [[1, "AA"], [2, "BB"]]
-        )
-        assert instance.query("SELECT * FROM tbl2 ORDER BY x") == TSV(
-            [[1, "AA"], [2, "BB"], [3, "CC"]]
-        )
-
-
 def test_replicated_table_with_not_synced_insert():
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
@@ -1087,18 +1056,15 @@ def test_stop_other_host_during_backup(kill):
     status = node1.query(f"SELECT status FROM system.backups WHERE id='{id}'").strip()
 
     if kill:
-        expected_statuses = ["BACKUP_CREATED", "BACKUP_FAILED"]
+        assert status in ["BACKUP_CREATED", "BACKUP_FAILED"]
     else:
-        expected_statuses = ["BACKUP_CREATED", "BACKUP_CANCELLED"]
-
-    assert status in expected_statuses
+        assert status == "BACKUP_CREATED"
 
     node2.start_clickhouse()
 
     if status == "BACKUP_CREATED":
         node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
         node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
-        node1.query("SYSTEM SYNC REPLICA tbl")
         assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
     elif status == "BACKUP_FAILED":
         assert not os.path.exists(

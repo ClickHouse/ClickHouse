@@ -338,8 +338,6 @@ def test_alter_drop_part(started_cluster, engine):
     main_node.query(f"INSERT INTO {database}.alter_drop_part VALUES (123)")
     if engine == "MergeTree":
         dummy_node.query(f"INSERT INTO {database}.alter_drop_part VALUES (456)")
-    else:
-        main_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part PULL")
     main_node.query(f"ALTER TABLE {database}.alter_drop_part DROP PART '{part_name}'")
     assert main_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
     if engine == "ReplicatedMergeTree":
@@ -509,7 +507,7 @@ def test_alters_from_different_replicas(started_cluster):
 
     settings = {"distributed_ddl_task_timeout": 5}
     assert (
-        "There are 1 unfinished hosts (0 of them are currently executing the task"
+        "There are 1 unfinished hosts (0 of them are currently active)"
         in competing_node.query_and_get_error(
             "ALTER TABLE alters_from_different_replicas.concurrent_test ADD COLUMN Added0 UInt32;",
             settings=settings,
@@ -801,7 +799,7 @@ def test_recover_staled_replica(started_cluster):
             settings=settings,
         )
         main_node.query_with_retry(
-            "ALTER TABLE recover.mv1 MODIFY QUERY SELECT m as n FROM recover.rmt1",
+            "ALTER TABLE recover.mv1 MODIFY QUERY SELECT m FROM recover.rmt1",
             settings=settings,
         )
         main_node.query_with_retry(
@@ -1079,7 +1077,7 @@ def test_startup_without_zk(started_cluster):
         err = main_node.query_and_get_error(
             "CREATE DATABASE startup ENGINE = Replicated('/clickhouse/databases/startup', 'shard1', 'replica1');"
         )
-        assert "ZooKeeper" in err or "Coordination::Exception" in err
+        assert "ZooKeeper" in err
     main_node.query(
         "CREATE DATABASE startup ENGINE = Replicated('/clickhouse/databases/startup', 'shard1', 'replica1');"
     )
@@ -1353,92 +1351,3 @@ def test_replicated_table_structure_alter(started_cluster):
     assert "1\t2\t3\t0\n1\t2\t3\t4\n" == dummy_node.query(
         "SELECT * FROM table_structure.rmt ORDER BY k"
     )
-
-
-def test_modify_comment(started_cluster):
-    main_node.query(
-        "CREATE DATABASE modify_comment_db ENGINE = Replicated('/test/modify_comment', 'shard1', 'replica' || '1');"
-    )
-
-    dummy_node.query(
-        "CREATE DATABASE modify_comment_db ENGINE = Replicated('/test/modify_comment', 'shard1', 'replica' || '2');"
-    )
-
-    main_node.query(
-        "CREATE TABLE modify_comment_db.modify_comment_table (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree ORDER BY k PARTITION BY toYYYYMM(d);"
-    )
-
-    def restart_verify_not_readonly():
-        main_node.restart_clickhouse()
-        assert (
-            main_node.query(
-                "SELECT is_readonly FROM system.replicas WHERE table = 'modify_comment_table'"
-            )
-            == "0\n"
-        )
-        dummy_node.restart_clickhouse()
-        assert (
-            dummy_node.query(
-                "SELECT is_readonly FROM system.replicas WHERE table = 'modify_comment_table'"
-            )
-            == "0\n"
-        )
-
-    main_node.query(
-        "ALTER TABLE modify_comment_db.modify_comment_table COMMENT COLUMN d 'Some comment'"
-    )
-
-    restart_verify_not_readonly()
-
-    main_node.query(
-        "ALTER TABLE modify_comment_db.modify_comment_table MODIFY COMMENT 'Some error comment'"
-    )
-
-    restart_verify_not_readonly()
-
-    main_node.query("DROP DATABASE modify_comment_db SYNC")
-    dummy_node.query("DROP DATABASE modify_comment_db SYNC")
-
-
-def test_table_metadata_corruption(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
-    dummy_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
-
-    main_node.query(
-        "CREATE DATABASE table_metadata_corruption ENGINE = Replicated('/clickhouse/databases/table_metadata_corruption', 'shard1', 'replica1');"
-    )
-    dummy_node.query(
-        "CREATE DATABASE table_metadata_corruption ENGINE = Replicated('/clickhouse/databases/table_metadata_corruption', 'shard1', 'replica2');"
-    )
-
-    create_some_tables("table_metadata_corruption")
-
-    main_node.query("SYSTEM SYNC DATABASE REPLICA table_metadata_corruption")
-    dummy_node.query("SYSTEM SYNC DATABASE REPLICA table_metadata_corruption")
-
-    # Server should handle this by throwing an exception during table loading, which should lead to server shutdown
-    corrupt = "sed --follow-symlinks -i 's/ReplicatedMergeTree/CorruptedMergeTree/' /var/lib/clickhouse/metadata/table_metadata_corruption/rmt1.sql"
-
-    print(f"Corrupting metadata using `{corrupt}`")
-    dummy_node.stop_clickhouse(kill=True)
-    dummy_node.exec_in_container(["bash", "-c", corrupt])
-
-    query = (
-        "SELECT name, uuid, create_table_query FROM system.tables WHERE database='table_metadata_corruption' AND name NOT LIKE '.inner_id.%' "
-        "ORDER BY name SETTINGS show_table_uuid_in_table_create_query_if_not_nil=1"
-    )
-    expected = main_node.query(query)
-
-    # We expect clickhouse server to shutdown without LOGICAL_ERRORs or deadlocks
-    dummy_node.start_clickhouse(expected_to_fail=True)
-    assert not dummy_node.contains_in_log("LOGICAL_ERROR")
-
-    fix_corrupt = "sed --follow-symlinks -i 's/CorruptedMergeTree/ReplicatedMergeTree/' /var/lib/clickhouse/metadata/table_metadata_corruption/rmt1.sql"
-    print(f"Fix corrupted metadata using `{fix_corrupt}`")
-    dummy_node.exec_in_container(["bash", "-c", fix_corrupt])
-
-    dummy_node.start_clickhouse()
-    assert_eq_with_retry(dummy_node, query, expected)
-
-    main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
-    dummy_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")

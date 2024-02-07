@@ -50,7 +50,7 @@ private:
     String remote_table_name;
     String database_path;
     SQLitePtr sqlite_db;
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

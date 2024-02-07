@@ -1,6 +1,5 @@
 <clickhouse>
     <zookeeper>
-        <use_compression>1</use_compression>
         <node index="1">
             <host>localhost</host>
             <port>9181</port>

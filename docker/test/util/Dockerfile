@@ -6,7 +6,7 @@ ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 # 15.0.2
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=17
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=16
 
 RUN apt-get update \
     && apt-get install \
@@ -27,9 +27,7 @@ RUN apt-get update \
     && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && echo "deb https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
         /etc/apt/sources.list \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
-
+    && apt-get clean
 
 # Install cmake 3.20+ for rust support
 # Used https://askubuntu.com/a/1157132 as reference
@@ -62,9 +60,7 @@ RUN apt-get update \
         software-properties-common \
         tzdata \
         --yes --no-install-recommends \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
-
+    && apt-get clean
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld

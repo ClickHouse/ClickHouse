@@ -328,7 +328,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 fs::create_symlink(binary_self_canonical_path, main_bin_path);
 
                 if (0 != chmod(binary_self_canonical_path.string().c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
-                    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot chmod {}", binary_self_canonical_path.string());
+                    throwFromErrno(fmt::format("Cannot chmod {}", binary_self_canonical_path.string()), ErrorCodes::SYSTEM_ERROR);
             }
         }
         else
@@ -361,7 +361,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             if (already_installed)
             {
                 if (0 != chmod(main_bin_path.string().c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
-                    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot chmod {}", main_bin_path.string());
+                    throwFromErrno(fmt::format("Cannot chmod {}", main_bin_path.string()), ErrorCodes::SYSTEM_ERROR);
             }
             else
             {
@@ -395,7 +395,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     }
 
                     if (0 != chmod(destination.c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
-                        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot chmod {}", main_bin_tmp_path.string());
+                        throwFromErrno(fmt::format("Cannot chmod {}", main_bin_tmp_path.string()), ErrorCodes::SYSTEM_ERROR);
                 }
                 catch (const Exception & e)
                 {
@@ -420,7 +420,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         /// Create symlinks.
 
-        std::initializer_list<std::string_view> tools
+        std::initializer_list<const char *> tools
         {
             "clickhouse-server",
             "clickhouse-client",
@@ -435,9 +435,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-keeper",
             "clickhouse-keeper-converter",
             "clickhouse-disks",
-            "ch",
-            "chl",
-            "chc",
         };
 
         for (const auto & tool : tools)
@@ -447,39 +444,29 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
             if (fs::exists(symlink_path))
             {
-                /// Do not replace short named symlinks if they are already present in the system
-                /// to avoid collision with other tools.
-                if (!tool.starts_with("clickhouse"))
+                bool is_symlink = FS::isSymlink(symlink_path);
+                fs::path points_to;
+                if (is_symlink)
+                    points_to = fs::weakly_canonical(FS::readSymlink(symlink_path));
+
+                if (is_symlink && (points_to == main_bin_path || (options.count("link") && points_to == binary_self_canonical_path)))
                 {
-                    fmt::print("Symlink {} already exists. Will keep it.\n", symlink_path.string());
                     need_to_create = false;
                 }
                 else
                 {
-                    bool is_symlink = FS::isSymlink(symlink_path);
-                    fs::path points_to;
-                    if (is_symlink)
-                        points_to = fs::weakly_canonical(FS::readSymlink(symlink_path));
-
-                    if (is_symlink && (points_to == main_bin_path || (options.count("link") && points_to == binary_self_canonical_path)))
+                    if (!is_symlink)
                     {
-                        need_to_create = false;
+                        fs::path rename_path = symlink_path.replace_extension(".old");
+                        fmt::print("File {} already exists but it's not a symlink. Will rename to {}.\n",
+                                   symlink_path.string(), rename_path.string());
+                        fs::rename(symlink_path, rename_path);
                     }
-                    else
+                    else if (points_to != main_bin_path)
                     {
-                        if (!is_symlink)
-                        {
-                            fs::path rename_path = symlink_path.replace_extension(".old");
-                            fmt::print("File {} already exists but it's not a symlink. Will rename to {}.\n",
-                                       symlink_path.string(), rename_path.string());
-                            fs::rename(symlink_path, rename_path);
-                        }
-                        else if (points_to != main_bin_path)
-                        {
-                            fmt::print("Symlink {} already exists but it points to {}. Will replace the old symlink to {}.\n",
-                                       symlink_path.string(), points_to.string(), main_bin_path.string());
-                            fs::remove(symlink_path);
-                        }
+                        fmt::print("Symlink {} already exists but it points to {}. Will replace the old symlink to {}.\n",
+                                   symlink_path.string(), points_to.string(), main_bin_path.string());
+                        fs::remove(symlink_path);
                     }
                 }
             }
@@ -1122,7 +1109,7 @@ namespace
                 return 0;
             }
             else
-                throw ErrnoException(ErrorCodes::CANNOT_KILL, "Cannot obtain the status of pid {} with `kill`", pid);
+                throwFromErrno(fmt::format("Cannot obtain the status of pid {} with `kill`", pid), ErrorCodes::CANNOT_KILL);
         }
 
         if (!pid)
@@ -1143,7 +1130,7 @@ namespace
         if (0 == kill(pid, signal))
             fmt::print("Sent {} signal to process with pid {}.\n", signal_name, pid);
         else
-            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot send {} signal", signal_name);
+            throwFromErrno(fmt::format("Cannot send {} signal", signal_name), ErrorCodes::SYSTEM_ERROR);
 
         size_t try_num = 0;
         for (; try_num < max_tries; ++try_num)
