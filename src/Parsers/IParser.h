@@ -82,7 +82,12 @@ public:
               * The frequency is arbitrary, but not too large, not too small,
               * and a power of two to simplify the division.
               */
-            if (depth % 8192 == 0)
+#ifdef USE_MUSL
+            static constexpr uint32_t check_frequency = 128;
+#else
+            static constexpr uint32_t check_frequency = 8192;
+#endif
+            if (depth % check_frequency == 0)
                 checkStackSize();
         }
 
