@@ -2387,8 +2387,8 @@ void ClientBase::runInteractive()
             if (!std::cin.good())
                 throw Exception(ErrorCodes::ABORTED, "Binary output confirmation prompt aborted by user.");
             trim(response);
-	    if (response.empty())
-		continue;
+            if (response.empty())
+                continue;
             if (response.size() == 1)
             {
                 if (response[0] == 'y' || response[0] == 'Y')
