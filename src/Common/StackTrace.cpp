@@ -26,7 +26,7 @@
 #include "config.h"
 
 
-#if defined(__APPLE__)
+#if defined(OS_DARWIN)
 /// This header contains functions like `backtrace` and `backtrace_symbols`
 /// Which will be used for stack unwinding on Mac.
 /// Read: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/backtrace.3.html
@@ -360,7 +360,7 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
 
 void StackTrace::tryCapture()
 {
-#ifdef __APPLE__
+#if defined(OS_DARWIN)
     size = ::backtrace(frame_pointers.data(), capacity);
 #else
     size = unw_backtrace(frame_pointers.data(), capacity);
