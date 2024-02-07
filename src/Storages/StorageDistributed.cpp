@@ -1502,10 +1502,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
 IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
 {
     const auto & slot_to_shard = cluster->getSlotToShard();
-
     const IColumn * column = result.column.get();
-    if (const auto * col_const = typeid_cast<const ColumnConst *>(column))
-        column = &col_const->getDataColumn();
 
 // If result.type is DataTypeLowCardinality, do shard according to its dictionaryType
 #define CREATE_FOR_TYPE(TYPE)                                                                                       \
