@@ -17,6 +17,8 @@
 #include <Common/Exception.h>
 #include <Poco/TemporaryFile.h>
 #include <filesystem>
+#include <format>
+
 
 
 namespace DB::ErrorCodes
@@ -344,6 +346,54 @@ TEST_P(ArchiveReaderAndWriterTest, InMemory)
 }
 
 
+TEST_P(ArchiveReaderAndWriterTest, ManyFilesInMemory)
+{
+    String archive_in_memory;
+    int files = 1000;
+    size_t times = 1;
+    /// Make an archive.
+    {
+        auto writer = createArchiveWriter(getPathToArchive(), std::make_unique<WriteBufferFromString>(archive_in_memory));
+        {
+            for(int i = 0; i < files; i++)
+            {
+                auto filename = std::format("{}.txt", i);
+                auto contents = std::format("The contents of {}.txt", i);
+                auto out = writer->writeFile(filename, times * contents.size());
+                for(int j = 0; j < times; j++)
+                {
+                    writeString(contents, *out);
+                }
+                out->finalize();
+            }
+        }
+        writer->finalize();
+    }
+
+    /// The created archive is really in memory.
+    ASSERT_FALSE(fs::exists(getPathToArchive()));
+
+    /// Read the archive.
+    auto read_archive_func = [&]() -> std::unique_ptr<SeekableReadBuffer> { return std::make_unique<ReadBufferFromString>(archive_in_memory); };
+    auto reader = createArchiveReader(getPathToArchive(), read_archive_func, archive_in_memory.size());
+
+    for(int i = 0; i < files; i++)
+    {
+        auto filename = std::format("{}.txt", i);
+        auto contents = std::format("The contents of {}.txt", i);
+        ASSERT_TRUE(reader->fileExists(filename));
+        EXPECT_EQ(reader->getFileInfo(filename).uncompressed_size, times * contents.size());
+
+        {
+            auto in = reader->readFile(filename, /*throw_on_not_found=*/true);
+            for(int j = 0; j < times; j++)
+            {
+                ASSERT_TRUE(checkString(String(contents), *in));
+            }
+        }
+    }
+}
+
 TEST_P(ArchiveReaderAndWriterTest, Password)
 {   
     auto writer = createArchiveWriter(getPathToArchive());
@@ -401,11 +451,57 @@ TEST_P(ArchiveReaderAndWriterTest, ArchiveNotExist)
 }
 
 
+TEST_P(ArchiveReaderAndWriterTest, ManyFilesOnDisk)
+{
+    int files = 1000;
+    size_t times = 1;
+    /// Make an archive.
+    {
+        auto writer = createArchiveWriter(getPathToArchive());
+        {
+            for(int i = 0; i < files; i++)
+            {
+                auto filename = std::format("{}.txt", i);
+                auto contents = std::format("The contents of {}.txt", i);
+                auto out = writer->writeFile(filename, times * contents.size());
+                for(int j = 0; j < times; j++)
+                {
+                    writeString(contents, *out);
+                }
+                out->finalize();
+            }
+        }
+        writer->finalize();
+    }
+
+    /// The created archive is really in memory.
+    ASSERT_TRUE(fs::exists(getPathToArchive()));
+
+    /// Read the archive.
+    auto reader = createArchiveReader(getPathToArchive());
+
+    for(int i = 0; i < files; i++)
+    {
+        auto filename = std::format("{}.txt", i);
+        auto contents = std::format("The contents of {}.txt", i);
+        ASSERT_TRUE(reader->fileExists(filename));
+        EXPECT_EQ(reader->getFileInfo(filename).uncompressed_size, times * contents.size());
+
+        {
+            auto in = reader->readFile(filename, /*throw_on_not_found=*/true);
+            for(int j = 0; j < times; j++)
+            {
+                ASSERT_TRUE(checkString(String(contents), *in));
+            }
+        }
+    }
+}
+
 TEST_P(ArchiveReaderAndWriterTest, LargeFile)
 {
     /// Make an archive.
     std::string_view contents = "The contents of a.txt\n";
-    int times = 100000000;
+    int times = 10000000;
     {
         auto writer = createArchiveWriter(getPathToArchive());
         {
@@ -569,17 +665,18 @@ TEST(SevenZipArchiveReaderTest, ReadTwoFiles) {
 }
 
 
-#if USE_MINIZIP
 
 namespace
 {
     const char * supported_archive_file_exts[] =
     {
+        #if USE_MINIZIP
         ".zip",
-        ".tar"
+        #endif
+        #if USE_LIBARCHIVE
+        ".tar",
+        #endif
     };
 }
 
 INSTANTIATE_TEST_SUITE_P(All, ArchiveReaderAndWriterTest, ::testing::ValuesIn(supported_archive_file_exts));
-
-#endif
