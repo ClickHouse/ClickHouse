@@ -47,7 +47,7 @@ private:
 
     IServer & iserver;
     const Poco::Net::SocketAddress address_to_listen;
-    LoggerPtr log;
+    LoggerRawPtr log;
     GRPCService grpc_service;
     std::unique_ptr<grpc::Server> grpc_server;
     std::unique_ptr<grpc::ServerCompletionQueue> queue;
