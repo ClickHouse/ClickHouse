@@ -98,8 +98,6 @@ std::optional<RangeWithStep> stepped_range_from_range(const Range & r, UInt64 st
         return std::nullopt;
     begin += remainder;
 
-    // LOG_DEBUG(&Poco::Logger::get("stepped_range_from_range"), "Begin: {}", begin);
-    // LOG_DEBUG(&Poco::Logger::get("stepped_range_from_range"), "Begin: {}", begin);
     while ((r.left_included <= r.left.get<UInt64>()) && (begin <= r.left.get<UInt64>() - r.left_included))
     {
         if (std::numeric_limits<UInt64>::max() - step < begin)
@@ -107,7 +105,6 @@ std::optional<RangeWithStep> stepped_range_from_range(const Range & r, UInt64 st
         begin += step;
     }
 
-    // LOG_DEBUG(&Poco::Logger::get("stepped_range_from_range"), "Begin: {}", begin);
     if ((begin >= r.right_included) && (begin - r.right_included >= r.right.get<UInt64>()))
         return std::nullopt;
     UInt64 right_edge_included = r.right.get<UInt64>() - (1 - r.right_included);
@@ -217,9 +214,6 @@ protected:
 
         ranges_state->pos = end;
 
-        LOG_DEBUG(&Poco::Logger::get("Range borders"), "Begin: {} {}", start.offset_in_ranges, static_cast<size_t>(start.offset_in_range));
-        LOG_DEBUG(&Poco::Logger::get("Range borders"), "End: {} {}", end.offset_in_ranges, static_cast<size_t>(end.offset_in_range));
-
         return size;
     }
 
@@ -258,12 +252,6 @@ protected:
                 ? end.offset_in_range - cursor.offset_in_range
                 : static_cast<UInt128>(last_value(range) - first_value(range)) / range.step + 1 - cursor.offset_in_range;
 
-            LOG_DEBUG(
-                &Poco::Logger::get("Generate"),
-                "Can Provide: {}, Block size: {}",
-                static_cast<UInt64>(can_provide),
-                static_cast<UInt64>(block_size));
-
             /// set value to block
             auto set_value = [&pos, this](UInt128 & start_value, UInt128 & end_value)
             {
@@ -280,8 +268,6 @@ protected:
                     auto start_value_64 = static_cast<UInt64>(start_value);
                     auto end_value_64 = static_cast<UInt64>(end_value);
                     auto size = (end_value_64 - start_value_64) / this->step;
-                    LOG_DEBUG(
-                        &Poco::Logger::get("Iota"), "Size: {}, Step: {}, Start: {}", static_cast<size_t>(size), this->step, start_value_64);
                     iota_with_step(pos, static_cast<size_t>(size), start_value_64, step);
                     pos += size;
                 }
@@ -443,13 +429,6 @@ Pipe ReadFromSystemNumbersStep::makePipe()
 {
     auto & numbers_storage = storage->as<StorageSystemNumbers &>();
 
-    LOG_DEBUG(
-        &Poco::Logger::get("Parameters"),
-        "Parameters: Limit: {}, Offset: {} Step: {}",
-        numbers_storage.limit.value(),
-        numbers_storage.offset,
-        numbers_storage.step);
-
     if (!numbers_storage.multithreaded)
         num_streams = 1;
 
@@ -468,7 +447,6 @@ Pipe ReadFromSystemNumbersStep::makePipe()
 
     if (condition.extractPlainRanges(ranges))
     {
-        LOG_DEBUG(&Poco::Logger::get("My logger"), "Use optimization");
         /// Intersect ranges with table range
         std::optional<Range> table_range;
         std::optional<Range> overflowed_table_range;
@@ -493,36 +471,11 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         {
             table_range.emplace(FieldRef(numbers_storage.offset), true, FieldRef(std::numeric_limits<UInt64>::max()), true);
         }
-        LOG_DEBUG(&Poco::Logger::get("My logger"), "Found table ranges");
 
         RangesWithStep intersected_ranges;
         for (auto & r : ranges)
         {
             auto intersected_range = table_range->intersectWith(r);
-            if (intersected_range.has_value())
-            {
-                LOG_DEBUG(
-                    &Poco::Logger::get("Ranges"),
-                    "Ranges: {} {} {} {}",
-                    intersected_range->left.get<UInt64>(),
-                    intersected_range->right.get<UInt64>(),
-                    intersected_range->left_included,
-                    intersected_range->right_included);
-                auto range_with_step = stepped_range_from_range(
-                    intersected_range.value(), numbers_storage.step, numbers_storage.offset % numbers_storage.step);
-                if (range_with_step.has_value())
-                {
-                    LOG_DEBUG(
-                        &Poco::Logger::get("Ranges With Step"),
-                        "Ranges: {} {} {} {} {}",
-                        range_with_step->range.left.get<UInt64>(),
-                        range_with_step->range.right.get<UInt64>(),
-                        range_with_step->range.left_included,
-                        range_with_step->range.right_included,
-                        range_with_step->step);
-                    intersected_ranges.push_back(*range_with_step);
-                }
-            }
         }
 
 
@@ -546,11 +499,6 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             }
         }
 
-        // for (const auto& range : intersected_ranges)
-        // {
-        //     LOG_DEBUG(&Poco::Logger::get("Ranges with step"), "Left: {}; Right {}, LI: {}, RI: {}, Step: {}", range.range.left.get<UInt64>(), range.range.right.get<UInt64>(), range.range.left_included, range.range.right_included, range.step);
-        //     // std::cout <<
-        // }
 
         /// ranges is blank, return a source who has no data
         if (intersected_ranges.empty())
@@ -565,7 +513,6 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         if (!intersected_ranges.rbegin()->range.right.isPositiveInfinity() || should_pushdown_limit)
         {
             UInt128 total_size = sizeOfRanges(intersected_ranges);
-            LOG_DEBUG(&Poco::Logger::get("Total_Size"), "Total Size: {}", static_cast<UInt64>(total_size));
             UInt128 query_limit = limit_length + limit_offset;
 
             /// limit total_size by query_limit

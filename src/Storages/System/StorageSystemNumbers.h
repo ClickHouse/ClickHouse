@@ -43,7 +43,7 @@ private:
 
     bool multithreaded;
     std::optional<UInt64> limit;
-    UInt64 offset;`
+    UInt64 offset;
     std::string column_name;
     UInt64 step;
 };
