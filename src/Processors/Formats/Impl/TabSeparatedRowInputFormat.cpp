@@ -10,6 +10,7 @@
 #include <Formats/verbosePrintString.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
+#include <boost/range/adaptor/map.hpp>
 #include "Formats/FormatSettings.h"
 
 namespace DB
@@ -97,13 +98,15 @@ void TabSeparatedFormatReader::skipRowEndDelimiter()
     bool supports_crfl = format_settings.tsv.crlf_end_of_line_input;
     if (buf->eof())
         return;
-
+    if (supports_crfl && first_row==false)
+    {
+        ++buf->position();
+    }
     if (unlikely(first_row))
-    {   
+    {
         supports_crfl ? checkForCarriageReturn<true>(*buf) : checkForCarriageReturn<false>(*buf);
         first_row = false;
     }
-
     assertChar('\n', *buf);
 }
 
@@ -117,11 +120,9 @@ String TabSeparatedFormatReader::readFieldIntoString()
     else
     {
         if constexpr (read_string)
-            support_crlf ? readEscapedStringCRLF<true>(field, *buf)
-                         : readEscapedStringCRLF<false>(field, *buf);
+            support_crlf ? readEscapedStringCRLF<true>(field, *buf) : readEscapedStringCRLF<false>(field, *buf);
         else
-            support_crlf ? readTSVField<true>(field, *buf)
-                         : readTSVField<false>(field, *buf);
+            support_crlf ? readTSVField<true>(field, *buf) : readTSVField<false>(field, *buf);
     }
     return field;
 }
@@ -132,8 +133,7 @@ void TabSeparatedFormatReader::skipField()
     if (is_raw)
         readStringInto(out, *buf);
     else
-        format_settings.tsv.crlf_end_of_line_input ? readEscapedStringInto<NullOutput,true>(out, *buf)
-                                                   : readEscapedStringInto<NullOutput,false>(out, *buf);
+        format_settings.tsv.crlf_end_of_line_input ? readEscapedStringInto<NullOutput,true>(out, *buf) : readEscapedStringInto<NullOutput,false>(out, *buf);
 }
 
 void TabSeparatedFormatReader::skipHeaderRow()
@@ -178,7 +178,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
     if (is_raw)
     {
         if (as_nullable)
-            return SerializationNullable::deserializeTextRawImpl(column, *buf, format_settings, serialization);
+            return SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(column, *buf, format_settings, serialization);
 
         serialization->deserializeTextRaw(column, *buf, format_settings);
         return true;
@@ -186,7 +186,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
 
 
     if (as_nullable)
-        return SerializationNullable::deserializeTextEscapedImpl(column, *buf, format_settings, serialization);
+        return SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(column, *buf, format_settings, serialization);
 
     serialization->deserializeTextEscaped(column, *buf, format_settings);
     return true;

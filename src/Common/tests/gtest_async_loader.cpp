@@ -622,7 +622,13 @@ TEST(AsyncLoader, CustomDependencyFailure)
     auto dependent_job1 = makeLoadJob({ collect_job }, "dependent_job1", dependent_job_func);
     auto dependent_job2 = makeLoadJob({ collect_job }, "dependent_job2", dependent_job_func);
     auto dependent_job3 = makeLoadJob({ collect_job }, "dependent_job3", dependent_job_func);
-    auto task = t.schedule({ dependent_job1, dependent_job2, dependent_job3 }); // Other jobs should be discovery automatically
+    auto task = t.schedule({
+            dependent_job1, dependent_job2, dependent_job3,
+            collect_job,
+            late_dep1, late_dep2, late_dep3,
+            good_dep1, good_dep2, good_dep3,
+            evil_dep1, evil_dep2, evil_dep3,
+        });
 
     t.loader.wait(collect_job, true);
     canceled_sync.arrive_and_wait(); // (A)
@@ -1022,8 +1028,10 @@ TEST(AsyncLoader, SetMaxThreads)
     };
 
     // Generate enough independent jobs
+    std::vector<LoadTaskPtr> tasks;
+    tasks.reserve(1000);
     for (int i = 0; i < 1000; i++)
-        t.schedule({makeLoadJob({}, "job", job_func)})->detach();
+        tasks.push_back(t.schedule({makeLoadJob({}, "job", job_func)}));
 
     t.loader.start();
     while (sync_index < syncs.size())

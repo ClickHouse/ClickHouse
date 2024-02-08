@@ -6,6 +6,7 @@
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
 #include <base/find_symbols.h>
@@ -339,7 +340,6 @@ static ReturnType parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
         {
             return error("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
         }
-
         s.push_back(unhex2(hex_code));
     }
     else if (char_after_backslash == 'N')
@@ -505,7 +505,9 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
         if constexpr (support_crlf)
         {
             next_pos = find_first_symbols<'\t', '\n', '\\','\r'>(buf.position(), buf.buffer().end());
-        } else {
+        }
+        else
+        {
             next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
         }
         
@@ -641,19 +643,32 @@ void readQuotedStringInto(Vector & s, ReadBuffer & buf)
     readAnyQuotedStringInto<'\'', enable_sql_style_quoting>(s, buf);
 }
 
-template <typename Vector>
+template <bool enable_sql_style_quoting, typename Vector>
 bool tryReadQuotedStringInto(Vector & s, ReadBuffer & buf)
 {
-    return readAnyQuotedStringInto<'\'', false, Vector, bool>(s, buf);
+    return readAnyQuotedStringInto<'\'', enable_sql_style_quoting, Vector, bool>(s, buf);
 }
 
-template bool tryReadQuotedStringInto(String & s, ReadBuffer & buf);
+template bool tryReadQuotedStringInto<true, String>(String & s, ReadBuffer & buf);
+template bool tryReadQuotedStringInto<false, String>(String & s, ReadBuffer & buf);
+template bool tryReadQuotedStringInto<true, PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template bool tryReadQuotedStringInto<false, PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
 template <bool enable_sql_style_quoting, typename Vector>
 void readDoubleQuotedStringInto(Vector & s, ReadBuffer & buf)
 {
     readAnyQuotedStringInto<'"', enable_sql_style_quoting>(s, buf);
 }
+
+template <bool enable_sql_style_quoting, typename Vector>
+bool tryReadDoubleQuotedStringInto(Vector & s, ReadBuffer & buf)
+{
+    return readAnyQuotedStringInto<'"', enable_sql_style_quoting, Vector, bool>(s, buf);
+}
+
+template bool tryReadDoubleQuotedStringInto<true, String>(String & s, ReadBuffer & buf);
+template bool tryReadDoubleQuotedStringInto<false, String>(String & s, ReadBuffer & buf);
+
 
 template <bool enable_sql_style_quoting, typename Vector>
 void readBackQuotedStringInto(Vector & s, ReadBuffer & buf)
@@ -672,6 +687,18 @@ void readQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
 {
     s.clear();
     readQuotedStringInto<true>(s, buf);
+}
+
+bool tryReadQuotedString(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    return tryReadQuotedStringInto<false>(s, buf);
+}
+
+bool tryReadQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    return tryReadQuotedStringInto<true>(s, buf);
 }
 
 
@@ -694,6 +721,18 @@ void readDoubleQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
     readDoubleQuotedStringInto<true>(s, buf);
 }
 
+bool tryReadDoubleQuotedString(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    return tryReadDoubleQuotedStringInto<false>(s, buf);
+}
+
+bool tryReadDoubleQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    return tryReadDoubleQuotedStringInto<true>(s, buf);
+}
+
 void readBackQuotedString(String & s, ReadBuffer & buf)
 {
     s.clear();
@@ -713,7 +752,7 @@ concept WithResize = requires (T value)
     { value.size() } -> std::integral<>;
 };
 
-template <typename Vector, bool include_quotes>
+template <typename Vector, bool include_quotes, bool allow_throw>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
     /// Empty string
@@ -776,12 +815,20 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
         {
             PeekableReadBuffer * peekable_buf = dynamic_cast<PeekableReadBuffer *>(&buf);
             if (!peekable_buf)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading CSV string with custom delimiter is allowed only when using PeekableReadBuffer");
+            {
+                if constexpr (allow_throw)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading CSV string with custom delimiter is allowed only when using PeekableReadBuffer");
+                return;
+            }
 
             while (true)
             {
                 if (peekable_buf->eof())
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF while reading CSV string, expected custom delimiter \"{}\"", custom_delimiter);
+                {
+                    if constexpr (allow_throw)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF while reading CSV string, expected custom delimiter \"{}\"", custom_delimiter);
+                    return;
+                }
 
                 char * next_pos = reinterpret_cast<char *>(memchr(peekable_buf->position(), custom_delimiter[0], peekable_buf->available()));
                 if (!next_pos)
@@ -970,6 +1017,9 @@ String readCSVFieldWithTwoPossibleDelimiters(PeekableReadBuffer & buf, const For
 
 template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 template void readCSVStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
+template void readCSVStringInto<String, false, false>(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
+template void readCSVStringInto<String, true, false>(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
+template void readCSVStringInto<PaddedPODArray<UInt8>, false, false>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
 
 template <typename Vector, typename ReturnType>
@@ -1091,15 +1141,18 @@ ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
 }
 
 template void readJSONObjectPossiblyInvalid<String>(String & s, ReadBuffer & buf);
+template bool readJSONObjectPossiblyInvalid<String, bool>(String & s, ReadBuffer & buf);
 template void readJSONObjectPossiblyInvalid<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template bool readJSONObjectPossiblyInvalid<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
-template <typename Vector>
-void readJSONArrayInto(Vector & s, ReadBuffer & buf)
+template <typename Vector, typename ReturnType>
+ReturnType readJSONArrayInto(Vector & s, ReadBuffer & buf)
 {
-    readJSONObjectOrArrayPossiblyInvalid<Vector, void, '[', ']'>(s, buf);
+    return readJSONObjectOrArrayPossiblyInvalid<Vector, ReturnType, '[', ']'>(s, buf);
 }
 
-template void readJSONArrayInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readJSONArrayInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template bool readJSONArrayInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
 template <typename ReturnType>
 ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
@@ -1239,6 +1292,13 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
                 return false;
         }
 
+        if constexpr (!throw_exception)
+        {
+            if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
+                || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
+                return false;
+        }
+
         UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
         UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
         UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
@@ -1262,6 +1322,13 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
                     return false;
             }
 
+            if constexpr (!throw_exception)
+            {
+                if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[3]) || !isNumericASCII(s[4])
+                    || !isNumericASCII(s[6]) || !isNumericASCII(s[7]))
+                    return false;
+            }
+
             hour = (s[0] - '0') * 10 + (s[1] - '0');
             minute = (s[3] - '0') * 10 + (s[4] - '0');
             second = (s[6] - '0') * 10 + (s[7] - '0');
@@ -1281,7 +1348,14 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         {
             /// Not very efficient.
             for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
+            {
+                if constexpr (!throw_exception)
+                {
+                    if (!isNumericASCII(*digit_pos))
+                        return false;
+                }
                 datetime = datetime * 10 + *digit_pos - '0';
+            }
         }
         datetime *= negative_multiplier;
 
@@ -1304,14 +1378,24 @@ template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, cons
 template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &);
 
 
-void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
+template <typename ReturnType>
+ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field)
 {
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
     if (buf.eof())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field.toString());
+    {
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field.toString());
+        return ReturnType(false);
+    }
     else if (*buf.position() == '"') /// skip double-quoted string
     {
         NullOutput sink;
-        readJSONStringInto(sink, buf);
+        if constexpr (throw_exception)
+            readJSONStringInto(sink, buf);
+        else if (!tryReadJSONStringInto(sink, buf))
+            return ReturnType(false);
     }
     else if (isNumericASCII(*buf.position()) || *buf.position() == '-' || *buf.position() == '+' || *buf.position() == '.') /// skip number
     {
@@ -1320,19 +1404,32 @@ void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
 
         double v;
         if (!tryReadFloatText(v, buf))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a number field for key '{}'", name_of_field.toString());
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a number field for key '{}'", name_of_field.toString());
+            return ReturnType(false);
+        }
     }
     else if (*buf.position() == 'n') /// skip null
     {
-        assertString("null", buf);
+        if constexpr (throw_exception)
+            assertString("null", buf);
+        else if (!checkString("null", buf))
+            return ReturnType(false);
     }
     else if (*buf.position() == 't') /// skip true
     {
-        assertString("true", buf);
+        if constexpr (throw_exception)
+            assertString("true", buf);
+        else if (!checkString("true", buf))
+            return ReturnType(false);
     }
     else if (*buf.position() == 'f') /// skip false
     {
-        assertString("false", buf);
+        if constexpr (throw_exception)
+            assertString("false", buf);
+        else if (!checkString("false", buf))
+            return ReturnType(false);
     }
     else if (*buf.position() == '[')
     {
@@ -1342,12 +1439,16 @@ void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
         if (!buf.eof() && *buf.position() == ']') /// skip empty array
         {
             ++buf.position();
-            return;
+            return ReturnType(true);
         }
 
         while (true)
         {
-            skipJSONField(buf, name_of_field);
+            if constexpr (throw_exception)
+                skipJSONFieldImpl<ReturnType>(buf, name_of_field);
+            else if (!skipJSONFieldImpl<ReturnType>(buf, name_of_field))
+                return ReturnType(false);
+
             skipWhitespaceIfAny(buf);
 
             if (!buf.eof() && *buf.position() == ',')
@@ -1361,7 +1462,11 @@ void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
                 break;
             }
             else
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
+            {
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
+                return ReturnType(false);
+            }
         }
     }
     else if (*buf.position() == '{') /// skip whole object
@@ -1375,19 +1480,34 @@ void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
             if (*buf.position() == '"')
             {
                 NullOutput sink;
-                readJSONStringInto(sink, buf);
+                if constexpr (throw_exception)
+                    readJSONStringInto(sink, buf);
+                else if (!tryReadJSONStringInto(sink, buf))
+                    return ReturnType(false);
             }
             else
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
+            {
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
+                return ReturnType(false);
+            }
 
             // ':'
             skipWhitespaceIfAny(buf);
             if (buf.eof() || !(*buf.position() == ':'))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
+            {
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
+                return ReturnType(false);
+            }
             ++buf.position();
             skipWhitespaceIfAny(buf);
 
-            skipJSONField(buf, name_of_field);
+            if constexpr (throw_exception)
+                skipJSONFieldImpl<ReturnType>(buf, name_of_field);
+            else if (!skipJSONFieldImpl<ReturnType>(buf, name_of_field))
+                return ReturnType(false);
+
             skipWhitespaceIfAny(buf);
 
             // optional ','
@@ -1399,18 +1519,37 @@ void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
         }
 
         if (buf.eof())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field.toString());
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field.toString());
+            return ReturnType(false);
+        }
         ++buf.position();
     }
     else
     {
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Cannot read JSON field here: '{}'. Unexpected symbol '{}'{}",
-            String(buf.position(), std::min(buf.available(), size_t(10))),
-            std::string(1, *buf.position()),
-            name_of_field.empty() ? "" : " for key " + name_of_field.toString());
+        if constexpr (throw_exception)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Cannot read JSON field here: '{}'. Unexpected symbol '{}'{}",
+                String(buf.position(), std::min(buf.available(), size_t(10))),
+                std::string(1, *buf.position()),
+                name_of_field.empty() ? "" : " for key " + name_of_field.toString());
+
+        return ReturnType(false);
     }
+
+    return ReturnType(true);
+}
+
+void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
+{
+    skipJSONFieldImpl<void>(buf, name_of_field);
+}
+
+bool trySkipJSONField(ReadBuffer & buf, StringRef name_of_field)
+{
+    return skipJSONFieldImpl<bool>(buf, name_of_field);
 }
 
 
@@ -1623,23 +1762,31 @@ void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delim
 }
 
 // Use PeekableReadBuffer to copy field to string after parsing.
-template <typename Vector, typename ParseFunc>
-static void readParsedValueInto(Vector & s, ReadBuffer & buf, ParseFunc parse_func)
+template <typename ReturnType, typename Vector, typename ParseFunc>
+static ReturnType readParsedValueInto(Vector & s, ReadBuffer & buf, ParseFunc parse_func)
 {
     PeekableReadBuffer peekable_buf(buf);
     peekable_buf.setCheckpoint();
-    parse_func(peekable_buf);
+    if constexpr (std::is_same_v<ReturnType, void>)
+        parse_func(peekable_buf);
+    else if (!parse_func(peekable_buf))
+        return ReturnType(false);
     peekable_buf.makeContinuousMemoryFromCheckpointToPos();
     auto * end = peekable_buf.position();
     peekable_buf.rollbackToCheckpoint();
     s.append(peekable_buf.position(), end);
     peekable_buf.position() = end;
+    return ReturnType(true);
 }
 
-template <typename Vector>
-static void readQuotedStringFieldInto(Vector & s, ReadBuffer & buf)
+template <typename ReturnType = void, typename Vector>
+static ReturnType readQuotedStringFieldInto(Vector & s, ReadBuffer & buf)
 {
-    assertChar('\'', buf);
+    if constexpr (std::is_same_v<ReturnType, void>)
+        assertChar('\'', buf);
+    else if (!checkChar('\'', buf))
+        return ReturnType(false);
+
     s.push_back('\'');
     while (!buf.eof())
     {
@@ -1667,16 +1814,23 @@ static void readQuotedStringFieldInto(Vector & s, ReadBuffer & buf)
     }
 
     if (buf.eof())
-        return;
+        return ReturnType(false);
 
     ++buf.position();
     s.push_back('\'');
+    return ReturnType(true);
 }
 
-template <char opening_bracket, char closing_bracket, typename Vector>
-static void readQuotedFieldInBracketsInto(Vector & s, ReadBuffer & buf)
+template <typename ReturnType = void, char opening_bracket, char closing_bracket, typename Vector>
+static ReturnType readQuotedFieldInBracketsInto(Vector & s, ReadBuffer & buf)
 {
-    assertChar(opening_bracket, buf);
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    if constexpr (throw_exception)
+        assertChar(opening_bracket, buf);
+    else if (!checkChar(opening_bracket, buf))
+        return ReturnType(false);
+
     s.push_back(opening_bracket);
 
     size_t balance = 1;
@@ -1692,7 +1846,10 @@ static void readQuotedFieldInBracketsInto(Vector & s, ReadBuffer & buf)
 
         if (*buf.position() == '\'')
         {
-            readQuotedStringFieldInto(s, buf);
+            if constexpr (throw_exception)
+                readQuotedStringFieldInto<void>(s, buf);
+            else if (!readQuotedStringFieldInto<bool>(s, buf))
+                return ReturnType(false);
         }
         else if (*buf.position() == opening_bracket)
         {
@@ -1707,13 +1864,20 @@ static void readQuotedFieldInBracketsInto(Vector & s, ReadBuffer & buf)
             ++buf.position();
         }
     }
+
+    if (balance)
+        return ReturnType(false);
+
+    return ReturnType(true);
 }
 
-template <typename Vector>
-void readQuotedFieldInto(Vector & s, ReadBuffer & buf)
+template <typename ReturnType, typename Vector>
+ReturnType readQuotedFieldInto(Vector & s, ReadBuffer & buf)
 {
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
     if (buf.eof())
-        return;
+        return ReturnType(false);
 
     /// Possible values in 'Quoted' field:
     /// - Strings: '...'
@@ -1725,35 +1889,47 @@ void readQuotedFieldInto(Vector & s, ReadBuffer & buf)
     /// - Number: integer, float, decimal.
 
     if (*buf.position() == '\'')
-        readQuotedStringFieldInto(s, buf);
+        return readQuotedStringFieldInto<ReturnType>(s, buf);
     else if (*buf.position() == '[')
-        readQuotedFieldInBracketsInto<'[', ']'>(s, buf);
+        return readQuotedFieldInBracketsInto<ReturnType, '[', ']'>(s, buf);
     else if (*buf.position() == '(')
-        readQuotedFieldInBracketsInto<'(', ')'>(s, buf);
+        return readQuotedFieldInBracketsInto<ReturnType, '(', ')'>(s, buf);
     else if (*buf.position() == '{')
-        readQuotedFieldInBracketsInto<'{', '}'>(s, buf);
+        return readQuotedFieldInBracketsInto<ReturnType, '{', '}'>(s, buf);
     else if (checkCharCaseInsensitive('n', buf))
     {
         /// NULL or NaN
         if (checkCharCaseInsensitive('u', buf))
         {
-            assertStringCaseInsensitive("ll", buf);
+            if constexpr (throw_exception)
+                assertStringCaseInsensitive("ll", buf);
+            else if (!checkStringCaseInsensitive("ll", buf))
+                return ReturnType(false);
             s.append("NULL");
         }
         else
         {
-            assertStringCaseInsensitive("an", buf);
+            if constexpr (throw_exception)
+                assertStringCaseInsensitive("an", buf);
+            else if (!checkStringCaseInsensitive("an", buf))
+                return ReturnType(false);
             s.append("NaN");
         }
     }
     else if (checkCharCaseInsensitive('t', buf))
     {
-        assertStringCaseInsensitive("rue", buf);
+        if constexpr (throw_exception)
+            assertStringCaseInsensitive("rue", buf);
+        else if (!checkStringCaseInsensitive("rue", buf))
+            return ReturnType(false);
         s.append("true");
     }
     else if (checkCharCaseInsensitive('f', buf))
     {
-        assertStringCaseInsensitive("alse", buf);
+        if constexpr (throw_exception)
+            assertStringCaseInsensitive("alse", buf);
+        else if (!checkStringCaseInsensitive("alse", buf))
+            return ReturnType(false);
         s.append("false");
     }
     else
@@ -1762,13 +1938,19 @@ void readQuotedFieldInto(Vector & s, ReadBuffer & buf)
         auto parse_func = [](ReadBuffer & in)
         {
             Float64 tmp;
-            readFloatText(tmp, in);
+            if constexpr (throw_exception)
+                readFloatText(tmp, in);
+            else
+                return tryReadFloatText(tmp, in);
         };
-        readParsedValueInto(s, buf, parse_func);
+
+        return readParsedValueInto<ReturnType>(s, buf, parse_func);
     }
+
+    return ReturnType(true);
 }
 
-template void readQuotedFieldInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
+template void readQuotedFieldInto<void, NullOutput>(NullOutput & s, ReadBuffer & buf);
 
 void readQuotedField(String & s, ReadBuffer & buf)
 {
@@ -1776,11 +1958,24 @@ void readQuotedField(String & s, ReadBuffer & buf)
     readQuotedFieldInto(s, buf);
 }
 
+bool tryReadQuotedField(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    return readQuotedFieldInto<bool>(s, buf);
+}
+
 void readJSONField(String & s, ReadBuffer & buf)
 {
     s.clear();
     auto parse_func = [](ReadBuffer & in) { skipJSONField(in, ""); };
-    readParsedValueInto(s, buf, parse_func);
+    readParsedValueInto<void>(s, buf, parse_func);
+}
+
+bool tryReadJSONField(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    auto parse_func = [](ReadBuffer & in) { return trySkipJSONField(in, ""); };
+    return readParsedValueInto<bool>(s, buf, parse_func);
 }
 
 template<bool support_crlf>
