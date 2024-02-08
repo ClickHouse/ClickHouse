@@ -193,6 +193,7 @@ struct Settings;
     M(Bool, cache_populated_by_fetch, false, "Only available in ClickHouse Cloud", 0) \
     M(Bool, allow_experimental_block_number_column, false, "Enable persisting column _block_number for each row.", 0) \
     M(Bool, allow_experimental_replacing_merge_with_cleanup, false, "Allow experimental CLEANUP merges for ReplacingMergeTree with is_deleted column.", 0) \
+    M(Bool, allow_experimental_alter_partition_with_different_key, false, "Allow attaching parts from table with different partition expression.", 0) \
     \
     /** Compress marks and primary key. */ \
     M(Bool, compress_marks, true, "Marks support compression, reduce mark file size and speed up network transmission.", 0) \

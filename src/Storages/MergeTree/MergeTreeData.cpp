@@ -7021,24 +7021,34 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (queryToStringNullable(my_snapshot->getPrimaryKeyAST()) != queryToStringNullable(src_snapshot->getPrimaryKeyAST()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
 
-    const auto is_a_subset_of = [](const auto & lhs, const auto & rhs)
-    {
-        if (lhs.size() > rhs.size())
-            return false;
 
-        const auto rhs_set = NameSet(rhs.begin(), rhs.end());
-        for (const auto & lhs_element : lhs)
-            if (!rhs_set.contains(lhs_element))
+    if (queryToStringNullable(my_snapshot->getPartitionKeyAST()) != queryToStringNullable(src_snapshot->getPartitionKeyAST()))
+    {
+        if (!getSettings()->allow_experimental_alter_partition_with_different_key)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different partition key. "
+                                                       "This is only allowed if `allow_experimental_alter_partition_with_different_key` is set");
+        }
+
+        const auto is_a_subset_of = [](const auto & lhs, const auto & rhs)
+        {
+            if (lhs.size() > rhs.size())
                 return false;
 
-        return true;
-    };
+            const auto rhs_set = NameSet(rhs.begin(), rhs.end());
+            for (const auto & lhs_element : lhs)
+                if (!rhs_set.contains(lhs_element))
+                    return false;
 
-    if (!is_a_subset_of(my_snapshot->getColumnsRequiredForPartitionKey(), src_snapshot->getColumnsRequiredForPartitionKey()))
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Destination table partition expression columns must be a subset of source table partition expression columns");
+            return true;
+        };
+
+        if (!is_a_subset_of(my_snapshot->getColumnsRequiredForPartitionKey(), src_snapshot->getColumnsRequiredForPartitionKey()))
+        {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Destination table partition expression columns must be a subset of source table partition expression columns");
+        }
     }
 
     const auto check_definitions = [](const auto & my_descriptions, const auto & src_descriptions)
