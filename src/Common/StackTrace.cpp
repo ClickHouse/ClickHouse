@@ -343,7 +343,11 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
 
 void StackTrace::tryCapture()
 {
+#if defined(OS_DARWIN)
     size = backtrace(frame_pointers.data(), capacity);
+#else
+    size = unw_backtrace(frame_pointers.data(), capacity);
+#endif
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 }
 
