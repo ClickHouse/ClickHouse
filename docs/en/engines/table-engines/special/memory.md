@@ -7,7 +7,10 @@ sidebar_label:  Memory
 # Memory Table Engine
 
 :::note
-When using the Memory table engine on ClickHouse Cloud, you must use a client that uses TCP (such as [clickhouse-client](/en/interfaces/cli)) or a native interface, and not one that uses HTTP (such as [clickhouse-connect](/en/integrations/python)). If you use HTTP, all queries must be submitted and executed at once using a multi-statement query.
+When using the Memory table engine on ClickHouse Cloud, data is not replicated across all nodes (by design). To guarantee that all queries are routed to the same node and that the Memory table engine works as expected, you can do one of the following:
+- Execute all operations in the same session
+- Use a client that uses TCP or the native interface (which enables support for sticky connections) such as [clickhouse-client](/en/interfaces/cli)
+- Submit and execute all queries at once using a multi-statement query (required with clients using the HTTP interface such as [clickhouse-connect](/en/integrations/python))
 :::
 
 The Memory engine stores data in RAM, in uncompressed form. Data is stored in exactly the same form as it is received when read. In other words, reading from this table is completely free.
