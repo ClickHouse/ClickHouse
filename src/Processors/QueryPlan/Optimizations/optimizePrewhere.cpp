@@ -228,14 +228,14 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
 
     /// This is the leak of abstraction.
     /// Splited actions may have inputs which are needed only for PREWHERE.
-    /// This is fine for ActionsDAG to have such a split, but it breakes defaults calculation.
+    /// This is fine for ActionsDAG to have such a split, but it breaks defaults calculation.
     ///
     /// See 00950_default_prewhere for example.
     /// Table has structure `APIKey UInt8, SessionType UInt8` and default `OperatingSystem = SessionType+1`
     /// For a query with `SELECT OperatingSystem WHERE APIKey = 42 AND SessionType = 42` we push everything to PREWHERE
     /// and columns APIKey, SessionType are removed from inputs (cause only OperatingSystem is needed).
     /// However, column OperatingSystem is calculated after PREWHERE stage, based on SessionType value.
-    /// If column SessionType is removed by PREWHERE actions, we use zero as defaut, and get a wrong result.
+    /// If column SessionType is removed by PREWHERE actions, we use zero as default, and get a wrong result.
     ///
     /// So, here we restore removed inputs for PREWHERE actions
     {
