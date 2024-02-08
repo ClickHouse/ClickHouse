@@ -28,7 +28,7 @@
 #        undef __msan_unpoison_string
 #        include <sanitizer/msan_interface.h>
 #        undef __msan_unpoison_overflow_15
-#        define __msan_unpoison_overflow_15(PTR, PTR_SIZE) __msan_unpoison(&(PTR)[(PTR_SIZE) - ((PTR_SIZE) % 16)], ((PTR_SIZE) % 16))
+#        define __msan_unpoison_overflow_15(PTR, PTR_SIZE) __msan_unpoison(&(PTR)[(PTR_SIZE) - ((PTR_SIZE) % 16)], 16)
 #    endif
 #endif
 
