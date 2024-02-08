@@ -171,25 +171,33 @@ public:
       * for keys that are not in dictionary. If null pointer is passed,
       * then default attribute value must be used.
       */
+    using RefDefault = std::reference_wrapper<const ColumnPtr>;
+    using RefFilter = std::reference_wrapper<IColumn::Filter>;
+    using DefaultOrFilter = std::variant<RefDefault, RefFilter>;
     virtual ColumnPtr getColumn(
-        const std::string & attribute_name,
-        const DataTypePtr & result_type,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const = 0;
+        const std::string & attribute_name [[maybe_unused]],
+        const DataTypePtr & attribute_type [[maybe_unused]],
+        const Columns & key_columns [[maybe_unused]],
+        const DataTypes & key_types [[maybe_unused]],
+        DefaultOrFilter defaultOrFilter [[maybe_unused]]) const = 0;
 
     /** Get multiple columns from dictionary.
       *
       * Default implementation just calls getColumn multiple times.
       * Subclasses can provide custom more efficient implementation.
       */
+    using RefDefaults = std::reference_wrapper<const Columns>;
+    using DefaultsOrFilter = std::variant<RefDefaults, RefFilter>;
     virtual Columns getColumns(
         const Strings & attribute_names,
-        const DataTypes & result_types,
+        const DataTypes & attribute_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const Columns & default_values_columns) const
+        DefaultsOrFilter defaultsOrFilter) const
     {
+        bool is_short_circuit = std::holds_alternative<RefFilter>(defaultsOrFilter);
+        assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaultsOrFilter));
+
         size_t attribute_names_size = attribute_names.size();
 
         Columns result;
@@ -198,10 +206,11 @@ public:
         for (size_t i = 0; i < attribute_names_size; ++i)
         {
             const auto & attribute_name = attribute_names[i];
-            const auto & result_type = result_types[i];
-            const auto & default_values_column = default_values_columns[i];
+            const auto & attribute_type = attribute_types[i];
 
-            result.emplace_back(getColumn(attribute_name, result_type, key_columns, key_types, default_values_column));
+            DefaultOrFilter var = is_short_circuit ? DefaultOrFilter{std::get<RefFilter>(defaultsOrFilter).get()} :
+                                                     std::get<RefDefaults>(defaultsOrFilter).get()[i];
+            result.emplace_back(getColumn(attribute_name, attribute_type, key_columns, key_types, var));
         }
 
         return result;
@@ -247,52 +256,6 @@ public:
 
             result.emplace_back(getColumnAllValues(
                 attribute_name, result_type, key_columns, key_types, default_values_column, limit));
-        }
-
-        return result;
-    }
-
-    /**
-      * Analogous to getColumn, but for dictGetOrDefault's short circuit case
-      */
-    virtual ColumnPtr getColumnOrDefaultShortCircuit(
-        const std::string & attribute_name [[maybe_unused]],
-        const DataTypePtr & attribute_type [[maybe_unused]],
-        const Columns & key_columns [[maybe_unused]],
-        const DataTypes & key_types [[maybe_unused]],
-        IColumn::Filter & default_mask [[maybe_unused]]) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Method getColumnOrDefault is not supported for {} dictionary.",
-                        getDictionaryID().getNameForLogs());
-    }
-
-    /** Get multiple columns from dictionary.
-      *
-      * Default implementation just calls getColumnOrDefault multiple times.
-      * Subclasses can provide custom more efficient implementation.
-      *
-      * default_mask filled with 0 means we have the value right now, 1 means
-      * default value would be used, later with lazy execution.
-      */
-    virtual Columns getColumnsOrDefaultShortCircuit(
-        const Strings & attribute_names,
-        const DataTypes & attribute_types,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        IColumn::Filter & default_mask) const
-    {
-        size_t attribute_names_size = attribute_names.size();
-
-        Columns result;
-        result.reserve(attribute_names_size);
-
-        for (size_t i = 0; i < attribute_names_size; ++i)
-        {
-            const auto & attribute_name = attribute_names[i];
-            const auto & attribute_type = attribute_types[i];
-            result.emplace_back(getColumnOrDefaultShortCircuit(attribute_name,
-                attribute_type, key_columns, key_types, default_mask));
         }
 
         return result;

@@ -695,8 +695,7 @@ private:
             else if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault && default_cols.empty())
             {
                 IColumn::Filter default_mask;
-                result_columns = dictionary->getColumnsOrDefaultShortCircuit(
-                    attribute_names, attribute_tuple_type.getElements(), key_columns, key_types, default_mask);
+                result_columns = dictionary->getColumns(attribute_names, attribute_tuple_type.getElements(), key_columns, key_types, default_mask);
 
 #ifdef ABORT_ON_LOGICAL_ERROR
                 for (const auto & column : result_columns)
@@ -736,8 +735,7 @@ private:
             else if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault && default_cols.empty())
             {
                 IColumn::Filter default_mask;
-                result = dictionary->getColumnOrDefaultShortCircuit(
-                    attribute_names[0], attribute_type, key_columns, key_types, default_mask);
+                result = dictionary->getColumn(attribute_names[0], attribute_type, key_columns, key_types, default_mask);
 
 #ifdef ABORT_ON_LOGICAL_ERROR
                 validateShortCircuitResult(result, default_mask);

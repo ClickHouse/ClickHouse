@@ -47,122 +47,10 @@ HashedArrayDictionary<dictionary_key_type, sharded>::HashedArrayDictionary(
 template <DictionaryKeyType dictionary_key_type, bool sharded>
 ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getColumn(
     const std::string & attribute_name,
-    const DataTypePtr & result_type,
-    const Columns & key_columns,
-    const DataTypes & key_types,
-    const ColumnPtr & default_values_column) const
-{
-    if (dictionary_key_type == DictionaryKeyType::Complex)
-        dict_struct.validateKeyTypes(key_types);
-
-    ColumnPtr result;
-
-    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
-
-    const size_t keys_size = extractor.getKeysSize();
-
-    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
-    const size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
-    auto & attribute = attributes[attribute_index];
-
-    return getAttributeColumn(attribute, dictionary_attribute, keys_size, default_values_column, extractor);
-}
-
-template <DictionaryKeyType dictionary_key_type, bool sharded>
-Columns HashedArrayDictionary<dictionary_key_type, sharded>::getColumns(
-    const Strings & attribute_names,
-    const DataTypes & result_types,
-    const Columns & key_columns,
-    const DataTypes & key_types,
-    const Columns & default_values_columns) const
-{
-    if (dictionary_key_type == DictionaryKeyType::Complex)
-        dict_struct.validateKeyTypes(key_types);
-
-    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
-
-    const size_t keys_size = extractor.getKeysSize();
-
-    KeyIndexToElementIndex key_index_to_element_index;
-
-    /** Optimization for multiple attributes.
-      * For each key save element index in key_index_to_element_index array.
-      * Later in type_call for attribute use getItemsImpl specialization with key_index_to_element_index array
-      * instead of DictionaryKeyExtractor.
-      */
-    if (attribute_names.size() > 1)
-    {
-        size_t keys_found = 0;
-
-        key_index_to_element_index.resize(keys_size);
-
-        for (size_t key_index = 0; key_index < keys_size; ++key_index)
-        {
-            auto key = extractor.extractCurrentKey();
-            auto shard = getShard(key);
-            const auto & key_attribute_container = key_attribute.containers[shard];
-
-            auto it = key_attribute_container.find(key);
-            if (it == key_attribute_container.end())
-            {
-                if constexpr (sharded)
-                    key_index_to_element_index[key_index] = std::make_pair(-1, shard);
-                else
-                    key_index_to_element_index[key_index] = -1;
-            }
-            else
-            {
-                if constexpr (sharded)
-                    key_index_to_element_index[key_index] = std::make_pair(it->getMapped(), shard);
-                else
-                    key_index_to_element_index[key_index] = it->getMapped();
-                ++keys_found;
-            }
-
-            extractor.rollbackCurrentKey();
-        }
-
-        query_count.fetch_add(keys_size, std::memory_order_relaxed);
-        found_count.fetch_add(keys_found, std::memory_order_relaxed);
-    }
-
-    size_t attribute_names_size = attribute_names.size();
-
-    Columns result_columns;
-    result_columns.reserve(attribute_names_size);
-
-    for (size_t i = 0; i < attribute_names_size; ++i)
-    {
-        ColumnPtr result_column;
-
-        const auto & attribute_name = attribute_names[i];
-        const auto & result_type = result_types[i];
-        const auto & default_values_column = default_values_columns[i];
-
-        const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
-        const size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
-        auto & attribute = attributes[attribute_index];
-
-        if (attribute_names_size > 1)
-            result_column = getAttributeColumn(attribute, dictionary_attribute, keys_size, default_values_column, key_index_to_element_index);
-        else
-            result_column = getAttributeColumn(attribute, dictionary_attribute, keys_size, default_values_column, extractor);
-
-        result_columns.emplace_back(std::move(result_column));
-    }
-
-    return result_columns;
-}
-
-template <DictionaryKeyType dictionary_key_type, bool sharded>
-ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getColumnOrDefaultShortCircuit(
-    const std::string & attribute_name,
     const DataTypePtr & attribute_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    IColumn::Filter & default_mask) const
+    DefaultOrFilter defaultOrFilter) const
 {
     if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
@@ -178,17 +66,20 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getColumnOrDefaul
     const size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
     auto & attribute = attributes[attribute_index];
 
-    return getAttributeColumnShortCircuit(attribute, dictionary_attribute, keys_size, extractor, default_mask);
+    return getAttributeColumn(attribute, dictionary_attribute, keys_size, defaultOrFilter, extractor);
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
-Columns HashedArrayDictionary<dictionary_key_type, sharded>::getColumnsOrDefaultShortCircuit(
+Columns HashedArrayDictionary<dictionary_key_type, sharded>::getColumns(
     const Strings & attribute_names,
     const DataTypes & attribute_types,
     const Columns & key_columns,
     const DataTypes & key_types,
-    IColumn::Filter & default_mask) const
+    DefaultsOrFilter defaultsOrFilter) const
 {
+    bool is_short_circuit = std::holds_alternative<RefFilter>(defaultsOrFilter);
+    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaultsOrFilter));
+
     if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
 
@@ -196,7 +87,13 @@ Columns HashedArrayDictionary<dictionary_key_type, sharded>::getColumnsOrDefault
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
 
     const size_t keys_size = extractor.getKeysSize();
-    default_mask.resize(keys_size);
+
+    IColumn::Filter * default_mask = nullptr;
+    if (is_short_circuit)
+    {
+        default_mask = &std::get<RefFilter>(defaultsOrFilter).get();
+        default_mask->resize(keys_size);
+    }
 
     KeyIndexToElementIndex key_index_to_element_index;
 
@@ -225,7 +122,8 @@ Columns HashedArrayDictionary<dictionary_key_type, sharded>::getColumnsOrDefault
                 else
                     key_index_to_element_index[key_index] = -1;
 
-                default_mask[key_index] = 1;
+                if (default_mask)
+                    (*default_mask)[key_index] = 1;
             }
             else
             {
@@ -234,7 +132,8 @@ Columns HashedArrayDictionary<dictionary_key_type, sharded>::getColumnsOrDefault
                 else
                     key_index_to_element_index[key_index] = it->getMapped();
 
-                default_mask[key_index] = 0;
+                if (default_mask)
+                    (*default_mask)[key_index] = 0;
 
                 ++keys_found;
             }
@@ -262,12 +161,26 @@ Columns HashedArrayDictionary<dictionary_key_type, sharded>::getColumnsOrDefault
         const size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
         auto & attribute = attributes[attribute_index];
 
-        if (attribute_names_size > 1)
-            result_column = getAttributeColumnShortCircuit(attribute, dictionary_attribute, keys_size,
-                key_index_to_element_index, default_mask);
+        if (is_short_circuit)
+        {
+            if (attribute_names_size > 1)
+                result_column = getAttributeColumn(attribute, dictionary_attribute, keys_size,
+                    *default_mask, key_index_to_element_index);
+            else
+                result_column = getAttributeColumn(attribute, dictionary_attribute, keys_size,
+                    *default_mask, extractor);
+        }
         else
-            result_column = getAttributeColumnShortCircuit(attribute, dictionary_attribute, keys_size,
-                extractor, default_mask);
+        {
+            const Columns & default_values_columns = std::get<RefDefaults>(defaultsOrFilter).get();
+            const auto & default_values_column = default_values_columns[i];
+            if (attribute_names_size > 1)
+                result_column = getAttributeColumn(attribute, dictionary_attribute, keys_size,
+                    default_values_column, key_index_to_element_index);
+            else
+                result_column = getAttributeColumn(attribute, dictionary_attribute, keys_size,
+                    default_values_column, extractor);
+        }
 
         result_columns.emplace_back(std::move(result_column));
     }
@@ -706,9 +619,12 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
     const Attribute & attribute,
     const DictionaryAttribute & dictionary_attribute,
     size_t keys_size,
-    ColumnPtr default_values_column,
+    DefaultOrFilter defaultOrFilter,
     KeysProvider && keys_object) const
 {
+    bool is_short_circuit = std::holds_alternative<RefFilter>(defaultOrFilter);
+    assert(is_short_circuit || std::holds_alternative<RefDefault>(defaultOrFilter));
+
     ColumnPtr result;
 
     bool is_attribute_nullable = attribute.is_index_null.has_value();
@@ -728,61 +644,130 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(dictionary_attribute.null_value, default_values_column);
-
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
-        if constexpr (std::is_same_v<ValueType, Array>)
+        if (is_short_circuit)
         {
-            auto * out = column.get();
+            IColumn::Filter & default_mask = std::get<RefFilter>(defaultOrFilter).get();
+            size_t keys_found = 0;
 
-            getItemsImpl<ValueType, false>(
-                attribute,
-                keys_object,
-                [&](const size_t, const Array & value, bool) { out->insert(value); },
-                default_value_extractor);
-        }
-        else if constexpr (std::is_same_v<ValueType, StringRef>)
-        {
-            auto * out = column.get();
+            if constexpr (std::is_same_v<ValueType, Array>)
+            {
+                auto * out = column.get();
+
+                keys_found = getItemsShortCircuitImpl<ValueType, false>(
+                    attribute,
+                    keys_object,
+                    [&](const size_t, const Array & value, bool) { out->insert(value); },
+                    default_mask);
+            }
+            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            {
+                auto * out = column.get();
+
+                if (is_attribute_nullable)
+                    keys_found = getItemsShortCircuitImpl<ValueType, true>(
+                        attribute,
+                        keys_object,
+                        [&](size_t row, StringRef value, bool is_null)
+                        {
+                            (*vec_null_map_to)[row] = is_null;
+                            out->insertData(value.data, value.size);
+                        },
+                        default_mask);
+                else
+                    keys_found = getItemsShortCircuitImpl<ValueType, false>(
+                        attribute,
+                        keys_object,
+                        [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
+                        default_mask);
+            }
+            else
+            {
+                auto & out = column->getData();
+
+                if (is_attribute_nullable)
+                    keys_found = getItemsShortCircuitImpl<ValueType, true>(
+                        attribute,
+                        keys_object,
+                        [&](size_t row, const auto value, bool is_null)
+                        {
+                            (*vec_null_map_to)[row] = is_null;
+                            out[row] = value;
+                        },
+                        default_mask);
+                else
+                    keys_found = getItemsShortCircuitImpl<ValueType, false>(
+                        attribute,
+                        keys_object,
+                        [&](size_t row, const auto value, bool) { out[row] = value; },
+                        default_mask);
+
+                out.resize(keys_found);
+            }
 
             if (is_attribute_nullable)
-                getItemsImpl<ValueType, true>(
-                    attribute,
-                    keys_object,
-                    [&](size_t row, StringRef value, bool is_null)
-                    {
-                        (*vec_null_map_to)[row] = is_null;
-                        out->insertData(value.data, value.size);
-                    },
-                    default_value_extractor);
-            else
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    keys_object,
-                    [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
-                    default_value_extractor);
+                vec_null_map_to->resize(keys_found);
         }
         else
         {
-            auto & out = column->getData();
+            const ColumnPtr & default_values_column = std::get<RefDefault>(defaultOrFilter).get();
 
-            if (is_attribute_nullable)
-                getItemsImpl<ValueType, true>(
-                    attribute,
-                    keys_object,
-                    [&](size_t row, const auto value, bool is_null)
-                    {
-                        (*vec_null_map_to)[row] = is_null;
-                        out[row] = value;
-                    },
-                    default_value_extractor);
-            else
+            DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(
+                dictionary_attribute.null_value, default_values_column);
+
+            if constexpr (std::is_same_v<ValueType, Array>)
+            {
+                auto * out = column.get();
+
                 getItemsImpl<ValueType, false>(
                     attribute,
                     keys_object,
-                    [&](size_t row, const auto value, bool) { out[row] = value; },
+                    [&](const size_t, const Array & value, bool) { out->insert(value); },
                     default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            {
+                auto * out = column.get();
+
+                if (is_attribute_nullable)
+                    getItemsImpl<ValueType, true>(
+                        attribute,
+                        keys_object,
+                        [&](size_t row, StringRef value, bool is_null)
+                        {
+                            (*vec_null_map_to)[row] = is_null;
+                            out->insertData(value.data, value.size);
+                        },
+                        default_value_extractor);
+                else
+                    getItemsImpl<ValueType, false>(
+                        attribute,
+                        keys_object,
+                        [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
+                        default_value_extractor);
+            }
+            else
+            {
+                auto & out = column->getData();
+
+                if (is_attribute_nullable)
+                    getItemsImpl<ValueType, true>(
+                        attribute,
+                        keys_object,
+                        [&](size_t row, const auto value, bool is_null)
+                        {
+                            (*vec_null_map_to)[row] = is_null;
+                            out[row] = value;
+                        },
+                        default_value_extractor);
+                else
+                    getItemsImpl<ValueType, false>(
+                        attribute,
+                        keys_object,
+                        [&](size_t row, const auto value, bool) { out[row] = value; },
+                        default_value_extractor);
+            }
         }
 
         result = std::move(column);
@@ -792,106 +777,6 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
 
     if (is_attribute_nullable)
         result = ColumnNullable::create(result, std::move(col_null_map_to));
-
-    return result;
-}
-
-template <DictionaryKeyType dictionary_key_type, bool sharded>
-template <typename KeysProvider>
-ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColumnShortCircuit(
-    const Attribute & attribute,
-    const DictionaryAttribute & dictionary_attribute,
-    size_t keys_size,
-    KeysProvider && keys_object,
-    IColumn::Filter & default_mask) const
-{
-    ColumnPtr result;
-
-    bool is_attribute_nullable = attribute.is_index_null.has_value();
-    size_t keys_found = 0;
-
-    ColumnUInt8::MutablePtr col_null_map_to;
-    ColumnUInt8::Container * vec_null_map_to = nullptr;
-    if (attribute.is_index_null)
-    {
-        col_null_map_to = ColumnUInt8::create(keys_size, false);
-        vec_null_map_to = &col_null_map_to->getData();
-    }
-
-    auto type_call = [&](const auto & dictionary_attribute_type)
-    {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
-        using ValueType = DictionaryValueType<AttributeType>;
-        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
-
-        auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
-
-        if constexpr (std::is_same_v<ValueType, Array>)
-        {
-            auto * out = column.get();
-
-            keys_found = getItemsShortCircuitImpl<ValueType, false>(
-                attribute,
-                keys_object,
-                [&](const size_t, const Array & value, bool) { out->insert(value); },
-                default_mask);
-        }
-        else if constexpr (std::is_same_v<ValueType, StringRef>)
-        {
-            auto * out = column.get();
-
-            if (is_attribute_nullable)
-                keys_found = getItemsShortCircuitImpl<ValueType, true>(
-                    attribute,
-                    keys_object,
-                    [&](size_t row, StringRef value, bool is_null)
-                    {
-                        (*vec_null_map_to)[row] = is_null;
-                        out->insertData(value.data, value.size);
-                    },
-                    default_mask);
-            else
-                keys_found = getItemsShortCircuitImpl<ValueType, false>(
-                    attribute,
-                    keys_object,
-                    [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
-                    default_mask);
-        }
-        else
-        {
-            auto & out = column->getData();
-
-            if (is_attribute_nullable)
-                keys_found = getItemsShortCircuitImpl<ValueType, true>(
-                    attribute,
-                    keys_object,
-                    [&](size_t row, const auto value, bool is_null)
-                    {
-                        (*vec_null_map_to)[row] = is_null;
-                        out[row] = value;
-                    },
-                    default_mask);
-            else
-                keys_found = getItemsShortCircuitImpl<ValueType, false>(
-                    attribute,
-                    keys_object,
-                    [&](size_t row, const auto value, bool) { out[row] = value; },
-                    default_mask);
-
-            out.resize(keys_found);
-        }
-
-        result = std::move(column);
-    };
-
-    callOnDictionaryAttributeType(attribute.type, type_call);
-
-    if (is_attribute_nullable)
-    {
-        vec_null_map_to->resize(keys_found);
-        result = ColumnNullable::create(result, std::move(col_null_map_to));
-    }
 
     return result;
 }

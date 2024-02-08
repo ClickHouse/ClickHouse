@@ -219,78 +219,14 @@ void IPAddressDictionary::convertKeyColumns(Columns &, DataTypes &) const
 
 ColumnPtr IPAddressDictionary::getColumn(
     const std::string & attribute_name,
-    const DataTypePtr & result_type,
-    const Columns & key_columns,
-    const DataTypes & key_types,
-    const ColumnPtr & default_values_column) const
-{
-    validateKeyTypes(key_types);
-
-    ColumnPtr result;
-
-    const auto & attribute = getAttribute(attribute_name);
-    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
-
-    auto size = key_columns.front()->size();
-
-    auto type_call = [&](const auto &dictionary_attribute_type)
-    {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
-        using ValueType = DictionaryValueType<AttributeType>;
-        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
-
-        const auto & null_value = std::get<AttributeType>(attribute.null_values);
-        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
-
-        auto column = ColumnProvider::getColumn(dictionary_attribute, size);
-
-        if constexpr (std::is_same_v<ValueType, Array>)
-        {
-            auto * out = column.get();
-
-            getItemsImpl<ValueType>(
-                attribute,
-                key_columns,
-                [&](const size_t, const Array & value) { out->insert(value); },
-                default_value_extractor);
-        }
-        else if constexpr (std::is_same_v<ValueType, StringRef>)
-        {
-            auto * out = column.get();
-
-            getItemsImpl<ValueType>(
-                attribute,
-                key_columns,
-                [&](const size_t, StringRef value) { out->insertData(value.data, value.size); },
-                default_value_extractor);
-        }
-        else
-        {
-            auto & out = column->getData();
-
-            getItemsImpl<ValueType>(
-                attribute,
-                key_columns,
-                [&](const size_t row, const auto value) { return out[row] = value; },
-                default_value_extractor);
-        }
-
-        result = std::move(column);
-    };
-
-    callOnDictionaryAttributeType(attribute.type, type_call);
-
-    return result;
-}
-
-ColumnPtr IPAddressDictionary::getColumnOrDefaultShortCircuit(
-    const std::string & attribute_name,
     const DataTypePtr & attribute_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    IColumn::Filter & default_mask) const
+    DefaultOrFilter defaultOrFilter) const
 {
+    bool is_short_circuit = std::holds_alternative<RefFilter>(defaultOrFilter);
+    assert(is_short_circuit || std::holds_alternative<RefDefault>(defaultOrFilter));
+
     validateKeyTypes(key_types);
 
     ColumnPtr result;
@@ -299,7 +235,6 @@ ColumnPtr IPAddressDictionary::getColumnOrDefaultShortCircuit(
     const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, attribute_type);
 
     auto size = key_columns.front()->size();
-    size_t keys_found = 0;
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
@@ -308,41 +243,83 @@ ColumnPtr IPAddressDictionary::getColumnOrDefaultShortCircuit(
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        // const auto & null_value = std::get<AttributeType>(attribute.null_values);
-
         auto column = ColumnProvider::getColumn(dictionary_attribute, size);
 
-        if constexpr (std::is_same_v<ValueType, Array>)
+        if (is_short_circuit)
         {
-            auto * out = column.get();
+            IColumn::Filter & default_mask = std::get<RefFilter>(defaultOrFilter).get();
+            size_t keys_found = 0;
 
-            keys_found = getItemsShortCircuitImpl<ValueType>(
-                attribute,
-                key_columns,
-                [&](const size_t, const Array & value) { out->insert(value); },
-                default_mask);
-        }
-        else if constexpr (std::is_same_v<ValueType, StringRef>)
-        {
-            auto * out = column.get();
+            if constexpr (std::is_same_v<ValueType, Array>)
+            {
+                auto * out = column.get();
 
-            keys_found = getItemsShortCircuitImpl<ValueType>(
-                attribute,
-                key_columns,
-                [&](const size_t, StringRef value) { out->insertData(value.data, value.size); },
-                default_mask);
+                keys_found = getItemsShortCircuitImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t, const Array & value) { out->insert(value); },
+                    default_mask);
+            }
+            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            {
+                auto * out = column.get();
+
+                keys_found = getItemsShortCircuitImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t, StringRef value) { out->insertData(value.data, value.size); },
+                    default_mask);
+            }
+            else
+            {
+                auto & out = column->getData();
+
+                keys_found = getItemsShortCircuitImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t row, const auto value) { return out[row] = value; },
+                    default_mask);
+
+                out.resize(keys_found);
+            }
         }
         else
         {
-            auto & out = column->getData();
+            const ColumnPtr & default_values_column = std::get<RefDefault>(defaultOrFilter).get();
 
-            keys_found = getItemsShortCircuitImpl<ValueType>(
-                attribute,
-                key_columns,
-                [&](const size_t row, const auto value) { return out[row] = value; },
-                default_mask);
+            const auto & null_value = std::get<AttributeType>(attribute.null_values);
+            DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
 
-            out.resize(keys_found);
+            if constexpr (std::is_same_v<ValueType, Array>)
+            {
+                auto * out = column.get();
+
+                getItemsImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t, const Array & value) { out->insert(value); },
+                    default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            {
+                auto * out = column.get();
+
+                getItemsImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t, StringRef value) { out->insertData(value.data, value.size); },
+                    default_value_extractor);
+            }
+            else
+            {
+                auto & out = column->getData();
+
+                getItemsImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t row, const auto value) { return out[row] = value; },
+                    default_value_extractor);
+            }
         }
 
         result = std::move(column);

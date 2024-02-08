@@ -101,44 +101,48 @@ public:
 
     ColumnPtr getColumn(
         const std::string & attribute_name,
-        const DataTypePtr & result_type,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const override
-    {
-        return getColumns(Strings({attribute_name}), DataTypes({result_type}), key_columns, key_types, Columns({default_values_column}))[0];
-    }
-
-    ColumnPtr getColumnOrDefaultShortCircuit(
-        const std::string & attribute_name,
         const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        IColumn::Filter & default_mask) const override
+        DefaultOrFilter defaultOrFilter) const override
     {
-        return getColumnsOrDefaultShortCircuit(Strings({attribute_name}),
-            DataTypes({attribute_type}), key_columns, key_types, default_mask)[0];
+        bool is_short_circuit = std::holds_alternative<RefFilter>(defaultOrFilter);
+        assert(is_short_circuit || std::holds_alternative<RefDefault>(defaultOrFilter));
+
+        if (is_short_circuit)
+        {
+            IColumn::Filter & default_mask = std::get<RefFilter>(defaultOrFilter).get();
+            return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, default_mask).front();
+        }
+        else
+        {
+            const ColumnPtr & default_values_column = std::get<RefDefault>(defaultOrFilter).get();
+            const Columns & columns= Columns({default_values_column});
+            return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
+        }
     }
 
     Columns getColumns(
         const Strings & attribute_names,
-        const DataTypes & result_types,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        const Columns & default_values_columns) const override
-    {
-        return getColumnsImpl(attribute_names, result_types, key_columns, key_types, default_values_columns, std::nullopt);
-    }
-
-    Columns getColumnsOrDefaultShortCircuit(
-        const Strings & attribute_names,
         const DataTypes & attribute_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        IColumn::Filter & default_mask) const override
+        DefaultsOrFilter defaultsOrFilter) const override
     {
-        return getColumnsShortCircuitImpl(attribute_names, attribute_types,
-            key_columns, key_types, default_mask, std::nullopt);
+        bool is_short_circuit = std::holds_alternative<RefFilter>(defaultsOrFilter);
+        assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaultsOrFilter));
+        if (is_short_circuit)
+        {
+            IColumn::Filter & default_mask = std::get<RefFilter>(defaultsOrFilter).get();
+            return getColumnsShortCircuitImpl(attribute_names, attribute_types,
+                key_columns, key_types, default_mask, std::nullopt);
+        }
+        else
+        {
+            const Columns & default_values_columns = std::get<RefDefaults>(defaultsOrFilter).get();
+            return getColumnsImpl(attribute_names, attribute_types, key_columns, key_types,
+                default_values_columns, std::nullopt);
+        }
     }
 
     ColumnPtr getColumnAllValues(

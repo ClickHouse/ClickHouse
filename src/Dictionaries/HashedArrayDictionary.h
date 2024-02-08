@@ -92,32 +92,18 @@ public:
     DictionaryKeyType getKeyType() const override { return dictionary_key_type; }
 
     ColumnPtr getColumn(
-        const std::string& attribute_name,
-        const DataTypePtr & result_type,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const override;
-
-    Columns getColumns(
-        const Strings & attribute_names,
-        const DataTypes & result_types,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        const Columns & default_values_columns) const override;
-
-    ColumnPtr getColumnOrDefaultShortCircuit(
         const std::string & attribute_name,
         const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        IColumn::Filter & default_mask) const override;
+        DefaultOrFilter defaultOrFilter) const override;
 
-    Columns getColumnsOrDefaultShortCircuit(
+    Columns getColumns(
         const Strings & attribute_names,
         const DataTypes & attribute_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        IColumn::Filter & default_mask) const override;
+        DefaultsOrFilter defaultsOrFilter) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -230,16 +216,8 @@ private:
         const Attribute & attribute,
         const DictionaryAttribute & dictionary_attribute,
         size_t keys_size,
-        ColumnPtr default_values_column,
+        DefaultOrFilter defaultOrFilter,
         KeysProvider && keys_object) const;
-
-    template <typename KeysProvider>
-    ColumnPtr getAttributeColumnShortCircuit(
-        const Attribute & attribute,
-        const DictionaryAttribute & dictionary_attribute,
-        size_t keys_size,
-        KeysProvider && keys_object,
-        IColumn::Filter & default_mask) const;
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(

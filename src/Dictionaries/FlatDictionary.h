@@ -77,17 +77,10 @@ public:
 
     ColumnPtr getColumn(
         const std::string & attribute_name,
-        const DataTypePtr & result_type,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const override;
-
-    ColumnPtr getColumnOrDefaultShortCircuit(
-        const std::string & attribute_name,
         const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        IColumn::Filter & default_mask) const override;
+        DefaultOrFilter defaultOrFilter) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
