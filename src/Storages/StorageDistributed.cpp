@@ -773,7 +773,8 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
             table_function_node->setTableExpressionModifiers(*table_expression_modifiers);
 
         QueryAnalysisPass query_analysis_pass;
-        query_analysis_pass.run(table_function_node, query_context);
+        QueryTreeNodePtr node = table_function_node;
+        query_analysis_pass.run(node, query_context);
 
         replacement_table_expression = std::move(table_function_node);
     }
