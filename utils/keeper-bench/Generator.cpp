@@ -455,7 +455,6 @@ Coordination::ZooKeeperRequestPtr CreateRequestGenerator::generateImpl(const Coo
 
     auto request = std::make_shared<ZooKeeperCreateRequest>();
     request->acls = acls;
-    request->is_sequential = true;
 
     std::string path_candidate = std::filesystem::path(parent_path.getPath()) / name.getString();
 

@@ -90,12 +90,13 @@ public:
         {
             if (isEphemeral())
                 return ephemeral_or_children_data.ephemeral_owner;
+
             return 0;
         }
 
         void setEphemeralOwner(int64_t ephemeral_owner)
         {
-            is_ephemeral_and_mtime.is_ephemeral = true;
+            is_ephemeral_and_mtime.is_ephemeral = ephemeral_owner != 0;
             ephemeral_or_children_data.ephemeral_owner = ephemeral_owner;
         }
 
@@ -116,6 +117,12 @@ public:
         {
             chassert(!isEphemeral());
             ++ephemeral_or_children_data.children_info.num_children;
+        }
+
+        void decreaseNumChildren()
+        {
+            chassert(!isEphemeral());
+            --ephemeral_or_children_data.children_info.num_children;
         }
 
         int32_t seqNum() const

@@ -89,11 +89,10 @@ namespace
         writeBinary(node.ephemeralOwner(), out);
         if (version < SnapshotVersion::V6)
             writeBinary(static_cast<int32_t>(node.data_size), out);
-        const bool is_ephemeral = node.isEphemeral();
-        writeBinary(is_ephemeral ? 0 : node.numChildren(), out);
+        writeBinary(node.numChildren(), out);
         writeBinary(node.pzxid, out);
 
-        writeBinary(is_ephemeral ? 0 : node.seqNum(), out);
+        writeBinary(node.seqNum(), out);
 
         if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
             writeBinary(node.sizeInBytes(), out);
