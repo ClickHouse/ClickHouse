@@ -1066,7 +1066,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 #ifndef NDEBUG
     if (!sort_description.empty())
     {
-        res_pipe.addSimpleTransform([&](const Block & header_)
+        builder->addSimpleTransform([&](const Block & header_)
         {
             auto transform = std::make_shared<CheckSortedTransform>(header_, sort_description);
             return transform;
