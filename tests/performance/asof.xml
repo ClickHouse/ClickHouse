@@ -64,7 +64,7 @@
         (
             SELECT
                 (number % {num_unique_sessions}) AS visitor_id,
-                number AS id,
+                number AS id
             FROM system.numbers
             LIMIT {num_rows}
         ) AS sessions
