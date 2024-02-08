@@ -44,7 +44,7 @@ def create_table(node, table_name, replicated):
         CREATE TABLE {table_name}(timestamp DateTime)
         ENGINE = {engine}
         ORDER BY tuple() PARTITION BY {partition_expression}
-        SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, max_cleanup_delay_period=1;
+        SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, max_cleanup_delay_period=1, allow_experimental_alter_partition_with_different_key=1;
         """.format(
             table_name=table_name,
             engine=engine,
@@ -123,7 +123,7 @@ def test_both_replicated_partitioned_to_unpartitioned(start_cluster):
                 CREATE TABLE destination(timestamp DateTime)
                 ENGINE = {engine}
                 ORDER BY tuple() PARTITION BY tuple()
-                SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, max_cleanup_delay_period=1;
+                SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, max_cleanup_delay_period=1, allow_experimental_alter_partition_with_different_key=1;
                 """.format(
                     engine=destination_engine,
                 )
@@ -180,7 +180,8 @@ def test_both_replicated_different_exp_same_id(start_cluster):
                 CREATE TABLE destination(a UInt16,b UInt16,c UInt16,extra UInt64,Path String,Time DateTime,Value Float64,Timestamp Int64,sign Int8)
                 ENGINE = {engine}
                 ORDER BY tuple() PARTITION BY a
-                SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, max_cleanup_delay_period=1;
+                SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, 
+                max_cleanup_delay_period=1, allow_experimental_alter_partition_with_different_key=1;
                 """.format(
                     engine=destination_engine,
                 )

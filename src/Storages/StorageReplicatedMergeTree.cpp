@@ -7883,10 +7883,10 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     ProfileEventsScope profile_events_scope;
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, metadata_snapshot);
-    String partition_id = src_data.getPartitionIDFromQuery(partition, query_context);
+    String source_partition_id = src_data.getPartitionIDFromQuery(partition, query_context);
 
     /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
-    DataPartsVector src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, partition_id);
+    DataPartsVector src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, source_partition_id);
 
     bool attach_empty_partition = !replace && src_all_parts.empty();
     if (attach_empty_partition)
@@ -7923,23 +7923,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         /// TODO why not to add normal DROP_RANGE entry to replication queue if `replace` is true?
         MergeTreePartInfo drop_range;
         std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
-        bool partition_was_empty = !getFakePartCoveringAllPartsInPartition(partition_id, drop_range, delimiting_block_lock, true);
-        if (replace && partition_was_empty)
-        {
-            /// Nothing to drop, will just attach new parts
-            LOG_INFO(log, "Partition {} was empty, REPLACE PARTITION will work as ATTACH PARTITION FROM", drop_range.partition_id);
-            replace = false;
-        }
 
-        if (!replace)
-        {
-            /// It's ATTACH PARTITION FROM, not REPLACE PARTITION. We have to reset drop range
-            drop_range = makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(partition_id);
-        }
-
-        assert(replace == !LogEntry::ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range));
-
-        String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
+        String drop_range_fake_part_name;
 
         std::set<String> replaced_parts;
         for (const auto & src_part : src_all_parts)
@@ -7951,10 +7936,12 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             if (!canReplacePartition(src_part))
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Cannot replace partition '{}' because part '{}"
-                                "' has inconsistent granularity with table", partition_id, src_part->name);
+                                "' has inconsistent granularity with table", source_partition_id, src_part->name);
 
             IMergeTreeDataPart::MinMaxIndex min_max_index = *src_part->minmax_idx;
             MergeTreePartition merge_tree_partition = src_part->partition;
+
+            String destination_partition_id = source_partition_id;
 
             if (is_partition_exp_different)
             {
@@ -7962,8 +7949,26 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
                 merge_tree_partition = new_partition;
                 min_max_index = new_min_max_index;
-                partition_id = merge_tree_partition.getID(*this);
+                destination_partition_id = merge_tree_partition.getID(*this);
             }
+
+            bool partition_was_empty = !getFakePartCoveringAllPartsInPartition(destination_partition_id, drop_range, delimiting_block_lock, true);
+            if (replace && partition_was_empty)
+            {
+                /// Nothing to drop, will just attach new parts
+                LOG_INFO(log, "Partition {} was empty, REPLACE PARTITION will work as ATTACH PARTITION FROM", drop_range.partition_id);
+                replace = false;
+            }
+
+            if (!replace)
+            {
+                /// It's ATTACH PARTITION FROM, not REPLACE PARTITION. We have to reset drop range
+                drop_range = makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(destination_partition_id);
+            }
+
+            assert(replace == !LogEntry::ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range));
+
+            drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
 
             String hash_hex = src_part->checksums.getTotalChecksumHex();
             const bool is_duplicated_part = replaced_parts.contains(hash_hex);
@@ -7974,9 +7979,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             else
                 LOG_INFO(log, "Trying to attach {} with hash_hex {}", src_part->name, hash_hex);
 
-            String block_id_path = (replace || is_duplicated_part) ? "" : (fs::path(zookeeper_path) / "blocks" / (partition_id + "_replace_from_" + hash_hex));
+            String block_id_path = (replace || is_duplicated_part) ? "" : (fs::path(zookeeper_path) / "blocks" / (destination_partition_id + "_replace_from_" + hash_hex));
 
-            auto lock = allocateBlockNumber(partition_id, zookeeper, block_id_path);
+            auto lock = allocateBlockNumber(destination_partition_id, zookeeper, block_id_path);
             if (!lock)
             {
                 LOG_INFO(log, "Part {} (hash {}) has been already attached", src_part->name, hash_hex);
@@ -7999,7 +8004,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 auto [dst_part, part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
                     src_part,
                     merge_tree_partition,
-                    partition_id,
+                    destination_partition_id,
                     min_max_index,
                     TMP_PREFIX,
                     metadata_snapshot,
@@ -8013,7 +8018,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             }
             else
             {
-                MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
+                MergeTreePartInfo dst_part_info(destination_partition_id, index, index, src_part->info.level);
 
                 auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
                     src_part,
