@@ -489,3 +489,15 @@ INSERT INTO TABLE destination VALUES (1);
 ALTER TABLE destination REPLACE PARTITION '1' FROM source;
 SELECT * FROM destination;
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+-- Attach without experimental setting, should not be allowed
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMMDD(timestamp);
+CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
+INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-02 02:01:03');
+ALTER TABLE destination ATTACH PARTITION ID '20100302' FROM source; -- { serverError 36 }
+SELECT * FROM source ORDER BY timestamp;
+2010-03-02 02:01:01
+2010-03-02 02:01:03
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
