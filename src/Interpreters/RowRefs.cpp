@@ -197,18 +197,19 @@ private:
                 };
 
                 if constexpr (is_descending)
-                    RadixSort<RadixSortTraits>::executeLSDWithPDQSort(entries.data(), entries.size(), true /*reverse*/);
+                    RadixSort<RadixSortTraits>::executeLSDWithTrySort(entries.data(), entries.size(), true /*reverse*/);
                 else
-                    RadixSort<RadixSortTraits>::executeLSDWithPDQSort(entries.data(), entries.size(), false /*reverse*/);
+                    RadixSort<RadixSortTraits>::executeLSDWithTrySort(entries.data(), entries.size(), false /*reverse*/);
+
+                sorted.store(true, std::memory_order_release);
+                return;
             }
         }
+
+        if constexpr (is_descending)
+            ::sort(entries.begin(), entries.end(), GreaterEntryOperator());
         else
-        {
-            if constexpr (is_descending)
-                ::sort(entries.begin(), entries.end(), GreaterEntryOperator());
-            else
-                ::sort(entries.begin(), entries.end(), LessEntryOperator());
-        }
+            ::sort(entries.begin(), entries.end(), LessEntryOperator());
 
         sorted.store(true, std::memory_order_release);
     }

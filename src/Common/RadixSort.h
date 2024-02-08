@@ -522,7 +522,7 @@ private:
     }
 
     template <bool DIRECT_WRITE_TO_DESTINATION, typename Comparator>
-    static void executeLSDWithPDQSortInternal(Element * arr, size_t size, bool reverse, Comparator comparator, Result * destination)
+    static void executeLSDWithTrySortInternal(Element * arr, size_t size, bool reverse, Comparator comparator, Result * destination)
     {
         bool try_sort = ::trySort(arr, arr + size, comparator);
         if (try_sort)
@@ -567,32 +567,32 @@ public:
     /** Tries to fast sort elements for common sorting patterns (unstable).
       * If fast sort cannot be performed, execute least significant digit radix sort.
       */
-    static void executeLSDWithPDQSort(Element * arr, size_t size)
+    static void executeLSDWithTrySort(Element * arr, size_t size)
     {
-        return executeLSDWithPDQSort(arr, size, false);
+        return executeLSDWithTrySort(arr, size, false);
     }
 
-    static void executeLSDWithPDQSort(Element * arr, size_t size, bool reverse)
+    static void executeLSDWithTrySort(Element * arr, size_t size, bool reverse)
     {
-        return executeLSDWithPDQSort(arr, size, reverse, nullptr);
+        return executeLSDWithTrySort(arr, size, reverse, nullptr);
     }
 
-    static void executeLSDWithPDQSort(Element * arr, size_t size, bool reverse, Result * destination)
+    static void executeLSDWithTrySort(Element * arr, size_t size, bool reverse, Result * destination)
     {
         if (reverse)
         {
 
             if (destination)
-                return executeLSDWithPDQSortInternal<true>(arr, size, reverse, GreaterComparator(), destination);
+                return executeLSDWithTrySortInternal<true>(arr, size, reverse, GreaterComparator(), destination);
             else
-                return executeLSDWithPDQSortInternal<false>(arr, size, reverse, GreaterComparator(), destination);
+                return executeLSDWithTrySortInternal<false>(arr, size, reverse, GreaterComparator(), destination);
         }
         else
         {
             if (destination)
-                return executeLSDWithPDQSortInternal<true>(arr, size, reverse, LessComparator(), destination);
+                return executeLSDWithTrySortInternal<true>(arr, size, reverse, LessComparator(), destination);
             else
-                return executeLSDWithPDQSortInternal<false>(arr, size, reverse, LessComparator(), destination);
+                return executeLSDWithTrySortInternal<false>(arr, size, reverse, LessComparator(), destination);
         }
     }
 
