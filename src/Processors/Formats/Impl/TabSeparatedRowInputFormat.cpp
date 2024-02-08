@@ -95,16 +95,16 @@ void TabSeparatedFormatReader::skipFieldDelimiter()
 
 void TabSeparatedFormatReader::skipRowEndDelimiter()
 {
-    bool supports_crfl = format_settings.tsv.crlf_end_of_line_input;
+    bool supports_crlf = format_settings.tsv.crlf_end_of_line_input;
     if (buf->eof())
         return;
-    if (supports_crfl && first_row==false)
+    if (supports_crlf && first_row==false)
     {
         ++buf->position();
     }
     if (unlikely(first_row))
     {
-        supports_crfl ? checkForCarriageReturn<true>(*buf) : checkForCarriageReturn<false>(*buf);
+        supports_crlf ? checkForCarriageReturn<true>(*buf) : checkForCarriageReturn<false>(*buf);
         first_row = false;
     }
     assertChar('\n', *buf);
