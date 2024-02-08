@@ -165,7 +165,7 @@ void ClusterCopierApp::mainImpl()
     registerDatabases();
     registerStorages();
     registerDictionaries();
-    registerDisks(/* global_skip_access_check= */ true);
+    registerDisks(DiskStartupFlags::GLOBAL_SKIP_ACCESS_CHECK);
     registerFormats();
 
     static const std::string default_database = "_local";

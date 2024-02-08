@@ -91,3 +91,52 @@ def test_reconcile(started_cluster):
     assert int(node.count_in_log("Selected snapshot 4 as best candidate")) == 1
 
     zk.stop()
+
+
+def test_ch_disks(started_cluster):
+    node: ClickHouseInstance = started_cluster.instances["node"]
+
+    listing = node.exec_in_container(
+        [
+            "/usr/bin/clickhouse",
+            "disks",
+            "--loglevel=trace",
+            "--save-logs",
+            "--config-file=/etc/clickhouse-server/config.d/config.xml",
+            "list-disks",
+        ],
+        privileged=True,
+        user="root",
+    )
+    print(listing)
+    assert listing == "default\nreacquire\nreconcile\n"
+
+    listing = node.exec_in_container(
+        [
+            "/usr/bin/clickhouse",
+            "disks",
+            "--config-file=/etc/clickhouse-server/config.xml",
+            "--loglevel=trace",
+            "--save-logs",
+            "--disk=reconcile",
+            "list",
+            "/",
+        ],
+        privileged=True,
+        user="root",
+    )
+
+    print(listing)
+
+    log = node.exec_in_container(
+        [
+            "/usr/bin/cat",
+            "/var/log/clickhouse-server/clickhouse-disks.log",
+        ],
+        privileged=True,
+        user="root",
+    )
+    print(log)
+
+    assert "GC enabled: false" in log
+    assert "GC started" not in log

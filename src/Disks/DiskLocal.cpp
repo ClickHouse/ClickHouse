@@ -1,6 +1,7 @@
 #include "DiskLocal.h"
 #include <Common/Throttler_fwd.h>
 #include <Common/createHardLink.h>
+#include "registerDisks.h"
 #include "DiskFactory.h"
 
 #include <Disks/LocalDirectorySyncGuard.h>
@@ -721,9 +722,9 @@ void DiskLocal::chmod(const String & path, mode_t mode)
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot chmod file: {}", path);
 }
 
-void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
+void registerDiskLocal(DiskFactory & factory, DiskStartupFlags disk_flags)
 {
-    auto creator = [global_skip_access_check](
+    auto creator = [disk_flags](
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
@@ -739,7 +740,8 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
             if (path == disk_ptr->getPath())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} and disk {} cannot have the same path ({})", name, disk_name, path);
 
-        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
+        bool skip_access_check = is_set(disk_flags, DiskStartupFlags::GLOBAL_SKIP_ACCESS_CHECK)
+            || config.getBool(config_prefix + ".skip_access_check", false);
         std::shared_ptr<IDisk> disk
             = std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, context, config, config_prefix);
         disk->startup(context, skip_access_check);

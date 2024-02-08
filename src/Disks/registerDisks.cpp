@@ -3,48 +3,54 @@
 #include "DiskFactory.h"
 
 #include "config.h"
+#include "magic_enum.hpp"
 
 namespace DB
 {
 
-void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check);
+void registerDiskLocal(DiskFactory & factory, DiskStartupFlags disk_flags);
 
 #if USE_SSL
-void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check);
+void registerDiskEncrypted(DiskFactory & factory, DiskStartupFlags disk_flags);
 #endif
 
-void registerDiskCache(DiskFactory & factory, bool global_skip_access_check);
-void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_check);
+void registerDiskCache(DiskFactory & factory, DiskStartupFlags disk_flags);
+void registerDiskObjectStorage(DiskFactory & factory, DiskStartupFlags disk_flags);
 
 
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
-void registerDisks(bool global_skip_access_check)
+void registerDisks(DiskStartupFlags disk_flags)
 {
     auto & factory = DiskFactory::instance();
 
-    registerDiskLocal(factory, global_skip_access_check);
+    registerDiskLocal(factory, disk_flags);
 
 #if USE_SSL
-    registerDiskEncrypted(factory, global_skip_access_check);
+    registerDiskEncrypted(factory, disk_flags);
 #endif
 
-    registerDiskCache(factory, global_skip_access_check);
+    registerDiskCache(factory, disk_flags);
 
-    registerDiskObjectStorage(factory, global_skip_access_check);
+    registerDiskObjectStorage(factory, disk_flags);
 }
 
 #else
 
-void registerDisks(bool global_skip_access_check)
+void registerDisks(DiskStartupFlags disk_flags)
 {
     auto & factory = DiskFactory::instance();
 
-    registerDiskLocal(factory, global_skip_access_check);
+    registerDiskLocal(factory, disk_flags);
 
-    registerDiskObjectStorage(factory, global_skip_access_check);
+    registerDiskObjectStorage(factory, disk_flags);
 }
 
 #endif
+
+bool is_set(DiskStartupFlags flag1, DiskStartupFlags flag2)
+{
+    return (magic_enum::enum_integer(flag1) & magic_enum::enum_integer(flag2));
+}
 
 }

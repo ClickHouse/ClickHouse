@@ -1,6 +1,7 @@
 #include <Disks/DiskEncrypted.h>
 
 #if USE_SSL
+#include "registerDisks.h"
 #include <Disks/DiskFactory.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
@@ -448,9 +449,9 @@ void DiskEncrypted::applyNewSettings(
     IDisk::applyNewSettings(config, context, config_prefix, disk_map);
 }
 
-void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
+void registerDiskEncrypted(DiskFactory & factory, DiskStartupFlags disk_flags)
 {
-    auto creator = [global_skip_access_check](
+    auto creator = [disk_flags](
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
@@ -458,7 +459,7 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         const DisksMap & map,
         bool, bool) -> DiskPtr
     {
-        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
+        bool skip_access_check = is_set(disk_flags, DiskStartupFlags::GLOBAL_SKIP_ACCESS_CHECK) || config.getBool(config_prefix + ".skip_access_check", false);
         DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);
         disk->startup(context, skip_access_check);
         return disk;

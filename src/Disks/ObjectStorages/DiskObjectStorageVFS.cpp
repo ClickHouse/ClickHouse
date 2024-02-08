@@ -59,7 +59,7 @@ void DiskObjectStorageVFS::startupImpl(ContextPtr context)
     auto new_settings = std::make_unique<VFSSettings>(*settings.get());
     new_settings->keeper_fault_injection_probability = ctx_settings.insert_keeper_fault_injection_probability;
     new_settings->keeper_fault_injection_seed = ctx_settings.insert_keeper_fault_injection_seed;
-    LOG_INFO(log, "VFS settings: {}", *new_settings);
+    LOG_INFO(log, "VFS settings: {}, GC enabled: {}", *new_settings, enable_gc);
     settings.set(std::move(new_settings));
 
     if (!enable_gc)

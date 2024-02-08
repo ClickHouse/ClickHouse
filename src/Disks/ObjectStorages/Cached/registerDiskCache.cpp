@@ -5,6 +5,7 @@
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Disks/registerDisks.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 
@@ -17,7 +18,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check */)
+void registerDiskCache(DiskFactory & factory, DiskStartupFlags)
 {
     auto creator = [](const String & name,
                     const Poco::Util::AbstractConfiguration & config,
