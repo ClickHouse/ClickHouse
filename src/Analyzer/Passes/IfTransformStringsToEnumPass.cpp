@@ -190,7 +190,7 @@ public:
 
 }
 
-void IfTransformStringsToEnumPass::run(QueryTreeNodePtr query, ContextPtr context)
+void IfTransformStringsToEnumPass::run(QueryTreeNodePtr & query, ContextPtr context)
 {
     ConvertStringsToEnumVisitor visitor(std::move(context));
     visitor.visit(query);

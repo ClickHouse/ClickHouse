@@ -826,10 +826,12 @@ try
         0, // We don't need any threads one all the parts will be deleted
         server_settings.max_parts_cleaning_thread_pool_size);
 
+    auto max_database_replicated_create_table_thread_pool_size = server_settings.max_database_replicated_create_table_thread_pool_size ?
+        server_settings.max_database_replicated_create_table_thread_pool_size : getNumberOfPhysicalCPUCores();
     getDatabaseReplicatedCreateTablesThreadPool().initialize(
-        server_settings.max_database_replicated_create_table_thread_pool_size,
+        max_database_replicated_create_table_thread_pool_size,
         0, // We don't need any threads once all the tables will be created
-        server_settings.max_database_replicated_create_table_thread_pool_size);
+        max_database_replicated_create_table_thread_pool_size);
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
