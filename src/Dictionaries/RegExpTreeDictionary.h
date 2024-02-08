@@ -129,20 +129,7 @@ public:
         const DataTypes & key_types,
         DefaultsOrFilter defaultsOrFilter) const override
     {
-        bool is_short_circuit = std::holds_alternative<RefFilter>(defaultsOrFilter);
-        assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaultsOrFilter));
-        if (is_short_circuit)
-        {
-            IColumn::Filter & default_mask = std::get<RefFilter>(defaultsOrFilter).get();
-            return getColumnsShortCircuitImpl(attribute_names, attribute_types,
-                key_columns, key_types, default_mask, std::nullopt);
-        }
-        else
-        {
-            const Columns & default_values_columns = std::get<RefDefaults>(defaultsOrFilter).get();
-            return getColumnsImpl(attribute_names, attribute_types, key_columns, key_types,
-                default_values_columns, std::nullopt);
-        }
+        return getColumnsImpl(attribute_names, attribute_types, key_columns, key_types, defaultsOrFilter, std::nullopt);
     }
 
     ColumnPtr getColumnAllValues(
@@ -173,15 +160,7 @@ public:
         const DataTypes & result_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const Columns & default_values_columns,
-        std::optional<size_t> collect_values_limit) const;
-
-    Columns getColumnsShortCircuitImpl(
-        const Strings & attribute_names,
-        const DataTypes & attribute_types,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        IColumn::Filter & default_mask,
+        DefaultsOrFilter defaultsOrFilter,
         std::optional<size_t> collect_values_limit) const;
 
 private:
@@ -205,18 +184,13 @@ private:
     void initTopologyOrder(UInt64 node_idx, std::set<UInt64> & visited, UInt64 & topology_id);
     void initGraph();
 
+    using RefDefaultMap = std::reference_wrapper<const std::unordered_map<String, ColumnPtr>>;
+    using DefaultMapOrFilter = std::variant<RefDefaultMap, RefFilter>;
     std::unordered_map<String, ColumnPtr> match(
         const ColumnString::Chars & keys_data,
         const ColumnString::Offsets & keys_offsets,
         const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-        const std::unordered_map<String, ColumnPtr> & defaults,
-        std::optional<size_t> collect_values_limit) const;
-
-    std::unordered_map<String, ColumnPtr> matchShortCircuit(
-        const ColumnString::Chars & keys_data,
-        const ColumnString::Offsets & keys_offsets,
-        const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-        IColumn::Filter & default_mask,
+        DefaultMapOrFilter defaultOrFilter,
         std::optional<size_t> collect_values_limit) const;
 
     class AttributeCollector;

@@ -676,9 +676,12 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
     const ColumnString::Chars & keys_data,
     const ColumnString::Offsets & keys_offsets,
     const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-    const std::unordered_map<String, ColumnPtr> & defaults,
+    DefaultMapOrFilter defaultOrFilter,
     std::optional<size_t> collect_values_limit) const
 {
+    bool is_short_circuit = std::holds_alternative<RefFilter>(defaultOrFilter);
+    assert(is_short_circuit || std::holds_alternative<RefDefaultMap>(defaultOrFilter));
+
 
 #if USE_VECTORSCAN
     hs_scratch_t * scratch = nullptr;
@@ -703,6 +706,18 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
         auto col_ptr = (collect_values_limit ? std::make_shared<DataTypeArray>(attr.type) : attr.type)->createColumn();
         col_ptr->reserve(keys_offsets.size());
         columns[name_] = std::move(col_ptr);
+    }
+
+    std::optional<RefDefaultMap> default_map;
+    std::optional<RefFilter> default_mask;
+    if (is_short_circuit)
+    {
+        default_mask = std::get<RefFilter>(defaultOrFilter).get();
+        default_mask.value().get().resize(keys_offsets.size());
+    }
+    else
+    {
+        default_map = std::get<RefDefaultMap>(defaultOrFilter).get();
     }
 
     UInt64 offset = 0;
@@ -771,168 +786,64 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
 
         String str = String(reinterpret_cast<const char *>(keys_data.data()) + offset, length);
 
-        for (auto item : match_result.matched_idx_sorted_list)
+        if (is_short_circuit)
         {
-            UInt64 id = item.second;
-            if (!is_valid(id))
-                continue;
-            if (visited_nodes.contains(id))
-                continue;
-            if (setAttributes(id, attributes_to_set, str, visited_nodes, attributes, defaults, key_idx))
-                break;
-        }
+            std::unordered_set<String> defaults;
 
-        for (const auto & [name_, attr] : attributes)
-        {
-            if (attributes_to_set.contains(name_))
-                continue;
-
-            DefaultValueProvider default_value(
-                collect_values_limit ? DataTypeArray(attr.type).getDefault() : attr.null_value, defaults.at(name_));
-            columns[name_]->insert(default_value.getDefaultValue(key_idx));
-        }
-
-        /// insert to columns
-        for (const auto & [name_, value] : attributes_to_set)
-            columns[name_]->insert(value);
-
-        offset = key_offset;
-    }
-
-    std::unordered_map<String, ColumnPtr> result;
-    for (auto & [name_, mutable_ptr] : columns)
-        result.emplace(name_, std::move(mutable_ptr));
-
-    return result;
-}
-
-std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchShortCircuit(
-    const ColumnString::Chars & keys_data,
-    const ColumnString::Offsets & keys_offsets,
-    const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-    IColumn::Filter & default_mask,
-    std::optional<size_t> collect_values_limit) const
-{
-
-#if USE_VECTORSCAN
-    hs_scratch_t * scratch = nullptr;
-    if (use_vectorscan)
-    {
-        hs_error_t err = hs_clone_scratch(origin_scratch.get(), &scratch);
-
-        if (err != HS_SUCCESS)
-        {
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not clone scratch space for hyperscan");
-        }
-    }
-
-    MultiRegexps::ScratchPtr smart_scratch(scratch);
-#endif
-
-    std::unordered_map<String, MutableColumnPtr> columns;
-
-    /// initialize columns
-    for (const auto & [name_, attr] : attributes)
-    {
-        auto col_ptr = (collect_values_limit ? std::make_shared<DataTypeArray>(attr.type) : attr.type)->createColumn();
-        col_ptr->reserve(keys_offsets.size());
-        columns[name_] = std::move(col_ptr);
-    }
-
-    default_mask.resize(keys_offsets.size());
-
-    UInt64 offset = 0;
-    for (size_t key_idx = 0; key_idx < keys_offsets.size(); ++key_idx)
-    {
-        auto key_offset = keys_offsets[key_idx];
-        UInt64 length = key_offset - offset - 1;
-
-        const char * begin = reinterpret_cast<const char *>(keys_data.data()) + offset;
-
-        MatchContext match_result(regexp_ids, topology_order, begin, length, regex_nodes);
-
-#if USE_VECTORSCAN
-        if (use_vectorscan)
-        {
-            /// pre-select all the possible matches
-            auto on_match = [](unsigned int id,
-                            unsigned long long /* from */, // NOLINT
-                            unsigned long long /* to */, // NOLINT
-                            unsigned int /* flags */,
-                            void * context) -> int
+            for (auto item : match_result.matched_idx_sorted_list)
             {
-                static_cast<MatchContext *>(context)->insertIdx(id);
-                return 0;
-            };
+                UInt64 id = item.second;
+                if (!is_valid(id))
+                    continue;
+                if (visited_nodes.contains(id))
+                    continue;
+                if (setAttributesShortCircuit(id, attributes_to_set, str, visited_nodes, attributes, &defaults))
+                    break;
+            }
 
-            hs_error_t err = hs_scan(
-                origin_db.get(),
-                reinterpret_cast<const char *>(keys_data.data()) + offset,
-                static_cast<unsigned>(length),
-                0,
-                smart_scratch.get(),
-                on_match,
-                &match_result);
-
-            if (err != HS_SUCCESS)
-                throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan data with vectorscan");
-
-        }
-#endif
-
-        for (const auto & node_ptr : complex_regexp_nodes)
-        {
-            if (node_ptr->match(reinterpret_cast<const char *>(keys_data.data()) + offset, length))
+            for (const auto & [name_, attr] : attributes)
             {
-                match_result.insertNodeID(node_ptr->id);
+                if (attributes_to_set.contains(name_))
+                    continue;
+
+                default_mask.value().get()[key_idx] = 1;
+            }
+
+            /// insert to columns
+            for (const auto & [name_, value] : attributes_to_set)
+            {
+                columns[name_]->insert(value);
+                default_mask.value().get()[key_idx] = 0;
             }
         }
-
-        match_result.sort();
-        /// Walk through the regex tree util all attributes are set;
-        AttributeCollector attributes_to_set{collect_values_limit};
-        std::unordered_set<UInt64> visited_nodes;
-
-        /// Some node matches but its parents cannot match. In this case we must regard this node unmatched.
-        auto is_valid = [&](UInt64 id)
+        else
         {
-            while (id)
+            for (auto item : match_result.matched_idx_sorted_list)
             {
-                if (!match_result.contains(id))
-                    return false;
-                id = regex_nodes.at(id)->parent_id;
+                UInt64 id = item.second;
+                if (!is_valid(id))
+                    continue;
+                if (visited_nodes.contains(id))
+                    continue;
+                if (setAttributes(id, attributes_to_set, str, visited_nodes, attributes,
+                        default_map.value().get(), key_idx))
+                    break;
             }
-            return true;
-        };
 
-        String str = String(reinterpret_cast<const char *>(keys_data.data()) + offset, length);
+            for (const auto & [name_, attr] : attributes)
+            {
+                if (attributes_to_set.contains(name_))
+                    continue;
 
-        std::unordered_set<String> defaults;
+                DefaultValueProvider default_value(
+                    collect_values_limit ? DataTypeArray(attr.type).getDefault() : attr.null_value,
+                        default_map.value().get().at(name_));
+                columns[name_]->insert(default_value.getDefaultValue(key_idx));
+            }
 
-        for (auto item : match_result.matched_idx_sorted_list)
-        {
-            UInt64 id = item.second;
-            if (!is_valid(id))
-                continue;
-            if (visited_nodes.contains(id))
-                continue;
-            if (setAttributesShortCircuit(id, attributes_to_set, str, visited_nodes, attributes, &defaults))
-                break;
-        }
-
-        for (const auto & [name_, attr] : attributes)
-        {
-            if (attributes_to_set.contains(name_))
-                continue;
-
-            default_mask[key_idx] = 1;
-        }
-
-        /// insert to columns
-        for (const auto & [name_, value] : attributes_to_set)
-        {
-            columns[name_]->insert(value);
-            default_mask[key_idx] = 0;
+            /// insert to columns
+            for (const auto & [name_, value] : attributes_to_set)
+                columns[name_]->insert(value);
         }
 
         offset = key_offset;
@@ -996,9 +907,12 @@ Columns RegExpTreeDictionary::getColumnsImpl(
     const DataTypes & result_types,
     const Columns & key_columns,
     const DataTypes & key_types,
-    const Columns & default_values_columns,
+    DefaultsOrFilter defaultsOrFilter,
     std::optional<size_t> collect_values_limit) const
 {
+    bool is_short_circuit = std::holds_alternative<RefFilter>(defaultsOrFilter);
+    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaultsOrFilter));
+
     /// valid check
     if (key_columns.size() != 1)
     {
@@ -1023,7 +937,11 @@ Columns RegExpTreeDictionary::getColumnsImpl(
         }
         const auto & attribute = structure.getAttribute(attribute_names[i], attribute_type);
         attributes.emplace(attribute.name, attribute);
-        defaults[attribute.name] = default_values_columns[i];
+        if (!is_short_circuit)
+        {
+            const Columns & default_values_columns = std::get<RefDefaults>(defaultsOrFilter).get();
+            defaults[attribute.name] = default_values_columns[i];
+        }
     }
 
     /// calculate matches
@@ -1035,59 +953,7 @@ Columns RegExpTreeDictionary::getColumnsImpl(
         key_column->getChars(),
         key_column->getOffsets(),
         attributes,
-        defaults,
-        collect_values_limit);
-
-    Columns result;
-    for (const String & name_ : attribute_names)
-        result.push_back(columns_map.at(name_));
-
-    return result;
-}
-
-Columns RegExpTreeDictionary::getColumnsShortCircuitImpl(
-    const Strings & attribute_names,
-    const DataTypes & attribute_types,
-    const Columns & key_columns,
-    const DataTypes & key_types,
-    IColumn::Filter & default_mask,
-    std::optional<size_t> collect_values_limit) const
-{
-    /// valid check
-    if (key_columns.size() != 1)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expect 1 key for DictGet, but got {} arguments", key_columns.size());
-    }
-    structure.validateKeyTypes(key_types);
-
-    std::unordered_map<String, const DictionaryAttribute &> attributes;
-
-    for (size_t i = 0; i < attribute_names.size(); i++)
-    {
-        DataTypePtr attribute_type = attribute_types[i];
-        if (collect_values_limit)
-        {
-            if (!WhichDataType(attribute_type).isArray())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Expected Array result type for attribute `{}`, got `{}`",
-                    attribute_names[i],
-                    attribute_type->getName());
-            attribute_type = assert_cast<const DataTypeArray &>(*attribute_type).getNestedType();
-        }
-        const auto & attribute = structure.getAttribute(attribute_names[i], attribute_type);
-        attributes.emplace(attribute.name, attribute);
-    }
-
-    /// calculate matches
-    const ColumnString * key_column = typeid_cast<const ColumnString *>(key_columns[0].get());
-    if (key_column == nullptr)
-        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a ColumnString column");
-
-    const auto & columns_map = matchShortCircuit(
-        key_column->getChars(),
-        key_column->getOffsets(),
-        attributes,
-        default_mask,
+        is_short_circuit ? std::get<RefFilter>(defaultsOrFilter).get()/*default_mask*/ : DefaultMapOrFilter{defaults},
         collect_values_limit);
 
     Columns result;
