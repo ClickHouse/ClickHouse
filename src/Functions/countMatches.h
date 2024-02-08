@@ -35,39 +35,32 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isStringOrFixedString(arguments[1].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument (pattern) of function {}. Must be String/FixedString.",
-                arguments[1].type->getName(), getName());
-        if (!isStringOrFixedString(arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument (haystack) of function {}. Must be String/FixedString.",
-                arguments[0].type->getName(), getName());
-        const auto * column = arguments[1].column.get();
-        if (!column || !checkAndGetColumnConstStringOrFixedString(column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "The second argument of function {} should be a constant string with the pattern",
-                getName());
+        FunctionArgumentDescriptors args{
+            {"haystack", &isStringOrFixedString<IDataType>, nullptr, "String or FixedString"},
+            {"pattern", &isStringOrFixedString<IDataType>, isColumnConst, "constant String or FixedString"}
+        };
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeUInt64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const ColumnConst * column_pattern = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
-        const OptimizedRegularExpression re = Regexps::createRegexp</*is_like*/ false, /*no_capture*/ true, CountMatchesBase::case_insensitive>(column_pattern->getValue<String>());
+        const IColumn * col_pattern = arguments[1].column.get();
+        const ColumnConst * col_pattern_const = checkAndGetColumnConstStringOrFixedString(col_pattern);
+        const OptimizedRegularExpression re = Regexps::createRegexp</*is_like*/ false, /*no_capture*/ true, CountMatchesBase::case_insensitive>(col_pattern_const->getValue<String>());
+
+        const IColumn * col_haystack = arguments[0].column.get();
         OptimizedRegularExpression::MatchVec matches;
 
-        const IColumn * column_haystack = arguments[0].column.get();
-
-        if (const ColumnString * col_str = checkAndGetColumn<ColumnString>(column_haystack))
+        if (const ColumnString * col_haystack_string = checkAndGetColumn<ColumnString>(col_haystack))
         {
-            auto result_column = ColumnUInt64::create();
+            auto col_res = ColumnUInt64::create();
 
-            const ColumnString::Chars & src_chars = col_str->getChars();
-            const ColumnString::Offsets & src_offsets = col_str->getOffsets();
+            const ColumnString::Chars & src_chars = col_haystack_string->getChars();
+            const ColumnString::Offsets & src_offsets = col_haystack_string->getOffsets();
 
-            ColumnUInt64::Container & vec_res = result_column->getData();
+            ColumnUInt64::Container & vec_res = col_res->getData();
             vec_res.resize(input_rows_count);
 
             size_t size = src_offsets.size();
@@ -83,11 +76,11 @@ public:
                 vec_res[i] = countMatches(str, re, matches);
             }
 
-            return result_column;
+            return col_res;
         }
-        else if (const ColumnConst * col_const_str = checkAndGetColumnConstStringOrFixedString(column_haystack))
+        else if (const ColumnConst * col_haystack_const = checkAndGetColumnConstStringOrFixedString(col_haystack))
         {
-            std::string_view str = col_const_str->getDataColumn().getDataAt(0).toView();
+            std::string_view str = col_haystack_const->getDataColumn().getDataAt(0).toView();
             uint64_t matches_count = countMatches(str, re, matches);
             return result_type->createColumnConst(input_rows_count, matches_count);
         }
