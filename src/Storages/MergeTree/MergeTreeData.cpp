@@ -7110,7 +7110,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         local_context->getWriteSettings(),
         new_partition,
         min_max_index,
-        false,
+        getSettings()->fsync_after_insert,
         clone_params);
 }
 
