@@ -61,7 +61,7 @@ public:
     {
     public:
         virtual ~IIterator() = default;
-        virtual KeyWithInfoPtr next(size_t idx = 0) = 0; /// NOLINT
+        virtual KeyWithInfoPtr next() = 0;
 
         /// Estimates how many streams we need to process all files.
         /// If keys count >= max_threads_count, the returned number may not represent the actual number of the keys.
@@ -85,7 +85,7 @@ public:
             const S3Settings::RequestSettings & request_settings_ = {},
             std::function<void(FileProgress)> progress_callback_ = {});
 
-        KeyWithInfoPtr next(size_t idx = 0) override; /// NOLINT
+        KeyWithInfoPtr next() override;
         size_t estimatedKeysCount() override;
 
     private:
@@ -106,7 +106,7 @@ public:
             KeysWithInfo * read_keys = nullptr,
             std::function<void(FileProgress)> progress_callback_ = {});
 
-        KeyWithInfoPtr next(size_t idx = 0) override; /// NOLINT
+        KeyWithInfoPtr next() override;
         size_t estimatedKeysCount() override;
 
     private:
@@ -120,7 +120,7 @@ public:
     public:
         explicit ReadTaskIterator(const ReadTaskCallback & callback_, size_t max_threads_count);
 
-        KeyWithInfoPtr next(size_t idx = 0) override; /// NOLINT
+        KeyWithInfoPtr next() override;
         size_t estimatedKeysCount() override;
 
     private:
@@ -253,11 +253,11 @@ private:
 
     /// Notice: we should initialize reader and future_reader lazily in generate to make sure key_condition
     /// is set before createReader is invoked for key_condition is read in createReader.
-    void lazyInitialize(size_t idx = 0);
+    void lazyInitialize();
 
     /// Recreate ReadBuffer and Pipeline for each file.
-    ReaderHolder createReader(size_t idx = 0);
-    std::future<ReaderHolder> createReaderAsync(size_t idx = 0);
+    ReaderHolder createReader();
+    std::future<ReaderHolder> createReaderAsync();
 
     std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key, size_t object_size);
     std::unique_ptr<ReadBuffer> createAsyncS3ReadBuffer(const String & key, const ReadSettings & read_settings, size_t object_size);

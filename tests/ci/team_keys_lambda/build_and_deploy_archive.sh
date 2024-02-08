@@ -35,8 +35,6 @@ if [ -f requirements.txt ]; then
 fi
 ( cd "$PACKAGE" && zip -9 -r ../"$PACKAGE".zip . )
 
-ECHO=()
-if [ -n "$DRY_RUN" ]; then
-  ECHO=(echo Run the following command to push the changes:)
+if [ -z "$DRY_RUN" ]; then
+  aws lambda update-function-code --function-name "$LAMBDA_NAME" --zip-file fileb://"$WORKDIR/$PACKAGE".zip
 fi
-"${ECHO[@]}" aws lambda update-function-code --function-name "$LAMBDA_NAME" --zip-file fileb://"$WORKDIR/$PACKAGE".zip

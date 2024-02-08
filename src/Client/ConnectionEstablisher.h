@@ -1,5 +1,7 @@
 #pragma once
 
+#include <variant>
+
 #include <Common/AsyncTaskExecutor.h>
 #include <Common/Epoll.h>
 #include <Common/Fiber.h>
@@ -18,7 +20,7 @@ class ConnectionEstablisher
 public:
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    ConnectionEstablisher(ConnectionPoolPtr pool_,
+    ConnectionEstablisher(IConnectionPool * pool_,
                           const ConnectionTimeouts * timeouts_,
                           const Settings & settings_,
                           LoggerPtr log,
@@ -30,13 +32,16 @@ public:
     /// Set async callback that will be called when reading from socket blocks.
     void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }
 
+    bool isFinished() const { return is_finished; }
+
 private:
-    ConnectionPoolPtr pool;
+    IConnectionPool * pool;
     const ConnectionTimeouts * timeouts;
     const Settings & settings;
     LoggerPtr log;
     const QualifiedTableName * table_to_check;
 
+    bool is_finished;
     AsyncCallback async_callback = {};
 };
 
@@ -53,7 +58,7 @@ class ConnectionEstablisherAsync : public AsyncTaskExecutor
 public:
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    ConnectionEstablisherAsync(ConnectionPoolPtr pool_,
+    ConnectionEstablisherAsync(IConnectionPool * pool_,
                                const ConnectionTimeouts * timeouts_,
                                const Settings & settings_,
                                LoggerPtr log_,

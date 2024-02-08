@@ -28,11 +28,6 @@
 #include <Common/ProfileEventsScope.h>
 
 
-namespace ProfileEvents
-{
-extern const Event MutateTaskProjectionsCalculationMicroseconds;
-}
-
 namespace CurrentMetrics
 {
     extern const Metric PartMutation;
@@ -556,9 +551,7 @@ static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
     {
         bool need_recalculate =
             materialized_projections.contains(projection.name)
-            || (!is_full_part_storage
-                && source_part->hasProjection(projection.name)
-                && !source_part->hasBrokenProjection(projection.name));
+            || (!is_full_part_storage && source_part->hasProjection(projection.name));
 
         if (need_recalculate)
             projections_to_recalc.insert(&projection);
@@ -902,8 +895,7 @@ void finalizeMutatedPart(
     new_data_part->modification_time = time(nullptr);
 
     /// Load rest projections which are hardlinked
-    bool noop;
-    new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
+    new_data_part->loadProjections(false, false, true /* if_not_loaded */);
 
     /// All information about sizes is stored in checksums.
     /// It doesn't make sense to touch filesystem for sizes.
@@ -1247,13 +1239,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
         {
             const auto & projection = *ctx->projections_to_build[i];
-
-            Block projection_block;
-            {
-                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-                projection_block = projection_squashes[i].add(projection.calculate(cur_block, ctx->context));
-            }
-
+            auto projection_block = projection_squashes[i].add(projection.calculate(cur_block, ctx->context));
             if (projection_block)
             {
                 auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
@@ -1486,9 +1472,7 @@ private:
 
             bool need_recalculate =
                 ctx->materialized_projections.contains(projection.name)
-                || (!is_full_part_storage
-                    && ctx->source_part->hasProjection(projection.name)
-                    && !ctx->source_part->hasBrokenProjection(projection.name));
+                || (!is_full_part_storage && ctx->source_part->hasProjection(projection.name));
 
             if (need_recalculate)
             {
@@ -1612,9 +1596,8 @@ private:
 
     void finalize()
     {
-        bool noop;
         ctx->new_data_part->minmax_idx = std::move(ctx->minmax_idx);
-        ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
+        ctx->new_data_part->loadProjections(false, false, true /* if_not_loaded */);
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 

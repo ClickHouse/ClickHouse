@@ -99,7 +99,7 @@
 	url = https://github.com/awslabs/aws-c-event-stream
 [submodule "aws-c-common"]
 	path = contrib/aws-c-common
-	url = https://github.com/awslabs/aws-c-common.git
+	url = https://github.com/ClickHouse/aws-c-common
 [submodule "aws-checksums"]
 	path = contrib/aws-checksums
 	url = https://github.com/awslabs/aws-checksums

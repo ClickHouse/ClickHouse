@@ -1087,11 +1087,9 @@ def test_stop_other_host_during_backup(kill):
     status = node1.query(f"SELECT status FROM system.backups WHERE id='{id}'").strip()
 
     if kill:
-        expected_statuses = ["BACKUP_CREATED", "BACKUP_FAILED"]
+        assert status in ["BACKUP_CREATED", "BACKUP_FAILED"]
     else:
-        expected_statuses = ["BACKUP_CREATED", "BACKUP_CANCELLED"]
-
-    assert status in expected_statuses
+        assert status == "BACKUP_CREATED"
 
     node2.start_clickhouse()
 

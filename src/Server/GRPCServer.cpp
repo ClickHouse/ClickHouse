@@ -419,11 +419,7 @@ namespace
         void read(GRPCQueryInfo & query_info_, const CompletionCallback & callback) override
         {
             if (!query_info.has_value())
-            {
                 callback(false);
-                return;
-            }
-
             query_info_ = std::move(query_info).value();
             query_info.reset();
             callback(true);
@@ -490,11 +486,7 @@ namespace
         void read(GRPCQueryInfo & query_info_, const CompletionCallback & callback) override
         {
             if (!query_info.has_value())
-            {
                 callback(false);
-                return;
-            }
-
             query_info_ = std::move(query_info).value();
             query_info.reset();
             callback(true);

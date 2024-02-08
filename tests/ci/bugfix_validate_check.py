@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
 
+from pathlib import Path
+from typing import List, Tuple, Optional
 import argparse
 import csv
 import logging
-from pathlib import Path
-from typing import List, Optional, Tuple
 
-# isort: off
 from github import Github
-
-# isort: on
 
 from commit_status_helper import get_commit, post_commit_status
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import ERROR, SUCCESS, TestResult, TestResults
+from report import TestResults, TestResult
 from s3_helper import S3Helper
 from upload_result_helper import upload_results
 
@@ -52,7 +49,7 @@ def process_result(file_path: Path) -> Tuple[bool, TestResults, Optional[str]]:
         )
         return False, [TestResult(f"{prefix}: {description}", status)], "Check failed"
 
-    is_ok = state == SUCCESS
+    is_ok = state == "success"
     if is_ok and report_url == "null":
         return is_ok, test_results, None
 
@@ -114,7 +111,7 @@ def main():
     commit = get_commit(gh, pr_info.sha)
     post_commit_status(
         commit,
-        SUCCESS if is_ok else ERROR,
+        "success" if is_ok else "error",
         report_url,
         description,
         check_name_with_group,

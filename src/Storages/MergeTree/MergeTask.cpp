@@ -728,9 +728,8 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
         MergeTreeData::DataPartsVector projection_parts;
         for (const auto & part : global_ctx->future_part->parts)
         {
-            auto actual_projection_parts = part->getProjectionParts();
-            auto it = actual_projection_parts.find(projection.name);
-            if (it != actual_projection_parts.end() && !it->second->is_broken)
+            auto it = part->getProjectionParts().find(projection.name);
+            if (it != part->getProjectionParts().end())
                 projection_parts.push_back(it->second);
         }
         if (projection_parts.size() < global_ctx->future_part->parts.size())

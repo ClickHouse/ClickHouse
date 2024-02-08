@@ -1,22 +1,21 @@
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Columns/ColumnConst.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/ObjectUtils.h>
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/Exception.h>
 #include <Disks/createVolume.h>
-#include <IO/HashingWriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Processors/TTL/ITTLAlgorithm.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
-#include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/Exception.h>
-#include <Common/HashTable/HashMap.h>
-#include <Common/OpenTelemetryTraceContext.h>
+#include <IO/HashingWriteBuffer.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/ObjectUtils.h>
+#include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
+#include <Processors/TTL/ITTLAlgorithm.h>
 
 #include <Parsers/queryToString.h>
 
@@ -36,16 +35,11 @@ namespace ProfileEvents
     extern const Event MergeTreeDataWriterRows;
     extern const Event MergeTreeDataWriterUncompressedBytes;
     extern const Event MergeTreeDataWriterCompressedBytes;
-    extern const Event MergeTreeDataWriterSortingBlocksMicroseconds;
-    extern const Event MergeTreeDataWriterMergingBlocksMicroseconds;
-    extern const Event MergeTreeDataWriterProjectionsCalculationMicroseconds;
     extern const Event MergeTreeDataProjectionWriterBlocks;
     extern const Event MergeTreeDataProjectionWriterBlocksAlreadySorted;
     extern const Event MergeTreeDataProjectionWriterRows;
     extern const Event MergeTreeDataProjectionWriterUncompressedBytes;
     extern const Event MergeTreeDataProjectionWriterCompressedBytes;
-    extern const Event MergeTreeDataProjectionWriterSortingBlocksMicroseconds;
-    extern const Event MergeTreeDataProjectionWriterMergingBlocksMicroseconds;
     extern const Event RejectedInserts;
 }
 
@@ -478,8 +472,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     IColumn::Permutation perm;
     if (!sort_description.empty())
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterSortingBlocksMicroseconds);
-
         if (!isAlreadySorted(block, sort_description))
         {
             stableGetPermutation(block, sort_description, perm);
@@ -491,10 +483,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
     if (context->getSettingsRef().optimize_on_insert)
-    {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
         block = mergeBlock(block, sort_description, partition_key_columns, perm_ptr, data.merging_params);
-    }
 
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
@@ -599,13 +588,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     for (const auto & projection : metadata_snapshot->getProjections())
     {
-        Block projection_block;
-        {
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterProjectionsCalculationMicroseconds);
-            projection_block = projection.calculate(block, context);
-            LOG_DEBUG(log, "Spent {} ms calculating projection {} for the part {}", watch.elapsed() / 1000, projection.name, new_data_part->name);
-        }
-
+        auto projection_block = projection.calculate(block, context);
         if (projection_block.rows())
         {
             auto proj_temp_part = writeProjectionPart(data, log, projection_block, projection, new_data_part.get());
@@ -702,8 +685,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     IColumn::Permutation perm;
     if (!sort_description.empty())
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataProjectionWriterSortingBlocksMicroseconds);
-
         if (!isAlreadySorted(block, sort_description))
         {
             stableGetPermutation(block, sort_description, perm);
@@ -715,8 +696,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
 
     if (projection.type == ProjectionDescription::Type::Aggregate)
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataProjectionWriterMergingBlocksMicroseconds);
-
         MergeTreeData::MergingParams projection_merging_params;
         projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
         block = mergeBlock(block, sort_description, {}, perm_ptr, projection_merging_params);

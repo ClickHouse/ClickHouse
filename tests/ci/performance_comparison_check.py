@@ -1,38 +1,35 @@
 #!/usr/bin/env python3
 
-import json
-import logging
 import os
-import re
-import subprocess
+import logging
 import sys
+import json
+import subprocess
 import traceback
+import re
 from pathlib import Path
 
-# isort: off
 from github import Github
 
-# isort: on
-
-from build_download_helper import download_builds_filter
-from ci_config import CI_CONFIG
-from clickhouse_helper import get_instance_id, get_instance_type
 from commit_status_helper import get_commit
-from docker_images_helper import get_docker_image, pull_image
+from ci_config import CI_CONFIG
+from docker_images_helper import pull_image, get_docker_image
 from env_helper import (
     GITHUB_EVENT_PATH,
     GITHUB_RUN_URL,
     REPO_COPY,
-    REPORT_PATH,
     S3_BUILDS_BUCKET,
     S3_DOWNLOAD,
     TEMP_PATH,
+    REPORT_PATH,
 )
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
-from report import FAILURE, SUCCESS, JobReport
-from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from clickhouse_helper import get_instance_type, get_instance_id
+from stopwatch import Stopwatch
+from build_download_helper import download_builds_filter
+from report import JobReport
 
 IMAGE_NAME = "clickhouse/performance-comparison"
 
@@ -226,20 +223,20 @@ def main():
             message = message_match.group(1).strip()
 
         # TODO: Remove me, always green mode for the first time, unless errors
-        status = SUCCESS
+        status = "success"
         if "errors" in message.lower() or too_many_slow(message.lower()):
-            status = FAILURE
+            status = "failure"
         # TODO: Remove until here
     except Exception:
         traceback.print_exc()
-        status = FAILURE
+        status = "failure"
         message = "Failed to parse the report."
 
     if not status:
-        status = FAILURE
+        status = "failure"
         message = "No status in report."
     elif not message:
-        status = FAILURE
+        status = "failure"
         message = "No message in report."
 
     JobReport(
@@ -252,7 +249,7 @@ def main():
         check_name=check_name_with_group,
     ).dump()
 
-    if status != SUCCESS:
+    if status == "error":
         sys.exit(1)
 
 

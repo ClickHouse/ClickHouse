@@ -41,9 +41,8 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     , skip_unavailable_shards(skip_unavailable_shards_)
 {
     shuffled_pools = pool->getShuffledPools(settings_, priority_func);
-    for (const auto & shuffled_pool : shuffled_pools)
-        replicas.emplace_back(
-            std::make_unique<ConnectionEstablisherAsync>(shuffled_pool.pool, &timeouts, settings_, log, table_to_check.get()));
+    for (auto shuffled_pool : shuffled_pools)
+        replicas.emplace_back(std::make_unique<ConnectionEstablisherAsync>(shuffled_pool.pool, &timeouts, settings_, log, table_to_check.get()));
 }
 
 HedgedConnectionsFactory::~HedgedConnectionsFactory()
@@ -414,7 +413,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::setBestUsableReplica(C
         indexes.end(),
         [&](size_t lhs, size_t rhs)
         {
-            return replicas[lhs].connection_establisher->getResult().delay < replicas[rhs].connection_establisher->getResult().delay;
+            return replicas[lhs].connection_establisher->getResult().staleness < replicas[rhs].connection_establisher->getResult().staleness;
         });
 
     replicas[indexes[0]].is_ready = true;

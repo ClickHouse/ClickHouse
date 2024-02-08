@@ -6,7 +6,6 @@
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <IO/PeekableReadBuffer.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
 #include <base/find_symbols.h>

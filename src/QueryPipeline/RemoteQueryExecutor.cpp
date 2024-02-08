@@ -64,14 +64,9 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
-    const String & query_,
-    const Block & header_,
-    ContextPtr context_,
-    ThrottlerPtr throttler,
-    const Scalars & scalars_,
-    const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_,
-    std::optional<Extension> extension_)
+    const String & query_, const Block & header_, ContextPtr context_,
+    ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,
+    QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
     : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
 {
     create_connections = [this, &connection, throttler, extension_](AsyncCallback)
@@ -85,14 +80,9 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     std::shared_ptr<Connection> connection_ptr,
-    const String & query_,
-    const Block & header_,
-    ContextPtr context_,
-    ThrottlerPtr throttler,
-    const Scalars & scalars_,
-    const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_,
-    std::optional<Extension> extension_)
+    const String & query_, const Block & header_, ContextPtr context_,
+    ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,
+    QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
     : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
 {
     create_connections = [this, connection_ptr, throttler, extension_](AsyncCallback)
@@ -106,18 +96,12 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     std::vector<IConnectionPool::Entry> && connections_,
-    const String & query_,
-    const Block & header_,
-    ContextPtr context_,
-    const ThrottlerPtr & throttler,
-    const Scalars & scalars_,
-    const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_,
-    std::optional<Extension> extension_)
+    const String & query_, const Block & header_, ContextPtr context_,
+    const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
+    QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
     : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
 {
-    create_connections = [this, connections_, throttler, extension_](AsyncCallback) mutable
-    {
+    create_connections = [this, connections_, throttler, extension_](AsyncCallback) mutable {
         auto res = std::make_unique<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
         if (extension_ && extension_->replica_info)
             res->setReplicaInfo(*extension_->replica_info);

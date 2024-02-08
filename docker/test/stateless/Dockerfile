@@ -44,8 +44,7 @@ RUN apt-get update -y \
             pv \
             zip \
             p7zip-full \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+    && apt-get clean
 
 RUN pip3 install numpy==1.26.3 scipy==1.12.0 pandas==1.5.3 Jinja2==3.1.3 pyarrow==15.0.0
 

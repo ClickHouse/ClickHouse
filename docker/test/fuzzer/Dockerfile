@@ -29,7 +29,7 @@ RUN apt-get update \
             wget \
     && apt-get autoremove --yes \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+    && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install Jinja2
 

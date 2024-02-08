@@ -67,7 +67,6 @@ StorageNATS::StorageNATS(
     auto nats_username = getContext()->getMacros()->expand(nats_settings->nats_username);
     auto nats_password = getContext()->getMacros()->expand(nats_settings->nats_password);
     auto nats_token = getContext()->getMacros()->expand(nats_settings->nats_token);
-    auto nats_credential_file = getContext()->getMacros()->expand(nats_settings->nats_credential_file);
 
     configuration =
     {
@@ -76,7 +75,6 @@ StorageNATS::StorageNATS(
         .username = nats_username.empty() ? getContext()->getConfigRef().getString("nats.user", "") : nats_username,
         .password = nats_password.empty() ? getContext()->getConfigRef().getString("nats.password", "") : nats_password,
         .token = nats_token.empty() ? getContext()->getConfigRef().getString("nats.token", "") : nats_token,
-        .credential_file = nats_credential_file.empty() ? getContext()->getConfigRef().getString("nats.credential_file", "") : nats_credential_file,
         .max_reconnect = static_cast<int>(nats_settings->nats_max_reconnect.value),
         .reconnect_wait = static_cast<int>(nats_settings->nats_reconnect_wait.value),
         .secure = nats_settings->nats_secure.value

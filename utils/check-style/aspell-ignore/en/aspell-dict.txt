@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2724
+personal_ws-1.1 en 2657
 AArch
 ACLs
 ALTERs
@@ -12,7 +12,6 @@ ARMv
 ASLR
 ASOF
 ASan
-AWND
 AWST
 Actian
 ActionsMenu
@@ -239,7 +238,6 @@ DistributedSend
 DockerHub
 DoubleDelta
 Doxygen
-Durre
 ECMA
 Ecto
 EdgeAngle
@@ -291,7 +289,6 @@ ForEach
 FreeBSD
 Fuzzer
 Fuzzers
-GHCN
 GTID
 GTest
 Gb
@@ -447,7 +444,6 @@ Khanna
 KittenHouse
 Klickhouse
 Kolmogorov
-Korzeniewski
 Kubernetes
 LDAP
 LGPL
@@ -507,7 +503,6 @@ MaxMind
 MaxPartCountForPartition
 MaxPushedDDLEntryID
 Mbps
-McNeal
 Memcheck
 MemoryCode
 MemoryDataAndStack
@@ -517,7 +512,6 @@ MemorySanitizer
 MemoryShared
 MemoryTracking
 MemoryVirtual
-Menne
 MergeJoin
 MergeState
 MergeTree
@@ -562,7 +556,6 @@ NEWDATE
 NEWDECIMAL
 NFKC
 NFKD
-NOAA
 NULLIF
 NVME
 NVMe
@@ -583,7 +576,6 @@ NetworkSendBytes
 NetworkSendDrop
 NetworkSendErrors
 NetworkSendPackets
-Noaa
 NodeJs
 NuRaft
 NumHexagons
@@ -664,10 +656,8 @@ OrZero
 OvercommitTracker
 PAAMAYIM
 PCRE
-PRCP
 PREWHERE
 PROCESSLIST
-PSUN
 PagerDuty
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
@@ -812,7 +802,6 @@ SIMD
 SLES
 SLRU
 SMALLINT
-SNWD
 SPNEGO
 SQEs
 SQLAlchemy
@@ -885,14 +874,11 @@ SupersetDocker
 SystemReplicasThreads
 SystemReplicasThreadsActive
 TABLUM
-TAVG
 TCPConnection
 TCPThreads
 TDigest
 TINYINT
 TLSv
-TMAX
-TMIN
 TPCH
 TSDB
 TSVRaw
@@ -953,7 +939,6 @@ TotalTemporaryFiles
 Tradeoff
 Transactional
 TwoColumnList
-Tukey
 UBSan
 UDFs
 UInt
@@ -995,9 +980,7 @@ VersionedCollapsingMergeTree
 VideoContainer
 ViewAllLink
 VirtualBox
-Vose
 WALs
-WSFG
 Welch's
 Werror
 Wether
@@ -1016,7 +999,6 @@ Xeon
 YAML
 YAMLRegExpTree
 YYYY
-YYYYMMDD
 YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
@@ -1349,7 +1331,6 @@ cryptographic
 csv
 csvwithnames
 csvwithnamesandtypes
-ctukey
 curdate
 currentDatabase
 currentProfiles
@@ -1589,7 +1570,6 @@ getSetting
 getSizeOfEnumType
 getblockinfo
 getevents
-ghcnd
 github
 glibc
 globalIn
@@ -1613,7 +1593,6 @@ groupArrayLast
 groupArrayMovingAvg
 groupArrayMovingSum
 groupArraySample
-groupArraySorted
 groupBitAnd
 groupBitOr
 groupBitXor
@@ -1628,7 +1607,6 @@ grouparraylast
 grouparraymovingavg
 grouparraymovingsum
 grouparraysample
-grouparraysorted
 groupbitand
 groupbitmap
 groupbitmapand
@@ -1974,7 +1952,6 @@ ngramSimHashCaseInsensitiveUTF
 ngramSimHashUTF
 ngrambf
 ngrams
-noaa
 nonNegativeDerivative
 noop
 normalizeQuery
@@ -2231,7 +2208,6 @@ reinterpretAsString
 reinterpretAsUInt
 reinterpretAsUUID
 remoteSecure
-repivot
 replaceAll
 replaceOne
 replaceRegexpAll
@@ -2292,7 +2268,6 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
-seriesOutliersDetectTukey
 seriesDecomposeSTL
 seriesPeriodDetectFFT
 serverTimeZone
@@ -2586,7 +2561,6 @@ tryPunycodeDecode
 tskv
 tsv
 tui
-tukey
 tumbleEnd
 tumbleStart
 tupleConcat
@@ -2663,7 +2637,6 @@ varPop
 varSamp
 variadic
 variantElement
-variantType
 varint
 varpop
 varsamp
@@ -2730,6 +2703,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-iTerm
-shortkeys
-Shortkeys

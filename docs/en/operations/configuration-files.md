@@ -163,7 +163,7 @@ key: value
 
 Corresponding XML:
 ``` xml
-<key>value</key>
+<key>value</value>
 ```
 
 A nested XML node is represented by a YAML map:

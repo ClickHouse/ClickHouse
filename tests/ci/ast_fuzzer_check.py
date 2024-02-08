@@ -7,11 +7,13 @@ import sys
 from pathlib import Path
 
 from build_download_helper import get_build_name_for_check, read_build_urls
-from clickhouse_helper import CiLogsCredentials
+from clickhouse_helper import (
+    CiLogsCredentials,
+)
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPORT_PATH, TEMP_PATH
 from pr_info import PRInfo
-from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult
+from report import JobReport
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
@@ -111,6 +113,7 @@ def main():
     paths = {
         "run.log": run_log_path,
         "main.log": main_log_path,
+        "fuzzer.log": workspace_path / "fuzzer.log",
         "report.html": workspace_path / "report.html",
         "core.zst": workspace_path / "core.zst",
         "dmesg.log": workspace_path / "dmesg.log",
@@ -119,20 +122,12 @@ def main():
     compressed_server_log_path = workspace_path / "server.log.zst"
     if compressed_server_log_path.exists():
         paths["server.log.zst"] = compressed_server_log_path
-    else:
-        # The script can fail before the invocation of `zstd`, but we are still interested in its log:
-        not_compressed_server_log_path = workspace_path / "server.log"
-        if not_compressed_server_log_path.exists():
-            paths["server.log"] = not_compressed_server_log_path
 
-    # Same idea but with the fuzzer log
-    compressed_fuzzer_log_path = workspace_path / "fuzzer.log.zst"
-    if compressed_fuzzer_log_path.exists():
-        paths["fuzzer.log.zst"] = compressed_fuzzer_log_path
-    else:
-        not_compressed_fuzzer_log_path = workspace_path / "fuzzer.log"
-        if not_compressed_fuzzer_log_path.exists():
-            paths["fuzzer.log"] = not_compressed_fuzzer_log_path
+    # The script can fail before the invocation of `zstd`, but we are still interested in its log:
+
+    not_compressed_server_log_path = workspace_path / "server.log"
+    if not_compressed_server_log_path.exists():
+        paths["server.log"] = not_compressed_server_log_path
 
     # Try to get status message saved by the fuzzer
     try:
@@ -142,16 +137,12 @@ def main():
         with open(workspace_path / "description.txt", "r", encoding="utf-8") as desc_f:
             description = desc_f.readline().rstrip("\n")
     except:
-        status = FAILURE
+        status = "failure"
         description = "Task failed: $?=" + str(retcode)
-
-    test_result = TestResult(description, OK)
-    if "fail" in status:
-        test_result.status = FAIL
 
     JobReport(
         description=description,
-        test_results=[test_result],
+        test_results=[],
         status=status,
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
@@ -160,7 +151,7 @@ def main():
     ).dump()
 
     logging.info("Result: '%s', '%s'", status, description)
-    if status != SUCCESS:
+    if status == "failure":
         sys.exit(1)
 
 

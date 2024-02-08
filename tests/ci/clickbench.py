@@ -10,14 +10,18 @@ from pathlib import Path
 from typing import List, Tuple
 
 from build_download_helper import download_all_deb_packages
-from clickhouse_helper import CiLogsCredentials
-from commit_status_helper import override_status
-from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPORT_PATH, TEMP_PATH
+from clickhouse_helper import (
+    CiLogsCredentials,
+)
+from commit_status_helper import (
+    override_status,
+)
+from docker_images_helper import get_docker_image, pull_image, DockerImage
+from env_helper import TEMP_PATH, REPORT_PATH
 from pr_info import FORCE_TESTS_LABEL, PRInfo
-from report import ERROR, SUCCESS, JobReport, StatusType, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from report import JobReport, TestResults
 
 
 def get_image_name() -> str:
@@ -48,7 +52,7 @@ def get_run_command(
 def process_results(
     result_directory: Path,
     server_log_path: Path,
-) -> Tuple[StatusType, str, TestResults, List[Path]]:
+) -> Tuple[str, str, TestResults, List[Path]]:
     test_results = []  # type: TestResults
     additional_files = []  # type: List[Path]
     # Just upload all files from result_directory.
@@ -70,7 +74,7 @@ def process_results(
 
     if len(status) != 1 or len(status[0]) != 2:
         logging.info("Files in result folder %s", os.listdir(result_directory))
-        return ERROR, "Invalid check_status.tsv", test_results, additional_files
+        return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     try:
@@ -80,17 +84,17 @@ def process_results(
             logging.info("Found %s", results_path.name)
         else:
             logging.info("Files in result folder %s", os.listdir(result_directory))
-            return ERROR, "Not found test_results.tsv", test_results, additional_files
+            return "error", "Not found test_results.tsv", test_results, additional_files
 
     except Exception as e:
         return (
-            ERROR,
+            "error",
             f"Cannot parse test_results.tsv ({e})",
             test_results,
             additional_files,
         )
 
-    return state, description, test_results, additional_files  # type: ignore
+    return state, description, test_results, additional_files
 
 
 def parse_args():
@@ -175,7 +179,7 @@ def main():
         additional_files=[run_log_path] + additional_logs,
     ).dump()
 
-    if state != SUCCESS:
+    if state != "success":
         if FORCE_TESTS_LABEL in pr_info.labels:
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:

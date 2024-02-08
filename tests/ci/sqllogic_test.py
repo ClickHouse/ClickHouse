@@ -10,21 +10,21 @@ from typing import Tuple
 
 from build_download_helper import download_all_deb_packages
 from commit_status_helper import override_status
-from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
+from docker_images_helper import DockerImage, pull_image, get_docker_image
+from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
 from report import (
-    ERROR,
-    FAIL,
     OK,
+    FAIL,
+    ERROR,
     SUCCESS,
     JobReport,
-    StatusType,
-    TestResult,
     TestResults,
+    TestResult,
     read_test_results,
 )
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+
 
 NO_CHANGES_MSG = "Nothing to run"
 IMAGE_NAME = "clickhouse/sqllogic-test"
@@ -47,7 +47,7 @@ def get_run_command(
     )
 
 
-def read_check_status(result_folder: Path) -> Tuple[StatusType, str]:
+def read_check_status(result_folder: Path) -> Tuple[str, str]:
     status_path = result_folder / "check_status.tsv"
     if not status_path.exists():
         return ERROR, "Not found check_status.tsv"
@@ -60,9 +60,9 @@ def read_check_status(result_folder: Path) -> Tuple[StatusType, str]:
         if len(row) != 2:
             return ERROR, "Invalid check_status.tsv"
         if row[0] != SUCCESS:
-            return row[0], row[1]  # type: ignore
+            return row[0], row[1]
 
-    return status_rows[-1][0], status_rows[-1][1]  # type: ignore
+    return status_rows[-1][0], status_rows[-1][1]
 
 
 def parse_args() -> argparse.Namespace:
@@ -172,7 +172,7 @@ def main():
         )
     )
 
-    # Until it pass all tests, do not block CI, report SUCCESS
+    # Until it pass all tests, do not block CI, report "success"
     assert description is not None
     # FIXME: force SUCCESS until all cases are fixed
     status = SUCCESS

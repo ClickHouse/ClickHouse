@@ -136,12 +136,12 @@ namespace
 {
 
 void assertDigest(
-    const KeeperStorage::Digest & expected,
-    const KeeperStorage::Digest & actual,
+    const KeeperStorage::Digest & first,
+    const KeeperStorage::Digest & second,
     const Coordination::ZooKeeperRequest & request,
     bool committing)
 {
-    if (!KeeperStorage::checkDigest(expected, actual))
+    if (!KeeperStorage::checkDigest(first, second))
     {
         LOG_FATAL(
             getLogger("KeeperStateMachine"),
@@ -149,9 +149,9 @@ void assertDigest(
             "{}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
             committing ? "committing" : "preprocessing",
             request.getOpNum(),
-            expected.value,
-            actual.value,
-            expected.version,
+            first.value,
+            second.value,
+            first.version,
             request.toString());
         std::terminate();
     }

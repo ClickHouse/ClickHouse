@@ -389,8 +389,8 @@ fi
 rg --text -F '<Fatal>' server.log > fatal.log ||:
 dmesg -T > dmesg.log ||:
 
-zstd --threads=0 --rm server.log
-zstd --threads=0 --rm fuzzer.log
+zstd --threads=0 server.log
+zstd --threads=0 fuzzer.log
 
 cat > report.html <<EOF ||:
 <!DOCTYPE html>

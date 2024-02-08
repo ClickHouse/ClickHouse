@@ -19,8 +19,7 @@ RUN apt-get update -y \
             openssl \
             netcat-openbsd \
             brotli \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+    && apt-get clean
 
 COPY run.sh /
 
