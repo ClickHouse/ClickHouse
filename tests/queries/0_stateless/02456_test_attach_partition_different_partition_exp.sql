@@ -6,6 +6,8 @@ DROP TABLE IF EXISTS destination;
 CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMMDD(timestamp);
 CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
 
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
 INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-02 02:01:03');
 
 ALTER TABLE destination ATTACH PARTITION ID '20100302' FROM source;
@@ -29,6 +31,8 @@ DROP TABLE IF EXISTS destination;
 
 CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
 CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMMDD(timestamp);
+
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
 
 INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-02 02:01:03');
 
@@ -54,6 +58,8 @@ CREATE TABLE source (timestamp DateTime, A Int64) engine=MergeTree ORDER BY time
 
 CREATE TABLE destination (timestamp DateTime, A Int64) engine=MergeTree ORDER BY timestamp PARTITION BY A;
 
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
 INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01', 1), ('2010-03-02 02:01:03', 1);
 
 ALTER TABLE destination ATTACH PARTITION ID '0' FROM source;
@@ -76,6 +82,8 @@ DROP TABLE IF EXISTS destination;
 
 CREATE TABLE source (productName String, category String) engine=MergeTree ORDER BY tuple() PARTITION BY cityHash64(category);
 CREATE TABLE destination (productName String, category String) engine=MergeTree ORDER BY tuple() PARTITION BY toString(category);
+
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
 
 INSERT INTO TABLE source VALUES ('spaghetti', 'food'), ('mop', 'general');
 INSERT INTO TABLE source VALUES ('rice', 'food');
@@ -102,6 +110,8 @@ DROP TABLE IF EXISTS destination;
 CREATE TABLE source (timestamp Int64) engine=MergeTree ORDER BY (timestamp) PARTITION BY intDiv(timestamp, 86400000);
 CREATE TABLE destination (timestamp Int64) engine=MergeTree ORDER BY (timestamp) PARTITION BY toYear(toDateTime(intDiv(timestamp, 1000)));
 
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
 INSERT INTO TABLE source VALUES (1267495261123);
 
 ALTER TABLE destination ATTACH PARTITION ID '14670' FROM source;
@@ -125,6 +135,8 @@ DROP TABLE IF EXISTS destination;
 
 CREATE TABLE source (timestamp DateTime('UTC'), key Int64, f Float64) engine=MergeTree ORDER BY (key, timestamp) PARTITION BY toYear(timestamp);
 CREATE TABLE destination (timestamp DateTime('UTC'), key Int64, f Float64) engine=MergeTree ORDER BY (key, timestamp) PARTITION BY (intDiv(toUInt32(timestamp),86400));
+
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
 
 INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01',1,1),('2010-03-02 02:01:01',1,1),('2011-02-02 02:01:03',1,1);
 
@@ -150,6 +162,8 @@ DROP TABLE IF EXISTS destination;
 CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
 CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple();
 
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
 INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-02 02:01:03');
 
 ALTER TABLE destination ATTACH PARTITION ID '201003' FROM source;
@@ -172,6 +186,8 @@ DROP TABLE IF EXISTS source;
 DROP TABLE IF EXISTS destination;
 CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
 CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY tuple();
+
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
 
 INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-02 02:01:03');
 
@@ -196,6 +212,8 @@ DROP TABLE IF EXISTS destination;
 CREATE TABLE source (a Int, b Int, c Int) engine=MergeTree ORDER BY tuple() PARTITION BY (a, b, c);
 CREATE TABLE destination (a Int, b Int, c Int) engine=MergeTree ORDER BY tuple() PARTITION BY (a, b);
 
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
 INSERT INTO TABLE source VALUES (1, 2, 3), (1, 2, 4);
 
 ALTER TABLE destination ATTACH PARTITION ID '1-2-3' FROM source;
@@ -218,6 +236,8 @@ DROP TABLE IF EXISTS source;
 DROP TABLE IF EXISTS destination;
 CREATE TABLE source (a Int, b Int, c Int) engine=MergeTree ORDER BY tuple() PARTITION BY (a, b, c);
 CREATE TABLE destination (a Int, b Int, c Int) engine=MergeTree ORDER BY tuple() PARTITION BY a;
+
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
 
 INSERT INTO TABLE source VALUES (1, 2, 3), (1, 2, 4);
 
@@ -244,6 +264,8 @@ DROP TABLE IF EXISTS destination;
 CREATE TABLE source (`timestamp` DateTime, `A` Int64) ENGINE = MergeTree PARTITION BY tuple(toYYYYMM(timestamp), intDiv(A, 6)) ORDER BY timestamp;
 CREATE TABLE destination (`timestamp` DateTime, `A` Int64) ENGINE = MergeTree PARTITION BY A ORDER BY timestamp;
 
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
 INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01', 5);
 
 ALTER TABLE destination ATTACH PARTITION ID '201003-0' FROM source;
@@ -268,6 +290,8 @@ DROP TABLE IF EXISTS destination;
 CREATE TABLE source (A Int, B Int) ENGINE = MergeTree PARTITION BY tuple(A, B) ORDER BY tuple();
 CREATE TABLE destination (A Int, B Int) ENGINE = MergeTree PARTITION BY tuple(intDiv(A, 2), intDiv(B, 2)) ORDER BY tuple();
 
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
 INSERT INTO TABLE source VALUES (6, 12);
 
 ALTER TABLE destination ATTACH PARTITION ID '6-12' FROM source;
@@ -290,6 +314,8 @@ DROP TABLE IF EXISTS destination;
 
 CREATE TABLE source (A Int, B Int) ENGINE = MergeTree PARTITION BY tuple(intDiv(A, 2), intDiv(B, 2)) ORDER BY tuple();
 CREATE TABLE destination (A Int, B Int) ENGINE = MergeTree PARTITION BY tuple(A, B) ORDER BY tuple();
+
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
 
 INSERT INTO TABLE source VALUES (6, 12);
 
@@ -322,6 +348,8 @@ CREATE TABLE
         PARTITION BY toYYYYMM(timestamp)
         ORDER BY tuple();
 
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
 INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-02 02:01:03');
 
 ALTER TABLE destination ATTACH PARTITION ID '20100302' FROM source;
@@ -349,6 +377,8 @@ CREATE TABLE
         PARTITION BY toYYYYMM(timestamp)
         ORDER BY tuple();
 
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
 INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-02 02:01:03');
 
 ALTER TABLE destination ATTACH PARTITION ID '20100302' FROM source;
@@ -372,6 +402,8 @@ DROP TABLE IF EXISTS destination SYNC;
 CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
 CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMMDD(timestamp);
 
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
 INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-03 02:01:03');
 
 ALTER TABLE destination ATTACH PARTITION ID '201003' FROM source; -- { serverError 248 }
@@ -385,6 +417,8 @@ CREATE TABLE source (timestamp DateTime, A Int64) engine=MergeTree ORDER BY time
 
 CREATE TABLE destination (timestamp DateTime, A Int64) engine=MergeTree ORDER BY timestamp PARTITION BY A;
 
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
 INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01', 1), ('2010-03-02 02:01:03', 2);
 
 ALTER TABLE destination ATTACH PARTITION ID '0' FROM source; -- { serverError 248 }
@@ -396,6 +430,8 @@ DROP TABLE IF EXISTS destination;
 
 CREATE TABLE source (productName String, category String) engine=MergeTree ORDER BY tuple() PARTITION BY toString(category);
 CREATE TABLE destination (productName String, category String) engine=MergeTree ORDER BY tuple() PARTITION BY substring(category, 1, 2);
+
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
 
 INSERT INTO TABLE source VALUES ('spaghetti', 'food'), ('mop', 'general');
 INSERT INTO TABLE source VALUES ('rice', 'food');
@@ -410,6 +446,8 @@ DROP TABLE IF EXISTS destination;
 CREATE TABLE source (productName String, category String) engine=MergeTree ORDER BY tuple() PARTITION BY toString(category);
 CREATE TABLE destination (productName String, category String) engine=MergeTree ORDER BY tuple() PARTITION BY toString(productName);
 
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
 INSERT INTO TABLE source VALUES ('spaghetti', 'food'), ('mop', 'general');
 INSERT INTO TABLE source VALUES ('rice', 'food');
 
@@ -423,6 +461,8 @@ DROP TABLE IF EXISTS destination;
 CREATE TABLE source (productName String) engine=MergeTree ORDER BY tuple() PARTITION BY left(productName, 2);
 CREATE TABLE destination (productName String) engine=MergeTree ORDER BY tuple() PARTITION BY cityHash64(productName);
 
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
 INSERT INTO TABLE source VALUES ('bread'), ('mop');
 INSERT INTO TABLE source VALUES ('broccoli');
 
@@ -435,6 +475,8 @@ DROP TABLE IF EXISTS destination;
 
 CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
 CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
+
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
 
 ALTER TABLE destination ATTACH PARTITION ID '1' FROM source;
 ALTER TABLE destination ATTACH PARTITION 1 FROM source;
@@ -450,6 +492,8 @@ DROP TABLE IF EXISTS destination;
 CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMMDD(timestamp);
 CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
 
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
 ALTER TABLE destination ATTACH PARTITION ID '1' FROM source;
 ALTER TABLE destination ATTACH PARTITION 1 FROM source;
 
@@ -464,6 +508,8 @@ DROP TABLE IF EXISTS destination;
 CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
 CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
 
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
 ALTER TABLE destination REPLACE PARTITION '1' FROM source;
 
 SELECT * FROM destination;
@@ -476,6 +522,8 @@ DROP TABLE IF EXISTS destination;
 
 CREATE TABLE source (A Int) engine=MergeTree ORDER BY tuple() PARTITION BY A;
 CREATE TABLE destination (A Int) engine=MergeTree ORDER BY tuple() PARTITION BY A;
+
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
 
 INSERT INTO TABLE destination VALUES (1);
 
