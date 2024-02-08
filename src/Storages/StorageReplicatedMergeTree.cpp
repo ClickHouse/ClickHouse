@@ -7888,16 +7888,27 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
     DataPartsVector src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, source_partition_id);
 
-    bool attach_empty_partition = !replace && src_all_parts.empty();
-    if (attach_empty_partition)
-        return;
-
     const auto my_partition_expression = metadata_snapshot->getPartitionKeyAST();
     const auto src_partition_expression = source_metadata_snapshot->getPartitionKeyAST();
     const auto is_partition_exp_different = queryToStringNullable(my_partition_expression) != queryToStringNullable(src_partition_expression);
 
-    if (is_partition_exp_different && !src_all_parts.empty())
-        MergeTreePartitionCompatibilityVerifier::verify(src_data, /* destination_storage */ *this, src_all_parts);
+    if (src_all_parts.empty())
+    {
+        if (!replace)
+        {
+            return;
+        }
+
+        if (is_partition_exp_different)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot replace partition '{}' because it is empty and has different partition expression."
+                            "There is no way to calculate the destination partition id",
+                            source_partition_id);
+        }
+    }
+
+    MergeTreePartitionCompatibilityVerifier::verify(src_data, /* destination_storage */ *this, src_all_parts);
 
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 

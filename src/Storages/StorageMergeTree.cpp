@@ -2068,10 +2068,6 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
 
-    bool attach_empty_partition = !replace && src_parts.empty();
-    if (attach_empty_partition)
-        return;
-
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
 
@@ -2081,8 +2077,23 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     const auto src_partition_expression = source_metadata_snapshot->getPartitionKeyAST();
     const auto is_partition_exp_different = queryToStringNullable(my_partition_expression) != queryToStringNullable(src_partition_expression);
 
-    if (is_partition_exp_different && !src_parts.empty())
-        MergeTreePartitionCompatibilityVerifier::verify(src_data, /* destination_storage */ *this, src_parts);
+    if (src_parts.empty())
+    {
+        if (!replace)
+        {
+            return;
+        }
+
+        if (is_partition_exp_different)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot replace partition '{}' because it is empty and has different partition expression."
+                            "There is no way to calculate the destination partition id",
+                            partition_id);
+        }
+    }
+
+    MergeTreePartitionCompatibilityVerifier::verify(src_data, /* destination_storage */ *this, src_parts);
 
     for (DataPartPtr & src_part : src_parts)
     {
