@@ -120,10 +120,20 @@ Chunk RabbitMQSource::generateImpl()
     {
         auto timeout = std::chrono::milliseconds(context->getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
         consumer = storage.popConsumer(timeout);
+
+        if (consumer->needChannelUpdate())
+        {
+            LOG_TRACE(log, "Channel {} is in error state, will update", consumer->getChannelID());
+            consumer->updateChannel(storage.getConnection());
+        }
     }
 
     if (is_finished || !consumer || consumer->isConsumerStopped())
+    {
+        LOG_TRACE(log, "RabbitMQSource is stopped (is_finished: {}, consumer_stopped: {})",
+                  is_finished, consumer ? toString(consumer->isConsumerStopped()) : "No consumer");
         return {};
+    }
 
     /// Currently it is one time usage source: to make sure data is flushed
     /// strictly by timeout or by block size.
@@ -254,13 +264,12 @@ Chunk RabbitMQSource::generateImpl()
 
 bool RabbitMQSource::sendAck()
 {
-    if (!consumer)
-        return false;
+    return consumer && consumer->ackMessages(commit_info);
+}
 
-    if (!consumer->ackMessages(commit_info))
-        return false;
-
-    return true;
+bool RabbitMQSource::sendNack()
+{
+    return consumer && consumer->nackMessages(commit_info);
 }
 
 }

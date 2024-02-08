@@ -3549,3 +3549,6 @@ def test_attach_broken_table(rabbitmq_cluster):
     assert "CANNOT_CONNECT_RABBITMQ" in error
     error = instance.query_and_get_error("INSERT INTO rabbit_queue VALUES ('test')")
     assert "CANNOT_CONNECT_RABBITMQ" in error
+
+
+# TODO: add a test

@@ -128,6 +128,32 @@ bool RabbitMQConsumer::ackMessages(const CommitInfo & commit_info)
     return false;
 }
 
+bool RabbitMQConsumer::nackMessages(const CommitInfo & commit_info)
+{
+    if (state != State::OK)
+        return false;
+
+    /// Nothing to nack.
+    if (!commit_info.delivery_tag || commit_info.delivery_tag <= last_commited_delivery_tag)
+        return false;
+
+    if (consumer_channel->reject(commit_info.delivery_tag, AMQP::multiple))
+    {
+        LOG_TRACE(
+            log, "Consumer rejected messages with deliveryTags from {} to {} on channel {}",
+            last_commited_delivery_tag, commit_info.delivery_tag, channel_id);
+
+        return true;
+    }
+
+    LOG_ERROR(
+        log,
+        "Failed to reject messages for {}:{}, (current commit point {}:{})",
+        commit_info.channel_id, commit_info.delivery_tag,
+        channel_id, last_commited_delivery_tag);
+
+    return false;
+}
 
 void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
 {
@@ -161,7 +187,7 @@ void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
 
     consumer_channel->onError([&](const char * message)
     {
-        LOG_ERROR(log, "Channel {} in an error state: {}", channel_id, message);
+        LOG_ERROR(log, "Channel {} in in error state: {}", channel_id, message);
         state = State::ERROR;
     });
 }
