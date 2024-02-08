@@ -3,6 +3,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -69,16 +70,30 @@ public:
             ColumnUInt64::Container & vec_res = col_res->getData();
             vec_res.resize(input_rows_count);
 
-            size_t size = src_offsets.size();
             ColumnString::Offset current_src_offset = 0;
 
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 Pos pos = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
                 current_src_offset = src_offsets[i];
                 Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]) - 1;
 
                 std::string_view str(pos, end - pos);
+                vec_res[i] = countMatches(str, re, matches);
+            }
+
+            return col_res;
+        }
+        else if (const ColumnFixedString * col_haystack_fixedstring = checkAndGetColumn<ColumnFixedString>(col_haystack))
+        {
+            auto col_res = ColumnUInt64::create();
+
+            ColumnUInt64::Container & vec_res = col_res->getData();
+            vec_res.resize(input_rows_count);
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                std::string_view str = col_haystack_fixedstring->getDataAt(i).toView();
                 vec_res[i] = countMatches(str, re, matches);
             }
 
@@ -109,7 +124,7 @@ public:
             if (!matches[0].length)
                 break;
             pos += matches[0].offset + matches[0].length;
-            match_count++;
+            ++match_count;
         }
 
         return match_count;

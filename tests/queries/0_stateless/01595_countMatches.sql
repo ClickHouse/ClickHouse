@@ -27,4 +27,8 @@ select countMatchesCaseInsensitive('foo.com@foo.com bar.com@foo.com BAZ.com@foo.
 select 'errors';
 select countMatches(1, 'foo') from numbers(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select countMatches('foobarfoo', toString(number)) from numbers(1); -- { serverError ILLEGAL_COLUMN }
-select countMatches('foo', materialize('foo')) -- { serverError ILLEGAL_COLUMN }
+select countMatches('foo', materialize('foo')); -- { serverError ILLEGAL_COLUMN }
+
+select 'FixedString';
+select countMatches(toFixedString('foobarfoo', 9), 'foo');
+select countMatches(materialize(toFixedString('foobarfoo', 9)), 'foo');
