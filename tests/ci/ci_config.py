@@ -204,10 +204,9 @@ class JobConfig:
 
 # About the "sparse_checkout" option:
 #
-# Misha f. Shiryaev
-# :facepalm:
-# we have this feature, it's used by devs, we need to test it in CI
-# It's not useful for the CI itself
+# It's needed only to test the option itself.
+# No particular sense to use it in the build,
+# and it is even slows down the job.
 
 
 @dataclass
@@ -730,7 +729,6 @@ CI_CONFIG = CIConfig(
             compiler="clang-17",
             coverage=True,
             package_type="deb",
-            sparse_checkout=True,
         ),
         Build.BINARY_RELEASE: BuildConfig(
             name=Build.BINARY_RELEASE,
@@ -751,7 +749,6 @@ CI_CONFIG = CIConfig(
             compiler="clang-17-darwin",
             package_type="binary",
             static_binary_name="macos",
-            sparse_checkout=True,  # Check that it works with at least one build, see also update-submodules.sh
         ),
         Build.BINARY_AARCH64: BuildConfig(
             name=Build.BINARY_AARCH64,

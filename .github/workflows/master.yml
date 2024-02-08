@@ -285,6 +285,7 @@ jobs:
       - BuilderDebDebug
       - BuilderDebMsan
       - BuilderDebRelease
+      - BuilderDebReleaseCoverage
       - BuilderDebTsan
       - BuilderDebUBsan
     uses: ./.github/workflows/reusable_test.yml
