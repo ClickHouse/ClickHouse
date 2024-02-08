@@ -37,12 +37,12 @@ Integer Types
 \N
 2
 Floating Point Types
-0.5108
-0.5108
-0.2599
-0.65667885
-0.65667885
-0.50860063
+0.1
+0.1
+0.1
+0.09999999999999998
+0.09999999999999998
+0.09999999999999998
 Boolean Types
 true
 String Types
@@ -53,7 +53,7 @@ Date Types
 2019-01-01 00:00:00
 JSON Types
 UUID Types
-48a339db-6464-4743-82cb-1ed31f6b3547
+61f0c404-5cb3-11e7-907b-a6006ad3dba0
 Low Cardinality Types
 str_0
 str_1
@@ -131,12 +131,12 @@ Integer Types
 \N
 2
 Floating Point Types
-0.0016
-0.0016
-0.7457
-0.31130143
-0.31130143
-0.76102853
+0.1
+0.1
+0.1
+0.09999999999999998
+0.09999999999999998
+0.09999999999999998
 Boolean Types
 true
 String Types
@@ -147,7 +147,7 @@ Date Types
 2019-01-01 00:00:00
 JSON Types
 UUID Types
-a98b6dcb-25ff-4d6c-b631-627bd3ea0f70
+61f0c404-5cb3-11e7-907b-a6006ad3dba0
 Low Cardinality Types
 str_0
 str_1
@@ -225,12 +225,12 @@ Integer Types
 \N
 2
 Floating Point Types
-0.9849
-0.2808
-0.5805
-0.94216039
-0.96966524
-0.25875363
+0.1
+0.1
+0.1
+0.09999999999999998
+0.09999999999999998
+0.09999999999999998
 Boolean Types
 true
 String Types
@@ -241,7 +241,7 @@ Date Types
 2019-01-01 00:00:00
 JSON Types
 UUID Types
-2db703f0-993d-4b5d-8aa9-b513aa40ada5
+61f0c404-5cb3-11e7-907b-a6006ad3dba0
 Low Cardinality Types
 str_0
 str_1

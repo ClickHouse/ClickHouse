@@ -95,12 +95,12 @@ function test_floating_point_numbers()
     echo "Floating Point Types"
 
     create_table "$1" "Float32"
-    $CH_CLIENT -q  "insert into test select 1, round(randCanonical(), 4)::Float32 FROM system.numbers LIMIT 3;"
+    $CH_CLIENT -q  "insert into test select 1, round(1 - 0.9, 4)::Float32 FROM system.numbers LIMIT 3;"
     run_select "Float32"
     drop_table
 
     create_table "$1" "Float64"
-    $CH_CLIENT -q  "insert into test select 1, round(randCanonical(), 8)::Float64 FROM system.numbers LIMIT 3;"
+    $CH_CLIENT -q  "insert into test select 1, (1 - 0.9)::Float64 FROM system.numbers LIMIT 3;"
     run_select "Float64"
     drop_table
     
@@ -175,7 +175,7 @@ function test_uuid()
     echo "UUID Types"
 
     create_table "$1" "UUID"
-    $CH_CLIENT -q  "insert into test select 1, generateUUIDv4();"
+    $CH_CLIENT -q  "insert into test select 1, toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0');"
     run_select "UUID"
     drop_table
 }
@@ -285,15 +285,13 @@ function test_geo_types()
     drop_table
 }
 
-$CH_CLIENT -q "drop table if exists test;"
+drop_table
 
 engines=("Memory" "MergeTree order by id settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000" "MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1")
 
-#engines=("MergeTree order by id settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000")
-
 for engine in "${engines[@]}"; do
 
-    echo "$engine"
+   echo "$engine"
 
    test_integer_types "$engine"
    test_floating_point_numbers "$engine"
