@@ -140,10 +140,10 @@ function setup_logs_replication
     clickhouse-client --query "
         CREATE TABLE IF NOT EXISTS system.coverage_log
         (
-            time DateTime,
-            test_name String,
-            coverage Array(UInt64)
-        ) ENGINE = MergeTree ORDER BY test_name
+            time DateTime COMMENT 'The time of test run',
+            test_name String COMMENT 'The name of the test',
+            coverage Array(UInt64) COMMENT 'An array of addresses of the code (a subset of addresses instrumented for coverage) that were encountered during the test run'
+        ) ENGINE = MergeTree ORDER BY test_name COMMENT 'Contains information about per-test coverage from the CI'
     "
 
     # For each system log table:
