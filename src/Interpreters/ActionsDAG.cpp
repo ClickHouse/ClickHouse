@@ -628,17 +628,24 @@ static ColumnWithTypeAndName executeActionForPartialResult(const ActionsDAG::Nod
             if (!array)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
                                 "ARRAY JOIN of not array nor map: {}", node->result_name);
-            res_column.column = array->getDataPtr();
+
+            ColumnPtr data;
             if (input_rows_count < array->size())
-                res_column.column = res_column.column->cloneResized(array->getOffsets()[input_rows_count - 1]);
+                data = array->getDataInRange(0, input_rows_count);
+            else
+                data = array->getDataPtr();
+
+            res_column.column = data;
             break;
         }
 
         case ActionsDAG::ActionType::COLUMN:
         {
-            res_column.column = node->column;
-            if (input_rows_count < res_column.column->size())
-                res_column.column = res_column.column->cloneResized(input_rows_count);
+            auto column = node->column;
+            if (input_rows_count < column->size())
+                column = column->cloneResized(input_rows_count);
+
+            res_column.column = column;
             break;
         }
 
