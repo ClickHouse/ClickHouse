@@ -119,6 +119,7 @@ Hello\nworld
 Hello\
 world
 ```
+`\n\r` (CRLF) поддерживается с помощью настройки `input_format_tsv_crlf_end_of_line`. 
 
 Второй вариант поддерживается, так как его использует MySQL при записи tab-separated дампа.
 
