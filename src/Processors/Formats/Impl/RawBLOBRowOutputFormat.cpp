@@ -33,6 +33,7 @@ void registerOutputFormatRawBLOB(FormatFactory & factory)
     {
         return std::make_shared<RawBLOBRowOutputFormat>(buf, sample);
     });
+    factory.markOutputFormatAsBinary("RawBLOB");
 }
 
 }

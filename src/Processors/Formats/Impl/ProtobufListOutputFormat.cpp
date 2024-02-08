@@ -60,6 +60,7 @@ void registerOutputFormatProtobufList(FormatFactory & factory)
                 settings.protobuf.output_nullables_with_google_wrappers,
                 settings.protobuf.google_protos_path);
         });
+    factory.markOutputFormatAsBinary("ProtobufList");
 }
 
 }

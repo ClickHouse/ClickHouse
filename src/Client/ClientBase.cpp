@@ -2373,11 +2373,11 @@ void ClientBase::runInteractive()
     if (print_time_to_stderr)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "time option could be specified only in non-interactive mode");
 
-    if (format == "Parquet" and stdout_is_a_tty)
+    if (stdout_is_a_tty && FormatFactory::instance().checkIfOutputFormatIsBinary(format))
     {
         // Confirm the user wants to dump binary data to their terminal.
-        std::cout << "This will dump the binary Parquet output to your terminal. "
-                  << "Did you mean to redirect to a file with e.g. '>output.parquet'?"
+        std::cout << "This will dump binary output to your terminal. "
+                  << "Did you mean to redirect to a file with e.g. '>output'?"
                   << std::endl;
         std::string response;
         while (true)

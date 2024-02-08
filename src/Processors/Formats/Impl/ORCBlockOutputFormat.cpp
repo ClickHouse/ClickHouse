@@ -626,6 +626,7 @@ void registerOutputFormatORC(FormatFactory & factory)
     });
     factory.markFormatHasNoAppendSupport("ORC");
     factory.markOutputFormatPrefersLargeBlocks("ORC");
+    factory.markOutputFormatAsBinary("ORC");
 }
 
 }

@@ -749,6 +749,14 @@ void FormatFactory::markOutputFormatPrefersLargeBlocks(const String & name)
     target = true;
 }
 
+void FormatFactory::markOutputFormatAsBinary(const String & name)
+{
+    auto & target = dict[name].is_binary_format;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as a binary format", name);
+    target = true;
+}
+
 bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const
 {
     const auto & target = getCreators(name);
@@ -808,6 +816,12 @@ bool FormatFactory::checkIfOutputFormatPrefersLargeBlocks(const String & name) c
 {
     const auto & target = getCreators(name);
     return target.prefers_large_blocks;
+}
+
+bool FormatFactory::checkIfOutputFormatIsBinary(const String & name) const
+{
+    const auto & target = getCreators(name);
+    return target.is_binary_format;
 }
 
 bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, ContextPtr context) const
