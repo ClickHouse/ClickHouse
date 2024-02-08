@@ -79,10 +79,6 @@ namespace ErrorCodes
 
 }
 
-/// ANSI escape sequence for intense color in terminal.
-#define HILITE "\033[1m"
-#define END_HILITE "\033[0m"
-
 #if defined(OS_DARWIN)
 /// Until createUser() and createGroup() are implemented, only sudo-less installations are supported/default for macOS.
 static constexpr auto DEFAULT_CLICKHOUSE_SERVER_USER = "";
@@ -216,6 +212,16 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 {
     try
     {
+        const char * start_hilite = "";
+        const char * end_hilite = "";
+
+        if (isatty(STDOUT_FILENO))
+        {
+            /// ANSI escape sequence for intense color in terminal.
+            start_hilite = "\033[1m";
+            end_hilite = "\033[0m";
+        }
+
         po::options_description desc;
         desc.add_options()
             ("help,h", "produce help message")
@@ -799,13 +805,13 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         /// Set up password for default user.
         if (has_password_for_default_user)
         {
-            fmt::print(HILITE "Password for default user is already specified. To remind or reset, see {} and {}." END_HILITE "\n",
-                       users_config_file.string(), users_d.string());
+            fmt::print("{}Password for default user is already specified. To remind or reset, see {} and {}.{}\n",
+                start_hilite, users_config_file.string(), users_d.string(), end_hilite);
         }
         else if (!can_ask_password)
         {
-            fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
-                       users_config_file.string(), users_d.string());
+            fmt::print("{}Password for default user is empty string. See {} and {} to change it.{}\n",
+                start_hilite, users_config_file.string(), users_d.string(), end_hilite);
         }
         else
         {
@@ -839,7 +845,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</clickhouse>\n";
                 out.sync();
                 out.finalize();
-                fmt::print(HILITE "Password for default user is saved in file {}." END_HILITE "\n", password_file);
+                fmt::print("{}Password for default user is saved in file {}.{}\n", start_hilite, password_file, end_hilite);
 #else
                 out << "<clickhouse>\n"
                     "    <users>\n"
@@ -850,13 +856,13 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</clickhouse>\n";
                 out.sync();
                 out.finalize();
-                fmt::print(HILITE "Password for default user is saved in plaintext in file {}." END_HILITE "\n", password_file);
+                fmt::print("{}Password for default user is saved in plaintext in file {}.{}\n", start_hilite, password_file, end_hilite);
 #endif
                 has_password_for_default_user = true;
             }
             else
-                fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
-                           users_config_file.string(), users_d.string());
+                fmt::print("{}Password for default user is empty string. See {} and {} to change it.{}\n",
+                    start_hilite, users_config_file.string(), users_d.string(), end_hilite);
         }
 
         /** Set capabilities for the binary.
