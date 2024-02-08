@@ -45,7 +45,7 @@ RUN apt-get update -y \
             p7zip-full \
     && apt-get clean
 
-RUN pip3 install numpy scipy pandas Jinja2
+RUN pip3 install numpy==1.26.3 scipy==1.12.0 pandas==1.5.3 Jinja2==3.1.3
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
