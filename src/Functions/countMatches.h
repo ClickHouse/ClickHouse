@@ -37,7 +37,7 @@ public:
     {
         FunctionArgumentDescriptors args{
             {"haystack", &isStringOrFixedString<IDataType>, nullptr, "String or FixedString"},
-            {"pattern", &isStringOrFixedString<IDataType>, isColumnConst, "constant String or FixedString"}
+            {"pattern", &isString<IDataType>, isColumnConst, "constant String"}
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 
@@ -47,13 +47,19 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IColumn * col_pattern = arguments[1].column.get();
-        const ColumnConst * col_pattern_const = checkAndGetColumnConstStringOrFixedString(col_pattern);
+        const ColumnConst * col_pattern_const = checkAndGetColumnConst<ColumnString>(col_pattern);
         const OptimizedRegularExpression re = Regexps::createRegexp</*is_like*/ false, /*no_capture*/ true, CountMatchesBase::case_insensitive>(col_pattern_const->getValue<String>());
 
         const IColumn * col_haystack = arguments[0].column.get();
         OptimizedRegularExpression::MatchVec matches;
 
-        if (const ColumnString * col_haystack_string = checkAndGetColumn<ColumnString>(col_haystack))
+        if (const ColumnConst * col_haystack_const = checkAndGetColumnConstStringOrFixedString(col_haystack))
+        {
+            std::string_view str = col_haystack_const->getDataColumn().getDataAt(0).toView();
+            uint64_t matches_count = countMatches(str, re, matches);
+            return result_type->createColumnConst(input_rows_count, matches_count);
+        }
+        else if (const ColumnString * col_haystack_string = checkAndGetColumn<ColumnString>(col_haystack))
         {
             auto col_res = ColumnUInt64::create();
 
@@ -77,12 +83,6 @@ public:
             }
 
             return col_res;
-        }
-        else if (const ColumnConst * col_haystack_const = checkAndGetColumnConstStringOrFixedString(col_haystack))
-        {
-            std::string_view str = col_haystack_const->getDataColumn().getDataAt(0).toView();
-            uint64_t matches_count = countMatches(str, re, matches);
-            return result_type->createColumnConst(input_rows_count, matches_count);
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Error in FunctionCountMatches::getReturnTypeImpl()");
