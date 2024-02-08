@@ -458,6 +458,38 @@ Type: Double
 
 Default: 0.9
 
+## cgroups_memory_usage_observer_wait_time
+
+Interval in seconds during which the server's maximum allowed memory consumption is adjusted by the corresponding threshold in cgroups. (see
+settings `cgroup_memory_watcher_hard_limit_ratio` and `cgroup_memory_watcher_soft_limit_ratio`).
+
+Type: UInt64
+
+Default: 15
+
+## cgroup_memory_watcher_hard_limit_ratio
+
+Specifies the "hard" threshold with regards to the memory consumption of the server process according to cgroups after which the server's
+maximum memory consumption is adjusted to the threshold value.
+
+See settings `cgroups_memory_usage_observer_wait_time` and `cgroup_memory_watcher_soft_limit_ratio`
+
+Type: Double
+
+Default: 0.95
+
+## cgroup_memory_watcher_soft_limit_ratio
+
+Specifies the "soft" threshold with regards to the memory consumption of the server process according to cgroups after which arenas in
+jemalloc are purged.
+
+
+See settings `cgroups_memory_usage_observer_wait_time` and `cgroup_memory_watcher_hard_limit_ratio`
+
+Type: Double
+
+Default: 0.95
+
 ## max_table_size_to_drop
 
 Restriction on deleting tables.
