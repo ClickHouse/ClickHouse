@@ -1274,7 +1274,7 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
     with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = []
         for job in job_digests:
-            if job not in jobs_to_skip or job not in jobs_to_do:
+            if job not in jobs_to_skip and job not in jobs_to_do:
                 # no need to create status for job that are not supposed to be executed
                 continue
             if CI_CONFIG.is_build_job(job):
