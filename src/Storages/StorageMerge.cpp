@@ -756,16 +756,23 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     auto join_tree_type = query_node->getJoinTree()->getNodeType();
     auto modified_query = query_node->cloneAndReplace(original_table_expression, replacement_table_expression);
 
+    // For the case when join tree is just a table or a table function we don't need to do anything more.
     if (join_tree_type == QueryTreeNodeType::TABLE || join_tree_type == QueryTreeNodeType::TABLE_FUNCTION)
         return modified_query;
 
+    // JOIN needs to be removed because StorageMerge should produce not joined data.
+    // GROUP BY should be removed as well.
+
     auto * modified_query_node = modified_query->as<QueryNode>();
 
+    // Remove the JOIN statement. As a result query will have a form like: SELECT * FROM <table> ...
     modified_query = modified_query->cloneAndReplace(modified_query_node->getJoinTree(), replacement_table_expression);
     modified_query_node = modified_query->as<QueryNode>();
 
     query_node = modified_query->as<QueryNode>();
 
+    // For backward compatibility we need to leave all filters related to this table.
+    // It may lead to some incorrect result.
     if (query_node->hasPrewhere())
         replaceFilterExpression(query_node->getPrewhere(), replacement_table_expression, context);
     if (query_node->hasWhere())
@@ -779,6 +786,9 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     projection.clear();
     NamesAndTypes projection_columns;
 
+    // Select only required columns from the table, because prjection list may contain:
+    // 1. aggregate functions
+    // 2. expressions referencing other tables of JOIN
     for (auto const & column_name : required_column_names)
     {
         QueryTreeNodePtr fake_node = std::make_shared<IdentifierNode>(Identifier{column_name});
@@ -791,6 +801,8 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Required column '{}' is not resolved", column_name);
         auto fake_column = resolved_column->getColumn();
 
+        // Identifier is resolved to ColumnNode, but we need to get rid of ALIAS columns
+        // and also fix references to source expression (now column is referencing original table expression).
         ApplyAliasColumnExpressionsVisitor visitor(replacement_table_expression);
         visitor.visit(fake_node);
 
@@ -860,7 +872,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
 
                 QueryTreeNodePtr column_node;
 
-
+                // Replace all references to ALIAS columns in the query by expressions.
                 if (is_alias)
                 {
                     QueryTreeNodePtr fake_node = std::make_shared<IdentifierNode>(Identifier{column});
