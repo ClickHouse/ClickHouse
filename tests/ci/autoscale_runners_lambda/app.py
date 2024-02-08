@@ -8,11 +8,10 @@ from pprint import pformat
 from typing import Any, List, Literal, Optional, Tuple
 
 import boto3  # type: ignore
-
 from lambda_shared import (
+    RUNNER_TYPE_LABELS,
     CHException,
     ClickHouseHelper,
-    RUNNER_TYPE_LABELS,
     get_parameter_from_ssm,
 )
 
@@ -115,6 +114,8 @@ def set_capacity(
         # Are we already at the capacity limits
         stop = stop or asg["MaxSize"] <= asg["DesiredCapacity"]
         # Let's calculate a new desired capacity
+        # (capacity_deficit + scale_up - 1) // scale_up : will increase min by 1
+        # if there is any capacity_deficit
         desired_capacity = (
             asg["DesiredCapacity"] + (capacity_deficit + scale_up - 1) // scale_up
         )
