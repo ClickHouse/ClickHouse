@@ -30,8 +30,6 @@ public:
     /// Set async callback that will be called when reading from socket blocks.
     void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }
 
-    bool isFinished() const { return is_finished; }
-
 private:
     ConnectionPoolPtr pool;
     const ConnectionTimeouts * timeouts;
@@ -39,7 +37,6 @@ private:
     LoggerPtr log;
     const QualifiedTableName * table_to_check;
 
-    bool is_finished;
     AsyncCallback async_callback = {};
 };
 
