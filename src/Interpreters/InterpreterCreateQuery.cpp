@@ -1086,7 +1086,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Table UUID is not specified in DDL log");
     }
 
-    if (create.refresh_strategy && database->getEngineName() != "Atomic" && !internal && !is_replicated_database_internal && !is_on_cluster)
+    if (create.refresh_strategy && database->getEngineName() != "Atomic")
         throw Exception(ErrorCodes::INCORRECT_QUERY,
             "Refreshable materialized view requires Atomic database engine, but database {} has engine {}", create.getDatabase(), database->getEngineName());
             /// TODO: Support Replicated databases, only with Shared/ReplicatedMergeTree.
