@@ -202,13 +202,6 @@ class JobConfig:
     release_only: bool = False
 
 
-# About the "sparse_checkout" option:
-#
-# It's needed only to test the option itself.
-# No particular sense to use it in the build,
-# and it is even slows down the job.
-
-
 @dataclass
 class BuildConfig:
     name: str
@@ -219,6 +212,8 @@ class BuildConfig:
     coverage: bool = False
     sanitizer: str = ""
     tidy: bool = False
+    # sparse_checkout is needed only to test the option itself.
+    # No particular sense to use it in every build, since it slows down the job.
     sparse_checkout: bool = False
     comment: str = ""
     static_binary_name: str = ""
