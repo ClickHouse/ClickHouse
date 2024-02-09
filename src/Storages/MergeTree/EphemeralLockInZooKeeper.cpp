@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int LOST_CONNECTION_TO_ZOOKEEPER;
 }
 
 EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & path_, const String & conflict_path_)
@@ -135,8 +136,7 @@ std::optional<String> checkLockAndDeduplicate(const EphemeralLockInZooKeeper& lo
 
     // ZNONODE if current node is destroyed, via disconnect
     if (e == Coordination::Error::ZNONODE)
-        // TODO: add valid exception
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Lost connection to ZK");
+        throw Exception(ErrorCodes::LOST_CONNECTION_TO_ZOOKEEPER, "Lost connection to ZK");
 
     if (e != Coordination::Error::ZOK)
     {
