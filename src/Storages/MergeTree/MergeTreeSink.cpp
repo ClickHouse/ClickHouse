@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/StorageMergeTree.h>
+#include <Storages/QueueModeColumns.h>
 #include <Interpreters/PartLog.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Common/ProfileEventsScope.h>
@@ -75,6 +76,14 @@ void MergeTreeSink::consume(Chunk chunk)
 
     for (auto & current_block : part_blocks)
     {
+        std::optional<int64_t> block_number;
+
+        if (storage.getSettings()->queue)
+        {
+            block_number = storage.increment.get();
+            materializeQueueSortingColumns(current_block.block, block_number.value());
+        }
+
         ProfileEvents::Counters part_counters;
 
         UInt64 elapsed_ns = 0;
@@ -84,7 +93,7 @@ void MergeTreeSink::consume(Chunk chunk)
             ProfileEventsScope scoped_attach(&part_counters);
 
             Stopwatch watch;
-            temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
+            temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context, std::move(block_number));
             elapsed_ns = watch.elapsed();
         }
 
