@@ -109,6 +109,16 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
       run_command: |
           python3 fast_test_check.py
+  FastTestAnalyzer:
+    needs: [RunConfig, StyleCheck]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Fast test (analyzer)
+      runner_type: builder
+      data: ${{ needs.RunConfig.outputs.data }}
+      run_command: |
+          python3 fast_test_check.py
   CompatibilityCheckX86:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
@@ -133,14 +143,14 @@ jobs:
 #################################### ORDINARY BUILDS ####################################
 #########################################################################################
   BuilderDebDebug:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_debug
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebRelease:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
@@ -148,7 +158,7 @@ jobs:
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebAarch64:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
@@ -156,35 +166,35 @@ jobs:
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinRelease:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_release
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebAsan:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_asan
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebUBsan:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_ubsan
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebTsan:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_tsan
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebMsan:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
@@ -194,77 +204,77 @@ jobs:
 ##################################### SPECIAL BUILDS #####################################
 ##########################################################################################
   BuilderBinClangTidy:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_tidy
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinDarwin:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_darwin
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinAarch64:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_aarch64
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinFreeBSD:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_freebsd
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinDarwinAarch64:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_darwin_aarch64
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinPPC64:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_ppc64le
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinAmd64Compat:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_amd64_compat
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinAmd64Musl:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_amd64_musl
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinAarch64V80Compat:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_aarch64_v80compat
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinRISCV64:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_riscv64
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinS390X:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, FastTest, FastTestAnalyzer]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
@@ -890,6 +900,7 @@ jobs:
       - BuilderSpecialReport
       - DocsCheck
       - FastTest
+      - FastTestAnalyzer
       - FunctionalStatelessTestDebug
       - FunctionalStatelessTestRelease
       - FunctionalStatelessTestReleaseDatabaseReplicated
