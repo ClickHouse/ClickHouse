@@ -131,7 +131,7 @@ public:
     void stopFlushThread() override;
 
 protected:
-    LoggerPtr log;
+    std::string log;
 
     using ISystemLog::is_shutdown;
     using ISystemLog::saving_thread;

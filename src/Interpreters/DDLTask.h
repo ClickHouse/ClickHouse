@@ -146,9 +146,9 @@ struct DDLTask : public DDLTaskBase
 {
     DDLTask(const String & name, const String & path) : DDLTaskBase(name, path) {}
 
-    bool findCurrentHostID(ContextPtr global_context, LoggerPtr log, const ZooKeeperPtr & zookeeper, const std::optional<std::string> & config_host_name);
+    bool findCurrentHostID(ContextPtr global_context, const std::string & log, const ZooKeeperPtr & zookeeper, const std::optional<std::string> & config_host_name);
 
-    void setClusterInfo(ContextPtr context, LoggerPtr log);
+    void setClusterInfo(ContextPtr context, const std::string & log);
 
     String getShardID() const override;
 

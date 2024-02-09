@@ -24,6 +24,8 @@ using LoggerRawPtr = Poco::Logger *;
   */
 LoggerPtr getLogger(const std::string & name);
 
+const Poco::Logger * getDefaultLogger();
+
 /** Create Logger with specified name, channel and logging level.
   * If Logger already exists, throws exception.
   * Logger is destroyed, when last shared ptr that refers to Logger with specified name is destroyed.

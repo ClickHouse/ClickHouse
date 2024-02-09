@@ -6,6 +6,12 @@ LoggerPtr getLogger(const std::string & name)
     return Poco::Logger::getShared(name);
 }
 
+const Poco::Logger * getDefaultLogger()
+{
+    static auto logger = []{ return getLogger("Application"); }();
+    return logger.get();
+}
+
 LoggerPtr createLogger(const std::string & name, Poco::Channel * channel, Poco::Message::Priority level)
 {
     return Poco::Logger::createShared(name, channel, level);

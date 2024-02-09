@@ -213,7 +213,7 @@ void DistributedAsyncInsertDirectoryQueue::run()
             }
             catch (...)
             {
-                tryLogCurrentException(getLoggerName().data());
+                tryLogCurrentException(getLoggerName());
 
                 UInt64 q = doubleToUInt64(std::exp2(status.error_count));
                 std::chrono::milliseconds new_sleep_time(default_sleep_time.count() * q);
