@@ -2670,7 +2670,7 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Default value: 1000000000 nanoseconds (once a second).
 
-Cloud default value: `0`.
+**Temporarily disabled in ClickHouse Cloud.**
 
 See also:
 
@@ -2695,7 +2695,7 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Default value: 1000000000 nanoseconds.
 
-Cloud default value: `0`.
+**Temporarily disabled in ClickHouse Cloud.**
 
 See also:
 
