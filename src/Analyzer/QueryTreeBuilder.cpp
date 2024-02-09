@@ -233,20 +233,16 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     auto select_settings = select_query_typed.settings();
     SettingsChanges settings_changes;
 
-    /// We are going to remove settings LIMIT and OFFSET and
+    /// We are going to remove expression settings LIMIT and OFFSET,
+    /// combine it with global settings limit and offset and
     /// further replace them with corresponding expression nodes
     UInt64 limit = 0;
     UInt64 offset = 0;
 
-    /// Remove global settings limit and offset
     if (const auto & settings_ref = updated_context->getSettingsRef(); settings_ref.limit || settings_ref.offset)
     {
-        Settings settings = updated_context->getSettings();
-        limit = settings.limit;
-        offset = settings.offset;
-        settings.limit = 0;
-        settings.offset = 0;
-        updated_context->setSettings(settings);
+        limit = settings_ref.limit;
+        offset = settings_ref.offset;
     }
 
     if (select_settings)
@@ -770,6 +766,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
 
         if (table_element.table_expression)
         {
+            auto updated_context = Context::createCopy(context);
+
+            /// Remove global settings limit and offset
+            Settings settings = updated_context->getSettings();
+            settings.limit = 0;
+            settings.offset = 0;
+            updated_context->setSettings(settings);
+
             auto & table_expression = table_element.table_expression->as<ASTTableExpression &>();
             std::optional<TableExpressionModifiers> table_expression_modifiers;
 
@@ -815,7 +819,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                 auto & subquery_expression = table_expression.subquery->as<ASTSubquery &>();
                 const auto & select_with_union_query = subquery_expression.children[0];
 
-                auto node = buildSelectWithUnionExpression(select_with_union_query, true /*is_subquery*/, {} /*cte_name*/, context);
+                auto node = buildSelectWithUnionExpression(select_with_union_query, true /*is_subquery*/, {} /*cte_name*/, updated_context);
                 node->setAlias(subquery_expression.tryGetAlias());
                 node->setOriginalAST(select_with_union_query);
 
@@ -845,11 +849,11 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                                 table_function_expression.formatForErrorMessage());
 
                         if (argument->as<ASTSelectQuery>() || argument->as<ASTSelectWithUnionQuery>() || argument->as<ASTSelectIntersectExceptQuery>())
-                            node->getArguments().getNodes().push_back(buildSelectOrUnionExpression(argument, false /*is_subquery*/, {} /*cte_name*/, context));
+                            node->getArguments().getNodes().push_back(buildSelectOrUnionExpression(argument, false /*is_subquery*/, {} /*cte_name*/, updated_context));
                         else if (const auto * ast_set = argument->as<ASTSetQuery>())
                             node->setSettingsChanges(ast_set->changes);
                         else
-                            node->getArguments().getNodes().push_back(buildExpression(argument, context));
+                            node->getArguments().getNodes().push_back(buildExpression(argument, updated_context));
                     }
                 }
 

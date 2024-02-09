@@ -89,6 +89,7 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
 
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
+  * Also limit and offset should not propagate into the view.
   */
 ContextPtr getViewContext(ContextPtr context)
 {
@@ -97,6 +98,8 @@ ContextPtr getViewContext(ContextPtr context)
     view_settings.max_result_rows = 0;
     view_settings.max_result_bytes = 0;
     view_settings.extremes = false;
+    view_settings.limit = 0;
+    view_settings.offset = 0;
     view_context->setSettings(view_settings);
     return view_context;
 }
