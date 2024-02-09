@@ -1130,7 +1130,7 @@ Possible values:
 
 Default value: `0`.
 
-Cloud default value: `2`.
+Cloud default value: from `2` to `4`, depending on the service size.
 
 Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [max_threads](#max_threads) setting.
 Higher values will lead to higher memory usage.
@@ -2138,7 +2138,7 @@ Possible values:
 - Positive integer.
 - 0 — Retries are disabled
 
-Default value: 0
+Default value: 20
 
 Cloud default value: `20`.
 
@@ -3335,7 +3335,7 @@ Possible values:
 
 - a string representing any valid table engine name
 
-Default value: `None`.
+Default value: `MergeTree`.
 
 Cloud default value: `SharedMergeTree`.
 
