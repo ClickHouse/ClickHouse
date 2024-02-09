@@ -661,8 +661,8 @@ inline bool memequalSmallAllowOverflow15(const Char * a, size_t a_size, const Ch
     if (a_size != b_size)
         return false;
 
-    __msan_unpoison(&a[a_size - a_size % 16], a_size % 16);
-    __msan_unpoison(&b[b_size - b_size % 16], b_size % 16);
+    __msan_unpoison_overflow_15(a, a_size);
+    __msan_unpoison_overflow_15(b, b_size);
 
     for (size_t offset = 0; offset < a_size; offset += 16)
     {
