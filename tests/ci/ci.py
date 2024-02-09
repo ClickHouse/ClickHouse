@@ -816,6 +816,12 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         default=False,
         help="skip fetching data about job runs, used in --configure action (for debugging and nigthly ci)",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Used with --run, force the job to run, omitting the ci cache",
+    )
     # FIXME: remove, not used
     parser.add_argument(
         "--rebuild-all-binaries",
@@ -1762,7 +1768,7 @@ def main() -> int:
                     previous_status = job_status.status
                     GHActions.print_in_group("Commit Status Data", job_status)
 
-        if previous_status:
+        if previous_status and not args.force:
             print(
                 f"Commit status or Build Report is already present - job will be skipped with status: [{previous_status}]"
             )

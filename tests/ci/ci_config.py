@@ -140,8 +140,6 @@ class JobNames(metaclass=WithIter):
     DOCS_CHECK = "Docs check"
     BUGFIX_VALIDATE = "tests bugfix validate check"
 
-    MARK_RELEASE_READY = "Mark Commit Release Ready"
-
 
 # dynamically update JobName with Build jobs
 for attr_name in dir(Build):
@@ -828,9 +826,6 @@ CI_CONFIG = CiConfig(
         ),
     },
     other_jobs_configs={
-        JobNames.MARK_RELEASE_READY: TestConfig(
-            "", job_config=JobConfig(release_only=True)
-        ),
         JobNames.DOCKER_SERVER: TestConfig(
             "",
             job_config=JobConfig(
