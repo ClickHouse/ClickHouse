@@ -384,6 +384,10 @@ The server successfully detected this situation and will download merged part fr
     M(S3PutObject, "Number of S3 API PutObject calls.") \
     M(S3GetObject, "Number of S3 API GetObject calls.") \
     \
+    M(AzureUploadPart, "Number of Azure blob storage API UploadPart calls") \
+    M(DiskAzureUploadPart, "Number of Disk Azure blob storage API UploadPart calls") \
+    M(AzureCopyObject, "Number of Azure blob storage API CopyObject calls") \
+    M(DiskAzureCopyObject, "Number of Disk Azure blob storage API CopyObject calls") \
     M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
     M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.") \
     \
