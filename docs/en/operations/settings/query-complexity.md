@@ -1,4 +1,4 @@
-![image](https://github.com/ClickHouse/ClickHouse/assets/3936029/17039d32-4699-4498-bcff-947079345a66)---
+---
 slug: /en/operations/settings/query-complexity
 sidebar_position: 59
 sidebar_label: Restrictions on Query Complexity
