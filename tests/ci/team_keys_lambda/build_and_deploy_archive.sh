@@ -22,19 +22,32 @@ mkdir "$PACKAGE"
 cp app.py "$PACKAGE"
 if [ -f requirements.txt ]; then
   VENV=lambda-venv
-  rm -rf "$VENV" lambda-package.zip
+  rm -rf "$VENV"
   docker run --net=host --rm --user="${UID}" -e HOME=/tmp --entrypoint=/bin/bash \
     --volume="${WORKDIR}/..:/ci" --workdir="/ci/${DIR_NAME}" "${DOCKER_IMAGE}" \
     -exc "
       '$PY_EXEC' -m venv '$VENV' &&
       source '$VENV/bin/activate' &&
-      pip install -r requirements.txt
+      pip install -r requirements.txt &&
+      # To have consistent pyc files
+      find '$VENV/lib' -name '*.pyc' -delete
+      find '$VENV/lib' ! -type d -exec touch -t 201212121212 {} +
+      python -m compileall
     "
   cp -rT "$VENV/lib/$PY_EXEC/site-packages/" "$PACKAGE"
   rm -r "$PACKAGE"/{pip,pip-*,setuptools,setuptools-*}
+  # zip stores metadata about timestamps
+  find "$PACKAGE" ! -type d -exec touch -t 201212121212 {} +
 fi
-( cd "$PACKAGE" && zip -9 -r ../"$PACKAGE".zip . )
+(
+  export LC_ALL=c
+  cd "$PACKAGE"
+  # zip uses random files order by default, so we sort the files alphabetically
+  find . ! -type d -print0 | sort -z | tr '\0' '\n' | zip -XD -0 ../"$PACKAGE".zip --names-stdin
+)
 
-if [ -z "$DRY_RUN" ]; then
-  aws lambda update-function-code --function-name "$LAMBDA_NAME" --zip-file fileb://"$WORKDIR/$PACKAGE".zip
+ECHO=()
+if [ -n "$DRY_RUN" ]; then
+  ECHO=(echo Run the following command to push the changes:)
 fi
+"${ECHO[@]}" aws lambda update-function-code --function-name "$LAMBDA_NAME" --zip-file fileb://"$WORKDIR/$PACKAGE".zip

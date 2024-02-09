@@ -34,6 +34,9 @@
 #include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Interpreters/PreparedSets.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -1057,13 +1060,14 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
             break;
     }
 
-    auto res_pipe = Pipe::unitePipes(std::move(pipes));
-    res_pipe.addTransform(std::move(merged_transform));
+    auto builder = std::make_unique<QueryPipelineBuilder>();
+    builder->init(Pipe::unitePipes(std::move(pipes)));
+    builder->addTransform(std::move(merged_transform));
 
 #ifndef NDEBUG
     if (!sort_description.empty())
     {
-        res_pipe.addSimpleTransform([&](const Block & header_)
+        builder->addSimpleTransform([&](const Block & header_)
         {
             auto transform = std::make_shared<CheckSortedTransform>(header_, sort_description);
             return transform;
@@ -1085,26 +1089,34 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
         }
 
         if (DistinctSortedTransform::isApplicable(header, sort_description, global_ctx->deduplicate_by_columns))
-            res_pipe.addTransform(std::make_shared<DistinctSortedTransform>(
-                res_pipe.getHeader(), sort_description, SizeLimits(), 0 /*limit_hint*/, global_ctx->deduplicate_by_columns));
+            builder->addTransform(std::make_shared<DistinctSortedTransform>(
+                builder->getHeader(), sort_description, SizeLimits(), 0 /*limit_hint*/, global_ctx->deduplicate_by_columns));
         else
-            res_pipe.addTransform(std::make_shared<DistinctTransform>(
-                res_pipe.getHeader(), SizeLimits(), 0 /*limit_hint*/, global_ctx->deduplicate_by_columns));
+            builder->addTransform(std::make_shared<DistinctTransform>(
+                builder->getHeader(), SizeLimits(), 0 /*limit_hint*/, global_ctx->deduplicate_by_columns));
     }
 
+    PreparedSets::Subqueries subqueries;
+
     if (ctx->need_remove_expired_values)
-        res_pipe.addTransform(std::make_shared<TTLTransform>(
-            res_pipe.getHeader(), *global_ctx->data, global_ctx->metadata_snapshot, global_ctx->new_data_part, global_ctx->time_of_merge, ctx->force_ttl));
+    {
+        auto transform = std::make_shared<TTLTransform>(global_ctx->context, builder->getHeader(), *global_ctx->data, global_ctx->metadata_snapshot, global_ctx->new_data_part, global_ctx->time_of_merge, ctx->force_ttl);
+        subqueries = transform->getSubqueries();
+        builder->addTransform(std::move(transform));
+    }
 
     if (global_ctx->metadata_snapshot->hasSecondaryIndices())
     {
         const auto & indices = global_ctx->metadata_snapshot->getSecondaryIndices();
-        res_pipe.addTransform(std::make_shared<ExpressionTransform>(
-            res_pipe.getHeader(), indices.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext())));
-        res_pipe.addTransform(std::make_shared<MaterializingTransform>(res_pipe.getHeader()));
+        builder->addTransform(std::make_shared<ExpressionTransform>(
+            builder->getHeader(), indices.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext())));
+        builder->addTransform(std::make_shared<MaterializingTransform>(builder->getHeader()));
     }
 
-    global_ctx->merged_pipeline = QueryPipeline(std::move(res_pipe));
+    if (!subqueries.empty())
+        builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), global_ctx->context);
+
+    global_ctx->merged_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     /// Dereference unique_ptr and pass horizontal_stage_progress by reference
     global_ctx->merged_pipeline.setProgressCallback(MergeProgressCallback(global_ctx->merge_list_element_ptr, global_ctx->watch_prev_elapsed, *global_ctx->horizontal_stage_progress));
     /// Is calculated inside MergeProgressCallback.

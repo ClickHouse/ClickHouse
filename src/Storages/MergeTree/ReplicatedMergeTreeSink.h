@@ -1,18 +1,15 @@
 #pragma once
 
-#include <optional>
-#include <vector>
 #include <base/types.h>
 
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 #include <Processors/Sinks/SinkToStorage.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/ZooKeeperRetries.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
-
 
 namespace Poco { class Logger; }
 

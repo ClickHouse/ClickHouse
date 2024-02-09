@@ -933,6 +933,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 reason = "asynchronous insert queue is not configured";
             else if (insert_query->select)
                 reason = "insert query has select";
+            else if (settings.deduplicate_blocks_in_dependent_materialized_views)
+                reason = "dependent materialized views block deduplication is enabled";
             else if (insert_query->hasInlinedData())
                 async_insert = true;
 
