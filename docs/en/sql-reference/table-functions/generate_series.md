@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/generate_series
-sidebar_position: ?
+sidebar_position: 146
 sidebar_label: generate_series
 ---
 

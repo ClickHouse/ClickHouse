@@ -483,9 +483,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
                 auto range_with_step = stepped_range_from_range(
                     intersected_range.value(), numbers_storage.step, numbers_storage.offset % numbers_storage.step);
                 if (range_with_step.has_value())
-                {
                     intersected_ranges.push_back(*range_with_step);
-                }
             }
         }
 
