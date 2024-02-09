@@ -1,5 +1,49 @@
 CreatingSets
   Expression
+    ReadFromMergeTree
+    Indexes:
+      PrimaryKey
+        Keys: 
+          id
+          value
+        Condition: and((id in (-Inf, 10]), (value in 1-element set))
+        Parts: 1/1
+        Granules: 1/1
+CreatingSets
+  Expression
+    ReadFromMergeTree
+    Indexes:
+      PrimaryKey
+        Keys: 
+          id
+          value
+        Condition: and((id in (-Inf, 10]), (value in 1-element set))
+        Parts: 1/1
+        Granules: 1/1
+CreatingSets
+  Expression
+    ReadFromMergeTree
+    Indexes:
+      PrimaryKey
+        Keys: 
+          id
+          value
+        Condition: and((id in (-Inf, 10]), (value in 5-element set))
+        Parts: 1/1
+        Granules: 1/1
+CreatingSets
+  Expression
+    ReadFromMergeTree
+    Indexes:
+      PrimaryKey
+        Keys: 
+          id
+          value
+        Condition: and((id in (-Inf, 10]), (value in 5-element set))
+        Parts: 1/1
+        Granules: 1/1
+CreatingSets
+  Expression
     Expression
       ReadFromMergeTree
       Indexes:

@@ -120,6 +120,12 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         auto & frame = stack.back();
 
+        if (frame.next_child == 0)
+        {
+            if (optimization_settings.distinct_in_order)
+                tryDistinctReadInOrder(frame.node);
+        }
+
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())
         {
@@ -154,9 +160,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
                 if (optimization_settings.aggregation_in_order)
                     optimizeAggregationInOrder(*frame.node, nodes);
-
-                if (optimization_settings.distinct_in_order)
-                    tryDistinctReadInOrder(frame.node);
             }
 
             /// Traverse all children first.

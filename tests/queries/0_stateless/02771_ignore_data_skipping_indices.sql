@@ -1,5 +1,3 @@
-SET allow_experimental_analyzer = 0;
-
 DROP TABLE IF EXISTS data_02771;
 
 
