@@ -6,6 +6,8 @@
 
 ### <a id="241"></a> ClickHouse release 24.1, 2024-01-30
 
+### ClickHouse release master (b4a5b6060ea) FIXME as compared to v23.12.1.1368-stable (a2faa65b080)
+
 #### Backward Incompatible Change
 * The setting `print_pretty_type_names` is turned on by default. You can turn it off to keep the old behavior or `SET compatibility = '23.12'`. [#57726](https://github.com/ClickHouse/ClickHouse/pull/57726) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * The MergeTree setting `clean_deleted_rows` is deprecated, it has no effect anymore. The `CLEANUP` keyword for `OPTIMIZE` is not allowed by default (unless `allow_experimental_replacing_merge_with_cleanup` is enabled). [#58316](https://github.com/ClickHouse/ClickHouse/pull/58316) ([Alexander Tokmakov](https://github.com/tavplubix)).
@@ -22,6 +24,7 @@
 * Add `quantileDD` aggregate function as well as the corresponding `quantilesDD` and `medianDD`. It is based on the DDSketch https://www.vldb.org/pvldb/vol12/p2195-masson.pdf. ### Documentation entry for user-facing changes. [#56342](https://github.com/ClickHouse/ClickHouse/pull/56342) ([Srikanth Chekuri](https://github.com/srikanthccv)).
 * Allow to configure any kind of object storage with any kind of metadata type. [#58357](https://github.com/ClickHouse/ClickHouse/pull/58357) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Added `null_status_on_timeout_only_active` and `throw_only_active` modes for `distributed_ddl_output_mode` that allow to avoid waiting for inactive replicas. [#58350](https://github.com/ClickHouse/ClickHouse/pull/58350) ([Alexander Tokmakov](https://github.com/tavplubix)).
+* Allow partitions from tables with different partition expressions to be attached when the destination table partition expression doesn't re-partition/split the part. [#39507](https://github.com/ClickHouse/ClickHouse/pull/39507) ([Arthur Passos](https://github.com/arthurpassos)).
 * Add function `arrayShingles` to compute subarrays, e.g. `arrayShingles([1, 2, 3, 4, 5], 3)` returns `[[1,2,3],[2,3,4],[3,4,5]]`. [#58396](https://github.com/ClickHouse/ClickHouse/pull/58396) ([Zheng Miao](https://github.com/zenmiao7)).
 * Added functions `punycodeEncode`, `punycodeDecode`, `idnaEncode` and `idnaDecode` which are useful for translating international domain names to an ASCII representation according to the IDNA standard. [#58454](https://github.com/ClickHouse/ClickHouse/pull/58454) ([Robert Schulze](https://github.com/rschu1ze)).
 * Added string similarity functions `dramerauLevenshteinDistance`, `jaroSimilarity` and `jaroWinklerSimilarity`. [#58531](https://github.com/ClickHouse/ClickHouse/pull/58531) ([Robert Schulze](https://github.com/rschu1ze)).

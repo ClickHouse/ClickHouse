@@ -11,7 +11,6 @@
 ## To run specified set of tests in CI:
 #ci_set_<SET_NAME>
 #ci_set_reduced
-#ci_set_arm
 
 ## To run specified job in CI:
 #job_<JOB NAME>
