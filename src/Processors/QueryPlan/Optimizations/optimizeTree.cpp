@@ -118,6 +118,22 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
         optimizePrewhere(stack, nodes);
         optimizePrimaryKeyCondition(stack);
 
+        auto & frame = stack.back();
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+
+        stack.pop_back();
+    }
+
+    while (!stack.empty())
+    {
         {
             /// NOTE: frame cannot be safely used after stack was modified.
             auto & frame = stack.back();
