@@ -73,7 +73,7 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
         zip \
         sudo \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # Download toolchain and SDK for Darwin
 RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz

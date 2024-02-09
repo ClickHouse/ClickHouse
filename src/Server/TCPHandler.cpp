@@ -184,7 +184,15 @@ void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo
 namespace DB
 {
 
-TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
+TCPHandler::TCPHandler(
+    IServer & server_,
+    TCPServer & tcp_server_,
+    const Poco::Net::StreamSocket & socket_,
+    bool parse_proxy_protocol_,
+    std::string server_display_name_,
+    std::string host_name_,
+    const ProfileEvents::Event & read_event_,
+    const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
@@ -193,11 +201,20 @@ TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::N
     , read_event(read_event_)
     , write_event(write_event_)
     , server_display_name(std::move(server_display_name_))
+    , host_name(std::move(host_name_))
 {
 }
 
-TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
-: Poco::Net::TCPServerConnection(socket_)
+TCPHandler::TCPHandler(
+    IServer & server_,
+    TCPServer & tcp_server_,
+    const Poco::Net::StreamSocket & socket_,
+    TCPProtocolStackData & stack_data,
+    std::string server_display_name_,
+    std::string host_name_,
+    const ProfileEvents::Event & read_event_,
+    const ProfileEvents::Event & write_event_)
+    : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , log(getLogger("TCPHandler"))
@@ -207,6 +224,7 @@ TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::N
     , write_event(write_event_)
     , default_database(stack_data.default_database)
     , server_display_name(std::move(server_display_name_))
+    , host_name(std::move(host_name_))
 {
     if (!forwarded_for.empty())
         LOG_TRACE(log, "Forwarded client address: {}", forwarded_for);
@@ -915,7 +933,7 @@ void TCPHandler::processInsertQuery()
         if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query.table_id, query_context))
             async_insert_enabled |= table->areAsynchronousInsertsEnabled();
 
-    if (insert_queue && async_insert_enabled && !insert_query.select)
+    if (insert_queue && async_insert_enabled && !insert_query.select && !settings.deduplicate_blocks_in_dependent_materialized_views)
     {
         auto result = processAsyncInsertQuery(*insert_queue);
         if (result.status == AsynchronousInsertQueue::PushResult::OK)
@@ -1201,7 +1219,7 @@ void TCPHandler::sendExtremes(const Block & extremes)
 void TCPHandler::sendProfileEvents()
 {
     Block block;
-    ProfileEvents::getProfileEvents(server_display_name, state.profile_queue, block, last_sent_snapshots);
+    ProfileEvents::getProfileEvents(host_name, state.profile_queue, block, last_sent_snapshots);
     if (block.rows() != 0)
     {
         initProfileEventsBlockOutput(block);

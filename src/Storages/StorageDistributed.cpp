@@ -773,7 +773,8 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
             table_function_node->setTableExpressionModifiers(*table_expression_modifiers);
 
         QueryAnalysisPass query_analysis_pass;
-        query_analysis_pass.run(table_function_node, query_context);
+        QueryTreeNodePtr node = table_function_node;
+        query_analysis_pass.run(node, query_context);
 
         replacement_table_expression = std::move(table_function_node);
     }
@@ -1533,10 +1534,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
 IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
 {
     const auto & slot_to_shard = cluster->getSlotToShard();
-
     const IColumn * column = result.column.get();
-    if (const auto * col_const = typeid_cast<const ColumnConst *>(column))
-        column = &col_const->getDataColumn();
 
 // If result.type is DataTypeLowCardinality, do shard according to its dictionaryType
 #define CREATE_FOR_TYPE(TYPE)                                                                                       \

@@ -1,21 +1,16 @@
 #!/usr/bin/env python3
 
 import logging
-import subprocess
 import os
+import subprocess
 import sys
 from pathlib import Path
-from typing import Dict
-
 
 from build_download_helper import get_build_name_for_check, read_build_urls
-from docker_images_helper import pull_image, get_docker_image
-from env_helper import (
-    REPORT_PATH,
-    TEMP_PATH,
-)
+from docker_images_helper import get_docker_image, pull_image
+from env_helper import REPORT_PATH, TEMP_PATH
 from pr_info import PRInfo
-from report import JobReport, TestResult
+from report import SUCCESS, JobReport, TestResult
 from stopwatch import Stopwatch
 
 IMAGE_NAME = "clickhouse/sqltest"
@@ -98,7 +93,7 @@ def main():
         "report.html": workspace_path / "report.html",
         "test.log": workspace_path / "test.log",
     }
-    status = "success"
+    status = SUCCESS
     description = "See the report"
     test_results = [TestResult(description, "OK")]
 
