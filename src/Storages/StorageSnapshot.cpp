@@ -39,6 +39,14 @@ void StorageSnapshot::init()
     system_columns[BlockNumberColumn::name] = BlockNumberColumn::type;
 }
 
+ColumnsDescription StorageSnapshot::getAllColumnsDescription() const
+{
+    auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+    auto column_names_and_types = getColumns(get_column_options);
+
+    return ColumnsDescription{column_names_and_types};
+}
+
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const
 {
     auto all_columns = getMetadataForQuery()->getColumns().get(options);
