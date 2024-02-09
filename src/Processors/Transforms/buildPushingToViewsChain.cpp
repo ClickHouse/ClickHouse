@@ -26,7 +26,6 @@
 #include <atomic>
 #include <chrono>
 
-
 namespace ProfileEvents
 {
     extern const Event SelectedBytes;
