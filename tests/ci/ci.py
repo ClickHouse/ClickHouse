@@ -1,5 +1,6 @@
 import argparse
 import concurrent.futures
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from enum import Enum
 import json
@@ -8,15 +9,15 @@ import os
 import re
 import subprocess
 import sys
-from pathlib import Path
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
 from ci_config import CI_CONFIG, Build, Labels, JobNames
-from ci_utils import GHActions, is_hex
+from ci_utils import GHActions, is_hex, normalize_string
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
@@ -48,7 +49,7 @@ from git_helper import GIT_PREFIX, Git
 from git_helper import Runner as GitRunner
 from github import Github
 from pr_info import PRInfo
-from report import SUCCESS, BuildResult, JobReport
+from report import ERROR, SUCCESS, BuildResult, JobReport
 from s3_helper import S3Helper
 from version_helper import get_version_from_repo
 
@@ -88,6 +89,7 @@ class CiCache:
     class RecordType(Enum):
         SUCCESSFUL = "successful"
         PENDING = "pending"
+        FAILED = "failed"
 
     @dataclass
     class Record:
@@ -249,6 +251,13 @@ class CiCache:
         )
         return record
 
+    def print_status(self):
+        for record_type in self.RecordType:
+            GHActions.print_in_group(
+                f"Cache records: [{record_type}]", list(self.records[record_type])
+            )
+        return self
+
     def update(self):
         """
         Pulls cache records from s3. Only records name w/o content.
@@ -260,9 +269,6 @@ class CiCache:
                 path = self.cache_s3_paths[job_type]
                 records = self.s3.list_prefix(f"{path}{prefix}", S3_BUILDS_BUCKET)
                 records = [record.split("/")[-1] for record in records]
-                GHActions.print_in_group(
-                    f"Cache records: [{record_type}] in [{job_type.value}]", records
-                )
                 for file in records:
                     record = self._parse_record_file_name(
                         record_type=record_type, file_name=file
@@ -384,6 +390,9 @@ class CiCache:
             if record_type == self.RecordType.SUCCESSFUL:
                 assert isinstance(status, CommitStatusData)
                 status.dump_to_file(record_file)
+            elif record_type == self.RecordType.FAILED:
+                assert isinstance(status, CommitStatusData)
+                status.dump_to_file(record_file)
             elif record_type == self.RecordType.PENDING:
                 assert isinstance(status, PendingState)
                 with open(record_file, "w") as json_file:
@@ -488,6 +497,16 @@ class CiCache:
             self.RecordType.SUCCESSFUL, job, batch, num_batches, release_branch
         )
 
+    def is_failed(
+        self, job: str, batch: int, num_batches: int, release_branch: bool
+    ) -> bool:
+        """
+        checks if a given job have already been done with failure
+        """
+        return self.exist(
+            self.RecordType.FAILED, job, batch, num_batches, release_branch
+        )
+
     def is_pending(
         self, job: str, batch: int, num_batches: int, release_branch: bool
     ) -> bool:
@@ -495,8 +514,9 @@ class CiCache:
         check pending record in the cache for a given job
         @release_branch - checks that "release" attribute is set for a record
         """
-        if self.is_successful(job, batch, num_batches, release_branch):
-            # successful record is present - not pending
+        if self.is_successful(
+            job, batch, num_batches, release_branch
+        ) or self.is_failed(job, batch, num_batches, release_branch):
             return False
 
         return self.exist(
@@ -517,6 +537,27 @@ class CiCache:
         """
         self.push(
             self.RecordType.SUCCESSFUL,
+            job,
+            [batch],
+            num_batches,
+            job_status,
+            release_branch,
+        )
+
+    def push_failed(
+        self,
+        job: str,
+        batch: int,
+        num_batches: int,
+        job_status: CommitStatusData,
+        release_branch: bool = False,
+    ) -> None:
+        """
+        Pushes a cache record of type Failed (CommitStatusData)
+        @release_branch adds "release" attribute to a record
+        """
+        self.push(
+            self.RecordType.FAILED,
             job,
             [batch],
             num_batches,
@@ -591,46 +632,87 @@ class CiCache:
             bucket=S3_BUILDS_BUCKET, file_path=result_json_path, s3_path=s3_path
         )
 
-    # def await_jobs(self, jobs_with_params: Dict[str, Dict[str, Any]]) -> List[str]:
-    # if not jobs_with_params:
-    #     return []
-    # print(f"Start awaiting jobs [{list(jobs_with_params)}]")
-    # poll_interval_sec = 180
-    # start_at = int(time.time())
-    # TIMEOUT = 3000
-    # expired_sec = 0
-    # done_jobs = []  # type: List[str]
-    # while expired_sec < TIMEOUT and jobs_with_params:
-    #     time.sleep(poll_interval_sec)
-    #     self.update()
-    #     pending_finished: List[str] = []
-    #     for job_name in jobs_with_params:
-    #         num_batches = jobs_with_params[job_name]["num_batches"]
-    #         for batch in jobs_with_params[job_name]["batches"]:
-    #             if self.is_pending(job_name, batch, num_batches):
-    #                 continue
-    #             print(
-    #                 f"Job [{job_name}_[{batch}/{num_batches}]] is not pending anymore"
-    #             )
-    #             pending_finished.append(job_name)
-    #     if pending_finished:
-    #         # restart timer
-    #         start_at = int(time.time())
-    #         expired_sec = 0
-    #         # remove finished jobs from awaiting list
-    #         for job in pending_finished:
-    #             del jobs_with_params[job]
-    #             done_jobs.append(job)
-    #     else:
-    #         expired_sec = int(time.time()) - start_at
-    #     print(f"  ...awaiting continues... time left [{TIMEOUT - expired_sec}]")
-    # if done_jobs:
-    #     print(
-    #         f"Awaiting OK. Left jobs: [{list(jobs_with_params)}], finished jobs: [{done_jobs}]"
-    #     )
-    # else:
-    #     print("Awaiting FAILED. No job has finished.")
-    # return done_jobs
+    def await_jobs(
+        self, jobs_with_params: Dict[str, Dict[str, Any]], is_release_branch: bool
+    ) -> Dict[str, List[int]]:
+        """
+        await pending jobs to be finished
+        @jobs_with_params - jobs to await. {JOB_NAME: {"batches": [BATCHES...], "num_batches": NUM_BATCHES}}
+        returns successfully finished jobs: {JOB_NAME: [BATCHES...]}
+        """
+        if not jobs_with_params:
+            return {}
+        poll_interval_sec = 300
+        TIMEOUT = 3600
+        await_finished: Dict[str, List[int]] = {}
+        round_cnt = 0
+        while len(jobs_with_params) > 5 and round_cnt < 3:
+            round_cnt += 1
+            GHActions.print_in_group(
+                f"Wait pending jobs, round [{round_cnt}]:", list(jobs_with_params)
+            )
+            # this is initial approach to wait pending jobs:
+            # start waiting for the next TIMEOUT seconds if there are more than X(=5) jobs to wait
+            # wait TIMEOUT seconds in rounds. Y(=3) is the max number of rounds
+            expired_sec = 0
+            start_at = int(time.time())
+            while expired_sec < TIMEOUT and jobs_with_params:
+                time.sleep(poll_interval_sec)
+                self.update()
+                jobs_with_params_copy = deepcopy(jobs_with_params)
+                for job_name in jobs_with_params:
+                    num_batches = jobs_with_params[job_name]["num_batches"]
+                    job_config = CI_CONFIG.get_job_config(job_name)
+                    for batch in jobs_with_params[job_name]["batches"]:
+                        if self.is_pending(
+                            job_name,
+                            batch,
+                            num_batches,
+                            release_branch=is_release_branch
+                            and job_config.required_on_release_branch,
+                        ):
+                            continue
+                        print(
+                            f"Job [{job_name}_[{batch}/{num_batches}]] is not pending anymore"
+                        )
+
+                        # some_job_ready = True
+                        jobs_with_params_copy[job_name]["batches"].remove(batch)
+                        if not jobs_with_params_copy[job_name]["batches"]:
+                            del jobs_with_params_copy[job_name]
+
+                        if not self.is_successful(
+                            job_name,
+                            batch,
+                            num_batches,
+                            release_branch=is_release_branch
+                            and job_config.required_on_release_branch,
+                        ):
+                            print(
+                                f"NOTE: Job [{job_name}:{batch}] finished but no success - remove from awaiting list, do not add to ready"
+                            )
+                            continue
+                        if job_name in await_finished:
+                            await_finished[job_name].append(batch)
+                        else:
+                            await_finished[job_name] = [batch]
+                jobs_with_params = jobs_with_params_copy
+                expired_sec = int(time.time()) - start_at
+                print(
+                    f"...awaiting continues... seconds left [{TIMEOUT - expired_sec}]"
+                )
+        if await_finished:
+            GHActions.print_in_group(
+                "Finished jobs:",
+                [f"{job}:{batches}" for job, batches in await_finished.items()],
+            )
+        else:
+            print("Awaiting FAILED. No job has finished successfully.")
+        GHActions.print_in_group(
+            "Remaining jobs:",
+            [f"{job}:{params['batches']}" for job, params in jobs_with_params.items()],
+        )
+        return await_finished
 
 
 def get_check_name(check_name: str, batch: int, num_batches: int) -> str:
@@ -734,12 +816,6 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         default=False,
         help="skip fetching data about job runs, used in --configure action (for debugging and nigthly ci)",
     )
-    parser.add_argument(
-        "--rebuild-all-docker",
-        action="store_true",
-        default=False,
-        help="will create run config for rebuilding all dockers, used in --configure action (for nightly docker job)",
-    )
     # FIXME: remove, not used
     parser.add_argument(
         "--rebuild-all-binaries",
@@ -838,7 +914,10 @@ def _pre_action(s3, indata, pr_info):
     ci_cache = CiCache(s3, indata["jobs_data"]["digests"])
 
     # for release/master branches reports must be from the same branches
-    report_prefix = pr_info.head_ref if pr_info.number == 0 else ""
+    report_prefix = normalize_string(pr_info.head_ref) if pr_info.number == 0 else ""
+    print(
+        f"Use report prefix [{report_prefix}], pr_num [{pr_info.number}], head_ref [{pr_info.head_ref}]"
+    )
     reports_files = ci_cache.download_build_reports(file_prefix=report_prefix)
     print(f"Pre action done. Report files [{reports_files}] have been downloaded")
 
@@ -865,7 +944,7 @@ def _mark_success_action(
         # there is no status for build jobs
         # create dummy success to mark it as done
         # FIXME: consider creating commit status for build jobs too, to treat everything the same way
-        CommitStatusData("success", "dummy description", "dummy_url").dump_status()
+        CommitStatusData(SUCCESS, "dummy description", "dummy_url").dump_status()
 
     job_status = None
     if CommitStatusData.exist():
@@ -889,8 +968,19 @@ def _mark_success_action(
                 job, batch, num_batches, job_status, pr_info.is_release_branch()
             )
             print(f"Job [{job}] is ok")
-        elif job_status:
-            print(f"Job [{job}] is not ok, status [{job_status.status}]")
+        elif job_status and not job_status.is_ok():
+            ci_cache.push_failed(
+                job, batch, num_batches, job_status, pr_info.is_release_branch()
+            )
+            print(f"Job [{job}] is failed with status [{job_status.status}]")
+        else:
+            job_status = CommitStatusData(
+                description="dummy description", status=ERROR, report_url="dummy url"
+            )
+            ci_cache.push_failed(
+                job, batch, num_batches, job_status, pr_info.is_release_branch()
+            )
+            print(f"No CommitStatusData for [{job}], push dummy failure to ci_cache")
 
 
 def _print_results(result: Any, outfile: Optional[str], pretty: bool = False) -> None:
@@ -939,9 +1029,7 @@ def _update_config_for_docs_only(jobs_data: dict) -> None:
     }
 
 
-def _configure_docker_jobs(
-    rebuild_all_dockers: bool, docker_digest_or_latest: bool = False
-) -> Dict:
+def _configure_docker_jobs(docker_digest_or_latest: bool) -> Dict:
     print("::group::Docker images check")
     # generate docker jobs data
     docker_digester = DockerDigester()
@@ -950,50 +1038,33 @@ def _configure_docker_jobs(
     )  # 'image name - digest' mapping
     images_info = docker_images_helper.get_images_info()
 
-    # a. check missing images
-    if not rebuild_all_dockers:
-        # FIXME: we need login as docker manifest inspect goes directly to one of the *.docker.com hosts instead of "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
-        #         find if it's possible to use the setting of /etc/docker/daemon.json
-        docker_images_helper.docker_login()
-        missing_multi_dict = check_missing_images_on_dockerhub(imagename_digest_dict)
-        missing_multi = list(missing_multi_dict)
-        missing_amd64 = []
-        missing_aarch64 = []
-        if not docker_digest_or_latest:
-            # look for missing arm and amd images only among missing multiarch manifests @missing_multi_dict
-            # to avoid extra dockerhub api calls
-            missing_amd64 = list(
-                check_missing_images_on_dockerhub(missing_multi_dict, "amd64")
-            )
-            # FIXME: WA until full arm support: skip not supported arm images
-            missing_aarch64 = list(
-                check_missing_images_on_dockerhub(
-                    {
-                        im: digest
-                        for im, digest in missing_multi_dict.items()
-                        if not images_info[im]["only_amd64"]
-                    },
-                    "aarch64",
-                )
-            )
-        # FIXME: temporary hack, remove after transition to docker digest as tag
-        else:
-            if missing_multi:
-                print(
-                    f"WARNING: Missing images {list(missing_multi)} - fallback to latest tag"
-                )
-                for image in missing_multi:
-                    imagename_digest_dict[image] = "latest"
-    else:
-        # add all images to missing
-        missing_multi = list(imagename_digest_dict)
-        missing_amd64 = missing_multi
+    # FIXME: we need login as docker manifest inspect goes directly to one of the *.docker.com hosts instead of "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
+    #   find if it's possible to use the setting of /etc/docker/daemon.json (https://github.com/docker/cli/issues/4484#issuecomment-1688095463)
+    docker_images_helper.docker_login()
+    missing_multi_dict = check_missing_images_on_dockerhub(imagename_digest_dict)
+    missing_multi = list(missing_multi_dict)
+    missing_amd64 = []
+    missing_aarch64 = []
+    if not docker_digest_or_latest:
+        # look for missing arm and amd images only among missing multiarch manifests @missing_multi_dict
+        # to avoid extra dockerhub api calls
+        missing_amd64 = list(
+            check_missing_images_on_dockerhub(missing_multi_dict, "amd64")
+        )
         # FIXME: WA until full arm support: skip not supported arm images
-        missing_aarch64 = [
-            name
-            for name in imagename_digest_dict
-            if not images_info[name]["only_amd64"]
-        ]
+        missing_aarch64 = list(
+            check_missing_images_on_dockerhub(
+                {
+                    im: digest
+                    for im, digest in missing_multi_dict.items()
+                    if not images_info[im]["only_amd64"]
+                },
+                "aarch64",
+            )
+        )
+    else:
+        if missing_multi:
+            assert False, f"Missing images [{missing_multi}], cannot proceed"
     print("::endgroup::")
 
     return {
@@ -1017,8 +1088,8 @@ def _configure_jobs(
     jobs_to_do: List[str] = []
     jobs_to_skip: List[str] = []
     digests: Dict[str, str] = {}
-    print("::group::Job Digests")
 
+    print("::group::Job Digests")
     for job in CI_CONFIG.job_generator():
         digest = job_digester.get_job_digest(CI_CONFIG.get_digest_config(job))
         digests[job] = digest
@@ -1028,7 +1099,8 @@ def _configure_jobs(
     ## b. check what we need to run
     ci_cache = None
     if not ci_cache_disabled:
-        ci_cache = CiCache(s3, digests)
+        ci_cache = CiCache(s3, digests).update()
+        ci_cache.print_status()
 
     jobs_to_wait: Dict[str, Dict[str, Any]] = {}
 
@@ -1037,9 +1109,12 @@ def _configure_jobs(
         job_config = CI_CONFIG.get_job_config(job)
         num_batches: int = job_config.num_batches
         batches_to_do: List[int] = []
+        add_to_skip = False
 
         for batch in range(num_batches):  # type: ignore
             if job_config.pr_only and pr_info.is_release_branch():
+                continue
+            if job_config.release_only and not pr_info.is_release_branch():
                 continue
             if job_config.run_by_label:
                 # this job controlled by label, add to todo if its label is set in pr
@@ -1061,7 +1136,13 @@ def _configure_jobs(
                 batches_to_do.append(batch)
 
                 # check if it's pending in the cache
-                if ci_cache.is_pending(job, batch, num_batches, release_branch=False):
+                if ci_cache.is_pending(
+                    job,
+                    batch,
+                    num_batches,
+                    release_branch=pr_info.is_release_branch()
+                    and job_config.required_on_release_branch,
+                ):
                     if job in jobs_to_wait:
                         jobs_to_wait[job]["batches"].append(batch)
                     else:
@@ -1069,15 +1150,18 @@ def _configure_jobs(
                             "batches": [batch],
                             "num_batches": num_batches,
                         }
+            else:
+                add_to_skip = True
 
         if batches_to_do:
             jobs_to_do.append(job)
-            jobs_params[job] = {
-                "batches": batches_to_do,
-                "num_batches": num_batches,
-            }
-        else:
+        elif add_to_skip:
+            # treat job as being skipped only if it's controlled by digest
             jobs_to_skip.append(job)
+        jobs_params[job] = {
+            "batches": batches_to_do,
+            "num_batches": num_batches,
+        }
 
     ## c. check CI controlling labels and commit messages
     if pr_info.labels:
@@ -1136,18 +1220,36 @@ def _configure_jobs(
                 f"NOTE: Only specific job(s) were requested by commit message tokens: [{jobs_to_do_requested}]"
             )
             jobs_to_do = list(
-                set(job for job in jobs_to_do_requested if job in jobs_to_do)
+                set(job for job in jobs_to_do_requested if job not in jobs_to_skip)
             )
 
     return {
         "digests": digests,
         "jobs_to_do": jobs_to_do,
         "jobs_to_skip": jobs_to_skip,
-        "jobs_to_wait": jobs_to_wait,
+        "jobs_to_wait": {
+            job: params for job, params in jobs_to_wait.items() if job in jobs_to_do
+        },
         "jobs_params": {
             job: params for job, params in jobs_params.items() if job in jobs_to_do
         },
     }
+
+
+def _create_gh_status(
+    commit: Any, job: str, batch: int, num_batches: int, job_status: CommitStatusData
+) -> None:
+    print(f"Going to re-create GH status for job [{job}]")
+    assert job_status.status == SUCCESS, "BUG!"
+    commit.create_status(
+        state=job_status.status,
+        target_url=job_status.report_url,
+        description=format_description(
+            f"Reused from [{job_status.pr_num}-{job_status.sha[0:8]}]: "
+            f"{job_status.description}"
+        ),
+        context=get_check_name(job, batch=batch, num_batches=num_batches),
+    )
 
 
 def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
@@ -1155,37 +1257,34 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
         print("CI cache is disabled - skip restoring commit statuses from CI cache")
         return
     job_digests = indata["jobs_data"]["digests"]
-    ci_cache = CiCache(s3, job_digests).update().fetch_records_data()
+    jobs_to_skip = indata["jobs_data"]["jobs_to_skip"]
+    jobs_to_do = indata["jobs_data"]["jobs_to_do"]
+    ci_cache = CiCache(s3, job_digests).update().fetch_records_data().print_status()
 
     # create GH status
     pr_info = PRInfo()
     commit = get_commit(Github(get_best_robot_token(), per_page=100), pr_info.sha)
 
-    def _run_create_status(job: str, batch: int, num_batches: int) -> None:
+    def _concurrent_create_status(job: str, batch: int, num_batches: int) -> None:
         job_status = ci_cache.get_successful(job, batch, num_batches)
         if not job_status:
             return
-        print(f"Going to re-create GH status for job [{job}] sha [{pr_info.sha}]")
-        assert job_status.status == "success", "BUG!"
-        commit.create_status(
-            state=job_status.status,
-            target_url=job_status.report_url,
-            description=format_description(
-                f"Reused from [{job_status.pr_num}-{job_status.sha[0:8]}]: "
-                f"{job_status.description}"
-            ),
-            context=get_check_name(job, batch=batch, num_batches=num_batches),
-        )
+        _create_gh_status(commit, job, batch, num_batches, job_status)
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = []
         for job in job_digests:
+            if job not in jobs_to_skip and job not in jobs_to_do:
+                # no need to create status for job that are not supposed to be executed
+                continue
             if CI_CONFIG.is_build_job(job):
                 # no GH status for build jobs
                 continue
             num_batches = CI_CONFIG.get_job_config(job).num_batches
             for batch in range(num_batches):
-                future = executor.submit(_run_create_status, job, batch, num_batches)
+                future = executor.submit(
+                    _concurrent_create_status, job, batch, num_batches
+                )
                 futures.append(future)
         done, _ = concurrent.futures.wait(futures)
         for future in done:
@@ -1218,7 +1317,7 @@ def _upload_build_artifacts(
         (
             get_release_or_pr(pr_info, get_version_from_repo())[1],
             pr_info.sha,
-            CI_CONFIG.normalize_string(build_name),
+            normalize_string(build_name),
             "performance.tar.zst",
         )
     )
@@ -1501,9 +1600,7 @@ def main() -> int:
         print(f"Got CH version for this commit: [{version}]")
 
         docker_data = (
-            _configure_docker_jobs(
-                args.rebuild_all_docker, args.docker_digest_or_latest
-            )
+            _configure_docker_jobs(args.docker_digest_or_latest)
             if not args.skip_docker
             else {}
         )
@@ -1527,38 +1624,59 @@ def main() -> int:
             else {}
         )
 
-        # FIXME: Early style check manipulates with job names might be not robust with await feature
-        if pr_info.number != 0 and not args.docker_digest_or_latest:
-            # FIXME: it runs style check before docker build if possible (style-check images is not changed)
-            #    find a way to do style check always before docker build and others
-            _check_and_update_for_early_style_check(jobs_data, docker_data)
-        if args.skip_jobs and pr_info.has_changes_in_documentation_only():
+        # # FIXME: Early style check manipulates with job names might be not robust with await feature
+        # if pr_info.number != 0:
+        #     # FIXME: it runs style check before docker build if possible (style-check images is not changed)
+        #     #    find a way to do style check always before docker build and others
+        #     _check_and_update_for_early_style_check(jobs_data, docker_data)
+        if not args.skip_jobs and pr_info.has_changes_in_documentation_only():
             _update_config_for_docs_only(jobs_data)
 
-        # TODO: await pending jobs
-        # wait for pending jobs to be finished, await_jobs is a long blocking call if any job has to be awaited
-        ci_cache = CiCache(s3, jobs_data["digests"])
-        # awaited_jobs = ci_cache.await_jobs(jobs_data.get("jobs_to_wait", {}))
-        # for job in awaited_jobs:
-        #     jobs_to_do = jobs_data["jobs_to_do"]
-        #     if job in jobs_to_do:
-        #         jobs_to_do.remove(job)
-        #     else:
-        #         assert False, "BUG"
+        if not args.skip_jobs:
+            ci_cache = CiCache(s3, jobs_data["digests"])
 
-        # set planned jobs as pending in the CI cache if on the master
-        if pr_info.is_master():
-            for job in jobs_data["jobs_to_do"]:
-                config = CI_CONFIG.get_job_config(job)
-                if config.run_always or config.run_by_label:
-                    continue
-                job_params = jobs_data["jobs_params"][job]
-                ci_cache.push_pending(
-                    job,
-                    job_params["batches"],
-                    config.num_batches,
-                    release_branch=pr_info.is_release_branch(),
+            if (
+                pr_info.is_release_branch()
+                or pr_info.event.get("pull_request", {})
+                .get("user", {})
+                .get("login", "not_maxknv")
+                == "maxknv"
+            ):
+                # wait for pending jobs to be finished, await_jobs is a long blocking call
+                # wait pending jobs (for now only on release/master branches)
+                ready_jobs_batches_dict = ci_cache.await_jobs(
+                    jobs_data.get("jobs_to_wait", {}), pr_info.is_release_branch()
                 )
+                jobs_to_do = jobs_data["jobs_to_do"]
+                jobs_to_skip = jobs_data["jobs_to_skip"]
+                jobs_params = jobs_data["jobs_params"]
+                for job, batches in ready_jobs_batches_dict.items():
+                    if job not in jobs_params:
+                        print(f"WARNING: Job [{job}] is not in the params list")
+                        continue
+                    for batch in batches:
+                        jobs_params[job]["batches"].remove(batch)
+                    if not jobs_params[job]["batches"]:
+                        jobs_to_do.remove(job)
+                        jobs_to_skip.append(job)
+                        del jobs_params[job]
+
+            # set planned jobs as pending in the CI cache if on the master
+            if pr_info.is_master():
+                for job in jobs_data["jobs_to_do"]:
+                    config = CI_CONFIG.get_job_config(job)
+                    if config.run_always or config.run_by_label:
+                        continue
+                    job_params = jobs_data["jobs_params"][job]
+                    ci_cache.push_pending(
+                        job,
+                        job_params["batches"],
+                        config.num_batches,
+                        release_branch=pr_info.is_release_branch(),
+                    )
+
+            if "jobs_to_wait" in jobs_data:
+                del jobs_data["jobs_to_wait"]
 
         # conclude results
         result["git_ref"] = git_ref
@@ -1634,23 +1752,15 @@ def main() -> int:
                         check_name, args.batch, job_config.num_batches
                     )
                     assert job_status, "BUG"
-                    commit.create_status(
-                        state=job_status.status,
-                        target_url=job_status.report_url,
-                        description=format_description(
-                            f"Reused from [{job_status.pr_num}-{job_status.sha[0:8]}]: "
-                            f"{job_status.description}"
-                        ),
-                        context=get_check_name(
-                            check_name,
-                            batch=args.batch,
-                            num_batches=job_config.num_batches,
-                        ),
+                    _create_gh_status(
+                        commit,
+                        check_name,
+                        args.batch,
+                        job_config.num_batches,
+                        job_status,
                     )
                     previous_status = job_status.status
-                    print("::group::Commit Status Data")
-                    print(job_status)
-                    print("::endgroup::")
+                    GHActions.print_in_group("Commit Status Data", job_status)
 
         if previous_status:
             print(
@@ -1674,7 +1784,7 @@ def main() -> int:
             if CI_CONFIG.is_build_job(args.job_name):
                 assert (
                     indata
-                ), "--infile with config must be provided for POST action of a build type job [{args.job_name}]"
+                ), f"--infile with config must be provided for POST action of a build type job [{args.job_name}]"
                 build_name = args.job_name
                 s3_path_prefix = "/".join(
                     (
@@ -1702,7 +1812,7 @@ def main() -> int:
                     (
                         get_release_or_pr(pr_info, get_version_from_repo())[0],
                         pr_info.sha,
-                        CI_CONFIG.normalize_string(
+                        normalize_string(
                             job_report.check_name or _get_ext_check_name(args.job_name)
                         ),
                     )

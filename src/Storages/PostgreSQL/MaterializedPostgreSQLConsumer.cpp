@@ -313,7 +313,7 @@ void MaterializedPostgreSQLConsumer::readTupleData(
                 Int32 col_len = readInt32(message, pos, size);
                 String value;
                 for (Int32 i = 0; i < col_len; ++i)
-                    value += readInt8(message, pos, size);
+                    value += static_cast<char>(readInt8(message, pos, size));
 
                 insertValue(storage_data, value, column_idx);
                 break;

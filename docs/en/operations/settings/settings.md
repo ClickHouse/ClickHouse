@@ -1922,7 +1922,7 @@ Possible values:
 - Positive integer.
 - 0 — Asynchronous insertions are disabled.
 
-Default value: `100000`.
+Default value: `1000000`.
 
 ### async_insert_max_query_number {#async-insert-max-query-number}
 
@@ -2097,7 +2097,7 @@ SELECT * FROM test_table
 
 ## update_insert_deduplication_token_in_dependent_materialized_views {#update-insert-deduplication-token-in-dependent-materialized-views}
 
-Allows to update `insert_deduplication_token` with table identifier during insert in dependent materialized views, if setting `deduplicate_blocks_in_dependent_materialized_views` is enabled and `insert_deduplication_token` is set.
+Allows to update `insert_deduplication_token` with view identifier during insert in dependent materialized views, if setting `deduplicate_blocks_in_dependent_materialized_views` is enabled and `insert_deduplication_token` is set.
 
 Possible values:
 

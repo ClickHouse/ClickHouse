@@ -785,6 +785,15 @@ jobs:
       test_name: Integration tests (release)
       runner_type: stress-tester
       data: ${{ needs.RunConfig.outputs.data }}
+  IntegrationTestsAarch64:
+    needs: [RunConfig, BuilderDebAarch64]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Integration tests (aarch64)
+      # FIXME: there is no stress-tester for aarch64. func-tester-aarch64 is ok?
+      runner_type: func-tester-aarch64
+      data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsFlakyCheck:
     needs: [RunConfig, BuilderDebAsan]
     if: ${{ !failure() && !cancelled() }}
@@ -924,6 +933,7 @@ jobs:
       - IntegrationTestsAnalyzerAsan
       - IntegrationTestsTsan
       - IntegrationTestsRelease
+      - IntegrationTestsAarch64
       - IntegrationTestsFlakyCheck
       - PerformanceComparisonX86
       - PerformanceComparisonAarch
@@ -992,7 +1002,7 @@ jobs:
 ####################################### libFuzzer ###########################################
 #############################################################################################
   libFuzzer:
-    if: ${{ !failure() && !cancelled() && contains(github.event.pull_request.labels.*.name, 'libFuzzer') }}
+    if: ${{ !failure() && !cancelled() }}
     needs: [RunConfig, StyleCheck]
     uses: ./.github/workflows/libfuzzer.yml
     with:
