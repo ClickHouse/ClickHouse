@@ -9,10 +9,12 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/System/StorageSystemNumbers.h>
+#include <fmt/format.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
 
 #include <Common/logger_useful.h>
+#include "base/types.h"
 
 namespace DB
 {
@@ -28,13 +30,13 @@ namespace
 class NumbersSource : public ISource
 {
 public:
-    NumbersSource(UInt64 block_size_, UInt64 offset_, UInt64 step_, const std::string & column_name, UInt64 inner_step_)
+    NumbersSource(UInt64 block_size_, UInt64 offset_, UInt64 chunk_step_, const std::string & column_name, UInt64 step_, UInt64 remainder_)
         : ISource(createHeader(column_name))
         , block_size(block_size_)
         , next(offset_)
+        , chunk_step(chunk_step_)
         , step(step_)
-        , inner_step(inner_step_)
-        , inner_remainder(offset_ % inner_step_)
+        , remainder(remainder_)
     {
     }
     String getName() const override { return "Numbers"; }
@@ -48,25 +50,33 @@ protected:
     Chunk generate() override
     {
         UInt64 curr = next; /// The local variable for some reason works faster (>20%) than member of class.
-        UInt64 first_element = (curr / inner_step) * inner_step + inner_remainder;
-        if (first_element < curr)
-            first_element += inner_step;
-        UInt64 filtered_block_size = 0;
+        UInt64 first_element = (curr / step) * step;
+        if (first_element > std::numeric_limits<UInt64>::max() - remainder) {
+            auto column = ColumnUInt64::create(0);
+            return {Columns{std::move(column)}, 0};
+        }
+        first_element += remainder;
+        if (first_element < curr) {
+            if (first_element > std::numeric_limits<UInt64>::max() - step) {
+                auto column = ColumnUInt64::create(0);
+                return {Columns{std::move(column)}, 0};
+            }
+            first_element += step;
+        }
         if (first_element - curr >= block_size)
         {
             auto column = ColumnUInt64::create(0);
-            return {Columns{std::move(column)}, filtered_block_size};
+            return {Columns{std::move(column)}, 0};
         }
-        if (first_element - curr < block_size)
-            filtered_block_size = (block_size - (first_element - curr) - 1) / inner_step + 1;
+        UInt64 filtered_block_size = (block_size - (first_element - curr) - 1) / step + 1;
 
         auto column = ColumnUInt64::create(filtered_block_size);
         ColumnUInt64::Container & vec = column->getData();
         UInt64 * pos = vec.data(); /// This also accelerates the code.
         UInt64 * end = &vec[filtered_block_size];
-        iota_with_step(pos, static_cast<size_t>(end - pos), first_element, inner_step);
+        iota_with_step(pos, static_cast<size_t>(end - pos), first_element, step);
 
-        next += step;
+        next += chunk_step;
 
         progress(column->size(), column->byteSize());
 
@@ -76,9 +86,9 @@ protected:
 private:
     UInt64 block_size;
     UInt64 next;
+    UInt64 chunk_step;
     UInt64 step;
-    UInt64 inner_step;
-    UInt64 inner_remainder;
+    UInt64 remainder;
 };
 
 struct RangeWithStep
@@ -565,7 +575,8 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             numbers_storage.offset + i * max_block_size,
             num_streams * max_block_size,
             numbers_storage.column_name,
-            numbers_storage.step);
+            numbers_storage.step, 
+            numbers_storage.offset % numbers_storage.step);
 
         if (numbers_storage.limit && i == 0)
         {
