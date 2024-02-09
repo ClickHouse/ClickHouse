@@ -3,10 +3,11 @@
 #include "config.h"
 
 #if USE_GRPC
+
+#include "clickhouse_grpc.grpc.pb.h"
 #include <Poco/Net/SocketAddress.h>
 #include <base/types.h>
 #include <Common/Logger.h>
-#include "clickhouse_grpc.grpc.pb.h"
 
 namespace Poco { class Logger; }
 
