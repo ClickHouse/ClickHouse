@@ -786,7 +786,7 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     projection.clear();
     NamesAndTypes projection_columns;
 
-    // Select only required columns from the table, because prjection list may contain:
+    // Select only required columns from the table, because projection list may contain:
     // 1. aggregate functions
     // 2. expressions referencing other tables of JOIN
     for (auto const & column_name : required_column_names)
