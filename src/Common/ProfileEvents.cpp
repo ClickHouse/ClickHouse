@@ -91,12 +91,14 @@
     M(GlobalThreadPoolThreadCreationMicroseconds, "Total time spent waiting for new threads to start.") \
     M(GlobalThreadPoolLockWaitMicroseconds,  "Total time threads have spent waiting for locks in the global thread pool.") \
     M(GlobalThreadPoolJobs, "Counts the number of jobs that have been pushed to the global thread pool.") \
+    M(GlobalThreadPoolJobWaitTimeMicroseconds, "Measures the elapsed time from when a job is scheduled in the thread pool to when it is picked up for execution by a worker thread. This metric helps identify delays in job processing, indicating the responsiveness of the thread pool to new tasks.") \
     M(LocalThreadPoolExpansions, "Counts the total number of times threads have been borrowed from the global thread pool to expand local thread pools.") \
     M(LocalThreadPoolShrinks,  "Counts the total number of times threads have been returned to the global thread pool from local thread pools.") \
     M(LocalThreadPoolThreadCreationMicroseconds, "Total time local thread pools have spent waiting to borrow a thread from the global pool.") \
     M(LocalThreadPoolLockWaitMicroseconds, "Total time threads have spent waiting for locks in the local thread pools.") \
     M(LocalThreadPoolJobs, "Counts the number of jobs that have been pushed to the local thread pools.") \
     M(LocalThreadPoolBusyMicroseconds, "Total time threads have spent executing the actual work.") \
+    M(LocalThreadPoolJobWaitTimeMicroseconds, "Measures the elapsed time from when a job is scheduled in the thread pool to when it is picked up for execution by a worker thread. This metric helps identify delays in job processing, indicating the responsiveness of the thread pool to new tasks.") \
     \
     M(DiskS3GetRequestThrottlerCount, "Number of DiskS3 GET and SELECT requests passed through throttler.") \
     M(DiskS3GetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform DiskS3 GET and SELECT request throttling.") \

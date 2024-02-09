@@ -35,6 +35,7 @@ namespace ProfileEvents
     extern const Event GlobalThreadPoolThreadCreationMicroseconds;
     extern const Event GlobalThreadPoolLockWaitMicroseconds;
     extern const Event GlobalThreadPoolJobs;
+    extern const Event GlobalThreadPoolJobWaitTimeMicroseconds;
 
     extern const Event LocalThreadPoolExpansions;
     extern const Event LocalThreadPoolShrinks;
@@ -42,6 +43,8 @@ namespace ProfileEvents
     extern const Event LocalThreadPoolLockWaitMicroseconds;
     extern const Event LocalThreadPoolJobs;
     extern const Event LocalThreadPoolBusyMicroseconds;
+    extern const Event LocalThreadPoolJobWaitTimeMicroseconds;
+
 }
 
 class JobWithPriority
@@ -57,6 +60,7 @@ public:
     /// Call stacks of all jobs' schedulings leading to this one
     std::vector<StackTrace::FramePointers> frame_pointers;
     bool enable_job_stack_trace = false;
+    Stopwatch job_create_time;
 
     JobWithPriority(
         Job job_, Priority priority_, CurrentMetrics::Metric metric,
@@ -76,6 +80,13 @@ public:
     {
         return priority > rhs.priority; // Reversed for `priority_queue` max-heap to yield minimum value (i.e. highest priority) first
     }
+
+    UInt64 elapsedMicroseconds() const
+    {
+        return job_create_time.elapsedMicroseconds();
+    }
+
+
 };
 
 static constexpr auto DEFAULT_THREAD_NAME = "ThreadPool";
@@ -482,6 +493,10 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
             /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority.
             job_data = std::move(const_cast<JobWithPriority &>(jobs.top()));
             jobs.pop();
+
+            ProfileEvents::increment(
+                std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolJobWaitTimeMicroseconds : ProfileEvents::LocalThreadPoolJobWaitTimeMicroseconds,
+                job_data->elapsedMicroseconds());
 
             /// We don't run jobs after `shutdown` is set, but we have to properly dequeue all jobs and finish them.
             if (shutdown)
