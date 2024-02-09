@@ -3,7 +3,6 @@
 #include <Columns/Collator.h>
 #include <Core/ServerSettings.h>
 #include <IO/Operators.h>
-#include <Interpreters/Context.h>
 #include <base/EnumReflection.h>
 #include <Common/quoteString.h>
 

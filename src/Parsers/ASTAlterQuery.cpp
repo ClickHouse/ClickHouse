@@ -2,7 +2,6 @@
 
 #include <Core/ServerSettings.h>
 #include <IO/Operators.h>
-#include <Interpreters/Context.h>
 #include <Common/quoteString.h>
 
 
@@ -71,9 +70,7 @@ ASTPtr ASTAlterCommand::clone() const
 
 void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    const auto format_with_parens = Context::getGlobalContextInstance()->getServerSettings().format_alter_operations_with_parentheses.value;
-
-    if (format_with_parens)
+    if (format_alter_commands_with_parentheses)
         settings.ostr << "(";
 
     if (type == ASTAlterCommand::ADD_COLUMN)
@@ -479,7 +476,7 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
 
-    if (format_with_parens)
+    if (format_alter_commands_with_parentheses)
         settings.ostr << ")";
 }
 
