@@ -176,7 +176,7 @@ LibArchiveWriter::LibArchiveWriter(const String & path_to_archive_, std::unique_
     if (archive_write_buffer_)
     {
         stream_info = std::make_unique<StreamInfo>(std::move(archive_write_buffer_));
-        archive_write_open2(a, &(*stream_info), nullptr, &StreamInfo::memory_write, nullptr, nullptr);
+        archive_write_open2(a, stream_info.get(), nullptr, &StreamInfo::memory_write, nullptr, nullptr);
     }
     else
     {
@@ -187,17 +187,13 @@ LibArchiveWriter::LibArchiveWriter(const String & path_to_archive_, std::unique_
 
 LibArchiveWriter::~LibArchiveWriter()
 {
-    if (!finalized)
-    {
-        if (!std::uncaught_exceptions() && std::current_exception() == nullptr)
+    if (!finalized && !std::uncaught_exceptions() && !std::current_exception())
             chassert(false && "TarArchiveWriter is not finalized in destructor.");
-    }
-
     if (a)
         archive_write_free(a);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> LibArchiveWriter::writeFile(const String & filename, const size_t & size)
+std::unique_ptr<WriteBufferFromFileBase> LibArchiveWriter::writeFile(const String & filename, size_t size)
 {
     return std::make_unique<WriteBufferFromLibArchive>(std::static_pointer_cast<LibArchiveWriter>(shared_from_this()), filename, size);
 }
@@ -245,7 +241,7 @@ void LibArchiveWriter::finalize()
 void LibArchiveWriter::setCompression(const String & compression_method_, int compression_level)
 {
     // throw an error unless setCompression is passed the defualt value
-    if (compression_method_.size() == 0 and compression_level == -1)
+    if (compression_method_.empty() == 0 && compression_level == -1)
     {
             return;
     }
@@ -254,7 +250,7 @@ void LibArchiveWriter::setCompression(const String & compression_method_, int co
 
 void LibArchiveWriter::setPassword([[maybe_unused]] const String & password_)
 {
-    if (password_ == "")
+    if (password_.empty())
         return;
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Setting a password is not currently supported for tar archives");
 }

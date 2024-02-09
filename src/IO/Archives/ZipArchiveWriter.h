@@ -32,7 +32,7 @@ public:
     /// of the function `writeFile()` should be destroyed before next call of `writeFile()`.
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & filename) override;
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & filename, const size_t & size) override;
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & filename, size_t size) override;
 
 
     /// Returns true if there is an active instance of WriteBuffer returned by writeFile().

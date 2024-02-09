@@ -2,7 +2,6 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
-
 #include <IO/Archives/ArchiveUtils.h>
 
 
@@ -42,22 +41,22 @@ class LibArchiveReader::Handle
 {
 public:
     explicit Handle(std::string path_to_archive_, bool lock_on_reading_)
-        : path_to_archive(path_to_archive_), lock_on_reading(lock_on_reading_) 
+        : path_to_archive(std::move(path_to_archive_)), lock_on_reading(lock_on_reading_) 
     {
         current_archive = openWithPath(path_to_archive);
     }
     explicit Handle(std::string path_to_archive_, bool lock_on_reading_, const ReadArchiveFunction & archive_read_function_)
-        : path_to_archive(path_to_archive_), archive_read_function(archive_read_function_), lock_on_reading(lock_on_reading_) 
+        : path_to_archive(std::move(path_to_archive_)), archive_read_function(archive_read_function_), lock_on_reading(lock_on_reading_) 
     {
         read_stream = std::make_unique<StreamInfo>(archive_read_function());
-        current_archive = openWithReader(&(*read_stream));
+        current_archive = openWithReader(read_stream.get());
     }
 
     Handle(const Handle &) = delete;
     Handle(Handle && other) noexcept
-        : current_archive(other.current_archive)
+        : read_stream(std::move(other.read_stream))
+        , current_archive(other.current_archive)
         , current_entry(other.current_entry)
-        , read_stream(std::move(other.read_stream))
         , archive_read_function(std::move(other.archive_read_function))
         , lock_on_reading(other.lock_on_reading)
         
@@ -115,17 +114,8 @@ public:
 
     std::vector<std::string> getAllFiles(NameFilter filter)
     {
-        struct archive * archive;
-        std::unique_ptr<LibArchiveReader::StreamInfo> rs;
-        if(archive_read_function)
-        {
-            rs = std::make_unique<StreamInfo>(archive_read_function());
-            archive = openWithReader(&(*rs));
-        }
-        else
-        {
-               archive = openWithPath(path_to_archive);
-        }
+        std::unique_ptr<LibArchiveReader::StreamInfo> rs = archive_read_function ? std::make_unique<StreamInfo>(archive_read_function()) : nullptr;
+        auto archive = rs ? openWithReader(rs.get()) : openWithPath(path_to_archive);
 
         SCOPE_EXIT(
             close(archive);
@@ -134,7 +124,7 @@ public:
         struct archive_entry * entry = nullptr;
 
         std::vector<std::string> files;
-        int error = readNextHeader(current_archive, &entry);
+        int error = readNextHeader(archive, &entry);
         while (error == ARCHIVE_OK || error == ARCHIVE_RETRY)
         {
             chassert(entry != nullptr);
@@ -176,11 +166,20 @@ public:
         return *file_info;
     }
 
-    struct archive * current_archive;
-    struct archive_entry * current_entry = nullptr;
-    bool valid = true;
+    la_ssize_t readData(void * buf, size_t len)
+    {
+        return archive_read_data(current_archive, buf, len);
+    }
+
+    const char * getArchiveError()
+    {
+        return archive_error_string(current_archive);
+    }
 
 private:
+    using Archive = struct archive *;
+    using Entry = struct archive_entry *;
+
     void checkError(int error) const
     {
         if (error == ARCHIVE_FATAL)
@@ -193,16 +192,7 @@ private:
         file_info.reset();
     }
 
-    static struct archive * openWithReader(StreamInfo * read_stream_)
-    {
-        auto * a = archive_read_new();
-        archive_read_support_filter_all(a);
-        archive_read_support_format_all(a);
-        archive_read_open(a, read_stream_, nullptr, StreamInfo::read, nullptr);
-        return a;
-    }
-
-    static struct archive * openWithPath(const String & path_to_archive)
+    Archive openWithReader(StreamInfo * read_stream_)
     {
         auto * archive = archive_read_new();
         try
@@ -230,7 +220,26 @@ private:
         return archive;
     }
 
-    static void close(struct archive * archive)
+    Archive openWithPath(const String & path_to_archive_)
+    {
+        auto * archive = archive_read_new();
+        try
+        {
+            archive_read_support_filter_all(archive);
+            archive_read_support_format_all(archive);
+            if (archive_read_open_filename(archive, path_to_archive_.c_str(), 10240) != ARCHIVE_OK)
+                throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't open archive {}: {}", quoteString(path_to_archive), archive_error_string(archive));
+        }
+        catch (...)
+        {
+            close(archive);
+            throw;
+        }
+
+        return archive;
+    }
+
+    static void close(Archive archive)
     {
         if (archive)
         {
@@ -248,9 +257,12 @@ private:
         return archive_read_next_header(archive, entry);
     }
 
-    const String path_to_archive;
-    std::unique_ptr<StreamInfo> read_stream = nullptr;
-    const IArchiveReader::ReadArchiveFunction archive_read_function;
+    String path_to_archive;
+    std::unique_ptr<StreamInfo> read_stream;
+    Archive current_archive;
+    Entry current_entry = nullptr;
+    bool valid = true;
+    IArchiveReader::ReadArchiveFunction archive_read_function;
 
     /// for some archive types when we are reading headers static variables are used
     /// which are not thread-safe
@@ -307,10 +319,9 @@ public:
 private:
     bool nextImpl() override
     {
-        auto bytes_read = archive_read_data(handle.current_archive, internal_buffer.begin(), static_cast<int>(internal_buffer.size()));
-
+        auto bytes_read = handle.readData(internal_buffer.begin(), internal_buffer.size());
         if (bytes_read < 0)
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to read file {} from {}: {}", handle.getFileName(), path_to_archive, archive_error_string(handle.current_archive));
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to read file {} from {}: {}", handle.getFileName(), path_to_archive, handle.getArchiveError());
 
         if (!bytes_read)
             return false;
@@ -440,17 +451,14 @@ std::vector<std::string> LibArchiveReader::getAllFiles(NameFilter filter)
 
 void LibArchiveReader::setPassword([[maybe_unused]] const String & password_)
 {
-    if (password_ != "")
+    if (password_.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not set password to {} archive", archive_name);
 }
 
 LibArchiveReader::Handle LibArchiveReader::acquireHandle()
 {
     std::lock_guard lock{mutex};
-    if (archive_read_function)
-        return Handle{path_to_archive, lock_on_reading, archive_read_function};
-    else
-        return Handle{path_to_archive, lock_on_reading};
+    return archive_read_function ? Handle{path_to_archive, lock_on_reading, archive_read_function} : Handle{path_to_archive, lock_on_reading};
 }
 
 #endif

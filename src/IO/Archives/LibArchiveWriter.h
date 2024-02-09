@@ -35,7 +35,7 @@ public:
     /// passed in the the archive writer tries to infer the size by looking at the available
     /// data in the buffer, if next is called before all data is written to the buffer
     /// an exception is thrown.
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & filename, const size_t & size) override;
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & filename, size_t size) override;
 
 
     /// Returns true if there is an active instance of WriteBuffer returned by writeFile().

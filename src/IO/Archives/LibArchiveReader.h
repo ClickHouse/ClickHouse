@@ -3,6 +3,7 @@
 #include "config.h"
 #include <mutex>
 #include <IO/Archives/IArchiveReader.h>
+#include <IO/Archives/LibArchiveReader.h>
 
 
 namespace DB
