@@ -435,6 +435,8 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     Pipe pipe;
     Ranges ranges;
 
+    // LOG_DEBUG(&Poco::Logger::get("parameters"), "Parameters: {} {} {}", numbers_storage.step, numbers_storage.limit.value(), numbers_storage.offset);
+
     if (numbers_storage.limit.has_value() && (numbers_storage.limit.value() == 0))
     {
         pipe.addSource(std::make_shared<NullSource>(NumbersSource::createHeader(numbers_storage.column_name)));
@@ -476,6 +478,15 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         for (auto & r : ranges)
         {
             auto intersected_range = table_range->intersectWith(r);
+            if (intersected_range.has_value())
+            {
+                auto range_with_step = stepped_range_from_range(
+                    intersected_range.value(), numbers_storage.step, numbers_storage.offset % numbers_storage.step);
+                if (range_with_step.has_value())
+                {
+                    intersected_ranges.push_back(*range_with_step);
+                }
+            }
         }
 
 
