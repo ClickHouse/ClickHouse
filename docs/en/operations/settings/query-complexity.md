@@ -28,7 +28,7 @@ The maximum amount of RAM to use for running a query on a single server.
 
 The default setting is unlimited (set to `0`).
 
-Cloud default value: 17 GB.
+Cloud default value: depends on the amount of RAM on the replica.
 
 The setting does not consider the volume of available memory or the total volume of memory on the machine.
 The restriction applies to a single query within a single server.
@@ -108,7 +108,7 @@ Possible values:
 
 Default value: `0`.
 
-Cloud default value: 8 GB.
+Cloud default value: half the memory amount per replica.
 
 ## max_bytes_before_external_sort {#settings-max_bytes_before_external_sort}
 
@@ -119,7 +119,7 @@ Enables or disables execution of `ORDER BY` clauses in external memory. See [ORD
 
 Default value: 0.
 
-Cloud default value: 8 GB.
+Cloud default value: half the memory amount per replica.
 
 ## max_rows_to_sort {#max-rows-to-sort}
 
@@ -139,7 +139,7 @@ Limit on the number of rows in the result. Also checked for subqueries, and on r
 
 Default value: `0`.
 
-Cloud default value: `500000`.
+Cloud default value: `0`.
 
 ## max_result_bytes {#max-result-bytes}
 
@@ -153,7 +153,7 @@ Using ‘break’ is similar to using LIMIT. `Break` interrupts execution only a
 
 Default value: `throw`.
 
-Cloud default value: `break`.
+Cloud default value: `throw`.
 
 Example:
 
