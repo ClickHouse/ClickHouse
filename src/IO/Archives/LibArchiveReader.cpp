@@ -309,7 +309,6 @@ public:
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getPosition not supported when reading from archive");
     }
-    
     String getFileName() const override { return handle.getFileName(); }
 
     size_t getFileSize() override { return handle.getFileInfo().uncompressed_size; }
