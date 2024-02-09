@@ -77,7 +77,7 @@ StoragePtr TableFunctionGenerateSeries::executeImpl(
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Table function '{}' requires step to be a positive number", getName());
         auto res = (start > stop)
             ? std::make_shared<StorageSystemNumbers>(
-                StorageID(getDatabaseName(), table_name), false, std::string{"generate_series"}, 0, 0, 0)
+                StorageID(getDatabaseName(), table_name), false, std::string{"generate_series"}, 0, 0, 1)
             : std::make_shared<StorageSystemNumbers>(
                 StorageID(getDatabaseName(), table_name), false, std::string{"generate_series"}, (stop - start) + 1, start, step);
         res->startup();
