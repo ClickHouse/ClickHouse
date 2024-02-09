@@ -1,5 +1,7 @@
 -- { echoOn }
 SET limit = 0;
+SELECT name, value, changed FROM system.settings WHERE name='limit' SETTINGS limit=5;
+limit	5	1
 SELECT * FROM numbers(10);
 0
 1
