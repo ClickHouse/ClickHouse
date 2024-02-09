@@ -150,7 +150,7 @@ void ColumnGathererStream::gather(Column & column_res)
     /// Because the column_res.allocatedBytes() could be bigger than block_preferred_size_bytes already at this point.
     do
     {
-        if (row_source_pos < row_sources_end)
+        if (row_source_pos >= row_sources_end)
             break;
 
         RowSourcePart row_source = *row_source_pos;
