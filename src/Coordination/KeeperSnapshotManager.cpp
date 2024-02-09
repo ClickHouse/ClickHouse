@@ -82,7 +82,7 @@ namespace
         writeBinary(node.czxid, out);
         writeBinary(node.mzxid, out);
         writeBinary(node.ctime(), out);
-        writeBinary(node.mtime(), out);
+        writeBinary(node.mtime, out);
         writeBinary(node.version, out);
         writeBinary(node.cversion, out);
         writeBinary(node.aversion, out);
@@ -143,9 +143,7 @@ namespace
         int64_t ctime;
         readBinary(ctime, in);
         node.setCtime(ctime);
-        int64_t mtime;
-        readBinary(mtime, in);
-        node.setMtime(mtime);
+        readBinary(node.mtime, in);
         readBinary(node.version, in);
         readBinary(node.cversion, in);
         readBinary(node.aversion, in);

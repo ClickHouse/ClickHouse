@@ -38,17 +38,13 @@ public:
         int64_t pzxid{0};
         uint64_t acl_id = 0; /// 0 -- no ACL by default
 
-        mutable struct
-        {
-            bool has_cached_digest : 1;
-            int64_t ctime : 63;
-        } has_cached_digest_and_ctime{false, 0};
+        int64_t mtime;
 
         struct
         {
             bool is_ephemeral : 1;
-            int64_t mtime : 63;
-        } is_ephemeral_and_mtime{false, 0};
+            int64_t ctime : 63;
+        } is_ephemeral_and_ctime{false, 0};
 
         union
         {
@@ -60,18 +56,14 @@ public:
             } children_info;
         } ephemeral_or_children_data{0};
 
-        char * data{nullptr};
+        std::unique_ptr<char[]> data{nullptr};
         uint32_t data_size{0};
 
         int32_t version{0};
         int32_t cversion{0};
         int32_t aversion{0};
 
-        /// we cannot use `std::optional<uint64_t> because we want to
-        /// pack the boolean with seq_num above
         mutable uint64_t cached_digest = 0;
-
-        ~Node();
 
         Node() = default;
 
@@ -83,7 +75,7 @@ public:
 
         bool isEphemeral() const
         {
-            return is_ephemeral_and_mtime.is_ephemeral;
+            return is_ephemeral_and_ctime.is_ephemeral;
         }
 
         int64_t ephemeralOwner() const
@@ -96,7 +88,7 @@ public:
 
         void setEphemeralOwner(int64_t ephemeral_owner)
         {
-            is_ephemeral_and_mtime.is_ephemeral = ephemeral_owner != 0;
+            is_ephemeral_and_ctime.is_ephemeral = ephemeral_owner != 0;
             ephemeral_or_children_data.ephemeral_owner = ephemeral_owner;
         }
 
@@ -146,22 +138,12 @@ public:
 
         int64_t ctime() const
         {
-            return has_cached_digest_and_ctime.ctime;
+            return is_ephemeral_and_ctime.ctime;
         }
 
         void setCtime(uint64_t ctime)
         {
-            has_cached_digest_and_ctime.ctime = ctime;
-        }
-
-        int64_t mtime() const
-        {
-            return is_ephemeral_and_mtime.mtime;
-        }
-
-        void setMtime(uint64_t mtime)
-        {
-            is_ephemeral_and_mtime.mtime = mtime;
+            is_ephemeral_and_ctime.ctime = ctime;
         }
 
         void copyStats(const Coordination::Stat & stat);
@@ -173,7 +155,7 @@ public:
 
         void setData(const String & new_data);
 
-        StringRef getData() const noexcept { return {data, data_size}; }
+        StringRef getData() const noexcept { return {data.get(), data_size}; }
 
         void addChild(StringRef child_path);
 
@@ -205,10 +187,11 @@ public:
         NO_DIGEST = 0,
         V1 = 1,
         V2 = 2, // added system nodes that modify the digest on startup so digest from V0 is invalid
-        V3 = 3  // fixed bug with casting, removed duplicate czxid usage
+        V3 = 3, // fixed bug with casting, removed duplicate czxid usage
+        V4 = 4  // 0 is not a valid digest value
     };
 
-    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V3;
+    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V4;
 
     struct ResponseForSession
     {

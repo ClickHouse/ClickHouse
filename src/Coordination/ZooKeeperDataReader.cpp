@@ -114,9 +114,7 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, LoggerP
         int64_t ctime;
         Coordination::read(ctime, in);
         node.setCtime(ctime);
-        int64_t mtime;
-        Coordination::read(mtime, in);
-        node.setMtime(mtime);
+        Coordination::read(node.mtime, in);
         Coordination::read(node.version, in);
         Coordination::read(node.cversion, in);
         Coordination::read(node.aversion, in);

@@ -175,13 +175,13 @@ uint64_t calculateDigest(std::string_view path, const KeeperStorage::Node & node
     if (node.data_size != 0)
     {
         chassert(node.data != nullptr);
-        hash.update(node.data, node.data_size);
+        hash.update(node.getData());
     }
 
     hash.update(node.czxid);
     hash.update(node.mzxid);
     hash.update(node.ctime());
-    hash.update(node.mtime());
+    hash.update(node.mtime);
     hash.update(node.version);
     hash.update(node.cversion);
     hash.update(node.aversion);
@@ -189,15 +189,15 @@ uint64_t calculateDigest(std::string_view path, const KeeperStorage::Node & node
     hash.update(node.numChildren());
     hash.update(node.pzxid);
 
+    auto digest = hash.get64();
+
+    /// 0 means no cached digest
+    if (digest == 0)
+        return 1;
+
     return hash.get64();
 }
 
-}
-
-KeeperStorage::Node::~Node()
-{
-    if (data_size)
-        delete[] data;
 }
 
 KeeperStorage::Node & KeeperStorage::Node::operator=(const Node & other)
@@ -209,8 +209,8 @@ KeeperStorage::Node & KeeperStorage::Node::operator=(const Node & other)
     mzxid = other.mzxid;
     pzxid = other.pzxid;
     acl_id = other.acl_id;
-    has_cached_digest_and_ctime = other.has_cached_digest_and_ctime;
-    is_ephemeral_and_mtime = other.is_ephemeral_and_mtime;
+    mtime = other.mtime;
+    is_ephemeral_and_ctime = other.is_ephemeral_and_ctime;
     ephemeral_or_children_data = other.ephemeral_or_children_data;
     data_size = other.data_size;
     version = other.version;
@@ -219,8 +219,8 @@ KeeperStorage::Node & KeeperStorage::Node::operator=(const Node & other)
 
     if (data_size != 0)
     {
-        data = new char[data_size];
-        memcpy(data, other.data, data_size);
+        data = std::unique_ptr<char[]>(new char[data_size]);
+        memcpy(data.get(), other.data.get(), data_size);
     }
 
     children = other.children;
@@ -244,8 +244,8 @@ void KeeperStorage::Node::copyStats(const Coordination::Stat & stat)
     mzxid = stat.mzxid;
     pzxid = stat.pzxid;
 
+    mtime = stat.mtime;
     setCtime(stat.ctime);
-    setMtime(stat.mtime);
 
     version = stat.version;
     cversion = stat.cversion;
@@ -253,7 +253,7 @@ void KeeperStorage::Node::copyStats(const Coordination::Stat & stat)
 
     if (stat.ephemeralOwner == 0)
     {
-        is_ephemeral_and_mtime.is_ephemeral = false;
+        is_ephemeral_and_ctime.is_ephemeral = false;
         setNumChildren(stat.numChildren);
     }
     else
@@ -267,7 +267,7 @@ void KeeperStorage::Node::setResponseStat(Coordination::Stat & response_stat) co
     response_stat.czxid = czxid;
     response_stat.mzxid = mzxid;
     response_stat.ctime = ctime();
-    response_stat.mtime = mtime();
+    response_stat.mtime = mtime;
     response_stat.version = version;
     response_stat.cversion = cversion;
     response_stat.aversion = aversion;
@@ -288,8 +288,8 @@ void KeeperStorage::Node::setData(const String & new_data)
     data_size = static_cast<uint32_t>(new_data.size());
     if (data_size != 0)
     {
-        data = new char[new_data.size()];
-        memcpy(data, new_data.data(), data_size);
+        data = std::unique_ptr<char[]>(new char[new_data.size()]);
+        memcpy(data.get(), new_data.data(), data_size);
     }
 }
 
@@ -305,16 +305,13 @@ void KeeperStorage::Node::removeChild(StringRef child_path)
 
 void KeeperStorage::Node::invalidateDigestCache() const
 {
-    has_cached_digest_and_ctime.has_cached_digest = false;
+    cached_digest = 0;
 }
 
 UInt64 KeeperStorage::Node::getDigest(const std::string_view path) const
 {
-    if (!has_cached_digest_and_ctime.has_cached_digest)
-    {
+    if (cached_digest == 0)
         cached_digest = calculateDigest(path, *this);
-        has_cached_digest_and_ctime.has_cached_digest = true;
-    }
 
     return cached_digest;
 };
@@ -326,17 +323,17 @@ void KeeperStorage::Node::shallowCopy(const KeeperStorage::Node & other)
     pzxid = other.pzxid;
     acl_id = other.acl_id; /// 0 -- no ACL by default
 
-    has_cached_digest_and_ctime = other.has_cached_digest_and_ctime;
+    mtime = other.mtime;
 
-    is_ephemeral_and_mtime = other.is_ephemeral_and_mtime;
+    is_ephemeral_and_ctime = other.is_ephemeral_and_ctime;
 
     ephemeral_or_children_data = other.ephemeral_or_children_data;
 
     data_size = other.data_size;
     if (data_size != 0)
     {
-        data = new char[data_size];
-        memcpy(data, other.data, data_size);
+        data = std::unique_ptr<char[]>(new char[data_size]);
+        memcpy(data.get(), other.data.get(), data_size);
     }
 
     version = other.version;
@@ -1448,7 +1445,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
                 {
                     value.version++;
                     value.mzxid = zxid;
-                    value.setMtime(time);
+                    value.mtime = time;
                     value.setData(data);
                 },
                 request.version});
