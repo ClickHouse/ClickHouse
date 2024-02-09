@@ -9,7 +9,7 @@ node2 = cluster.add_instance(
     "node2",
     with_zookeeper=True,
     image="clickhouse/clickhouse-server",
-    tag="22.3",
+    tag="23.3",
     with_installed_binary=True,
 )
 
