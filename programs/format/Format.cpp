@@ -150,10 +150,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             return 2;
         }
 
-        SharedContextHolder shared_context = Context::createShared();
-        auto context = Context::createGlobal(shared_context.get());
-        auto context_const = WithContext(context).getContext();
-        context->makeGlobalContext();
 
         String query;
 
