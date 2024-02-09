@@ -139,8 +139,8 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     const auto & context = read_from_merge_tree->getContext();
     const auto & settings = context->getSettingsRef();
 
-    // if (!settings.allow_experimental_analyzer)
-    //     return;
+    if (!settings.allow_experimental_analyzer)
+        return;
 
     bool is_final = read_from_merge_tree->isQueryWithFinal();
     bool optimize_move_to_prewhere = settings.optimize_move_to_prewhere && (!is_final || settings.optimize_move_to_prewhere_if_final);
