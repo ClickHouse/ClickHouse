@@ -75,6 +75,25 @@ T EnumValues<T>::getValue(StringRef field_name, bool try_treat_as_id) const
 }
 
 template <typename T>
+bool EnumValues<T>::tryGetValue(T & x, StringRef field_name, bool try_treat_as_id) const
+{
+    const auto it = name_to_value_map.find(field_name);
+    if (!it)
+    {
+        /// It is used in CSV and TSV input formats. If we fail to find given string in
+        /// enum names, we will try to treat it as enum id.
+        if (try_treat_as_id)
+        {
+            ReadBufferFromMemory tmp_buf(field_name.data, field_name.size);
+            return tryReadText(x, tmp_buf) && tmp_buf.eof() && value_to_name_map.contains(x);
+        }
+        return false;
+    }
+    x = it->getMapped();
+    return true;
+}
+
+template <typename T>
 Names EnumValues<T>::getAllRegisteredNames() const
 {
     Names result;

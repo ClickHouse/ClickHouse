@@ -4,8 +4,8 @@
 
 namespace ProfileEvents
 {
-extern const Event ReadBufferSeekCancelConnection;
-extern const Event ReadWriteBufferFromHTTPPreservedSessions;
+    extern const Event ReadBufferSeekCancelConnection;
+    extern const Event ReadWriteBufferFromHTTPPreservedSessions;
 }
 
 namespace DB
@@ -213,7 +213,7 @@ void ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::getHeadResponse(Poco::Net
         }
         catch (const Poco::Exception & e)
         {
-            if (i == settings.http_max_tries - 1 || !isRetriableError(response.getStatus()))
+            if (i == settings.http_max_tries - 1 || e.code() == ErrorCodes::TOO_MANY_REDIRECTS || !isRetriableError(response.getStatus()))
                 throw;
 
             LOG_ERROR(log, "Failed to make HTTP_HEAD request to {}. Error: {}", uri.toString(), e.displayText());
@@ -265,7 +265,7 @@ ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::ReadWriteBufferFromHTTPBase(
     , file_info(file_info_)
     , http_skip_not_found_url(http_skip_not_found_url_)
     , settings {settings_}
-    , log(&Poco::Logger::get("ReadWriteBufferFromHTTP"))
+    , log(getLogger("ReadWriteBufferFromHTTP"))
     , proxy_config(proxy_config_)
 {
     if (settings.http_max_tries <= 0 || settings.http_retry_initial_backoff_ms <= 0
@@ -541,8 +541,8 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::nextImpl()
         }
         catch (const Poco::Exception & e)
         {
-            /// Too many open files - non-retryable.
-            if (e.code() == POCO_EMFILE)
+            /// Too many open files or redirects - non-retryable.
+            if (e.code() == POCO_EMFILE || e.code() == ErrorCodes::TOO_MANY_REDIRECTS)
                 throw;
 
             /** Retry request unconditionally if nothing has been read yet.

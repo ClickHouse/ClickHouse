@@ -97,7 +97,7 @@ BackupEntriesCollector::BackupEntriesCollector(
     , max_sleep_before_next_attempt_to_collect_metadata(
           context->getConfigRef().getUInt64("backups.max_sleep_before_next_attempt_to_collect_metadata", 5000))
     , compare_collected_metadata(context->getConfigRef().getBool("backups.compare_collected_metadata", true))
-    , log(&Poco::Logger::get("BackupEntriesCollector"))
+    , log(getLogger("BackupEntriesCollector"))
     , global_zookeeper_retries_info(
           context->getSettingsRef().backup_restore_keeper_max_retries,
           context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,

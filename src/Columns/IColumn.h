@@ -34,6 +34,7 @@ class Arena;
 class ColumnGathererStream;
 class Field;
 class WeakHash32;
+class ColumnConst;
 
 /*
  * Represents a set of equal ranges in previous column to perform sorting in current column.
@@ -222,11 +223,11 @@ public:
 
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Returns pointer to the position after the read data.
-    virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
+    [[nodiscard]] virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
 
     /// Skip previously serialized value that was serialized using IColumn::serializeValueIntoArena method.
     /// Returns a pointer to the position after the deserialized data.
-    virtual const char * skipSerializedInArena(const char *) const = 0;
+    [[nodiscard]] virtual const char * skipSerializedInArena(const char *) const = 0;
 
     /// Update state of hash function with value of n-th element.
     /// On subsequent calls of this method for sequence of column values of arbitrary types,
@@ -399,10 +400,7 @@ public:
 
     /// Requests the removal of unused capacity.
     /// It is a non-binding request to reduce the capacity of the underlying container to its size.
-    virtual MutablePtr shrinkToFit() const
-    {
-        return cloneResized(size());
-    }
+    virtual void shrinkToFit() {}
 
     /// If we have another column as a source (owner of data), copy all data to ourself and reset source.
     virtual void ensureOwnership() {}
@@ -462,10 +460,10 @@ public:
 
     /// Returns column with @total_size elements.
     /// In result column values from current column are at positions from @offsets.
-    /// Other values are filled by @default_value.
+    /// Other values are filled by value from @column_with_default_value.
     /// @shift means how much rows to skip from the beginning of current column.
     /// Used to create full column from sparse.
-    [[nodiscard]] virtual Ptr createWithOffsets(const Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const;
+    [[nodiscard]] virtual Ptr createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const;
 
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
@@ -661,5 +659,8 @@ bool isColumnConst(const IColumn & column);
 
 /// True if column's an ColumnNullable instance. It's just a syntax sugar for type check.
 bool isColumnNullable(const IColumn & column);
+
+/// True if column's is ColumnNullable or ColumnLowCardinality with nullable nested column.
+bool isColumnNullableOrLowCardinalityNullable(const IColumn & column);
 
 }

@@ -3,6 +3,8 @@
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 
+#include <Poco/Net/HTTPBasicStreamBuf.h>
+
 
 namespace DB
 {
@@ -11,6 +13,8 @@ class ReadBufferFromIStream : public BufferWithOwnMemory<ReadBuffer>
 {
 private:
     std::istream & istr;
+    Poco::Net::HTTPBasicStreamBuf & stream_buf;
+    bool eof = false;
 
     bool nextImpl() override;
 

@@ -5008,6 +5008,15 @@ def test_multiple_read_in_materialized_views(kafka_cluster, max_retries=15):
     )
     assert res == expected_result
 
+    kafka_delete_topic(admin_client, topic)
+    instance.query(
+        f"""
+        DROP TABLE test.kafka_multiple_read_input;
+        DROP TABLE test.kafka_multiple_read_table;
+        DROP TABLE test.kafka_multiple_read_mv;
+        """
+    )
+
 
 if __name__ == "__main__":
     cluster.start()

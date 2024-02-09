@@ -2,6 +2,7 @@
 
 #include <limits>
 #include <optional>
+#include <fmt/format.h>
 #include <base/defines.h>
 #include <base/scope_guard.h>
 #include <Common/ErrorCodes.h>
@@ -34,11 +35,11 @@ namespace ErrorCodes
 static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
 static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 
-void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch)
+void logAboutProgress(LoggerPtr log, size_t processed, size_t total, AtomicStopwatch & watch)
 {
     if (total && (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS)))
     {
-        LOG_INFO(log, "Processed: {}%", processed * 100.0 / total);
+        LOG_INFO(log, "Processed: {}%", static_cast<Int64>(processed * 1000.0 / total) * 0.1);
         watch.restart();
     }
 }
@@ -195,17 +196,10 @@ void LoadTask::remove()
     }
 }
 
-void LoadTask::detach()
-{
-    jobs.clear();
-    goal_jobs.clear();
-}
-
-
 AsyncLoader::AsyncLoader(std::vector<PoolInitializer> pool_initializers, bool log_failures_, bool log_progress_)
     : log_failures(log_failures_)
     , log_progress(log_progress_)
-    , log(&Poco::Logger::get("AsyncLoader"))
+    , log(getLogger("AsyncLoader"))
 {
     pools.reserve(pool_initializers.size());
     for (auto && init : pool_initializers)
@@ -214,7 +208,22 @@ AsyncLoader::AsyncLoader(std::vector<PoolInitializer> pool_initializers, bool lo
 
 AsyncLoader::~AsyncLoader()
 {
-    stop();
+    // All `LoadTask` objects should be destructed before AsyncLoader destruction because they hold a reference.
+    // To make sure we check for all pending jobs to be finished.
+    std::unique_lock lock{mutex};
+    if (scheduled_jobs.empty() && finished_jobs.empty())
+        return;
+
+    std::vector<String> scheduled;
+    std::vector<String> finished;
+    scheduled.reserve(scheduled_jobs.size());
+    finished.reserve(finished_jobs.size());
+    for (const auto & [job, _] : scheduled_jobs)
+        scheduled.push_back(job->name);
+    for (const auto & job : finished_jobs)
+        finished.push_back(job->name);
+    LOG_ERROR(log, "Bug. Destruction with pending ({}) and finished ({}) load jobs.", fmt::join(scheduled, ", "), fmt::join(finished, ", "));
+    abort();
 }
 
 void AsyncLoader::start()
@@ -236,6 +245,17 @@ void AsyncLoader::wait()
         for (auto & p : pools)
             p.thread_pool->wait();
         lock.lock();
+
+        // If there is no way for all jobs to finish, throw LOGICAL_ERROR instead of deadlock
+        if (!scheduled_jobs.empty() && !hasWorker(lock))
+        {
+            std::vector<String> names;
+            names.reserve(scheduled_jobs.size());
+            for (const auto & [job, _] : scheduled_jobs)
+                names.push_back(job->name);
+            LOG_ERROR(log, "Waiting for load jobs to finish while being stopped: {}.", fmt::join(names, ", "));
+            abort();
+        }
     }
 }
 
@@ -243,10 +263,12 @@ void AsyncLoader::stop()
 {
     {
         std::unique_lock lock{mutex};
-        is_running = false;
-        // NOTE: there is no need to notify because workers never wait
+        is_running = false; // NOTE: there is no need to notify because workers never wait
     }
-    wait();
+
+    // Wait for all currently running jobs to finish (and do NOT wait all pending jobs)
+    for (auto & p : pools)
+        p.thread_pool->wait();
 }
 
 void AsyncLoader::schedule(LoadTask & task)

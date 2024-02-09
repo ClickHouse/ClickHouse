@@ -99,7 +99,7 @@ private:
     std::atomic<bool> created_base_directory = false;
 
     LockedKeyPtr lockNoStateCheck();
-    Poco::Logger * logger() const;
+    LoggerPtr logger() const;
     bool addToDownloadQueue(FileSegmentPtr file_segment);
     void addToCleanupQueue();
 };
@@ -177,7 +177,7 @@ private:
     const DownloadQueuePtr download_queue;
     const bool write_cache_per_user_directory;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     mutable std::shared_mutex key_prefix_directory_mutex;
 
     struct MetadataBucket : public std::unordered_map<FileCacheKey, KeyMetadataPtr>

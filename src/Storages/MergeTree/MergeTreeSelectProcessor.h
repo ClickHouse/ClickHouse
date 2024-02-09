@@ -114,7 +114,7 @@ private:
     /// Should we add part level to produced chunk. Part level is useful for next steps if query has FINAL
     bool add_part_level = false;
 
-    Poco::Logger * log = &Poco::Logger::get("MergeTreeSelectProcessor");
+    LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};
 };
 

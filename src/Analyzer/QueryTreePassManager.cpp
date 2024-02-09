@@ -3,6 +3,7 @@
 #include <memory>
 
 #include <Common/Exception.h>
+#include "Analyzer/Passes/OptimizeGroupByInjectiveFunctionsPass.h"
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -18,6 +19,7 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/RemoveUnusedProjectionColumnsPass.h>
+#include <Analyzer/Passes/RewriteSumFunctionWithSumAndCountPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
 #include <Analyzer/Passes/UniqToCountPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
@@ -162,8 +164,6 @@ private:
 
 /** ClickHouse query tree pass manager.
   *
-  * TODO: Support setting optimize_substitute_columns.
-  * TODO: Support GROUP BY injective function elimination.
   * TODO: Support setting optimize_aggregators_of_group_by_keys.
   * TODO: Support setting optimize_monotonous_functions_in_order_by.
   * TODO: Add optimizations based on function semantics. Example: SELECT * FROM test_table WHERE id != id. (id is not nullable column).
@@ -256,6 +256,7 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 
     manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());
 
+    manager.addPass(std::make_unique<RewriteSumFunctionWithSumAndCountPass>());
     manager.addPass(std::make_unique<CountDistinctPass>());
     manager.addPass(std::make_unique<UniqToCountPass>());
     manager.addPass(std::make_unique<RewriteAggregateFunctionWithIfPass>());
@@ -266,6 +267,7 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<AggregateFunctionsArithmericOperationsPass>());
     manager.addPass(std::make_unique<UniqInjectiveFunctionsEliminationPass>());
     manager.addPass(std::make_unique<OptimizeGroupByFunctionKeysPass>());
+    manager.addPass(std::make_unique<OptimizeGroupByInjectiveFunctionsPass>());
 
     manager.addPass(std::make_unique<MultiIfToIfPass>());
     manager.addPass(std::make_unique<IfConstantConditionPass>());

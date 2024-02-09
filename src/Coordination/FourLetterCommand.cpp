@@ -234,7 +234,7 @@ void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dis
             }
             else
             {
-                auto * log = &Poco::Logger::get("FourLetterCommandFactory");
+                auto log = getLogger("FourLetterCommandFactory");
                 LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
             }
         }
@@ -300,7 +300,11 @@ String MonitorCommand::run()
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
-    print(ret, "max_file_descriptor_count", getMaxFileDescriptorCount());
+    auto max_file_descriptor_count = getMaxFileDescriptorCount();
+    if (max_file_descriptor_count.has_value())
+        print(ret, "max_file_descriptor_count", *max_file_descriptor_count);
+    else
+        print(ret, "max_file_descriptor_count", -1);
 #endif
 
     if (keeper_info.is_leader)

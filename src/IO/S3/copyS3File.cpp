@@ -61,7 +61,7 @@ namespace
             ThreadPoolCallbackRunner<void> schedule_,
             bool for_disk_s3_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            const Poco::Logger * log_)
+            const LoggerPtr log_)
             : client_ptr(client_ptr_)
             , dest_bucket(dest_bucket_)
             , dest_key(dest_key_)
@@ -87,7 +87,7 @@ namespace
         ThreadPoolCallbackRunner<void> schedule;
         bool for_disk_s3;
         BlobStorageLogWriterPtr blob_storage_log;
-        const Poco::Logger * log;
+        const LoggerPtr log;
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -475,7 +475,7 @@ namespace
             ThreadPoolCallbackRunner<void> schedule_,
             bool for_disk_s3_,
             BlobStorageLogWriterPtr blob_storage_log_)
-            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, blob_storage_log_, &Poco::Logger::get("copyDataToS3File"))
+            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, blob_storage_log_, getLogger("copyDataToS3File"))
             , create_read_buffer(create_read_buffer_)
             , offset(offset_)
             , size(size_)
@@ -658,7 +658,7 @@ namespace
             ThreadPoolCallbackRunner<void> schedule_,
             bool for_disk_s3_,
             BlobStorageLogWriterPtr blob_storage_log_)
-            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, blob_storage_log_, &Poco::Logger::get("copyS3File"))
+            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, blob_storage_log_, getLogger("copyS3File"))
             , src_bucket(src_bucket_)
             , src_key(src_key_)
             , offset(src_offset_)

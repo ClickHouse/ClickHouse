@@ -179,6 +179,7 @@ StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQue
     limits.speed_limits.max_execution_rps = settings.max_execution_speed;
     limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
     limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+    limits.speed_limits.max_estimated_execution_time = settings.max_estimated_execution_time;
 
     return limits;
 }

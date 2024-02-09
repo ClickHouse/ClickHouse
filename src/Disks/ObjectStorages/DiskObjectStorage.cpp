@@ -67,7 +67,7 @@ DiskObjectStorage::DiskObjectStorage(
     const String & config_prefix)
     : IDisk(name_, config, config_prefix)
     , object_key_prefix(object_key_prefix_)
-    , log (&Poco::Logger::get("DiskObjectStorage(" + name + ")"))
+    , log(getLogger("DiskObjectStorage(" + name + ")"))
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
     , send_metadata(config.getBool(config_prefix + ".send_metadata", false))
@@ -531,7 +531,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const bool file_can_be_empty = !file_size.has_value() || *file_size == 0;
 
     if (storage_objects.empty() && file_can_be_empty)
-        return std::make_unique<ReadBufferFromEmptyFile>();
+        return std::make_unique<ReadBufferFromEmptyFile>(path);
 
     return object_storage->readObjects(
         storage_objects,
