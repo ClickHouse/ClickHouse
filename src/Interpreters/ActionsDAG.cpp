@@ -605,7 +605,7 @@ ActionsDAGPtr ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool rem
     return actions;
 }
 
-static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * node, ColumnsWithTypeAndName arguments)
+static ColumnWithTypeAndName executeActionForPartialResult(const ActionsDAG::Node * node, ColumnsWithTypeAndName arguments, size_t input_rows_count)
 {
     ColumnWithTypeAndName res_column;
     res_column.type = node->result_type;
@@ -615,7 +615,7 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
     {
         case ActionsDAG::ActionType::FUNCTION:
         {
-            res_column.column = node->function->execute(arguments, res_column.type, 0, true);
+            res_column.column = node->function->execute(arguments, res_column.type, input_rows_count, true);
             break;
         }
 
@@ -628,13 +628,24 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
             if (!array)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
                                 "ARRAY JOIN of not array nor map: {}", node->result_name);
-            res_column.column = array->getDataPtr()->cloneEmpty();
+
+            ColumnPtr data;
+            if (input_rows_count < array->size())
+                data = array->getDataInRange(0, input_rows_count);
+            else
+                data = array->getDataPtr();
+
+            res_column.column = data;
             break;
         }
 
         case ActionsDAG::ActionType::COLUMN:
         {
-            res_column.column = node->column->cloneResized(0);
+            auto column = node->column;
+            if (input_rows_count < column->size())
+                column = column->cloneResized(input_rows_count);
+
+            res_column.column = column;
             break;
         }
 
@@ -681,7 +692,7 @@ Block ActionsDAG::updateHeader(Block header) const
     ColumnsWithTypeAndName result_columns;
     try
     {
-        result_columns = evaluatePartialResult(node_to_column, outputs, true);
+        result_columns = evaluatePartialResult(node_to_column, outputs, /* input_rows_count= */ 0, /* throw_on_error= */ true);
     }
     catch (Exception & e)
     {
@@ -710,8 +721,11 @@ Block ActionsDAG::updateHeader(Block header) const
 ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
     IntermediateExecutionResult & node_to_column,
     const NodeRawConstPtrs & outputs,
+    size_t input_rows_count,
     bool throw_on_error)
 {
+    chassert(input_rows_count <= 1); /// evaluatePartialResult() should be used only to evaluate headers or constants
+
     ColumnsWithTypeAndName result_columns;
     result_columns.reserve(outputs.size());
 
@@ -768,7 +782,7 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
                                         node->result_name);
 
                     if (node->type != ActionsDAG::ActionType::INPUT && has_all_arguments)
-                        node_to_column[node] = executeActionForHeader(node, std::move(arguments));
+                        node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count);
                 }
             }
 
