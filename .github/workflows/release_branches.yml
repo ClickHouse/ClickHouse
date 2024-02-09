@@ -206,13 +206,8 @@ jobs:
     if: ${{ !cancelled() }}
     needs:
       - RunConfig
-      - BuilderDebRelease
-      - BuilderDebAarch64
-      - BuilderDebAsan
-      - BuilderDebTsan
-      - BuilderDebUBsan
-      - BuilderDebMsan
-      - BuilderDebDebug
+      - BuilderBinDarwin
+      - BuilderBinDarwinAarch64
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse special build check
