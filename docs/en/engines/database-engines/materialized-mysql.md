@@ -7,7 +7,10 @@ sidebar_position: 70
 # [experimental] MaterializedMySQL 
 
 :::note
-This is an experimental feature that should not be used in production.
+This database engine is experimental. To use it, set `allow_experimental_database_materialized_mysql` to 1 in your configuration files or by using the `SET` command:
+```sql
+SET allow_experimental_database_materialized_mysql=1
+```
 :::
 
 Creates a ClickHouse database with all the tables existing in MySQL, and all the data in those tables. The ClickHouse server works as MySQL replica. It reads `binlog` and performs DDL and DML queries.

@@ -68,6 +68,8 @@ using DatabaseAndTableName = std::pair<String, String>;
 class BackupEntriesCollector;
 class RestorerFromBackup;
 
+class ConditionEstimator;
+
 struct ColumnSize
 {
     size_t marks = 0;
@@ -134,6 +136,8 @@ public:
 
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
+
+    virtual ConditionEstimator getConditionEstimatorByPredicate(const SelectQueryInfo &, const StorageSnapshotPtr &, ContextPtr) const;
 
     /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
@@ -595,13 +599,6 @@ public:
     std::atomic<bool> is_detached{false};
     std::atomic<bool> is_being_restarted{false};
 
-    /// Does table support index for IN sections
-    virtual bool supportsIndexForIn() const { return false; }
-
-    /// Provides a hint that the storage engine may evaluate the IN-condition by using an index.
-    virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */, ContextPtr /* query_context */, const StorageMetadataPtr & /* metadata_snapshot */) const { return false; }
-
-
     /** A list of tasks to check a validity of data.
       * Each IStorage implementation may interpret this task in its own way.
       * E.g. for some storages it's a list of files in filesystem, for others it can be a list of parts.
@@ -672,7 +669,7 @@ public:
     virtual std::optional<UInt64> totalRows(const Settings &) const { return {}; }
 
     /// Same as above but also take partition predicate into account.
-    virtual std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const { return {}; }
+    virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAGPtr &, ContextPtr) const { return {}; }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)
@@ -688,6 +685,15 @@ public:
     /// In particular, alloctedBytes() is preferable over bytes()
     /// when considering in-memory blocks.
     virtual std::optional<UInt64> totalBytes(const Settings &) const { return {}; }
+
+    /// If it is possible to quickly determine exact number of uncompressed bytes for the table on storage:
+    /// - disk (uncompressed)
+    ///
+    /// Used for:
+    /// - For total_bytes_uncompressed column in system.tables
+    ///
+    /// Does not take underlying Storage (if any) into account
+    virtual std::optional<UInt64> totalBytesUncompressed(const Settings &) const { return {}; }
 
     /// Number of rows INSERTed since server start.
     ///

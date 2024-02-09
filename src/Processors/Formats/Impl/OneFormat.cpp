@@ -23,7 +23,7 @@ OneInputFormat::OneInputFormat(const Block & header, ReadBuffer & in_) : IInputF
                         header.getByPosition(0).type->getName());
 }
 
-Chunk OneInputFormat::generate()
+Chunk OneInputFormat::read()
 {
     if (done)
         return {};

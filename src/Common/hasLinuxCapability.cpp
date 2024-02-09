@@ -27,7 +27,7 @@ static __user_cap_data_struct getCapabilities()
 
     /// Avoid dependency on 'libcap'.
     if (0 != syscall(SYS_capget, &request, &response))
-        throwFromErrno("Cannot do 'capget' syscall", ErrorCodes::NETLINK_ERROR);
+        throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Cannot do 'capget' syscall");
 
     return response;
 }

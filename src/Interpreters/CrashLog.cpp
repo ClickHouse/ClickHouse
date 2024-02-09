@@ -1,5 +1,7 @@
+#include <base/getFQDNOrHostName.h>
 #include <Interpreters/CrashLog.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
@@ -17,10 +19,11 @@ namespace DB
 std::weak_ptr<CrashLog> CrashLog::crash_log;
 
 
-NamesAndTypesList CrashLogElement::getNamesAndTypes()
+ColumnsDescription CrashLogElement::getColumnsDescription()
 {
-    return
+    return ColumnsDescription
     {
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"timestamp_ns", std::make_shared<DataTypeUInt64>()},
@@ -39,6 +42,7 @@ void CrashLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
+    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(timestamp_ns);

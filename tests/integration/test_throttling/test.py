@@ -34,11 +34,14 @@ node = cluster.add_instance(
     "node",
     stay_alive=True,
     main_configs=[
-        "configs/server_backups.xml",
-        "configs/server_overrides.xml",
+        "configs/static_overrides.xml",
+        "configs/dynamic_overrides.xml",
         "configs/ssl.xml",
     ],
-    user_configs=["configs/users_overrides.xml"],
+    user_configs=[
+        "configs/users_overrides.xml",
+        "configs/users_overrides_persistent.xml",
+    ],
     with_minio=True,
     minio_certs_dir="minio_certs",
 )
@@ -61,7 +64,7 @@ def revert_config():
         [
             "bash",
             "-c",
-            f"echo '<clickhouse></clickhouse>' > /etc/clickhouse-server/config.d/server_overrides.xml",
+            f"echo '<clickhouse></clickhouse>' > /etc/clickhouse-server/config.d/dynamic_overrides.xml",
         ]
     )
     node.exec_in_container(
@@ -93,7 +96,7 @@ def node_update_config(mode, setting, value=None):
     if mode is None:
         return
     if mode == "server":
-        config_path = "/etc/clickhouse-server/config.d/server_overrides.xml"
+        config_path = "/etc/clickhouse-server/config.d/dynamic_overrides.xml"
         config_content = f"""
         <clickhouse><{setting}>{value}</{setting}></clickhouse>
         """
@@ -256,7 +259,7 @@ def assert_took(took, should_took):
             "user",
             "max_backup_bandwidth",
             "1M",
-            7 * 2,
+            7,
             id="user_local_to_remote_throttling",
         ),
         # reading 1e6*8 bytes with 2M default bandwith should take (8-2)/2=3 seconds
@@ -266,7 +269,7 @@ def assert_took(took, should_took):
             "server",
             "max_backup_bandwidth_for_server",
             "2M",
-            3 * 2,
+            3,
             id="server_local_to_remote_throttling",
         ),
     ],
@@ -427,3 +430,32 @@ def test_write_throttling(policy, mode, setting, value, should_took):
     )
     _, took = elapsed(node.query, f"insert into data select * from numbers(1e6)")
     assert_took(took, should_took)
+
+
+def test_max_mutations_bandwidth_for_server():
+    node.query(
+        """
+        drop table if exists data;
+        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9;
+    """
+    )
+    node.query("insert into data select * from numbers(1e6)")
+    _, took = elapsed(
+        node.query,
+        "alter table data update key = -key where 1 settings mutations_sync = 1",
+    )
+    # reading 1e6*8 bytes with 1M/s bandwith should take (8-1)/1=7 seconds
+    assert_took(took, 7)
+
+
+def test_max_merges_bandwidth_for_server():
+    node.query(
+        """
+        drop table if exists data;
+        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9;
+    """
+    )
+    node.query("insert into data select * from numbers(1e6)")
+    _, took = elapsed(node.query, "optimize table data final")
+    # reading 1e6*8 bytes with 1M/s bandwith should take (8-1)/1=7 seconds
+    assert_took(took, 7)

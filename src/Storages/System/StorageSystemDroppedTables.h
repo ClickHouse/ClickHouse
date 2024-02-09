@@ -10,7 +10,7 @@ class StorageSystemDroppedTables final : public IStorageSystemOneBlock<StorageSy
 {
 public:
     std::string getName() const override { return "SystemMarkedDroppedTables"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

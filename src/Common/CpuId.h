@@ -93,7 +93,10 @@ inline bool cpuid(UInt32 op, UInt32 * res) noexcept /// NOLINT
     OP(CLFLUSHOPT)           \
     OP(CLWB)                 \
     OP(XSAVE)                \
-    OP(OSXSAVE)
+    OP(OSXSAVE)              \
+    OP(AMXBF16)              \
+    OP(AMXTILE)              \
+    OP(AMXINT8)
 
 union CpuInfo
 {
@@ -311,6 +314,35 @@ bool haveAVX512VBMI2() noexcept
 bool haveRDRAND() noexcept
 {
     return CpuInfo(0x0).registers.eax >= 0x7 && ((CpuInfo(0x1).registers.ecx >> 30) & 1u);
+}
+
+inline bool haveAMX() noexcept
+{
+#if defined(__x86_64__) || defined(__i386__)
+    // http://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-optimization-manual.pdf
+    return haveOSXSAVE()                           // implies haveXSAVE()
+           && ((our_xgetbv(0) >> 17) & 0x3) == 0x3;        // AMX state are enabled by OS
+#else
+    return false;
+#endif
+}
+
+bool haveAMXBF16() noexcept
+{
+    return haveAMX()
+            && ((CpuInfo(0x7, 0).registers.edx >> 22) & 1u);  // AMX-BF16 bit
+}
+
+bool haveAMXTILE() noexcept
+{
+    return haveAMX()
+            && ((CpuInfo(0x7, 0).registers.edx >> 24) & 1u);  // AMX-TILE bit
+}
+
+bool haveAMXINT8() noexcept
+{
+    return haveAMX()
+            && ((CpuInfo(0x7, 0).registers.edx >> 25) & 1u);  // AMX-INT8 bit
 }
 
 struct CpuFlagsCache

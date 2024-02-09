@@ -11,6 +11,9 @@
 
     <keeper_server>
         <tcp_port>2181</tcp_port>
+        <availability_zone>
+            <value>az-zoo1</value>
+        </availability_zone>
         <server_id>1</server_id>
 
         <coordination_settings>

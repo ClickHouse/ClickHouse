@@ -224,9 +224,16 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Seek is not supported when reading from archive");
     }
 
+    bool checkIfActuallySeekable() override { return false; }
+
     off_t getPosition() override
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getPosition not supported when reading from archive");
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getPosition is not supported when reading from archive");
+    }
+
+    size_t getFileOffsetOfBufferEnd() const override
+    {
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getFileOffsetOfBufferEnd is not supported when reading from archive");
     }
 
     String getFileName() const override { return handle.getFileName(); }

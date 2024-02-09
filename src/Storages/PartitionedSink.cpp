@@ -5,11 +5,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/evaluateConstantExpression.h>
 
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTLiteral.h>
 
 #include <Processors/ISource.h>
 

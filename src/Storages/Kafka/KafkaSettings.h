@@ -8,6 +8,12 @@ namespace DB
 {
 class ASTStorage;
 
+const auto KAFKA_RESCHEDULE_MS = 500;
+const auto KAFKA_CLEANUP_TIMEOUT_MS = 3000;
+// once per minute leave do reschedule (we can't lock threads in pool forever)
+const auto KAFKA_MAX_THREAD_WORK_DURATION_MS = 60000;
+// 10min
+const auto KAFKA_CONSUMERS_POOL_TTL_MS_MAX = 600'000;
 
 #define KAFKA_RELATED_SETTINGS(M, ALIAS) \
     M(String, kafka_broker_list, "", "A comma-separated list of brokers for Kafka engine.", 0) \
@@ -25,6 +31,7 @@ class ASTStorage;
     /* default is stream_poll_timeout_ms */ \
     M(Milliseconds, kafka_poll_timeout_ms, 0, "Timeout for single poll from Kafka.", 0) \
     M(UInt64, kafka_poll_max_batch_size, 0, "Maximum amount of messages to be polled in a single Kafka poll.", 0) \
+    M(UInt64, kafka_consumers_pool_ttl_ms, 60'000, "TTL for Kafka consumers (in milliseconds)", 0) \
     /* default is stream_flush_interval_ms */ \
     M(Milliseconds, kafka_flush_interval_ms, 0, "Timeout for flushing data from Kafka.", 0) \
     M(Bool, kafka_thread_per_consumer, false, "Provide independent thread for each consumer", 0) \
@@ -53,6 +60,8 @@ DECLARE_SETTINGS_TRAITS(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS)
 struct KafkaSettings : public BaseSettings<KafkaSettingsTraits>
 {
     void loadFromQuery(ASTStorage & storage_def);
+
+    void sanityCheck() const;
 };
 
 }

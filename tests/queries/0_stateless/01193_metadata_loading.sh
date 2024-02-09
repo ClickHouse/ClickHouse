@@ -29,7 +29,7 @@ create_tables() {
           groupArray(
               create1 || toString(number) || create2 || engines[1 + number % length(engines)] || ';\n' ||
               insert1 ||  toString(number) || insert2
-          ), ';\n') FROM numbers($tables) FORMAT TSVRaw;" | $CLICKHOUSE_CLIENT -nm
+          ), ';\n') FROM numbers($tables) SETTINGS max_bytes_before_external_group_by = 0 FORMAT TSVRaw;" | $CLICKHOUSE_CLIENT -nm
 }
 
 $CLICKHOUSE_CLIENT -q "CREATE DATABASE $db"

@@ -11,6 +11,7 @@
 #include <Disks/DirectoryIterator.h>
 #include <Disks/WriteMode.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskType.h>
 #include <Common/ErrorCodes.h>
 
 namespace DB
@@ -163,6 +164,8 @@ public:
 
     /// Get metadata root path.
     virtual const std::string & getPath() const = 0;
+
+    virtual MetadataStorageType getType() const = 0;
 
     /// ==== General purpose methods. Define properties of object storage file based on metadata files ====
 

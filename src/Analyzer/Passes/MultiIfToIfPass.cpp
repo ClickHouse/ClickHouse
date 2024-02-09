@@ -33,8 +33,17 @@ public:
         if (function_node->getArguments().getNodes().size() != 3)
             return;
 
-        auto result_type = function_node->getResultType();
-        function_node->resolveAsFunction(if_function_ptr->build(function_node->getArgumentColumns()));
+        auto if_function_value = if_function_ptr->build(function_node->getArgumentColumns());
+        if (!if_function_value->getResultType()->equals(*function_node->getResultType()))
+        {
+            /** We faced some corner case, when result type of `if` and `multiIf` are different.
+              * For example, currently `if(NULL`, a, b)` returns type of `a` column,
+              * but multiIf(NULL, a, b) returns supertypetype of `a` and `b`.
+              */
+            return;
+        }
+
+        function_node->resolveAsFunction(std::move(if_function_value));
     }
 
 private:
@@ -43,7 +52,7 @@ private:
 
 }
 
-void MultiIfToIfPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void MultiIfToIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     auto if_function_ptr = FunctionFactory::instance().get("if", context);
     MultiIfToIfVisitor visitor(std::move(if_function_ptr), std::move(context));

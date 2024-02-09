@@ -23,6 +23,7 @@ namespace CurrentMetrics
 {
     extern const Metric SystemReplicasThreads;
     extern const Metric SystemReplicasThreadsActive;
+    extern const Metric SystemReplicasThreadsScheduled;
 }
 
 namespace DB
@@ -55,12 +56,12 @@ private:
     /// Used to assign unique incremental ids to requests.
     UInt64 request_id TSA_GUARDED_BY(mutex) = 0;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
 public:
     explicit StatusRequestsPool(size_t max_threads)
-        : thread_pool(CurrentMetrics::SystemReplicasThreads, CurrentMetrics::SystemReplicasThreadsActive, max_threads)
-        , log(&Poco::Logger::get("StatusRequestsPool"))
+        : thread_pool(CurrentMetrics::SystemReplicasThreads, CurrentMetrics::SystemReplicasThreadsActive, CurrentMetrics::SystemReplicasThreadsScheduled, max_threads)
+        , log(getLogger("StatusRequestsPool"))
     {}
 
     ~StatusRequestsPool()

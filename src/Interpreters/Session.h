@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <optional>
 
 namespace Poco::Net { class SocketAddress; }
@@ -122,7 +123,7 @@ private:
     /// to set when creating a session context
     SettingsChanges settings_from_auth_server;
 
-    Poco::Logger * log = nullptr;
+    LoggerPtr log = nullptr;
 };
 
 }

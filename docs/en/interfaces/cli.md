@@ -16,7 +16,7 @@ ClickHouse provides a native command-line client: `clickhouse-client`. The clien
 $ clickhouse-client
 ClickHouse client version 20.13.1.5273 (official build).
 Connecting to localhost:9000 as user default.
-Connected to ClickHouse server version 20.13.1 revision 54442.
+Connected to ClickHouse server version 20.13.1.
 
 :)
 ```
@@ -195,6 +195,29 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--profile-events-delay-ms` – Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet).
 
 Instead of `--host`, `--port`, `--user` and `--password` options, ClickHouse client also supports connection strings (see next section).
+
+
+## Aliases {#cli_aliases}
+
+- `\l` - SHOW DATABASES
+- `\d` - SHOW TABLES
+- `\c <DATABASE>` - USE DATABASE
+- `.` - repeat the last query
+
+
+## Shortkeys {#shortkeys_aliases}
+
+- `Alt (Option) + Shift + e` - open editor with current query. It is possible to set up an environment variable - `EDITOR`, by default vim is used.
+- `Alt (Option) + #` - comment line.
+- `Ctrl + r` - fuzzy history search.
+
+:::tip
+To configure the correct work of meta key (Option) on MacOS:
+
+iTerm2: Go to Preferences -> Profile -> Keys -> Left Option key and click Esc+
+:::
+
+The full list with all available shortkeys - [replxx](https://github.com/AmokHuginnsson/replxx/blob/1f149bf/src/replxx_impl.cxx#L262).
 
 
 ## Connection string {#connection_string}

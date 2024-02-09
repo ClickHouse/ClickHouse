@@ -390,6 +390,7 @@ class ClickHouseCluster:
         odbc_bridge_bin_path=None,
         library_bridge_bin_path=None,
         zookeeper_config_path=None,
+        keeper_config_dir=None,
         custom_dockerd_host=None,
         zookeeper_keyfile=None,
         zookeeper_certfile=None,
@@ -424,6 +425,12 @@ class ClickHouseCluster:
             p.join(self.base_dir, zookeeper_config_path)
             if zookeeper_config_path
             else p.join(HELPERS_DIR, "zookeeper_config.xml")
+        )
+
+        self.keeper_config_dir = (
+            p.join(self.base_dir, keeper_config_dir)
+            if keeper_config_dir
+            else HELPERS_DIR
         )
 
         project_name = (
@@ -583,6 +590,7 @@ class ClickHouseCluster:
         self.rabbitmq_host = "rabbitmq1"
         self.rabbitmq_ip = None
         self.rabbitmq_port = 5672
+        self.rabbitmq_secure_port = 5671
         self.rabbitmq_dir = p.abspath(p.join(self.instances_dir, "rabbitmq"))
         self.rabbitmq_cookie_file = os.path.join(self.rabbitmq_dir, "erlang.cookie")
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
@@ -1316,6 +1324,7 @@ class ClickHouseCluster:
         self.with_rabbitmq = True
         env_variables["RABBITMQ_HOST"] = self.rabbitmq_host
         env_variables["RABBITMQ_PORT"] = str(self.rabbitmq_port)
+        env_variables["RABBITMQ_SECURE_PORT"] = str(self.rabbitmq_secure_port)
         env_variables["RABBITMQ_LOGS"] = self.rabbitmq_logs_dir
         env_variables["RABBITMQ_LOGS_FS"] = "bind"
         env_variables["RABBITMQ_COOKIE_FILE"] = self.rabbitmq_cookie_file
@@ -2723,7 +2732,9 @@ class ClickHouseCluster:
                 if self.use_keeper:  # TODO: remove hardcoded paths from here
                     for i in range(1, 4):
                         shutil.copy(
-                            os.path.join(HELPERS_DIR, f"keeper_config{i}.xml"),
+                            os.path.join(
+                                self.keeper_config_dir, f"keeper_config{i}.xml"
+                            ),
                             os.path.join(
                                 self.keeper_instance_dir_prefix + f"{i}", "config"
                             ),
@@ -3765,7 +3776,9 @@ class ClickHouseInstance:
         except Exception as e:
             logging.warning(f"Stop ClickHouse raised an error {e}")
 
-    def start_clickhouse(self, start_wait_sec=60, retry_start=True):
+    def start_clickhouse(
+        self, start_wait_sec=60, retry_start=True, expected_to_fail=False
+    ):
         if not self.stay_alive:
             raise Exception(
                 "ClickHouse can be started again only with stay_alive=True instance"
@@ -3783,10 +3796,15 @@ class ClickHouseInstance:
                     ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
                     user=str(os.getuid()),
                 )
+                if expected_to_fail:
+                    self.wait_start_failed(start_wait_sec + start_time - time.time())
+                    return
                 time.sleep(1)
                 continue
             else:
                 logging.debug("Clickhouse process running.")
+                if expected_to_fail:
+                    raise Exception("ClickHouse was expected not to be running.")
                 try:
                     self.wait_start(start_wait_sec + start_time - time.time())
                     return
@@ -3837,6 +3855,30 @@ class ClickHouseInstance:
             )
         if last_err is not None:
             raise last_err
+
+    def wait_start_failed(self, start_wait_sec):
+        start_time = time.time()
+        while time.time() <= start_time + start_wait_sec:
+            pid = self.get_process_pid("clickhouse")
+            if pid is None:
+                return
+            time.sleep(1)
+        logging.error(
+            f"No time left to shutdown. Process is still running. Will dump threads."
+        )
+        ps_clickhouse = self.exec_in_container(
+            ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
+        )
+        logging.info(f"PS RESULT:\n{ps_clickhouse}")
+        pid = self.get_process_pid("clickhouse")
+        if pid is not None:
+            self.exec_in_container(
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
+                user="root",
+            )
+        raise Exception(
+            "ClickHouse server is still running, but was expected to shutdown. Check logs."
+        )
 
     def restart_clickhouse(self, stop_start_wait_sec=60, kill=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
@@ -4128,14 +4170,14 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/system.sql",
+                    "if [ ! -f /var/lib/clickhouse/metadata/system.sql ]; then echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/system.sql; fi",
                 ]
             )
             self.exec_in_container(
                 [
                     "bash",
                     "-c",
-                    "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql",
+                    "if [ ! -f /var/lib/clickhouse/metadata/default.sql ]; then echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql; fi",
                 ]
             )
         self.exec_in_container(

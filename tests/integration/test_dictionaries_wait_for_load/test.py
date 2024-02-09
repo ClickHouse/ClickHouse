@@ -10,11 +10,14 @@ DICTIONARY_FILES = [
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/wait_for_dictionaries_load.xml"],
+    main_configs=["configs/no_dictionaries_lazy_load.xml"],
     dictionaries=DICTIONARY_FILES,
 )
 
-node0 = cluster.add_instance("node0", dictionaries=DICTIONARY_FILES)
+node0 = cluster.add_instance(
+    "node0",
+    dictionaries=DICTIONARY_FILES,
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -33,9 +36,13 @@ def get_status(instance, dictionary_name):
 
 
 def test_wait_for_dictionaries_load():
-    assert get_status(node0, "long_loading_dictionary") == "NOT_LOADED"
-
     assert get_status(node1, "long_loading_dictionary") == "LOADED"
     assert node1.query("SELECT * FROM dictionary(long_loading_dictionary)") == TSV(
         [[1, "aa"], [2, "bb"]]
     )
+
+    assert get_status(node0, "long_loading_dictionary") == "NOT_LOADED"
+    assert node0.query("SELECT * FROM dictionary(long_loading_dictionary)") == TSV(
+        [[1, "aa"], [2, "bb"]]
+    )
+    assert get_status(node0, "long_loading_dictionary") == "LOADED"

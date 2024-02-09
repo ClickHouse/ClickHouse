@@ -1,9 +1,10 @@
 #include "ReadBufferFromRemoteFSGather.h"
 
-#include <IO/SeekableReadBuffer.h>
+#include <IO/ReadBufferFromFileBase.h>
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <IO/ReadSettings.h>
 #include <IO/SwapHelper.h>
 #include <Interpreters/FilesystemCacheLog.h>
@@ -55,13 +56,13 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     , query_id(CurrentThread::getQueryId())
     , use_external_buffer(use_external_buffer_)
     , with_cache(withCache(settings))
-    , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
+    , log(getLogger("ReadBufferFromRemoteFSGather"))
 {
     if (!blobs_to_read.empty())
         current_object = blobs_to_read.front();
 }
 
-SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object)
+std::unique_ptr<ReadBufferFromFileBase> ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object)
 {
     if (current_buf && !with_cache)
     {
@@ -78,10 +79,11 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     if (with_cache)
     {
         auto cache_key = settings.remote_fs_cache->createKeyForPath(object_path);
-        return std::make_shared<CachedOnDiskReadBufferFromFile>(
+        return std::make_unique<CachedOnDiskReadBufferFromFile>(
             object_path,
             cache_key,
             settings.remote_fs_cache,
+            FileCache::getCommonUser(),
             std::move(current_read_buffer_creator),
             settings,
             query_id,
@@ -209,7 +211,7 @@ void ReadBufferFromRemoteFSGather::setReadUntilPosition(size_t position)
 
 void ReadBufferFromRemoteFSGather::reset()
 {
-    current_object = {};
+    current_object = StoredObject();
     current_buf_idx = {};
     current_buf.reset();
 }
@@ -265,4 +267,26 @@ ReadBufferFromRemoteFSGather::~ReadBufferFromRemoteFSGather()
         appendUncachedReadInfo();
 }
 
+bool ReadBufferFromRemoteFSGather::isSeekCheap()
+{
+    return !current_buf || current_buf->isSeekCheap();
+}
+
+bool ReadBufferFromRemoteFSGather::isContentCached(size_t offset, size_t size)
+{
+    if (!current_buf)
+        initialize();
+
+    if (current_buf)
+    {
+        /// offset should be adjusted the same way as we do it in initialize()
+        for (const auto & blob : blobs_to_read)
+            if (offset >= blob.bytes_size)
+                offset -= blob.bytes_size;
+
+        return current_buf->isContentCached(offset, size);
+    }
+
+    return false;
+}
 }

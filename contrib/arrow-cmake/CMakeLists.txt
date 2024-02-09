@@ -77,16 +77,16 @@ set(FLATBUFFERS_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/flatbuffers")
 set(FLATBUFFERS_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/flatbuffers")
 set(FLATBUFFERS_INCLUDE_DIR "${FLATBUFFERS_SRC_DIR}/include")
 
-# set flatbuffers CMake options
-set(FLATBUFFERS_BUILD_FLATLIB ON CACHE BOOL "Enable the build of the flatbuffers library")
-set(FLATBUFFERS_BUILD_SHAREDLIB OFF CACHE BOOL "Disable the build of the flatbuffers shared library")
-set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "Skip flatbuffers tests")
+set(FLATBUFFERS_SRCS
+  ${FLATBUFFERS_SRC_DIR}/src/idl_parser.cpp
+  ${FLATBUFFERS_SRC_DIR}/src/idl_gen_text.cpp
+  ${FLATBUFFERS_SRC_DIR}/src/reflection.cpp
+  ${FLATBUFFERS_SRC_DIR}/src/util.cpp)
 
-add_subdirectory(${FLATBUFFERS_SRC_DIR} "${FLATBUFFERS_BINARY_DIR}")
+add_library(_flatbuffers STATIC ${FLATBUFFERS_SRCS})
+target_include_directories(_flatbuffers PUBLIC ${FLATBUFFERS_INCLUDE_DIR})
+target_compile_definitions(_flatbuffers PRIVATE -DFLATBUFFERS_LOCALE_INDEPENDENT=0)
 
-add_library(_flatbuffers INTERFACE)
-target_link_libraries(_flatbuffers INTERFACE flatbuffers)
-target_include_directories(_flatbuffers INTERFACE ${FLATBUFFERS_INCLUDE_DIR})
 
 # ===  hdfs
 # NOTE: cannot use ch_contrib::hdfs since it's INCLUDE_DIRECTORIES does not includes trailing "hdfs/"
@@ -127,7 +127,6 @@ set(ORC_SRCS
         "${ORC_SOURCE_SRC_DIR}/BpackingDefault.hh"
         "${ORC_SOURCE_SRC_DIR}/ByteRLE.cc"
         "${ORC_SOURCE_SRC_DIR}/ByteRLE.hh"
-        "${ORC_SOURCE_SRC_DIR}/CMakeLists.txt"
         "${ORC_SOURCE_SRC_DIR}/ColumnPrinter.cc"
         "${ORC_SOURCE_SRC_DIR}/ColumnReader.cc"
         "${ORC_SOURCE_SRC_DIR}/ColumnReader.hh"

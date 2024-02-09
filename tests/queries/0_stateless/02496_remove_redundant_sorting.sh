@@ -96,7 +96,8 @@ FROM
         ORDER BY number ASC
     )
     ORDER BY number DESC
-) AS t2"
+) AS t2
+ORDER BY t1.number, t2.number"
 run_query "$query"
 
 echo "-- CROSS JOIN with subqueries, ORDER BY in main query -> all ORDER BY clauses will be removed in subqueries"
@@ -138,7 +139,8 @@ FROM
     )
     ORDER BY number DESC
 )
-GROUP BY number"
+GROUP BY number
+ORDER BY number"
 run_query "$query"
 
 echo "-- GROUP BY with aggregation function which depends on order -> keep ORDER BY in first subquery, and eliminate in second subquery"
@@ -154,7 +156,8 @@ FROM
     )
     ORDER BY number DESC
 )
-GROUP BY number"
+GROUP BY number
+ORDER BY number"
 run_query "$query"
 
 echo "-- query with aggregation function but w/o GROUP BY -> remove sorting"
@@ -218,7 +221,8 @@ FROM
     )
     GROUP BY number
 )
-WHERE a > 0"
+WHERE a > 0
+ORDER BY a"
 run_query "$query"
 
 echo "-- GROUP BY in most inner query makes execution parallelized, and removing inner sorting steps will keep it that way. But need to correctly update data streams sorting properties after removing sorting steps"

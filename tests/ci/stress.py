@@ -21,6 +21,7 @@ def get_options(i: int, upgrade_check: bool) -> str:
         options.append(f'''--db-engine="Replicated('/test/db/test_{i}', 's1', 'r1')"''')
         client_options.append("allow_experimental_database_replicated=1")
         client_options.append("enable_deflate_qpl_codec=1")
+        client_options.append("enable_zstd_qat_codec=1")
 
     # If database name is not specified, new database is created for each functional test.
     # Run some threads with one database for all tests.
@@ -60,13 +61,10 @@ def get_options(i: int, upgrade_check: bool) -> str:
         client_options.append("throw_on_unsupported_query_inside_transaction=0")
 
     if random.random() < 0.1:
-        client_options.append("allow_experimental_partial_result=1")
-        client_options.append(
-            f"partial_result_update_duration_ms={random.randint(10, 1000)}"
-        )
-
-    if random.random() < 0.1:
         client_options.append("optimize_trivial_approximate_count_query=1")
+
+    if random.random() < 0.3:
+        client_options.append(f"http_make_head_request={random.randint(0, 1)}")
 
     if client_options:
         options.append(" --client-option " + " ".join(client_options))
@@ -125,7 +123,7 @@ def call_with_retry(query: str, timeout: int = 30, retry_count: int = 5) -> None
 def make_query_command(query: str) -> str:
     return (
         f'clickhouse client -q "{query}" --max_untracked_memory=1Gi '
-        "--memory_profiler_step=1Gi --max_memory_usage_for_user=0"
+        "--memory_profiler_step=1Gi --max_memory_usage_for_user=0 --max_memory_usage_in_client=1000000000"
     )
 
 

@@ -105,7 +105,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
             if (allow_override_by_default)
                 continue;
             // if allow_override_by_default is false we don't allow extra arguments
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed because setting allow_override_by_default is disabled");
         }
         else if (!collection_copy->isOverridable(value_override->first, allow_override_by_default))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", value_override->first);

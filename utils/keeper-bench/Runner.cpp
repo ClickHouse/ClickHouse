@@ -10,10 +10,12 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 
+
 namespace CurrentMetrics
 {
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
 }
 
 namespace DB::ErrorCodes
@@ -106,7 +108,7 @@ Runner::Runner(
 
     std::cerr << "---- Run options ----\n" << std::endl;
 
-    pool.emplace(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, concurrency);
+    pool.emplace(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, concurrency);
     queue.emplace(concurrency);
 }
 
@@ -172,7 +174,7 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         || sigaddset(&sig_set, SIGINT)
         || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
     {
-        DB::throwFromErrno("Cannot block signal.", DB::ErrorCodes::CANNOT_BLOCK_SIGNAL);
+        throw DB::ErrnoException(DB::ErrorCodes::CANNOT_BLOCK_SIGNAL, "Cannot block signal");
     }
 
     while (true)
@@ -461,4 +463,3 @@ Runner::~Runner()
     pool->wait();
     generator->cleanup(*connections[0]);
 }
-

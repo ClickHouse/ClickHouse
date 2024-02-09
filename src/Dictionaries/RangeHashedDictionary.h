@@ -683,7 +683,7 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
 
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
-            "{}: dictionary source is empty and 'require_nonempty' property is set.");
+            "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
 }
 
 template <DictionaryKeyType dictionary_key_type>

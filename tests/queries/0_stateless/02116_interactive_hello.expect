@@ -21,7 +21,7 @@ spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \
 # (?n) - Do not match new lines
 expect -re "(?n)ClickHouse client version \[\\d\]{2}\.\[\\d\]{1,2}\.\[\\d\]{1,2}\.\[\\d\]{1,}.*\r"
 expect -re "(?n)Connecting to database .* at localhost:9000 as user default\.\r"
-expect -re "(?n)Connected to ClickHouse server version \[\\d\]{2}\.\[\\d\]{1,2}\.\[\\d\]{1,2} revision \[\\d\]{1,}\.\r"
+expect -re "(?n)Connected to ClickHouse server version \[\\d\]{2}\.\[\\d\]{1,2}\.\[\\d\]{1,2}\.\r"
 expect ":) "
 
 send -- ""
