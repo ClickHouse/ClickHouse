@@ -342,6 +342,11 @@ bool MutationsInterpreter::Source::hasProjection(const String & name) const
     return part && part->hasProjection(name);
 }
 
+bool MutationsInterpreter::Source::hasBrokenProjection(const String & name) const
+{
+    return part && part->hasBrokenProjection(name);
+}
+
 bool MutationsInterpreter::Source::isCompactPart() const
 {
     return part && part->getType() == MergeTreeDataPartType::Compact;
@@ -807,7 +812,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
             const auto & projection = projections_desc.get(command.projection_name);
-            if (!source.hasProjection(projection.name))
+            if (!source.hasProjection(projection.name) || source.hasBrokenProjection(projection.name))
             {
                 for (const auto & column : projection.required_columns)
                     dependencies.emplace(column, ColumnDependency::PROJECTION);
@@ -993,6 +998,13 @@ void MutationsInterpreter::prepare(bool dry_run)
     {
         if (!source.hasProjection(projection.name))
             continue;
+
+        /// Always rebuild broken projections.
+        if (source.hasBrokenProjection(projection.name))
+        {
+            materialized_projections.insert(projection.name);
+            continue;
+        }
 
         if (need_rebuild_projections)
         {

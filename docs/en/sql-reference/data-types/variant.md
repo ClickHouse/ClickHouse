@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/data-types/json
+slug: /en/sql-reference/data-types/variant
 sidebar_position: 55
 sidebar_label: Variant
 ---
@@ -154,6 +154,35 @@ SELECT v, variantElement(v, 'String'), variantElement(v, 'UInt64'), variantEleme
 │ Hello, World! │ Hello, World!               │                        ᴺᵁᴸᴸ │ []                                 │
 │ [1,2,3]       │ ᴺᵁᴸᴸ                        │                        ᴺᵁᴸᴸ │ [1,2,3]                            │
 └───────────────┴─────────────────────────────┴─────────────────────────────┴────────────────────────────────────┘
+```
+
+To know what variant is stored in each row function `variantType(variant_column)` can be used. It returns `Enum` with variant type name for each row (or `'None'` if row is `NULL`).
+
+Example:
+
+```sql
+CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+SELECT variantType(v) from test;
+```
+
+```text
+┌─variantType(v)─┐
+│ None           │
+│ UInt64         │
+│ String         │
+│ Array(UInt64)  │
+└────────────────┘
+```
+
+```sql
+SELECT toTypeName(variantType(v)) FROM test LIMIT 1;
+```
+
+```text
+┌─toTypeName(variantType(v))──────────────────────────────────────────┐
+│ Enum8('None' = -1, 'Array(UInt64)' = 0, 'String' = 1, 'UInt64' = 2) │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Conversion between Variant column and other columns
