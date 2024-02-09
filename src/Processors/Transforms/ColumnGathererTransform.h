@@ -147,7 +147,7 @@ void ColumnGathererStream::gather(Column & column_res)
 
 
     /// We use do ... while here to ensure there will be at least one iteration of this loop.
-    /// Because the column_res.allocatedBytes() could be bigger than block_preferred_size_bytes already at this point.
+    /// Because the column_res.byteSize() could be bigger than block_preferred_size_bytes already at this point.
     do
     {
         if (row_source_pos >= row_sources_end)
@@ -195,7 +195,7 @@ void ColumnGathererStream::gather(Column & column_res)
         }
 
         source.pos += len;
-    } while (column_res.size() < block_preferred_size_rows && column_res.allocatedBytes() < block_preferred_size_bytes);
+    } while (column_res.size() < block_preferred_size_rows && column_res.byteSize() < block_preferred_size_bytes);
 }
 
 }
