@@ -27,14 +27,12 @@ ConnectionEstablisher::ConnectionEstablisher(
     const Settings & settings_,
     LoggerPtr log_,
     const QualifiedTableName * table_to_check_)
-    : pool(std::move(pool_)), timeouts(timeouts_), settings(settings_), log(log_), table_to_check(table_to_check_), is_finished(false)
+    : pool(std::move(pool_)), timeouts(timeouts_), settings(settings_), log(log_), table_to_check(table_to_check_)
 {
 }
 
 void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::string & fail_message)
 {
-    is_finished = false;
-    SCOPE_EXIT(is_finished = true);
     try
     {
         ProfileEvents::increment(ProfileEvents::DistributedConnectionTries);

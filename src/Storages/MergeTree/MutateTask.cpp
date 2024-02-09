@@ -28,6 +28,11 @@
 #include <Common/ProfileEventsScope.h>
 
 
+namespace ProfileEvents
+{
+extern const Event MutateTaskProjectionsCalculationMicroseconds;
+}
+
 namespace CurrentMetrics
 {
     extern const Metric PartMutation;
@@ -1242,7 +1247,13 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
         {
             const auto & projection = *ctx->projections_to_build[i];
-            auto projection_block = projection_squashes[i].add(projection.calculate(cur_block, ctx->context));
+
+            Block projection_block;
+            {
+                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
+                projection_block = projection_squashes[i].add(projection.calculate(cur_block, ctx->context));
+            }
+
             if (projection_block)
             {
                 auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
