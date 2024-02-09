@@ -3707,8 +3707,6 @@ Possible values:
 
 Default value: `0`.
 
-Cloud default value: `1`.
-
 ## live_view_heartbeat_interval {#live-view-heartbeat-interval}
 
 Sets the heartbeat interval in seconds to indicate [live view](../../sql-reference/statements/create/view.md/#live-view) is alive .
@@ -3914,6 +3912,8 @@ Possible values:
 - 1 — Enabled.
 
 Default value: `0`.
+
+Cloud default value: `1`.
 
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
