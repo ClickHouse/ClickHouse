@@ -38,7 +38,7 @@ public:
         int64_t pzxid{0};
         uint64_t acl_id = 0; /// 0 -- no ACL by default
 
-        int64_t mtime;
+        int64_t mtime{0};
 
         struct
         {
@@ -155,7 +155,7 @@ public:
 
         void setData(const String & new_data);
 
-        StringRef getData() const noexcept { return {data.get(), data_size}; }
+        std::string_view getData() const noexcept { return {data.get(), data_size}; }
 
         void addChild(StringRef child_path);
 
@@ -335,39 +335,7 @@ public:
 
         void applyDelta(const Delta & delta);
 
-        bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate)
-        {
-            const auto check_auth = [&](const auto & auth_ids)
-            {
-                for (const auto & auth : auth_ids)
-                {
-                    using TAuth = std::remove_reference_t<decltype(auth)>;
-
-                    const AuthID * auth_ptr = nullptr;
-                    if constexpr (std::is_pointer_v<TAuth>)
-                        auth_ptr = auth;
-                    else
-                        auth_ptr = &auth;
-
-                    if (predicate(*auth_ptr))
-                        return true;
-                }
-                return false;
-            };
-
-            if (is_local)
-                return check_auth(storage.session_and_auth[session_id]);
-
-            if (check_auth(storage.session_and_auth[session_id]))
-                return true;
-
-            // check if there are uncommitted
-            const auto auth_it = session_and_auth.find(session_id);
-            if (auth_it == session_and_auth.end())
-                return false;
-
-            return check_auth(auth_it->second);
-        }
+        bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate) const;
 
         void forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const;
 

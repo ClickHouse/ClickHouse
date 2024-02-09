@@ -172,10 +172,11 @@ uint64_t calculateDigest(std::string_view path, const KeeperStorage::Node & node
 
     hash.update(path);
 
-    if (node.data_size != 0)
+    auto data = node.getData();
+    if (!data.empty())
     {
-        chassert(node.data != nullptr);
-        hash.update(node.getData());
+        chassert(data.data() != nullptr);
+        hash.update(data);
     }
 
     hash.update(node.czxid);
@@ -195,7 +196,7 @@ uint64_t calculateDigest(std::string_view path, const KeeperStorage::Node & node
     if (digest == 0)
         return 1;
 
-    return hash.get64();
+    return digest;
 }
 
 }
@@ -475,6 +476,40 @@ void KeeperStorage::UncommittedState::applyDelta(const Delta & delta)
             }
         },
         delta.operation);
+}
+
+bool KeeperStorage::UncommittedState::hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate) const
+{
+    const auto check_auth = [&](const auto & auth_ids)
+    {
+        for (const auto & auth : auth_ids)
+        {
+            using TAuth = std::remove_reference_t<decltype(auth)>;
+
+            const AuthID * auth_ptr = nullptr;
+            if constexpr (std::is_pointer_v<TAuth>)
+                auth_ptr = auth;
+            else
+                auth_ptr = &auth;
+
+            if (predicate(*auth_ptr))
+                return true;
+        }
+        return false;
+    };
+
+    if (is_local)
+        return check_auth(storage.session_and_auth[session_id]);
+
+    if (check_auth(storage.session_and_auth[session_id]))
+        return true;
+
+    // check if there are uncommitted
+    const auto auth_it = session_and_auth.find(session_id);
+    if (auth_it == session_and_auth.end())
+        return false;
+
+    return check_auth(auth_it->second);
 }
 
 void KeeperStorage::UncommittedState::addDelta(Delta new_delta)
@@ -1228,7 +1263,7 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
         {
             node_it->value.setResponseStat(response.stat);
             auto data = node_it->value.getData();
-            response.data = std::string(data.data, data.size);
+            response.data = std::string(data);
             response.error = Coordination::Error::ZOK;
         }
 

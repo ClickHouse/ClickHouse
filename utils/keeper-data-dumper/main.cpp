@@ -26,7 +26,7 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
         std::cout << key << "\n";
         auto value = storage.container.getValue(key);
         std::cout << "\tStat: {version: " << value.version <<
-            ", mtime: " << value.mtime() <<
+            ", mtime: " << value.mtime <<
             ", emphemeralOwner: " << value.ephemeralOwner() <<
             ", czxid: " << value.czxid <<
             ", mzxid: " << value.mzxid <<
