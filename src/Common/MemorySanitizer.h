@@ -13,7 +13,7 @@
 #undef __msan_unpoison_string
 
 #define __msan_unpoison(X, Y) /// NOLINT
-/// Given a pointer and **its size**, unpoisons up to 15 bytes **at the end**
+/// Given a pointer and **its size**, unpoisons 15 bytes **at the end**
 /// See memcmpSmall.h / memcpySmall.h
 #define __msan_unpoison_overflow_15(X, Y) /// NOLINT
 #define __msan_test_shadow(X, Y) (false) /// NOLINT
@@ -28,7 +28,7 @@
 #        undef __msan_unpoison_string
 #        include <sanitizer/msan_interface.h>
 #        undef __msan_unpoison_overflow_15
-#        define __msan_unpoison_overflow_15(PTR, PTR_SIZE) __msan_unpoison(&(PTR)[(PTR_SIZE)], ((16 - ((PTR_SIZE) % 16)) % 16))
+#        define __msan_unpoison_overflow_15(PTR, PTR_SIZE) __msan_unpoison(&(PTR)[(PTR_SIZE)], 15)
 #    endif
 #endif
 
