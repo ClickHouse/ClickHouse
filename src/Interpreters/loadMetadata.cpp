@@ -227,26 +227,13 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         databases.emplace(default_database_name, std::filesystem::path(path) / escapeForFileName(default_database_name));
     }
 
-    bool has_ordinary_databases = false;
     TablesLoader::Databases loaded_databases;
     for (const auto & [name, db_path] : databases)
     {
         loadDatabase(context, name, db_path, has_force_restore_data_flag);
-
-        auto database = DatabaseCatalog::instance().getDatabase(name);
-        loaded_databases.insert({name, database});
-        
-
-        if (database->getEngineName() == "Ordinary")
-            has_ordinary_databases = true;
-        
-        loaded_databases.insert({name,database});
+        loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
     }
 
-    if (has_ordinary_databases)
-        context->addWarningMessage("Server has databases with Ordinary engine, which is not optimal. \n " 
-        "To convert this database to a new Atomic engine, please create a flag named `convert_ordinary_to_atomic` in flags directory");
-    
     auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag);
     TablesLoader loader{context, std::move(loaded_databases), mode};
     auto load_tasks = loader.loadTablesAsync();

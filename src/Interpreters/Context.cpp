@@ -1171,6 +1171,30 @@ void Context::addWarningMessage(const String & msg) const
         shared->addWarningMessage(msg);
 }
 
+void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_name) const
+{
+    std::lock_guard lock(shared->mutex);
+
+    /// We would like to report only about the first database with engine Ordinary
+    static std::atomic_bool is_called = false;
+    if (is_called.exchange(true))
+        return;
+
+    auto suppress_re = shared->getConfigRefWithLock(lock).getString("warning_supress_regexp", "");
+    /// We don't use getFlagsPath method, because it takes a shared lock.
+    auto convert_databases_flag = fs::path(shared->flags_path) / "convert_ordinary_to_atomic";
+    auto message = fmt::format("Server has databases (for example `{}`) with Ordinary engine, which was deprecated.\n"
+            "To convert this database to a new Atomic engine, please create a forcing flag {} and make sure that ClickHouse has write permission for it.\n"
+            "Example:\n"
+            "sudo touch '{}' && sudo chmod 666 '{}'",
+            database_name,
+            convert_databases_flag.string(), convert_databases_flag.string(), convert_databases_flag.string());
+
+    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(message, suppress_re);
+    if (!is_supressed)
+        shared->addWarningMessage(message);
+}
+
 void Context::setConfig(const ConfigurationPtr & config)
 {
     shared->setConfig(config);
