@@ -21,6 +21,4 @@ SELECT * FROM queue_mode_test;
 SELECT 'cursor lookup';
 SELECT * FROM queue_mode_test WHERE (_queue_block_number, _queue_block_offset) > (3, 1);
 
-DROP TABLE queue_mode_test;
-
 SELECT 'end';
