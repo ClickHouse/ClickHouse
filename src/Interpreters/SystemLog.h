@@ -131,7 +131,7 @@ public:
     void stopFlushThread() override;
 
 protected:
-    Poco::Logger * log;
+    LoggerPtr log;
 
     using ISystemLog::is_shutdown;
     using ISystemLog::saving_thread;

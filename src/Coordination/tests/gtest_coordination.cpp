@@ -66,7 +66,7 @@ class CoordinationTest : public ::testing::TestWithParam<CompressionParam>
 {
 protected:
     DB::KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true);
-    Poco::Logger * log{&Poco::Logger::get("CoordinationTest")};
+    LoggerPtr log{getLogger("CoordinationTest")};
 
     void SetUp() override
     {
@@ -1101,7 +1101,7 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
 }
 
 /// Truncating only some entries from the end
-/// For compressed logs we have no reliable way of knowing how many log entries were lost 
+/// For compressed logs we have no reliable way of knowing how many log entries were lost
 /// after we truncate some bytes from the end
 TEST_F(CoordinationTest, ChangelogTestReadAfterBrokenTruncate3)
 {
@@ -1801,7 +1801,7 @@ void testLogAndStateMachine(
                 = [&snapshot_created](bool & ret, nuraft::ptr<std::exception> & /*exception*/)
             {
                 snapshot_created = ret;
-                LOG_INFO(&Poco::Logger::get("CoordinationTest"), "Snapshot finished");
+                LOG_INFO(getLogger("CoordinationTest"), "Snapshot finished");
             };
 
             state_machine->create_snapshot(s, when_done);

@@ -18,7 +18,6 @@ class WriteBuffer;
 /// It's setup as a virtual class so we can avoid templates when we need to extend them (argMax, SingleValueOrNull)
 struct SingleValueDataBase
 {
-    static constexpr int nan_direction_hint = 1;
     /// Any subclass (numeric, string, generic) must be smaller than MAX_STORAGE_SIZE
     /// We use this knowledge to create composite data classes that use them directly by reserving a 'memory_block'
     /// For example argMin holds 1 of these (for the result), while keeping a template for the value

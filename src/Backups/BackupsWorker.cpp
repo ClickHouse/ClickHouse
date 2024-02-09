@@ -380,7 +380,7 @@ BackupsWorker::BackupsWorker(ContextMutablePtr global_context, size_t num_backup
     , allow_concurrent_backups(allow_concurrent_backups_)
     , allow_concurrent_restores(allow_concurrent_restores_)
     , test_inject_sleep(test_inject_sleep_)
-    , log(&Poco::Logger::get("BackupsWorker"))
+    , log(getLogger("BackupsWorker"))
     , backup_log(global_context->getBackupLog())
     , process_list(global_context->getProcessList())
 {

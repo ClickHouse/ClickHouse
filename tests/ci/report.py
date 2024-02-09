@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
+import csv
+import datetime
+import json
+import logging
+import os
 from ast import literal_eval
 from dataclasses import asdict, dataclass
+from html import escape
 from pathlib import Path
 from typing import (
     Dict,
@@ -13,17 +19,11 @@ from typing import (
     Tuple,
     Union,
 )
-from html import escape
-import csv
-import datetime
-import json
-import logging
-import os
 
 from build_download_helper import get_gh_api
-from ci_config import BuildConfig, CI_CONFIG
+from ci_config import CI_CONFIG, BuildConfig
 from env_helper import REPORT_PATH, TEMP_PATH
-
+from ci_utils import normalize_string
 
 logger = logging.getLogger(__name__)
 
@@ -36,26 +36,28 @@ OK: Final = "OK"
 FAIL: Final = "FAIL"
 
 StatusType = Literal["error", "failure", "pending", "success"]
+STATUSES = [ERROR, FAILURE, PENDING, SUCCESS]  # type: List[StatusType]
+
+
 # The order of statuses from the worst to the best
-_STATES = {ERROR: 0, FAILURE: 1, PENDING: 2, SUCCESS: 3}
+def _state_rank(status: str) -> int:
+    "return the index of status or index of SUCCESS in case of wrong status"
+    try:
+        return STATUSES.index(status)  # type: ignore
+    except ValueError:
+        return 3
 
 
-def get_worst_status(statuses: Iterable[str]) -> str:
-    worst_status = None
+def get_worst_status(statuses: Iterable[str]) -> StatusType:
+    worst_status = SUCCESS  # type: StatusType
     for status in statuses:
-        if _STATES.get(status) is None:
-            continue
-        if worst_status is None:
-            worst_status = status
-            continue
-        if _STATES.get(status) < _STATES.get(worst_status):
-            worst_status = status
+        ind = _state_rank(status)
+        if ind < _state_rank(worst_status):
+            worst_status = STATUSES[ind]
 
         if worst_status == ERROR:
             break
 
-    if worst_status is None:
-        return ""
     return worst_status
 
 
@@ -549,7 +551,7 @@ class BuildResult:
 
     def write_json(self, directory: Union[Path, str] = REPORT_PATH) -> Path:
         path = Path(directory) / self.get_report_name(
-            self.build_name, self.pr_number or self.head_ref
+            self.build_name, self.pr_number or normalize_string(self.head_ref)
         )
         path.write_text(
             json.dumps(

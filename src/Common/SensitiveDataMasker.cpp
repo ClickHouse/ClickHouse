@@ -112,7 +112,7 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
-    Poco::Logger * logger = &Poco::Logger::get("SensitiveDataMaskerConfigRead");
+    LoggerPtr logger = getLogger("SensitiveDataMaskerConfigRead");
 
     std::set<std::string> used_names;
 

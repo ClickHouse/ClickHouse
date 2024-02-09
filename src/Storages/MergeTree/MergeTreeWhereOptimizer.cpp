@@ -56,7 +56,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     const ConditionEstimator & estimator_,
     const Names & queried_columns_,
     const std::optional<NameSet> & supported_columns_,
-    Poco::Logger * log_)
+    LoggerPtr log_)
     : estimator(estimator_)
     , table_columns{collections::map<std::unordered_set>(
         metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
@@ -132,8 +132,8 @@ std::optional<MergeTreeWhereOptimizer::FilterActionsOptimizeResult> MergeTreeWhe
     if (!optimize_result)
         return {};
 
-    auto filter_actions = reconstructDAG(optimize_result->where_conditions, context);
-    auto prewhere_filter_actions = reconstructDAG(optimize_result->prewhere_conditions, context);
+    auto filter_actions = reconstructDAG(optimize_result->where_conditions);
+    auto prewhere_filter_actions = reconstructDAG(optimize_result->prewhere_conditions);
 
     FilterActionsOptimizeResult result = { std::move(filter_actions), std::move(prewhere_filter_actions) };
     return result;
@@ -343,7 +343,7 @@ ASTPtr MergeTreeWhereOptimizer::reconstructAST(const Conditions & conditions)
     return function;
 }
 
-ActionsDAGPtr MergeTreeWhereOptimizer::reconstructDAG(const Conditions & conditions, const ContextPtr & context)
+ActionsDAGPtr MergeTreeWhereOptimizer::reconstructDAG(const Conditions & conditions)
 {
     if (conditions.empty())
         return {};
@@ -354,7 +354,7 @@ ActionsDAGPtr MergeTreeWhereOptimizer::reconstructDAG(const Conditions & conditi
     for (const auto & condition : conditions)
         filter_nodes.push_back(condition.node.getDAGNode());
 
-    return ActionsDAG::buildFilterActionsDAG(filter_nodes, {} /*node_name_to_input_node_column*/, context);
+    return ActionsDAG::buildFilterActionsDAG(filter_nodes);
 }
 
 std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::optimizeImpl(const RPNBuilderTreeNode & node,

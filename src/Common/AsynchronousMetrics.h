@@ -82,7 +82,7 @@ public:
 protected:
     const Duration update_period;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 private:
     virtual void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) = 0;
     virtual void logImpl(AsynchronousMetricValues &) {}

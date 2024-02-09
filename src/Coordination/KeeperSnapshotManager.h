@@ -188,7 +188,7 @@ private:
 
     KeeperContextPtr keeper_context;
 
-    Poco::Logger * log = &Poco::Logger::get("KeeperSnapshotManager");
+    LoggerPtr log = getLogger("KeeperSnapshotManager");
 };
 
 /// Keeper create snapshots in background thread. KeeperStateMachine just create

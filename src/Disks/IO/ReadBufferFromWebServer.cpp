@@ -27,7 +27,7 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     bool use_external_buffer_,
     size_t read_until_position_)
     : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0)
-    , log(&Poco::Logger::get("ReadBufferFromWebServer"))
+    , log(getLogger("ReadBufferFromWebServer"))
     , context(context_)
     , url(url_)
     , buf_size(settings_.remote_fs_buffer_size)

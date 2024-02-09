@@ -265,7 +265,7 @@ ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::ReadWriteBufferFromHTTPBase(
     , file_info(file_info_)
     , http_skip_not_found_url(http_skip_not_found_url_)
     , settings {settings_}
-    , log(&Poco::Logger::get("ReadWriteBufferFromHTTP"))
+    , log(getLogger("ReadWriteBufferFromHTTP"))
     , proxy_config(proxy_config_)
 {
     if (settings.http_max_tries <= 0 || settings.http_retry_initial_backoff_ms <= 0

@@ -523,7 +523,7 @@ void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries
         if (auto table = tryGetTargetTable())
             table->backupData(backup_entries_collector, data_path_in_backup, partitions);
         else
-            LOG_WARNING(&Poco::Logger::get("StorageMaterializedView"),
+            LOG_WARNING(getLogger("StorageMaterializedView"),
                         "Inner table does not exist, will not backup any data");
     }
 }

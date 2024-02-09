@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <memory>
+#include <stack>
 #include <Core/NamesAndTypes.h>
 #include <Core/TypeId.h>
 
@@ -211,7 +212,7 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
         const auto * expr_const_node = actions->tryFindInOutputs(expr_column_name);
         if (!expr_const_node)
             return false;
-        auto filter_actions = ActionsDAG::buildFilterActionsDAG({expr_const_node}, {}, context);
+        auto filter_actions = ActionsDAG::buildFilterActionsDAG({expr_const_node});
         const auto & nodes = filter_actions->getNodes();
         bool has_dependent_columns = std::any_of(nodes.begin(), nodes.end(), [&](const auto & node)
         {

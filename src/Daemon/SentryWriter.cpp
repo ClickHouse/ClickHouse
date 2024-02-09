@@ -68,7 +68,7 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
 {
     bool enabled = false;
     bool debug = config.getBool("send_crash_reports.debug", false);
-    auto * logger = &Poco::Logger::get("SentryWriter");
+    auto logger = getLogger("SentryWriter");
 
     if (config.getBool("send_crash_reports.enabled", false))
     {
@@ -140,7 +140,7 @@ void SentryWriter::shutdown()
 
 void SentryWriter::onFault(int sig, const std::string & error_message, const StackTrace & stack_trace)
 {
-    auto * logger = &Poco::Logger::get("SentryWriter");
+    auto logger = getLogger("SentryWriter");
     if (initialized)
     {
         sentry_value_t event = sentry_value_new_message_event(SENTRY_LEVEL_FATAL, "fault", error_message.c_str());

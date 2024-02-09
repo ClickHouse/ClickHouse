@@ -345,7 +345,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
 {
     using SessionPtr = std::conditional_t<pooled, PooledHTTPSessionPtr, HTTPSessionPtr>;
 
-    Poco::Logger * log = &Poco::Logger::get("AWSClient");
+    LoggerPtr log = getLogger("AWSClient");
 
     auto uri = request.GetUri().GetURIString();
     auto method = getMethod(request);

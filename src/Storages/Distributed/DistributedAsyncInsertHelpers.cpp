@@ -72,7 +72,7 @@ void writeRemoteConvert(
     RemoteInserter & remote,
     bool compression_expected,
     ReadBufferFromFile & in,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     if (!remote.getHeader())
     {

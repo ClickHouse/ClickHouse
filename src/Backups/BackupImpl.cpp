@@ -105,7 +105,7 @@ BackupImpl::BackupImpl(
     , version(INITIAL_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
     , use_same_s3_credentials_for_base_backup(use_same_s3_credentials_for_base_backup_)
-    , log(&Poco::Logger::get("BackupImpl"))
+    , log(getLogger("BackupImpl"))
 {
     open();
 }
@@ -136,7 +136,7 @@ BackupImpl::BackupImpl(
     , base_backup_info(base_backup_info_)
     , deduplicate_files(deduplicate_files_)
     , use_same_s3_credentials_for_base_backup(use_same_s3_credentials_for_base_backup_)
-    , log(&Poco::Logger::get("BackupImpl"))
+    , log(getLogger("BackupImpl"))
 {
     open();
 }

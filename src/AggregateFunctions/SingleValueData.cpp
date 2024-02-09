@@ -36,6 +36,8 @@ mergeIfAndNullFlags(const UInt8 * __restrict null_map, const UInt8 * __restrict 
 
 std::optional<size_t> SingleValueDataBase::getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) const
 {
+    static constexpr int nan_null_direction_hint = 1;
+
     if (row_begin >= row_end)
         return std::nullopt;
 
@@ -44,7 +46,7 @@ std::optional<size_t> SingleValueDataBase::getSmallestIndex(const IColumn & colu
     {
         size_t index = row_begin;
         for (size_t i = index + 1; i < row_end; i++)
-            if ((column.compareAt(i, index, column, nan_direction_hint) < 0))
+            if ((column.compareAt(i, index, column, nan_null_direction_hint) < 0))
                 index = i;
         return {index};
     }
@@ -54,13 +56,15 @@ std::optional<size_t> SingleValueDataBase::getSmallestIndex(const IColumn & colu
         constexpr IColumn::PermutationSortStability stability = IColumn::PermutationSortStability::Unstable;
         IColumn::Permutation permutation;
         constexpr UInt64 limit = 1;
-        column.getPermutation(direction, stability, limit, nan_direction_hint, permutation);
+        column.getPermutation(direction, stability, limit, nan_null_direction_hint, permutation);
         return {permutation[0]};
     }
 }
 
 std::optional<size_t> SingleValueDataBase::getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const
 {
+    static constexpr int nan_null_direction_hint = -1;
+
     if (row_begin >= row_end)
         return std::nullopt;
 
@@ -69,7 +73,7 @@ std::optional<size_t> SingleValueDataBase::getGreatestIndex(const IColumn & colu
     {
         size_t index = row_begin;
         for (size_t i = index + 1; i < row_end; i++)
-            if ((column.compareAt(i, index, column, nan_direction_hint) > 0))
+            if ((column.compareAt(i, index, column, nan_null_direction_hint) > 0))
                 index = i;
         return {index};
     }
@@ -79,7 +83,7 @@ std::optional<size_t> SingleValueDataBase::getGreatestIndex(const IColumn & colu
         constexpr IColumn::PermutationSortStability stability = IColumn::PermutationSortStability::Unstable;
         IColumn::Permutation permutation;
         constexpr UInt64 limit = 1;
-        column.getPermutation(direction, stability, limit, nan_direction_hint, permutation);
+        column.getPermutation(direction, stability, limit, nan_null_direction_hint, permutation);
         return {permutation[0]};
     }
 }
@@ -87,6 +91,8 @@ std::optional<size_t> SingleValueDataBase::getGreatestIndex(const IColumn & colu
 std::optional<size_t> SingleValueDataBase::getSmallestIndexNotNullIf(
     const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end) const
 {
+    static constexpr int nan_null_direction_hint = 1;
+
     size_t index = row_begin;
     while ((index < row_end) && ((if_map && if_map[index] == 0) || (null_map && null_map[index] != 0)))
         index++;
@@ -94,7 +100,7 @@ std::optional<size_t> SingleValueDataBase::getSmallestIndexNotNullIf(
         return std::nullopt;
 
     for (size_t i = index + 1; i < row_end; i++)
-        if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (column.compareAt(i, index, column, nan_direction_hint) < 0))
+        if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (column.compareAt(i, index, column, nan_null_direction_hint) < 0))
             index = i;
     return {index};
 }
@@ -102,6 +108,8 @@ std::optional<size_t> SingleValueDataBase::getSmallestIndexNotNullIf(
 std::optional<size_t> SingleValueDataBase::getGreatestIndexNotNullIf(
     const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end) const
 {
+    static constexpr int nan_null_direction_hint = -1;
+
     size_t index = row_begin;
     while ((index < row_end) && ((if_map && if_map[index] == 0) || (null_map && null_map[index] != 0)))
         index++;
@@ -109,7 +117,7 @@ std::optional<size_t> SingleValueDataBase::getGreatestIndexNotNullIf(
         return std::nullopt;
 
     for (size_t i = index + 1; i < row_end; i++)
-        if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (column.compareAt(i, index, column, nan_direction_hint) > 0))
+        if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (column.compareAt(i, index, column, nan_null_direction_hint) > 0))
             index = i;
     return {index};
 }

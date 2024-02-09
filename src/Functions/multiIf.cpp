@@ -9,6 +9,7 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/getLeastSupertype.h>
 
 
@@ -116,6 +117,9 @@ public:
         {
             types_of_branches.emplace_back(arg);
         });
+
+        if (context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type)
+            return getLeastSupertypeOrVariant(types_of_branches);
 
         return getLeastSupertype(types_of_branches);
     }

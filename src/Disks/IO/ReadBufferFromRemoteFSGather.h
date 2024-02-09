@@ -82,7 +82,7 @@ private:
     size_t current_buf_idx = 0;
     std::unique_ptr<ReadBufferFromFileBase> current_buf;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 size_t chooseBufferSizeForRemoteReading(const DB::ReadSettings & settings, size_t file_size);

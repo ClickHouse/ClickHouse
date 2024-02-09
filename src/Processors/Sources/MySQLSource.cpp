@@ -58,7 +58,7 @@ MySQLSource::MySQLSource(
     const Block & sample_block,
     const StreamSettings & settings_)
     : ISource(sample_block.cloneEmpty())
-    , log(&Poco::Logger::get("MySQLSource"))
+    , log(getLogger("MySQLSource"))
     , connection{std::make_unique<Connection>(entry, query_str)}
     , settings{std::make_unique<StreamSettings>(settings_)}
 {
@@ -69,7 +69,7 @@ MySQLSource::MySQLSource(
 /// For descendant MySQLWithFailoverSource
 MySQLSource::MySQLSource(const Block &sample_block_, const StreamSettings & settings_)
     : ISource(sample_block_.cloneEmpty())
-    , log(&Poco::Logger::get("MySQLSource"))
+    , log(getLogger("MySQLSource"))
     , settings(std::make_unique<StreamSettings>(settings_))
 {
     description.init(sample_block_);

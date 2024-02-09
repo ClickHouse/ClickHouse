@@ -1562,6 +1562,10 @@
         <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
     </query_cache>
 
+    <backups>
+        <allowed_path>backups</allowed_path>
+    </backups>
+
     <!-- This allows to disable exposing addresses in stack traces for security reasons.
          Please be aware that it does not improve security much, but makes debugging much harder.
          The addresses that are small offsets from zero will be displayed nevertheless to show nullptr dereferences.

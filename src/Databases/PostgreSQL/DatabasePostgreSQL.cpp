@@ -57,7 +57,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , configuration(configuration_)
     , pool(std::move(pool_))
     , cache_tables(cache_tables_)
-    , log(&Poco::Logger::get("DatabasePostgreSQL(" + dbname_ + ")"))
+    , log(getLogger("DatabasePostgreSQL(" + dbname_ + ")"))
 {
     fs::create_directories(metadata_path);
     cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
@@ -531,7 +531,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
                 else
                 {
                     use_table_cache = safeGetLiteralValue<UInt8>(engine_args[4], engine_name);
-                    LOG_WARNING(&Poco::Logger::get("DatabaseFactory"), "A deprecated syntax of PostgreSQL database engine is used");
+                    LOG_WARNING(getLogger("DatabaseFactory"), "A deprecated syntax of PostgreSQL database engine is used");
                     is_deprecated_syntax = true;
                 }
             }
