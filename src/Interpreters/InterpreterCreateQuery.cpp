@@ -36,6 +36,7 @@
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/BlockNumberColumn.h>
+#include <Storages/QueueModeColumns.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -906,6 +907,27 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
                             "Cannot create table with column '{}' for *MergeTree engines because it "
                             "is reserved for storing block number",
                             BlockNumberColumn::name);
+
+        auto search_queue_block_number = all_columns.find(QueueBlockNumberColumn::name);
+        if (search_queue_block_number != all_columns.end())
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Cannot create table with column '{}' for *MergeTree engines because it "
+                            "is reserved for storing block offset",
+                            QueueBlockNumberColumn::name);
+
+        auto search_queue_block_offset = all_columns.find(QueueBlockOffsetColumn::name);
+        if (search_queue_block_offset != all_columns.end())
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Cannot create table with column '{}' for *MergeTree engines because it "
+                            "is reserved for storing block offset",
+                            QueueBlockOffsetColumn::name);
+
+        auto search_queue_replica_column = all_columns.find(QueueReplicaColumn::name);
+        if (search_queue_replica_column != all_columns.end())
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Cannot create table with column '{}' for *MergeTree engines because it "
+                            "is reserved for storing block offset",
+                            QueueReplicaColumn::name);
     }
 
     const auto & settings = getContext()->getSettingsRef();

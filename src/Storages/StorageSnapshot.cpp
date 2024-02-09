@@ -1,6 +1,7 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/LightweightDeleteDescription.h>
 #include <Storages/BlockNumberColumn.h>
+#include <Storages/QueueModeColumns.h>
 #include <Storages/IStorage.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/NestedUtils.h>
@@ -37,6 +38,9 @@ void StorageSnapshot::init()
         system_columns[LightweightDeleteDescription::FILTER_COLUMN.name] = LightweightDeleteDescription::FILTER_COLUMN.type;
 
     system_columns[BlockNumberColumn::name] = BlockNumberColumn::type;
+    system_columns[QueueBlockNumberColumn::name] = QueueBlockNumberColumn::type;
+    system_columns[QueueBlockOffsetColumn::name] = QueueBlockOffsetColumn::type;
+    system_columns[QueueReplicaColumn::name] = QueueReplicaColumn::type;
 }
 
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const

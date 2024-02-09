@@ -32,6 +32,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/PreparedSets.h>
 #include <Storages/LightweightDeleteDescription.h>
+#include <Storages/QueueModeColumns.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
 #include <Analyzer/QueryTreeBuilder.h>
@@ -467,6 +468,12 @@ static void validateUpdateColumns(
 
         /// Dont allow to override value of block number virtual column
         if (!found && column_name == BlockNumberColumn::name)
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Update is not supported for virtual column {} ", backQuote(column_name));
+        }
+
+        /// Dont allow to override value of queue mode columns
+        if (!found && isQueueModeColumn(column_name))
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Update is not supported for virtual column {} ", backQuote(column_name));
         }

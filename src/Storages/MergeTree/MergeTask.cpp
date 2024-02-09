@@ -9,6 +9,7 @@
 #include <Common/ActionBlocker.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/LightweightDeleteDescription.h>
+#include <Storages/QueueModeColumns.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
 #include <DataTypes/ObjectUtils.h>
@@ -1072,13 +1073,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     if (global_ctx->deduplicate)
     {
-        /// We don't want to deduplicate by block number column
-        /// so if deduplicate_by_columns is empty, add all columns except _block_number
-        if (supportsBlockNumberColumn(global_ctx) && global_ctx->deduplicate_by_columns.empty())
+        /// We don't want to deduplicate by block number or queue mode columns
+        /// so if deduplicate_by_columns is empty, add all columns except this ones
+        if ((supportsBlockNumberColumn(global_ctx) || isInQueueMode(global_ctx)) && global_ctx->deduplicate_by_columns.empty())
         {
             for (const auto & col : global_ctx->merging_column_names)
             {
-                if (col != BlockNumberColumn::name)
+                if (col != BlockNumberColumn::name && !isQueueModeColumn(col))
                     global_ctx->deduplicate_by_columns.emplace_back(col);
             }
         }

@@ -407,6 +407,12 @@ private:
         return global_ctx->data->getSettings()->allow_experimental_block_number_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
     }
 
+    /// Check for queue mode is enabled
+    static bool isInQueueMode(GlobalRuntimeContextPtr global_ctx)
+    {
+        return global_ctx->data->getSettings()->queue;
+    }
+
 };
 
 /// FIXME

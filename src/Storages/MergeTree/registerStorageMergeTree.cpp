@@ -5,6 +5,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/QueueModeColumns.h>
 
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -525,6 +526,55 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (is_extended_storage_def)
     {
+        storage_settings->loadFromQuery(*args.storage_def, context, args.attach);
+
+        if (storage_settings->queue)
+        {
+            if (merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree queue settings is not supported for {} mode", merging_params.getModeName());
+
+            // explicitly disable block_number virtual column feature
+            storage_settings->allow_experimental_block_number_column = false;
+
+            auto add_column = [&] (const String& name, const DataTypePtr& type, const CompressionCodecPtr& codec = nullptr) {
+                ColumnDescription column(name, type);
+
+                if (codec != nullptr)
+                    column.codec = codec->getFullCodecDesc();
+
+                column.default_desc.kind = ColumnDefaultKind::Materialized;
+
+                // setup expression value to ensure that serialization works correctly
+                if (type->isValueRepresentedByNumber())
+                    column.default_desc.expression = std::make_shared<ASTLiteral>(0);
+                else
+                    column.default_desc.expression = std::make_shared<ASTLiteral>("");
+
+                metadata.columns.add(std::move(column));
+            };
+
+            add_column(QueueBlockNumberColumn::name, QueueBlockNumberColumn::type, QueueBlockNumberColumn::compression_codec);
+            add_column(QueueBlockOffsetColumn::name, QueueBlockOffsetColumn::type, QueueBlockOffsetColumn::compression_codec);
+
+            if (replicated)
+                add_column(QueueReplicaColumn::name, QueueReplicaColumn::type);
+
+            // mode is ordinary -> additional_sorting_key_settings must be empty
+            chassert(!additional_sorting_key_settings.has_value());
+
+            additional_sorting_key_settings = KeyDescription::AdditionalSettings{};
+            additional_sorting_key_settings->ext_columns_front = std::vector<String>{QueueBlockNumberColumn::name, QueueBlockOffsetColumn::name};
+
+            additional_primary_key_settings = KeyDescription::AdditionalSettings{};
+            additional_primary_key_settings->ext_columns_front = std::vector<String>{QueueBlockNumberColumn::name, QueueBlockOffsetColumn::name};
+
+            if (replicated)
+            {
+                additional_partition_key_settings = KeyDescription::AdditionalSettings{};
+                additional_partition_key_settings->ext_columns_front = std::vector<String>{QueueReplicaColumn::name};
+            }
+        }
+
         ASTPtr partition_by_key;
         if (args.storage_def->partition_by)
             partition_by_key = args.storage_def->partition_by->ptr();
@@ -615,8 +665,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, allow_suspicious_ttl);
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
-
-        storage_settings->loadFromQuery(*args.storage_def, context, args.attach);
 
         // updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
