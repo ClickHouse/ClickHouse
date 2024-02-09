@@ -46,14 +46,12 @@ static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, ContextPtr context_)
     : DatabaseOrdinary(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseOrdinary (" + name_ + ")", context_)
 {
-    getContext()->addWarningMessageAboutDatabaseOrdinary(name_);
 }
 
 DatabaseOrdinary::DatabaseOrdinary(
     const String & name_, const String & metadata_path_, const String & data_path_, const String & logger, ContextPtr context_)
     : DatabaseOnDisk(name_, metadata_path_, data_path_, logger, context_)
 {
-    getContext()->addWarningMessageAboutDatabaseOrdinary(name_);
 }
 
 void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel)
@@ -364,6 +362,9 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
             throw Exception(
                 ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                 "Ordinary database engine is deprecated (see also allow_deprecated_database_ordinary setting)");
+
+        args.context->addWarningMessageAboutDatabaseOrdinary(args.database_name);
+
         return make_shared<DatabaseOrdinary>(
             args.database_name,
             args.metadata_path,

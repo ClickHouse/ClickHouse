@@ -1183,10 +1183,9 @@ void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_nam
     auto suppress_re = shared->getConfigRefWithLock(lock).getString("warning_supress_regexp", "");
     /// We don't use getFlagsPath method, because it takes a shared lock.
     auto convert_databases_flag = fs::path(shared->flags_path) / "convert_ordinary_to_atomic";
-    auto message = fmt::format("Server has databases (for example `{}`) with Ordinary engine, which was deprecated.\n"
-            "To convert this database to a new Atomic engine, please create a forcing flag {} and make sure that ClickHouse has write permission for it.\n"
-            "Example:\n"
-            "sudo touch '{}' && sudo chmod 666 '{}'",
+    auto message = fmt::format("Server has databases (for example `{}`) with Ordinary engine, which was deprecated. "
+            "To convert this database to a new Atomic engine, please create a forcing flag {} and make sure that ClickHouse has write permission for it. "
+            "Example: sudo touch '{}' && sudo chmod 666 '{}'",
             database_name,
             convert_databases_flag.string(), convert_databases_flag.string(), convert_databases_flag.string());
 
