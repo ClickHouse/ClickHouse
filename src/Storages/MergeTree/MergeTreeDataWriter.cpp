@@ -388,14 +388,11 @@ Block MergeTreeDataWriter::mergeBlock(
 }
 
 
-MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
+    BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, std::optional<int64_t> block_number)
 {
-    return writeTempPartImpl(block, metadata_snapshot, context, data.insert_increment.get(), /*need_tmp_prefix = */true);
-}
-
-MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartWithoutPrefix(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, int64_t block_number, ContextPtr context)
-{
-    return writeTempPartImpl(block, metadata_snapshot, context, block_number, /*need_tmp_prefix = */false);
+    int64_t block_number_to_use = block_number.has_value() ? block_number.value() : data.insert_increment.get();
+    return writeTempPartImpl(block, metadata_snapshot, context, block_number_to_use, /*need_tmp_prefix = */true);
 }
 
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
