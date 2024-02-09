@@ -1002,7 +1002,7 @@ jobs:
 ####################################### libFuzzer ###########################################
 #############################################################################################
   libFuzzer:
-    if: ${{ !failure() && !cancelled() && contains(github.event.pull_request.labels.*.name, 'libFuzzer') }}
+    if: ${{ !failure() && !cancelled() }}
     needs: [RunConfig, StyleCheck]
     uses: ./.github/workflows/libfuzzer.yml
     with:
