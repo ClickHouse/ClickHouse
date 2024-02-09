@@ -100,6 +100,12 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "EphemeralLock is not created");
     }
 
+    ZooKeeperWithFaultInjectionPtr getZooKeeper() const
+    {
+        checkCreated();
+        return zookeeper;
+    }
+
     ~EphemeralLockInZooKeeper();
 
 private:
@@ -112,6 +118,10 @@ private:
 template<typename T>
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
     const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path);
+
+/// Checks that current node is stil exists and also makes deduplication check
+template<typename T>
+std::optional<String> checkLockAndDeduplicate(const EphemeralLockInZooKeeper& lock, const T & deduplication_path);
 
 /// Acquires block number locks in all partitions.
 class EphemeralLocksInAllPartitions : public boost::noncopyable
@@ -198,6 +208,12 @@ private:
 
     std::optional<EphemeralLocksInAllPartitions> multiple_partitions_holder;
     std::optional<EphemeralLockInZooKeeper> single_partition_holder;
+};
+
+/// Struct for storing EphemeralLock if it was allocated correctly
+struct EphemeralLockHolder
+{
+    std::optional<EphemeralLockInZooKeeper> block_number_lock;
 };
 
 }

@@ -118,7 +118,7 @@ void AsyncInsertBlockInfo::filterBlockDuplicate(const std::vector<String> & bloc
         block_with_partition.block = unmerged_block_with_partition->block;
 }
 
-std::vector<String> AsyncInsertBlockInfo::getHashesForBlocks(BlockWithPartition & block, String partition_id)
+std::vector<String> AsyncInsertBlockInfo::getHashesForBlocks(const BlockWithPartition & block, String partition_id)
 {
     size_t start = 0;
     auto cols = block.block.getColumns();
@@ -145,6 +145,23 @@ std::vector<String> AsyncInsertBlockInfo::getHashesForBlocks(BlockWithPartition 
         start = offset;
     }
     return block_id_vec;
+}
+
+String SyncInsertBlockInfo::getHashForBlock(const BlockWithPartition & block, String partition_id)
+{
+    auto cols = block.block.getColumns();
+    size_t rows = block.block.rows();
+
+    SipHash hash;
+    for (size_t j = 0; j < rows; ++j)
+    {
+        for (const auto & col : cols)
+            col->updateHashWithValue(j, hash);
+    }
+
+    const auto hash_value = hash.get128();
+
+    return partition_id + "_" + DB::toString(hash_value.items[0]) + "_" + DB::toString(hash_value.items[1]);
 }
 
 }

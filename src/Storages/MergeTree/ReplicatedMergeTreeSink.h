@@ -1,10 +1,16 @@
 #pragma once
 
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <optional>
+#include <vector>
 #include <base/types.h>
-#include <Storages/MergeTree/ZooKeeperRetries.h>
+
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+
+#include <Processors/Sinks/SinkToStorage.h>
+
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/ZooKeeperRetries.h>
+#include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 
 
@@ -89,13 +95,14 @@ private:
 
     /// Rename temporary part and commit to ZooKeeper.
     /// Returns a list of conflicting async blocks and true if the whole parts was deduplicated
+    /// lock_holder for queue mode purposes
     std::pair<std::vector<String>, bool> commitPart(
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
         const BlockIDsType & block_id,
         size_t replicas_num,
-        bool writing_existing_part);
-
+        bool writing_existing_part,
+        std::shared_ptr<EphemeralLockHolder> lock_holder = nullptr);
 
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
     /// Also checks that replica still alive.

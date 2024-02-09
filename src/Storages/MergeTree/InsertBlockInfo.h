@@ -7,6 +7,8 @@ namespace DB
 
 struct SyncInsertBlockInfo
 {
+    std::string block_id;
+
     SyncInsertBlockInfo(
         LoggerPtr /*log_*/,
         std::string && block_id_,
@@ -20,7 +22,7 @@ struct SyncInsertBlockInfo
         : block_id(std::move(block_id_))
     {}
 
-    std::string block_id;
+    static String getHashForBlock(const BlockWithPartition & block, String partition_id);
 };
 
 struct AsyncInsertBlockInfo
@@ -49,7 +51,7 @@ struct AsyncInsertBlockInfo
     void filterBlockDuplicate(const std::vector<String> & block_paths, bool self_dedup);
         /// Convert block id vector to string. Output at most 50 ids.
 
-    static std::vector<String> getHashesForBlocks(BlockWithPartition & block, String partition_id);
+    static std::vector<String> getHashesForBlocks(const BlockWithPartition & block, String partition_id);
 };
 
 }

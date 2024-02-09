@@ -92,6 +92,61 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
     return EphemeralLockInZooKeeper{path_prefix_, zookeeper_, path};
 }
 
+template<typename T>
+std::optional<String> checkLockAndDeduplicate(const EphemeralLockInZooKeeper& lock, const T & deduplication_path)
+{
+    static constexpr bool async_insert = std::is_same_v<T, std::vector<String>>;
+
+    // check has zookeeper
+    lock.checkCreated();
+    auto zookeeper = lock.getZooKeeper();
+
+    Coordination::Requests ops;
+
+    // add check deduplication
+    if constexpr (async_insert)
+    {
+        for (const auto & single_dedup_path : deduplication_path)
+            zkutil::addCheckNotExistsRequest(ops, *zookeeper, single_dedup_path);
+    }
+    else
+    {
+        zkutil::addCheckNotExistsRequest(ops, *zookeeper, deduplication_path);
+    }
+
+    // add check current node request
+    ops.push_back(zkutil::makeCheckRequest(lock.getPath(), -1));
+
+    // execute
+    Coordination::Responses responses;
+    Coordination::Error e = zookeeper->tryMulti(ops, responses);
+
+    // ZNODEEXISTS if has duplication
+    if (e == Coordination::Error::ZNODEEXISTS)
+    {
+        if constexpr (async_insert)
+        {
+            auto failed_idx = zkutil::getFailedOpIndex(Coordination::Error::ZNODEEXISTS, responses);
+            return ops[failed_idx]->getPath();
+        }
+        else
+            return deduplication_path;
+    }
+
+    // ZNONODE if current node is destroyed, via disconnect
+    if (e == Coordination::Error::ZNONODE)
+        // TODO: add valid exception
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Lost connection to ZK");
+
+    if (e != Coordination::Error::ZOK)
+    {
+        zkutil::KeeperMultiException::check(e, ops, responses); // This should always throw the proper exception
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to handle error {} when proposing deduplicate discovery", toString(e));
+    }
+
+    return std::nullopt;
+}
+
 void EphemeralLockInZooKeeper::unlock()
 {
     Coordination::Requests ops;
@@ -225,5 +280,11 @@ template std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper<
 
 template std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper<std::vector<String>>(
     const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const std::vector<String> & deduplication_path);
+
+template std::optional<String> checkLockAndDeduplicate<String>(
+    const EphemeralLockInZooKeeper& lock, const String & deduplication_path);
+
+template std::optional<String> checkLockAndDeduplicate<std::vector<String>>(
+    const EphemeralLockInZooKeeper& lock, const std::vector<String> & deduplication_path);
 
 }
