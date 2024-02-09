@@ -646,14 +646,14 @@ class CiCache:
         TIMEOUT = 3600
         await_finished: Dict[str, List[int]] = {}
         round_cnt = 0
-        while len(jobs_with_params) > 5 and round_cnt < 3:
+        while len(jobs_with_params) > 4 and round_cnt < 5:
             round_cnt += 1
             GHActions.print_in_group(
                 f"Wait pending jobs, round [{round_cnt}]:", list(jobs_with_params)
             )
             # this is initial approach to wait pending jobs:
-            # start waiting for the next TIMEOUT seconds if there are more than X(=5) jobs to wait
-            # wait TIMEOUT seconds in rounds. Y(=3) is the max number of rounds
+            # start waiting for the next TIMEOUT seconds if there are more than X(=4) jobs to wait
+            # wait TIMEOUT seconds in rounds. Y(=5) is the max number of rounds
             expired_sec = 0
             start_at = int(time.time())
             while expired_sec < TIMEOUT and jobs_with_params:
@@ -701,13 +701,11 @@ class CiCache:
                 print(
                     f"...awaiting continues... seconds left [{TIMEOUT - expired_sec}]"
                 )
-        if await_finished:
-            GHActions.print_in_group(
-                "Finished jobs:",
-                [f"{job}:{batches}" for job, batches in await_finished.items()],
-            )
-        else:
-            print("Awaiting FAILED. No job has finished successfully.")
+            if await_finished:
+                GHActions.print_in_group(
+                    f"Finished jobs, round [{round_cnt}]:",
+                    [f"{job}:{batches}" for job, batches in await_finished.items()],
+                )
         GHActions.print_in_group(
             "Remaining jobs:",
             [f"{job}:{params['batches']}" for job, params in jobs_with_params.items()],
