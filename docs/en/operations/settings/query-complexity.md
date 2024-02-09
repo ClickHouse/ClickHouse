@@ -1,4 +1,4 @@
----
+![image](https://github.com/ClickHouse/ClickHouse/assets/3936029/17039d32-4699-4498-bcff-947079345a66)---
 slug: /en/operations/settings/query-complexity
 sidebar_position: 59
 sidebar_label: Restrictions on Query Complexity
@@ -27,6 +27,8 @@ It can take one of two values: `throw` or `break`. Restrictions on aggregation (
 The maximum amount of RAM to use for running a query on a single server.
 
 The default setting is unlimited (set to `0`).
+
+Cloud default value: 17 GB.
 
 The setting does not consider the volume of available memory or the total volume of memory on the machine.
 The restriction applies to a single query within a single server.
@@ -104,7 +106,9 @@ Possible values:
 - Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../sql-reference/statements/select/group-by.md#select-group-by-clause) operation.
 - 0 — `GROUP BY` in external memory disabled.
 
-Default value: 0.
+Default value: `0`.
+
+Cloud default value: 8 GB.
 
 ## max_bytes_before_external_sort {#settings-max_bytes_before_external_sort}
 
@@ -114,6 +118,8 @@ Enables or disables execution of `ORDER BY` clauses in external memory. See [ORD
 - 0 — `ORDER BY` in external memory disabled.
 
 Default value: 0.
+
+Cloud default value: 8 GB.
 
 ## max_rows_to_sort {#max-rows-to-sort}
 
@@ -129,7 +135,11 @@ What to do if the number of rows received before sorting exceeds one of the limi
 
 ## max_result_rows {#setting-max_result_rows}
 
-Limit on the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
+Limit on the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query. No limit is applied when value is `0`.
+
+Default value: `0`.
+
+Cloud default value: `500000`.
 
 ## max_result_bytes {#max-result-bytes}
 
@@ -137,9 +147,13 @@ Limit on the number of bytes in the result. The same as the previous setting.
 
 ## result_overflow_mode {#result-overflow-mode}
 
-What to do if the volume of the result exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
+What to do if the volume of the result exceeds one of the limits: ‘throw’ or ‘break’.
 
 Using ‘break’ is similar to using LIMIT. `Break` interrupts execution only at the block level. This means that amount of returned rows is greater than [max_result_rows](#setting-max_result_rows), multiple of [max_block_size](../../operations/settings/settings.md#setting-max_block_size) and depends on [max_threads](../../operations/settings/settings.md#max_threads).
+
+Default value: `throw`.
+
+Cloud default value: `break`.
 
 Example:
 
