@@ -122,6 +122,10 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         if (frame.next_child == 0)
         {
+
+            if (optimization_settings.read_in_order)
+                optimizeReadInOrder(*frame.node, nodes);
+
             if (optimization_settings.distinct_in_order)
                 tryDistinctReadInOrder(frame.node);
         }
@@ -149,9 +153,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             if (frame.next_child == 0)
             {
                 has_reading_from_mt |= typeid_cast<const ReadFromMergeTree *>(frame.node->step.get()) != nullptr;
-
-                if (optimization_settings.read_in_order)
-                    optimizeReadInOrder(*frame.node, nodes);
 
                 /// Projection optimization relies on PK optimization
                 if (optimization_settings.optimize_projection)
