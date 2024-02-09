@@ -577,7 +577,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             /// Primary and sorting key become independent after this ALTER so
             /// we have to save the old ORDER BY expression as the new primary
             /// key.
-            primary_key = KeyDescription::getKeyFromAST(sorting_key.definition_ast, metadata.columns, context);
+            primary_key = KeyDescription::Builder().buildFromAST(sorting_key.definition_ast, metadata.columns, context);
         }
 
         /// Recalculate key with new order_by expression.
@@ -1122,7 +1122,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     }
     else
     {
-        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, context);
+        metadata_copy.primary_key = KeyDescription::Builder().buildFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, context);
         metadata_copy.primary_key.definition_ast = nullptr;
     }
 

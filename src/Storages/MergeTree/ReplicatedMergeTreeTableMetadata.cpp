@@ -294,7 +294,7 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
 
     /// NOTE: You can make a less strict check of match expressions so that tables do not break from small changes
     ///    in formatAST code.
-    String parsed_zk_primary_key = formattedAST(KeyDescription::parse(from_zk.primary_key, columns, context).expression_list_ast);
+    String parsed_zk_primary_key = formattedAST(KeyDescription::Builder().buildFromString(from_zk.primary_key, columns, context).expression_list_ast);
     if (primary_key != parsed_zk_primary_key)
         throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in primary key. "
             "Stored in ZooKeeper: {}, parsed from ZooKeeper: {}, local: {}",
@@ -306,7 +306,7 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
                         "Stored in ZooKeeper: {}, local: {}", DB::toString(from_zk.data_format_version.toUnderType()),
                         DB::toString(data_format_version.toUnderType()));
 
-    String parsed_zk_partition_key = formattedAST(KeyDescription::parse(from_zk.partition_key, columns, context).expression_list_ast);
+    String parsed_zk_partition_key = formattedAST(KeyDescription::Builder().buildFromString(from_zk.partition_key, columns, context).expression_list_ast);
     if (partition_key != parsed_zk_partition_key)
         throw Exception(ErrorCodes::METADATA_MISMATCH,
                         "Existing table metadata in ZooKeeper differs in partition key expression. "
@@ -319,7 +319,7 @@ void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTabl
 
     checkImmutableFieldsEquals(from_zk, columns, context);
 
-    String parsed_zk_sampling_expression = formattedAST(KeyDescription::parse(from_zk.sampling_expression, columns, context).definition_ast);
+    String parsed_zk_sampling_expression = formattedAST(KeyDescription::Builder().buildFromString(from_zk.sampling_expression, columns, context).definition_ast);
     if (sampling_expression != parsed_zk_sampling_expression)
     {
         throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in sample expression. "
@@ -327,7 +327,7 @@ void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTabl
             from_zk.sampling_expression, parsed_zk_sampling_expression, sampling_expression);
     }
 
-    String parsed_zk_sorting_key = formattedAST(extractKeyExpressionList(KeyDescription::parse(from_zk.sorting_key, columns, context).definition_ast));
+    String parsed_zk_sorting_key = formattedAST(extractKeyExpressionList(KeyDescription::Builder().buildFromString(from_zk.sorting_key, columns, context).definition_ast));
     if (sorting_key != parsed_zk_sorting_key)
     {
         throw Exception(ErrorCodes::METADATA_MISMATCH,
@@ -336,7 +336,7 @@ void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTabl
                         from_zk.sorting_key, parsed_zk_sorting_key, sorting_key);
     }
 
-    auto parsed_primary_key = KeyDescription::parse(primary_key, columns, context);
+    auto parsed_primary_key = KeyDescription::Builder().buildFromString(primary_key, columns, context);
     String parsed_zk_ttl_table = formattedAST(TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key).definition_ast);
     if (ttl_table != parsed_zk_ttl_table)
     {
@@ -457,7 +457,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
                 /// Primary and sorting key become independent after this ALTER so we have to
                 /// save the old ORDER BY expression as the new primary key.
                 auto old_sorting_key_ast = old_metadata.getSortingKey().definition_ast;
-                new_metadata.primary_key = KeyDescription::getKeyFromAST(
+                new_metadata.primary_key = KeyDescription::Builder().buildFromAST(
                     old_sorting_key_ast, new_metadata.columns, context);
             }
         }
@@ -521,7 +521,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     }
     else
     {
-        new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, context);
+        new_metadata.primary_key = KeyDescription::Builder().buildFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, context);
         new_metadata.primary_key.definition_ast = nullptr;
     }
 

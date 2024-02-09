@@ -1,16 +1,21 @@
-#include <Storages/KeyDescription.h>
+#include <ranges>
 
 #include <Functions/IFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTFunction.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Storages/extractKeyExpressionList.h>
+
 #include <Common/quoteString.h>
-#include <Interpreters/FunctionNameNormalizer.h>
+
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/TreeRewriter.h>
+
+#include <Storages/KeyDescription.h>
+#include <Storages/extractKeyExpressionList.h>
 
 
 namespace DB
@@ -22,13 +27,116 @@ namespace ErrorCodes
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
 }
 
+/// settings extenders
+KeyDescription::Builder::Builder(std::optional<AdditionalSettings> settings_) : settings{std::move(settings_)}
+{
+}
+
+KeyDescription::Builder & KeyDescription::Builder::withExtFrontColumns(std::vector<String> ext_columns_front_)
+{
+    if (!settings.has_value())
+        settings = AdditionalSettings{};
+
+    settings->ext_columns_front = std::move(ext_columns_front_);
+
+    return *this;
+}
+
+KeyDescription::Builder & KeyDescription::Builder::withExtBackColumns(std::vector<String> ext_columns_back_)
+{
+    if (!settings.has_value())
+        settings = AdditionalSettings{};
+
+    settings->ext_columns_back = std::move(ext_columns_back_);
+
+    return *this;
+}
+
+KeyDescription KeyDescription::Builder::buildEmpty()
+{
+    chassert(!settings.has_value());
+
+    KeyDescription result;
+    result.expression_list_ast = std::make_shared<ASTExpressionList>();
+    result.expression = std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(), ExpressionActionsSettings{});
+
+    return result;
+}
+
+KeyDescription
+KeyDescription::Builder::buildFromAST(const ASTPtr & definition_ast_, const ColumnsDescription & columns_, ContextPtr context_)
+{
+    KeyDescription result;
+    result.definition_ast = definition_ast_;
+    result.expression_list_ast = extractKeyExpressionList(definition_ast_);
+    result.additional_settings = settings;
+
+    if (settings && settings->ext_columns_front)
+    {
+        for (const auto & additional_column : std::ranges::views::reverse(settings->ext_columns_front.value()))
+        {
+            ASTPtr column_identifier = std::make_shared<ASTIdentifier>(additional_column);
+            result.expression_list_ast->children.insert(result.expression_list_ast->children.begin(), column_identifier);
+        }
+    }
+
+    if (settings && settings->ext_columns_back)
+    {
+        for (const auto & additional_column : settings->ext_columns_back.value())
+        {
+            ASTPtr column_identifier = std::make_shared<ASTIdentifier>(additional_column);
+            result.expression_list_ast->children.push_back(column_identifier);
+        }
+    }
+
+    const auto & children = result.expression_list_ast->children;
+    for (const auto & child : children)
+        result.column_names.emplace_back(child->getColumnName());
+
+    {
+        auto expr = result.expression_list_ast->clone();
+        auto syntax_result = TreeRewriter(context_).analyze(expr, columns_.getAllPhysical());
+        /// In expression we also need to store source columns
+        result.expression = ExpressionAnalyzer(expr, syntax_result, context_).getActions(false);
+        /// In sample block we use just key columns
+        result.sample_block = ExpressionAnalyzer(expr, syntax_result, context_).getActions(true)->getSampleBlock();
+    }
+
+    for (size_t i = 0; i < result.sample_block.columns(); ++i)
+    {
+        result.data_types.emplace_back(result.sample_block.getByPosition(i).type);
+        if (!result.data_types.back()->isComparable())
+            throw Exception(
+                ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY,
+                "Column {} with type {} is not allowed in key expression, it's not comparable",
+                backQuote(result.sample_block.getByPosition(i).name),
+                result.data_types.back()->getName());
+    }
+
+    return result;
+}
+
+/// Parses description from string
+KeyDescription KeyDescription::Builder::buildFromString(const String & str_, const ColumnsDescription & columns_, ContextPtr context_)
+{
+    KeyDescription result;
+    if (str_.empty())
+        return result;
+
+    ParserExpression parser;
+    ASTPtr ast = parseQuery(parser, "(" + str_ + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    FunctionNameNormalizer().visit(ast.get());
+
+    return buildFromAST(ast, columns_, context_);
+}
+
 KeyDescription::KeyDescription(const KeyDescription & other)
     : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
     , sample_block(other.sample_block)
     , column_names(other.column_names)
     , data_types(other.data_types)
-    , additional_column(other.additional_column)
+    , additional_settings(other.additional_settings)
 {
     if (other.expression)
         expression = other.expression->clone();
@@ -60,34 +168,23 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
     data_types = other.data_types;
 
     /// additional_column is constant property It should never be lost.
-    if (additional_column.has_value() && !other.additional_column.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong key assignment, losing additional_column");
-    additional_column = other.additional_column;
+    if (additional_settings.has_value() && !other.additional_settings.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong key assignment, losing additional_settings");
+
+    additional_settings = other.additional_settings;
+
     return *this;
 }
 
 
-void KeyDescription::recalculateWithNewAST(
-    const ASTPtr & new_ast,
-    const ColumnsDescription & columns,
-    ContextPtr context)
+void KeyDescription::recalculateWithNewAST(const ASTPtr & new_ast, const ColumnsDescription & columns, ContextPtr context)
 {
-    *this = getSortingKeyFromAST(new_ast, columns, context, additional_column);
+    *this = Builder(std::move(additional_settings)).buildFromAST(new_ast, columns, context);
 }
 
-void KeyDescription::recalculateWithNewColumns(
-    const ColumnsDescription & new_columns,
-    ContextPtr context)
+void KeyDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context)
 {
-    *this = getSortingKeyFromAST(definition_ast, new_columns, context, additional_column);
-}
-
-KeyDescription KeyDescription::getKeyFromAST(
-    const ASTPtr & definition_ast,
-    const ColumnsDescription & columns,
-    ContextPtr context)
-{
-    return getSortingKeyFromAST(definition_ast, columns, context, {});
+    *this = Builder(std::move(additional_settings)).buildFromAST(definition_ast, new_columns, context);
 }
 
 bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
@@ -112,69 +209,6 @@ bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
         }
     }
     return modulo_in_ast;
-}
-
-KeyDescription KeyDescription::getSortingKeyFromAST(
-    const ASTPtr & definition_ast,
-    const ColumnsDescription & columns,
-    ContextPtr context,
-    const std::optional<String> & additional_column)
-{
-    KeyDescription result;
-    result.definition_ast = definition_ast;
-    result.expression_list_ast = extractKeyExpressionList(definition_ast);
-
-    if (additional_column)
-    {
-        result.additional_column = additional_column;
-        ASTPtr column_identifier = std::make_shared<ASTIdentifier>(*additional_column);
-        result.expression_list_ast->children.push_back(column_identifier);
-    }
-
-    const auto & children = result.expression_list_ast->children;
-    for (const auto & child : children)
-        result.column_names.emplace_back(child->getColumnName());
-
-    {
-        auto expr = result.expression_list_ast->clone();
-        auto syntax_result = TreeRewriter(context).analyze(expr, columns.getAllPhysical());
-        /// In expression we also need to store source columns
-        result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
-        /// In sample block we use just key columns
-        result.sample_block = ExpressionAnalyzer(expr, syntax_result, context).getActions(true)->getSampleBlock();
-    }
-
-    for (size_t i = 0; i < result.sample_block.columns(); ++i)
-    {
-        result.data_types.emplace_back(result.sample_block.getByPosition(i).type);
-        if (!result.data_types.back()->isComparable())
-            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY,
-                            "Column {} with type {} is not allowed in key expression, it's not comparable",
-                            backQuote(result.sample_block.getByPosition(i).name), result.data_types.back()->getName());
-    }
-
-    return result;
-}
-
-KeyDescription KeyDescription::buildEmptyKey()
-{
-    KeyDescription result;
-    result.expression_list_ast = std::make_shared<ASTExpressionList>();
-    result.expression = std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(), ExpressionActionsSettings{});
-    return result;
-}
-
-KeyDescription KeyDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr context)
-{
-    KeyDescription result;
-    if (str.empty())
-        return result;
-
-    ParserExpression parser;
-    ASTPtr ast = parseQuery(parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    FunctionNameNormalizer().visit(ast.get());
-
-    return getKeyFromAST(ast, columns, context);
 }
 
 }

@@ -441,7 +441,7 @@ StorageHive::StorageHive(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment_);
-    storage_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, storage_metadata.columns, getContext());
+    storage_metadata.partition_key = KeyDescription::Builder().buildFromAST(partition_by_ast, storage_metadata.columns, getContext());
 
     setInMemoryMetadata(storage_metadata);
 }
