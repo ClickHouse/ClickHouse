@@ -132,6 +132,8 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
         stack.pop_back();
     }
 
+    stack.push_back({.node = &root});
+
     while (!stack.empty())
     {
         {
