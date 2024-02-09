@@ -21,11 +21,11 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/DataLakes/Iceberg/IcebergMetadata.h>
-#include <Storages/DataLakes/S3MetadataReader.h>
-#include <Storages/StorageS3.h>
+#include <Storages/ObjectStorage/Configuration.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -44,7 +44,8 @@ namespace ErrorCodes
 }
 
 IcebergMetadata::IcebergMetadata(
-    const StorageS3::Configuration & configuration_,
+    ObjectStoragePtr object_storage_,
+    StorageObjectStorageConfigurationPtr configuration_,
     DB::ContextPtr context_,
     Int32 metadata_version_,
     Int32 format_version_,
@@ -52,6 +53,7 @@ IcebergMetadata::IcebergMetadata(
     Int32 current_schema_id_,
     DB::NamesAndTypesList schema_)
     : WithContext(context_)
+    , object_storage(object_storage_)
     , configuration(configuration_)
     , metadata_version(metadata_version_)
     , format_version(format_version_)
@@ -331,21 +333,42 @@ MutableColumns parseAvro(
     return columns;
 }
 
+std::vector<String> listFiles(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfiguration & configuration,
+    const String & prefix, const String & suffix)
+{
+    auto key = std::filesystem::path(configuration.getPath()) / prefix;
+    RelativePathsWithMetadata files_with_metadata;
+    object_storage->listObjects(key, files_with_metadata, 0);
+    Strings res;
+    for (const auto & file_with_metadata : files_with_metadata)
+    {
+        const auto & filename = file_with_metadata->relative_path;
+        if (filename.ends_with(suffix))
+            res.push_back(filename);
+    }
+    LOG_TRACE(getLogger("DataLakeMetadataReadHelper"), "Listed {} files", res.size());
+    return res;
+}
+
 /**
  * Each version of table metadata is stored in a `metadata` directory and
  * has one of 2 formats:
  *   1) v<V>.metadata.json, where V - metadata version.
  *   2) <V>-<random-uuid>.metadata.json, where V - metadata version
  */
-std::pair<Int32, String> getMetadataFileAndVersion(const StorageS3::Configuration & configuration)
+std::pair<Int32, String> getMetadataFileAndVersion(
+    ObjectStoragePtr object_storage,
+    const StorageObjectStorageConfiguration & configuration)
 {
-    const auto metadata_files = S3DataLakeMetadataReadHelper::listFiles(configuration, "metadata", ".metadata.json");
+    const auto metadata_files = listFiles(object_storage, configuration, "metadata", ".metadata.json");
     if (metadata_files.empty())
     {
         throw Exception(
             ErrorCodes::FILE_DOESNT_EXIST,
             "The metadata file for Iceberg table with path {} doesn't exist",
-            configuration.url.key);
+            configuration.getPath());
     }
 
     std::vector<std::pair<UInt32, String>> metadata_files_with_versions;
@@ -372,11 +395,15 @@ std::pair<Int32, String> getMetadataFileAndVersion(const StorageS3::Configuratio
 
 }
 
-std::unique_ptr<IcebergMetadata> parseIcebergMetadata(const StorageS3::Configuration & configuration, ContextPtr context_)
+std::unique_ptr<IcebergMetadata> parseIcebergMetadata(
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration,
+    ContextPtr context_)
 {
-    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(configuration);
+    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration);
     LOG_DEBUG(getLogger("IcebergMetadata"), "Parse metadata {}", metadata_file_path);
-    auto buf = S3DataLakeMetadataReadHelper::createReadBuffer(metadata_file_path, context_, configuration);
+    auto read_settings = context_->getReadSettings();
+    auto buf = object_storage->readObject(StoredObject(metadata_file_path), read_settings);
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
 
@@ -397,12 +424,12 @@ std::unique_ptr<IcebergMetadata> parseIcebergMetadata(const StorageS3::Configura
         if (snapshot->getValue<Int64>("snapshot-id") == current_snapshot_id)
         {
             const auto path = snapshot->getValue<String>("manifest-list");
-            manifest_list_file = std::filesystem::path(configuration.url.key) / "metadata" / std::filesystem::path(path).filename();
+            manifest_list_file = std::filesystem::path(configuration->getPath()) / "metadata" / std::filesystem::path(path).filename();
             break;
         }
     }
 
-    return std::make_unique<IcebergMetadata>(configuration, context_, metadata_version, format_version, manifest_list_file, schema_id, schema);
+    return std::make_unique<IcebergMetadata>(object_storage, configuration, context_, metadata_version, format_version, manifest_list_file, schema_id, schema);
 }
 
 /**
@@ -441,12 +468,14 @@ Strings IcebergMetadata::getDataFiles()
 
     LOG_TEST(log, "Collect manifest files from manifest list {}", manifest_list_file);
 
-    auto manifest_list_buf = S3DataLakeMetadataReadHelper::createReadBuffer(manifest_list_file, getContext(), configuration);
+    auto context = getContext();
+    auto read_settings = context->getReadSettings();
+    auto manifest_list_buf = object_storage->readObject(StoredObject(manifest_list_file), read_settings);
     auto manifest_list_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf));
 
     auto data_type = AvroSchemaReader::avroNodeToDataType(manifest_list_file_reader->dataSchema().root()->leafAt(0));
     Block header{{data_type->createColumn(), data_type, "manifest_path"}};
-    auto columns = parseAvro(*manifest_list_file_reader, header, getFormatSettings(getContext()));
+    auto columns = parseAvro(*manifest_list_file_reader, header, getFormatSettings(context));
     auto & col = columns.at(0);
 
     if (col->getDataType() != TypeIndex::String)
@@ -462,7 +491,7 @@ Strings IcebergMetadata::getDataFiles()
     {
         const auto file_path = col_str->getDataAt(i).toView();
         const auto filename = std::filesystem::path(file_path).filename();
-        manifest_files.emplace_back(std::filesystem::path(configuration.url.key) / "metadata" / filename);
+        manifest_files.emplace_back(std::filesystem::path(configuration->getPath()) / "metadata" / filename);
     }
 
     NameSet files;
@@ -471,7 +500,7 @@ Strings IcebergMetadata::getDataFiles()
     {
         LOG_TEST(log, "Process manifest file {}", manifest_file);
 
-        auto buffer = S3DataLakeMetadataReadHelper::createReadBuffer(manifest_file, getContext(), configuration);
+        auto buffer = object_storage->readObject(StoredObject(manifest_file), read_settings);
         auto manifest_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
 
         /// Manifest file should always have table schema in avro file metadata. By now we don't support tables with evolved schema,
@@ -482,7 +511,7 @@ Strings IcebergMetadata::getDataFiles()
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var json = parser.parse(schema_json_string);
         Poco::JSON::Object::Ptr schema_object = json.extract<Poco::JSON::Object::Ptr>();
-        if (!getContext()->getSettingsRef().iceberg_engine_ignore_schema_evolution && schema_object->getValue<int>("schema-id") != current_schema_id)
+        if (!context->getSettingsRef().iceberg_engine_ignore_schema_evolution && schema_object->getValue<int>("schema-id") != current_schema_id)
             throw Exception(
                 ErrorCodes::UNSUPPORTED_METHOD,
                 "Cannot read Iceberg table: the table schema has been changed at least 1 time, reading tables with evolved schema is not "
@@ -595,9 +624,9 @@ Strings IcebergMetadata::getDataFiles()
 
             const auto status = status_int_column->getInt(i);
             const auto data_path = std::string(file_path_string_column->getDataAt(i).toView());
-            const auto pos = data_path.find(configuration.url.key);
+            const auto pos = data_path.find(configuration->getPath());
             if (pos == std::string::npos)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", configuration.url.key, data_path);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", configuration->getPath(), data_path);
 
             const auto file_path = data_path.substr(pos);
 

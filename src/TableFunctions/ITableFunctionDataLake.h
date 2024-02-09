@@ -10,6 +10,9 @@
 #    include <Interpreters/parseColumnsListForTableFunction.h>
 #    include <Storages/IStorage.h>
 #    include <TableFunctions/ITableFunction.h>
+#include <Storages/ObjectStorage/Configuration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/DataLakes/Iceberg/StorageIceberg.h>
 
 namespace DB
 {
@@ -30,12 +33,13 @@ protected:
         bool /*is_insert_query*/) const override
     {
         ColumnsDescription columns;
-        if (TableFunction::configuration.structure != "auto")
-            columns = parseColumnsListFromString(TableFunction::configuration.structure, context);
+        if (TableFunction::configuration->structure != "auto")
+            columns = parseColumnsListFromString(TableFunction::configuration->structure, context);
 
-        StoragePtr storage = Storage::create(
-            TableFunction::configuration, context, false, StorageID(TableFunction::getDatabaseName(), table_name),
-            columns, ConstraintsDescription{}, String{}, std::nullopt);
+        StorageObjectStorageConfigurationPtr configuration = TableFunction::configuration;
+        StoragePtr storage = StorageIceberg<StorageObjectStorage<StorageS3Settings>>::create(
+            configuration, context, "", StorageID(TableFunction::getDatabaseName(), table_name),
+            columns, ConstraintsDescription{}, String{}, std::nullopt, false);
 
         storage->startup();
         return storage;
@@ -45,19 +49,19 @@ protected:
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const override
     {
-        if (TableFunction::configuration.structure == "auto")
+        if (TableFunction::configuration->structure == "auto")
         {
             context->checkAccess(TableFunction::getSourceAccessType());
-            return Storage::getTableStructureFromData(TableFunction::configuration, std::nullopt, context);
+            return Storage::getTableStructureFromData(TableFunction::object_storage, TableFunction::configuration, std::nullopt, context);
         }
 
-        return parseColumnsListFromString(TableFunction::configuration.structure, context);
+        return parseColumnsListFromString(TableFunction::configuration->structure, context);
     }
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override
     {
         /// Set default format to Parquet if it's not specified in arguments.
-        TableFunction::configuration.format = "Parquet";
+        TableFunction::configuration->format = "Parquet";
         TableFunction::parseArguments(ast_function, context);
     }
 };

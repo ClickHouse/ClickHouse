@@ -5,11 +5,11 @@
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Backups/BackupIO_AzureBlobStorage.h>
-#include <Storages/StorageAzureBlob.h>
 #include <Backups/BackupImpl.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Storages/ObjectStorage/AzureConfiguration.h>
 #include <filesystem>
 #endif
 
@@ -49,7 +49,7 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
         const String & id_arg = params.backup_info.id_arg;
         const auto & args = params.backup_info.args;
 
-        StorageAzureBlob::Configuration configuration;
+        StorageAzureBlobConfiguration configuration;
 
         if (!id_arg.empty())
         {
@@ -58,6 +58,9 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 
             if (!config.has(config_prefix))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", id_arg);
+
+            if (!config.has(config_prefix))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no `{}` in config", config_prefix);
 
             if (config.has(config_prefix + ".connection_string"))
             {
@@ -75,10 +78,11 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
             }
 
             if (args.size() > 1)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup AzureBlobStorage requires 1 or 2 arguments: named_collection, [filename]");
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                "Backup AzureBlobStorage requires 1 or 2 arguments: named_collection, [filename]");
 
             if (args.size() == 1)
-                configuration.blob_path = args[0].safeGet<String>();
+                configuration.setPath(args[0].safeGet<String>());
 
         }
         else
@@ -110,12 +114,14 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
         }
 
         BackupImpl::ArchiveParams archive_params;
-        if (hasRegisteredArchiveFileExtension(configuration.blob_path))
+        if (hasRegisteredArchiveFileExtension(configuration.getPath()))
         {
             if (params.is_internal_backup)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Using archives with backups on clusters is disabled");
 
-            archive_params.archive_name = removeFileNameFromURL(configuration.blob_path);
+            auto path = configuration.getPath();
+            configuration.setPath(removeFileNameFromURL(path));
+            archive_params.archive_name = configuration.getPath();
             archive_params.compression_method = params.compression_method;
             archive_params.compression_level = params.compression_level;
             archive_params.password = params.password;

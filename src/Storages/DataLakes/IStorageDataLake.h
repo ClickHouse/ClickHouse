@@ -8,126 +8,90 @@
 #include <Common/logger_useful.h>
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFactory.h>
-#include <filesystem>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 
 namespace DB
 {
 
-template <typename Storage, typename Name, typename MetadataParser>
-class IStorageDataLake : public Storage
+template <typename StorageSettings, typename Name, typename MetadataParser>
+class IStorageDataLake : public StorageObjectStorage<StorageSettings>
 {
 public:
     static constexpr auto name = Name::name;
-    using Configuration = typename Storage::Configuration;
 
-    template <class ...Args>
-    explicit IStorageDataLake(const Configuration & configuration_, ContextPtr context_, bool attach, Args && ...args)
-        : Storage(getConfigurationForDataRead(configuration_, context_, {}, attach), context_, std::forward<Args>(args)...)
-        , base_configuration(configuration_)
-        , log(getLogger(getName())) {} // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
+    using Storage = StorageObjectStorage<StorageSettings>;
+    using ConfigurationPtr = Storage::ConfigurationPtr;
 
-    template <class ...Args>
-    static StoragePtr create(const Configuration & configuration_, ContextPtr context_, bool attach, Args && ...args)
+    static StoragePtr create(
+        ConfigurationPtr base_configuration,
+        ContextPtr context,
+        const String & engine_name_,
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment_,
+        std::optional<FormatSettings> format_settings_,
+        bool /* attach */)
     {
-        return std::make_shared<IStorageDataLake<Storage, Name, MetadataParser>>(configuration_, context_, attach, std::forward<Args>(args)...);
+        auto object_storage = base_configuration->createOrUpdateObjectStorage(context);
+
+        auto configuration = base_configuration->clone();
+        configuration->getPaths() = MetadataParser().getFiles(object_storage, configuration, context);
+
+        return std::make_shared<IStorageDataLake<StorageSettings, Name, MetadataParser>>(
+            base_configuration, configuration, object_storage, engine_name_, context,
+            table_id_, columns_, constraints_, comment_, format_settings_);
     }
 
     String getName() const override { return name; }
 
     static ColumnsDescription getTableStructureFromData(
-        Configuration & base_configuration,
-        const std::optional<FormatSettings> & format_settings,
+        ObjectStoragePtr object_storage_,
+        ConfigurationPtr base_configuration,
+        const std::optional<FormatSettings> &,
         ContextPtr local_context)
     {
-        auto configuration = getConfigurationForDataRead(base_configuration, local_context);
-        return Storage::getTableStructureFromData(configuration, format_settings, local_context);
+        auto metadata = parseIcebergMetadata(object_storage_, base_configuration, local_context);
+        return ColumnsDescription(metadata->getTableSchema());
     }
 
-    static Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context)
+    std::pair<ConfigurationPtr, ObjectStoragePtr> updateConfigurationAndGetCopy(ContextPtr local_context) override
     {
-        return Storage::getConfiguration(engine_args, local_context, /* get_format_from_file */false);
+        std::lock_guard lock(Storage::configuration_update_mutex);
+
+        auto new_object_storage = base_configuration->createOrUpdateObjectStorage(local_context);
+        bool updated = new_object_storage != nullptr;
+        if (updated)
+            Storage::object_storage = new_object_storage;
+
+        auto new_keys = MetadataParser().getFiles(Storage::object_storage, base_configuration, local_context);
+
+        if (updated || new_keys != Storage::configuration->getPaths())
+        {
+            auto updated_configuration = base_configuration->clone();
+            /// If metadata wasn't changed, we won't list data files again.
+            updated_configuration->getPaths() = new_keys;
+            Storage::configuration = updated_configuration;
+        }
+        return {Storage::configuration, Storage::object_storage};
     }
 
-    Configuration updateConfigurationAndGetCopy(ContextPtr local_context) override
+    template <typename... Args>
+    explicit IStorageDataLake(
+        ConfigurationPtr base_configuration_,
+        Args &&... args)
+        : Storage(std::forward<Args>(args)...)
+        , base_configuration(base_configuration_)
     {
-        std::lock_guard lock(configuration_update_mutex);
-        updateConfigurationImpl(local_context);
-        return Storage::getConfiguration();
-    }
-
-    void updateConfiguration(ContextPtr local_context) override
-    {
-        std::lock_guard lock(configuration_update_mutex);
-        updateConfigurationImpl(local_context);
     }
 
 private:
-    static Configuration getConfigurationForDataRead(
-        const Configuration & base_configuration, ContextPtr local_context, const Strings & keys = {}, bool attach = false)
-    {
-        auto configuration{base_configuration};
-        configuration.update(local_context);
-        configuration.static_configuration = true;
-
-        try
-        {
-            if (keys.empty())
-                configuration.keys = getDataFiles(configuration, local_context);
-            else
-                configuration.keys = keys;
-
-            LOG_TRACE(
-                getLogger("DataLake"),
-                "New configuration path: {}, keys: {}",
-                configuration.getPath(), fmt::join(configuration.keys, ", "));
-
-            configuration.connect(local_context);
-            return configuration;
-        }
-        catch (...)
-        {
-            if (!attach)
-                throw;
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            return configuration;
-        }
-    }
-
-    static Strings getDataFiles(const Configuration & configuration, ContextPtr local_context)
-    {
-        return MetadataParser().getFiles(configuration, local_context);
-    }
-
-    void updateConfigurationImpl(ContextPtr local_context)
-    {
-        const bool updated = base_configuration.update(local_context);
-        auto new_keys = getDataFiles(base_configuration, local_context);
-
-        if (!updated && new_keys == Storage::getConfiguration().keys)
-            return;
-
-        Storage::useConfiguration(getConfigurationForDataRead(base_configuration, local_context, new_keys));
-    }
-
-    Configuration base_configuration;
-    std::mutex configuration_update_mutex;
+    ConfigurationPtr base_configuration;
     LoggerPtr log;
 };
 
-
-template <typename DataLake>
-static StoragePtr createDataLakeStorage(const StorageFactory::Arguments & args)
-{
-    auto configuration = DataLake::getConfiguration(args.engine_args, args.getLocalContext());
-
-    /// Data lakes use parquet format, no need for schema inference.
-    if (configuration.format == "auto")
-        configuration.format = "Parquet";
-
-    return DataLake::create(configuration, args.getContext(), args.attach, args.table_id, args.columns, args.constraints,
-        args.comment, getFormatSettings(args.getContext()));
-}
 
 }
 

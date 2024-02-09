@@ -120,25 +120,22 @@ private:
     {
         ProfileEvents::increment(ProfileEvents::S3ListObjects);
 
-        bool result = false;
         auto outcome = client->ListObjectsV2(request);
+
         /// Outcome failure will be handled on the caller side.
         if (outcome.IsSuccess())
         {
+            request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
+
             auto objects = outcome.GetResult().GetContents();
-
-            result = !objects.empty();
-
             for (const auto & object : objects)
-                batch.emplace_back(
-                    object.GetKey(),
-                    ObjectMetadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), {}}
-                );
+            {
+                ObjectMetadata metadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), {}};
+                batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
+            }
 
-            if (result)
-                request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-
-            return result;
+            /// It returns false when all objects were returned
+            return outcome.GetResult().GetIsTruncated();
         }
 
         throw S3Exception(outcome.GetError().GetErrorType(), "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
@@ -249,7 +246,6 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     if (write_settings.s3_allow_parallel_part_upload)
         scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "VFSWrite");
 
-
     auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
     if (blob_storage_log)
         blob_storage_log->local_path = object.local_path;
@@ -300,12 +296,12 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
             break;
 
         for (const auto & object : objects)
-            children.emplace_back(
+            children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 object.GetKey(),
                 ObjectMetadata{
                     static_cast<uint64_t>(object.GetSize()),
                     Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
-                    {}});
+                    {}}));
 
         if (max_keys)
         {

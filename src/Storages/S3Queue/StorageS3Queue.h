@@ -8,7 +8,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/S3Queue/S3QueueSettings.h>
 #include <Storages/S3Queue/S3QueueSource.h>
-#include <Storages/StorageS3.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Interpreters/Context.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 #include <Storages/StorageFactory.h>
@@ -26,11 +26,13 @@ class S3QueueFilesMetadata;
 class StorageS3Queue : public IStorage, WithContext
 {
 public:
-    using Configuration = typename StorageS3::Configuration;
+    using Storage = StorageObjectStorage<S3StorageSettings>;
+    using Source = StorageObjectStorageSource<S3StorageSettings>;
+    using ConfigurationPtr = Storage::ConfigurationPtr;
 
     StorageS3Queue(
         std::unique_ptr<S3QueueSettings> s3queue_settings_,
-        const Configuration & configuration_,
+        ConfigurationPtr configuration_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -53,8 +55,6 @@ public:
 
     NamesAndTypesList getVirtuals() const override { return virtual_columns; }
 
-    const auto & getFormatName() const { return configuration.format; }
-
     const fs::path & getZooKeeperPath() const { return zk_path; }
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
@@ -68,7 +68,8 @@ private:
     const S3QueueAction after_processing;
 
     std::shared_ptr<S3QueueFilesMetadata> files_metadata;
-    Configuration configuration;
+    ConfigurationPtr configuration;
+    ObjectStoragePtr object_storage;
 
     const std::optional<FormatSettings> format_settings;
     NamesAndTypesList virtual_columns;
@@ -103,7 +104,6 @@ private:
 
     void createOrCheckMetadata(const StorageInMemoryMetadata & storage_metadata);
     void checkTableStructure(const String & zookeeper_prefix, const StorageInMemoryMetadata & storage_metadata);
-    Configuration updateConfigurationAndGetCopy(ContextPtr local_context);
 };
 
 }

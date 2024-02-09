@@ -12,9 +12,9 @@ public:
     virtual void next() = 0;
     virtual void nextBatch() = 0;
     virtual bool isValid() = 0;
-    virtual RelativePathWithMetadata current() = 0;
+    virtual RelativePathWithMetadataPtr current() = 0;
     virtual RelativePathsWithMetadata currentBatch() = 0;
-    virtual std::optional<RelativePathsWithMetadata> getCurrrentBatchAndScheduleNext() = 0;
+    virtual std::optional<RelativePathsWithMetadata> getCurrentBatchAndScheduleNext() = 0;
     virtual size_t getAccumulatedSize() const = 0;
 
     virtual ~IObjectStorageIterator() = default;
@@ -47,22 +47,14 @@ public:
         return batch_iterator != batch.end();
     }
 
-    RelativePathWithMetadata current() override;
+    RelativePathWithMetadataPtr current() override;
 
-    RelativePathsWithMetadata currentBatch() override
-    {
-        return batch;
-    }
+    RelativePathsWithMetadata currentBatch() override { return batch; }
 
-    virtual std::optional<RelativePathsWithMetadata> getCurrrentBatchAndScheduleNext() override
-    {
-        return std::nullopt;
-    }
+    std::optional<RelativePathsWithMetadata> getCurrentBatchAndScheduleNext() override { return std::nullopt; }
 
-    size_t getAccumulatedSize() const override
-    {
-        return batch.size();
-    }
+    size_t getAccumulatedSize() const override { return batch.size(); }
+
 private:
     RelativePathsWithMetadata batch;
     RelativePathsWithMetadata::iterator batch_iterator;

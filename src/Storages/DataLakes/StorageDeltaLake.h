@@ -5,11 +5,6 @@
 #include <Storages/DataLakes/DeltaLakeMetadataParser.h>
 #include "config.h"
 
-#if USE_AWS_S3
-#include <Storages/DataLakes/S3MetadataReader.h>
-#include <Storages/StorageS3.h>
-#endif
-
 namespace DB
 {
 
@@ -19,7 +14,7 @@ struct StorageDeltaLakeName
 };
 
 #if USE_AWS_S3 && USE_PARQUET
-using StorageDeltaLakeS3 = IStorageDataLake<StorageS3, StorageDeltaLakeName, DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>>;
+using StorageDeltaLakeS3 = IStorageDataLake<S3StorageSettings, StorageDeltaLakeName, DeltaLakeMetadataParser>;
 #endif
 
 }

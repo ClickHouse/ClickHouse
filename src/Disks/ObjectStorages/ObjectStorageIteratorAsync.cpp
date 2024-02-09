@@ -82,7 +82,7 @@ bool IObjectStorageIteratorAsync::isValid()
     return current_batch_iterator != current_batch.end();
 }
 
-RelativePathWithMetadata IObjectStorageIteratorAsync::current()
+RelativePathWithMetadataPtr IObjectStorageIteratorAsync::current()
 {
     if (!isValid())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to access invalid iterator");
@@ -101,7 +101,7 @@ RelativePathsWithMetadata IObjectStorageIteratorAsync::currentBatch()
     return current_batch;
 }
 
-std::optional<RelativePathsWithMetadata> IObjectStorageIteratorAsync::getCurrrentBatchAndScheduleNext()
+std::optional<RelativePathsWithMetadata> IObjectStorageIteratorAsync::getCurrentBatchAndScheduleNext()
 {
     std::lock_guard lock(mutex);
     if (!is_initialized)

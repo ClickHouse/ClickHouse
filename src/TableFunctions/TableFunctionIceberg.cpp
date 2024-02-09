@@ -5,7 +5,7 @@
 #include <Storages/DataLakes/Iceberg/StorageIceberg.h>
 #include <TableFunctions/ITableFunctionDataLake.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/TableFunctionS3.h>
+#include <TableFunctions/TableFunctionObjectStorage.h>
 #include "registerTableFunctions.h"
 
 
@@ -17,7 +17,10 @@ struct TableFunctionIcebergName
     static constexpr auto name = "iceberg";
 };
 
-using TableFunctionIceberg = ITableFunctionDataLake<TableFunctionIcebergName, StorageIceberg, TableFunctionS3>;
+using TableFunctionIceberg = ITableFunctionDataLake<
+    TableFunctionIcebergName,
+    StorageIceberg<S3StorageSettings>,
+    TableFunctionS3>;
 
 void registerTableFunctionIceberg(TableFunctionFactory & factory)
 {

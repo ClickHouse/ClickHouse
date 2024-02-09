@@ -62,6 +62,8 @@ struct RelativePathWithMetadata
         : relative_path(std::move(relative_path_))
         , metadata(std::move(metadata_))
     {}
+
+    virtual ~RelativePathWithMetadata() = default;
 };
 
 struct ObjectKeyWithMetadata
@@ -77,7 +79,8 @@ struct ObjectKeyWithMetadata
     {}
 };
 
-using RelativePathsWithMetadata = std::vector<RelativePathWithMetadata>;
+using RelativePathWithMetadataPtr = std::shared_ptr<RelativePathWithMetadata>;
+using RelativePathsWithMetadata = std::vector<RelativePathWithMetadataPtr>;
 using ObjectKeysWithMetadata = std::vector<ObjectKeyWithMetadata>;
 
 class IObjectStorageIterator;

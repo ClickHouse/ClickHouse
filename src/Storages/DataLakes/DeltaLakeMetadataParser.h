@@ -2,17 +2,21 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Storages/ObjectStorage/Configuration.h>
 
 namespace DB
 {
 
-template <typename Configuration, typename MetadataReadHelper>
 struct DeltaLakeMetadataParser
 {
 public:
-    DeltaLakeMetadataParser<Configuration, MetadataReadHelper>();
+    DeltaLakeMetadataParser();
 
-    Strings getFiles(const Configuration & configuration, ContextPtr context);
+    Strings getFiles(
+        ObjectStoragePtr object_storage,
+        StorageObjectStorageConfigurationPtr configuration,
+        ContextPtr context);
 
 private:
     struct Impl;

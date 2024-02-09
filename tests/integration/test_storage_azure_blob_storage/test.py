@@ -29,6 +29,8 @@ def cluster():
             with_azurite=True,
         )
         cluster.start()
+        container_client = cluster.blob_service_client.get_container_client("cont")
+        container_client.create_container()
         yield cluster
     finally:
         cluster.shutdown()
@@ -129,8 +131,10 @@ def test_create_table_connection_string(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        f"CREATE TABLE test_create_table_conn_string (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}',"
-        f"'cont', 'test_create_connection_string', 'CSV')",
+        f"""
+        CREATE TABLE test_create_table_conn_string (key UInt64, data String)
+        Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_create_connection_string', 'CSV')
+        """,
     )
 
 

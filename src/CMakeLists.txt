@@ -119,6 +119,7 @@ endif()
 
 add_headers_and_sources(dbms Storages/DataLakes)
 add_headers_and_sources(dbms Storages/DataLakes/Iceberg)
+add_headers_and_sources(dbms Storages/ObjectStorage)
 add_headers_and_sources(dbms Common/NamedCollections)
 
 if (TARGET ch_contrib::amqp_cpp)

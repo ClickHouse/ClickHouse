@@ -2,9 +2,10 @@
 
 #if USE_AWS_S3 && USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
 
-#include <Storages/StorageS3.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Storages/ObjectStorage/Configuration.h>
 
 namespace DB
 {
@@ -59,13 +60,15 @@ namespace DB
 class IcebergMetadata : WithContext
 {
 public:
-    IcebergMetadata(const StorageS3::Configuration & configuration_,
-                    ContextPtr context_,
-                    Int32 metadata_version_,
-                    Int32 format_version_,
-                    String manifest_list_file_,
-                    Int32 current_schema_id_,
-                    NamesAndTypesList schema_);
+    IcebergMetadata(
+        ObjectStoragePtr object_storage_,
+        StorageObjectStorageConfigurationPtr configuration_,
+        ContextPtr context_,
+        Int32 metadata_version_,
+        Int32 format_version_,
+        String manifest_list_file_,
+        Int32 current_schema_id_,
+        NamesAndTypesList schema_);
 
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
     /// All subsequent calls will return saved list of files (because it cannot be changed without changing metadata file)
@@ -77,7 +80,8 @@ public:
     size_t getVersion() const { return metadata_version; }
 
 private:
-    const StorageS3::Configuration configuration;
+    ObjectStoragePtr object_storage;
+    StorageObjectStorageConfigurationPtr configuration;
     Int32 metadata_version;
     Int32 format_version;
     String manifest_list_file;
@@ -88,7 +92,10 @@ private:
 
 };
 
-std::unique_ptr<IcebergMetadata> parseIcebergMetadata(const StorageS3::Configuration & configuration, ContextPtr context);
+std::unique_ptr<IcebergMetadata> parseIcebergMetadata(
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration,
+    ContextPtr context);
 
 }
 

@@ -5,7 +5,9 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Processors/ISource.h>
 #include <Storages/S3Queue/S3QueueFilesMetadata.h>
-#include <Storages/StorageS3.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/Settings.h>
 #include <Interpreters/S3QueueLog.h>
 
 
@@ -14,28 +16,32 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+struct ObjectMetadata;
+
 class StorageS3QueueSource : public ISource, WithContext
 {
 public:
-    using IIterator = StorageS3Source::IIterator;
-    using KeyWithInfoPtr = StorageS3Source::KeyWithInfoPtr;
-    using GlobIterator = StorageS3Source::DisclosedGlobIterator;
+    using Storage = StorageObjectStorage<S3StorageSettings>;
+    using Source = StorageObjectStorageSource<S3StorageSettings>;
+
+    using ConfigurationPtr = Storage::ConfigurationPtr;
+    using GlobIterator = Source::GlobIterator;
     using ZooKeeperGetter = std::function<zkutil::ZooKeeperPtr()>;
     using RemoveFileFunc = std::function<void(std::string)>;
     using FileStatusPtr = S3QueueFilesMetadata::FileStatusPtr;
     using Metadata = S3QueueFilesMetadata;
 
-    struct S3QueueKeyWithInfo : public StorageS3Source::KeyWithInfo
+    struct S3QueueObjectInfo : public Source::ObjectInfo
     {
-        S3QueueKeyWithInfo(
-                const std::string & key_,
-                std::optional<S3::ObjectInfo> info_,
-                Metadata::ProcessingNodeHolderPtr processing_holder_);
+        S3QueueObjectInfo(
+            const std::string & key_,
+            const ObjectMetadata & object_metadata_,
+            Metadata::ProcessingNodeHolderPtr processing_holder_);
 
         Metadata::ProcessingNodeHolderPtr processing_holder;
     };
 
-    class FileIterator : public IIterator
+    class FileIterator : public Source::IIterator
     {
     public:
         FileIterator(
@@ -47,7 +53,7 @@ public:
         /// Note:
         /// List results in s3 are always returned in UTF-8 binary order.
         /// (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
-        KeyWithInfoPtr next(size_t idx) override;
+        Source::ObjectInfoPtr next(size_t processor) override;
 
         size_t estimatedKeysCount() override;
 
@@ -60,14 +66,14 @@ public:
 
         const bool sharded_processing;
         const size_t current_shard;
-        std::unordered_map<size_t, std::deque<KeyWithInfoPtr>> sharded_keys;
+        std::unordered_map<size_t, std::deque<Source::ObjectInfoPtr>> sharded_keys;
         std::mutex sharded_keys_mutex;
     };
 
     StorageS3QueueSource(
         String name_,
         const Block & header_,
-        std::unique_ptr<StorageS3Source> internal_source_,
+        std::unique_ptr<Source> internal_source_,
         std::shared_ptr<S3QueueFilesMetadata> files_metadata_,
         size_t processing_id_,
         const S3QueueAction & action_,
@@ -80,8 +86,6 @@ public:
         const StorageID & storage_id_,
         LoggerPtr log_);
 
-    ~StorageS3QueueSource() override;
-
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
     String getName() const override;
@@ -93,7 +97,7 @@ private:
     const S3QueueAction action;
     const size_t processing_id;
     const std::shared_ptr<S3QueueFilesMetadata> files_metadata;
-    const std::shared_ptr<StorageS3Source> internal_source;
+    const std::shared_ptr<Source> internal_source;
     const NamesAndTypesList requested_virtual_columns;
     const std::atomic<bool> & shutdown_called;
     const std::atomic<bool> & table_is_being_dropped;
@@ -103,13 +107,11 @@ private:
     RemoveFileFunc remove_file_func;
     LoggerPtr log;
 
-    using ReaderHolder = StorageS3Source::ReaderHolder;
-    ReaderHolder reader;
-    std::future<ReaderHolder> reader_future;
+    Source::ReaderHolder reader;
+    std::future<Source::ReaderHolder> reader_future;
     std::atomic<bool> initialized{false};
     size_t processed_rows_from_file = 0;
 
-    void lazyInitialize();
     void applyActionAfterProcessing(const String & path);
     void appendLogElement(const std::string & filename, S3QueueFilesMetadata::FileStatus & file_status_, size_t processed_rows, bool processed);
 };

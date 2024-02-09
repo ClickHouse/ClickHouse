@@ -39,11 +39,6 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory);
 #endif
 #endif
 
-#if USE_HDFS
-void registerTableFunctionHDFS(TableFunctionFactory & factory);
-void registerTableFunctionHDFSCluster(TableFunctionFactory & factory);
-#endif
-
 #if USE_HIVE
 void registerTableFunctionHive(TableFunctionFactory & factory);
 #endif
@@ -73,8 +68,8 @@ void registerTableFunctionFormat(TableFunctionFactory & factory);
 void registerTableFunctionExplain(TableFunctionFactory & factory);
 
 #if USE_AZURE_BLOB_STORAGE
-void registerTableFunctionAzureBlobStorage(TableFunctionFactory & factory);
-void registerTableFunctionAzureBlobStorageCluster(TableFunctionFactory & factory);
+void registerTableFunctionObjectStorage(TableFunctionFactory & factory);
+void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory);
 #endif
 
 void registerTableFunctions();

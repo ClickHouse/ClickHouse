@@ -52,11 +52,9 @@
 #include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
-#include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
-#include <Storages/StorageAzureBlob.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/MaterializedView/RefreshTask.h>
-#include <Storages/HDFS/StorageHDFS.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -482,7 +480,7 @@ BlockIO InterpreterSystemQuery::execute()
                 StorageURL::getSchemaCache(getContext()).clear();
 #if USE_AZURE_BLOB_STORAGE
             if (caches_to_drop.contains("AZURE"))
-                StorageAzureBlob::getSchemaCache(getContext()).clear();
+                StorageAzureBlobStorage::getSchemaCache(getContext()).clear();
 #endif
             break;
         }

@@ -6,43 +6,43 @@
 #include <Storages/DataLakes/StorageDeltaLake.h>
 #include <Storages/DataLakes/Iceberg/StorageIceberg.h>
 #include <Storages/DataLakes/StorageHudi.h>
+#include <Storages/DataLakes/DeltaLakeMetadataParser.h>
 
 
 namespace DB
 {
 
-#define REGISTER_DATA_LAKE_STORAGE(STORAGE, NAME)       \
-    factory.registerStorage(                            \
-        NAME,                                           \
-        [](const StorageFactory::Arguments & args)      \
-        {                                               \
-            return createDataLakeStorage<STORAGE>(args);\
-        },                                              \
-        {                                               \
-            .supports_settings = false,                 \
-            .supports_schema_inference = true,          \
-            .source_access_type = AccessType::S3,       \
-        });
-
 #if USE_PARQUET
-void registerStorageDeltaLake(StorageFactory & factory)
+void registerStorageDeltaLake(StorageFactory & )
 {
-    REGISTER_DATA_LAKE_STORAGE(StorageDeltaLakeS3, StorageDeltaLakeName::name)
+    // factory.registerStorage(
+    //     StorageDeltaLakeName::name,
+    //     [&](const StorageFactory::Arguments & args)
+    //     {
+    //         auto configuration = std::make_shared<StorageS3Configuration>();
+    //         return IStorageDataLake<StorageS3Settings, StorageDeltaLakeName, DeltaLakeMetadataParser>::create(
+    //             configuration, args.getContext(), "deltaLake", args.table_id, args.columns,
+    //             args.constraints, args.comment, std::nullopt, args.attach);
+    //     },
+    //     {
+    //         .supports_settings = false,
+    //         .supports_schema_inference = true,
+    //         .source_access_type = AccessType::S3,
+    //     });
 }
 #endif
 
 #if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
 
-void registerStorageIceberg(StorageFactory & factory)
+void registerStorageIceberg(StorageFactory &)
 {
-    REGISTER_DATA_LAKE_STORAGE(StorageIceberg, StorageIceberg::name)
+    // REGISTER_DATA_LAKE_STORAGE(StorageIceberg, StorageIceberg::name)
 }
 
 #endif
 
-void registerStorageHudi(StorageFactory & factory)
+void registerStorageHudi(StorageFactory &)
 {
-    REGISTER_DATA_LAKE_STORAGE(StorageHudiS3, StorageHudiName::name)
 }
 
 }

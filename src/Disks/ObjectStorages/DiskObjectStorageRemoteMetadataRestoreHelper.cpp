@@ -363,18 +363,18 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage *
         for (const auto & object : objects)
         {
 
-            LOG_INFO(disk->log, "Calling restore for key for disk {}", object.relative_path);
+            LOG_INFO(disk->log, "Calling restore for key for disk {}", object->relative_path);
 
             /// Skip file operations objects. They will be processed separately.
-            if (object.relative_path.find("/operations/") != String::npos)
+            if (object->relative_path.find("/operations/") != String::npos)
                 continue;
 
-            const auto [revision, _] = extractRevisionAndOperationFromKey(object.relative_path);
+            const auto [revision, _] = extractRevisionAndOperationFromKey(object->relative_path);
             /// Filter early if it's possible to get revision from key.
             if (revision > restore_information.revision)
                 continue;
 
-            keys_names.push_back(object.relative_path);
+            keys_names.push_back(object->relative_path);
         }
 
         if (!keys_names.empty())
@@ -474,10 +474,10 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
 
         for (const auto & object : objects)
         {
-            const auto [revision, operation] = extractRevisionAndOperationFromKey(object.relative_path);
+            const auto [revision, operation] = extractRevisionAndOperationFromKey(object->relative_path);
             if (revision == UNKNOWN_REVISION)
             {
-                LOG_WARNING(disk->log, "Skip key {} with unknown revision", object.relative_path);
+                LOG_WARNING(disk->log, "Skip key {} with unknown revision", object->relative_path);
                 continue;
             }
 
@@ -490,7 +490,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
             if (send_metadata)
                 revision_counter = revision - 1;
 
-            auto object_attributes = *(source_object_storage->getObjectMetadata(object.relative_path).attributes);
+            auto object_attributes = *(source_object_storage->getObjectMetadata(object->relative_path).attributes);
             if (operation == rename)
             {
                 auto from_path = object_attributes["from_path"];

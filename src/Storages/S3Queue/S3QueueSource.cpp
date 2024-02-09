@@ -5,9 +5,9 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
-#include <Common/getRandomASCIIString.h>
 #include <Storages/S3Queue/S3QueueSource.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 
 namespace CurrentMetrics
@@ -31,11 +31,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-StorageS3QueueSource::S3QueueKeyWithInfo::S3QueueKeyWithInfo(
+StorageS3QueueSource::S3QueueObjectInfo::S3QueueObjectInfo(
         const std::string & key_,
-        std::optional<S3::ObjectInfo> info_,
+        const ObjectMetadata & object_metadata_,
         Metadata::ProcessingNodeHolderPtr processing_holder_)
-    : StorageS3Source::KeyWithInfo(key_, info_)
+    : Source::ObjectInfo(key_, object_metadata_)
     , processing_holder(processing_holder_)
 {
 }
@@ -55,15 +55,15 @@ StorageS3QueueSource::FileIterator::FileIterator(
     if (sharded_processing)
     {
         for (const auto & id : metadata->getProcessingIdsForShard(current_shard))
-            sharded_keys.emplace(id, std::deque<KeyWithInfoPtr>{});
+            sharded_keys.emplace(id, std::deque<Source::ObjectInfoPtr>{});
     }
 }
 
-StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(size_t idx)
+StorageS3QueueSource::Source::ObjectInfoPtr StorageS3QueueSource::FileIterator::next(size_t processor)
 {
     while (!shutdown_called)
     {
-        KeyWithInfoPtr val{nullptr};
+        Source::ObjectInfoPtr val{nullptr};
 
         {
             std::unique_lock lk(sharded_keys_mutex, std::defer_lock);
@@ -73,7 +73,7 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
                 /// we need to check sharded_keys and to next() under lock.
                 lk.lock();
 
-                if (auto it = sharded_keys.find(idx); it != sharded_keys.end())
+                if (auto it = sharded_keys.find(processor); it != sharded_keys.end())
                 {
                     auto & keys = it->second;
                     if (!keys.empty())
@@ -86,24 +86,24 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
                 {
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                                     "Processing id {} does not exist (Expected ids: {})",
-                                    idx, fmt::join(metadata->getProcessingIdsForShard(current_shard), ", "));
+                                    processor, fmt::join(metadata->getProcessingIdsForShard(current_shard), ", "));
                 }
             }
 
             if (!val)
             {
-                val = glob_iterator->next();
+                val = glob_iterator->next(processor);
                 if (val && sharded_processing)
                 {
-                    const auto processing_id_for_key = metadata->getProcessingIdForPath(val->key);
-                    if (idx != processing_id_for_key)
+                    const auto processing_id_for_key = metadata->getProcessingIdForPath(val->relative_path);
+                    if (processor != processing_id_for_key)
                     {
                         if (metadata->isProcessingIdBelongsToShard(processing_id_for_key, current_shard))
                         {
                             LOG_TEST(log, "Putting key {} into queue of processor {} (total: {})",
-                                     val->key, processing_id_for_key, sharded_keys.size());
+                                     val->relative_path, processing_id_for_key, sharded_keys.size());
 
-                            if (auto it = sharded_keys.find(idx); it != sharded_keys.end())
+                            if (auto it = sharded_keys.find(processor); it != sharded_keys.end())
                             {
                                 it->second.push_back(val);
                             }
@@ -111,7 +111,7 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
                             {
                                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                                 "Processing id {} does not exist (Expected ids: {})",
-                                                idx, fmt::join(metadata->getProcessingIdsForShard(current_shard), ", "));
+                                                processor, fmt::join(metadata->getProcessingIdsForShard(current_shard), ", "));
                             }
                         }
                         continue;
@@ -129,25 +129,25 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
             return {};
         }
 
-        auto processing_holder = metadata->trySetFileAsProcessing(val->key);
+        auto processing_holder = metadata->trySetFileAsProcessing(val->relative_path);
         if (shutdown_called)
         {
             LOG_TEST(log, "Shutdown was called, stopping file iterator");
             return {};
         }
 
-        LOG_TEST(log, "Checking if can process key {} for processing_id {}", val->key, idx);
+        LOG_TEST(log, "Checking if can process key {} for processing_id {}", val->relative_path, processor);
 
         if (processing_holder)
         {
-            return std::make_shared<S3QueueKeyWithInfo>(val->key, val->info, processing_holder);
+            return std::make_shared<S3QueueObjectInfo>(val->relative_path, val->metadata, processing_holder);
         }
         else if (sharded_processing
-                 && metadata->getFileStatus(val->key)->state == S3QueueFilesMetadata::FileStatus::State::Processing)
+                 && metadata->getFileStatus(val->relative_path)->state == S3QueueFilesMetadata::FileStatus::State::Processing)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "File {} is processing by someone else in sharded processing. "
-                            "It is a bug", val->key);
+                            "It is a bug", val->relative_path);
         }
     }
     return {};
@@ -161,7 +161,7 @@ size_t StorageS3QueueSource::FileIterator::estimatedKeysCount()
 StorageS3QueueSource::StorageS3QueueSource(
     String name_,
     const Block & header_,
-    std::unique_ptr<StorageS3Source> internal_source_,
+    std::unique_ptr<Source> internal_source_,
     std::shared_ptr<S3QueueFilesMetadata> files_metadata_,
     size_t processing_id_,
     const S3QueueAction & action_,
@@ -190,38 +190,19 @@ StorageS3QueueSource::StorageS3QueueSource(
 {
 }
 
-StorageS3QueueSource::~StorageS3QueueSource()
-{
-    internal_source->create_reader_pool.wait();
-}
-
 String StorageS3QueueSource::getName() const
 {
     return name;
 }
 
-void StorageS3QueueSource::lazyInitialize()
-{
-    if (initialized)
-        return;
-
-    internal_source->lazyInitialize(processing_id);
-    reader = std::move(internal_source->reader);
-    if (reader)
-        reader_future = std::move(internal_source->reader_future);
-    initialized = true;
-}
-
 Chunk StorageS3QueueSource::generate()
 {
-    lazyInitialize();
-
     while (true)
     {
         if (!reader)
             break;
 
-        const auto * key_with_info = dynamic_cast<const S3QueueKeyWithInfo *>(&reader.getKeyWithInfo());
+        const auto * key_with_info = dynamic_cast<const S3QueueObjectInfo *>(&reader.getObjectInfo());
         auto file_status = key_with_info->processing_holder->getFileStatus();
 
         if (isCancelled())
@@ -239,7 +220,7 @@ Chunk StorageS3QueueSource::generate()
                     tryLogCurrentException(__PRETTY_FUNCTION__);
                 }
 
-                appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, false);
+                appendLogElement(reader.getRelativePath(), *file_status, processed_rows_from_file, false);
             }
 
             break;
@@ -254,7 +235,7 @@ Chunk StorageS3QueueSource::generate()
             {
                 LOG_DEBUG(
                     log, "Table is being dropped, {} rows are already processed from {}, but file is not fully processed",
-                    processed_rows_from_file, reader.getFile());
+                    processed_rows_from_file, reader.getRelativePath());
 
                 try
                 {
@@ -265,7 +246,7 @@ Chunk StorageS3QueueSource::generate()
                     tryLogCurrentException(__PRETTY_FUNCTION__);
                 }
 
-                appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, false);
+                appendLogElement(reader.getRelativePath(), *file_status, processed_rows_from_file, false);
 
                 /// Leave the file half processed. Table is being dropped, so we do not care.
                 break;
@@ -273,7 +254,7 @@ Chunk StorageS3QueueSource::generate()
 
             LOG_DEBUG(log, "Shutdown called, but file {} is partially processed ({} rows). "
                      "Will process the file fully and then shutdown",
-                     reader.getFile(), processed_rows_from_file);
+                     reader.getRelativePath(), processed_rows_from_file);
         }
 
         auto * prev_scope = CurrentThread::get().attachProfileCountersScope(&file_status->profile_counters);
@@ -287,30 +268,30 @@ Chunk StorageS3QueueSource::generate()
             Chunk chunk;
             if (reader->pull(chunk))
             {
-                LOG_TEST(log, "Read {} rows from file: {}", chunk.getNumRows(), reader.getPath());
+                LOG_TEST(log, "Read {} rows from file: {}", chunk.getNumRows(), reader.getRelativePath());
 
                 file_status->processed_rows += chunk.getNumRows();
                 processed_rows_from_file += chunk.getNumRows();
 
-                VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(chunk, requested_virtual_columns, reader.getPath(), reader.getKeyWithInfo().info->size);
+                VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(chunk, requested_virtual_columns, reader.getRelativePath(), reader.getObjectInfo().metadata.size_bytes);
                 return chunk;
             }
         }
         catch (...)
         {
             const auto message = getCurrentExceptionMessage(true);
-            LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", reader.getFile(), message);
+            LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", reader.getRelativePath(), message);
 
             files_metadata->setFileFailed(key_with_info->processing_holder, message);
 
-            appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, false);
+            appendLogElement(reader.getRelativePath(), *file_status, processed_rows_from_file, false);
             throw;
         }
 
         files_metadata->setFileProcessed(key_with_info->processing_holder);
-        applyActionAfterProcessing(reader.getFile());
+        applyActionAfterProcessing(reader.getRelativePath());
 
-        appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, true);
+        appendLogElement(reader.getRelativePath(), *file_status, processed_rows_from_file, true);
         file_status.reset();
         processed_rows_from_file = 0;
 
@@ -326,7 +307,7 @@ Chunk StorageS3QueueSource::generate()
         if (!reader)
             break;
 
-        file_status = files_metadata->getFileStatus(reader.getFile());
+        file_status = files_metadata->getFileStatus(reader.getRelativePath());
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.

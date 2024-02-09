@@ -98,9 +98,14 @@ class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromo
 public:
     IStorage() = delete;
     /// Storage metadata can be set separately in setInMemoryMetadata method
-    explicit IStorage(StorageID storage_id_)
+    explicit IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_ = nullptr)
         : storage_id(std::move(storage_id_))
-        , metadata(std::make_unique<StorageInMemoryMetadata>()) {}
+        {
+            if (metadata_)
+                metadata.set(std::move(metadata_));
+            else
+                metadata.set(std::make_unique<StorageInMemoryMetadata>());
+        }
 
     IStorage(const IStorage &) = delete;
     IStorage & operator=(const IStorage &) = delete;

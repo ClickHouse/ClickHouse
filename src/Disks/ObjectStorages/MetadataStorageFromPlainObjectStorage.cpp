@@ -77,7 +77,7 @@ std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(co
     std::vector<std::string> result;
     for (const auto & path_size : files)
     {
-        result.push_back(path_size.relative_path);
+        result.push_back(path_size->relative_path);
     }
 
     std::unordered_set<std::string> duplicates_filter;

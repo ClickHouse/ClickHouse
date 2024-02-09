@@ -26,10 +26,10 @@ public:
     void next() override;
     void nextBatch() override;
     bool isValid() override;
-    RelativePathWithMetadata current() override;
+    RelativePathWithMetadataPtr current() override;
     RelativePathsWithMetadata currentBatch() override;
     size_t getAccumulatedSize() const override;
-    std::optional<RelativePathsWithMetadata> getCurrrentBatchAndScheduleNext() override;
+    std::optional<RelativePathsWithMetadata> getCurrentBatchAndScheduleNext() override;
 
     ~IObjectStorageIteratorAsync() override
     {
