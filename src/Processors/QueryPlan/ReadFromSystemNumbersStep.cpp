@@ -14,6 +14,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Common/logger_useful.h>
+#include "Core/Types.h"
 #include "base/types.h"
 
 namespace DB
@@ -51,13 +52,16 @@ protected:
     {
         UInt64 curr = next; /// The local variable for some reason works faster (>20%) than member of class.
         UInt64 first_element = (curr / step) * step;
-        if (first_element > std::numeric_limits<UInt64>::max() - remainder) {
+        if (first_element > std::numeric_limits<UInt64>::max() - remainder) 
+        {
             auto column = ColumnUInt64::create(0);
             return {Columns{std::move(column)}, 0};
         }
         first_element += remainder;
-        if (first_element < curr) {
-            if (first_element > std::numeric_limits<UInt64>::max() - step) {
+        if (first_element < curr) 
+        {
+            if (first_element > std::numeric_limits<UInt64>::max() - step) 
+            {
                 auto column = ColumnUInt64::create(0);
                 return {Columns{std::move(column)}, 0};
             }
@@ -101,6 +105,8 @@ using RangesWithStep = std::vector<RangeWithStep>;
 
 std::optional<RangeWithStep> stepped_range_from_range(const Range & r, UInt64 step, UInt64 remainder)
 {
+    // LOG_DEBUG(&Poco::Logger::get("Stepped from range"),
+    //                     "stepped from range");
     if ((r.right.get<UInt64>() == 0) && (!r.right_included))
         return std::nullopt;
     UInt64 begin = (r.left.get<UInt64>() / step) * step;
@@ -126,7 +132,11 @@ std::optional<RangeWithStep> stepped_range_from_range(const Range & r, UInt64 st
     if (r.range.right.isPositiveInfinity())
         return static_cast<UInt128>(std::numeric_limits<UInt64>::max() - r.range.left.get<UInt64>()) / r.step + r.range.left_included;
 
-    return static_cast<UInt128>(r.range.right.get<UInt64>() - r.range.left.get<UInt64>()) / r.step + 1;
+    UInt128 size = static_cast<UInt128>(r.range.right.get<UInt64>() - r.range.left.get<UInt64>()) / r.step;
+    if (r.range.right_included && (r.range.right.get<UInt64>() % r.step == 0)) {
+        ++size;
+    }
+    return size;
 };
 
 [[maybe_unused]] auto sizeOfRanges(const RangesWithStep & rs)
@@ -173,6 +183,17 @@ public:
         , base_block_size(base_block_size_)
         , step(step_)
     {
+        // for (const auto& range_with_step : ranges_) {
+        //     // LOG_DEBUG(&Poco::Logger::get("Ranges With Step"),
+        //     //             "Ranges: {} {} {} {} {}",
+        //     //             range_with_step.range.left.get<UInt64>(),
+        //     //             range_with_step.range.right.get<UInt64>(),
+        //     //             range_with_step.range.left_included,
+        //     //             range_with_step.range.right_included,
+        //     //             range_with_step.step);
+        //     // LOG_DEBUG(&Poco::Logger::get("Ranges With Step"),
+        //     //             "Step: {}", step);
+        // }
     }
 
     String getName() const override { return "NumbersRange"; }
@@ -241,6 +262,8 @@ protected:
         RangesPos start, end;
         auto block_size = findRanges(start, end, base_block_size);
 
+        // LOG_DEBUG(&Poco::Logger::get("Found range"), "Evth: {} {} {} {} {} {}", start.offset_in_ranges, static_cast<UInt64>(start.offset_in_range), end.offset_in_ranges, static_cast<UInt64>(end.offset_in_range), base_block_size, block_size);
+
         if (!block_size)
             return {};
 
@@ -256,6 +279,11 @@ protected:
         while (block_size - provided != 0)
         {
             UInt64 need = block_size - provided;
+            // LOG_DEBUG(&Poco::Logger::get("Indices:"),
+            //             "Indices: {} {}, provided: {}",
+            //             ranges.size(),
+            //             cursor.offset_in_ranges,
+            //             provided);
             auto & range = ranges[cursor.offset_in_ranges];
 
             UInt128 can_provide = cursor.offset_in_ranges == end.offset_in_ranges
@@ -445,13 +473,15 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     Pipe pipe;
     Ranges ranges;
 
-    // LOG_DEBUG(&Poco::Logger::get("parameters"), "Parameters: {} {} {}", numbers_storage.step, numbers_storage.limit.value(), numbers_storage.offset);
+
+    // LOG_DEBUG(&Poco::Logger::get("parameters"), "Parameters: {} {} {} {}", numbers_storage.step, numbers_storage.offset, numbers_storage.limit.has_value(), numbers_storage.limit.has_value() ? numbers_storage.limit.value() : UInt64{0});
 
     if (numbers_storage.limit.has_value() && (numbers_storage.limit.value() == 0))
     {
         pipe.addSource(std::make_shared<NullSource>(NumbersSource::createHeader(numbers_storage.column_name)));
         return pipe;
     }
+    chassert(numbers_storage.step != UInt64{0});
 
     /// Build rpn of query filters
     KeyCondition condition(buildFilterDAG(), context, column_names, key_expression);
@@ -575,7 +605,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             numbers_storage.offset + i * max_block_size,
             num_streams * max_block_size,
             numbers_storage.column_name,
-            numbers_storage.step, 
+            numbers_storage.step,
             numbers_storage.offset % numbers_storage.step);
 
         if (numbers_storage.limit && i == 0)
