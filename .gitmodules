@@ -176,9 +176,6 @@
 [submodule "contrib/libpq"]
 	path = contrib/libpq
 	url = https://github.com/ClickHouse/libpq
-[submodule "contrib/boringssl"]
-	path = contrib/boringssl
-	url = https://github.com/ClickHouse/boringssl
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
 	url = https://github.com/ClickHouse/NuRaft
