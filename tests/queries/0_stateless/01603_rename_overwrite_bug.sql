@@ -2,7 +2,10 @@
 
 DROP database IF EXISTS test_1603_rename_bug_ordinary;
 set allow_deprecated_database_ordinary=1;
+-- Creation of a database with ENGINE=Ordinary results in a warning in server logs
+SET send_logs_level='fatal';
 create database test_1603_rename_bug_ordinary engine=Ordinary;
+SET send_logs_level='warning';
 create table test_1603_rename_bug_ordinary.foo engine=Memory as select * from numbers(100);
 create table test_1603_rename_bug_ordinary.bar engine=Log as select * from numbers(200);
 detach table test_1603_rename_bug_ordinary.foo;

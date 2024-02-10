@@ -1,7 +1,10 @@
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
 set allow_deprecated_database_ordinary=1;
+-- Creation of a database with ENGINE=Ordinary results in a warning in server logs
+SET send_logs_level='fatal';
 CREATE DATABASE {CLICKHOUSE_DATABASE:Identifier} ENGINE=Ordinary; -- Different inner table name with Atomic
+SET send_logs_level='warning';
 
 set allow_deprecated_syntax_for_merge_tree=1;
 create table {CLICKHOUSE_DATABASE:Identifier}.my_table ENGINE = MergeTree(day, (day), 8192) as select today() as day, 'mystring' as str;

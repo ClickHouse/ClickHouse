@@ -4,7 +4,10 @@ SET allow_experimental_analyzer = 0;
 SET allow_experimental_window_view = 1;
 DROP DATABASE IF EXISTS test_01048;
 set allow_deprecated_database_ordinary=1;
+-- Creation of a database with ENGINE=Ordinary results in a warning in server logs
+SET send_logs_level='fatal';
 CREATE DATABASE test_01048 ENGINE=Ordinary;
+SET send_logs_level='warning';
 
 DROP TABLE IF EXISTS test_01048.mt;
 DROP TABLE IF EXISTS test_01048.mt_2;
