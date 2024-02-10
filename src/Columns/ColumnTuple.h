@@ -23,7 +23,8 @@ private:
     template <bool positive>
     struct Less;
 
-    explicit ColumnTuple(MutableColumns && columns);
+    explicit ColumnTuple(MutableColumns && columns_);
+    explicit ColumnTuple(TupleColumns && columns_);
     ColumnTuple(const ColumnTuple &) = default;
 
 public:
@@ -33,11 +34,11 @@ public:
     using Base = COWHelper<IColumn, ColumnTuple>;
     static Ptr create(const Columns & columns);
     static Ptr create(const TupleColumns & columns);
-    static Ptr create(Columns && arg) { return create(arg); }
+    static Ptr create(TupleColumns && columns);
 
-    template <typename Arg>
-    requires std::is_rvalue_reference_v<Arg &&>
-    static MutablePtr create(Arg && arg) { return Base::create(std::forward<Arg>(arg)); }
+    template <typename TColumnPtr>
+    requires (IsMutableColumn<TColumnPtr>::value)
+    static MutablePtr create(std::vector<TColumnPtr> && columns) { return Base::create(std::move(columns)); }
 
     std::string getName() const override;
     const char * getFamilyName() const override { return "Tuple"; }

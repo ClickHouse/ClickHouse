@@ -25,7 +25,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
 std::string ColumnTuple::getName() const
 {
     WriteBufferFromOwnString res;
@@ -42,40 +41,48 @@ std::string ColumnTuple::getName() const
     return res.str();
 }
 
-ColumnTuple::ColumnTuple(MutableColumns && mutable_columns)
+ColumnTuple::ColumnTuple(TupleColumns && columns_)
 {
-    columns.reserve(mutable_columns.size());
-    for (auto & column : mutable_columns)
+    /// A tuple can't be empty (see ColumnTuple::size() for example).
+    if (columns_.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple cannot be empty");
+
+    /// All columns which are the components of a tuple must have the same size.
+    size_t column_size = columns_[0]->size();
+
+    for (size_t i = 0; i != columns_.size(); ++i)
     {
+        const auto & column = columns_[i];
+        if (column->size() != column_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "ColumnTuple cannot have columns of different sizes as its elements. Column #0({}): size={}, column #{}({}): size={}",
+                columns_[0]->getName(), column_size, i, columns_[i]->getName(), column->size());
+
         if (isColumnConst(*column))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnTuple cannot have ColumnConst as its element");
-
-        columns.push_back(std::move(column));
     }
+
+    columns = std::move(columns_);
+}
+
+ColumnTuple::ColumnTuple(MutableColumns && columns_)
+    : ColumnTuple(TupleColumns(std::make_move_iterator(columns_.begin()), std::make_move_iterator(columns_.end())))
+{
 }
 
 ColumnTuple::Ptr ColumnTuple::create(const Columns & columns)
 {
-    for (const auto & column : columns)
-        if (isColumnConst(*column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnTuple cannot have ColumnConst as its element");
-
-    auto column_tuple = ColumnTuple::create(MutableColumns());
-    column_tuple->columns.assign(columns.begin(), columns.end());
-
-    return column_tuple;
+    return create(TupleColumns(columns.begin(), columns.end()));
 }
 
 ColumnTuple::Ptr ColumnTuple::create(const TupleColumns & columns)
 {
-    for (const auto & column : columns)
-        if (isColumnConst(*column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnTuple cannot have ColumnConst as its element");
+    return create(TupleColumns(columns));
+}
 
-    auto column_tuple = ColumnTuple::create(MutableColumns());
-    column_tuple->columns = columns;
-
-    return column_tuple;
+ColumnTuple::Ptr ColumnTuple::create(TupleColumns && columns)
+{
+    return Base::create(std::move(columns));
 }
 
 MutableColumnPtr ColumnTuple::cloneEmpty() const
