@@ -370,6 +370,9 @@ class CommitStatusData:
     def is_ok(self):
         return self.status == SUCCESS
 
+    def is_failure(self):
+        return self.status == FAILURE
+
     @staticmethod
     def cleanup():
         STATUS_FILE_PATH.unlink(missing_ok=True)
