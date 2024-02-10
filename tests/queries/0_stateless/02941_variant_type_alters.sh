@@ -42,9 +42,13 @@ function run()
     $CH_CLIENT -q "insert into test select number, multiIf(number % 3 == 0, number, number % 3 == 1, 'str_' || toString(number), NULL), NULL from numbers(22, 3)"
     $CH_CLIENT -q "select x, y, y.UInt64, y.String, v, v.String, v.UInt64, v.Date from test order by x"
 
+    echo "rename variant column"
+    $CH_CLIENT -q "alter table test rename column v to v_renamed settings mutations_sync=1"
+    $CH_CLIENT -q "select x, y, y.UInt64, y.String, v_renamed from test order by x"
+
     echo "drop variant column"
-    $CH_CLIENT -q "alter table test drop column v settings mutations_sync=1"
-    $CH_CLIENT -q "select x, y, y.UInt64, y.String from test order by x "
+    $CH_CLIENT -q "alter table test drop column v_renamed settings mutations_sync=1"
+    $CH_CLIENT -q "select x, y, y.UInt64, y.String from test order by x"
 }
 
 $CH_CLIENT -q "drop table if exists test;"

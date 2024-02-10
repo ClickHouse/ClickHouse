@@ -87,8 +87,8 @@ function delete_data()
     $CH_CLIENT -nmq "select id, v from test order by id;"
 
     # Delete with a condition on Variant column value
-    #$CH_CLIENT -q  "alter table test delete where v = 'Hello';"
-    #$CH_CLIENT -nmq "select id, v from test order by id;"
+    $CH_CLIENT -q  "alter table test delete where v = 'Hello';"
+    $CH_CLIENT -nmq "select id, v from test order by id;"
 }
 
 engines=("MergeTree order by id settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000" "MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1")
