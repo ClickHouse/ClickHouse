@@ -768,7 +768,13 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
     if (remote_table_function)
     {
-        auto remote_table_function_query_tree = buildQueryTree(remote_table_function, query_context);
+        auto context = Context::createCopy(query_context);
+        Settings settings = query_context->getSettings();
+        settings.limit = 0;
+        settings.offset = 0;
+        context->setSettings(settings);
+
+        auto remote_table_function_query_tree = buildQueryTree(remote_table_function, context);
         auto & remote_table_function_node = remote_table_function_query_tree->as<FunctionNode &>();
 
         auto table_function_node = std::make_shared<TableFunctionNode>(remote_table_function_node.getFunctionName());
@@ -778,7 +784,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
             table_function_node->setTableExpressionModifiers(*table_expression_modifiers);
 
         QueryAnalysisPass query_analysis_pass;
-        query_analysis_pass.run(table_function_node, query_context);
+        query_analysis_pass.run(table_function_node, context);
 
         replacement_table_expression = std::move(table_function_node);
     }
