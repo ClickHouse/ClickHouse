@@ -126,6 +126,9 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             if (optimization_settings.read_in_order)
                 optimizeReadInOrder(*frame.node, nodes);
 
+            if (optimization_settings.aggregation_in_order)
+                optimizeAggregationInOrder(*frame.node, nodes);
+
             if (optimization_settings.distinct_in_order)
                 tryDistinctReadInOrder(frame.node);
         }
@@ -138,6 +141,8 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             stack.push_back(next_frame);
             continue;
         }
+
+        enableMemoryBoundMerging(*stack.back().node, nodes);
 
         stack.pop_back();
     }
@@ -158,9 +163,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
                 if (optimization_settings.optimize_projection)
                     num_applied_projection
                         += optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings.optimize_use_implicit_projections);
-
-                if (optimization_settings.aggregation_in_order)
-                    optimizeAggregationInOrder(*frame.node, nodes);
             }
 
             /// Traverse all children first.
@@ -191,8 +193,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
                 continue;
             }
         }
-
-        enableMemoryBoundMerging(*stack.back().node, nodes);
 
         stack.pop_back();
     }

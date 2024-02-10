@@ -91,19 +91,18 @@ ExpressionTransform × 16
         (Expression)
         ExpressionTransform × 4
           (ReadFromMergeTree)
-          ExpressionTransform × 4
-            MergingSortedTransform 2 → 1
-              ExpressionTransform × 2
-                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                  MergingSortedTransform 2 → 1
-                    ExpressionTransform × 2
-                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                        MergingSortedTransform 2 → 1
-                          ExpressionTransform × 2
-                            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                              MergingSortedTransform 2 → 1
-                                ExpressionTransform × 2
-                                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+          MergingSortedTransform 2 → 1
+            ExpressionTransform × 2
+              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                MergingSortedTransform 2 → 1
+                  ExpressionTransform × 2
+                    MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                      MergingSortedTransform 2 → 1
+                        ExpressionTransform × 2
+                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                            MergingSortedTransform 2 → 1
+                              ExpressionTransform × 2
+                                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
 1000000
 (Expression)
 ExpressionTransform × 16
@@ -114,41 +113,6 @@ ExpressionTransform × 16
         (Expression)
         ExpressionTransform × 8
           (ReadFromMergeTree)
-          ExpressionTransform × 8
-            MergingSortedTransform 2 → 1
-              ExpressionTransform × 2
-                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                  MergingSortedTransform 2 → 1
-                    ExpressionTransform × 2
-                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                        MergingSortedTransform 2 → 1
-                          ExpressionTransform × 2
-                            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                              MergingSortedTransform 2 → 1
-                                ExpressionTransform × 2
-                                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                                    MergingSortedTransform 2 → 1
-                                      ExpressionTransform × 2
-                                        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                                          MergingSortedTransform 2 → 1
-                                            ExpressionTransform × 2
-                                              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                                                MergingSortedTransform 2 → 1
-                                                  ExpressionTransform × 2
-                                                    MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                                                      MergingSortedTransform 2 → 1
-                                                        ExpressionTransform × 2
-                                                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-1000000
-(Expression)
-ExpressionTransform × 16
-  (Aggregating)
-  FinalizeAggregatedTransform × 16
-    AggregatingInOrderTransform × 16
-      (Expression)
-      ExpressionTransform × 16
-        (ReadFromMergeTree)
-        ExpressionTransform × 16
           MergingSortedTransform 2 → 1
             ExpressionTransform × 2
               MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
@@ -173,30 +137,63 @@ ExpressionTransform × 16
                                                     MergingSortedTransform 2 → 1
                                                       ExpressionTransform × 2
                                                         MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                                                          MergingSortedTransform 2 → 1
-                                                            ExpressionTransform × 2
-                                                              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                                                                MergingSortedTransform 2 → 1
-                                                                  ExpressionTransform × 2
-                                                                    MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                                                                      MergingSortedTransform 2 → 1
-                                                                        ExpressionTransform × 2
-                                                                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                                                                            MergingSortedTransform 2 → 1
-                                                                              ExpressionTransform × 2
-                                                                                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                                                                                  MergingSortedTransform 2 → 1
-                                                                                    ExpressionTransform × 2
-                                                                                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                                                                                        MergingSortedTransform 2 → 1
-                                                                                          ExpressionTransform × 2
-                                                                                            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                                                                                              MergingSortedTransform 2 → 1
-                                                                                                ExpressionTransform × 2
-                                                                                                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                                                                                                    MergingSortedTransform 2 → 1
-                                                                                                      ExpressionTransform × 2
-                                                                                                        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+1000000
+(Expression)
+ExpressionTransform × 16
+  (Aggregating)
+  FinalizeAggregatedTransform × 16
+    AggregatingInOrderTransform × 16
+      (Expression)
+      ExpressionTransform × 16
+        (ReadFromMergeTree)
+        MergingSortedTransform 2 → 1
+          ExpressionTransform × 2
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+              MergingSortedTransform 2 → 1
+                ExpressionTransform × 2
+                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                    MergingSortedTransform 2 → 1
+                      ExpressionTransform × 2
+                        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                          MergingSortedTransform 2 → 1
+                            ExpressionTransform × 2
+                              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                                MergingSortedTransform 2 → 1
+                                  ExpressionTransform × 2
+                                    MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                                      MergingSortedTransform 2 → 1
+                                        ExpressionTransform × 2
+                                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                                            MergingSortedTransform 2 → 1
+                                              ExpressionTransform × 2
+                                                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                                                  MergingSortedTransform 2 → 1
+                                                    ExpressionTransform × 2
+                                                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                                                        MergingSortedTransform 2 → 1
+                                                          ExpressionTransform × 2
+                                                            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                                                              MergingSortedTransform 2 → 1
+                                                                ExpressionTransform × 2
+                                                                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                                                                    MergingSortedTransform 2 → 1
+                                                                      ExpressionTransform × 2
+                                                                        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                                                                          MergingSortedTransform 2 → 1
+                                                                            ExpressionTransform × 2
+                                                                              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                                                                                MergingSortedTransform 2 → 1
+                                                                                  ExpressionTransform × 2
+                                                                                    MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                                                                                      MergingSortedTransform 2 → 1
+                                                                                        ExpressionTransform × 2
+                                                                                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                                                                                            MergingSortedTransform 2 → 1
+                                                                                              ExpressionTransform × 2
+                                                                                                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                                                                                                  MergingSortedTransform 2 → 1
+                                                                                                    ExpressionTransform × 2
+                                                                                                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
 1000000
 Skip merging: 1
 Skip merging: 1
