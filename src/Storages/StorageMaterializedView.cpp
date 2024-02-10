@@ -19,7 +19,6 @@
 #include <Access/Common/AccessFlags.h>
 
 #include <Storages/AlterCommands.h>
-#include <Storages/StorageFactory.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/StorageFactory.h>
