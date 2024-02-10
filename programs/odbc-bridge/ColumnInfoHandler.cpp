@@ -69,7 +69,7 @@ namespace
 }
 
 
-void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
     HTMLForm params(getContext()->getSettingsRef(), request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
@@ -78,7 +78,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
-            *response.send() << message << std::endl;
+            *response.send() << message << '\n';
         LOG_WARNING(log, fmt::runtime(message));
     };
 

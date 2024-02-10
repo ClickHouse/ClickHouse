@@ -50,7 +50,7 @@ ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
     auto scheme = uri.getScheme();
     auto port = uri.getPort();
 
-    LOG_TRACE(&Poco::Logger::get("EnvironmentProxyConfigurationResolver"), "Use proxy from environment: {}://{}:{}", scheme, host, port);
+    LOG_TRACE(getLogger("EnvironmentProxyConfigurationResolver"), "Use proxy from environment: {}://{}:{}", scheme, host, port);
 
     return ProxyConfiguration {
         host,

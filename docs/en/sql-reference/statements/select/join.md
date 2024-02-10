@@ -12,7 +12,7 @@ Join produces a new table by combining columns from one or multiple tables by us
 ``` sql
 SELECT <expr_list>
 FROM <left_table>
-[GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ASOF] JOIN <right_table>
+[GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ALL|ASOF] JOIN <right_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
@@ -294,6 +294,34 @@ PASTE JOIN
 ┌─a─┬─t2.a─┐
 │ 0 │    1 │
 │ 1 │    0 │
+└───┴──────┘
+```
+Note: In this case result can be nondeterministic if the reading is parallel. Example:
+```SQL
+SELECT *
+FROM
+(
+    SELECT number AS a
+    FROM numbers_mt(5)
+) AS t1
+PASTE JOIN
+(
+    SELECT number AS a
+    FROM numbers(10)
+    ORDER BY a DESC
+) AS t2
+SETTINGS max_block_size = 2;
+
+┌─a─┬─t2.a─┐
+│ 2 │    9 │
+│ 3 │    8 │
+└───┴──────┘
+┌─a─┬─t2.a─┐
+│ 0 │    7 │
+│ 1 │    6 │
+└───┴──────┘
+┌─a─┬─t2.a─┐
+│ 4 │    5 │
 └───┴──────┘
 ```
 

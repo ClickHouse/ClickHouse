@@ -46,7 +46,7 @@ namespace ErrorCodes
 }
 
 IOUringReader::IOUringReader(uint32_t entries_)
-    : log(&Poco::Logger::get("IOUringReader"))
+    : log(getLogger("IOUringReader"))
 {
     struct io_uring_probe * probe = io_uring_get_probe();
     if (!probe)

@@ -33,11 +33,11 @@ curl https://clickhouse.com/ | sh
 
 ## Upcoming Events
 
-Keep an eye out for upcoming meetups around the world. Somewhere else you want us to be? Please feel free to reach out to tyler <at> clickhouse <dot> com.
+Keep an eye out for upcoming meetups around the world. Somewhere else you want us to be? Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com.
 
 ## Recent Recordings
 * **Recent Meetup Videos**: [Meetup Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3iNDUzpY1S3L_iV4nARda_U) Whenever possible recordings of the ClickHouse Community Meetups are edited and presented as individual talks. Current featuring "Modern SQL in 2023", "Fast, Concurrent, and Consistent Asynchronous INSERTS in ClickHouse", and "Full-Text Indices: Design and Experiments"
-* **Recording available**: [**v23.10 Release Webinar**](https://www.youtube.com/watch?v=PGQS6uPb970) All the features of 23.10, one convenient video! Watch it now!
+* **Recording available**: [**v24.1 Release Webinar**](https://www.youtube.com/watch?v=pBF9g0wGAGs) All the features of 24.1, one convenient video! Watch it now!
 * **All release webinar recordings**: [YouTube playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU)
 
   

@@ -142,7 +142,7 @@ private:
 
     String getNestedTableName() const;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Not nullptr only for single MaterializedPostgreSQL storage, because for MaterializedPostgreSQL
     /// database engine there is one replication handler for all tables.

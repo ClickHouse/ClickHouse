@@ -33,7 +33,7 @@ PasteJoinAlgorithm::PasteJoinAlgorithm(
     size_t max_block_size_)
     : table_join(table_join_)
     , max_block_size(max_block_size_)
-    , log(&Poco::Logger::get("PasteJoinAlgorithm"))
+    , log(getLogger("PasteJoinAlgorithm"))
 {
     if (input_headers.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PasteJoinAlgorithm requires exactly two inputs");
@@ -117,7 +117,7 @@ PasteJoinTransform::PasteJoinTransform(
         /* always_read_till_end_= */ false,
         /* empty_chunk_on_finish_= */ true,
         table_join, input_headers, max_block_size)
-    , log(&Poco::Logger::get("PasteJoinTransform"))
+    , log(getLogger("PasteJoinTransform"))
 {
     LOG_TRACE(log, "Use PasteJoinTransform");
 }

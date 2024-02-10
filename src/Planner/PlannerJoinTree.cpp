@@ -84,32 +84,38 @@ namespace
 {
 
 /// Check if current user has privileges to SELECT columns from table
-void checkAccessRights(const TableNode & table_node, const Names & column_names, const ContextPtr & query_context)
+/// Throws an exception if access to any column from `column_names` is not granted
+/// If `column_names` is empty, check access to any columns and return names of accessible columns
+NameSet checkAccessRights(const TableNode & table_node, Names & column_names, const ContextPtr & query_context)
 {
     /// StorageDummy is created on preliminary stage, ignore access check for it.
     if (typeid_cast<const StorageDummy *>(table_node.getStorage().get()))
-        return;
+        return {};
 
     const auto & storage_id = table_node.getStorageID();
     const auto & storage_snapshot = table_node.getStorageSnapshot();
 
     if (column_names.empty())
     {
+        NameSet accessible_columns;
         /** For a trivial queries like "SELECT count() FROM table", "SELECT 1 FROM table" access is granted if at least
           * one table column is accessible.
           */
         auto access = query_context->getAccess();
-
         for (const auto & column : storage_snapshot->metadata->getColumns())
         {
             if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
-                return;
+                accessible_columns.insert(column.name);
         }
 
-        throw Exception(ErrorCodes::ACCESS_DENIED,
-            "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
-            query_context->getUserName(),
-            storage_id.getFullTableName());
+        if (accessible_columns.empty())
+        {
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
+                query_context->getUserName(),
+                storage_id.getFullTableName());
+        }
+        return accessible_columns;
     }
 
     // In case of cross-replication we don't know what database is used for the table.
@@ -117,6 +123,8 @@ void checkAccessRights(const TableNode & table_node, const Names & column_names,
     // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
     if (storage_id.hasDatabase())
         query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+
+    return {};
 }
 
 bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
@@ -133,7 +141,7 @@ bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
     return false;
 }
 
-NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot)
+NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot, const NameSet & column_names_allowed_to_select)
 {
     /** We need to read at least one column to find the number of rows.
       * We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
@@ -166,6 +174,18 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
 
     auto column_sizes = storage->getColumnSizes();
     auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns());
+
+    if (!column_names_allowed_to_select.empty())
+    {
+        auto it = column_names_and_types.begin();
+        while (it != column_names_and_types.end())
+        {
+            if (!column_names_allowed_to_select.contains(it->name))
+                it = column_names_and_types.erase(it);
+            else
+                ++it;
+        }
+    }
 
     if (!column_sizes.empty())
     {
@@ -276,7 +296,7 @@ bool applyTrivialCountIfPossible(
         /// The query could use trivial count if it didn't use parallel replicas, so let's disable it
         query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
         query_context->setSetting("max_parallel_replicas", UInt64{0});
-        LOG_TRACE(&Poco::Logger::get("Planner"), "Disabling parallel replicas to be able to use a trivial count optimization");
+        LOG_TRACE(getLogger("Planner"), "Disabling parallel replicas to be able to use a trivial count optimization");
 
     }
 
@@ -330,12 +350,13 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
     /** The current user must have the SELECT privilege.
       * We do not check access rights for table functions because they have been already checked in ITableFunction::execute().
       */
+    NameSet columns_names_allowed_to_select;
     if (table_node)
     {
         auto column_names_with_aliases = columns_names;
         const auto & alias_columns_names = table_expression_data.getAliasColumnsNames();
         column_names_with_aliases.insert(column_names_with_aliases.end(), alias_columns_names.begin(), alias_columns_names.end());
-        checkAccessRights(*table_node, column_names_with_aliases, query_context);
+        columns_names_allowed_to_select = checkAccessRights(*table_node, column_names_with_aliases, query_context);
     }
 
     if (columns_names.empty())
@@ -346,8 +367,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         {
             const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-            additional_column_to_read = chooseSmallestColumnToReadFromStorage(storage, storage_snapshot);
-
+            additional_column_to_read = chooseSmallestColumnToReadFromStorage(storage, storage_snapshot, columns_names_allowed_to_select);
         }
         else if (query_node || union_node)
         {
@@ -478,7 +498,7 @@ FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
                 "(setting 'max_parallel_replcias'), but the table does not have custom_key defined for it "
                 " or it's invalid (setting 'parallel_replicas_custom_key')");
 
-    LOG_TRACE(&Poco::Logger::get("Planner"), "Processing query on a replica using custom_key '{}'", settings.parallel_replicas_custom_key.value);
+    LOG_TRACE(getLogger("Planner"), "Processing query on a replica using custom_key '{}'", settings.parallel_replicas_custom_key.value);
 
     auto parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
             settings.parallel_replicas_count,
@@ -645,7 +665,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     max_threads_execute_query = 1;
                 }
 
-                if (max_block_size_limited < select_query_info.local_storage_limits.local_limits.size_limits.max_rows)
+                if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows != 0)
+                {
+                    if (max_block_size_limited < select_query_info.local_storage_limits.local_limits.size_limits.max_rows)
+                        table_expression_query_info.limit = max_block_size_limited;
+                }
+                else
                 {
                     table_expression_query_info.limit = max_block_size_limited;
                 }
@@ -720,7 +745,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                     size_t number_of_replicas_to_use = rows_to_read / settings.parallel_replicas_min_number_of_rows_per_replica;
                     LOG_TRACE(
-                        &Poco::Logger::get("Planner"),
+                        getLogger("Planner"),
                         "Estimated {} rows to read. It is enough work for {} parallel replicas",
                         rows_to_read,
                         number_of_replicas_to_use);
@@ -730,12 +755,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         planner_context->getMutableQueryContext()->setSetting(
                             "allow_experimental_parallel_reading_from_replicas", Field(0));
                         planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", UInt64{0});
-                        LOG_DEBUG(&Poco::Logger::get("Planner"), "Disabling parallel replicas because there aren't enough rows to read");
+                        LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because there aren't enough rows to read");
                     }
                     else if (number_of_replicas_to_use < settings.max_parallel_replicas)
                     {
                         planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", number_of_replicas_to_use);
-                        LOG_DEBUG(&Poco::Logger::get("Planner"), "Reducing the number of replicas to use to {}", number_of_replicas_to_use);
+                        LOG_DEBUG(getLogger("Planner"), "Reducing the number of replicas to use to {}", number_of_replicas_to_use);
                     }
                 }
 
@@ -804,15 +829,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     else
                     {
                         if (auto * distributed = typeid_cast<StorageDistributed *>(storage.get());
-                            distributed && canUseCustomKey(settings, *distributed->getCluster(), *query_context))
+                            distributed && query_context->canUseParallelReplicasCustomKey(*distributed->getCluster()))
                         {
-                            table_expression_query_info.use_custom_key = true;
                             planner_context->getMutableQueryContext()->setSetting("distributed_group_by_no_merge", 2);
                         }
                     }
                 }
 
-                const auto & table_expression_alias = table_expression->getAlias();
+                const auto & table_expression_alias = table_expression->getOriginalAlias();
                 auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context);
                 add_filter(additional_filters_info, "additional filter");
 
@@ -841,9 +865,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     query_context->getQueryContext()->addQueryAccessInfo(
                         backQuoteIfNeed(local_storage_id.getDatabaseName()),
                         local_storage_id.getFullTableName(),
-                        columns_names,
-                        {},
-                        {});
+                        columns_names);
                 }
             }
 
@@ -978,6 +1000,57 @@ void joinCastPlanColumnsToNullable(QueryPlan & plan_to_add_cast, PlannerContextP
     plan_to_add_cast.addStep(std::move(cast_join_columns_step));
 }
 
+/// Actions to calculate table columns that have a functional representation (ALIASes and subcolumns)
+/// and used in USING clause of JOIN expression.
+struct UsingAliasKeyActions
+{
+    UsingAliasKeyActions(
+        const ColumnsWithTypeAndName & left_plan_output_columns,
+        const ColumnsWithTypeAndName & right_plan_output_columns
+    )
+        : left_alias_columns_keys(std::make_shared<ActionsDAG>(left_plan_output_columns))
+        , right_alias_columns_keys(std::make_shared<ActionsDAG>(right_plan_output_columns))
+    {}
+
+    void addLeftColumn(QueryTreeNodePtr & node, const ColumnsWithTypeAndName & plan_output_columns, const PlannerContextPtr & planner_context)
+    {
+        addColumnImpl(left_alias_columns_keys, node, plan_output_columns, planner_context);
+    }
+
+    void addRightColumn(QueryTreeNodePtr & node, const ColumnsWithTypeAndName & plan_output_columns, const PlannerContextPtr & planner_context)
+    {
+        addColumnImpl(right_alias_columns_keys, node, plan_output_columns, planner_context);
+    }
+
+    ActionsDAGPtr getLeftActions()
+    {
+        left_alias_columns_keys->projectInput();
+        return std::move(left_alias_columns_keys);
+    }
+
+    ActionsDAGPtr getRightActions()
+    {
+        right_alias_columns_keys->projectInput();
+        return std::move(right_alias_columns_keys);
+    }
+
+private:
+    void addColumnImpl(ActionsDAGPtr & alias_columns_keys, QueryTreeNodePtr & node, const ColumnsWithTypeAndName & plan_output_columns, const PlannerContextPtr & planner_context)
+    {
+        auto & column_node = node->as<ColumnNode&>();
+        if (column_node.hasExpression())
+        {
+            auto dag = buildActionsDAGFromExpressionNode(column_node.getExpressionOrThrow(), plan_output_columns, planner_context);
+            const auto & left_inner_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(node);
+            dag->addOrReplaceInOutputs(dag->addAlias(*dag->getOutputs().front(), left_inner_column_identifier));
+            alias_columns_keys->mergeInplace(std::move(*dag));
+        }
+    }
+
+    ActionsDAGPtr left_alias_columns_keys;
+    ActionsDAGPtr right_alias_columns_keys;
+};
+
 JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_expression,
     JoinTreeQueryPlan left_join_tree_query_plan,
     JoinTreeQueryPlan right_join_tree_query_plan,
@@ -1001,6 +1074,18 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     auto right_plan = std::move(right_join_tree_query_plan.query_plan);
     auto right_plan_output_columns = right_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
+
+    // {
+    //     WriteBufferFromOwnString buf;
+    //     left_plan.explainPlan(buf, {.header = true, .actions = true});
+    //     std::cerr << "left plan \n "<< buf.str() << std::endl;
+    // }
+
+    // {
+    //     WriteBufferFromOwnString buf;
+    //     right_plan.explainPlan(buf, {.header = true, .actions = true});
+    //     std::cerr << "right plan \n "<< buf.str() << std::endl;
+    // }
 
     JoinClausesAndActions join_clauses_and_actions;
     JoinKind join_kind = join_node.getKind();
@@ -1034,6 +1119,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     if (join_node.isUsingJoinExpression())
     {
+        UsingAliasKeyActions using_alias_key_actions{left_plan_output_columns, right_plan_output_columns};
+
         auto & join_node_using_columns_list = join_node.getJoinExpression()->as<ListNode &>();
         for (auto & join_node_using_node : join_node_using_columns_list.getNodes())
         {
@@ -1043,8 +1130,12 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             auto & left_inner_column_node = inner_columns_list.getNodes().at(0);
             auto & left_inner_column = left_inner_column_node->as<ColumnNode &>();
 
+            using_alias_key_actions.addLeftColumn(left_inner_column_node, left_plan_output_columns, planner_context);
+
             auto & right_inner_column_node = inner_columns_list.getNodes().at(1);
             auto & right_inner_column = right_inner_column_node->as<ColumnNode &>();
+
+            using_alias_key_actions.addRightColumn(right_inner_column_node, right_plan_output_columns, planner_context);
 
             const auto & join_node_using_column_node_type = join_node_using_column_node.getColumnType();
             if (!left_inner_column.getColumnType()->equals(*join_node_using_column_node_type))
@@ -1059,6 +1150,14 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
                 right_plan_column_name_to_cast_type.emplace(right_inner_column_identifier, join_node_using_column_node_type);
             }
         }
+
+        auto left_alias_columns_keys_step = std::make_unique<ExpressionStep>(left_plan.getCurrentDataStream(), using_alias_key_actions.getLeftActions());
+        left_alias_columns_keys_step->setStepDescription("Actions for left table alias column keys");
+        left_plan.addStep(std::move(left_alias_columns_keys_step));
+
+        auto right_alias_columns_keys_step = std::make_unique<ExpressionStep>(right_plan.getCurrentDataStream(), using_alias_key_actions.getRightActions());
+        right_alias_columns_keys_step->setStepDescription("Actions for right table alias column keys");
+        right_plan.addStep(std::move(right_alias_columns_keys_step));
     }
 
     auto join_cast_plan_output_nodes = [&](QueryPlan & plan_to_add_cast, std::unordered_map<std::string, DataTypePtr> & plan_column_name_to_cast_type)

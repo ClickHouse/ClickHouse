@@ -120,7 +120,7 @@ bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & sett
     return true;
 }
 
-Poco::Logger * getLogger() { return &Poco::Logger::get("ExpressionAnalyzer"); }
+LoggerPtr getLogger() { return ::getLogger("ExpressionAnalyzer"); }
 
 }
 
@@ -1050,7 +1050,7 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
         join_element.table_expression,
         context,
         original_right_column_names,
-        query_options.copy().setWithAllColumns().ignoreProjections(false).ignoreAlias(false));
+        query_options.copy().setWithAllColumns().ignoreAlias(false));
     auto joined_plan = std::make_unique<QueryPlan>();
     interpreter->buildQueryPlan(*joined_plan);
     {

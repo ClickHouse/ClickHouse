@@ -1,17 +1,17 @@
 {% for engine in ["ReplicatedMergeTree('/clickhouse/tables/{database}/test_01825_3/t_json_3', 'r1') ORDER BY tuple()", "Memory"] -%}
-1	('',0)	Tuple(k1 String, k2 Int8)
-2	('v1',2)	Tuple(k1 String, k2 Int8)
+1	('',0)	Tuple(\n    k1 String,\n    k2 Int8)
+2	('v1',2)	Tuple(\n    k1 String,\n    k2 Int8)
 1		0
 2	v1	2
 ========
-1	([])	Tuple(k1 Nested(k2 String, k3 String))
-2	([('v1','v3'),('v4','')])	Tuple(k1 Nested(k2 String, k3 String))
+1	([])	Tuple(\n    k1 Nested(k2 String, k3 String))
+2	([('v1','v3'),('v4','')])	Tuple(\n    k1 Nested(k2 String, k3 String))
 1	[]	[]
 2	['v1','v4']	['v3','']
-1	([])	Tuple(k1 Nested(k2 String, k3 String))
-2	([('v1','v3'),('v4','')])	Tuple(k1 Nested(k2 String, k3 String))
-3	([])	Tuple(k1 Nested(k2 String, k3 String))
-4	([])	Tuple(k1 Nested(k2 String, k3 String))
+1	([])	Tuple(\n    k1 Nested(k2 String, k3 String))
+2	([('v1','v3'),('v4','')])	Tuple(\n    k1 Nested(k2 String, k3 String))
+3	([])	Tuple(\n    k1 Nested(k2 String, k3 String))
+4	([])	Tuple(\n    k1 Nested(k2 String, k3 String))
 1	[]	[]
 2	['v1','v4']	['v3','']
 3	[]	[]
@@ -26,9 +26,9 @@ data	Tuple(k1 Nested(k2 String, k3 String))
 3	[]	[]
 4	[]	[]
 ========
-1	((1,'foo'),[])	Tuple(k1 Tuple(k2 Int8, k3 String), k4 Array(Int8))
-2	((0,''),[1,2,3])	Tuple(k1 Tuple(k2 Int8, k3 String), k4 Array(Int8))
-3	((10,''),[])	Tuple(k1 Tuple(k2 Int8, k3 String), k4 Array(Int8))
+1	((1,'foo'),[])	Tuple(\n    k1 Tuple(\n        k2 Int8,\n        k3 String),\n    k4 Array(Int8))
+2	((0,''),[1,2,3])	Tuple(\n    k1 Tuple(\n        k2 Int8,\n        k3 String),\n    k4 Array(Int8))
+3	((10,''),[])	Tuple(\n    k1 Tuple(\n        k2 Int8,\n        k3 String),\n    k4 Array(Int8))
 1	1	foo	[]
 2	0		[1,2,3]
 3	10		[]

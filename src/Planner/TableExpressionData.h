@@ -80,9 +80,11 @@ public:
     }
 
     /// Add alias column name
-    void addAliasColumnName(const std::string & column_name)
+    void addAliasColumnName(const std::string & column_name, const ColumnIdentifier & column_identifier)
     {
         alias_columns_names.insert(column_name);
+
+        column_name_to_column_identifier.emplace(column_name, column_identifier);
     }
 
     /// Get alias columns names

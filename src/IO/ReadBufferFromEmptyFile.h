@@ -14,12 +14,18 @@ namespace DB
 /// - ThreadPoolReader
 class ReadBufferFromEmptyFile : public ReadBufferFromFileBase
 {
+public:
+    explicit ReadBufferFromEmptyFile(const String & file_name_) : file_name(file_name_) {}
+
 private:
+    String file_name;
+
     bool nextImpl() override { return false; }
-    std::string getFileName() const override { return "<empty>"; }
+    std::string getFileName() const override { return file_name; }
     off_t seek(off_t /*off*/, int /*whence*/) override { return 0; }
     off_t getPosition() override { return 0; }
     size_t getFileSize() override { return 0; }
+    size_t getFileOffsetOfBufferEnd() const override { return 0; }
 };
 
 }

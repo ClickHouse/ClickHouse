@@ -95,6 +95,9 @@ struct QueryFuzzer
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
     void fuzzTableName(ASTTableExpression & table);
+    ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
+    ASTPtr reverseLiteralFuzzing(ASTPtr child);
+    void fuzzExpressionList(ASTExpressionList & expr_list);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(ASTPtr ast);

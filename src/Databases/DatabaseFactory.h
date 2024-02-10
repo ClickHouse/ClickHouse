@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/NamePrompter.h>
 #include <Interpreters/Context_fwd.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -24,7 +25,7 @@ static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &eng
     return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
 }
 
-class DatabaseFactory : private boost::noncopyable
+class DatabaseFactory : private boost::noncopyable, public IHints<>
 {
 public:
 
@@ -51,6 +52,14 @@ public:
     void registerDatabase(const std::string & name, CreatorFn creator_fn);
 
     const DatabaseEngines & getDatabaseEngines() const { return database_engines; }
+
+    std::vector<String> getAllRegisteredNames() const override
+    {
+        std::vector<String> result;
+        auto getter = [](const auto & pair) { return pair.first; };
+        std::transform(database_engines.begin(), database_engines.end(), std::back_inserter(result), getter);
+        return result;
+    }
 
 private:
     DatabaseEngines database_engines;

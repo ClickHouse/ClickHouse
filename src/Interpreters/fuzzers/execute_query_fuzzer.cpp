@@ -1,5 +1,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/registerInterpreters.h>
 #include "Processors/Executors/PullingPipelineExecutor.h"
 
 #include <Functions/registerDatabases.h>
@@ -29,6 +30,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
             context->makeGlobalContext();
             context->setApplicationType(Context::ApplicationType::LOCAL);
 
+            registerInterpreters();
             registerFunctions();
             registerAggregateFunctions();
             registerTableFunctions();

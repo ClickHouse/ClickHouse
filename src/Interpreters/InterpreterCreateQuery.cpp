@@ -11,6 +11,8 @@
 #include <Common/atomicRename.h>
 #include <Common/PoolId.h>
 #include <Common/logger_useful.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/hex.h>
 
 #include <Core/Defines.h>
@@ -40,6 +42,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -462,6 +465,14 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->children.push_back(column_declaration->ttl);
         }
 
+        if (!column.settings.empty())
+        {
+            auto settings = std::make_shared<ASTSetQuery>();
+            settings->is_standalone = false;
+            settings->changes = column.settings;
+            column_declaration->settings = std::move(settings);
+        }
+
         columns_list->children.push_back(column_declaration_ptr);
     }
 
@@ -595,6 +606,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     bool sanity_check_compression_codecs = !attach && !context_->getSettingsRef().allow_suspicious_codecs;
     bool allow_experimental_codecs = attach || context_->getSettingsRef().allow_experimental_codecs;
     bool enable_deflate_qpl_codec = attach || context_->getSettingsRef().enable_deflate_qpl_codec;
+    bool enable_zstd_qat_codec = attach || context_->getSettingsRef().enable_zstd_qat_codec;
 
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
@@ -655,7 +667,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.default_specifier == "ALIAS")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec);
+                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec, enable_zstd_qat_codec);
         }
 
         if (col_decl.stat_type)
@@ -667,6 +679,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         if (col_decl.ttl)
             column.ttl = col_decl.ttl;
+
+        if (col_decl.settings)
+        {
+            column.settings = col_decl.settings->as<ASTSetQuery &>().changes;
+            MergeTreeColumnSettings::validate(column.settings);
+        }
 
         res.add(std::move(column));
     }
@@ -698,7 +716,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     setEngine(create);
 
     /// We have to check access rights again (in case engine was changed).
-    if (create.storage)
+    if (create.storage && create.storage->engine)
     {
         auto source_access_type = StorageFactory::instance().getSourceAccessType(create.storage->engine->name);
         if (source_access_type != AccessType::NONE)
@@ -939,6 +957,20 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
             }
         }
     }
+    if (!create.attach && !settings.allow_experimental_variant_type)
+    {
+        for (const auto & [name, type] : properties.columns.getAllPhysical())
+        {
+            if (isVariant(type))
+            {
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Cannot create table with column '{}' which type is '{}' "
+                        "because experimental Variant type is not allowed. "
+                        "Set setting allow_experimental_variant_type = 1 in order to allow it",
+                        name, type->getName());
+            }
+        }
+    }
 }
 
 namespace
@@ -1044,15 +1076,22 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
 {
     const auto * kind = create.is_dictionary ? "Dictionary" : "Table";
     const auto * kind_upper = create.is_dictionary ? "DICTIONARY" : "TABLE";
+    bool is_replicated_database_internal = database->getEngineName() == "Replicated" && getContext()->getClientInfo().is_replicated_database_internal;
+    bool from_path = create.attach_from_path.has_value();
+    bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    if (database->getEngineName() == "Replicated" && getContext()->getClientInfo().is_replicated_database_internal
-        && !internal)
+    if (is_replicated_database_internal && !internal)
     {
         if (create.uuid == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Table UUID is not specified in DDL log");
     }
 
-    bool from_path = create.attach_from_path.has_value();
+    if (create.refresh_strategy && database->getEngineName() != "Atomic")
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Refreshable materialized view requires Atomic database engine, but database {} has engine {}", create.getDatabase(), database->getEngineName());
+            /// TODO: Support Replicated databases, only with Shared/ReplicatedMergeTree.
+            ///       Figure out how to make the refreshed data appear all at once on other
+            ///       replicas; maybe a replicated SYSTEM SYNC REPLICA query before the rename?
 
     if (database->getUUID() != UUIDHelpers::Nil)
     {
@@ -1076,7 +1115,6 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     }
     else
     {
-        bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
         bool has_uuid = create.uuid != UUIDHelpers::Nil || create.to_inner_uuid != UUIDHelpers::Nil;
         if (has_uuid && !is_on_cluster && !internal)
         {
@@ -1088,13 +1126,6 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} UUID specified, but engine of database {} is not Atomic", kind, create.getDatabase());
         }
-
-        if (create.refresh_strategy && database->getEngineName() != "Atomic")
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Refreshable materialized view requires Atomic database engine, but database {} has engine {}", create.getDatabase(), database->getEngineName());
-                /// TODO: Support Replicated databases, only with Shared/ReplicatedMergeTree.
-                ///       Figure out how to make the refreshed data appear all at once on other
-                ///       replicas; maybe a replicated SYSTEM SYNC REPLICA query before the rename?
 
         /// The database doesn't support UUID so we'll ignore it. The UUID could be set here because of either
         /// a) the initiator of `ON CLUSTER` query generated it to ensure the same UUIDs are used on different hosts; or
@@ -1196,7 +1227,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
     else if (create.attach && !create.attach_short_syntax && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
     {
-        auto * log = &Poco::Logger::get("InterpreterCreateQuery");
+        auto log = getLogger("InterpreterCreateQuery");
         LOG_WARNING(log, "ATTACH TABLE query with full table definition is not recommended: "
                          "use either ATTACH TABLE {}; to attach existing table "
                          "or CREATE TABLE {} <table definition>; to create new table "
@@ -1403,8 +1434,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             interpreter.execute();
         }
         else
-            throw Exception(storage_already_exists_error_code,
-                "{} {}.{} already exists", storage_name, backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+        {
+            if (database->getTable(create.getTable(), getContext())->isDictionary())
+                throw Exception(ErrorCodes::DICTIONARY_ALREADY_EXISTS,
+                                "Dictionary {}.{} already exists", backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+            else
+                throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+                                "Table {}.{} already exists", backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+        }
     }
     else if (!create.attach)
     {
@@ -1437,7 +1474,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             /// so the existing directory probably contains some leftovers from previous unsuccessful attempts to create the table
 
             fs::path trash_path = fs::path{getContext()->getPath()} / "trash" / data_path / getHexUIntLowercase(thread_local_rng());
-            LOG_WARNING(&Poco::Logger::get("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
+            LOG_WARNING(getLogger("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
                         Poco::toLower(storage_name), String(data_path), trash_path);
             fs::create_directories(trash_path.parent_path());
             renameNoReplace(full_data_path, trash_path);
@@ -1893,6 +1930,15 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
         ASTPtr columns = std::make_shared<ASTExpressionList>(*create_query_from_storage.columns_list->columns);
         create.columns_list->set(create.columns_list->columns, columns);
     }
+}
+
+void registerInterpreterCreateQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterCreateQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterCreateQuery", create_fn);
 }
 
 }

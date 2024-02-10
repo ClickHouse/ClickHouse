@@ -17,7 +17,7 @@ class StorageSystemDashboards final : public IStorageSystemOneBlock<StorageSyste
 public:
     std::string getName() const override { return "SystemDashboards"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

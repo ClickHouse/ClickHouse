@@ -92,9 +92,16 @@ void validate(const ASTCreateQuery & create_query)
 
 DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
 {
+    const auto engine_name = create.storage->engine->name;
     /// check if the database engine is a valid one before proceeding
-    if (!database_engines.contains(create.storage->engine->name))
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", create.storage->engine->name);
+    if (!database_engines.contains(engine_name))
+    {
+        auto hints = getHints(engine_name);
+        if (!hints.empty())
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine {}. Maybe you meant: {}", engine_name, toString(hints));
+        else
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", create.storage->engine->name);
+    }
 
     /// if the engine is found (i.e. registered with the factory instance), then validate if the
     /// supplied engine arguments, settings and table overrides are valid for the engine.

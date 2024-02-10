@@ -11,30 +11,24 @@ Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a
 **Syntax**
 
 ``` sql
-mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause'])
+mysql({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
 ```
 
-**Arguments**
+**Parameters**
 
 - `host:port` — MySQL server address.
-
 - `database` — Remote database name.
-
 - `table` — Remote table name.
-
 - `user` — MySQL user.
-
 - `password` — User password.
-
 - `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. Possible values:
     - `0` - The query is executed as `INSERT INTO`.
     - `1` - The query is executed as `REPLACE INTO`.
-
 - `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query. Can be specified only with `replace_query = 0` (if you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception).
-
     Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1;`
-
     `on_duplicate_clause` here is `UPDATE c2 = c2 + 1`. See the MySQL documentation to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause.
+
+Arguments also can be passed using [named collections](/docs/en/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are currently executed on the MySQL server.
 
@@ -84,6 +78,18 @@ Selecting data from ClickHouse:
 
 ``` sql
 SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
+```
+
+Or using [named collections](/docs/en/operations/named-collections.md):
+
+```sql
+CREATE NAMED COLLECTION creds AS
+        host = 'localhost',
+        port = 3306,
+        database = 'test',
+        user = 'bayonet',
+        password = '123';
+SELECT * FROM mysql(creds, table='test');
 ```
 
 ``` text

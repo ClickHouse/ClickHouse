@@ -39,30 +39,6 @@ struct ActionDAGNodes;
 class KeyCondition
 {
 public:
-    /// Construct key condition from AST SELECT query WHERE, PREWHERE and additional filters
-    KeyCondition(
-        const ASTPtr & query,
-        const ASTs & additional_filter_asts,
-        Block block_with_constants,
-        PreparedSetsPtr prepared_sets_,
-        ContextPtr context,
-        const Names & key_column_names,
-        const ExpressionActionsPtr & key_expr,
-        NameSet array_joined_column_names,
-        bool single_point_ = false,
-        bool strict_ = false);
-
-    /** Construct key condition from AST SELECT query WHERE, PREWHERE and additional filters.
-      * Select query, additional filters, prepared sets are initialized using query info.
-      */
-    KeyCondition(
-        const SelectQueryInfo & query_info,
-        ContextPtr context,
-        const Names & key_column_names,
-        const ExpressionActionsPtr & key_expr_,
-        bool single_point_ = false,
-        bool strict_ = false);
-
     /// Construct key condition from ActionsDAG nodes
     KeyCondition(
         ActionsDAGPtr filter_dag,

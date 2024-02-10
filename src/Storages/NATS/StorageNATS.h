@@ -78,7 +78,7 @@ private:
     size_t num_consumers;
     size_t max_rows_per_message;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     NATSConnectionManagerPtr connection; /// Connection for all consumers
     NATSConfiguration configuration;

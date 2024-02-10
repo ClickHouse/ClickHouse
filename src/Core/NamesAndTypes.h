@@ -133,6 +133,6 @@ using NamesAndTypesLists = std::vector<NamesAndTypesList>;
 namespace std
 {
     template <> struct tuple_size<DB::NameAndTypePair> : std::integral_constant<size_t, 2> {};
-    template <> struct tuple_element<0, DB::NameAndTypePair> { using type = DB::String; };
+    template <> struct tuple_element<0, DB::NameAndTypePair> { using type = String; };
     template <> struct tuple_element<1, DB::NameAndTypePair> { using type = DB::DataTypePtr; };
 }

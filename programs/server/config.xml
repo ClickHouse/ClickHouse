@@ -440,6 +440,9 @@
     <!-- Cache size in elements for compiled expressions.-->
     <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size>
 
+    <!-- Cache path for custom (created from SQL) cached disks -->
+    <custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
+
     <validate_tcp_client_information>false</validate_tcp_client_information>
 
     <!-- Path to data directory, with trailing slash. -->
@@ -713,11 +716,11 @@
              For example, if there two users A, B and a row policy is defined only for A, then
              if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
              By default this setting is false for compatibility with earlier access configurations. -->
-        <users_without_row_policies_can_read_rows>false</users_without_row_policies_can_read_rows>
+        <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
 
         <!-- By default, for backward compatibility ON CLUSTER queries ignore CLUSTER grant,
              however you can change this behaviour by setting this to true -->
-        <on_cluster_queries_require_cluster_grant>false</on_cluster_queries_require_cluster_grant>
+        <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
 
         <!-- By default, for backward compatibility "SELECT * FROM system.<table>" doesn't require any grants and can be executed
              by any user. You can change this behaviour by setting this to true.
@@ -725,19 +728,19 @@
              Exceptions: a few system tables ("tables", "columns", "databases", and some constant tables like "one", "contributors")
              are still accessible for everyone; and if there is a SHOW privilege (e.g. "SHOW USERS") granted the corresponding system
              table (i.e. "system.users") will be accessible. -->
-        <select_from_system_db_requires_grant>false</select_from_system_db_requires_grant>
+        <select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>
 
         <!-- By default, for backward compatibility "SELECT * FROM information_schema.<table>" doesn't require any grants and can be
              executed by any user. You can change this behaviour by setting this to true.
              If it's set to true then this query requires "GRANT SELECT ON information_schema.<table>" just like as for ordinary tables. -->
-        <select_from_information_schema_requires_grant>false</select_from_information_schema_requires_grant>
+        <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
 
         <!-- By default, for backward compatibility a settings profile constraint for a specific setting inherit every not set field from
              previous profile. You can change this behaviour by setting this to true.
              If it's set to true then if settings profile has a constraint for a specific setting, then this constraint completely cancels all
              actions of previous constraint (defined in other profiles) for the same specific setting, including fields that are not set by new constraint.
              It also enables 'changeable_in_readonly' constraint type -->
-        <settings_constraints_replace_previous>false</settings_constraints_replace_previous>
+        <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
 
         <!-- Number of seconds since last access a role is stored in the Role Cache -->
         <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
@@ -1558,6 +1561,10 @@
         <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
         <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
     </query_cache>
+
+    <backups>
+        <allowed_path>backups</allowed_path>
+    </backups>
 
     <!-- This allows to disable exposing addresses in stack traces for security reasons.
          Please be aware that it does not improve security much, but makes debugging much harder.

@@ -859,6 +859,55 @@ def test_settings(started_cluster):
     conn.close()
 
 
+def test_mysql_point(started_cluster):
+    table_name = "test_mysql_point"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            CREATE TABLE `clickhouse`.`{table_name}` (
+            `id` int NOT NULL,
+            `point` Point NOT NULL,
+            PRIMARY KEY (`id`)) ENGINE=InnoDB;
+        """
+        )
+        cursor.execute(
+            f"INSERT INTO `clickhouse`.`{table_name}` SELECT 1, Point(15, 20)"
+        )
+        assert 1 == cursor.execute(f"SELECT count(*) FROM `clickhouse`.`{table_name}`")
+
+    conn.commit()
+
+    result = node1.query(
+        f"DESCRIBE mysql('mysql57:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse')"
+    )
+    assert result.strip() == "id\tInt32\t\t\t\t\t\npoint\tPoint"
+
+    assert 1 == int(
+        node1.query(
+            f"SELECT count() FROM mysql('mysql57:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse')"
+        )
+    )
+    assert (
+        "(15,20)"
+        == node1.query(
+            f"SELECT point FROM mysql('mysql57:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse')"
+        ).strip()
+    )
+
+    node1.query("DROP TABLE IF EXISTS test")
+    node1.query(
+        f"CREATE TABLE test (id Int32, point Point) Engine=MySQL('mysql57:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse')"
+    )
+    assert "(15,20)" == node1.query(f"SELECT point FROM test").strip()
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
 if __name__ == "__main__":
     with contextmanager(started_cluster)() as cluster:
         for name, instance in list(cluster.instances.items()):

@@ -31,7 +31,7 @@ public:
 
     NamesAndTypesList getVirtuals() const override { return virtual_columns; }
 
-    RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const override;
+    RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
 
     bool supportsSubcolumns() const override { return true; }
 
