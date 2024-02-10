@@ -52,15 +52,15 @@ protected:
     {
         UInt64 curr = next; /// The local variable for some reason works faster (>20%) than member of class.
         UInt64 first_element = (curr / step) * step;
-        if (first_element > std::numeric_limits<UInt64>::max() - remainder) 
+        if (first_element > std::numeric_limits<UInt64>::max() - remainder)
         {
             auto column = ColumnUInt64::create(0);
             return {Columns{std::move(column)}, 0};
         }
         first_element += remainder;
-        if (first_element < curr) 
+        if (first_element < curr)
         {
-            if (first_element > std::numeric_limits<UInt64>::max() - step) 
+            if (first_element > std::numeric_limits<UInt64>::max() - step)
             {
                 auto column = ColumnUInt64::create(0);
                 return {Columns{std::move(column)}, 0};
@@ -133,9 +133,8 @@ std::optional<RangeWithStep> stepped_range_from_range(const Range & r, UInt64 st
         return static_cast<UInt128>(std::numeric_limits<UInt64>::max() - r.range.left.get<UInt64>()) / r.step + r.range.left_included;
 
     UInt128 size = static_cast<UInt128>(r.range.right.get<UInt64>() - r.range.left.get<UInt64>()) / r.step;
-    if (r.range.right_included && (r.range.right.get<UInt64>() % r.step == 0)) {
+    if (r.range.right_included && (r.range.right.get<UInt64>() % r.step == 0))
         ++size;
-    }
     return size;
 };
 
