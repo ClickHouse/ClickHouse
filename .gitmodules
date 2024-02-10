@@ -275,6 +275,9 @@
 [submodule "contrib/crc32-s390x"]
 	path = contrib/crc32-s390x
 	url = https://github.com/linux-on-ibm-z/crc32-s390x
+[submodule "contrib/openssl"]
+	path = contrib/openssl
+	url = https://github.com/ClickHouse/openssl.git
 [submodule "contrib/google-benchmark"]
 	path = contrib/google-benchmark
 	url = https://github.com/google/benchmark
