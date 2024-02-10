@@ -97,7 +97,8 @@ private:
 
 struct RangeWithStep
 {
-    Range range;
+    UInt64 left;
+    UInt64 right;
     UInt64 step;
 };
 
@@ -124,18 +125,12 @@ std::optional<RangeWithStep> stepped_range_from_range(const Range & r, UInt64 st
     if ((begin >= r.right_included) && (begin - r.right_included >= r.right.get<UInt64>()))
         return std::nullopt;
     UInt64 right_edge_included = r.right.get<UInt64>() - (1 - r.right_included);
-    return std::optional{RangeWithStep{Range(begin, true, right_edge_included, true), step}};
+    return std::optional{RangeWithStep{begin, right_edge_included, step}};
 }
 
 [[maybe_unused]] UInt128 sizeOfRange(const RangeWithStep & r)
 {
-    if (r.range.right.isPositiveInfinity())
-        return static_cast<UInt128>(std::numeric_limits<UInt64>::max() - r.range.left.get<UInt64>()) / r.step + r.range.left_included;
-
-    UInt128 size = static_cast<UInt128>(r.range.right.get<UInt64>() - r.range.left.get<UInt64>()) / r.step;
-    if (r.range.right_included && (r.range.right.get<UInt64>() % r.step == 0))
-        ++size;
-    return size;
+    return static_cast<UInt128>(r.right - r.left) / r.step + 1;
 };
 
 [[maybe_unused]] auto sizeOfRanges(const RangesWithStep & rs)
@@ -252,10 +247,6 @@ protected:
         if (ranges.empty())
             return {};
 
-        auto first_value = [](const RangeWithStep & r) { return r.range.left.get<UInt64>() + (r.range.left_included ? 0 : 1); };
-
-        auto last_value = [](const RangeWithStep & r) { return r.range.right.get<UInt64>() - (r.range.right_included ? 0 : 1); };
-
         /// Find the data range.
         /// If data left is small, shrink block size.
         RangesPos start, end;
@@ -287,7 +278,7 @@ protected:
 
             UInt128 can_provide = cursor.offset_in_ranges == end.offset_in_ranges
                 ? end.offset_in_range - cursor.offset_in_range
-                : static_cast<UInt128>(last_value(range) - first_value(range)) / range.step + 1 - cursor.offset_in_range;
+                : static_cast<UInt128>(range.right - range.left) / range.step + 1 - cursor.offset_in_range;
 
             /// set value to block
             auto set_value = [&pos, this](UInt128 & start_value, UInt128 & end_value)
@@ -312,7 +303,7 @@ protected:
 
             if (can_provide > need)
             {
-                UInt64 start_value = first_value(range) + cursor.offset_in_range * step;
+                UInt64 start_value = range.left + cursor.offset_in_range * step;
                 /// end_value will never overflow
                 iota_with_step(pos, static_cast<size_t>(need), start_value, step);
                 pos += need;
@@ -323,7 +314,7 @@ protected:
             else if (can_provide == need)
             {
                 /// to avoid UInt64 overflow
-                UInt128 start_value = static_cast<UInt128>(first_value(range)) + cursor.offset_in_range * step;
+                UInt128 start_value = static_cast<UInt128>(range.left) + cursor.offset_in_range * step;
                 UInt128 end_value = start_value + need * step;
                 set_value(start_value, end_value);
 
@@ -334,7 +325,7 @@ protected:
             else
             {
                 /// to avoid UInt64 overflow
-                UInt128 start_value = static_cast<UInt128>(first_value(range)) + cursor.offset_in_range * step;
+                UInt128 start_value = static_cast<UInt128>(range.left) + cursor.offset_in_range * step;
                 UInt128 end_value = start_value + can_provide * step;
                 set_value(start_value, end_value);
 
@@ -400,9 +391,7 @@ namespace
         else
         {
             auto & range = ranges[i];
-            UInt64 right = range.range.left.get<UInt64>() + static_cast<UInt64>(size);
-            range.range.right = Field(right);
-            range.range.right_included = !range.range.left_included;
+            range.right = range.left + static_cast<UInt64>(size) * range.step - 1;
             last_range_idx = i;
             break;
         }
@@ -558,7 +547,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         const auto & limit_offset = limit_length_and_offset.second;
 
         /// If intersected ranges is limited or we can pushdown limit.
-        if (!intersected_ranges.rbegin()->range.right.isPositiveInfinity() || should_pushdown_limit)
+        if (should_pushdown_limit)
         {
             UInt128 total_size = sizeOfRanges(intersected_ranges);
             UInt128 query_limit = limit_length + limit_offset;
