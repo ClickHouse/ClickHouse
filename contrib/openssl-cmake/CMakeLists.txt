@@ -31,6 +31,9 @@ elseif(ARCH_PPC64LE)
 elseif(ARCH_S390X)
     set(PLATFORM_DIRECTORY linux_s390x)
     add_definitions(-DAES_ASM -DAES_CTR_ASM -DAES_XTS_ASM -DGHASH_ASM -DKECCAK1600_ASM -DOPENSSL_BN_ASM_MONT -DOPENSSL_CPUID_OBJ -DPOLY1305_ASM -DS390X_EC_ASM -DSHA1_ASM -DSHA256_ASM -DSHA512_ASM -DB_ENDIAN)
+elseif(ARCH_RISCV64)
+    set(PLATFORM_DIRECTORY linux_riscv64)
+    add_definitions(-DL_ENDIAN)
 endif()
 
 file(STRINGS "${PLATFORM_DIRECTORY}/include/openssl/opensslv.h" OPENSSL_VERSION_STR
@@ -1203,6 +1206,25 @@ elseif(ARCH_S390X)
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-s390x.S
         ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_block.c
         ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_dgst.c
+    )
+elseif(ARCH_RISCV64)
+    set(CRYPTO_SRC ${CRYPTO_SRC}
+        ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_cbc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_core.c
+        ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_asm.c
+        ${OPENSSL_SOURCE_DIR}/crypto/chacha/chacha_enc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/sha/keccak1600.c
+        ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_block.c
+        ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_dgst.c
+        ${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_nistp521.c
+        ${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_nistp256.c
+        ${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_nistp224.c
+        ${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_nistz256.c
+        ${OPENSSL_SOURCE_DIR}/crypto/camellia/camellia.c
+        ${OPENSSL_SOURCE_DIR}/crypto/camellia/cmll_cbc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/mem_clr.c
+        ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_enc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_skey.c
     )
 endif()
 
