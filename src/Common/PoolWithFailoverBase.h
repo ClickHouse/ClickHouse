@@ -108,12 +108,14 @@ public:
     /// Returns at least min_entries and at most max_entries connections (at most one connection per nested pool).
     /// The method will throw if it is unable to get min_entries alive connections or
     /// if fallback_to_stale_replicas is false and it is unable to get min_entries connections to up-to-date replicas.
+    /// If insert is true then it will take into account replica read-only flag (non-read-only replicas will be preferred)
     std::vector<TryResult> getMany(
             size_t min_entries, size_t max_entries, size_t max_tries,
             size_t max_ignored_errors,
             bool fallback_to_stale_replicas,
             const TryGetEntryFunc & try_get_entry,
-            const GetPriorityFunc & get_priority);
+            const GetPriorityFunc & get_priority,
+            bool insert);
 
     size_t getPoolSize() const { return nested_pools.size(); }
 
@@ -202,7 +204,8 @@ PoolWithFailoverBase<TNestedPool>::get(size_t max_ignored_errors, bool fallback_
     std::vector<TryResult> results = getMany(
         1 /* min entries */, 1 /* max entries */, 1 /* max tries */,
         max_ignored_errors, fallback_to_stale_replicas,
-        try_get_entry, get_priority);
+        try_get_entry, get_priority,
+        /* insert= */ false);
     if (results.empty() || results[0].entry.isNull())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
                 "PoolWithFailoverBase::getMany() returned less than min_entries entries.");
@@ -216,7 +219,8 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         size_t max_ignored_errors,
         bool fallback_to_stale_replicas,
         const TryGetEntryFunc & try_get_entry,
-        const GetPriorityFunc & get_priority)
+        const GetPriorityFunc & get_priority,
+        bool insert)
 {
     std::vector<ShuffledPool> shuffled_pools = getShuffledPools(max_ignored_errors, get_priority);
 
@@ -294,13 +298,27 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     std::erase_if(try_results, [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; });
 
     /// Sort so that preferred items are near the beginning.
-    std::stable_sort(
-            try_results.begin(), try_results.end(),
-            [](const TryResult & left, const TryResult & right)
-            {
-                return std::forward_as_tuple(!left.is_up_to_date, left.delay)
-                    < std::forward_as_tuple(!right.is_up_to_date, right.delay);
-            });
+    if (insert)
+    {
+        /// In case of connections had been requested for INSERT we take into
+        /// account replica read-only flag. Note, that they are not filtered out,
+        /// since they may be still non-readonly when the INSERT will be performed.
+        auto results_comparator = [&](const TryResult & left, const TryResult & right)
+        {
+            return std::forward_as_tuple(left.is_readonly, !left.is_up_to_date, left.delay)
+                 < std::forward_as_tuple(right.is_readonly, !right.is_up_to_date, right.delay);
+        };
+        std::stable_sort(try_results.begin(), try_results.end(), results_comparator);
+    }
+    else
+    {
+        auto results_comparator = [&](const TryResult & left, const TryResult & right)
+        {
+            return std::forward_as_tuple(!left.is_up_to_date, left.delay)
+                 < std::forward_as_tuple(!right.is_up_to_date, right.delay);
+        };
+        std::stable_sort(try_results.begin(), try_results.end(), results_comparator);
+    }
 
     if (fallback_to_stale_replicas)
     {

@@ -20,7 +20,6 @@ public:
     ConnectionEstablisher(ConnectionPoolPtr pool_,
                           const ConnectionTimeouts * timeouts_,
                           const Settings & settings_,
-                          bool insert,
                           LoggerPtr log,
                           const QualifiedTableName * table_to_check = nullptr);
 
@@ -34,7 +33,6 @@ private:
     ConnectionPoolPtr pool;
     const ConnectionTimeouts * timeouts;
     const Settings & settings;
-    bool insert;
     LoggerPtr log;
     const QualifiedTableName * table_to_check;
 
@@ -57,7 +55,6 @@ public:
     ConnectionEstablisherAsync(ConnectionPoolPtr pool_,
                                const ConnectionTimeouts * timeouts_,
                                const Settings & settings_,
-                               bool insert_,
                                LoggerPtr log_,
                                const QualifiedTableName * table_to_check_ = nullptr);
 

@@ -109,6 +109,7 @@ private:
         const Settings & settings,
         PoolMode pool_mode,
         const TryGetEntryFunc & try_get_entry,
+        bool insert,
         std::optional<bool> skip_unavailable_endpoints = std::nullopt,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
@@ -120,7 +121,6 @@ private:
             const ConnectionTimeouts & timeouts,
             std::string & fail_message,
             const Settings & settings,
-            bool insert,
             const QualifiedTableName * table_to_check = nullptr,
             AsyncCallback async_callback = {});
 

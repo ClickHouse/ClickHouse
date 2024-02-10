@@ -87,12 +87,12 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         {
             auto table_name = main_table.getQualifiedName();
 
-            ConnectionEstablisher connection_establisher(pool, &timeouts, current_settings, /* insert= */ false, log, &table_name);
+            ConnectionEstablisher connection_establisher(pool, &timeouts, current_settings, log, &table_name);
             connection_establisher.run(result, fail_message);
         }
         else
         {
-            ConnectionEstablisher connection_establisher(pool, &timeouts, current_settings, /* insert= */ false, log, nullptr);
+            ConnectionEstablisher connection_establisher(pool, &timeouts, current_settings, log, nullptr);
             connection_establisher.run(result, fail_message);
         }
 
