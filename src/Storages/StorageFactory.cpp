@@ -237,7 +237,7 @@ StorageFactory & StorageFactory::instance()
 
 std::optional<StorageFactory::StorageFeatures> StorageFactory::tryGetFeatures(const String & name)
 {
-    auto it = storages.find(table_engine);
+    auto it = storages.find(name);
     if (it == storages.end())
         return std::nullopt;
     return it->second.features;

@@ -4,6 +4,7 @@
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
 
@@ -194,6 +195,7 @@ StorageMaterializedView::StorageMaterializedView(
             if (!features->supports_moving_data_between_tables)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Engine {} doesn't support moving data between tables as required by refreshable materialized view (without APPEND). Only the following engines support it: {}",
+                    storage->engine->name,
                     StorageFactory::instance().getAllRegisteredNamesByFeatureMatcherFn([](const auto & f) { return f.supports_moving_data_between_tables; }));
 
             if (storage->partition_by)
