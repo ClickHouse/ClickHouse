@@ -547,42 +547,39 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         const auto & limit_offset = limit_length_and_offset.second;
 
         /// If intersected ranges is limited or we can pushdown limit.
-        if (should_pushdown_limit)
+        UInt128 total_size = sizeOfRanges(intersected_ranges);
+        UInt128 query_limit = limit_length + limit_offset;
+
+        /// limit total_size by query_limit
+        if (should_pushdown_limit && query_limit < total_size)
         {
-            UInt128 total_size = sizeOfRanges(intersected_ranges);
-            UInt128 query_limit = limit_length + limit_offset;
-
-            /// limit total_size by query_limit
-            if (should_pushdown_limit && query_limit < total_size)
-            {
-                total_size = query_limit;
-                /// We should shrink intersected_ranges for case:
-                ///     intersected_ranges: [1, 4], [7, 100]; query_limit: 2
-                shrinkRanges(intersected_ranges, total_size);
-            }
-
-            checkLimits(size_t(total_size));
-
-            if (total_size / max_block_size < num_streams)
-                num_streams = static_cast<size_t>(total_size / max_block_size);
-
-            if (num_streams == 0)
-                num_streams = 1;
-
-            /// Ranges state, all streams will share the state.
-            auto ranges_state = std::make_shared<NumbersRangedSource::RangesState>();
-            for (size_t i = 0; i < num_streams; ++i)
-            {
-                auto source = std::make_shared<NumbersRangedSource>(
-                    intersected_ranges, ranges_state, max_block_size, numbers_storage.step, numbers_storage.column_name);
-
-                if (i == 0)
-                    source->addTotalRowsApprox(total_size);
-
-                pipe.addSource(std::move(source));
-            }
-            return pipe;
+            total_size = query_limit;
+            /// We should shrink intersected_ranges for case:
+            ///     intersected_ranges: [1, 4], [7, 100]; query_limit: 2
+            shrinkRanges(intersected_ranges, total_size);
         }
+
+        checkLimits(size_t(total_size));
+
+        if (total_size / max_block_size < num_streams)
+            num_streams = static_cast<size_t>(total_size / max_block_size);
+
+        if (num_streams == 0)
+            num_streams = 1;
+
+        /// Ranges state, all streams will share the state.
+        auto ranges_state = std::make_shared<NumbersRangedSource::RangesState>();
+        for (size_t i = 0; i < num_streams; ++i)
+        {
+            auto source = std::make_shared<NumbersRangedSource>(
+                intersected_ranges, ranges_state, max_block_size, numbers_storage.step, numbers_storage.column_name);
+
+            if (i == 0)
+                source->addTotalRowsApprox(total_size);
+
+            pipe.addSource(std::move(source));
+        }
+        return pipe;
     }
 
     /// Fall back to NumbersSource
