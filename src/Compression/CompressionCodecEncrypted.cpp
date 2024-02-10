@@ -9,16 +9,10 @@
 #include <Common/logger_useful.h>
 #include <Common/safe_cast.h>
 
-// This depends on BoringSSL-specific API, notably <openssl/aead.h>.
 #if USE_SSL
 #    include <openssl/err.h>
 #    include <boost/algorithm/hex.hpp>
-#    if USE_BORINGSSL
-#        include <openssl/digest.h>
-#        include <openssl/aead.h>
-#    else
-#        include <openssl/evp.h>
-#    endif
+#    include <openssl/evp.h>
 #endif
 
 // Common part for both parts (with SSL and without)
@@ -107,77 +101,6 @@ std::string lastErrorString()
     return std::string(buffer.data());
 }
 
-#if USE_BORINGSSL
-/// Get encryption/decryption algorithms.
-auto getMethod(EncryptionMethod Method)
-{
-    if (Method == AES_128_GCM_SIV)
-        return EVP_aead_aes_128_gcm_siv;
-    else if (Method == AES_256_GCM_SIV)
-        return EVP_aead_aes_256_gcm_siv;
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", getMethodName(Method));
-}
-
-/// Encrypt plaintext with particular algorithm and put result into ciphertext_and_tag.
-/// This function get key and nonce and encrypt text with their help.
-/// If something went wrong (can't init context or can't encrypt data) it throws exception.
-/// It returns length of encrypted text.
-size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, EncryptionMethod method, const String & key, const String & nonce)
-{
-    /// Init context for encryption, using key.
-    EVP_AEAD_CTX encrypt_ctx;
-    EVP_AEAD_CTX_zero(&encrypt_ctx);
-    const int ok_init = EVP_AEAD_CTX_init(&encrypt_ctx, getMethod(method)(),
-                                            reinterpret_cast<const uint8_t*>(key.data()), key.size(),
-                                            tag_size, nullptr);
-    if (!ok_init)
-        throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
-
-    /// encrypt data using context and given nonce.
-    size_t out_len;
-    const int ok_open = EVP_AEAD_CTX_seal(&encrypt_ctx,
-                                            reinterpret_cast<uint8_t *>(ciphertext_and_tag),
-                                            &out_len, plaintext.size() + tag_size,
-                                            reinterpret_cast<const uint8_t *>(nonce.data()), nonce.size(),
-                                            reinterpret_cast<const uint8_t *>(plaintext.data()), plaintext.size(),
-                                            nullptr, 0);
-    if (!ok_open)
-        throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
-
-    return out_len;
-}
-
-/// Encrypt plaintext with particular algorithm and put result into ciphertext_and_tag.
-/// This function get key and nonce and encrypt text with their help.
-/// If something went wrong (can't init context or can't encrypt data) it throws exception.
-/// It returns length of encrypted text.
-size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod method, const String & key, const String & nonce)
-{
-    /// Init context for decryption with given key.
-    EVP_AEAD_CTX decrypt_ctx;
-    EVP_AEAD_CTX_zero(&decrypt_ctx);
-
-    const int ok_init = EVP_AEAD_CTX_init(&decrypt_ctx, getMethod(method)(),
-                                          reinterpret_cast<const uint8_t*>(key.data()), key.size(),
-                                          tag_size, nullptr);
-    if (!ok_init)
-        throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
-
-    /// decrypt data using given nonce
-    size_t out_len;
-    const int ok_open = EVP_AEAD_CTX_open(&decrypt_ctx,
-                                          reinterpret_cast<uint8_t *>(plaintext),
-                                          &out_len, ciphertext.size(),
-                                          reinterpret_cast<const uint8_t *>(nonce.data()), nonce.size(),
-                                          reinterpret_cast<const uint8_t *>(ciphertext.data()), ciphertext.size(),
-                                          nullptr, 0);
-    if (!ok_open)
-        throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
-
-    return out_len;
-}
-#else
 /// Get encryption/decryption algorithms.
 auto getMethod(EncryptionMethod Method)
 {
@@ -324,7 +247,6 @@ size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod m
 
     return plaintext_len + out_len;
 }
-#endif
 
 /// Register codec in factory
 void registerEncryptionCodec(CompressionCodecFactory & factory, EncryptionMethod Method)
