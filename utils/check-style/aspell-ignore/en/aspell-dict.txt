@@ -1326,7 +1326,7 @@ cosineDistance
 countDigits
 countEqual
 countMatches
-countMatchesCaseInsensitiveb
+countMatchesCaseInsensitive
 countSubstrings
 covarPop
 covarSamp
