@@ -298,8 +298,10 @@ $CLICKHOUSE_CLIENT -nq "
 $CLICKHOUSE_CLIENT -nq "system wait view h2;" 2>/dev/null && echo "SYSTEM WAIT VIEW failed to fail at $LINENO"
 $CLICKHOUSE_CLIENT -nq "
     select '<31.5: will retry>', last_refresh_result, retry > 0 from refreshes;
-    truncate table src;
-    insert into src values (1);"
+    create table src2 empty as src;
+    insert into src2 values (1)
+    exchange tables src and src2;
+    drop table src2;"
 while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result, retry from refreshes -- $LINENO" | xargs`" != 'Finished 0' ]
 do
     sleep 0.1
@@ -336,6 +338,7 @@ $CLICKHOUSE_CLIENT -nq "
 # ALTER to non-APPEND
 $CLICKHOUSE_CLIENT -nq "
     alter table k modify refresh every 10 year;
+    system wait view k;
     system refresh view k;
     system wait view k;
     select '<36: not append>', * from k order by x;
