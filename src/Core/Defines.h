@@ -8,9 +8,11 @@ namespace DB
 
 static constexpr auto DBMS_DEFAULT_PORT = 9000;
 static constexpr auto DBMS_DEFAULT_SECURE_PORT = 9440;
+
 static constexpr auto DBMS_DEFAULT_CONNECT_TIMEOUT_SEC = 10;
 static constexpr auto DBMS_DEFAULT_SEND_TIMEOUT_SEC = 300;
 static constexpr auto DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC = 300;
+
 /// Timeout for synchronous request-result protocol call (like Ping or TablesStatus).
 static constexpr auto DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC = 5;
 static constexpr auto DBMS_DEFAULT_POLL_INTERVAL = 10;
@@ -51,6 +53,7 @@ static constexpr auto DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT = 1;
 /// the number is unmotivated
 static constexpr auto DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT = 15;
 
+static constexpr auto DEFAULT_TCP_KEEP_ALIVE_TIMEOUT = 290;
 static constexpr auto DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT = 30;
 
 static constexpr auto DBMS_DEFAULT_PATH = "/var/lib/clickhouse/";

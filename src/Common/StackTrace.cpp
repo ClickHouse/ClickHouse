@@ -4,6 +4,7 @@
 #include <base/constexpr_helpers.h>
 #include <base/demangle.h>
 
+#include <Common/scope_guard_safe.h>
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
 #include <Common/MemorySanitizer.h>
@@ -23,6 +24,15 @@
 #include <libunwind.h>
 
 #include "config.h"
+
+#include <boost/algorithm/string/split.hpp>
+
+#if defined(OS_DARWIN)
+/// This header contains functions like `backtrace` and `backtrace_symbols`
+/// Which will be used for stack unwinding on Mac.
+/// Read: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/backtrace.3.html
+#include "execinfo.h"
+#endif
 
 namespace
 {
@@ -264,6 +274,33 @@ void StackTrace::forEachFrame(
 
         callback(current_frame);
     }
+#elif defined(OS_DARWIN)
+    UNUSED(fatal);
+
+    /// This function returns an array of string in a special (a little bit weird format)
+    /// The frame number, library name, address in hex, mangled symbol name, `+` sign, the offset.
+    char** strs = ::backtrace_symbols(frame_pointers.data(), static_cast<int>(size));
+    SCOPE_EXIT_SAFE({free(strs);});
+
+    for (size_t i = offset; i < size; ++i)
+    {
+        StackTrace::Frame current_frame;
+
+        std::vector<std::string> split;
+        boost::split(split, strs[i], isWhitespaceASCII);
+        split.erase(
+            std::remove_if(
+                split.begin(), split.end(),
+                [](const std::string & x) { return x.empty(); }),
+            split.end());
+        assert(split.size() == 6);
+
+        current_frame.virtual_addr = frame_pointers[i];
+        current_frame.physical_addr = frame_pointers[i];
+        current_frame.object = split[1];
+        current_frame.symbol = split[3];
+        callback(current_frame);
+    }
 #else
     UNUSED(fatal);
 
@@ -306,7 +343,11 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
 
 void StackTrace::tryCapture()
 {
+#if defined(OS_DARWIN)
+    size = backtrace(frame_pointers.data(), capacity);
+#else
     size = unw_backtrace(frame_pointers.data(), capacity);
+#endif
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 }
 
@@ -317,16 +358,19 @@ constexpr std::pair<std::string_view, std::string_view> replacements[]
 // Demangle @c symbol_name if it's not from __functional header (as such functions don't provide any useful
 // information but pollute stack traces).
 // Replace parts from @c replacements with shorter aliases
-String demangleAndCollapseNames(std::string_view file, const char * const symbol_name)
+String demangleAndCollapseNames(std::optional<std::string_view> file, const char * const symbol_name)
 {
     if (!symbol_name)
         return "?";
 
-    std::string_view file_copy = file;
-    if (auto trim_pos = file.find_last_of('/'); trim_pos != file.npos)
-        file_copy.remove_suffix(file.size() - trim_pos);
-    if (file_copy.ends_with("functional"))
-        return "?";
+    if (file.has_value())
+    {
+        std::string_view file_copy = file.value();
+        if (auto trim_pos = file_copy.find_last_of('/'); trim_pos != file_copy.npos)
+            file_copy.remove_suffix(file_copy.size() - trim_pos);
+        if (file_copy.ends_with("functional"))
+            return "?";
+    }
 
     String haystack = demangle(symbol_name);
 
@@ -373,7 +417,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         return callback("<Empty trace>");
 
     size_t frame_index = stack_trace.offset;
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     size_t inline_frame_index = 0;
     auto callback_wrapper = [&](const StackTrace::Frame & frame)
     {
@@ -393,8 +437,8 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         if (frame.file.has_value() && frame.line.has_value())
             out << *frame.file << ':' << *frame.line << ": ";
 
-        if (frame.symbol.has_value() && frame.file.has_value())
-            out << demangleAndCollapseNames(*frame.file, frame.symbol->data());
+        if (frame.symbol.has_value())
+            out << demangleAndCollapseNames(frame.file, frame.symbol->data());
         else
             out << "?";
 

@@ -34,12 +34,16 @@ name: Simple job
       working-directory:
         description: sets custom working directory
         type: string
-        default: ""
+        default: "$GITHUB_WORKSPACE/tests/ci"
       git_ref:
         description: commit to use, merge commit for pr or head
         required: false
         type: string
         default: ${{ github.event.after }} # no merge commit
+      report_required:
+        description: set to true if job report with the commit status required
+        type: boolean
+        default: false
     secrets:
       secret_envs:
         description: if given, it's passed to the environments
@@ -81,12 +85,12 @@ jobs:
           job_type: test
       - name: Run
         run: |
-          if [ -n '${{ inputs.working-directory }}' ]; then
-            cd "${{ inputs.working-directory }}"
-          else
-            cd "$GITHUB_WORKSPACE/tests/ci"
-          fi
+          cd "${{ inputs.working-directory }}"
           ${{ inputs.run_command }}
+      - name: Post
+        if: ${{ inputs.report_required }}
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --post --job-name '${{inputs.test_name}}'
       - name: Clean
         if: always()
         uses: ./.github/actions/clean

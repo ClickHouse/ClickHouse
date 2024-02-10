@@ -482,7 +482,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
             /// If authentication/permissions error occurs then fallthrough to copy with buffer.
             if (exc.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
                 throw;
-            LOG_WARNING(&Poco::Logger::get("S3ObjectStorage"),
+            LOG_WARNING(getLogger("S3ObjectStorage"),
                 "S3-server-side copy object from the disk {} to the disk {} can not be performed: {}\n",
                 getName(), dest_s3->getName(), exc.what());
         }

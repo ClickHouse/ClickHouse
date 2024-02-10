@@ -60,6 +60,17 @@ void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings
                     MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
         }
     }
+
+    if (!settings.allow_experimental_variant_type)
+    {
+        if (isVariant(type))
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create column with type '{}' because experimental Variant type is not allowed. "
+                "Set setting allow_experimental_variant_type = 1 in order to allow it", type->getName());
+        }
+    }
 }
 
 ColumnsDescription parseColumnsListFromString(const std::string & structure, const ContextPtr & context)

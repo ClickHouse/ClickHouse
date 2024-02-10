@@ -603,27 +603,26 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
             memcpy(buf, istr.position(), bytes_to_copy);
             buf[bytes_to_copy] = 0;
 
-            /// Skip leading zeroes - we don't want any funny octal business
-            char * non_zero_buf = find_first_not_symbols<'0'>(buf, buf + bytes_to_copy);
+            const bool hex_like = bytes_to_copy >= 2 && buf[0] == '0' && (buf[1] == 'x' || buf[1] == 'X');
 
-            char * pos_double = non_zero_buf;
+            char * pos_double = buf;
             errno = 0;
-            Float64 float_value = std::strtod(non_zero_buf, &pos_double);
-            if (pos_double == non_zero_buf || errno == ERANGE || float_value < 0)
+            Float64 float_value = std::strtod(buf, &pos_double);
+            if (pos_double == buf || errno == ERANGE || float_value < 0)
                 return false;
 
             if (negative)
                 float_value = -float_value;
 
-            char * pos_integer = non_zero_buf;
+            char * pos_integer = buf;
             errno = 0;
-            UInt64 uint_value = std::strtoull(non_zero_buf, &pos_integer, 0);
+            UInt64 uint_value = std::strtoull(buf, &pos_integer, hex_like ? 16 : 10);
             if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
             {
                 istr.position() += pos_integer - buf;
                 if (negative && type_info.main_type == Type::Int64)
                     number = static_cast<Int64>(-uint_value);
-                else if (!negative && type_info.main_type == Type::UInt64)
+                else if (type_info.main_type == Type::UInt64 && (!negative || uint_value == 0))
                     number = uint_value;
                 else
                     return false;

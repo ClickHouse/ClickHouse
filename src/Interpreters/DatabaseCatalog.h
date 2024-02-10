@@ -318,7 +318,7 @@ private:
     /// View dependencies between a source table and its view.
     TablesDependencyGraph view_dependencies TSA_GUARDED_BY(databases_mutex);
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::atomic_bool is_shutting_down = false;
 

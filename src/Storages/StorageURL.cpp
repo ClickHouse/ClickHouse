@@ -930,7 +930,7 @@ private:
 
 void ReadFromURL::applyFilters()
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -1284,7 +1284,7 @@ StorageURLWithFailover::StorageURLWithFailover(
     {
         Poco::URI poco_uri(uri_option);
         context_->getRemoteHostFilter().checkURL(poco_uri);
-        LOG_DEBUG(&Poco::Logger::get("StorageURLDistributed"), "Adding URL option: {}", uri_option);
+        LOG_DEBUG(getLogger("StorageURLDistributed"), "Adding URL option: {}", uri_option);
         uri_options.emplace_back(uri_option);
     }
 }

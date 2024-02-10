@@ -145,7 +145,7 @@ private:
     const std::chrono::milliseconds max_sleep_time;
     std::chrono::time_point<std::chrono::system_clock> last_decrease_time {std::chrono::system_clock::now()};
     std::mutex mutex;
-    Poco::Logger * log;
+    LoggerPtr log;
     ActionBlocker & monitor_blocker;
 
     BackgroundSchedulePoolTaskHolder task_handle;

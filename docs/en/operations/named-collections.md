@@ -5,9 +5,9 @@ sidebar_label: "Named collections"
 title: "Named collections"
 ---
 
-Named collections provide a way to store collections of key-value pairs to be 
+Named collections provide a way to store collections of key-value pairs to be
 used to configure integrations with external sources. You can use named collections with
-dictionaries, tables, table functions, and object storage. 
+dictionaries, tables, table functions, and object storage.
 
 Named collections can be configured with DDL or in configuration files and are applied
 when ClickHouse starts. They simplify the creation of objects and the hiding of credentials
@@ -64,7 +64,7 @@ To manage named collections with DDL a user must have the `named_control_collect
 ```
 
 :::tip
-In the above example the `password_sha256_hex` value is the hexadecimal representation of the SHA256 hash of the password.  This configuration for the user `default` has the attribute `replace=true` as in the default configuration has a plain text `password` set, and it is not possible to have both plain text and sha256 hex passwords set for a user. 
+In the above example the `password_sha256_hex` value is the hexadecimal representation of the SHA256 hash of the password.  This configuration for the user `default` has the attribute `replace=true` as in the default configuration has a plain text `password` set, and it is not possible to have both plain text and sha256 hex passwords set for a user.
 :::
 
 ## Storing named collections in configuration files
@@ -296,7 +296,6 @@ host = '127.0.0.1',
 port = 5432,
 database = 'test',
 schema = 'test_schema',
-connection_pool_size = 8
 ```
 
 Example of configuration:
@@ -310,7 +309,6 @@ Example of configuration:
             <port>5432</port>
             <database>test</database>
             <schema>test_schema</schema>
-            <connection_pool_size>8</connection_pool_size>
         </mypg>
     </named_collections>
 </clickhouse>
@@ -445,4 +443,3 @@ SELECT dictGet('dict', 'b', 1);
 │ a                       │
 └─────────────────────────┘
 ```
-

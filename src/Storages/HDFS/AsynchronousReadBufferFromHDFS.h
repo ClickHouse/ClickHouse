@@ -21,7 +21,7 @@ namespace DB
 
 class IAsynchronousReader;
 
-class AsynchronousReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileName, public WithFileSize
+class AsynchronousReadBufferFromHDFS : public ReadBufferFromFileBase
 {
 public:
     AsynchronousReadBufferFromHDFS(
@@ -62,7 +62,7 @@ private:
     std::optional<size_t> read_until_position;
     bool use_prefetch;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Metrics to profile prefetch
     Stopwatch interval_watch;

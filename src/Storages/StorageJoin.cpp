@@ -104,7 +104,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     if (disk->exists(path))
         disk->removeRecursive(path);
     else
-        LOG_INFO(&Poco::Logger::get("StorageJoin"), "Path {} is already removed from disk {}", path, disk->getName());
+        LOG_INFO(getLogger("StorageJoin"), "Path {} is already removed from disk {}", path, disk->getName());
 
     disk->createDirectories(path);
     disk->createDirectories(fs::path(path) / "tmp/");

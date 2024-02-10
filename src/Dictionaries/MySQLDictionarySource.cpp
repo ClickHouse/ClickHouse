@@ -173,7 +173,7 @@ MySQLDictionarySource::MySQLDictionarySource(
     mysqlxx::PoolWithFailoverPtr pool_,
     const Block & sample_block_,
     const StreamSettings & settings_)
-    : log(&Poco::Logger::get("MySQLDictionarySource"))
+    : log(getLogger("MySQLDictionarySource"))
     , update_time(std::chrono::system_clock::from_time_t(0))
     , dict_struct(dict_struct_)
     , configuration(configuration_)
@@ -187,7 +187,7 @@ MySQLDictionarySource::MySQLDictionarySource(
 
 /// copy-constructor is provided in order to support cloneability
 MySQLDictionarySource::MySQLDictionarySource(const MySQLDictionarySource & other)
-    : log(&Poco::Logger::get("MySQLDictionarySource"))
+    : log(getLogger("MySQLDictionarySource"))
     , update_time(other.update_time)
     , dict_struct(other.dict_struct)
     , configuration(other.configuration)

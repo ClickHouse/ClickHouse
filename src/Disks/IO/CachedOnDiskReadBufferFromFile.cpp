@@ -3,6 +3,7 @@
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
@@ -59,9 +60,9 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     std::shared_ptr<FilesystemCacheLog> cache_log_)
     : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
 #ifdef ABORT_ON_LOGICAL_ERROR
-    , log(&Poco::Logger::get(fmt::format("CachedOnDiskReadBufferFromFile({})", cache_key_)))
+    , log(getLogger(fmt::format("CachedOnDiskReadBufferFromFile({})", cache_key_)))
 #else
-    , log(&Poco::Logger::get("CachedOnDiskReadBufferFromFile"))
+    , log(getLogger("CachedOnDiskReadBufferFromFile"))
 #endif
     , cache_key(cache_key_)
     , source_file_path(source_file_path_)
@@ -560,8 +561,9 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
             ProfileEvents::FileSegmentPredownloadMicroseconds, predownload_watch.elapsedMicroseconds());
     });
 
-    OpenTelemetry::SpanHolder span{
-        fmt::format("CachedOnDiskReadBufferFromFile::predownload(key={}, size={})", file_segment.key().toString(), bytes_to_predownload)};
+    OpenTelemetry::SpanHolder span("CachedOnDiskReadBufferFromFile::predownload");
+    span.addAttribute("clickhouse.key", file_segment.key().toString());
+    span.addAttribute("clickhouse.size", bytes_to_predownload);
 
     if (bytes_to_predownload)
     {

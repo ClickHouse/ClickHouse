@@ -24,16 +24,9 @@ CachedObjectStorage::CachedObjectStorage(
     , cache(cache_)
     , cache_settings(cache_settings_)
     , cache_config_name(cache_config_name_)
-    , log(&Poco::Logger::get(getName()))
+    , log(getLogger(getName()))
 {
     cache->initialize();
-}
-
-DataSourceDescription CachedObjectStorage::getDataSourceDescription() const
-{
-    auto wrapped_object_storage_data_source = object_storage->getDataSourceDescription();
-    wrapped_object_storage_data_source.is_cached = true;
-    return wrapped_object_storage_data_source;
 }
 
 FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const

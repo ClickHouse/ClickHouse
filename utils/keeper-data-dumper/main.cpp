@@ -31,7 +31,7 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
             ", czxid: " << value.stat.czxid <<
             ", mzxid: " << value.stat.mzxid <<
             ", numChildren: " << value.stat.numChildren <<
-            ", dataLength: " << value.stat.dataLength <<
+            ", dataLength: " << value.getData().size() <<
             "}" << std::endl;
         std::cout << "\tData: " << storage.container.getValue(key).getData() << std::endl;
 

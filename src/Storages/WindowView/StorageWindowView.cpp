@@ -1160,7 +1160,7 @@ StorageWindowView::StorageWindowView(
     bool attach_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , log(&Poco::Logger::get(fmt::format("StorageWindowView({}.{})", table_id_.database_name, table_id_.table_name)))
+    , log(getLogger(fmt::format("StorageWindowView({}.{})", table_id_.database_name, table_id_.table_name)))
     , fire_signal_timeout_s(context_->getSettingsRef().wait_for_window_view_fire_signal_timeout.totalSeconds())
     , clean_interval_usec(context_->getSettingsRef().window_view_clean_interval.totalMicroseconds())
 {
