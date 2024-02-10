@@ -188,7 +188,7 @@ function run_tests()
         # Too many tests fail for DatabaseReplicated in parallel.
         ADDITIONAL_OPTIONS+=('--jobs')
         ADDITIONAL_OPTIONS+=('2')
-    elif [[ 1 == $(clickhouse-client --query "SELECT value LIKE '%sanitize-coverage%' FROM system.build_options WHERE name = 'CXX_FLAGS'") ]]; then
+    elif [[ 1 == $(clickhouse-client --query "SELECT value LIKE '%SANITIZE_COVERAGE%' FROM system.build_options WHERE name = 'CXX_FLAGS'") ]]; then
         # Coverage on a per-test basis could only be collected sequentially.
         # Do not set the --jobs parameter.
         echo "Running tests with coverage collection."
