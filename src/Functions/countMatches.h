@@ -98,7 +98,7 @@ public:
             return col_res;
         }
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Error in FunctionCountMatches::getReturnTypeImpl()");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast haystack argument to String or FixedString");
     }
 
     static uint64_t countMatches(std::string_view src, const OptimizedRegularExpression & re, OptimizedRegularExpression::MatchVec & matches)

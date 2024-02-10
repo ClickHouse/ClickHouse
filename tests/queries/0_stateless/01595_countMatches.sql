@@ -14,6 +14,7 @@ select countMatches(concat(toString(number), 'foofoo'), 'foo') from numbers(2);
 select countMatches('foobarbazfoobarbaz', 'foo(bar)(?:baz|)');
 select countMatches('foo.com bar.com baz.com bam.com', '([^. ]+)\.([^. ]+)');
 select countMatches('foo.com@foo.com bar.com@foo.com baz.com@foo.com bam.com@foo.com', '([^. ]+)\.([^. ]+)@([^. ]+)\.([^. ]+)');
+select countMatches(materialize('foobarfoo'), 'foo');
 
 select 'case insensitive';
 select countMatchesCaseInsensitive('foobarfoo', 'FOo');
@@ -23,6 +24,7 @@ select countMatchesCaseInsensitive(concat(toString(number), 'Foofoo'), 'foo') fr
 select countMatchesCaseInsensitive('foOBarBAZfoobarbaz', 'foo(bar)(?:baz|)');
 select countMatchesCaseInsensitive('foo.com BAR.COM baz.com bam.com', '([^. ]+)\.([^. ]+)');
 select countMatchesCaseInsensitive('foo.com@foo.com bar.com@foo.com BAZ.com@foo.com bam.com@foo.com', '([^. ]+)\.([^. ]+)@([^. ]+)\.([^. ]+)');
+select countMatchesCaseInsensitive(materialize('foobarfoo'), 'FOo');
 
 select 'errors';
 select countMatches(1, 'foo') from numbers(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
