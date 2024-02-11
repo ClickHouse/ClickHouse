@@ -95,10 +95,11 @@ public:
     {
         NO_DIGEST = 0,
         V1 = 1,
-        V2 = 2  // added system nodes that modify the digest on startup so digest from V0 is invalid
+        V2 = 2, // added system nodes that modify the digest on startup so digest from V0 is invalid
+        V3 = 3  // fixed bug with casting, removed duplicate czxid usage
     };
 
-    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V2;
+    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V3;
 
     struct ResponseForSession
     {
@@ -113,16 +114,7 @@ public:
         uint64_t value{0};
     };
 
-    static bool checkDigest(const Digest & first, const Digest & second)
-    {
-        if (first.version != second.version)
-            return true;
-
-        if (first.version == DigestVersion::NO_DIGEST)
-            return true;
-
-        return first.value == second.value;
-    }
+    static bool checkDigest(const Digest & first, const Digest & second);
 
     static String generateDigest(const String & userdata);
 
