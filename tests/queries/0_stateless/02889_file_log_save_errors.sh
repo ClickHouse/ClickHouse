@@ -38,7 +38,7 @@ while true; do
 	sleep 1
 done
 
-${CLICKHOUSE_CLIENT} --query "select * from log_errors order by file, record;"
+${CLICKHOUSE_CLIENT} --query "select * from log_errors order by file, record;" | sed -e 's/Code: 27. DB::Exception: //' -e 's/ (CANNOT_PARSE_INPUT_ASSERTION_FAILED) (version.*)//'
 ${CLICKHOUSE_CLIENT} --query "drop table file_log;"
 ${CLICKHOUSE_CLIENT} --query "drop table log_errors;"
 
