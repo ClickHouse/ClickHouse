@@ -265,8 +265,11 @@ private:
             else
                 handle_row(current_min_x, current_min_y);
         }
-        for (auto & thread : threads)
-            thread.join();
+        for (auto & thread : threads) {
+            if (thread.joinable()) {
+                thread.join();
+            }
+        }
         return std::make_unique<DividedCell<ReturnCell>>(std::move(children));
     }
 

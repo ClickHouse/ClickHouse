@@ -222,8 +222,12 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
         LOG_TRACE(getLogger("BackgroundSchedulePool/" + thread_name), "Waiting for threads to finish.");
         delayed_thread->join();
 
-        for (auto & thread : threads)
-            thread.join();
+        for (auto & thread : threads) {
+            if (thread.joinable()) {
+                thread.join();
+            }
+        }
+
     }
     catch (...)
     {

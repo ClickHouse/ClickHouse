@@ -91,8 +91,11 @@ int main(int argc, char ** argv)
         }
     });
 
-    for (auto & thread : threads)
-        thread.join();
+    for (auto & thread : threads) {
+        if (thread.joinable()) {
+            thread.join();
+        }
+    }
 
     stop = true;
     stats_thread.join();

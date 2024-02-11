@@ -331,8 +331,11 @@ void ThreadPoolImpl<Thread>::finalize()
     new_job_or_shutdown.notify_all();
 
     /// Wait for all currently running jobs to finish (we don't wait for all scheduled jobs here like the function wait() does).
-    for (auto & thread : threads)
-        thread.join();
+    for (auto & thread : threads) {
+        if (thread.joinable()) {
+            thread.join();
+        }
+    }
 
     threads.clear();
 }
