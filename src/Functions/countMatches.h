@@ -47,6 +47,9 @@ public:
     {
         const IColumn * col_pattern = arguments[1].column.get();
         const ColumnConst * col_pattern_const = checkAndGetColumnConst<ColumnString>(col_pattern);
+        if (col_pattern_const == nullptr)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Pattern argument is not const");
+
         const OptimizedRegularExpression re = Regexps::createRegexp</*is_like*/ false, /*no_capture*/ true, CountMatchesBase::case_insensitive>(col_pattern_const->getValue<String>());
 
         const IColumn * col_haystack = arguments[0].column.get();
