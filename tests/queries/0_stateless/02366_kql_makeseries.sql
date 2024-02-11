@@ -50,21 +50,21 @@ make_series_test_table | make-series PriceAvg = avg(Price) default=0 on Purchase
 print '-- without by';
 make_series_test_table | make-series PriceAvg = avg(Price) default=0 on Purchase step 1d;
 print '-- without aggregation alias';
-make_series_test_table | make-series avg(Price) default=0 on Purchase step 1d by Supplier, Fruit;
+make_series_test_table | make-series avg(Price) default=0 on Purchase step 1d by Supplier, Fruit | order by Supplier, Fruit;
 print '-- assign group alias';
-make_series_test_table | make-series avg(Price) default=0 on Purchase step 1d by Supplier_Name = Supplier, Fruit;
+make_series_test_table | make-series avg(Price) default=0 on Purchase step 1d by Supplier_Name = Supplier, Fruit | order by Supplier_Name, Fruit;
 print '-- 3d step';
 make_series_test_table | make-series PriceAvg = avg(Price) default=0 on Purchase from datetime(2016-09-10)  to datetime(2016-09-13) step 3d by Supplier, Fruit | order by Supplier, Fruit;
 
 print '-- numeric column'
 print '-- from to';
-make_series_test_table2 | make-series PriceAvg=avg(Price) default=0 on Purchase from 10 to  15 step  1.0  by Supplier, Fruit;
+make_series_test_table2 | make-series PriceAvg=avg(Price) default=0 on Purchase from 10 to  15 step  1.0  by Supplier, Fruit | order by Supplier, Fruit;
 print '-- from';
-make_series_test_table2 | make-series PriceAvg=avg(Price) default=0 on Purchase from 10 step  1.0  by Supplier, Fruit;
+make_series_test_table2 | make-series PriceAvg=avg(Price) default=0 on Purchase from 10 step  1.0  by Supplier, Fruit | order by Supplier, Fruit;
 print '-- to';
-make_series_test_table2 | make-series PriceAvg=avg(Price) default=0 on Purchase to 18 step  4.0  by Supplier, Fruit;
+make_series_test_table2 | make-series PriceAvg=avg(Price) default=0 on Purchase to 18 step  4.0  by Supplier, Fruit | order by Supplier, Fruit;
 print '-- without from/to';
-make_series_test_table2 | make-series PriceAvg=avg(Price) default=0 on Purchase step  2.0  by Supplier, Fruit;
+make_series_test_table2 | make-series PriceAvg=avg(Price) default=0 on Purchase step  2.0  by Supplier, Fruit | order by Supplier, Fruit;
 print '-- without by';
 make_series_test_table2 | make-series PriceAvg=avg(Price) default=0 on Purchase step  2.0;
 
