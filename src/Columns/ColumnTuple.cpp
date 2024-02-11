@@ -169,7 +169,10 @@ void ColumnTuple::insertDefault()
 void ColumnTuple::popBack(size_t n)
 {
     for (auto & column : columns)
-        column->popBack(n);
+    {
+        if (column->size() >= n)
+            column->popBack(n);
+    }
 }
 
 StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
