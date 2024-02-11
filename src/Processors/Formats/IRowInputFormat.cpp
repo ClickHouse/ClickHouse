@@ -163,8 +163,7 @@ Chunk IRowInputFormat::read()
                     break;
 
                 /// Next time we will read new message
-                if (in->eof())
-                    in->nextRow();
+                in->nextRow();
 
                 /// The case when there is no columns. Just count rows.
                 if (columns.empty())
