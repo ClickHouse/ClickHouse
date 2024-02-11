@@ -1374,8 +1374,11 @@ void executeQuery(
                     /// Force an update of the headers before we start writing
                     result_details.content_type = output_format->getContentType();
                     result_details.format = format_name;
-                    set_result_details(result_details);
-                    set_result_details = nullptr;
+                    if (set_result_details)
+                    {
+                        set_result_details(result_details);
+                        set_result_details = nullptr;
+                    }
                 }
             }
             catch (const DB::Exception & e)
