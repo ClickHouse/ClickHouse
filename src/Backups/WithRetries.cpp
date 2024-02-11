@@ -21,10 +21,11 @@ WithRetries::KeeperSettings WithRetries::KeeperSettings::fromContext(ContextPtr 
 }
 
 WithRetries::WithRetries(
-    Poco::Logger * log_, zkutil::GetZooKeeper get_zookeeper_, const KeeperSettings & settings_, RenewerCallback callback_)
+    LoggerPtr log_, zkutil::GetZooKeeper get_zookeeper_, const KeeperSettings & settings_, QueryStatusPtr process_list_element_, RenewerCallback callback_)
     : log(log_)
     , get_zookeeper(get_zookeeper_)
     , settings(settings_)
+    , process_list_element(process_list_element_)
     , callback(callback_)
     , global_zookeeper_retries_info(
           settings.keeper_max_retries, settings.keeper_retry_initial_backoff_ms, settings.keeper_retry_max_backoff_ms)
@@ -32,7 +33,7 @@ WithRetries::WithRetries(
 
 WithRetries::RetriesControlHolder::RetriesControlHolder(const WithRetries * parent, const String & name)
     : info(parent->global_zookeeper_retries_info)
-    , retries_ctl(name, parent->log, info, nullptr)
+    , retries_ctl(name, parent->log, info, parent->process_list_element)
     , faulty_zookeeper(parent->getFaultyZooKeeper())
 {}
 

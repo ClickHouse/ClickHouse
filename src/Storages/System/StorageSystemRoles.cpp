@@ -14,14 +14,14 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemRoles::getNamesAndTypes()
+ColumnsDescription StorageSystemRoles::getColumnsDescription()
 {
-    NamesAndTypesList names_and_types{
-        {"name", std::make_shared<DataTypeString>()},
-        {"id", std::make_shared<DataTypeUUID>()},
-        {"storage", std::make_shared<DataTypeString>()},
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "Role name."},
+        {"id", std::make_shared<DataTypeUUID>(), "Role ID."},
+        {"storage", std::make_shared<DataTypeString>(), "Path to the storage of roles. Configured in the `access_control_path` parameter."},
     };
-    return names_and_types;
 }
 
 

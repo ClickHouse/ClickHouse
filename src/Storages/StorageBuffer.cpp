@@ -137,7 +137,7 @@ StorageBuffer::StorageBuffer(
     , flush_thresholds(flush_thresholds_)
     , destination_id(destination_id_)
     , allow_materialized(allow_materialized_)
-    , log(&Poco::Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
+    , log(getLogger("StorageBuffer (" + table_id_.getFullTableName() + ")"))
     , bg_pool(getContext()->getBufferFlushSchedulePool())
 {
     StorageInMemoryMetadata storage_metadata;
@@ -433,7 +433,7 @@ void StorageBuffer::read(
 }
 
 
-static void appendBlock(Poco::Logger * log, const Block & from, Block & to)
+static void appendBlock(LoggerPtr log, const Block & from, Block & to)
 {
     size_t rows = from.rows();
     size_t old_rows = to.rows();

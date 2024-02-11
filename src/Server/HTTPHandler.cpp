@@ -137,7 +137,7 @@ bool tryAddHttpOptionHeadersFromConfig(HTTPServerResponse & response, const Poco
             {
                 /// If there is empty header name, it will not be processed and message about it will be in logs
                 if (config.getString("http_options_response." + config_key + ".name", "").empty())
-                    LOG_WARNING(&Poco::Logger::get("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
+                    LOG_WARNING(getLogger("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
                 else
                     response.add(config.getString("http_options_response." + config_key + ".name", ""),
                                     config.getString("http_options_response." + config_key + ".value", ""));
@@ -328,7 +328,7 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 
 HTTPHandler::HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_)
     : server(server_)
-    , log(&Poco::Logger::get(name))
+    , log(getLogger(name))
     , default_settings(server.context()->getSettingsRef())
     , content_type_override(content_type_override_)
 {

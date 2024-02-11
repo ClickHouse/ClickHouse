@@ -642,13 +642,13 @@ bool tryJoinOnConst(TableJoin & analyzed_join, const ASTPtr & on_expression, Con
         if (eval_const_res.value())
         {
             /// JOIN ON 1 == 1
-            LOG_DEBUG(&Poco::Logger::get("TreeRewriter"), "Join on constant executed as cross join");
+            LOG_DEBUG(getLogger("TreeRewriter"), "Join on constant executed as cross join");
             analyzed_join.resetToCross();
         }
         else
         {
             /// JOIN ON 1 != 1
-            LOG_DEBUG(&Poco::Logger::get("TreeRewriter"), "Join on constant executed as empty join");
+            LOG_DEBUG(getLogger("TreeRewriter"), "Join on constant executed as empty join");
             analyzed_join.resetKeys();
         }
         return true;

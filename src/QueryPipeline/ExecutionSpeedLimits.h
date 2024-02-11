@@ -21,6 +21,7 @@ public:
     size_t max_execution_bps = 0;
 
     Poco::Timespan max_execution_time = 0;
+    Poco::Timespan max_estimated_execution_time = 0;
     /// Verify that the speed is not too low after the specified time has elapsed.
     Poco::Timespan timeout_before_checking_execution_speed = 0;
 

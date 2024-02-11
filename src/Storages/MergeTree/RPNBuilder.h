@@ -229,6 +229,12 @@ private:
                         rpn_elements.emplace_back(std::move(element));
                 }
 
+                if (arguments_size == 0 && function_node.getFunctionName() == "indexHint")
+                {
+                    element.function = RPNElement::ALWAYS_TRUE;
+                    rpn_elements.emplace_back(std::move(element));
+                }
+
                 return;
             }
         }

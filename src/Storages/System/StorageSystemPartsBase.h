@@ -141,7 +141,7 @@ private:
 protected:
     const FormatSettings format_settings = {};
 
-    StorageSystemPartsBase(const StorageID & table_id_, NamesAndTypesList && columns_);
+    StorageSystemPartsBase(const StorageID & table_id_, ColumnsDescription && columns);
 
     virtual std::unique_ptr<StoragesInfoStreamBase> getStoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context)
     {

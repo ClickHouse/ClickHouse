@@ -22,11 +22,11 @@
 namespace DB
 {
 
-NamesAndTypesList QueryThreadLogElement::getNamesAndTypes()
+ColumnsDescription QueryThreadLogElement::getColumnsDescription()
 {
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
-    return
+    return ColumnsDescription
     {
         {"hostname", low_cardinality_string},
         {"event_date", std::make_shared<DataTypeDate>()},

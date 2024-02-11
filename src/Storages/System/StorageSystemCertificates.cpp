@@ -17,9 +17,10 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemCertificates::getNamesAndTypes()
+ColumnsDescription StorageSystemCertificates::getColumnsDescription()
 {
-    return
+    /// TODO: Fill in all the comments.
+    return ColumnsDescription
     {
         {"version",         std::make_shared<DataTypeNumber<Int32>>()},
         {"serial_number",   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},

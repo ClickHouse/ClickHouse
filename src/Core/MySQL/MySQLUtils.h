@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Core/DecimalFunctions.h"
-#include "DataTypes/IDataType.h"
+#include <Core/DecimalFunctions.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {

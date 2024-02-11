@@ -221,7 +221,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
 
 void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType action_type, bool start,
                                                        const String & database_name, const DatabasePtr & database,
-                                                       const ContextPtr & local_context, Poco::Logger * log)
+                                                       const ContextPtr & local_context, LoggerPtr log)
 {
     auto manager = local_context->getActionLocksManager();
     auto access = local_context->getAccess();
@@ -251,7 +251,7 @@ void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType ac
 
 
 InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
-        : WithMutableContext(context_), query_ptr(query_ptr_->clone()), log(&Poco::Logger::get("InterpreterSystemQuery"))
+        : WithMutableContext(context_), query_ptr(query_ptr_->clone()), log(getLogger("InterpreterSystemQuery"))
 {
 }
 
@@ -379,27 +379,28 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
+            const auto user_id = FileCache::getCommonUser().user_id;
 
             if (query.filesystem_cache_name.empty())
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
-                    cache_data->cache->removeAllReleasable();
+                    cache_data->cache->removeAllReleasable(user_id);
             }
             else
             {
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name)->cache;
                 if (query.key_to_drop.empty())
                 {
-                    cache->removeAllReleasable();
+                    cache->removeAllReleasable(user_id);
                 }
                 else
                 {
                     auto key = FileCacheKey::fromKeyString(query.key_to_drop);
                     if (query.offset_to_drop.has_value())
-                        cache->removeFileSegment(key, query.offset_to_drop.value());
+                        cache->removeFileSegment(key, query.offset_to_drop.value(), user_id);
                     else
-                        cache->removeKey(key);
+                        cache->removeKey(key, user_id);
                 }
             }
             break;
@@ -424,7 +425,9 @@ BlockIO InterpreterSystemQuery::execute()
                 for (const auto & file_segment : file_segments)
                 {
                     size_t i = 0;
-                    const auto path = cache->getPathInLocalCache(file_segment.key, file_segment.offset, file_segment.kind);
+                    const auto path = cache->getFileSegmentPath(
+                        file_segment.key, file_segment.offset, file_segment.kind,
+                        FileCache::UserInfo(file_segment.user_id, file_segment.user_weight));
                     res_columns[i++]->insert(cache_name);
                     res_columns[i++]->insert(path);
                     res_columns[i++]->insert(file_segment.downloaded_size);
@@ -559,6 +562,14 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
             system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
             break;
+        case Type::RELOAD_ASYNCHRONOUS_METRICS:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_ASYNCHRONOUS_METRICS);
+            auto * asynchronous_metrics = system_context->getAsynchronousMetrics();
+            if (asynchronous_metrics)
+                asynchronous_metrics->update(std::chrono::system_clock::now(), /*force_update*/ true);
+            break;
+        }
         case Type::STOP_MERGES:
             startStopAction(ActionLocks::PartsMerge, false);
             break;
@@ -1070,7 +1081,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
     {
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
         auto sync_timeout = getContext()->getSettingsRef().receive_timeout.totalMilliseconds();
-        if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.sync_replica_mode))
+        if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.sync_replica_mode, query.src_replicas))
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out!", table_id.getNameForLogs());
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \
@@ -1221,6 +1232,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_USERS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_USERS);
+            break;
+        }
+        case Type::RELOAD_ASYNCHRONOUS_METRICS:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RELOAD_ASYNCHRONOUS_METRICS);
             break;
         }
         case Type::STOP_MERGES:

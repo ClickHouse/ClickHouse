@@ -179,6 +179,7 @@ StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQue
     limits.speed_limits.max_execution_rps = settings.max_execution_speed;
     limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
     limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+    limits.speed_limits.max_estimated_execution_time = settings.max_estimated_execution_time;
 
     return limits;
 }
@@ -398,7 +399,7 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr &
                     storage_dummy_columns.emplace_back(projection_column);
             }
 
-            storage_dummy = std::make_shared<StorageDummy>(StorageID{"dummy", "subquery_" + std::to_string(subquery_index)}, ColumnsDescription(storage_dummy_columns));
+            storage_dummy = std::make_shared<StorageDummy>(StorageID{"dummy", "subquery_" + std::to_string(subquery_index)}, ColumnsDescription::fromNamesAndTypes(storage_dummy_columns));
             ++subquery_index;
         }
 

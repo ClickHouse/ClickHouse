@@ -4,7 +4,7 @@
 #include <Core/Defines.h>
 #include <base/types.h>
 #include <base/unit.h>
-
+#include <Core/SettingsFields.h>
 
 namespace DB
 {
@@ -34,6 +34,7 @@ struct FormatSettings
     bool null_as_default = true;
     bool decimal_trailing_zeros = false;
     bool defaults_for_omitted_fields = true;
+    bool is_writing_to_terminal = false;
 
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 25000;
@@ -122,6 +123,8 @@ struct FormatSettings
     {
         UInt64 row_group_size = 1000000;
         bool low_cardinality_as_dictionary = false;
+        bool use_signed_indexes_for_dictionary = false;
+        bool use_64_bit_indexes_for_dictionary = false;
         bool allow_missing_columns = false;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
@@ -270,7 +273,7 @@ struct FormatSettings
         UInt64 max_rows = 10000;
         UInt64 max_column_pad_width = 250;
         UInt64 max_value_width = 10000;
-        bool color = true;
+        SettingFieldUInt64Auto color{"auto"};
 
         bool output_format_pretty_row_numbers = false;
 

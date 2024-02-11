@@ -45,7 +45,7 @@ StorageXDBC::StorageXDBC(
     , bridge_helper(bridge_helper_)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
-    , log(&Poco::Logger::get("Storage" + bridge_helper->getName()))
+    , log(getLogger("Storage" + bridge_helper->getName()))
 {
     uri = bridge_helper->getMainURI().toString();
 }

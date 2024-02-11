@@ -31,7 +31,7 @@ enum class ChangeableWithoutRestart
     Yes
 };
 
-NamesAndTypesList StorageSystemServerSettings::getNamesAndTypes()
+ColumnsDescription StorageSystemServerSettings::getColumnsDescription()
 {
     auto changeable_without_restart_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -42,15 +42,16 @@ NamesAndTypesList StorageSystemServerSettings::getNamesAndTypes()
             {"Yes",             static_cast<Int8>(ChangeableWithoutRestart::Yes)},
         });
 
-    return {
-        {"name", std::make_shared<DataTypeString>()},
-        {"value", std::make_shared<DataTypeString>()},
-        {"default", std::make_shared<DataTypeString>()},
-        {"changed", std::make_shared<DataTypeUInt8>()},
-        {"description", std::make_shared<DataTypeString>()},
-        {"type", std::make_shared<DataTypeString>()},
-        {"changeable_without_restart", std::move(changeable_without_restart_type)},
-        {"is_obsolete", std::make_shared<DataTypeUInt8>()}
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "Server setting name."},
+        {"value", std::make_shared<DataTypeString>(), "Server setting value."},
+        {"default", std::make_shared<DataTypeString>(), "Server setting default value."},
+        {"changed", std::make_shared<DataTypeUInt8>(), "Shows whether a setting was specified in config.xml"},
+        {"description", std::make_shared<DataTypeString>(), "Short server setting description."},
+        {"type", std::make_shared<DataTypeString>(), "Server setting value type."},
+        {"changeable_without_restart", std::move(changeable_without_restart_type), "Shows whether a setting can be changed at runtime."},
+        {"is_obsolete", std::make_shared<DataTypeUInt8>(), "Shows whether a setting is obsolete."}
     };
 }
 

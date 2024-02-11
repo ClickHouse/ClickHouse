@@ -110,7 +110,7 @@ private:
     const String logger_name;
     const size_t max_bytes_in_buffer = 0;
     const UInt64 max_flush_ms = 0;
-    Poco::Logger * logger = nullptr;
+    LoggerPtr logger = nullptr;
 
     BinlogPtr binlog_read_from;
 

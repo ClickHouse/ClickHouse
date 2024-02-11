@@ -111,7 +111,7 @@ public:
         // bump into reader thread on wraparound.
         processing_units.resize(params.max_threads + 2);
 
-        LOG_TRACE(&Poco::Logger::get("ParallelParsingInputFormat"), "Parallel parsing is used");
+        LOG_TRACE(getLogger("ParallelParsingInputFormat"), "Parallel parsing is used");
     }
 
     ~ParallelParsingInputFormat() override

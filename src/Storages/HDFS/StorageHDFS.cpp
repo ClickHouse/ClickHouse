@@ -687,7 +687,7 @@ Chunk HDFSSource::generate()
     return {};
 }
 
-void HDFSSource::addNumRowsToCache(const DB::String & path, size_t num_rows)
+void HDFSSource::addNumRowsToCache(const String & path, size_t num_rows)
 {
     auto cache_key = getKeyForSchemaCache(path, storage->format_name, std::nullopt, getContext());
     StorageHDFS::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
@@ -877,7 +877,7 @@ private:
 
 void ReadFromHDFS::applyFilters()
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);

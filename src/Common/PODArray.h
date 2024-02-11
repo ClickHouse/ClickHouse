@@ -6,6 +6,7 @@
 #include <Common/PODArray_fwd.h>
 #include <base/getPageSize.h>
 #include <boost/noncopyable.hpp>
+#include <cstdlib>
 #include <cstring>
 #include <cstddef>
 #include <cassert>
@@ -236,6 +237,12 @@ public:
     {
         reserve_exact(n, std::forward<TAllocatorParams>(allocator_params)...);
         resize_assume_reserved(n);
+    }
+
+    template <typename ... TAllocatorParams>
+    void shrink_to_fit(TAllocatorParams &&... allocator_params)
+    {
+        realloc(PODArrayDetails::minimum_memory_for_elements(size(), ELEMENT_SIZE, pad_left, pad_right), std::forward<TAllocatorParams>(allocator_params)...);
     }
 
     void resize_assume_reserved(const size_t n) /// NOLINT

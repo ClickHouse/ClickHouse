@@ -207,6 +207,12 @@ struct SelectQueryInfo
     /// If query has aggregate functions
     bool has_aggregates = false;
 
+    /// If query has any filter and no arrayJoin before filter. Used by skipping FINAL
+    /// Skipping FINAL algorithm will output the original chunk and a column indices of
+    /// selected rows. If query has filter and doesn't have array join before any filter,
+    /// we can merge the indices with the first filter in FilterTransform later.
+    bool has_filters_and_no_array_join_before_filter = false;
+
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
     bool settings_limit_offset_done = false;
