@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 

@@ -20,7 +20,8 @@ class DNSResolver : private boost::noncopyable
 {
 public:
     using IPAddresses = std::vector<Poco::Net::IPAddress>;
-    using CacheEntry = struct {
+    using CacheEntry = struct
+    {
         IPAddresses addresses;
         std::chrono::system_clock::time_point cached_at;
     };

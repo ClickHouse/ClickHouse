@@ -140,9 +140,7 @@ DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
 
 DNSResolver::IPAddresses resolveIPAddressWithCache(CacheBase<std::string, DNSResolver::CacheEntry> & cache, const std::string & host)
 {
-    auto [result, _ ] = cache.getOrSet(host, [&host]() {
-                                          return std::make_shared<DNSResolver::CacheEntry>(resolveIPAddressImpl(host), std::chrono::system_clock::now());
-                                      });
+    auto [result, _ ] = cache.getOrSet(host, [&host]() {return std::make_shared<DNSResolver::CacheEntry>(resolveIPAddressImpl(host), std::chrono::system_clock::now());});
     return result->addresses;
 }
 
