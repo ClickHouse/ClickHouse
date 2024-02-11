@@ -14,10 +14,12 @@ class StorageSystemDNSCache final : public IStorageSystemOneBlock<StorageSystemD
 {
 public:
     std::string getName() const override { return "SystemDNSCache"; }
-    ColumnsDescription getColumnsDescription();
+
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
+
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 };
 

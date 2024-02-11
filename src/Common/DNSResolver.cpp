@@ -437,10 +437,10 @@ void DNSResolver::addToNewAddresses(const Poco::Net::IPAddress & address)
     impl->new_addresses.insert({address, consecutive_failures});
 }
 
-std::vector<DNSResolver::CacheEntry> DNSResolver::cacheEntries() const
+std::vector<std::pair<std::string, DNSResolver::CacheEntry>> DNSResolver::cacheEntries() const
 {
     std::lock_guard lock(impl->drop_mutex);
-    std::vector<DNSResolver::CacheEntry> entries;
+    std::vector<std::pair<std::string, DNSResolver::CacheEntry>> entries;
 
     for (const auto & host : impl->known_hosts)
     {
@@ -448,7 +448,7 @@ std::vector<DNSResolver::CacheEntry> DNSResolver::cacheEntries() const
 
         const auto cache_entry = impl->cache_host.get(hostname);
         if (cache_entry)
-            entries.push_back(*cache_entry);
+            entries.emplace_back(hostname, *cache_entry);
     }
     return entries;
 }

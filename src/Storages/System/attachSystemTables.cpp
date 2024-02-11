@@ -90,6 +90,7 @@
 #include <Storages/System/StorageSystemS3Queue.h>
 #include <Storages/System/StorageSystemDashboards.h>
 #include <Storages/System/StorageSystemViewRefreshes.h>
+#include <Storages/System/StorageSystemDNSCache.h>
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 #include <Storages/System/StorageSystemSymbols.h>
