@@ -56,7 +56,7 @@ make_series_test_table | make-series avg(Price) default=0 on Purchase step 1d by
 print '-- 3d step';
 make_series_test_table | make-series PriceAvg = avg(Price) default=0 on Purchase from datetime(2016-09-10)  to datetime(2016-09-13) step 3d by Supplier, Fruit | order by Supplier, Fruit;
 
-print '-- numeric column'
+print '-- numeric column';
 print '-- from to';
 make_series_test_table2 | make-series PriceAvg=avg(Price) default=0 on Purchase from 10 to  15 step  1.0  by Supplier, Fruit | order by Supplier, Fruit;
 print '-- from';
