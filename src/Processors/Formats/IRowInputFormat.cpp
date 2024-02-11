@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int INCORRECT_DATA;
+    extern const int SYNTAX_ERROR;
     extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
     extern const int CANNOT_PARSE_IPV4;
     extern const int CANNOT_PARSE_IPV6;
@@ -51,6 +52,7 @@ bool isParseError(int code)
         || code == ErrorCodes::TOO_LARGE_STRING_SIZE
         || code == ErrorCodes::ARGUMENT_OUT_OF_BOUND       /// For Decimals
         || code == ErrorCodes::INCORRECT_DATA              /// For some ReadHelpers
+        || code == ErrorCodes::SYNTAX_ERROR                /// For Values format
         || code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING
         || code == ErrorCodes::CANNOT_PARSE_IPV4
         || code == ErrorCodes::CANNOT_PARSE_IPV6
