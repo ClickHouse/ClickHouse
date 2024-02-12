@@ -4,6 +4,7 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
+#include <Common/FailPoint.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryCache.h>
@@ -105,6 +106,10 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+namespace FailPoints
+{
+    extern const char execute_query_calling_empty_set_result_func_on_exception[];
+}
 
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 {
@@ -1361,7 +1366,7 @@ void executeQuery(
     BlockIO streams;
     OutputFormatPtr output_format;
 
-    auto update_format_for_exception_if_needed = [&]()
+    auto update_format_on_exception_if_needed = [&]()
     {
         if (!output_format)
         {
@@ -1374,10 +1379,13 @@ void executeQuery(
                     /// Force an update of the headers before we start writing
                     result_details.content_type = output_format->getContentType();
                     result_details.format = format_name;
+
                     if (set_result_details)
                     {
-                        set_result_details(result_details);
+                        /// reset set_result_details func to avoid calling in SCOPE_EXIT()
+                        auto set_result_details_copy = set_result_details;
                         set_result_details = nullptr;
+                        set_result_details_copy(result_details);
                     }
                 }
             }
@@ -1397,7 +1405,7 @@ void executeQuery(
     {
         if (handle_exception_in_output_format)
         {
-            update_format_for_exception_if_needed();
+            update_format_on_exception_if_needed();
             if (output_format)
                 handle_exception_in_output_format(*output_format);
         }
@@ -1427,7 +1435,7 @@ void executeQuery(
                 const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
 
                 std::string compression_method;
-                if (ast_query_with_output->compression)
+                if (ast_query_with_output->compressiong
                 {
                     const auto & compression_method_node = ast_query_with_output->compression->as<ASTLiteral &>();
                     compression_method = compression_method_node.value.safeGet<std::string>();
@@ -1500,7 +1508,7 @@ void executeQuery(
     {
         if (handle_exception_in_output_format)
         {
-            update_format_for_exception_if_needed();
+            update_format_on_exception_if_needed();
             if (output_format)
                 handle_exception_in_output_format(*output_format);
         }

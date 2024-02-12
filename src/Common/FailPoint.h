@@ -1,5 +1,4 @@
 #pragma once
-#include "config.h"
 
 #include <Common/Exception.h>
 #include <Core/Types.h>
@@ -18,7 +17,6 @@
 #pragma clang diagnostic pop
 #endif
 
-#include <any>
 #include <unordered_map>
 
 namespace DB

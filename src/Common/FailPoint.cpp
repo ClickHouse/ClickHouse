@@ -1,3 +1,4 @@
+#include "config.h"
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Config/ConfigHelper.h>
@@ -6,7 +7,6 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
-#include <optional>
 
 namespace DB
 {
@@ -44,7 +44,8 @@ static struct InitFiu
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
     PAUSEABLE_ONCE(dummy_pausable_failpoint_once) \
-    PAUSEABLE(dummy_pausable_failpoint)
+    PAUSEABLE(dummy_pausable_failpoint) \
+    ONCE(execute_query_calling_empty_set_result_func_on_exception)
 
 namespace FailPoints
 {
