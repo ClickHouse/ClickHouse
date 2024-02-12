@@ -13,6 +13,8 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/assert_cast.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeDate32.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
@@ -34,6 +36,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
 struct Settings;
 
@@ -117,9 +120,7 @@ public:
                 continue;
             auto value = map.find(rhs_elem.getKey());
             if (value != nullptr)
-            {
                 ++value->getMapped();
-            }
         }
     }
 
@@ -164,12 +165,8 @@ public:
 
         size_t i = 0;
         for (auto it = map.begin(); it != map.end(); ++it)
-        {
             if (version == it->getMapped())
-            {
                 data_to[old_size + i++] = it->getKey();
-            }
-        }
     }
 };
 
@@ -194,7 +191,7 @@ class AggregateFunctionGroupArrayIntersectGeneric
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectGenericData,
         AggregateFunctionGroupArrayIntersectGeneric<is_plain_column>>
 {
-    DataTypePtr & input_data_type;
+    const DataTypePtr & input_data_type;
 
     using State = AggregateFunctionGroupArrayIntersectGenericData;
 
@@ -202,6 +199,10 @@ public:
     AggregateFunctionGroupArrayIntersectGeneric(const DataTypePtr & input_data_type_, const Array & parameters_)
         : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectGenericData, AggregateFunctionGroupArrayIntersectGeneric<is_plain_column>>({input_data_type_}, parameters_, std::make_shared<DataTypeArray>(input_data_type_))
         , input_data_type(this->argument_types[0]) {}
+
+    AggregateFunctionGroupArrayIntersectGeneric(const DataTypePtr & input_data_type_, const Array & parameters_, const DataTypePtr & result_type_)
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectGenericData, AggregateFunctionGroupArrayIntersectGeneric<is_plain_column>>({input_data_type_}, parameters_, result_type_)
+        , input_data_type(result_type_) {}
 
     String getName() const override { return "GroupArrayIntersect"; }
 
@@ -346,15 +347,10 @@ public:
         {
             if (elem.getMapped() == version)
             {
-
-                // if constexpr (is_plain_column)
-                // {
+                if constexpr (is_plain_column)
                     data_to.insertData(elem.getKey().data, elem.getKey().size);
-                // }
-                // else
-                // {
-                //     data_to.deserializeAndInsertFromArena(elem.getKey().data);
-                // }
+                else
+                    std::ignore = data_to.deserializeAndInsertFromArena(elem.getKey().data);
             }
         }
     }
@@ -380,13 +376,28 @@ public:
     static DataTypePtr createResultType() { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()); }
 };
 
+class AggregateFunctionGroupArrayIntersectDate32 : public AggregateFunctionGroupArrayIntersect<DataTypeDate32::FieldType>
+{
+public:
+    explicit AggregateFunctionGroupArrayIntersectDate32(const DataTypePtr & argument_type, const Array & parameters_)
+        : AggregateFunctionGroupArrayIntersect<DataTypeDate32::FieldType>(argument_type, parameters_, createResultType()) {}
+    static DataTypePtr createResultType() { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDate32>()); }
+};
+
 IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, const Array & parameters)
 {
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::Date) return new AggregateFunctionGroupArrayIntersectDate(argument_type, parameters);
     else if (which.idx == TypeIndex::DateTime) return new AggregateFunctionGroupArrayIntersectDateTime(argument_type, parameters);
+    else if (which.idx == TypeIndex::Date32) return new AggregateFunctionGroupArrayIntersectDate32(argument_type, parameters);
     else
     {
+        if (which.idx == TypeIndex::DateTime64)
+        {
+            // There is always DateTime64(3) as `argument_type`
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "While using groupArrayIntersect with DateTime64, it's required to have a scale = 3");
+        }
+
         /// Check that we can use plain version of AggregateFunctionGroupArrayIntersectGeneric
         if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
             return new AggregateFunctionGroupArrayIntersectGeneric<true>(argument_type, parameters);
