@@ -23,7 +23,7 @@
         <policies>
             <s3>
                 <volumes>
-                    <main><disk>cached_s3</disk></main>
+                    <main><disk>cached_s3_encrypted</disk></main>
                 </volumes>
             </s3>
         </policies>
