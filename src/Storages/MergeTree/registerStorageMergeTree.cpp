@@ -315,7 +315,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
 
     /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
-    bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
+    /// and if UUID was explicitly passed in CREATE TABLE (like for ATTACH)
+    bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach || args.query.has_uuid;
 
     auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name)
     {
