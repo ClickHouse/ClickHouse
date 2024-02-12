@@ -32,6 +32,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int LOGICAL_ERROR;
     extern const int CLUSTER_DOESNT_EXIST;
+    extern const int UNEXPECTED_CLUSTER;
 }
 
 namespace ClusterProxy
@@ -374,12 +375,12 @@ void executeQueryWithParallelReplicas(
         shard_num = column->getUInt(0);
     }
 
-    ClusterPtr new_cluster;
+    const auto shard_count = not_optimized_cluster->getShardCount();
+    ClusterPtr new_cluster = not_optimized_cluster;
     /// if got valid shard_num from query initiator, then parallel replicas scope is the specified shard
     /// shards are numbered in order of appearance in the cluster config
     if (shard_num > 0)
     {
-        const auto shard_count = not_optimized_cluster->getShardCount();
         if (shard_num > shard_count)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -395,17 +396,18 @@ void executeQueryWithParallelReplicas(
 
         // get cluster for shard specified by shard_num
         // shard_num is 1-based, but getClusterWithSingleShard expects 0-based index
-        auto single_shard_cluster = not_optimized_cluster->getClusterWithSingleShard(shard_num - 1);
-        // convert cluster to representation expected by parallel replicas
-        new_cluster = single_shard_cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
+        new_cluster = not_optimized_cluster->getClusterWithSingleShard(shard_num - 1);
     }
     else
     {
-        new_cluster = not_optimized_cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
+        if (not_optimized_cluster->getShardCount() > 1)
+            throw DB::Exception(
+                ErrorCodes::UNEXPECTED_CLUSTER,
+                "`cluster_for_parallel_replicas` setting refers to cluster with several shards. Expected a cluster with one shard");
     }
 
-    auto coordinator
-        = std::make_shared<ParallelReplicasReadingCoordinator>(new_cluster->getShardCount(), settings.parallel_replicas_mark_segment_size);
+    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(
+        new_cluster->getShardsInfo().begin()->getAllNodeCount(), settings.parallel_replicas_mark_segment_size);
     auto external_tables = new_context->getExternalTables();
     auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
         query_ast,

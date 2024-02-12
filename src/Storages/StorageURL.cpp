@@ -904,6 +904,7 @@ public:
         , context(std::move(context_))
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
+        , max_num_streams(num_streams_)
     {
     }
 
@@ -920,6 +921,7 @@ private:
 
     size_t max_block_size;
     size_t num_streams;
+    const size_t max_num_streams;
 
     std::shared_ptr<StorageURLSource::IteratorWrapper> iterator_wrapper;
     bool is_url_with_globs = false;
@@ -1093,8 +1095,8 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     auto pipe = Pipe::unitePipes(std::move(pipes));
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = context->getSettingsRef().parallelize_output_from_storages;
-    if (parallelize_output && storage->parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < num_streams)
-        pipe.resize(num_streams);
+    if (parallelize_output && storage->parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < max_num_streams)
+        pipe.resize(max_num_streams);
 
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(info.source_header));
