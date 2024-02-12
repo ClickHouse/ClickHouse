@@ -360,6 +360,9 @@ ZooKeeper::ZooKeeper(
         initApiVersion();
 
         ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
+
+        /// Avoid stale reads after connecting
+        sync("/", [](const SyncResponse &){});
     }
     catch (...)
     {
