@@ -183,6 +183,12 @@ macro(clickhouse_program_install name lib_name)
     add_custom_target (${name} ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse ${name} DEPENDS clickhouse)
     install (FILES "${CMAKE_CURRENT_BINARY_DIR}/${name}" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     list(APPEND CLICKHOUSE_BUNDLE ${name})
+
+    foreach(alias ${ARGN})
+        message(STATUS "Adding alias ${alias} for ${name}")
+        add_custom_target (${alias} ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse ${alias} DEPENDS clickhouse)
+        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/${alias}" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+    endforeach()
 endmacro()
 
 if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
@@ -190,19 +196,8 @@ if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
 endif ()
 
 clickhouse_program_install(clickhouse-server server)
-
-# client
-clickhouse_program_install(clickhouse-client client)
-add_custom_target (chc ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse chc DEPENDS clickhouse)
-install (FILES "${CMAKE_CURRENT_BINARY_DIR}/chc" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-
-# local
-clickhouse_program_install(clickhouse-local local)
-add_custom_target (chl ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse chl DEPENDS clickhouse)
-install (FILES "${CMAKE_CURRENT_BINARY_DIR}/chl" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-add_custom_target (ch ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse ch DEPENDS clickhouse)
-install (FILES "${CMAKE_CURRENT_BINARY_DIR}/ch" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-
+clickhouse_program_install(clickhouse-client client chc)
+clickhouse_program_install(clickhouse-local local chl ch)
 clickhouse_program_install(clickhouse-benchmark benchmark)
 clickhouse_program_install(clickhouse-copier copier)
 clickhouse_program_install(clickhouse-extract-from-config extract-from-config)
