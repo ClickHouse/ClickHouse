@@ -8,6 +8,8 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <stack>
+
 namespace DB
 {
 
