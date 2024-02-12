@@ -28,9 +28,30 @@ Default: 1
 
 Period in seconds for updating asynchronous metrics.
 
-Type: UInt32Type: Bool
+Type: UInt32
+
+Default: 120
+
+
+## asynchronous_metrics_update_period_s
+
+Period in seconds for updating asynchronous metrics.
+
+Type: UInt32
 
 Default: 1
+
+
+## background_buffer_flush_schedule_pool_size
+
+The maximum number of threads that will be used for performing flush operations for Buffer-engine tables in the background.
+
+Type: UInt64
+
+Default: 16
+
+
+## background_common_pool_size
 
 The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for \*MergeTree-engine tables in a background.
 
@@ -294,29 +315,31 @@ The maximum read speed in bytes per second for all backups on server. Zero means
 
 Type: UInt64
 
+Default: 0
 
-Default: 120
+## max_backups_io_thread_pool_free_size
 
-
-## asynchronous_metrics_update_period_s
-
-Period in seconds for updating asynchronous metrics.
-
-Type: UInt32
-
-Default: 1
-
-
-## background_buffer_flush_schedule_pool_size
-
-The maximum number of threads that will be used for performing flush operations for Buffer-engine tables in the background.
+If the number of **idle** threads in the Backups IO Thread pool exceeds `max_backup_io_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.
 
 Type: UInt64
 
-Default: 16
+Default: 0
 
+## max_backups_io_thread_pool_size
 
-## background_common_pool_size
+The maximum number of threads that would be used for IO operations for BACKUP queries
+
+Type: UInt64
+
+Default: 1000
+
+## max_concurrent_queries
+
+Limit on total number of concurrently executed queries. Zero means Unlimited. Note that limits on insert and select queries, and on the maximum number of queries for users must also be considered.  See also max_concurrent_insert_queries, max_concurrent_select_queries, max_concurrent_queries_for_all_users. Zero means unlimited.
+
+:::note
+This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::
 
 Type: UInt64
 
