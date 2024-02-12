@@ -121,7 +121,7 @@ public:
             close(archive);
         );
 
-        struct archive_entry * entry = nullptr;
+        Entry entry = nullptr;
 
         std::vector<std::string> files;
         int error = readNextHeader(archive, &entry);
@@ -132,7 +132,7 @@ public:
             if (!filter || filter(name))
                 files.push_back(std::move(name));
 
-            error = readNextHeader(current_archive, &entry);
+            error = readNextHeader(archive, &entry);
         }
 
         checkError(error);

@@ -57,7 +57,7 @@ public:
         : WriteBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0), archive_writer(archive_writer_), filename(filename_), size(size_)
     {
         startWritingFile();
-        a = archive_writer_->getArchive();
+        archive = archive_writer_->getArchive();
         entry = nullptr;
     }
 
@@ -94,7 +94,7 @@ private:
         if (entry == nullptr)
             writeEntry();
         ssize_t to_write = offset();
-        ssize_t written = archive_write_data(a, working_buffer.begin(), offset());
+        ssize_t written = archive_write_data(archive, working_buffer.begin(), offset());
         if (written != to_write)
         {
             throw Exception(
@@ -115,7 +115,7 @@ private:
         archive_entry_set_size(entry, expected_size);
         archive_entry_set_filetype(entry, static_cast<__LA_MODE_T>(0100000));
         archive_entry_set_perm(entry, 0644);
-        checkResult(archive_write_header(a, entry));
+        checkResult(archive_write_header(archive, entry));
     }
 
     size_t getSize() const
@@ -155,8 +155,8 @@ private:
 
     std::weak_ptr<LibArchiveWriter> archive_writer;
     const String filename;
-    struct archive_entry * entry;
-    struct archive * a;
+    Entry entry;
+    Archive archive;
     size_t size;
     size_t expected_size;
 };
@@ -169,18 +169,18 @@ LibArchiveWriter::LibArchiveWriter(const String & path_to_archive_) : path_to_ar
 LibArchiveWriter::LibArchiveWriter(const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_)
     : path_to_archive(path_to_archive_)
 {
-    a = archive_write_new();
-    archive_write_set_format_pax_restricted(a);
+    archive = archive_write_new();
+    archive_write_set_format_pax_restricted(archive);
     //this allows use to write directly to a writer buffer rather than an intermediate buffer in LibArchive
     //archive_write_set_bytes_per_block(a, 0);
     if (archive_write_buffer_)
     {
         stream_info = std::make_unique<StreamInfo>(std::move(archive_write_buffer_));
-        archive_write_open2(a, stream_info.get(), nullptr, &StreamInfo::memory_write, nullptr, nullptr);
+        archive_write_open2(archive, stream_info.get(), nullptr, &StreamInfo::memory_write, nullptr, nullptr);
     }
     else
     {
-        archive_write_open_filename(a, path_to_archive.c_str());
+        archive_write_open_filename(archive, path_to_archive.c_str());
     }
 }
 
@@ -189,8 +189,8 @@ LibArchiveWriter::~LibArchiveWriter()
 {
     if (!finalized && !std::uncaught_exceptions() && !std::current_exception())
             chassert(false && "TarArchiveWriter is not finalized in destructor.");
-    if (a)
-        archive_write_free(a);
+    if (archive)
+        archive_write_free(archive);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> LibArchiveWriter::writeFile(const String & filename, size_t size)
@@ -228,8 +228,8 @@ void LibArchiveWriter::finalize()
     std::lock_guard lock{mutex};
     if (finalized)
         return;
-    if (a)
-        archive_write_close(a);
+    if (archive)
+        archive_write_close(archive);
     if (stream_info)
     {
         stream_info->archive_write_buffer->finalize();
@@ -255,10 +255,10 @@ void LibArchiveWriter::setPassword([[maybe_unused]] const String & password_)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Setting a password is not currently supported for tar archives");
 }
 
-struct archive * LibArchiveWriter::getArchive()
+LibArchiveWriter::Archive LibArchiveWriter::getArchive()
 {
     std::lock_guard lock{mutex};
-    return a;
+    return archive;
 }
 }
 #endif

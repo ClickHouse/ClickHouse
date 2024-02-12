@@ -59,13 +59,16 @@ private:
     class WriteBufferFromLibArchive;
     class StreamInfo;
 
-    struct archive * getArchive();
+    using Archive = struct archive *;
+    using Entry = struct archive_entry *;
+
+    Archive getArchive();
     void startWritingFile();
     void endWritingFile();
 
     String path_to_archive;
     std::unique_ptr<StreamInfo> stream_info TSA_GUARDED_BY(mutex) = nullptr;
-    struct archive * a TSA_GUARDED_BY(mutex) = nullptr;
+    Archive archive TSA_GUARDED_BY(mutex) = nullptr;
     bool is_writing_file TSA_GUARDED_BY(mutex) = false;
     bool finalized TSA_GUARDED_BY(mutex) = false;
     mutable std::mutex mutex;
