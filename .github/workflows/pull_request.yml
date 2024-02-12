@@ -147,6 +147,14 @@ jobs:
       build_name: package_release
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
+  BuilderDebReleaseCoverage:
+    needs: [RunConfig, FastTest]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: package_release_coverage
+      checkout_depth: 0
+      data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebAarch64:
     needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
@@ -309,6 +317,7 @@ jobs:
       - BuilderDebDebug
       - BuilderDebMsan
       - BuilderDebRelease
+      - BuilderDebReleaseCoverage
       - BuilderDebTsan
       - BuilderDebUBsan
     uses: ./.github/workflows/reusable_test.yml
@@ -380,6 +389,14 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateless tests (release)
+      runner_type: func-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+  FunctionalStatelessTestCoverage:
+    needs: [RunConfig, BuilderDebReleaseCoverage]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Stateless tests (coverage)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestReleaseDatabaseReplicated:
@@ -507,6 +524,14 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateful tests (release)
+      runner_type: func-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+  FunctionalStatefulTestCoverage:
+    needs: [RunConfig, BuilderDebReleaseCoverage]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Stateful tests (coverage)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatefulTestAarch64:
