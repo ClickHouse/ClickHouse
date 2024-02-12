@@ -166,6 +166,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         merging_params.mode = MergeTreeData::MergingParams::Collapsing;
     else if (name_part == "Summing")
         merging_params.mode = MergeTreeData::MergingParams::Summing;
+    else if (name_part == "StatelessAggregating")
+        merging_params.mode = MergeTreeData::MergingParams::StatelessAggregating;
     else if (name_part == "Aggregating")
         merging_params.mode = MergeTreeData::MergingParams::Aggregating;
     else if (name_part == "Replacing")
@@ -226,6 +228,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         default:
             break;
         case MergeTreeData::MergingParams::Summing:
+            add_optional_param("list of columns to sum");
+            break;
+        case MergeTreeData::MergingParams::StatelessAggregating:
             add_optional_param("list of columns to sum");
             break;
         case MergeTreeData::MergingParams::Replacing:
@@ -459,6 +464,15 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Summing)
+    {
+        /// If the last element is not index_granularity or replica_name (a literal), then this is a list of summable columns.
+        if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
+        {
+            merging_params.columns_to_sum = extractColumnNames(engine_args[arg_cnt - 1]);
+            --arg_cnt;
+        }
+    }
+    else if (merging_params.mode == MergeTreeData::MergingParams::StatelessAggregating)
     {
         /// If the last element is not index_granularity or replica_name (a literal), then this is a list of summable columns.
         if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
@@ -767,6 +781,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("ReplacingMergeTree", create, features);
     factory.registerStorage("AggregatingMergeTree", create, features);
     factory.registerStorage("SummingMergeTree", create, features);
+    factory.registerStorage("StatelessAggregatingMergeTree", create, features);
     factory.registerStorage("GraphiteMergeTree", create, features);
     factory.registerStorage("VersionedCollapsingMergeTree", create, features);
 
@@ -774,6 +789,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     features.supports_deduplication = true;
     features.supports_schema_inference = true;
 
+    // TODO: fix ReplicatedStatelessAggregatingMergeTree
     factory.registerStorage("ReplicatedMergeTree", create, features);
     factory.registerStorage("ReplicatedCollapsingMergeTree", create, features);
     factory.registerStorage("ReplicatedReplacingMergeTree", create, features);

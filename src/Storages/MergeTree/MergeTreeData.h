@@ -343,6 +343,7 @@ public:
             Replacing           = 5,
             Graphite            = 6,
             VersionedCollapsing = 7,
+            StatelessAggregating = 8,
         };
 
         Mode mode;

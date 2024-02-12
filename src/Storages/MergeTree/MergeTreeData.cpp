@@ -492,7 +492,7 @@ bool MergeTreeData::supportsFinal() const
 {
     return merging_params.mode == MergingParams::Collapsing
         || merging_params.mode == MergingParams::Summing
-        || merging_params.mode == MergingParams::Aggregating
+        || merging_params.mode == MergingParams::StatelessAggregating || merging_params.mode == MergingParams::Aggregating
         || merging_params.mode == MergingParams::Replacing
         || merging_params.mode == MergingParams::Graphite
         || merging_params.mode == MergingParams::VersionedCollapsing;
@@ -955,7 +955,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
     if (mode == MergingParams::Collapsing)
         check_sign_column(false, "CollapsingMergeTree");
 
-    if (mode == MergingParams::Summing)
+    if (mode == MergingParams::Summing || mode == MergingParams::StatelessAggregating)
     {
         /// If columns_to_sum are set, then check that such columns exist.
         for (const auto & column_to_sum : columns_to_sum)
@@ -1116,13 +1116,14 @@ String MergeTreeData::MergingParams::getModeName() const
 {
     switch (mode)
     {
-        case Ordinary:      return "";
-        case Collapsing:    return "Collapsing";
-        case Summing:       return "Summing";
-        case Aggregating:   return "Aggregating";
-        case Replacing:     return "Replacing";
-        case Graphite:      return "Graphite";
-        case VersionedCollapsing: return "VersionedCollapsing";
+        case Ordinary:                return "";
+        case Collapsing:              return "Collapsing";
+        case Summing:                 return "Summing";
+        case StatelessAggregating:    return "StatelessAggregating";
+        case Aggregating:             return "Aggregating";
+        case Replacing:               return "Replacing";
+        case Graphite:                return "Graphite";
+        case VersionedCollapsing:     return "VersionedCollapsing";
     }
 
     UNREACHABLE();

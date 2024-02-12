@@ -29,6 +29,7 @@
 #include <Processors/Merges/GraphiteRollupSortedTransform.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
+#include <Processors/Merges/StatelessAggregatingSortedTransform.h>
 #include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
@@ -1029,6 +1030,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
         case MergeTreeData::MergingParams::Summing:
             merged_transform = std::make_shared<SummingSortedTransform>(
+                header, pipes.size(), sort_description, ctx->merging_params.columns_to_sum, partition_key_columns, merge_block_size_rows, merge_block_size_bytes);
+            break;
+
+        case MergeTreeData::MergingParams::StatelessAggregating:
+            merged_transform = std::make_shared<StatelessAggregatingSortedTransform>(
                 header, pipes.size(), sort_description, ctx->merging_params.columns_to_sum, partition_key_columns, merge_block_size_rows, merge_block_size_bytes);
             break;
 
