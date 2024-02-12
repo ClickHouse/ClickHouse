@@ -117,7 +117,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
     auto * create_query = ast->as<ASTCreateQuery>();
 
-    if (!create_query->storage || !create_query->storage->engine->name.ends_with("MergeTree") || create_query->storage->engine->name.starts_with("Replicated"))
+    if (!create_query->storage || !create_query->storage->engine->name.ends_with("MergeTree") || create_query->storage->engine->name.starts_with("Replicated") || create_query->storage->engine->name.starts_with("Shared"))
         return;
 
     auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, false);
