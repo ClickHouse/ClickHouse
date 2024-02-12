@@ -49,10 +49,10 @@ protected:
     std::shared_ptr<const EnabledQuota> quota;
 };
 
-class CountingTransform2 final : public ExceptionKeepingTransform
+class CountingTransform final : public ExceptionKeepingTransform
 {
 public:
-    explicit CountingTransform2(
+    explicit CountingTransform(
         const Block & header,
         ThreadStatus * thread_status_ = nullptr,
         std::shared_ptr<const EnabledQuota> quota_ = nullptr)

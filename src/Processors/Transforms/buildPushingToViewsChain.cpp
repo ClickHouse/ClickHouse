@@ -425,7 +425,7 @@ Chain buildPushingToViewsChain(
                     table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
             }
 
-            auto counting = std::make_shared<CountingTransform2>(out.getInputHeader(), thread_status, view_insert_context->getQuota());
+            auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), thread_status, view_insert_context->getQuota());
             counting->setProcessListElement(view_insert_context->getProcessListElement());
             counting->setProgressCallback(view_insert_context->getProgressCallback());
             out.addSource(std::move(counting));
