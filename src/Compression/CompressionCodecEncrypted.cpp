@@ -106,10 +106,23 @@ std::string lastErrorString()
 /// Get encryption/decryption algorithms.
 const char * getMethod(EncryptionMethod Method)
 {
+    /// The encrypting codecs were originally implemented using boringssl's API. At a later point and for FIPS-related reasons, an
+    /// implementation based on OpenSSL was added specifically for s390/x. At that time, OpenSSL did not provide *-SIV ciphers (they were
+    /// only added with OpenSSL 3.2), whereas boringssl provided them for ages. As a result, s390/x used non-SIV ciphers instead (leading to
+    /// a different ciphertext / persistence). When ClickHouse migrated to OpenSSL on all platforms, this twist for s390/x needed to be kept,
+    /// otherwise encrypted data on s390/x can no longer be read.
     if (Method == AES_128_GCM_SIV)
+#if defined(__s390x__)
         return "AES-128-GCM";
+#else
+        return "AES-128-GCM-SIV";
+#endif
     else if (Method == AES_256_GCM_SIV)
+#if defined(__s390x__)
         return "AES-256-GCM";
+#else
+        return "AES-256-GCM-SIV";
+#endif
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", getMethodName(Method));
 }
@@ -209,6 +222,12 @@ size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod m
                                             reinterpret_cast<const uint8_t *>(nonce.data())); ok == 0)
             throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
+        if (int ok = EVP_CIPHER_CTX_ctrl(ctx,
+                                            EVP_CTRL_GCM_SET_TAG,
+                                            tag_size,
+                                            reinterpret_cast<uint8_t *>(const_cast<char *>(ciphertext.data())) + ciphertext.size() - tag_size); ok == 0)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+
         if (int ok = EVP_DecryptUpdate(ctx,
                                         reinterpret_cast<uint8_t *>(plaintext),
                                         reinterpret_cast<int32_t *>(&out_len),
@@ -217,12 +236,6 @@ size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod m
             throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
         plaintext_len = out_len;
-
-        if (int ok = EVP_CIPHER_CTX_ctrl(ctx,
-                                            EVP_CTRL_GCM_SET_TAG,
-                                            tag_size,
-                                            reinterpret_cast<uint8_t *>(const_cast<char *>(ciphertext.data())) + ciphertext.size() - tag_size); ok == 0)
-            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
         if (int ok = EVP_DecryptFinal_ex(ctx,
                                             reinterpret_cast<uint8_t *>(plaintext) + out_len,
