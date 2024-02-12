@@ -138,6 +138,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     if (is_short_circuit)
         default_mask= &std::get<RefFilter>(defaultsOrFilter).get();
 
+    bool mask_filled = false;
     for (size_t attribute_index = 0; attribute_index < result_columns.size(); ++attribute_index)
     {
         if (!request.shouldFillResultColumnWithIndex(attribute_index))
@@ -149,7 +150,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
 
         result_column->reserve(requested_keys_size);
 
-        if (default_mask)
+        if (default_mask && !mask_filled)
             default_mask->resize(requested_keys_size);
 
         for (size_t requested_key_index = 0; requested_key_index < requested_keys_size; ++requested_key_index)
@@ -162,7 +163,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
                 fetched_column_from_storage->get(it->getMapped(), value_to_insert);
                 ++keys_found;
 
-                if (default_mask)
+                if (default_mask && !mask_filled)
                     (*default_mask)[requested_key_index] = 0;
 
                 result_column->insert(value_to_insert);
@@ -171,7 +172,8 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
             {
                 if (default_mask)
                 {
-                    (*default_mask)[requested_key_index] = 1;
+                    if (!mask_filled)
+                        (*default_mask)[requested_key_index] = 1;
                 }
                 else
                 {
@@ -181,6 +183,8 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
                 }
             }
         }
+
+        mask_filled = true;
     }
 
     query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
