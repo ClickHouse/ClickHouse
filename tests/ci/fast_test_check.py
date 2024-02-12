@@ -34,7 +34,9 @@ def get_fasttest_cmd(
     pr_number: int,
     commit_sha: str,
     image: DockerImage,
+    analyzer: Bool,
 ) -> str:
+    analyzer_env = "-e USE_NEW_ANALYZER=1" if analyzer else ""
     return (
         f"docker run --cap-add=SYS_PTRACE --user={os.geteuid()}:{os.getegid()} "
         "--network=host "  # required to get access to IAM credentials
@@ -44,6 +46,7 @@ def get_fasttest_cmd(
         f"-e PULL_REQUEST_NUMBER={pr_number} -e COMMIT_SHA={commit_sha} "
         f"-e COPY_CLICKHOUSE_BINARY_TO_OUTPUT=1 "
         f"-e SCCACHE_BUCKET={S3_BUILDS_BUCKET} -e SCCACHE_S3_KEY_PREFIX=ccache/sccache "
+        f"{analyzer_env}"
         "-e stage=clone_submodules "
         f"--volume={workspace}:/fasttest-workspace --volume={repo_path}:/ClickHouse "
         f"--volume={output_path}:/test_output {image}"
@@ -102,6 +105,7 @@ def main():
     logging.basicConfig(level=logging.INFO)
     stopwatch = Stopwatch()
     args = parse_args()
+    check_name = args.check_name or os.getenv("CHECK_NAME")
 
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
@@ -125,6 +129,7 @@ def main():
         pr_info.number,
         pr_info.sha,
         docker_image,
+        "analyzer" in check_name,
     )
     logging.info("Going to run fasttest with cmd %s", run_cmd)
 
