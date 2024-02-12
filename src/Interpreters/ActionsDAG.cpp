@@ -1645,7 +1645,7 @@ void ActionsDAG::mergeNodes(ActionsDAG && second)
     }
 }
 
-ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes) const
+ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping) const
 {
     /// Split DAG into two parts.
     /// (first_nodes, first_outputs) is a part which will have split_list in result.
@@ -1779,13 +1779,13 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
                     }
 
                     /// Input from second DAG should also be in the first.
-                    if (copy.type == ActionType::INPUT)
-                    {
-                        auto & input_copy = first_nodes.emplace_back(*cur.node);
-                        assert(cur_data.to_first == nullptr);
-                        cur_data.to_first = &input_copy;
-                        new_inputs.push_back(cur.node);
-                    }
+                    // if (copy.type == ActionType::INPUT)
+                    // {
+                    //     auto & input_copy = first_nodes.emplace_back(*cur.node);
+                    //     assert(cur_data.to_first == nullptr);
+                    //     cur_data.to_first = &input_copy;
+                    //     new_inputs.push_back(cur.node);
+                    // }
                 }
                 else
                 {
@@ -1804,11 +1804,12 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
                         /// If this node is needed in result, add it as input.
                         Node input_node;
                         input_node.type = ActionType::INPUT;
-                        input_node.result_type = node.result_type;
-                        input_node.result_name = node.result_name;
+                        input_node.result_type = cur.node->result_type;
+                        input_node.result_name = cur.node->result_name;
                         cur_data.to_second = &second_nodes.emplace_back(std::move(input_node));
 
-                        new_inputs.push_back(cur.node);
+                        if (cur.node->type != ActionType::INPUT)
+                            new_inputs.push_back(cur.node);
                     }
                 }
             }
@@ -1824,14 +1825,29 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
     for (const auto * input_node : inputs)
     {
         const auto & cur = data[input_node];
-        first_inputs.push_back(cur.to_first);
+        if (cur.to_first)
+        {
+            first_inputs.push_back(cur.to_first);
+
+            if (cur.to_second)
+                first_outputs.push_back(cur.to_first);
+        }
     }
 
     for (const auto * input : new_inputs)
     {
         const auto & cur = data[input];
-        second_inputs.push_back(cur.to_second);
-        first_outputs.push_back(cur.to_first);
+        if (cur.to_second)
+            second_inputs.push_back(cur.to_second);
+        if (cur.to_first)
+            first_outputs.push_back(cur.to_first);
+    }
+
+    for (const auto * input_node : inputs)
+    {
+        const auto & cur = data[input_node];
+        if (cur.to_second)
+            second_inputs.push_back(cur.to_second);
     }
 
     auto first_actions = std::make_shared<ActionsDAG>();
@@ -1844,7 +1860,14 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
     second_actions->outputs.swap(second_outputs);
     second_actions->inputs.swap(second_inputs);
 
-    return {std::move(first_actions), std::move(second_actions)};
+    std::unordered_map<const Node *, const Node *> split_nodes_mapping;
+    if (create_split_nodes_mapping)
+    {
+        for (const auto * node : split_nodes)
+            split_nodes_mapping[node] = data[node].to_first;
+    }
+
+    return {std::move(first_actions), std::move(second_actions), std::move(split_nodes_mapping)};
 }
 
 ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const
