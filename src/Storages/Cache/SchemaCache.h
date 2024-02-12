@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/ColumnsDescription.h>
+#include <base/TimeSpec.h>
 #include <unordered_map>
 #include <list>
 #include <mutex>
@@ -51,10 +52,10 @@ public:
     {
         std::optional<ColumnsDescription> columns;
         std::optional<size_t> num_rows;
-        time_t registration_time;
+        TimeSpec registration_time;
     };
 
-    using LastModificationTimeGetter = std::function<std::optional<time_t>()>;
+    using LastModificationTimeGetter = std::function<std::optional<TimeSpec>()>;
 
     /// Add new key or update existing with a schema
     void addColumns(const Key & key, const ColumnsDescription & columns);

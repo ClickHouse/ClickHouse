@@ -264,7 +264,7 @@ private:
 
     void addNumRowsToCache(const String & path, size_t num_rows) const;
 
-    std::optional<size_t> tryGetNumRowsFromCache(const String & path, time_t last_mod_time) const;
+    std::optional<size_t> tryGetNumRowsFromCache(const String & path, TimeSpec ts) const;
 
     std::shared_ptr<StorageFile> storage;
     FilesIteratorPtr files_iterator;

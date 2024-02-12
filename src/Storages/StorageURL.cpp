@@ -507,14 +507,14 @@ void StorageURLSource::addNumRowsToCache(const String & uri, size_t num_rows)
 std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time)
 {
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
-    auto get_last_mod_time = [&]() -> std::optional<time_t>
+    auto get_last_mod_time = [&]() -> std::optional<TimeSpec>
     {
         /// Some URLs could not have Last-Modified header, in this case we cannot be sure that
         /// data wasn't changed after adding it's schema to cache. Use schema from cache only if
         /// special setting for this case is enabled.
         if (!last_mod_time && !getContext()->getSettingsRef().schema_inference_cache_require_modification_time_for_url)
-            return 0;
-        return last_mod_time;
+            return TimeSpec{};
+        return TimeSpec(*last_mod_time);
     };
 
     return StorageURL::getSchemaCache(getContext()).tryGetNumRows(cache_key, get_last_mod_time);
@@ -808,15 +808,15 @@ namespace
             auto & schema_cache = StorageURL::getSchemaCache(getContext());
             for (const auto & url : urls)
             {
-                auto get_last_mod_time = [&]() -> std::optional<time_t>
+                auto get_last_mod_time = [&]() -> std::optional<TimeSpec>
                 {
                     auto last_mod_time = StorageURL::tryGetLastModificationTime(url, headers, credentials, getContext());
                     /// Some URLs could not have Last-Modified header, in this case we cannot be sure that
                     /// data wasn't changed after adding it's schema to cache. Use schema from cache only if
                     /// special setting for this case is enabled.
                     if (!last_mod_time && !getContext()->getSettingsRef().schema_inference_cache_require_modification_time_for_url)
-                        return 0;
-                    return last_mod_time;
+                        return TimeSpec{};
+                    return TimeSpec(*last_mod_time);
                 };
 
                 auto cache_key = getKeyForSchemaCache(url, format, format_settings, getContext());

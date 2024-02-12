@@ -53,9 +53,12 @@ void SchemaCache::addUnlocked(const Key & key, const std::optional<ColumnsDescri
         return;
     }
 
-    time_t now = std::time(nullptr);
+    struct timespec now_ts;
+    /// CLOCK_REALTIME is used here since it is compared to file mtime
+    clock_gettime(CLOCK_REALTIME, &now_ts);
+
     auto it = queue.insert(queue.end(), key);
-    data[key] = {SchemaInfo{columns, num_rows, now}, it};
+    data[key] = {SchemaInfo{columns, num_rows, TimeSpec(now_ts)}, it};
     checkOverflow();
 }
 

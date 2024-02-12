@@ -65,6 +65,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
 #include <filesystem>
+#include <optional>
 
 #include <boost/algorithm/string.hpp>
 
@@ -827,9 +828,9 @@ std::optional<size_t> StorageS3Source::tryGetNumRowsFromCache(const KeyWithInfo 
 {
     String source = fs::path(url_host_and_port) / bucket / key_with_info.key;
     auto cache_key = getKeyForSchemaCache(source, format, format_settings, getContext());
-    auto get_last_mod_time = [&]() -> std::optional<time_t>
+    auto get_last_mod_time = [&]() -> std::optional<TimeSpec>
     {
-        return key_with_info.info->last_modification_time;
+        return TimeSpec(key_with_info.info->last_modification_time);
     };
 
     return StorageS3::getSchemaCache(getContext()).tryGetNumRows(cache_key, get_last_mod_time);
@@ -1745,7 +1746,7 @@ namespace
             auto & schema_cache = StorageS3::getSchemaCache(getContext());
             for (auto it = begin; it < end; ++it)
             {
-                auto get_last_mod_time = [&]
+                auto get_last_mod_time = [&] -> std::optional<TimeSpec>
                 {
                     time_t last_modification_time = 0;
                     if ((*it)->info)
@@ -1768,7 +1769,7 @@ namespace
                              /*throw_on_error= */ false).last_modification_time;
                     }
 
-                    return last_modification_time ? std::make_optional(last_modification_time) : std::nullopt;
+                    return last_modification_time ? std::make_optional(TimeSpec(last_modification_time)) : std::nullopt;
                 };
 
                 String path = fs::path(configuration.url.bucket) / (*it)->key;

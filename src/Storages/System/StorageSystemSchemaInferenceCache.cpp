@@ -6,6 +6,7 @@
 #include <Storages/StorageAzureBlob.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
@@ -14,6 +15,8 @@
 
 namespace DB
 {
+
+static constexpr auto TIME_SCALE = 9;
 
 static String getSchemaString(const ColumnsDescription & columns)
 {
@@ -41,7 +44,7 @@ ColumnsDescription StorageSystemSchemaInferenceCache::getColumnsDescription()
         {"additional_format_info", std::make_shared<DataTypeString>(),
             "Additional information required to identify the schema. For example, format specific settings."
         },
-        {"registration_time", std::make_shared<DataTypeDateTime>(), "Timestamp when schema was added in cache."},
+        {"registration_time", std::make_shared<DataTypeDateTime64>(TIME_SCALE), "Timestamp when schema was added in cache."},
         {"schema", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Cached schema."},
         {"number_of_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Number of rows in the file in given format. It's used for caching trivial count() from data files and for caching number of rows from the metadata during schema inference."},
         {"schema_inference_mode", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Scheme inference mode."},
@@ -55,11 +58,15 @@ static void fillDataImpl(MutableColumns & res_columns, SchemaCache & schema_cach
 
     for (const auto & [key, schema_info] : s3_schema_cache_data)
     {
+        const auto & registration_time = schema_info.registration_time.getTimeSpec();
+        DecimalUtils::DecimalComponents<DateTime64> registration_time_components{registration_time.tv_sec, registration_time.tv_nsec};
+        DecimalField registration_time_value(DecimalUtils::decimalFromComponents<DateTime64>(registration_time_components, TIME_SCALE), TIME_SCALE);
+
         res_columns[0]->insert(storage_name);
         res_columns[1]->insert(key.source);
         res_columns[2]->insert(key.format);
         res_columns[3]->insert(key.additional_format_info);
-        res_columns[4]->insert(schema_info.registration_time);
+        res_columns[4]->insert(registration_time_value);
         if (schema_info.columns)
             res_columns[5]->insert(getSchemaString(*schema_info.columns));
         else

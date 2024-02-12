@@ -349,16 +349,16 @@ namespace
             auto & schema_cache = StorageHDFS::getSchemaCache(getContext());
             for (const auto & path_with_info : paths_with_info_)
             {
-                auto get_last_mod_time = [&]() -> std::optional<time_t>
+                auto get_last_mod_time = [&]() -> std::optional<TimeSpec>
                 {
                     if (path_with_info.info)
-                        return path_with_info.info->last_mod_time;
+                        return TimeSpec(path_with_info.info->last_mod_time);
 
                     auto builder = createHDFSBuilder(uri_without_path + "/", getContext()->getGlobalContext()->getConfigRef());
                     auto fs = createHDFSFS(builder.get());
                     HDFSFileInfoPtr hdfs_info(hdfsGetPathInfo(fs.get(), path_with_info.path.c_str()));
                     if (hdfs_info)
-                        return hdfs_info->mLastMod;
+                        return TimeSpec(hdfs_info->mLastMod);
 
                     return std::nullopt;
                 };
@@ -696,10 +696,10 @@ void HDFSSource::addNumRowsToCache(const String & path, size_t num_rows)
 std::optional<size_t> HDFSSource::tryGetNumRowsFromCache(const StorageHDFS::PathWithInfo & path_with_info)
 {
     auto cache_key = getKeyForSchemaCache(path_with_info.path, storage->format_name, std::nullopt, getContext());
-    auto get_last_mod_time = [&]() -> std::optional<time_t>
+    auto get_last_mod_time = [&]() -> std::optional<TimeSpec>
     {
         if (path_with_info.info)
-            return path_with_info.info->last_mod_time;
+            return TimeSpec(path_with_info.info->last_mod_time);
         return std::nullopt;
     };
 

@@ -52,6 +52,7 @@
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <base/TimeSpec.h>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -477,12 +478,12 @@ namespace
             struct stat file_stat{};
             for (const auto & path : paths_)
             {
-                auto get_last_mod_time = [&]() -> std::optional<time_t>
+                auto get_last_mod_time = [&]() -> std::optional<TimeSpec>
                 {
                     if (0 != stat(path.c_str(), &file_stat))
                         return std::nullopt;
 
-                    return file_stat.st_mtime;
+                    return TimeSpec(file_stat.st_mtim);
                 };
 
                 auto cache_key = getKeyForSchemaCache(path, format, format_settings, getContext());
@@ -688,12 +689,12 @@ namespace
 
             struct stat file_stat;
             auto & schema_cache = StorageFile::getSchemaCache(context);
-            auto get_last_mod_time = [&]() -> std::optional<time_t>
+            auto get_last_mod_time = [&]() -> std::optional<TimeSpec>
             {
                 if (0 != stat(archive_path.c_str(), &file_stat))
                     return std::nullopt;
 
-                return file_stat.st_mtime;
+                return TimeSpec(file_stat.st_mtim);
             };
 
             auto cache_key = getKeyForSchemaCache(full_path, format, format_settings, context);
@@ -1064,7 +1065,7 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
     if (!context->getSettingsRef().use_cache_for_count_from_files)
         return false;
 
-    auto num_rows_from_cache = tryGetNumRowsFromCache(current_path, file_stat.st_mtime);
+    auto num_rows_from_cache = tryGetNumRowsFromCache(current_path, TimeSpec(file_stat.st_mtim));
     if (!num_rows_from_cache)
         return false;
 
@@ -1300,13 +1301,13 @@ void StorageFileSource::addNumRowsToCache(const String & path, size_t num_rows) 
     StorageFile::getSchemaCache(context).addNumRows(key, num_rows);
 }
 
-std::optional<size_t> StorageFileSource::tryGetNumRowsFromCache(const String & path, time_t last_mod_time) const
+std::optional<size_t> StorageFileSource::tryGetNumRowsFromCache(const String & path, TimeSpec ts) const
 {
     auto & schema_cache = StorageFile::getSchemaCache(context);
     auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, context);
-    auto get_last_mod_time = [&]() -> std::optional<time_t>
+    auto get_last_mod_time = [&]() -> std::optional<TimeSpec>
     {
-        return last_mod_time;
+        return ts;
     };
 
     return schema_cache.tryGetNumRows(key, get_last_mod_time);

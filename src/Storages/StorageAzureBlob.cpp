@@ -1132,11 +1132,11 @@ std::optional<size_t> StorageAzureBlobSource::tryGetNumRowsFromCache(const DB::R
 {
     String source = fs::path(connection_url) / container / path_with_metadata.relative_path;
     auto cache_key = getKeyForSchemaCache(source, format, format_settings, getContext());
-    auto get_last_mod_time = [&]() -> std::optional<time_t>
+    auto get_last_mod_time = [&]() -> std::optional<TimeSpec>
     {
         auto last_mod = path_with_metadata.metadata.last_modified;
         if (last_mod)
-            return last_mod->epochTime();
+            return TimeSpec(last_mod->epochTime());
         return std::nullopt;
     };
 
@@ -1394,10 +1394,10 @@ namespace
             auto & schema_cache = StorageAzureBlob::getSchemaCache(getContext());
             for (auto it = begin; it < end; ++it)
             {
-                auto get_last_mod_time = [&] -> std::optional<time_t>
+                auto get_last_mod_time = [&] -> std::optional<TimeSpec>
                 {
                     if (it->metadata.last_modified)
-                        return it->metadata.last_modified->epochTime();
+                        return TimeSpec(it->metadata.last_modified->epochTime());
                     return std::nullopt;
                 };
 
