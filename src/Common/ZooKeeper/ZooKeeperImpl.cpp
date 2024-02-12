@@ -359,6 +359,9 @@ ZooKeeper::ZooKeeper(
         keeper_feature_flags.logFlags(log);
 
         ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
+
+        /// Avoid stale reads after connecting
+        sync("/", [](const SyncResponse &){});
     }
     catch (...)
     {
