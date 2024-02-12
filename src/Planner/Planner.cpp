@@ -71,7 +71,6 @@
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerSorting.h>
 #include <Planner/PlannerWindowFunctions.h>
-#include <Planner/ActionsChain.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/PlannerJoinTree.h>
@@ -97,14 +96,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
-
-/** ClickHouse query planner.
-  *
-  * TODO: Support projections.
-  * TODO: Support trivial count using partition predicates.
-  * TODO: Support trivial count for table functions.
-  * TODO: Support indexes for IN function.
-  */
 
 namespace
 {
