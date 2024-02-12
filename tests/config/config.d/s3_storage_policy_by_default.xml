@@ -7,18 +7,18 @@
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
             </s3>
-            <s3_encrypted>
-                <type>encrypted</type>
-                <disk>s3</disk>
-                <key>1234567812345678</key>
-                <path>encrypted_s3/</path>
-            </s3_encrypted>
             <cached_s3>
                 <type>cache</type>
                 <max_size>1Gi</max_size>
                 <path>cached_s3/</path>
-                <disk>s3_encrypted</disk>
+                <disk>s3</disk>
             </cached_s3>
+            <cached_s3_encrypted>
+                <type>encrypted</type>
+                <disk>cached_s3</disk>
+                <key>1234567812345678</key>
+                <path>cached_s3_encrypted/</path>
+            </cached_s3_encrypted>
         </disks>
         <policies>
             <s3>
