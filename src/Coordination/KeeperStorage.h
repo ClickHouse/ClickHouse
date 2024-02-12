@@ -40,22 +40,6 @@ public:
 
         int64_t mtime{0};
 
-        struct
-        {
-            bool is_ephemeral : 1;
-            int64_t ctime : 63;
-        } is_ephemeral_and_ctime{false, 0};
-
-        union
-        {
-            int64_t ephemeral_owner;
-            struct
-            {
-                int32_t seq_num;
-                int32_t num_children;
-            } children_info;
-        } ephemeral_or_children_data{0};
-
         std::unique_ptr<char[]> data{nullptr};
         uint32_t data_size{0};
 
@@ -174,12 +158,34 @@ public:
         // (e.g. we don't need to copy list of children)
         void shallowCopy(const Node & other);
     private:
+        /// as ctime can't be negative because it stores the timestamp when the
+        /// node was created, we can use the MSB for a bool
+        struct
+        {
+            bool is_ephemeral : 1;
+            int64_t ctime : 63;
+        } is_ephemeral_and_ctime{false, 0};
+
+        /// ephemeral notes cannot have children so a node can set either
+        /// ephemeral_owner OR seq_num + num_children 
+        union
+        {
+            int64_t ephemeral_owner;
+            struct
+            {
+                int32_t seq_num;
+                int32_t num_children;
+            } children_info;
+        } ephemeral_or_children_data{0};
+
         ChildrenSet children{};
     };
 
 #if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
     static_assert(
-        sizeof(ListNode<Node>) <= 144, "std::list node containing ListNode<Node> is > 160 bytes which will increase memory consumption");
+        sizeof(ListNode<Node>) <= 144,
+        "std::list node containing ListNode<Node> is > 160 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
+        "memory consumption");
 #endif
 
     enum DigestVersion : uint8_t
