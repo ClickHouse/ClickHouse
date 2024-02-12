@@ -23,6 +23,8 @@ struct StorageObjectStorageSettings
     bool create_new_file_on_insert;
     bool schema_inference_use_cache;
     SchemaInferenceMode schema_inference_mode;
+    bool skip_empty_files;
+    size_t list_object_keys_size;
 };
 
 struct S3StorageSettings
@@ -34,6 +36,8 @@ struct S3StorageSettings
             .create_new_file_on_insert = settings.s3_create_new_file_on_insert,
             .schema_inference_use_cache = settings.schema_inference_use_cache_for_s3,
             .schema_inference_mode = settings.schema_inference_mode,
+            .skip_empty_files = settings.s3_skip_empty_files,
+            .list_object_keys_size = settings.s3_list_object_keys_size,
         };
     }
 
@@ -53,6 +57,8 @@ struct AzureStorageSettings
             .create_new_file_on_insert = settings.azure_create_new_file_on_insert,
             .schema_inference_use_cache = settings.schema_inference_use_cache_for_azure,
             .schema_inference_mode = settings.schema_inference_mode,
+            .skip_empty_files = settings.s3_skip_empty_files, /// TODO: add setting for azure
+            .list_object_keys_size = settings.azure_list_object_keys_size,
         };
     }
 
@@ -72,6 +78,8 @@ struct HDFSStorageSettings
             .create_new_file_on_insert = settings.hdfs_create_new_file_on_insert,
             .schema_inference_use_cache = settings.schema_inference_use_cache_for_hdfs,
             .schema_inference_mode = settings.schema_inference_mode,
+            .skip_empty_files = settings.s3_skip_empty_files, /// TODO: add setting for hdfs
+            .list_object_keys_size = settings.s3_list_object_keys_size, /// TODO: add a setting for hdfs
         };
     }
 

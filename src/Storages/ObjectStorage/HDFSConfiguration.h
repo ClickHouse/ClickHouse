@@ -3,7 +3,7 @@
 
 #if USE_HDFS
 
-#include <Storages/ObjectStorage/Configuration.h>
+#include <Storages/ObjectStorage/StorageObejctStorageConfiguration.h>
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Interpreters/Context.h>
 #include <Storages/checkAndGetLiteralArgument.h>

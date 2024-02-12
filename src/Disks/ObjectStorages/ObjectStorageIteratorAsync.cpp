@@ -14,27 +14,32 @@ namespace ErrorCodes
 void IObjectStorageIteratorAsync::nextBatch()
 {
     std::lock_guard lock(mutex);
-    if (!is_finished)
+    if (is_finished)
     {
+        LOG_TEST(&Poco::Logger::get("kssenii"), "KSSENII: here 3");
+        current_batch.clear();
+        current_batch_iterator = current_batch.begin();
+    }
+    else
+    {
+        LOG_TEST(&Poco::Logger::get("kssenii"), "KSSENII: here 4");
         if (!is_initialized)
         {
             outcome_future = scheduleBatch();
             is_initialized = true;
         }
 
-         BatchAndHasNext next_batch = outcome_future.get();
-         current_batch = std::move(next_batch.batch);
-         accumulated_size.fetch_add(current_batch.size(), std::memory_order_relaxed);
-         current_batch_iterator = current_batch.begin();
-         if (next_batch.has_next)
-             outcome_future = scheduleBatch();
-         else
-             is_finished = true;
-    }
-    else
-    {
-        current_batch.clear();
+        chassert(outcome_future.valid());
+        auto [batch, has_next] = outcome_future.get();
+        current_batch = std::move(batch);
         current_batch_iterator = current_batch.begin();
+
+        accumulated_size.fetch_add(current_batch.size(), std::memory_order_relaxed);
+
+        if (has_next)
+            outcome_future = scheduleBatch();
+        else
+            is_finished = true;
     }
 }
 
@@ -42,24 +47,10 @@ void IObjectStorageIteratorAsync::next()
 {
     std::lock_guard lock(mutex);
 
-    if (current_batch_iterator != current_batch.end())
-    {
+    if (current_batch_iterator == current_batch.end())
+        nextBatch();
+    else
         ++current_batch_iterator;
-    }
-    else if (!is_finished)
-    {
-        if (outcome_future.valid())
-        {
-            BatchAndHasNext next_batch = outcome_future.get();
-            current_batch = std::move(next_batch.batch);
-            accumulated_size.fetch_add(current_batch.size(), std::memory_order_relaxed);
-            current_batch_iterator = current_batch.begin();
-            if (next_batch.has_next)
-                outcome_future = scheduleBatch();
-            else
-                is_finished = true;
-        }
-    }
 }
 
 std::future<IObjectStorageIteratorAsync::BatchAndHasNext> IObjectStorageIteratorAsync::scheduleBatch()
@@ -107,14 +98,16 @@ std::optional<RelativePathsWithMetadata> IObjectStorageIteratorAsync::getCurrent
     if (!is_initialized)
         nextBatch();
 
-    if (current_batch_iterator != current_batch.end())
+    if (current_batch_iterator == current_batch.end())
     {
-        auto temp_current_batch = current_batch;
-        nextBatch();
-        return temp_current_batch;
+        LOG_TEST(&Poco::Logger::get("kssenii"), "KSSENII: here 2");
+        return std::nullopt;
     }
 
-    return std::nullopt;
+    auto temp_current_batch = std::move(current_batch);
+    LOG_TEST(&Poco::Logger::get("kssenii"), "KSSENII: here 1: {}", temp_current_batch.size());
+    nextBatch();
+    return temp_current_batch;
 }
 
 size_t IObjectStorageIteratorAsync::getAccumulatedSize() const

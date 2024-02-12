@@ -7,7 +7,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Access/Common/AccessFlags.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/Configuration.h>
+#include <Storages/ObjectStorage/StorageObejctStorageConfiguration.h>
 #include <Storages/ObjectStorage/S3Configuration.h>
 #include <Storages/ObjectStorage/HDFSConfiguration.h>
 #include <Storages/ObjectStorage/AzureConfiguration.h>
@@ -27,20 +27,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static void initializeConfiguration(
-    StorageObjectStorageConfiguration & configuration,
-    ASTs & engine_args,
-    ContextPtr local_context,
-    bool with_table_structure)
-{
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
-        configuration.fromNamedCollection(*named_collection);
-    else
-        configuration.fromAST(engine_args, local_context, with_table_structure);
-}
-
 template <typename Definition, typename StorageSettings, typename Configuration>
-ObjectStoragePtr TableFunctionObjectStorage<Definition, StorageSettings, Configuration>::getObjectStorage(const ContextPtr & context, bool create_readonly) const
+ObjectStoragePtr TableFunctionObjectStorage<
+    Definition, StorageSettings, Configuration>::getObjectStorage(const ContextPtr & context, bool create_readonly) const
 {
     if (!object_storage)
         object_storage = configuration->createOrUpdateObjectStorage(context, create_readonly);
@@ -48,7 +37,8 @@ ObjectStoragePtr TableFunctionObjectStorage<Definition, StorageSettings, Configu
 }
 
 template <typename Definition, typename StorageSettings, typename Configuration>
-std::vector<size_t> TableFunctionObjectStorage<Definition, StorageSettings, Configuration>::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
+std::vector<size_t> TableFunctionObjectStorage<
+    Definition, StorageSettings, Configuration>::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
     auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
     auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
@@ -65,16 +55,18 @@ std::vector<size_t> TableFunctionObjectStorage<Definition, StorageSettings, Conf
 }
 
 template <typename Definition, typename StorageSettings, typename Configuration>
-void TableFunctionObjectStorage<Definition, StorageSettings, Configuration>::addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr & context)
+void TableFunctionObjectStorage<
+    Definition, StorageSettings, Configuration>::addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr & context)
 {
     Configuration::addStructureToArgs(args, structure, context);
 }
 
 template <typename Definition, typename StorageSettings, typename Configuration>
-void TableFunctionObjectStorage<Definition, StorageSettings, Configuration>::parseArgumentsImpl(ASTs & engine_args, const ContextPtr & local_context)
+void TableFunctionObjectStorage<
+    Definition, StorageSettings, Configuration>::parseArgumentsImpl(ASTs & engine_args, const ContextPtr & local_context)
 {
     configuration = std::make_shared<Configuration>();
-    initializeConfiguration(*configuration, engine_args, local_context, true);
+    StorageObjectStorageConfiguration::initialize(*configuration, engine_args, local_context, true);
 }
 
 template <typename Definition, typename StorageSettings, typename Configuration>
@@ -91,7 +83,8 @@ void TableFunctionObjectStorage<Definition, StorageSettings, Configuration>::par
 }
 
 template <typename Definition, typename StorageSettings, typename Configuration>
-ColumnsDescription TableFunctionObjectStorage<Definition, StorageSettings, Configuration>::getActualTableStructure(ContextPtr context, bool is_insert_query) const
+ColumnsDescription TableFunctionObjectStorage<
+    Definition, StorageSettings, Configuration>::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
     if (configuration->structure == "auto")
     {
@@ -104,13 +97,15 @@ ColumnsDescription TableFunctionObjectStorage<Definition, StorageSettings, Confi
 }
 
 template <typename Definition, typename StorageSettings, typename Configuration>
-bool TableFunctionObjectStorage<Definition, StorageSettings, Configuration>::supportsReadingSubsetOfColumns(const ContextPtr & context)
+bool TableFunctionObjectStorage<
+    Definition, StorageSettings, Configuration>::supportsReadingSubsetOfColumns(const ContextPtr & context)
 {
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context);
 }
 
 template <typename Definition, typename StorageSettings, typename Configuration>
-std::unordered_set<String> TableFunctionObjectStorage<Definition, StorageSettings, Configuration>::getVirtualsToCheckBeforeUsingStructureHint() const
+std::unordered_set<String> TableFunctionObjectStorage<
+    Definition, StorageSettings, Configuration>::getVirtualsToCheckBeforeUsingStructureHint() const
 {
     auto virtual_column_names = StorageObjectStorage<StorageSettings>::getVirtualColumnNames();
     return {virtual_column_names.begin(), virtual_column_names.end()};
@@ -166,15 +161,33 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
 
     factory.registerFunction<TableFunctionObjectStorage<GCSDefinition, S3StorageSettings, StorageS3Configuration>>(
     {
+        .documentation =
+        {
+            .description=R"(The table function can be used to read the data stored on GCS.)",
+            .examples{{"gcs", "SELECT * FROM gcs(url, access_key_id, secret_access_key)", ""}
+        },
+        .categories{"DataLake"}},
         .allow_readonly = false
     });
 
     factory.registerFunction<TableFunctionObjectStorage<COSNDefinition, S3StorageSettings, StorageS3Configuration>>(
     {
+        .documentation =
+        {
+            .description=R"(The table function can be used to read the data stored on COSN.)",
+            .examples{{"cosn", "SELECT * FROM cosn(url, access_key_id, secret_access_key)", ""}
+        },
+        .categories{"DataLake"}},
         .allow_readonly = false
     });
     factory.registerFunction<TableFunctionObjectStorage<OSSDefinition, S3StorageSettings, StorageS3Configuration>>(
     {
+        .documentation =
+        {
+            .description=R"(The table function can be used to read the data stored on OSS.)",
+            .examples{{"oss", "SELECT * FROM oss(url, access_key_id, secret_access_key)", ""}
+        },
+        .categories{"DataLake"}},
         .allow_readonly = false
     });
 #endif

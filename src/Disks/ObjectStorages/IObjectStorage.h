@@ -54,11 +54,11 @@ struct ObjectMetadata
 struct RelativePathWithMetadata
 {
     String relative_path;
-    ObjectMetadata metadata;
+    std::optional<ObjectMetadata> metadata;
 
     RelativePathWithMetadata() = default;
 
-    RelativePathWithMetadata(String relative_path_, ObjectMetadata metadata_)
+    explicit RelativePathWithMetadata(String relative_path_, std::optional<ObjectMetadata> metadata_ = std::nullopt)
         : relative_path(std::move(relative_path_))
         , metadata(std::move(metadata_))
     {}
@@ -111,9 +111,9 @@ public:
     /// /, /a, /a/b, /a/b/c, /a/b/c/d while exists will return true only for /a/b/c/d
     virtual bool existsOrHasAnyChild(const std::string & path) const;
 
-    virtual void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const;
+    virtual void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const;
 
-    virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const;
+    virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const;
 
     /// Get object metadata if supported. It should be possible to receive
     /// at least size of object

@@ -180,7 +180,7 @@ std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
     return object_storage->cloneObjectStorage(new_namespace, config, config_prefix, context);
 }
 
-void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const
+void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     object_storage->listObjects(path, children, max_keys);
 }

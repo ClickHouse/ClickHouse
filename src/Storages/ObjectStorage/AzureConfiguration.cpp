@@ -89,6 +89,17 @@ StorageObjectStorageConfigurationPtr StorageAzureBlobConfiguration::clone()
     return configuration;
 }
 
+StorageAzureBlobConfiguration::StorageAzureBlobConfiguration(const StorageAzureBlobConfiguration & other)
+{
+    connection_url = other.connection_url;
+    is_connection_string = other.is_connection_string;
+    account_name = other.account_name;
+    account_key = other.account_key;
+    container = other.container;
+    blob_path = other.blob_path;
+    blobs_paths = other.blobs_paths;
+}
+
 AzureObjectStorage::SettingsPtr StorageAzureBlobConfiguration::createSettings(ContextPtr context)
 {
     const auto & context_settings = context->getSettingsRef();

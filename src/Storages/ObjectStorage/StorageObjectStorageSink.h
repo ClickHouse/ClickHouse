@@ -1,6 +1,6 @@
 #pragma once
 #include <Storages/PartitionedSink.h>
-#include <Storages/ObjectStorage/Configuration.h>
+#include <Storages/ObjectStorage/StorageObejctStorageConfiguration.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>

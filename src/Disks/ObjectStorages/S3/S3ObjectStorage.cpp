@@ -138,9 +138,10 @@ private:
             return outcome.GetResult().GetIsTruncated();
         }
 
-        throw S3Exception(outcome.GetError().GetErrorType(), "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
-                quoteString(request.GetBucket()), quoteString(request.GetPrefix()),
-                backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
+        throw S3Exception(outcome.GetError().GetErrorType(),
+                          "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
+                          quoteString(request.GetBucket()), quoteString(request.GetPrefix()),
+                          backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
     }
 
     std::shared_ptr<const S3::Client> client;
@@ -263,13 +264,13 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
 }
 
 
-ObjectStorageIteratorPtr S3ObjectStorage::iterate(const std::string & path_prefix) const
+ObjectStorageIteratorPtr S3ObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
 {
     auto settings_ptr = s3_settings.get();
-    return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), settings_ptr->list_object_keys_size);
+    return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys);
 }
 
-void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const
+void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     auto settings_ptr = s3_settings.get();
 
@@ -277,7 +278,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
     request.SetBucket(uri.bucket);
     request.SetPrefix(path);
     if (max_keys)
-        request.SetMaxKeys(max_keys);
+        request.SetMaxKeys(static_cast<int>(max_keys));
     else
         request.SetMaxKeys(settings_ptr->list_object_keys_size);
 
@@ -305,10 +306,10 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
 
         if (max_keys)
         {
-            int keys_left = max_keys - static_cast<int>(children.size());
+            size_t keys_left = max_keys - children.size();
             if (keys_left <= 0)
                 break;
-            request.SetMaxKeys(keys_left);
+            request.SetMaxKeys(static_cast<int>(keys_left));
         }
 
         request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());

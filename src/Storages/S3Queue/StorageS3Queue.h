@@ -27,7 +27,6 @@ class StorageS3Queue : public IStorage, WithContext
 {
 public:
     using Storage = StorageObjectStorage<S3StorageSettings>;
-    using Source = StorageObjectStorageSource<S3StorageSettings>;
     using ConfigurationPtr = Storage::ConfigurationPtr;
 
     StorageS3Queue(

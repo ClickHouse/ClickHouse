@@ -7,7 +7,7 @@
 #include <Storages/S3Queue/S3QueueFilesMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/ObjectStorage/Settings.h>
+#include <Storages/ObjectStorage/StorageObjectStorageQuerySettings.h>
 #include <Interpreters/S3QueueLog.h>
 
 
@@ -22,16 +22,19 @@ class StorageS3QueueSource : public ISource, WithContext
 {
 public:
     using Storage = StorageObjectStorage<S3StorageSettings>;
-    using Source = StorageObjectStorageSource<S3StorageSettings>;
 
     using ConfigurationPtr = Storage::ConfigurationPtr;
-    using GlobIterator = Source::GlobIterator;
+    using GlobIterator = StorageObjectStorageSource::GlobIterator;
     using ZooKeeperGetter = std::function<zkutil::ZooKeeperPtr()>;
     using RemoveFileFunc = std::function<void(std::string)>;
     using FileStatusPtr = S3QueueFilesMetadata::FileStatusPtr;
+    using ReaderHolder = StorageObjectStorageSource::ReaderHolder;
     using Metadata = S3QueueFilesMetadata;
+    using ObjectInfo = RelativePathWithMetadata;
+    using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
+    using ObjectInfos = std::vector<ObjectInfoPtr>;
 
-    struct S3QueueObjectInfo : public Source::ObjectInfo
+    struct S3QueueObjectInfo : public ObjectInfo
     {
         S3QueueObjectInfo(
             const std::string & key_,
@@ -41,7 +44,7 @@ public:
         Metadata::ProcessingNodeHolderPtr processing_holder;
     };
 
-    class FileIterator : public Source::IIterator
+    class FileIterator : public StorageObjectStorageSource::IIterator
     {
     public:
         FileIterator(
@@ -53,7 +56,7 @@ public:
         /// Note:
         /// List results in s3 are always returned in UTF-8 binary order.
         /// (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
-        Source::ObjectInfoPtr next(size_t processor) override;
+        ObjectInfoPtr next(size_t processor) override;
 
         size_t estimatedKeysCount() override;
 
@@ -66,14 +69,14 @@ public:
 
         const bool sharded_processing;
         const size_t current_shard;
-        std::unordered_map<size_t, std::deque<Source::ObjectInfoPtr>> sharded_keys;
+        std::unordered_map<size_t, std::deque<ObjectInfoPtr>> sharded_keys;
         std::mutex sharded_keys_mutex;
     };
 
     StorageS3QueueSource(
         String name_,
         const Block & header_,
-        std::unique_ptr<Source> internal_source_,
+        std::unique_ptr<StorageObjectStorageSource> internal_source_,
         std::shared_ptr<S3QueueFilesMetadata> files_metadata_,
         size_t processing_id_,
         const S3QueueAction & action_,
@@ -97,7 +100,7 @@ private:
     const S3QueueAction action;
     const size_t processing_id;
     const std::shared_ptr<S3QueueFilesMetadata> files_metadata;
-    const std::shared_ptr<Source> internal_source;
+    const std::shared_ptr<StorageObjectStorageSource> internal_source;
     const NamesAndTypesList requested_virtual_columns;
     const std::atomic<bool> & shutdown_called;
     const std::atomic<bool> & table_is_being_dropped;
@@ -107,8 +110,8 @@ private:
     RemoveFileFunc remove_file_func;
     LoggerPtr log;
 
-    Source::ReaderHolder reader;
-    std::future<Source::ReaderHolder> reader_future;
+    ReaderHolder reader;
+    std::future<ReaderHolder> reader_future;
     std::atomic<bool> initialized{false};
     size_t processed_rows_from_file = 0;
 

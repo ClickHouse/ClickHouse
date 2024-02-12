@@ -5,7 +5,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Storages/ObjectStorage/Configuration.h>
+#include <Storages/ObjectStorage/StorageObejctStorageConfiguration.h>
 
 namespace DB
 {

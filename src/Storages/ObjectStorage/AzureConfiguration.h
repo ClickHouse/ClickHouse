@@ -1,6 +1,6 @@
 #pragma once
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
-#include <Storages/ObjectStorage/Configuration.h>
+#include <Storages/ObjectStorage/StorageObejctStorageConfiguration.h>
 
 namespace DB
 {

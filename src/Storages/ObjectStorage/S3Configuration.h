@@ -1,7 +1,7 @@
 #pragma once
 #include <IO/S3/getObjectInfo.h>
 #include <Storages/StorageS3Settings.h>
-#include <Storages/ObjectStorage/Configuration.h>
+#include <Storages/ObjectStorage/StorageObejctStorageConfiguration.h>
 
 namespace DB
 {

@@ -10,7 +10,7 @@
 #    include <Interpreters/parseColumnsListForTableFunction.h>
 #    include <Storages/IStorage.h>
 #    include <TableFunctions/ITableFunction.h>
-#include <Storages/ObjectStorage/Configuration.h>
+#include <Storages/ObjectStorage/StorageObejctStorageConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/DataLakes/Iceberg/StorageIceberg.h>
 

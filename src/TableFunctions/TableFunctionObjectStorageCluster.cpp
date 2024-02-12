@@ -6,7 +6,6 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/Configuration.h>
 #include <Storages/ObjectStorage/S3Configuration.h>
 #include <Storages/ObjectStorage/HDFSConfiguration.h>
 #include <Storages/ObjectStorage/AzureConfiguration.h>
@@ -76,8 +75,8 @@ void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionS3Cluster>(
     {
         .documentation = {
-            .description=R"(The table function can be used to read the data stored on Azure Blob Storage in parallel for many nodes in a specified cluster.)",
-            .examples{{"azureBlobStorageCluster", "SELECT * FROM  azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])", ""}}},
+            .description=R"(The table function can be used to read the data stored on S3 in parallel for many nodes in a specified cluster.)",
+            .examples{{"s3Cluster", "SELECT * FROM  s3Cluster(cluster, url, format, structure)", ""}}},
             .allow_readonly = false
         }
     );
@@ -95,7 +94,14 @@ void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory)
 #endif
 
 #if USE_HDFS
-    factory.registerFunction<TableFunctionHDFSCluster>();
+    factory.registerFunction<TableFunctionHDFSCluster>(
+    {
+        .documentation = {
+            .description=R"(The table function can be used to read the data stored on HDFS in parallel for many nodes in a specified cluster.)",
+            .examples{{"HDFSCluster", "SELECT * FROM HDFSCluster(cluster_name, uri, format)", ""}}},
+            .allow_readonly = false
+        }
+    );
 #endif
 }
 

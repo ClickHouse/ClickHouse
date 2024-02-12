@@ -9,12 +9,12 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/ObjectStorage/Configuration.h>
-#include <Storages/ObjectStorage/Settings.h>
+#include <Storages/ObjectStorage/StorageObejctStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageQuerySettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/ReadBufferIterator.h>
-#include <Storages/ObjectStorage/ReadFromObjectStorage.h>
+#include <Storages/ObjectStorage/ReadFromStorageObjectStorage.h>
 
 
 namespace DB
@@ -154,34 +154,38 @@ void StorageObjectStorage<StorageSettings>::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    if (partition_by && configuration->withWildcard())
+    auto [query_configuration, query_object_storage] = updateConfigurationAndGetCopy(local_context);
+    if (partition_by && query_configuration->withWildcard())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Reading from a partitioned {} storage is not implemented yet",
                         getName());
     }
 
-    auto this_ptr = std::static_pointer_cast<StorageObjectStorage>(shared_from_this());
-    auto read_from_format_info = prepareReadingFromFormat(
+    const auto read_from_format_info = prepareReadingFromFormat(
         column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
-    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+    const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
 
-    auto [query_configuration, query_object_storage] = updateConfigurationAndGetCopy(local_context);
-    auto reading = std::make_unique<ReadFromStorageObejctStorage<StorageSettings>>(
+    auto read_step = std::make_unique<ReadFromStorageObejctStorage>(
         query_object_storage,
         query_configuration,
         getName(),
         virtual_columns,
         format_settings,
+        StorageSettings::create(local_context->getSettingsRef()),
         distributed_processing,
         std::move(read_from_format_info),
+        getSchemaCache(local_context),
         need_only_count,
         local_context,
         max_block_size,
-        num_streams);
+        num_streams,
+        StorageSettings::ObjectStorageThreads(),
+        StorageSettings::ObjectStorageThreadsActive(),
+        StorageSettings::ObjectStorageThreadsScheduled());
 
-    query_plan.addStep(std::move(reading));
+    query_plan.addStep(std::move(read_step));
 }
 
 template <typename StorageSettings>
@@ -191,35 +195,43 @@ SinkToStoragePtr StorageObjectStorage<StorageSettings>::write(
     ContextPtr local_context,
     bool /* async_insert */)
 {
-    auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query);
-    auto partition_by_ast = insert_query
-        ? (insert_query->partition_by ? insert_query->partition_by : partition_by)
-        : nullptr;
-    bool is_partitioned_implementation = partition_by_ast && configuration->withWildcard();
+    auto [query_configuration, query_object_storage] = updateConfigurationAndGetCopy(local_context);
+    const auto sample_block = metadata_snapshot->getSampleBlock();
 
-    auto sample_block = metadata_snapshot->getSampleBlock();
-    auto storage_settings = StorageSettings::create(local_context->getSettingsRef());
-
-    if (is_partitioned_implementation)
+    if (query_configuration->withWildcard())
     {
-        return std::make_shared<PartitionedStorageObjectStorageSink>(
-            object_storage, configuration, format_settings, sample_block, local_context, partition_by_ast);
+        ASTPtr partition_by_ast = nullptr;
+        if (auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query))
+        {
+            if (insert_query->partition_by)
+                partition_by_ast = insert_query->partition_by;
+            else
+                partition_by_ast = partition_by;
+        }
+
+        if (partition_by_ast)
+        {
+            return std::make_shared<PartitionedStorageObjectStorageSink>(
+                object_storage, query_configuration, format_settings, sample_block, local_context, partition_by_ast);
+        }
     }
 
-    if (configuration->isPathWithGlobs() || configuration->isNamespaceWithGlobs())
+    if (query_configuration->withGlobs())
     {
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                         "{} key '{}' contains globs, so the table is in readonly mode",
-                        getName(), configuration->getPath());
+                        getName(), query_configuration->getPath());
     }
 
+    const auto storage_settings = StorageSettings::create(local_context->getSettingsRef());
     if (!storage_settings.truncate_on_insert
-        && object_storage->exists(StoredObject(configuration->getPath())))
+        && object_storage->exists(StoredObject(query_configuration->getPath())))
     {
         if (storage_settings.create_new_file_on_insert)
         {
-            size_t index = configuration->getPaths().size();
-            const auto & first_key = configuration->getPaths()[0];
+            auto & paths = query_configuration->getPaths();
+            size_t index = paths.size();
+            const auto & first_key = paths[0];
             auto pos = first_key.find_first_of('.');
             String new_key;
 
@@ -233,7 +245,7 @@ SinkToStoragePtr StorageObjectStorage<StorageSettings>::write(
             }
             while (object_storage->exists(StoredObject(new_key)));
 
-            configuration->getPaths().push_back(new_key);
+            paths.push_back(new_key);
         }
         else
         {
@@ -242,12 +254,12 @@ SinkToStoragePtr StorageObjectStorage<StorageSettings>::write(
                 "Object in bucket {} with key {} already exists. "
                 "If you want to overwrite it, enable setting [engine_name]_truncate_on_insert, if you "
                 "want to create a new file on each insert, enable setting [engine_name]_create_new_file_on_insert",
-                configuration->getNamespace(), configuration->getPaths().back());
+                query_configuration->getNamespace(), query_configuration->getPaths().back());
         }
     }
 
     return std::make_shared<StorageObjectStorageSink>(
-        object_storage, configuration, format_settings, sample_block, local_context);
+        object_storage, query_configuration, format_settings, sample_block, local_context);
 }
 
 template <typename StorageSettings>
@@ -257,7 +269,7 @@ void StorageObjectStorage<StorageSettings>::truncate(
     ContextPtr,
     TableExclusiveLockHolder &)
 {
-    if (configuration->isPathWithGlobs() || configuration->isNamespaceWithGlobs())
+    if (configuration->withGlobs())
     {
         throw Exception(
             ErrorCodes::DATABASE_ACCESS_DENIED,
@@ -279,21 +291,18 @@ ColumnsDescription StorageObjectStorage<StorageSettings>::getTableStructureFromD
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context)
 {
-    using Source = StorageObjectStorageSource<StorageSettings>;
-
     ObjectInfos read_keys;
-    auto file_iterator = Source::createFileIterator(
+    const auto settings = StorageSettings::create(context->getSettingsRef());
+    auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration, object_storage, /* distributed_processing */false,
-        context, /* predicate */{}, /* virtual_columns */{}, &read_keys);
+        context, /* predicate */{}, /* virtual_columns */{}, &read_keys, settings.list_object_keys_size);
 
-    ReadBufferIterator<StorageSettings> read_buffer_iterator(
+    ReadBufferIterator read_buffer_iterator(
         object_storage, configuration, file_iterator,
-        format_settings, read_keys, context);
+        format_settings, StorageSettings::create(context->getSettingsRef()), getSchemaCache(context), read_keys, context);
 
-    const bool retry = configuration->isPathWithGlobs() || configuration->isNamespaceWithGlobs();
-    return readSchemaFromFormat(
-        configuration->format, format_settings,
-        read_buffer_iterator, retry, context);
+    const bool retry = configuration->withGlobs();
+    return readSchemaFromFormat(configuration->format, format_settings, read_buffer_iterator, retry, context);
 }
 
 template class StorageObjectStorage<S3StorageSettings>;

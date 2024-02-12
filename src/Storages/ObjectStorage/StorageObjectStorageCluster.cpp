@@ -11,8 +11,8 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/ObjectStorage/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/StorageObejctStorageConfiguration.h>
 #include <Common/Exception.h>
 #include <Parsers/queryToString.h>
 
@@ -82,10 +82,11 @@ void StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::ad
 
 template <typename Definition, typename StorageSettings, typename Configuration>
 RemoteQueryExecutor::Extension
-StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr &) const
+StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & local_context) const
 {
-    auto iterator = std::make_shared<typename Source::GlobIterator>(
-        object_storage, configuration, predicate, virtual_columns, nullptr);
+    const auto settings = StorageSettings::create(local_context->getSettingsRef());
+    auto iterator = std::make_shared<StorageObjectStorageSource::GlobIterator>(
+        object_storage, configuration, predicate, virtual_columns, local_context, nullptr, settings.list_object_keys_size);
 
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String{ return iterator->next(0)->relative_path; });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };

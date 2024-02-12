@@ -21,7 +21,6 @@ class StorageObjectStorageCluster : public IStorageCluster
 {
 public:
     using Storage = StorageObjectStorage<StorageSettings>;
-    using Source = StorageObjectStorageSource<StorageSettings>;
 
     StorageObjectStorageCluster(
         const String & cluster_name_,

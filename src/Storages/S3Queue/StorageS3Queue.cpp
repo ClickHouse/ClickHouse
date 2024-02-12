@@ -341,16 +341,23 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
     size_t max_block_size,
     ContextPtr local_context)
 {
-    auto internal_source = std::make_unique<Source>(
+    auto threadpool = std::make_shared<ThreadPool>(CurrentMetrics::ObjectStorageS3Threads,
+                                                   CurrentMetrics::ObjectStorageS3ThreadsActive,
+                                                   CurrentMetrics::ObjectStorageS3ThreadsScheduled,
+                                                   /* max_threads */1);
+    auto internal_source = std::make_unique<StorageObjectStorageSource>(
         getName(),
         object_storage,
         configuration,
         info,
         format_settings,
+        S3StorageSettings::create(local_context->getSettingsRef()),
         local_context,
         max_block_size,
         file_iterator,
-        false);
+        false,
+        Storage::getSchemaCache(local_context),
+        threadpool);
 
     auto file_deleter = [=, this](const std::string & path) mutable
     {
@@ -555,23 +562,12 @@ void StorageS3Queue::checkTableStructure(const String & zookeeper_prefix, const 
     }
 }
 
-std::shared_ptr<StorageS3Queue::FileIterator> StorageS3Queue::createFileIterator(ContextPtr , const ActionsDAG::Node * predicate)
+std::shared_ptr<StorageS3Queue::FileIterator> StorageS3Queue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
-    auto glob_iterator = std::make_unique<Source::GlobIterator>(object_storage, configuration, predicate, virtual_columns, nullptr);
-
+    auto settings = S3StorageSettings::create(local_context->getSettingsRef());
+    auto glob_iterator = std::make_unique<StorageObjectStorageSource::GlobIterator>(
+        object_storage, configuration, predicate, virtual_columns, local_context, nullptr, settings.list_object_keys_size);
     return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), s3queue_settings->s3queue_current_shard_num, shutdown_called);
-}
-
-static void initializeConfiguration(
-    StorageObjectStorageConfiguration & configuration,
-    ASTs & engine_args,
-    ContextPtr local_context,
-    bool with_table_structure)
-{
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
-        configuration.fromNamedCollection(*named_collection);
-    else
-        configuration.fromAST(engine_args, local_context, with_table_structure);
 }
 
 void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)
@@ -585,7 +581,7 @@ void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
             auto configuration = std::make_shared<StorageS3Configuration>();
-            initializeConfiguration(*configuration, args.engine_args, args.getContext(), false);
+            StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getContext(), false);
 
             // Use format settings from global server context + settings from
             // the SETTINGS clause of the create query. Settings from current

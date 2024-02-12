@@ -35,7 +35,7 @@ StorageS3QueueSource::S3QueueObjectInfo::S3QueueObjectInfo(
         const std::string & key_,
         const ObjectMetadata & object_metadata_,
         Metadata::ProcessingNodeHolderPtr processing_holder_)
-    : Source::ObjectInfo(key_, object_metadata_)
+    : ObjectInfo(key_, object_metadata_)
     , processing_holder(processing_holder_)
 {
 }
@@ -55,15 +55,15 @@ StorageS3QueueSource::FileIterator::FileIterator(
     if (sharded_processing)
     {
         for (const auto & id : metadata->getProcessingIdsForShard(current_shard))
-            sharded_keys.emplace(id, std::deque<Source::ObjectInfoPtr>{});
+            sharded_keys.emplace(id, std::deque<ObjectInfoPtr>{});
     }
 }
 
-StorageS3QueueSource::Source::ObjectInfoPtr StorageS3QueueSource::FileIterator::next(size_t processor)
+StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::next(size_t processor)
 {
     while (!shutdown_called)
     {
-        Source::ObjectInfoPtr val{nullptr};
+        ObjectInfoPtr val{nullptr};
 
         {
             std::unique_lock lk(sharded_keys_mutex, std::defer_lock);
@@ -140,7 +140,7 @@ StorageS3QueueSource::Source::ObjectInfoPtr StorageS3QueueSource::FileIterator::
 
         if (processing_holder)
         {
-            return std::make_shared<S3QueueObjectInfo>(val->relative_path, val->metadata, processing_holder);
+            return std::make_shared<S3QueueObjectInfo>(val->relative_path, val->metadata.value(), processing_holder);
         }
         else if (sharded_processing
                  && metadata->getFileStatus(val->relative_path)->state == S3QueueFilesMetadata::FileStatus::State::Processing)
@@ -161,7 +161,7 @@ size_t StorageS3QueueSource::FileIterator::estimatedKeysCount()
 StorageS3QueueSource::StorageS3QueueSource(
     String name_,
     const Block & header_,
-    std::unique_ptr<Source> internal_source_,
+    std::unique_ptr<StorageObjectStorageSource> internal_source_,
     std::shared_ptr<S3QueueFilesMetadata> files_metadata_,
     size_t processing_id_,
     const S3QueueAction & action_,
@@ -273,7 +273,8 @@ Chunk StorageS3QueueSource::generate()
                 file_status->processed_rows += chunk.getNumRows();
                 processed_rows_from_file += chunk.getNumRows();
 
-                VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(chunk, requested_virtual_columns, reader.getRelativePath(), reader.getObjectInfo().metadata.size_bytes);
+                VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(
+                    chunk, requested_virtual_columns, reader.getRelativePath(), reader.getObjectInfo().metadata->size_bytes);
                 return chunk;
             }
         }
@@ -311,7 +312,7 @@ Chunk StorageS3QueueSource::generate()
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
-        internal_source->create_reader_pool.wait();
+        internal_source->create_reader_pool->wait();
         reader_future = internal_source->createReaderAsync(processing_id);
     }
 

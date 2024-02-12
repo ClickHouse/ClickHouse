@@ -25,7 +25,6 @@
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/DataLakes/Iceberg/IcebergMetadata.h>
-#include <Storages/ObjectStorage/Configuration.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>

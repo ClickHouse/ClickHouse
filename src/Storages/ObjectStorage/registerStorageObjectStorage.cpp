@@ -8,18 +8,6 @@
 namespace DB
 {
 
-static void initializeConfiguration(
-    StorageObjectStorageConfiguration & configuration,
-    ASTs & engine_args,
-    ContextPtr local_context,
-    bool with_table_structure)
-{
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
-        configuration.fromNamedCollection(*named_collection);
-    else
-        configuration.fromAST(engine_args, local_context, with_table_structure);
-}
-
 template <typename StorageSettings>
 static std::shared_ptr<StorageObjectStorage<StorageSettings>> createStorageObjectStorage(
     const StorageFactory::Arguments & args,
@@ -82,7 +70,7 @@ void registerStorageAzure(StorageFactory & factory)
     {
         auto context = args.getLocalContext();
         auto configuration = std::make_shared<StorageAzureBlobConfiguration>();
-        initializeConfiguration(*configuration, args.engine_args, context, false);
+        StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false);
         return createStorageObjectStorage<AzureStorageSettings>(args, configuration, "Azure", context);
     },
     {
@@ -101,7 +89,7 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
     {
         auto context = args.getLocalContext();
         auto configuration = std::make_shared<StorageS3Configuration>();
-        initializeConfiguration(*configuration, args.engine_args, context, false);
+        StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false);
         return createStorageObjectStorage<S3StorageSettings>(args, configuration, name, context);
     },
     {
@@ -136,7 +124,7 @@ void registerStorageHDFS(StorageFactory & factory)
     {
         auto context = args.getLocalContext();
         auto configuration = std::make_shared<StorageHDFSConfiguration>();
-        initializeConfiguration(*configuration, args.engine_args, context, false);
+        StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false);
         return createStorageObjectStorage<HDFSStorageSettings>(args, configuration, "HDFS", context);
     },
     {

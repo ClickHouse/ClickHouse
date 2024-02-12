@@ -128,15 +128,15 @@ bool AzureObjectStorage::exists(const StoredObject & object) const
     return false;
 }
 
-ObjectStorageIteratorPtr AzureObjectStorage::iterate(const std::string & path_prefix) const
+ObjectStorageIteratorPtr AzureObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
 {
     auto settings_ptr = settings.get();
     auto client_ptr = client.get();
 
-    return std::make_shared<AzureIteratorAsync>(path_prefix, client_ptr, settings_ptr->list_object_keys_size);
+    return std::make_shared<AzureIteratorAsync>(path_prefix, client_ptr, max_keys);
 }
 
-void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const
+void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     auto client_ptr = client.get();
 
@@ -168,7 +168,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
         if (max_keys)
         {
-            int keys_left = max_keys - static_cast<int>(children.size());
+            size_t keys_left = max_keys - children.size();
             if (keys_left <= 0)
                 break;
             options.PageSizeHint = keys_left;
