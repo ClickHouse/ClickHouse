@@ -637,25 +637,31 @@ void S3QueueFilesMetadata::setFileProcessedForUnorderedMode(ProcessingNodeHolder
                 "this could be a result of expired zookeeper session", path);
 }
 
+
 void S3QueueFilesMetadata::setFileProcessedForOrderedMode(ProcessingNodeHolderPtr holder)
+{
+    auto processed_node_path = isShardedProcessing()
+        ? zookeeper_processed_path / toString(getProcessingIdForPath(holder->path))
+        : zookeeper_processed_path;
+
+    return setFileProcessedForOrderedModeImpl(holder->path, holder, processed_node_path);
+}
+
+void S3QueueFilesMetadata::setFileProcessedForOrderedModeImpl(
+    const std::string & path, ProcessingNodeHolderPtr holder, const std::string & processed_node_path)
 {
     /// Update a persistent node in /processed and remove ephemeral node from /processing.
 
-    const auto & path = holder->path;
     const auto node_name = getNodeName(path);
     const auto node_metadata = createNodeMetadata(path).toString();
     const auto zk_client = getZooKeeper();
 
-    auto processed_node = isShardedProcessing()
-        ? zookeeper_processed_path / toString(getProcessingIdForPath(path))
-        : zookeeper_processed_path;
-
-    LOG_TEST(log, "Setting file `{}` as processed", path);
+    LOG_TEST(log, "Setting file `{}` as processed (at {})", path, processed_node_path);
     while (true)
     {
         std::string res;
         Coordination::Stat stat;
-        bool exists = zk_client->tryGet(processed_node, res, &stat);
+        bool exists = zk_client->tryGet(processed_node_path, res, &stat);
         Coordination::Requests requests;
         if (exists)
         {
@@ -664,44 +670,62 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedMode(ProcessingNodeHolderPt
                 auto metadata = NodeMetadata::fromString(res);
                 if (metadata.file_path >= path)
                 {
-                    /// Here we get in the case that maximum processed file is bigger than ours.
-                    /// This is possible to achieve in case of parallel processing
-                    /// but for local processing we explicitly disable parallel mode and do everything in a single thread
-                    /// (see constructor of StorageS3Queue where s3queue_processing_threads_num is explicitly set to 1 in case of Ordered mode).
-                    /// Nevertheless, in case of distributed processing we cannot do anything with parallelism.
-                    /// What this means?
-                    /// It means that in scenario "distributed processing + Ordered mode"
-                    /// a setting s3queue_loading_retries will not work. It is possible to fix, it is in TODO.
-
-                    /// Return because there is nothing to change,
-                    /// the max processed file is already bigger than ours.
+                    LOG_TRACE(log, "File {} is already processed, current max processed file: {}", path, metadata.file_path);
                     return;
                 }
             }
-            requests.push_back(zkutil::makeSetRequest(processed_node, node_metadata, stat.version));
+            requests.push_back(zkutil::makeSetRequest(processed_node_path, node_metadata, stat.version));
         }
         else
         {
-            requests.push_back(zkutil::makeCreateRequest(processed_node, node_metadata, zkutil::CreateMode::Persistent));
+            requests.push_back(zkutil::makeCreateRequest(processed_node_path, node_metadata, zkutil::CreateMode::Persistent));
         }
 
         Coordination::Responses responses;
-        if (holder->remove(&requests, &responses))
+        if (holder)
         {
-            LOG_TEST(log, "Moved file `{}` to processed", path);
-            if (max_loading_retries)
-                zk_client->tryRemove(zookeeper_failed_path / (node_name + ".retriable"), -1);
-            return;
+            if (holder->remove(&requests, &responses))
+            {
+                LOG_TEST(log, "Moved file `{}` to processed", path);
+                if (max_loading_retries)
+                    zk_client->tryRemove(zookeeper_failed_path / (node_name + ".retriable"), -1);
+                return;
+            }
+        }
+        else
+        {
+            auto code = zk_client->tryMulti(requests, responses);
+            if (code == Coordination::Error::ZOK)
+                return;
         }
 
         /// Failed to update max processed node, retry.
         if (!responses.empty() && responses[0]->error != Coordination::Error::ZOK)
+        {
+            LOG_TRACE(log, "Failed to update processed node ({}). Will retry.", magic_enum::enum_name(responses[0]->error));
             continue;
+        }
 
         LOG_WARNING(log, "Cannot set file ({}) as processed since processing node "
                     "does not exist with expected processing id does not exist, "
                     "this could be a result of expired zookeeper session", path);
         return;
+    }
+}
+
+void S3QueueFilesMetadata::setFileProcessed(const std::string & path, size_t shard_id)
+{
+    if (mode != S3QueueMode::ORDERED)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can set file as preprocessed only for Ordered mode");
+
+    if (isShardedProcessing())
+    {
+        for (const auto & processor : getProcessingIdsForShard(shard_id))
+            setFileProcessedForOrderedModeImpl(path, nullptr, zookeeper_processed_path / toString(processor));
+    }
+    else
+    {
+        setFileProcessedForOrderedModeImpl(path, nullptr, zookeeper_processed_path);
     }
 }
 

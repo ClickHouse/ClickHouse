@@ -3,9 +3,7 @@
 #include <memory>
 #include <base/chrono_io.h>
 
-#include <Core/Defines.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfilingScopedRWLock.h>
