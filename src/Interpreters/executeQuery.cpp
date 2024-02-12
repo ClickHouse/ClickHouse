@@ -1380,6 +1380,11 @@ void executeQuery(
                     result_details.content_type = output_format->getContentType();
                     result_details.format = format_name;
 
+                    fiu_do_on(FailPoint::execute_query_calling_empty_set_result_func_on_exception, {
+                        set_result_details = nullptr;
+                        set_result_details(result_details);
+                    });
+
                     if (set_result_details)
                     {
                         /// reset set_result_details func to avoid calling in SCOPE_EXIT()
@@ -1435,7 +1440,7 @@ void executeQuery(
                 const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
 
                 std::string compression_method;
-                if (ast_query_with_output->compressiong
+                if (ast_query_with_output->compression)
                 {
                     const auto & compression_method_node = ast_query_with_output->compression->as<ASTLiteral &>();
                     compression_method = compression_method_node.value.safeGet<std::string>();
