@@ -194,11 +194,14 @@ clickhouse_program_install(clickhouse-server server)
 # client
 clickhouse_program_install(clickhouse-client client)
 add_custom_target (chc ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse chc DEPENDS clickhouse)
+install (FILES "${CMAKE_CURRENT_BINARY_DIR}/chc" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 
 # local
 clickhouse_program_install(clickhouse-local local)
 add_custom_target (chl ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse chl DEPENDS clickhouse)
+install (FILES "${CMAKE_CURRENT_BINARY_DIR}/chl" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 add_custom_target (ch ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse ch DEPENDS clickhouse)
+install (FILES "${CMAKE_CURRENT_BINARY_DIR}/ch" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 
 clickhouse_program_install(clickhouse-benchmark benchmark)
 clickhouse_program_install(clickhouse-copier copier)
