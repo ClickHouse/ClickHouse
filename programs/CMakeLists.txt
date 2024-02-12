@@ -188,6 +188,7 @@ macro(clickhouse_program_install name lib_name)
         message(STATUS "Adding alias ${alias} for ${name}")
         add_custom_target (${alias} ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse ${alias} DEPENDS clickhouse)
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/${alias}" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        list(APPEND CLICKHOUSE_BUNDLE ${alias})
     endforeach()
 endmacro()
 
