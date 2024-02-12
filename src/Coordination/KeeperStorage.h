@@ -167,7 +167,7 @@ public:
         } is_ephemeral_and_ctime{false, 0};
 
         /// ephemeral notes cannot have children so a node can set either
-        /// ephemeral_owner OR seq_num + num_children 
+        /// ephemeral_owner OR seq_num + num_children
         union
         {
             int64_t ephemeral_owner;
