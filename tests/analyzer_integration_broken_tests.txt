@@ -1,4 +1,3 @@
-test_access_for_functions/test.py::test_access_rights_for_function
 test_build_sets_from_multiple_threads/test.py::test_set
 test_concurrent_backups_s3/test.py::test_concurrent_backups
 test_distributed_backward_compatability/test.py::test_distributed_in_tuple
