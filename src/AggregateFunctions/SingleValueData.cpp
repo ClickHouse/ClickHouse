@@ -165,10 +165,9 @@ void SingleValueDataBase::setGreatestNotNullIf(
 template <typename T>
 void SingleValueDataFixed<T>::insertResultInto(IColumn & to) const
 {
-    if (has())
-        assert_cast<ColVecType &>(to).getData().push_back(value);
-    else
-        assert_cast<ColVecType &>(to).insertDefault();
+    /// value is set to 0 in the constructor (also with JIT), so no need to check has_data()
+    chassert(has() || value == T{});
+    assert_cast<ColVecType &>(to).getData().push_back(value);
 }
 
 template <typename T>
@@ -632,35 +631,20 @@ template <typename T>
 void SingleValueDataFixed<T>::compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
 {
     llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
-    auto * has_value_ptr = getHasValuePtrFromAggregateDataPtr(builder, aggregate_data_ptr);
-    b.CreateStore(b.getFalse(), has_value_ptr);
+    /// We initialize everything to 0 so both has_data and value are initialized
+    /// Note that getResult uses the knowledge that value is 0 with no data, both with and without JIT,
+    /// to skip a check
+    b.CreateMemSet(
+        b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_ptr, 0),
+        llvm::ConstantInt::get(b.getInt8Ty(), 0),
+        sizeof(SingleValueDataFixed<T>),
+        llvm::assumeAligned(alignof(SingleValueDataFixed<T>)));
 }
 
 template <typename T>
 llvm::Value * SingleValueDataFixed<T>::compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
 {
-    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
-
-    auto * has_value_value = getHasValueFromAggregateDataPtr(b, aggregate_data_ptr);
-
-    auto * head = b.GetInsertBlock();
-    auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
-    auto * if_not_has_value = llvm::BasicBlock::Create(head->getContext(), "if_not_has_value", head->getParent());
-
-    b.CreateCondBr(has_value_value, join_block, if_not_has_value);
-
-    /// If not has_value we set the value to 0 (the default) and return that. This is important to keep compatibility
-    /// between JIT and not JIT calls
-    b.SetInsertPoint(if_not_has_value);
-    b.CreateMemSet(
-        getValuePtrFromAggregateDataPtr(b, aggregate_data_ptr),
-        llvm::ConstantInt::get(b.getInt8Ty(), 0),
-        sizeof(SingleValueDataFixed<T>),
-        llvm::assumeAligned(alignof(SingleValueDataFixed<T>)));
-    b.CreateBr(join_block);
-
-    b.SetInsertPoint(join_block);
-
+    /// value is set to 0 in the constructor, so no need to check has_data()
     return getValueFromAggregateDataPtr(builder, aggregate_data_ptr);
 }
 
