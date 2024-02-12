@@ -34,7 +34,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
 }
 struct Settings;
 
@@ -78,19 +77,16 @@ public:
         const auto & offsets = assert_cast<const ColumnArray &>(*columns[0]).getOffsets();
         const size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
         const auto arr_size = offsets[row_num] - offset;
-        std::cerr << "======================" << arr_size << "  " << offset << std::endl;
         ++version;
         if (version == 1)
         {
-            std::cerr << "----first" << std::endl;
-            for (size_t i = 0; i < arr_size; ++i)                                   // first_row = {a,b,c,d}
-                map[static_cast<T>((*data_column)[offset + i].get<T>())] = version; // {a} = 0, {b} = 0, {c} = 0, {d} = 0
+            for (size_t i = 0; i < arr_size; ++i)
+                map[static_cast<T>((*data_column)[offset + i].get<T>())] = version;
         }
         else if (map.size() > 0)
         {
             for (size_t i = 0; i < arr_size; ++i)
             {
-                std::cerr << "----other" << std::endl;
                 typename State::Map::LookupResult value = map.find(static_cast<T>((*data_column)[offset + i].get<T>()));
                 if (value != nullptr && value->getMapped() == version - 1)
                     ++(value->getMapped());
@@ -273,7 +269,8 @@ public:
                     new (&it->getMapped()) UInt64(version);
             }
         }
-        else {
+        else
+        {
             for (size_t i = 0; i < arr_size; ++i)
             {
                 if constexpr (is_plain_column)
@@ -419,9 +416,8 @@ AggregateFunctionPtr createAggregateFunctionGroupArrayIntersect(
 {
     assertUnary(name, argument_types);
 
-    if (!WhichDataType(argument_types.at(0)).isArray()) {
+    if (!WhichDataType(argument_types.at(0)).isArray())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function groupArrayIntersect accepts only array type argument.");
-    }
 
     if (!parameters.empty())
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
