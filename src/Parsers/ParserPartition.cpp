@@ -8,7 +8,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTQueryParameter.h>
-#include <iostream>
 
 namespace DB
 {
