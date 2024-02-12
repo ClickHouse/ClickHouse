@@ -15,7 +15,7 @@ namespace ProfileEvents
 namespace DB
 {
 
-void CountingTransform::onConsume(Chunk chunk)
+void CountingBase::count(const Chunk & chunk)
 {
     if (quota)
         quota->used(QuotaType::WRITTEN_BYTES, chunk.bytes());
@@ -40,8 +40,6 @@ void CountingTransform::onConsume(Chunk chunk)
 
     if (progress_callback)
         progress_callback(local_progress);
-
-    cur_chunk = std::move(chunk);
 }
 
 }

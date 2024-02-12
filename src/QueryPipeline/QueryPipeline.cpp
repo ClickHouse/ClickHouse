@@ -549,7 +549,12 @@ void QueryPipeline::setProcessListElement(QueryStatusPtr elem)
 
     if (pushing())
     {
-        if (auto * counting = dynamic_cast<CountingTransform *>(&input->getProcessor()))
+        if (auto * counting = dynamic_cast<CountingTransform2 *>(&input->getProcessor()))
+        {
+            counting->setProcessListElement(elem);
+        }
+
+        if (auto * counting = dynamic_cast<SimpleCountingTransform *>(&input->getProcessor()))
         {
             counting->setProcessListElement(elem);
         }
