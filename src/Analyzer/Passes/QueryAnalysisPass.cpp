@@ -79,6 +79,8 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace ProfileEvents
 {
@@ -1066,7 +1068,7 @@ private:
 class QueryAnalyzer
 {
 public:
-    void resolve(QueryTreeNodePtr node, const QueryTreeNodePtr & table_expression, ContextPtr context)
+    void resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
     {
         IdentifierResolveScope scope(node, nullptr /*parent_scope*/);
 
@@ -7649,7 +7651,7 @@ QueryAnalysisPass::QueryAnalysisPass(QueryTreeNodePtr table_expression_)
     : table_expression(std::move(table_expression_))
 {}
 
-void QueryAnalysisPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void QueryAnalysisPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     QueryAnalyzer analyzer;
     analyzer.resolve(query_tree_node, table_expression, context);
