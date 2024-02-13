@@ -536,7 +536,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             // explicitly disable block_number virtual column feature
             storage_settings->allow_experimental_block_number_column = false;
 
-            auto add_column = [&] (const String& name, const DataTypePtr& type, const CompressionCodecPtr& codec = nullptr) {
+            auto add_column = [&](const String& name, const DataTypePtr& type, const CompressionCodecPtr& codec = nullptr)
+            {
                 ColumnDescription column(name, type);
 
                 if (codec != nullptr)

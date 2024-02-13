@@ -119,7 +119,7 @@ template<typename T>
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
     const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path);
 
-/// Checks that current node is stil exists and also makes deduplication check
+/// Checks that current node is still exists and also makes deduplication check
 template<typename T>
 std::optional<String> checkLockAndDeduplicate(const EphemeralLockInZooKeeper& lock, const T & deduplication_path);
 
