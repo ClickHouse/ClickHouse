@@ -27,7 +27,8 @@ struct AzureObjectStorageSettings
         size_t max_upload_part_size_,
         size_t max_single_part_copy_size_,
         bool use_native_copy_,
-        size_t max_unexpected_write_error_retries_)
+        size_t max_unexpected_write_error_retries_,
+        size_t max_inflight_parts_for_one_file_)
         : max_single_part_upload_size(max_single_part_upload_size_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , max_single_read_retries(max_single_read_retries_)
@@ -37,6 +38,7 @@ struct AzureObjectStorageSettings
         , max_single_part_copy_size(max_single_part_copy_size_)
         , use_native_copy(use_native_copy_)
         , max_unexpected_write_error_retries (max_unexpected_write_error_retries_)
+        , max_inflight_parts_for_one_file (max_inflight_parts_for_one_file_)
     {
     }
 
@@ -52,6 +54,7 @@ struct AzureObjectStorageSettings
     size_t max_single_part_copy_size = 256 * 1024 * 1024;
     bool use_native_copy = false;
     size_t max_unexpected_write_error_retries = 4;
+    size_t max_inflight_parts_for_one_file = 20;
 };
 
 using AzureClient = Azure::Storage::Blobs::BlobContainerClient;

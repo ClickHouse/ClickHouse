@@ -95,7 +95,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , object_metadata(std::move(object_metadata_))
     , buffer_allocation_policy(ChooseBufferPolicy(upload_settings))
     , task_tracker(
-          std::make_unique<WriteBufferFromS3::TaskTracker>(
+          std::make_unique<TaskTracker>(
               std::move(schedule_),
               upload_settings.max_inflight_parts_for_one_file,
               limitedLog))

@@ -1,7 +1,5 @@
 #include "config.h"
 
-#if USE_AWS_S3
-
 #include <IO/WriteBufferFromS3TaskTracker.h>
 
 namespace ProfileEvents
@@ -12,19 +10,19 @@ namespace ProfileEvents
 namespace DB
 {
 
-WriteBufferFromS3::TaskTracker::TaskTracker(ThreadPoolCallbackRunner<void> scheduler_, size_t max_tasks_inflight_, LogSeriesLimiterPtr limitedLog_)
+TaskTracker::TaskTracker(ThreadPoolCallbackRunner<void> scheduler_, size_t max_tasks_inflight_, LogSeriesLimiterPtr limitedLog_)
     : is_async(bool(scheduler_))
     , scheduler(scheduler_ ? std::move(scheduler_) : syncRunner())
     , max_tasks_inflight(max_tasks_inflight_)
     , limitedLog(limitedLog_)
 {}
 
-WriteBufferFromS3::TaskTracker::~TaskTracker()
+TaskTracker::~TaskTracker()
 {
     safeWaitAll();
 }
 
-ThreadPoolCallbackRunner<void> WriteBufferFromS3::TaskTracker::syncRunner()
+ThreadPoolCallbackRunner<void> TaskTracker::syncRunner()
 {
     return [](Callback && callback, int64_t) mutable -> std::future<void>
     {
@@ -35,7 +33,7 @@ ThreadPoolCallbackRunner<void> WriteBufferFromS3::TaskTracker::syncRunner()
     };
 }
 
-void WriteBufferFromS3::TaskTracker::waitAll()
+void TaskTracker::waitAll()
 {
     /// Exceptions are propagated
     for (auto & future : futures)
@@ -48,7 +46,7 @@ void WriteBufferFromS3::TaskTracker::waitAll()
     finished_futures.clear();
 }
 
-void WriteBufferFromS3::TaskTracker::safeWaitAll()
+void TaskTracker::safeWaitAll()
 {
     for (auto & future : futures)
     {
@@ -71,7 +69,7 @@ void WriteBufferFromS3::TaskTracker::safeWaitAll()
     finished_futures.clear();
 }
 
-void WriteBufferFromS3::TaskTracker::waitIfAny()
+void TaskTracker::waitIfAny()
 {
     if (futures.empty())
         return;
@@ -99,7 +97,7 @@ void WriteBufferFromS3::TaskTracker::waitIfAny()
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3WaitInflightLimitMicroseconds, watch.elapsedMicroseconds());
 }
 
-void WriteBufferFromS3::TaskTracker::add(Callback && func)
+void TaskTracker::add(Callback && func)
 {
     /// All this fuzz is about 2 things. This is the most critical place of TaskTracker.
     /// The first is not to fail insertion in the list `futures`.
@@ -134,7 +132,7 @@ void WriteBufferFromS3::TaskTracker::add(Callback && func)
     waitTilInflightShrink();
 }
 
-void WriteBufferFromS3::TaskTracker::waitTilInflightShrink()
+void TaskTracker::waitTilInflightShrink()
 {
     if (!max_tasks_inflight)
         return;
@@ -166,11 +164,10 @@ void WriteBufferFromS3::TaskTracker::waitTilInflightShrink()
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3WaitInflightLimitMicroseconds, watch.elapsedMicroseconds());
 }
 
-bool WriteBufferFromS3::TaskTracker::isAsync() const
+bool TaskTracker::isAsync() const
 {
     return is_async;
 }
 
 }
 
-#endif

@@ -12,6 +12,7 @@
 #include <Storages/StorageS3Settings.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <IO/S3/BlobStorageLogWriter.h>
+#include <IO/WriteBufferFromS3TaskTracker.h>
 
 #include <memory>
 #include <vector>
@@ -26,6 +27,8 @@ namespace DB
  * Data is divided on chunks with size greater than 'minimum_upload_part_size'. Last chunk can be less than this threshold.
  * Each chunk is written as a part to S3.
  */
+class TaskTracker;
+
 class WriteBufferFromS3 final : public WriteBufferFromFileBase
 {
 public:
@@ -118,7 +121,7 @@ private:
     size_t total_size = 0;
     size_t hidden_size = 0;
 
-    class TaskTracker;
+//    class TaskTracker;
     std::unique_ptr<TaskTracker> task_tracker;
 
     BlobStorageLogWriterPtr blob_log;

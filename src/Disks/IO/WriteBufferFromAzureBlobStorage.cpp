@@ -18,13 +18,21 @@ namespace ProfileEvents
 namespace DB
 {
 
+struct WriteBufferFromAzureBlobStorage::PartData
+{
+    Memory<> memory;
+    size_t data_size = 0;
+};
+
 WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & blob_path_,
     size_t max_single_part_upload_size_,
     size_t max_unexpected_write_error_retries_,
     size_t buf_size_,
-    const WriteSettings & write_settings_)
+    const WriteSettings & write_settings_,
+    size_t max_inflight_parts_for_one_file_,
+    ThreadPoolCallbackRunner<void> schedule_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , log(getLogger("WriteBufferFromAzureBlobStorage"))
     , max_single_part_upload_size(max_single_part_upload_size_)
@@ -32,7 +40,13 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     , blob_path(blob_path_)
     , write_settings(write_settings_)
     , blob_container_client(blob_container_client_)
+    , task_tracker(
+          std::make_unique<TaskTracker>(
+              std::move(schedule_),
+              max_inflight_parts_for_one_file_,
+              limitedLog))
 {
+    allocateBuffer();
 }
 
 
@@ -79,60 +93,80 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
 {
     execWithRetry([this](){ next(); }, max_unexpected_write_error_retries);
 
-    if (tmp_buffer_write_offset > 0)
-        uploadBlock(tmp_buffer->data(), tmp_buffer_write_offset);
+    task_tracker->waitAll();
 
     auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
     execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, max_unexpected_write_error_retries);
 
-    LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
-}
-
-void WriteBufferFromAzureBlobStorage::uploadBlock(const char * data, size_t size)
-{
-    auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
-    const std::string & block_id = block_ids.emplace_back(getRandomASCIIString(64));
-
-    Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(data), size);
-    execWithRetry([&](){ block_blob_client.StageBlock(block_id, memory_stream); }, max_unexpected_write_error_retries, size);
-    tmp_buffer_write_offset = 0;
-
-    LOG_TRACE(log, "Staged block (id: {}) of size {} (blob path: {}).", block_id, size, blob_path);
-}
-
-WriteBufferFromAzureBlobStorage::MemoryBufferPtr WriteBufferFromAzureBlobStorage::allocateBuffer() const
-{
-    return std::make_unique<Memory<>>(max_single_part_upload_size);
+    LOG_DEBUG(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
 }
 
 void WriteBufferFromAzureBlobStorage::nextImpl()
 {
-    size_t size_to_upload = offset();
+    task_tracker->waitIfAny();
 
-    if (size_to_upload == 0)
-        return;
+    reallocateBuffer();
+    detachBuffer();
 
-    if (!tmp_buffer)
-        tmp_buffer = allocateBuffer();
-
-    size_t uploaded_size = 0;
-    while (uploaded_size != size_to_upload)
+    while (!detached_part_data.empty())
     {
-        size_t memory_buffer_remaining_size = max_single_part_upload_size - tmp_buffer_write_offset;
-        if (memory_buffer_remaining_size == 0)
-            uploadBlock(tmp_buffer->data(), tmp_buffer->size());
-
-        size_t size = std::min(memory_buffer_remaining_size, size_to_upload - uploaded_size);
-        memcpy(tmp_buffer->data() + tmp_buffer_write_offset, working_buffer.begin() + uploaded_size, size);
-        uploaded_size += size;
-        tmp_buffer_write_offset += size;
+        writePart(std::move(detached_part_data.front()));
+        detached_part_data.pop_front();
     }
 
-    if (tmp_buffer_write_offset == max_single_part_upload_size)
-        uploadBlock(tmp_buffer->data(), tmp_buffer->size());
+    allocateBuffer();
+}
 
-    if (write_settings.remote_throttler)
-        write_settings.remote_throttler->add(size_to_upload, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+void WriteBufferFromAzureBlobStorage::allocateBuffer()
+{
+    memory = Memory(max_single_part_upload_size);
+    WriteBuffer::set(memory.data(), memory.size());
+}
+
+
+void WriteBufferFromAzureBlobStorage::reallocateBuffer()
+{
+    chassert(offset() == 0);
+
+    if (available() > 0)
+        return;
+
+    if (memory.size() == max_single_part_upload_size)
+        return;
+
+    memory.resize(max_single_part_upload_size);
+
+    WriteBuffer::set(memory.data(), memory.size());
+
+    chassert(offset() == 0);
+}
+
+void WriteBufferFromAzureBlobStorage::detachBuffer()
+{
+    size_t data_size = size_t(position() - memory.data());
+    auto buf = std::move(memory);
+    WriteBuffer::set(nullptr, 0);
+    detached_part_data.push_back({std::move(buf), data_size});
+}
+
+void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage::PartData && data)
+{
+    if (data.data_size == 0)
+        return;
+
+    auto upload_worker = [&] ()
+    {
+        auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
+        const std::string & block_id = block_ids.emplace_back(getRandomASCIIString(64));
+
+        Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(data.memory.data()), data.data_size);
+        execWithRetry([&](){ block_blob_client.StageBlock(block_id, memory_stream); }, max_unexpected_write_error_retries, data.data_size);
+
+        if (write_settings.remote_throttler)
+            write_settings.remote_throttler->add(data.data_size, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+    };
+
+    task_tracker->add(std::move(upload_worker));
 }
 
 }

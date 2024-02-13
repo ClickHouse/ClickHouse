@@ -11,6 +11,7 @@
 #include <IO/WriteSettings.h>
 #include <azure/storage/blobs.hpp>
 #include <azure/core/io/body_stream.hpp>
+#include <IO/WriteBufferFromS3TaskTracker.h>
 
 
 namespace Poco
@@ -20,6 +21,8 @@ class Logger;
 
 namespace DB
 {
+
+class TaskTracker;
 
 class WriteBufferFromAzureBlobStorage : public WriteBufferFromFileBase
 {
@@ -32,7 +35,9 @@ public:
         size_t max_single_part_upload_size_,
         size_t max_unexpected_write_error_retries_,
         size_t buf_size_,
-        const WriteSettings & write_settings_);
+        const WriteSettings & write_settings_,
+        size_t max_inflight_parts_for_one_file_,
+        ThreadPoolCallbackRunner<void> schedule_ = {});
 
     ~WriteBufferFromAzureBlobStorage() override;
 
@@ -42,11 +47,21 @@ public:
     void sync() override { next(); }
 
 private:
+    struct PartData;
+
+    void writePart(WriteBufferFromAzureBlobStorage::PartData && data);
+    void detachBuffer();
+    void allocateBuffer();
+    void allocateFirstBuffer();
+    void reallocateFirstBuffer();
+    void reallocateBuffer();
+
     void finalizeImpl() override;
     void execWithRetry(std::function<void()> func, size_t num_tries, size_t cost = 0);
     void uploadBlock(const char * data, size_t size);
 
     LoggerPtr log;
+    LogSeriesLimiterPtr limitedLog = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
     const size_t max_single_part_upload_size;
     const size_t max_unexpected_write_error_retries;
@@ -61,6 +76,11 @@ private:
     size_t tmp_buffer_write_offset = 0;
 
     MemoryBufferPtr allocateBuffer() const;
+
+    bool first_buffer=true;
+
+    std::unique_ptr<TaskTracker> task_tracker;
+    std::deque<PartData> detached_part_data;
 };
 
 }

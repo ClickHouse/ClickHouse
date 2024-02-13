@@ -278,7 +278,8 @@ std::unique_ptr<WriteBuffer> BackupWriterAzureBlobStorage::writeFile(const Strin
         settings->max_single_part_upload_size,
         settings->max_unexpected_write_error_retries,
         DBMS_DEFAULT_BUFFER_SIZE,
-        write_settings);
+        write_settings,
+        settings->max_inflight_parts_for_one_file);
 }
 
 void BackupWriterAzureBlobStorage::removeFile(const String & file_name)

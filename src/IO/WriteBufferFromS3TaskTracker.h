@@ -1,9 +1,7 @@
 #pragma once
 
 #include "config.h"
-
-#if USE_AWS_S3
-
+#include <Interpreters/threadPoolCallbackRunner.h>
 #include "WriteBufferFromS3.h"
 
 #include <Common/logger_useful.h>
@@ -22,7 +20,7 @@ namespace DB
 /// Basic exception safety is provided. If exception occurred the object has to be destroyed.
 /// No thread safety is provided. Use this object with no concurrency.
 
-class WriteBufferFromS3::TaskTracker
+class TaskTracker
 {
 public:
     using Callback = std::function<void()>;
@@ -68,5 +66,3 @@ private:
 };
 
 }
-
-#endif
