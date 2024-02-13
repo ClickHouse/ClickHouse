@@ -2,9 +2,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/StatusFile.h>
 #include <Common/TerminalSize.h>
-#include <Databases/registerDatabases.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Interpreters/registerInterpreters.h>
 #include <Formats/registerFormats.h>
 #include <Common/scope_guard_safe.h>
 #include <unistd.h>
@@ -158,11 +156,9 @@ void ClusterCopierApp::mainImpl()
     context->setApplicationType(Context::ApplicationType::LOCAL);
     context->setPath(process_path + "/");
 
-    registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
-    registerDatabases();
     registerStorages();
     registerDictionaries();
     registerDisks(/* global_skip_access_check= */ true);

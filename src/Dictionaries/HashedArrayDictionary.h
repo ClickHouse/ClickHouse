@@ -244,7 +244,7 @@ private:
 
     void resize(size_t total_rows);
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;

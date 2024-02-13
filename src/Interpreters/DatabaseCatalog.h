@@ -82,8 +82,8 @@ private:
 
 using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 
-class FutureSetFromSubquery;
-using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
+class FutureSet;
+using FutureSetPtr = std::shared_ptr<FutureSet>;
 
 /// Creates temporary table in `_temporary_and_external_tables` with randomly generated unique StorageID.
 /// Such table can be accessed from everywhere by its ID.
@@ -116,7 +116,7 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     IDatabase * temporary_tables = nullptr;
     UUID id = UUIDHelpers::Nil;
-    FutureSetFromSubqueryPtr future_set;
+    FutureSetPtr future_set;
 };
 
 ///TODO maybe remove shared_ptr from here?
@@ -318,7 +318,7 @@ private:
     /// View dependencies between a source table and its view.
     TablesDependencyGraph view_dependencies TSA_GUARDED_BY(databases_mutex);
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     std::atomic_bool is_shutting_down = false;
 

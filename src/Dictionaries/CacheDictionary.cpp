@@ -63,7 +63,7 @@ CacheDictionary<dictionary_key_type>::CacheDictionary(
             update(unit_to_update);
         })
     , configuration(configuration_)
-    , log(getLogger("ExternalDictionaries"))
+    , log(&Poco::Logger::get("ExternalDictionaries"))
     , rnd_engine(randomSeed())
 {
     if (!source_ptr->supportsSelectiveLoad())

@@ -79,11 +79,11 @@ public:
             for (const auto & elem : block)
                 compressed_block.insert({ elem.column->compress(), elem.type, elem.name });
 
-            new_blocks.push_back(std::move(compressed_block));
+            new_blocks.emplace_back(compressed_block);
         }
         else
         {
-            new_blocks.push_back(std::move(block));
+            new_blocks.emplace_back(block);
         }
     }
 
@@ -472,21 +472,9 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
 
         while (auto block = block_in.read())
         {
-            if (compress)
-            {
-                Block compressed_block;
-                for (const auto & elem : block)
-                    compressed_block.insert({ elem.column->compress(), elem.type, elem.name });
-
-                new_blocks.push_back(std::move(compressed_block));
-            }
-            else
-            {
-                new_blocks.push_back(std::move(block));
-            }
-
-            new_bytes += new_blocks.back().bytes();
-            new_rows += new_blocks.back().rows();
+            new_bytes += block.bytes();
+            new_rows += block.rows();
+            new_blocks.push_back(std::move(block));
         }
     }
 

@@ -79,10 +79,6 @@ if (SANITIZE_COVERAGE)
 
     # But the actual coverage will be enabled on per-library basis: for ClickHouse code, but not for 3rd-party.
     set (COVERAGE_FLAGS "-fsanitize-coverage=trace-pc-guard,pc-table")
-
-    set (WITHOUT_COVERAGE_FLAGS "-fno-profile-instr-generate -fno-coverage-mapping -fno-sanitize-coverage=trace-pc-guard,pc-table")
-    set (WITHOUT_COVERAGE_FLAGS_LIST -fno-profile-instr-generate -fno-coverage-mapping -fno-sanitize-coverage=trace-pc-guard,pc-table)
-else()
-    set (WITHOUT_COVERAGE_FLAGS "")
-    set (WITHOUT_COVERAGE_FLAGS_LIST "")
 endif()
+
+set (WITHOUT_COVERAGE_FLAGS "-fno-profile-instr-generate -fno-coverage-mapping -fno-sanitize-coverage=trace-pc-guard,pc-table")

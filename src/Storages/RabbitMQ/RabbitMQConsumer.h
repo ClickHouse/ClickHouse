@@ -32,7 +32,7 @@ public:
         std::vector<String> & queues_,
         size_t channel_id_base_,
         const String & channel_base_,
-        LoggerPtr log_,
+        Poco::Logger * log_,
         uint32_t queue_size_);
 
     struct CommitInfo
@@ -88,7 +88,7 @@ private:
     const String channel_base;
     const size_t channel_id_base;
 
-    LoggerPtr log;
+    Poco::Logger * log;
     std::atomic<bool> stopped;
 
     String channel_id;

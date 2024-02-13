@@ -33,7 +33,7 @@ public:
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
     Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
-        : log(getLogger("Set")),
+        : log(&Poco::Logger::get("Set")),
         limits(limits_), max_elements_to_fill(max_elements_to_fill_), transform_null_in(transform_null_in_),
         cast_cache(std::make_unique<InternalCastFunctionCache>())
     {}
@@ -114,7 +114,7 @@ private:
     /// Types for set_elements.
     DataTypes set_elements_types;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     /// Limitations on the maximum size of the set
     SizeLimits limits;

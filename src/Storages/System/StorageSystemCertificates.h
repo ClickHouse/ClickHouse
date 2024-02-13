@@ -18,7 +18,7 @@ class StorageSystemCertificates final : public IStorageSystemOneBlock<StorageSys
 public:
     std::string getName() const override { return "SystemCertificates"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

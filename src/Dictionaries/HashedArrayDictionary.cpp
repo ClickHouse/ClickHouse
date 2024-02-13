@@ -32,7 +32,7 @@ HashedArrayDictionary<dictionary_key_type, sharded>::HashedArrayDictionary(
     const HashedArrayDictionaryStorageConfiguration & configuration_,
     BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
-    , log(getLogger("HashedArrayDictionary"))
+    , log(&Poco::Logger::get("HashedArrayDictionary"))
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
     , configuration(configuration_)
@@ -822,7 +822,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
         if (parallel_loader)
             parallel_loader->finish();
 
-        LOG_DEBUG(getLogger("HashedArrayDictionary"),
+        LOG_DEBUG(&Poco::Logger::get("HashedArrayDictionary"),
             "Finished {}reading {} blocks with {} rows from pipeline in {:.2f} sec and inserted into hashtable in {:.2f} sec",
             configuration.use_async_executor ? "asynchronous " : "",
             total_blocks, total_rows, pull_time_microseconds / 1000000.0, process_time_microseconds / 1000000.0);

@@ -30,47 +30,24 @@ struct KeeperStorageSnapshot;
 class KeeperStorage
 {
 public:
-    /// Node should have as minimal size as possible to reduce memory footprint
-    /// of stored nodes
-    /// New fields should be added to the struct only if it's really necessary
     struct Node
     {
-        /// to reduce size of the Node struct we use a custom Stat without dataLength
-        struct Stat
-        {
-            int64_t czxid{0};
-            int64_t mzxid{0};
-            int64_t ctime{0};
-            int64_t mtime{0};
-            int32_t version{0};
-            int32_t cversion{0};
-            int32_t aversion{0};
-            int32_t numChildren{0}; /// NOLINT
-            int64_t ephemeralOwner{0}; /// NOLINT
-            int64_t pzxid{0};
-
-            bool operator==(const Stat &) const = default;
-        };
-
         uint64_t acl_id = 0; /// 0 -- no ACL by default
-        Stat stat{};
+        bool is_sequental = false;
+        Coordination::Stat stat{};
         int32_t seq_num = 0;
+        uint64_t size_bytes; // save size to avoid calculate every time
 
-        /// we cannot use `std::optional<uint64_t> because we want to
-        /// pack the boolean with seq_num above
-        mutable bool has_cached_digest = false;
-        mutable uint64_t cached_digest = 0;
-
-        void setResponseStat(Coordination::Stat & response_stat) const;
+        Node() : size_bytes(sizeof(Node)) { }
 
         /// Object memory size
-        uint64_t sizeInBytes() const;
+        uint64_t sizeInBytes() const { return size_bytes; }
 
         void setData(String new_data);
 
         const auto & getData() const noexcept { return data; }
 
-        void addChild(StringRef child_path);
+        void addChild(StringRef child_path, bool update_size = true);
 
         void removeChild(StringRef child_path);
 
@@ -86,20 +63,23 @@ public:
         // copy only necessary information for preprocessing and digest calculation
         // (e.g. we don't need to copy list of children)
         void shallowCopy(const Node & other);
+
+        void recalculateSize();
+
     private:
         String data;
         ChildrenSet children{};
+        mutable std::optional<UInt64> cached_digest;
     };
 
     enum DigestVersion : uint8_t
     {
         NO_DIGEST = 0,
         V1 = 1,
-        V2 = 2, // added system nodes that modify the digest on startup so digest from V0 is invalid
-        V3 = 3  // fixed bug with casting, removed duplicate czxid usage
+        V2 = 2  // added system nodes that modify the digest on startup so digest from V0 is invalid
     };
 
-    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V3;
+    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V2;
 
     struct ResponseForSession
     {
@@ -114,7 +94,16 @@ public:
         uint64_t value{0};
     };
 
-    static bool checkDigest(const Digest & first, const Digest & second);
+    static bool checkDigest(const Digest & first, const Digest & second)
+    {
+        if (first.version != second.version)
+            return true;
+
+        if (first.version == DigestVersion::NO_DIGEST)
+            return true;
+
+        return first.value == second.value;
+    }
 
     static String generateDigest(const String & userdata);
 
@@ -169,7 +158,8 @@ public:
     //  - quickly commit the changes to the storage
     struct CreateNodeDelta
     {
-        KeeperStorage::Node::Stat stat;
+        Coordination::Stat stat;
+        bool is_sequental;
         Coordination::ACLs acls;
         String data;
     };
@@ -334,7 +324,8 @@ public:
     bool createNode(
         const std::string & path,
         String data,
-        const KeeperStorage::Node::Stat & stat,
+        const Coordination::Stat & stat,
+        bool is_sequental,
         Coordination::ACLs node_acls);
 
     // Remove node in the storage

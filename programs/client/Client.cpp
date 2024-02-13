@@ -504,7 +504,7 @@ void Client::connect()
                         << "It may lack support for new features." << std::endl
                         << std::endl;
         }
-        else if (client_version_tuple > server_version_tuple && server_display_name != "clickhouse-cloud")
+        else if (client_version_tuple > server_version_tuple)
         {
             std::cout << "ClickHouse server version is older than ClickHouse client. "
                         << "It may indicate that the server is out of date and can be upgraded." << std::endl
@@ -1010,7 +1010,6 @@ void Client::addOptions(OptionsDescription & options_description)
         ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
         ("connection", po::value<std::string>(), "connection to use (from the client config), by default connection name is hostname")
         ("secure,s", "Use TLS connection")
-        ("no-secure,s", "Don't use TLS connection")
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         ("password", po::value<std::string>(), "password")
         ("ask-password", "ask-password")
@@ -1152,8 +1151,6 @@ void Client::processOptions(const OptionsDescription & options_description,
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
     if (options.count("secure"))
         config().setBool("secure", true);
-    if (options.count("no-secure"))
-        config().setBool("no-secure", true);
     if (options.count("user") && !options["user"].defaulted())
         config().setString("user", options["user"].as<std::string>());
     if (options.count("password"))

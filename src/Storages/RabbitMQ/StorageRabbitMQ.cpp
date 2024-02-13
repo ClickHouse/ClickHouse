@@ -69,7 +69,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         ContextPtr context_,
         const ColumnsDescription & columns_,
         std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
-        bool is_attach)
+        bool is_attach_)
         : IStorage(table_id_)
         , WithContext(context_->getGlobalContext())
         , rabbitmq_settings(std::move(rabbitmq_settings_))
@@ -86,11 +86,12 @@ StorageRabbitMQ::StorageRabbitMQ(
         , persistent(rabbitmq_settings->rabbitmq_persistent.value)
         , use_user_setup(rabbitmq_settings->rabbitmq_queue_consume.value)
         , hash_exchange(num_consumers > 1 || num_queues > 1)
-        , log(getLogger("StorageRabbitMQ (" + table_id_.table_name + ")"))
+        , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, static_cast<int>(num_consumers))
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
         , milliseconds_to_wait(rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms)
+        , is_attach(is_attach_)
 {
     const auto & config = getContext()->getConfigRef();
 
@@ -317,11 +318,10 @@ void StorageRabbitMQ::connectionFunc()
     try
     {
         if (connection->reconnect())
-        {
             initRabbitMQ();
-            streaming_task->scheduleAfter(RESCHEDULE_MS);
-            return;
-        }
+
+        streaming_task->scheduleAfter(RESCHEDULE_MS);
+        return;
     }
     catch (...)
     {
@@ -373,37 +373,57 @@ void StorageRabbitMQ::initRabbitMQ()
     }
     else
     {
-        auto rabbit_channel = connection->createChannel();
-
-        /// Main exchange -> Bridge exchange -> ( Sharding exchange ) -> Queues -> Consumers
-
-        initExchange(*rabbit_channel);
-        bindExchange(*rabbit_channel);
-
-        for (const auto i : collections::range(0, num_queues))
-            bindQueue(i + 1, *rabbit_channel);
-
-        if (queues.size() != num_queues)
+        try
         {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Expected all queues to be initialized (but having {}/{})",
-                queues.size(), num_queues);
-        }
+            auto rabbit_channel = connection->createChannel();
 
-        LOG_TRACE(log, "RabbitMQ setup completed");
-        rabbit_channel->close();
+            /// Main exchange -> Bridge exchange -> ( Sharding exchange ) -> Queues -> Consumers
+
+            initExchange(*rabbit_channel);
+            bindExchange(*rabbit_channel);
+
+            for (const auto i : collections::range(0, num_queues))
+                bindQueue(i + 1, *rabbit_channel);
+
+            if (queues.size() != num_queues)
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Expected all queues to be initialized (but having {}/{})",
+                    queues.size(), num_queues);
+            }
+
+            LOG_TRACE(log, "RabbitMQ setup completed");
+            rabbit_channel->close();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            if (is_attach)
+                return; /// A user will have to reattach the table.
+            throw;
+        }
     }
 
     LOG_TRACE(log, "Registering {} conumers", num_consumers);
 
     for (size_t i = 0; i < num_consumers; ++i)
     {
-        auto consumer = createConsumer();
-        consumer->updateChannel(*connection);
-        consumers_ref.push_back(consumer);
-        pushConsumer(consumer);
-        ++num_created_consumers;
+        try
+        {
+            auto consumer = createConsumer();
+            consumer->updateChannel(*connection);
+            consumers_ref.push_back(consumer);
+            pushConsumer(consumer);
+            ++num_created_consumers;
+        }
+        catch (...)
+        {
+            if (!is_attach)
+                throw;
+
+            tryLogCurrentException(log);
+        }
     }
 
     LOG_TRACE(log, "Registered {}/{} conumers", num_created_consumers, num_consumers);
@@ -680,7 +700,7 @@ void StorageRabbitMQ::read(
     if (num_created_consumers == 0)
     {
         auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, local_context);
         return;
     }
 
@@ -738,11 +758,11 @@ void StorageRabbitMQ::read(
     if (pipe.empty())
     {
         auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, local_context);
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), local_context, query_info);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), query_info, local_context);
         query_plan.addStep(std::move(read_step));
         query_plan.addInterpreterContext(modified_context);
     }

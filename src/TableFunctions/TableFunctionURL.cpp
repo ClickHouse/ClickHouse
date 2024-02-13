@@ -57,24 +57,16 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         if (format == "auto")
             format = FormatFactory::instance().getFormatFromFileName(Poco::URI(filename).getPath(), true);
 
-        StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
+        StorageURL::collectHeaders(args, configuration.headers, context);
     }
     else
     {
-        size_t count = StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
+        auto * headers_it = StorageURL::collectHeaders(args, configuration.headers, context);
         /// ITableFunctionFileLike cannot parse headers argument, so remove it.
-        ASTPtr headers_ast;
-        if (count != args.size())
-        {
-            chassert(count + 1 == args.size());
-            headers_ast = args.back();
-            args.pop_back();
-        }
+        if (headers_it != args.end())
+            args.erase(headers_it);
 
         ITableFunctionFileLike::parseArgumentsImpl(args, context);
-
-        if (headers_ast)
-            args.push_back(headers_ast);
     }
 }
 
@@ -90,15 +82,15 @@ void TableFunctionURL::addColumnsStructureToArguments(ASTs & args, const String 
     }
     else
     {
-        /// If arguments contain headers, just remove it and add to the end of arguments later.
+        /// If arguments contain headers, just remove it and add to the end of arguments later
+        /// (header argument can be at any position).
         HTTPHeaderEntries tmp_headers;
-        size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, context);
+        auto * headers_it = StorageURL::collectHeaders(args, tmp_headers, context);
         ASTPtr headers_ast;
-        if (count != args.size())
+        if (headers_it != args.end())
         {
-            chassert(count + 1 == args.size());
-            headers_ast = args.back();
-            args.pop_back();
+            headers_ast = *headers_it;
+            args.erase(headers_it);
         }
 
         ITableFunctionFileLike::addColumnsStructureToArguments(args, desired_structure, context);

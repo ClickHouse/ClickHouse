@@ -9,7 +9,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/System/StorageSystemNumbers.h>
-#include <Common/iota.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -41,10 +40,11 @@ protected:
         auto column = ColumnUInt64::create(block_size);
         ColumnUInt64::Container & vec = column->getData();
 
-        UInt64 curr = next; /// The local variable for some reason works faster (>20%) than member of class.
+        size_t curr = next; /// The local variable for some reason works faster (>20%) than member of class.
         UInt64 * pos = vec.data(); /// This also accelerates the code.
         UInt64 * end = &vec[block_size];
-        iota(pos, static_cast<size_t>(end - pos), curr);
+        while (pos < end)
+            *pos++ = curr++;
 
         next += step;
 
@@ -211,18 +211,17 @@ protected:
                 {
                     auto start_value_64 = static_cast<UInt64>(start_value);
                     auto end_value_64 = static_cast<UInt64>(end_value);
-                    auto size = end_value_64 - start_value_64;
-                    iota(pos, static_cast<size_t>(size), start_value_64);
-                    pos += size;
+                    while (start_value_64 < end_value_64)
+                        *(pos++) = start_value_64++;
                 }
             };
 
             if (can_provide > need)
             {
                 UInt64 start_value = first_value(range) + cursor.offset_in_range;
-                /// end_value will never overflow
-                iota(pos, static_cast<size_t>(need), start_value);
-                pos += need;
+                UInt64 end_value = start_value + need; /// end_value will never overflow
+                while (start_value < end_value)
+                    *(pos++) = start_value++;
 
                 provided += need;
                 cursor.offset_in_range += need;
@@ -332,7 +331,7 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     , storage{std::move(storage_)}
     , storage_snapshot{storage_snapshot_}
     , context{std::move(context_)}
-    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context).expression}
+    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->getMetadataForQuery()->columns, context).expression}
     , max_block_size{max_block_size_}
     , num_streams{num_streams_}
     , limit_length_and_offset(InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery&>(), context))
@@ -375,7 +374,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         num_streams = 1;
 
     /// Build rpn of query filters
-    KeyCondition condition(buildFilterDAG(), context, column_names, key_expression);
+    KeyCondition condition(buildFilterDAG(), context, column_names, key_expression, NameSet{});
 
     Pipe pipe;
     Ranges ranges;
@@ -507,7 +506,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
 ActionsDAGPtr ReadFromSystemNumbersStep::buildFilterDAG()
 {
     std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
-    return ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, node_name_to_input_node_column);
+    return ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, node_name_to_input_node_column, context);
 }
 
 void ReadFromSystemNumbersStep::checkLimits(size_t rows)

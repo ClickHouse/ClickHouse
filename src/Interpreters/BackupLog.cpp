@@ -18,9 +18,9 @@ BackupLogElement::BackupLogElement(BackupOperationInfo info_)
 {
 }
 
-ColumnsDescription BackupLogElement::getColumnsDescription()
+NamesAndTypesList BackupLogElement::getNamesAndTypes()
 {
-    return ColumnsDescription
+    return
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},

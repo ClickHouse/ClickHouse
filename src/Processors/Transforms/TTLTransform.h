@@ -42,7 +42,7 @@ private:
 
     /// ttl_infos and empty_columns are updating while reading
     const MergeTreeData::MutableDataPartPtr & data_part;
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

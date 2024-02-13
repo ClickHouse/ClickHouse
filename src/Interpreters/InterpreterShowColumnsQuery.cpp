@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowColumnsQuery.h>
 
 #include <Common/quoteString.h>
@@ -165,13 +164,5 @@ BlockIO InterpreterShowColumnsQuery::execute()
     return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
-void registerInterpreterShowColumnsQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterShowColumnsQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterShowColumnsQuery", create_fn);
-}
 
 }

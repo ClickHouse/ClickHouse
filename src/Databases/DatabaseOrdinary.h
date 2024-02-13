@@ -51,8 +51,7 @@ public:
 
     void waitTableStarted(const String & name) const override;
 
-    void waitDatabaseStarted() const override;
-    void stopLoading() override;
+    void waitDatabaseStarted(bool no_throw) const override;
 
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
 
@@ -77,7 +76,7 @@ protected:
 
     std::unordered_map<String, LoadTaskPtr> load_table TSA_GUARDED_BY(mutex);
     std::unordered_map<String, LoadTaskPtr> startup_table TSA_GUARDED_BY(mutex);
-    LoadTaskPtr startup_database_task TSA_GUARDED_BY(mutex);
+    LoadTaskPtr startup_database_task;
     std::atomic<size_t> total_tables_to_startup{0};
     std::atomic<size_t> tables_started{0};
     AtomicStopwatch startup_watch;

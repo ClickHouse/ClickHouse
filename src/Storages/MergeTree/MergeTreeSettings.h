@@ -255,7 +255,7 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>, public 
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context);
 
     /// We check settings after storage creation
     static bool isReadonlySetting(const String & name)
@@ -276,12 +276,5 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>, public 
 };
 
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
-
-
-/// Column-level Merge-Tree settings which overwrite MergeTree settings
-namespace MergeTreeColumnSettings
-{
-    void validate(const SettingsChanges & changes);
-}
 
 }

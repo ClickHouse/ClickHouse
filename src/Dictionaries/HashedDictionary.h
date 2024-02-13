@@ -251,7 +251,7 @@ private:
 
     void resize(size_t added_rows);
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
@@ -293,7 +293,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::HashedDictionary(
     const HashedDictionaryConfiguration & configuration_,
     BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
-    , log(getLogger("HashedDictionary"))
+    , log(&Poco::Logger::get("HashedDictionary"))
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
     , configuration(configuration_)
