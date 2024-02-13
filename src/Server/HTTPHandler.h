@@ -87,9 +87,9 @@ private:
                 return;
             finalized = true;
 
-            if (out_maybe_compressed)
-                out_maybe_compressed->finalize();
-            else if (out)
+            if (out_compressed_holder)
+                out_compressed_holder->finalize();
+            if (out)
                 out->finalize();
         }
 
@@ -100,7 +100,7 @@ private:
     };
 
     IServer & server;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// It is the name of the server that will be sent in an http-header X-ClickHouse-Server-Display-Name.
     String server_display_name;

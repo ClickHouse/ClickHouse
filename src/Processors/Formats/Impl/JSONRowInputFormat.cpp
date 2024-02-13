@@ -2,6 +2,7 @@
 #include <Formats/JSONUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB

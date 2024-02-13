@@ -22,7 +22,7 @@ protected:
         for (const auto & column : keys.getColumnsWithTypeAndName())
             node_name_to_input_column.insert({column.name, column});
 
-        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes, node_name_to_input_column, context);
+        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes, node_name_to_input_column);
         key_condition = std::make_shared<const KeyCondition>(
             filter_actions_dag,
             context,

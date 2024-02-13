@@ -149,7 +149,7 @@ private:
 
     std::shared_ptr<HiveSettings> storage_settings;
 
-    Poco::Logger * log = &Poco::Logger::get("StorageHive");
+    LoggerPtr log = getLogger("StorageHive");
 };
 
 }

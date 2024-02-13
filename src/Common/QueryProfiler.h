@@ -7,6 +7,8 @@
 
 #include "config.h"
 
+#include <Common/Logger.h>
+
 
 namespace Poco
 {
@@ -43,7 +45,7 @@ public:
     void cleanup();
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
     std::optional<timer_t> timer_id;
 };
 #endif
@@ -58,7 +60,7 @@ public:
 private:
     void cleanup();
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
 #ifndef __APPLE__
     inline static thread_local Timer timer = Timer();

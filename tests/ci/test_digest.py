@@ -5,6 +5,7 @@ from hashlib import md5
 from pathlib import Path
 
 import digest_helper as dh
+from env_helper import ROOT_DIR
 
 _12 = b"12\n"
 _13 = b"13\n"
@@ -13,7 +14,7 @@ _14 = b"14\n"
 
 # pylint:disable=protected-access
 class TestDigests(unittest.TestCase):
-    tests_dir = Path("tests/digests")
+    tests_dir = Path(ROOT_DIR) / "tests/ci/tests/digests"
     broken_link = tests_dir / "broken-symlink"
     empty_digest = "d41d8cd98f00b204e9800998ecf8427e"
 

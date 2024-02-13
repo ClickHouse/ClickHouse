@@ -115,7 +115,7 @@ private:
     /// If table_to_check is not null and the check is enabled in settings, check that replication delay
     /// for this table is not too large.
     TryResult tryGetEntry(
-            IConnectionPool & pool,
+            const ConnectionPoolPtr & pool,
             const ConnectionTimeouts & timeouts,
             std::string & fail_message,
             const Settings & settings,

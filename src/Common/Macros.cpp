@@ -38,6 +38,10 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
     }
 }
 
+Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & root_key, LoggerPtr log)
+    : Macros(config, root_key, log.get())
+{}
+
 Macros::Macros(std::map<String, String> map)
 {
     macros = std::move(map);

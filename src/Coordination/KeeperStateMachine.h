@@ -173,7 +173,7 @@ private:
     /// Last committed Raft log number.
     std::atomic<uint64_t> last_committed_idx;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Cluster config for our quorum.
     /// It's a copy of config stored in StateManager, but here

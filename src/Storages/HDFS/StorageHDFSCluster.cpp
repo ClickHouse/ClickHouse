@@ -45,7 +45,7 @@ StorageHDFSCluster::StorageHDFSCluster(
     const ConstraintsDescription & constraints_,
     const String & compression_method_,
     bool structure_argument_was_provided_)
-    : IStorageCluster(cluster_name_, table_id_, &Poco::Logger::get("StorageHDFSCluster (" + table_id_.table_name + ")"), structure_argument_was_provided_)
+    : IStorageCluster(cluster_name_, table_id_, getLogger("StorageHDFSCluster (" + table_id_.table_name + ")"), structure_argument_was_provided_)
     , uri(uri_)
     , format_name(format_name_)
     , compression_method(compression_method_)

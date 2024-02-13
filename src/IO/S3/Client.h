@@ -281,7 +281,7 @@ private:
 
     const ServerSideEncryptionKMSConfig sse_kms_config;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 class ClientFactory

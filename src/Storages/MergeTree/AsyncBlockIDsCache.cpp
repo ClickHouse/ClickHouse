@@ -60,7 +60,7 @@ AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_)
     , update_wait(storage.getSettings()->async_block_ids_cache_update_wait_ms)
     , path(storage.getZooKeeperPath() + "/async_blocks")
     , log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)")
-    , log(&Poco::Logger::get(log_name))
+    , log(getLogger(log_name))
 {
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ update(); });
 }

@@ -297,7 +297,7 @@ void registerStorageAzureBlob(StorageFactory & factory)
 
         return std::make_shared<StorageAzureBlob>(
             std::move(configuration),
-            std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings)),
+            std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings),configuration.container),
             args.getContext(),
             args.table_id,
             args.columns,
@@ -707,7 +707,7 @@ private:
 
 void ReadFromAzureBlob::applyFilters()
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
