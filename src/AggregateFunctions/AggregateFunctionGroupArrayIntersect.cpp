@@ -384,25 +384,19 @@ public:
     static DataTypePtr createResultType() { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDate32>()); }
 };
 
-class AggregateFunctionGroupArrayIntersectDateTime64 : public AggregateFunctionGroupArrayIntersect<DataTypeDateTime64::FieldType>
-{
-public:
-    explicit AggregateFunctionGroupArrayIntersectDateTime64(const DataTypePtr & argument_type, const Array & parameters_)
-        : AggregateFunctionGroupArrayIntersect<DataTypeDateTime64::FieldType>(argument_type, parameters_, createResultType(argument_type)) {}
-    static DataTypePtr createResultType(DataTypePtr argument_type)
-    {
-        const auto & datetime64_type = typeid_cast<const DataTypeDateTime64 &>(argument_type);
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime64>(datetime64_type.getScale()));
-    }
-};
-
 IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, const Array & parameters)
 {
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::Date) return new AggregateFunctionGroupArrayIntersectDate(argument_type, parameters);
     else if (which.idx == TypeIndex::DateTime) return new AggregateFunctionGroupArrayIntersectDateTime(argument_type, parameters);
     else if (which.idx == TypeIndex::Date32) return new AggregateFunctionGroupArrayIntersectDate32(argument_type, parameters);
-    else if (which.idx == TypeIndex::DateTime64) return new AggregateFunctionGroupArrayIntersectDateTime64(argument_type, parameters);
+    else if (which.idx == TypeIndex::DateTime64)
+    {
+        const auto * datetime64_type = dynamic_cast<const DataTypeDateTime64 *>(argument_type.get());
+        const auto return_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime64>(datetime64_type->getScale()));
+
+        return new AggregateFunctionGroupArrayIntersectGeneric<true>(argument_type, parameters, return_type);
+    }
     else
     {
         /// Check that we can use plain version of AggregateFunctionGroupArrayIntersectGeneric
