@@ -7,11 +7,10 @@ cluster = ClickHouseCluster(__file__)
 node_old = cluster.add_instance(
     "node1",
     main_configs=["configs/remote_servers.xml"],
-    image="yandex/clickhouse-server",
-    tag="20.8.11.17",
+    image="clickhouse/clickhouse-server",
+    tag="23.3",
     stay_alive=True,
     with_installed_binary=True,
-    allow_analyzer=False,
 )
 node_new = cluster.add_instance(
     "node2",
