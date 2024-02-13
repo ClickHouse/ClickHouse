@@ -68,8 +68,7 @@ void registerTableFunctions()
 
     registerTableFunctionObjectStorage(factory);
     registerTableFunctionObjectStorageCluster(factory);
-
-
+    registerDataLakeTableFunctions(factory);
 }
 
 }

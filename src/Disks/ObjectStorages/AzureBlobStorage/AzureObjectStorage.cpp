@@ -323,9 +323,7 @@ void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     {
         removeObjectIfExists(object);
     }
-
 }
-
 
 ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) const
 {
@@ -338,9 +336,9 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) c
     {
         result.attributes.emplace();
         for (const auto & [key, value] : properties.Metadata)
-            (*result.attributes)[key] = value;
+            result.attributes[key] = value;
     }
-    result.last_modified.emplace(static_cast<std::chrono::system_clock::time_point>(properties.LastModified).time_since_epoch().count());
+    result.last_modified = static_cast<std::chrono::system_clock::time_point>(properties.LastModified).time_since_epoch().count();
     return result;
 }
 

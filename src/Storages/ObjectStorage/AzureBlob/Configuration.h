@@ -1,6 +1,11 @@
 #pragma once
+
+#include "config.h"
+
+#if USE_AZURE_BLOB_STORAGE
+
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObejctStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 
 namespace DB
 {
@@ -26,8 +31,8 @@ public:
     String getNamespace() const override { return container; }
 
     void check(ContextPtr context) const override;
-    StorageObjectStorageConfigurationPtr clone() override;
     ObjectStoragePtr createOrUpdateObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
+    StorageObjectStorageConfigurationPtr clone() override { return std::make_shared<StorageAzureBlobConfiguration>(*this); }
 
     void fromNamedCollection(const NamedCollection & collection) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
@@ -52,3 +57,5 @@ protected:
 };
 
 }
+
+#endif

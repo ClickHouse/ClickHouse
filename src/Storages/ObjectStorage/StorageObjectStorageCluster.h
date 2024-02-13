@@ -67,5 +67,8 @@ using StorageS3Cluster = StorageObjectStorageCluster<S3ClusterDefinition, S3Stor
 #if USE_AZURE_BLOB_STORAGE
 using StorageAzureBlobCluster = StorageObjectStorageCluster<AzureClusterDefinition, AzureStorageSettings, StorageAzureBlobConfiguration>;
 #endif
+#if USE_HDFS
+using StorageHDFSCluster = StorageObjectStorageCluster<HDFSClusterDefinition, HDFSStorageSettings, StorageHDFSConfiguration>;
+#endif
 
 }

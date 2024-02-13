@@ -2,10 +2,9 @@
 
 #include "config.h"
 
-#if USE_AZURE_BLOB_STORAGE
-
 #include <TableFunctions/ITableFunction.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Disks/ObjectStorages/IObjectStorage_fwd.h>
 
 
@@ -114,6 +113,8 @@ public:
     static void addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr & context);
 
 protected:
+    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
+
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
         ContextPtr context,
@@ -125,9 +126,11 @@ protected:
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
-    ObjectStoragePtr getObjectStorage(const ContextPtr & context, bool create_readonly) const;
 
-    mutable typename StorageObjectStorage<StorageSettings>::ConfigurationPtr configuration;
+    ObjectStoragePtr getObjectStorage(const ContextPtr & context, bool create_readonly) const;
+    ConfigurationPtr getConfiguration() const;
+
+    mutable ConfigurationPtr configuration;
     mutable ObjectStoragePtr object_storage;
     ColumnsDescription structure_hint;
 
@@ -146,5 +149,3 @@ using TableFunctionAzureBlob = TableFunctionObjectStorage<AzureDefinition, Azure
 using TableFunctionHDFS = TableFunctionObjectStorage<HDFSDefinition, HDFSStorageSettings, StorageHDFSConfiguration>;
 #endif
 }
-
-#endif

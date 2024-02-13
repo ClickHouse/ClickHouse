@@ -12,7 +12,7 @@
 #include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/ObjectStorage/StorageObejctStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Common/Exception.h>
 #include <Parsers/queryToString.h>
 

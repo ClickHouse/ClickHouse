@@ -1,12 +1,17 @@
-#include <Storages/ObjectStorage/AzureConfiguration.h>
-#include <Storages/ObjectStorage/S3Configuration.h>
-#include <Storages/ObjectStorage/HDFSConfiguration.h>
+#include <Storages/ObjectStorage/AzureBlob/Configuration.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFactory.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 template <typename StorageSettings>
 static std::shared_ptr<StorageObjectStorage<StorageSettings>> createStorageObjectStorage(
@@ -149,6 +154,7 @@ void registerStorageObjectStorage(StorageFactory & factory)
 #if USE_HDFS
     registerStorageHDFS(factory);
 #endif
+    UNUSED(factory);
 }
 
 }

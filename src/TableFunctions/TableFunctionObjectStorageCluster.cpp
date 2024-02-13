@@ -6,9 +6,9 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/S3Configuration.h>
-#include <Storages/ObjectStorage/HDFSConfiguration.h>
-#include <Storages/ObjectStorage/AzureConfiguration.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/AzureBlob/Configuration.h>
 
 
 namespace DB
@@ -103,6 +103,8 @@ void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory)
         }
     );
 #endif
+
+    UNUSED(factory);
 }
 
 #if USE_AWS_S3

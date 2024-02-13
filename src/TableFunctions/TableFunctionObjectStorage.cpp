@@ -7,10 +7,10 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Access/Common/AccessFlags.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObejctStorageConfiguration.h>
-#include <Storages/ObjectStorage/S3Configuration.h>
-#include <Storages/ObjectStorage/HDFSConfiguration.h>
-#include <Storages/ObjectStorage/AzureConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/AzureBlob/Configuration.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Formats/FormatFactory.h>
@@ -24,7 +24,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
 }
 
 template <typename Definition, typename StorageSettings, typename Configuration>
@@ -34,6 +33,15 @@ ObjectStoragePtr TableFunctionObjectStorage<
     if (!object_storage)
         object_storage = configuration->createOrUpdateObjectStorage(context, create_readonly);
     return object_storage;
+}
+
+template <typename Definition, typename StorageSettings, typename Configuration>
+StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<
+    Definition, StorageSettings, Configuration>::getConfiguration() const
+{
+    if (!configuration)
+        configuration = std::make_shared<Configuration>();
+    return configuration;
 }
 
 template <typename Definition, typename StorageSettings, typename Configuration>
@@ -65,8 +73,7 @@ template <typename Definition, typename StorageSettings, typename Configuration>
 void TableFunctionObjectStorage<
     Definition, StorageSettings, Configuration>::parseArgumentsImpl(ASTs & engine_args, const ContextPtr & local_context)
 {
-    configuration = std::make_shared<Configuration>();
-    StorageObjectStorageConfiguration::initialize(*configuration, engine_args, local_context, true);
+    StorageObjectStorageConfiguration::initialize(*getConfiguration(), engine_args, local_context, true);
 }
 
 template <typename Definition, typename StorageSettings, typename Configuration>
@@ -147,6 +154,7 @@ StoragePtr TableFunctionObjectStorage<Definition, StorageSettings, Configuration
 
 void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
 {
+    UNUSED(factory);
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionObjectStorage<S3Definition, S3StorageSettings, StorageS3Configuration>>(
     {

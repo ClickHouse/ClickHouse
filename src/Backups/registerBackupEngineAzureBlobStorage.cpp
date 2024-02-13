@@ -9,7 +9,7 @@
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Storages/ObjectStorage/AzureConfiguration.h>
+#include <Storages/ObjectStorage/AzureBlob/Configuration.h>
 #include <filesystem>
 #endif
 
@@ -58,9 +58,6 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 
             if (!config.has(config_prefix))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", id_arg);
-
-            if (!config.has(config_prefix))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no `{}` in config", config_prefix);
 
             if (config.has(config_prefix + ".connection_string"))
             {

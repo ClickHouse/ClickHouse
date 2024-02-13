@@ -9,7 +9,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Storages/ObjectStorage/StorageObejctStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageQuerySettings.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Common/parseGlobs.h>
@@ -26,6 +26,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 StorageObjectStorageSource::StorageObjectStorageSource(
@@ -182,8 +184,8 @@ std::optional<size_t> StorageObjectStorageSource::tryGetNumRowsFromCache(const O
 
     auto get_last_mod_time = [&]() -> std::optional<time_t>
     {
-        return object_info->metadata && object_info->metadata->last_modified
-            ? object_info->metadata->last_modified->epochMicroseconds()
+        return object_info->metadata
+            ? object_info->metadata->last_modified.epochMicroseconds()
             : 0;
     };
     return schema_cache.tryGetNumRows(cache_key, get_last_mod_time);
@@ -472,4 +474,29 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
     return std::make_shared<ObjectInfo>(key, metadata);
 }
 
+StorageObjectStorageSource::ReaderHolder::ReaderHolder(
+    ObjectInfoPtr object_info_,
+    std::unique_ptr<ReadBuffer> read_buf_,
+    std::shared_ptr<ISource> source_,
+    std::unique_ptr<QueryPipeline> pipeline_,
+    std::unique_ptr<PullingPipelineExecutor> reader_)
+    : object_info(std::move(object_info_))
+    , read_buf(std::move(read_buf_))
+    , source(std::move(source_))
+    , pipeline(std::move(pipeline_))
+    , reader(std::move(reader_))
+{
+}
+
+StorageObjectStorageSource::ReaderHolder & StorageObjectStorageSource::ReaderHolder::operator=(ReaderHolder && other) noexcept
+{
+    /// The order of destruction is important.
+    /// reader uses pipeline, pipeline uses read_buf.
+    reader = std::move(other.reader);
+    pipeline = std::move(other.pipeline);
+    source = std::move(other.source);
+    read_buf = std::move(other.read_buf);
+    object_info = std::move(other.object_info);
+    return *this;
+}
 }

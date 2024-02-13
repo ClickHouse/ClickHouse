@@ -5,7 +5,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObejctStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 
 namespace DB
 {
@@ -57,12 +58,16 @@ namespace DB
  *     "metadata-log" : [ ]
  * }
  */
-class IcebergMetadata : WithContext
+class IcebergMetadata : public IDataLakeMetadata, private WithContext
 {
 public:
+    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
+
+    static constexpr auto name = "Iceberg";
+
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        ConfigurationPtr configuration_,
         ContextPtr context_,
         Int32 metadata_version_,
         Int32 format_version_,
@@ -72,30 +77,35 @@ public:
 
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
     /// All subsequent calls will return saved list of files (because it cannot be changed without changing metadata file)
-    Strings getDataFiles();
+    Strings getDataFiles() const override;
 
     /// Get table schema parsed from metadata.
-    NamesAndTypesList getTableSchema() const { return schema; }
+    NamesAndTypesList getTableSchema() const override { return schema; }
 
-    size_t getVersion() const { return metadata_version; }
+    bool operator ==(const IDataLakeMetadata & other) const override
+    {
+        const auto * iceberg_metadata = dynamic_cast<const IcebergMetadata *>(&other);
+        return iceberg_metadata && getVersion() == iceberg_metadata->getVersion();
+    }
+
+    static DataLakeMetadataPtr create(
+        ObjectStoragePtr object_storage,
+        ConfigurationPtr configuration,
+        ContextPtr local_context);
 
 private:
-    ObjectStoragePtr object_storage;
-    StorageObjectStorageConfigurationPtr configuration;
+    size_t getVersion() const { return metadata_version; }
+
+    const ObjectStoragePtr object_storage;
+    const ConfigurationPtr configuration;
     Int32 metadata_version;
     Int32 format_version;
     String manifest_list_file;
     Int32 current_schema_id;
     NamesAndTypesList schema;
-    Strings data_files;
+    mutable Strings data_files;
     LoggerPtr log;
-
 };
-
-std::unique_ptr<IcebergMetadata> parseIcebergMetadata(
-    ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
-    ContextPtr context);
 
 }
 

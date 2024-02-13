@@ -81,7 +81,7 @@ void StorageSystemSchemaInferenceCache::fillData(MutableColumns & res_columns, C
 #endif
     fillDataImpl(res_columns, StorageURL::getSchemaCache(context), "URL");
 #if USE_AZURE_BLOB_STORAGE
-    fillDataImpl(res_columns, StorageAzureBlobStorage::getSchemaCache(context), "Azure"); /// FIXME
+    fillDataImpl(res_columns, StorageAzureBlob::getSchemaCache(context), "Azure"); /// FIXME
 #endif
 }
 

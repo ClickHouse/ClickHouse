@@ -24,7 +24,8 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
-#include <Storages/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Common.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -332,25 +333,6 @@ MutableColumns parseAvro(
     return columns;
 }
 
-std::vector<String> listFiles(
-    const ObjectStoragePtr & object_storage,
-    const StorageObjectStorageConfiguration & configuration,
-    const String & prefix, const String & suffix)
-{
-    auto key = std::filesystem::path(configuration.getPath()) / prefix;
-    RelativePathsWithMetadata files_with_metadata;
-    object_storage->listObjects(key, files_with_metadata, 0);
-    Strings res;
-    for (const auto & file_with_metadata : files_with_metadata)
-    {
-        const auto & filename = file_with_metadata->relative_path;
-        if (filename.ends_with(suffix))
-            res.push_back(filename);
-    }
-    LOG_TRACE(getLogger("DataLakeMetadataReadHelper"), "Listed {} files", res.size());
-    return res;
-}
-
 /**
  * Each version of table metadata is stored in a `metadata` directory and
  * has one of 2 formats:
@@ -361,7 +343,7 @@ std::pair<Int32, String> getMetadataFileAndVersion(
     ObjectStoragePtr object_storage,
     const StorageObjectStorageConfiguration & configuration)
 {
-    const auto metadata_files = listFiles(object_storage, configuration, "metadata", ".metadata.json");
+    const auto metadata_files = listFiles(*object_storage, configuration, "metadata", ".metadata.json");
     if (metadata_files.empty())
     {
         throw Exception(
@@ -394,14 +376,14 @@ std::pair<Int32, String> getMetadataFileAndVersion(
 
 }
 
-std::unique_ptr<IcebergMetadata> parseIcebergMetadata(
+DataLakeMetadataPtr IcebergMetadata::create(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
-    ContextPtr context_)
+    ContextPtr local_context)
 {
     const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration);
     LOG_DEBUG(getLogger("IcebergMetadata"), "Parse metadata {}", metadata_file_path);
-    auto read_settings = context_->getReadSettings();
+    auto read_settings = local_context->getReadSettings();
     auto buf = object_storage->readObject(StoredObject(metadata_file_path), read_settings);
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
@@ -411,7 +393,7 @@ std::unique_ptr<IcebergMetadata> parseIcebergMetadata(
     Poco::JSON::Object::Ptr object = json.extract<Poco::JSON::Object::Ptr>();
 
     auto format_version = object->getValue<int>("format-version");
-    auto [schema, schema_id] = parseTableSchema(object, format_version, context_->getSettingsRef().iceberg_engine_ignore_schema_evolution);
+    auto [schema, schema_id] = parseTableSchema(object, format_version, local_context->getSettingsRef().iceberg_engine_ignore_schema_evolution);
 
     auto current_snapshot_id = object->getValue<Int64>("current-snapshot-id");
     auto snapshots = object->get("snapshots").extract<Poco::JSON::Array::Ptr>();
@@ -428,7 +410,7 @@ std::unique_ptr<IcebergMetadata> parseIcebergMetadata(
         }
     }
 
-    return std::make_unique<IcebergMetadata>(object_storage, configuration, context_, metadata_version, format_version, manifest_list_file, schema_id, schema);
+    return std::make_unique<IcebergMetadata>(object_storage, configuration, local_context, metadata_version, format_version, manifest_list_file, schema_id, schema);
 }
 
 /**
@@ -456,7 +438,7 @@ std::unique_ptr<IcebergMetadata> parseIcebergMetadata(
  * │      1 │ 2252246380142525104 │ ('/iceberg_data/db/table_name/data/a=2/00000-1-c9535a00-2f4f-405c-bcfa-6d4f9f477235-00003.parquet','PARQUET',(2),1,631,67108864,[(1,46),(2,48)],[(1,1),(2,1)],[(1,0),(2,0)],[],[(1,'\0\0\0\0\0\0\0'),(2,'3')],[(1,'\0\0\0\0\0\0\0'),(2,'3')],NULL,[4],0) │
  * └────────┴─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  */
-Strings IcebergMetadata::getDataFiles()
+Strings IcebergMetadata::getDataFiles() const
 {
     if (!data_files.empty())
         return data_files;

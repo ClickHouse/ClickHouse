@@ -6,7 +6,7 @@
 #include <Backups/BackupIO_Default.h>
 #include <Disks/DiskType.h>
 #include <Interpreters/Context_fwd.h>
-#include <Storages/ObjectStorage/AzureConfiguration.h>
+#include <Storages/ObjectStorage/AzureBlob/Configuration.h>
 
 
 namespace DB

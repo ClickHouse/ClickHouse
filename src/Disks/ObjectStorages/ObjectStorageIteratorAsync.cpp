@@ -11,18 +11,26 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+IObjectStorageIteratorAsync::IObjectStorageIteratorAsync(
+    CurrentMetrics::Metric threads_metric,
+    CurrentMetrics::Metric threads_active_metric,
+    CurrentMetrics::Metric threads_scheduled_metric,
+    const std::string & thread_name)
+    : list_objects_pool(threads_metric, threads_active_metric, threads_scheduled_metric, 1)
+    , list_objects_scheduler(threadPoolCallbackRunner<BatchAndHasNext>(list_objects_pool, thread_name))
+{
+}
+
 void IObjectStorageIteratorAsync::nextBatch()
 {
     std::lock_guard lock(mutex);
     if (is_finished)
     {
-        LOG_TEST(&Poco::Logger::get("kssenii"), "KSSENII: here 3");
         current_batch.clear();
         current_batch_iterator = current_batch.begin();
     }
     else
     {
-        LOG_TEST(&Poco::Logger::get("kssenii"), "KSSENII: here 4");
         if (!is_initialized)
         {
             outcome_future = scheduleBatch();
@@ -30,13 +38,23 @@ void IObjectStorageIteratorAsync::nextBatch()
         }
 
         chassert(outcome_future.valid());
-        auto [batch, has_next] = outcome_future.get();
-        current_batch = std::move(batch);
+        BatchAndHasNext result;
+        try
+        {
+            result = outcome_future.get();
+        }
+        catch (...)
+        {
+            is_finished = true;
+            throw;
+        }
+
+        current_batch = std::move(result.batch);
         current_batch_iterator = current_batch.begin();
 
         accumulated_size.fetch_add(current_batch.size(), std::memory_order_relaxed);
 
-        if (has_next)
+        if (result.has_next)
             outcome_future = scheduleBatch();
         else
             is_finished = true;
@@ -100,12 +118,10 @@ std::optional<RelativePathsWithMetadata> IObjectStorageIteratorAsync::getCurrent
 
     if (current_batch_iterator == current_batch.end())
     {
-        LOG_TEST(&Poco::Logger::get("kssenii"), "KSSENII: here 2");
         return std::nullopt;
     }
 
     auto temp_current_batch = std::move(current_batch);
-    LOG_TEST(&Poco::Logger::get("kssenii"), "KSSENII: here 1: {}", temp_current_batch.size());
     nextBatch();
     return temp_current_batch;
 }

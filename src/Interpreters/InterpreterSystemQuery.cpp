@@ -480,7 +480,7 @@ BlockIO InterpreterSystemQuery::execute()
                 StorageURL::getSchemaCache(getContext()).clear();
 #if USE_AZURE_BLOB_STORAGE
             if (caches_to_drop.contains("AZURE"))
-                StorageAzureBlobStorage::getSchemaCache(getContext()).clear();
+                StorageAzureBlob::getSchemaCache(getContext()).clear();
 #endif
             break;
         }

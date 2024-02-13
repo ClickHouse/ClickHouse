@@ -95,8 +95,7 @@ public:
         ContextPtr context);
 
 protected:
-    virtual std::pair<ConfigurationPtr, ObjectStoragePtr>
-    updateConfigurationAndGetCopy(ContextPtr local_context);
+    virtual std::pair<ConfigurationPtr, ObjectStoragePtr> updateConfigurationAndGetCopy(ContextPtr local_context);
 
     const std::string engine_name;
     const NamesAndTypesList virtual_columns;
@@ -110,7 +109,7 @@ protected:
 };
 
 using StorageS3 = StorageObjectStorage<S3StorageSettings>;
-using StorageAzureBlobStorage = StorageObjectStorage<AzureStorageSettings>;
+using StorageAzureBlob = StorageObjectStorage<AzureStorageSettings>;
 using StorageHDFS = StorageObjectStorage<HDFSStorageSettings>;
 
 }

@@ -67,11 +67,11 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
         auto get_last_mod_time = [&] -> std::optional<time_t>
         {
             if (object_info->metadata)
-                return object_info->metadata->last_modified->epochMicroseconds();
+                return object_info->metadata->last_modified.epochMicroseconds();
             else
             {
                 object_info->metadata = object_storage->getObjectMetadata(object_info->relative_path);
-                return object_info->metadata->last_modified->epochMicroseconds();
+                return object_info->metadata->last_modified.epochMicroseconds();
             }
         };
 

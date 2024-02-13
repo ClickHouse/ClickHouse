@@ -59,7 +59,6 @@ void ReadFromStorageObejctStorage::applyFilters()
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
-
     createIterator(predicate);
 }
 

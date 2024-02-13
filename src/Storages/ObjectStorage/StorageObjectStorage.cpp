@@ -9,7 +9,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/ObjectStorage/StorageObejctStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageQuerySettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -24,8 +24,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DATABASE_ACCESS_DENIED;
-    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 
 }
@@ -59,7 +57,6 @@ std::unique_ptr<StorageInMemoryMetadata> getStorageMetadata(
 
         storage_metadata->setColumns(columns);
     }
-
     storage_metadata->setConstraints(constraints);
     storage_metadata->setComment(comment);
     return storage_metadata;
@@ -264,10 +261,7 @@ SinkToStoragePtr StorageObjectStorage<StorageSettings>::write(
 
 template <typename StorageSettings>
 void StorageObjectStorage<StorageSettings>::truncate(
-    const ASTPtr &,
-    const StorageMetadataPtr &,
-    ContextPtr,
-    TableExclusiveLockHolder &)
+    const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     if (configuration->withGlobs())
     {

@@ -1,4 +1,7 @@
-#include <Storages/ObjectStorage/AzureConfiguration.h>
+#include <Storages/ObjectStorage/AzureBlob/Configuration.h>
+
+#if USE_AZURE_BLOB_STORAGE
+
 #include <azure/storage/common/storage_credential.hpp>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
@@ -44,21 +47,19 @@ namespace
         return !candidate.starts_with("http");
     }
 
-    bool containerExists(std::unique_ptr<Azure::Storage::Blobs::BlobServiceClient> & blob_service_client, std::string container_name)
+    bool containerExists(Azure::Storage::Blobs::BlobServiceClient & blob_service_client, std::string container_name)
     {
         Azure::Storage::Blobs::ListBlobContainersOptions options;
         options.Prefix = container_name;
         options.PageSizeHint = 1;
 
-        auto containers_list_response = blob_service_client->ListBlobContainers(options);
+        auto containers_list_response = blob_service_client.ListBlobContainers(options);
         auto containers_list = containers_list_response.BlobContainers;
 
-        for (const auto & container : containers_list)
-        {
-            if (container_name == container.Name)
-                return true;
-        }
-        return false;
+        auto it = std::find_if(
+            containers_list.begin(), containers_list.end(),
+            [&](const auto & c) { return c.Name == container_name; });
+        return it != containers_list.end();
     }
 }
 
@@ -76,19 +77,6 @@ void StorageAzureBlobConfiguration::check(ContextPtr context) const
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url_to_check);
 }
 
-StorageObjectStorageConfigurationPtr StorageAzureBlobConfiguration::clone()
-{
-    auto configuration = std::make_shared<StorageAzureBlobConfiguration>();
-    configuration->connection_url = connection_url;
-    configuration->is_connection_string = is_connection_string;
-    configuration->account_name = account_name;
-    configuration->account_key = account_key;
-    configuration->container = container;
-    configuration->blob_path = blob_path;
-    configuration->blobs_paths = blobs_paths;
-    return configuration;
-}
-
 StorageAzureBlobConfiguration::StorageAzureBlobConfiguration(const StorageAzureBlobConfiguration & other)
 {
     connection_url = other.connection_url;
@@ -98,6 +86,10 @@ StorageAzureBlobConfiguration::StorageAzureBlobConfiguration(const StorageAzureB
     container = other.container;
     blob_path = other.blob_path;
     blobs_paths = other.blobs_paths;
+
+    format = other.format;
+    compression_method = other.compression_method;
+    structure = other.structure;
 }
 
 AzureObjectStorage::SettingsPtr StorageAzureBlobConfiguration::createSettings(ContextPtr context)
@@ -127,7 +119,7 @@ AzureClientPtr StorageAzureBlobConfiguration::createClient(bool is_read_only)
     {
         auto blob_service_client = std::make_unique<BlobServiceClient>(BlobServiceClient::CreateFromConnectionString(connection_url));
         result = std::make_unique<BlobContainerClient>(BlobContainerClient::CreateFromConnectionString(connection_url, container));
-        bool container_exists = containerExists(blob_service_client, container);
+        bool container_exists = containerExists(*blob_service_client, container);
 
         if (!container_exists)
         {
@@ -140,10 +132,11 @@ AzureClientPtr StorageAzureBlobConfiguration::createClient(bool is_read_only)
             try
             {
                 result->CreateIfNotExists();
-            } catch (const Azure::Storage::StorageException & e)
+            }
+            catch (const Azure::Storage::StorageException & e)
             {
-                if (!(e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
-                    && e.ReasonPhrase == "The specified container already exists."))
+                if (e.StatusCode != Azure::Core::Http::HttpStatusCode::Conflict
+                    || e.ReasonPhrase != "The specified container already exists.")
                 {
                     throw;
                 }
@@ -169,7 +162,7 @@ AzureClientPtr StorageAzureBlobConfiguration::createClient(bool is_read_only)
             blob_service_client = std::make_unique<BlobServiceClient>(connection_url);
         }
 
-        bool container_exists = containerExists(blob_service_client, container);
+        bool container_exists = containerExists(*blob_service_client, container);
 
         std::string final_url;
         size_t pos = connection_url.find('?');
@@ -460,3 +453,5 @@ void StorageAzureBlobConfiguration::addStructureToArgs(ASTs & args, const String
 }
 
 }
+
+#endif

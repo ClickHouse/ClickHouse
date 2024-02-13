@@ -23,7 +23,7 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
-#include <Storages/ObjectStorage/S3Configuration.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <filesystem>
 
@@ -34,6 +34,13 @@ namespace ProfileEvents
 {
     extern const Event S3DeleteObjects;
     extern const Event S3ListObjects;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric ObjectStorageS3Threads;
+    extern const Metric ObjectStorageS3ThreadsActive;
+    extern const Metric ObjectStorageS3ThreadsScheduled;
 }
 
 namespace DB

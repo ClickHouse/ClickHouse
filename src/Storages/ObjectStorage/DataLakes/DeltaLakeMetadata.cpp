@@ -1,4 +1,4 @@
-#include <Storages/DataLakes/DeltaLakeMetadataParser.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <base/JSON.h>
 #include "config.h"
 #include <set>
@@ -15,8 +15,7 @@
 #include <IO/ReadHelpers.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <parquet/arrow/reader.h>
-
-namespace fs = std::filesystem;
+#include <Storages/ObjectStorage/DataLakes/Common.h>
 
 namespace DB
 {
@@ -27,12 +26,23 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-struct DeltaLakeMetadataParser::Impl
+struct DeltaLakeMetadata::Impl final : private WithContext
 {
+    ObjectStoragePtr object_storage;
+    ConfigurationPtr configuration;
+
     /**
      * Useful links:
      *  - https://github.com/delta-io/delta/blob/master/PROTOCOL.md#data-files
      */
+     Impl(ObjectStoragePtr object_storage_,
+          ConfigurationPtr configuration_,
+          ContextPtr context_)
+        : WithContext(context_)
+        , object_storage(object_storage_)
+        , configuration(configuration_)
+    {
+    }
 
     /**
      * DeltaLake tables store metadata files and data files.
@@ -62,13 +72,10 @@ struct DeltaLakeMetadataParser::Impl
      * An action changes one aspect of the table's state, for example, adding or removing a file.
      * Note: it is not a valid json, but a list of json's, so we read it in a while cycle.
      */
-    std::set<String> processMetadataFiles(
-        ObjectStoragePtr object_storage,
-        const StorageObjectStorageConfiguration & configuration,
-        ContextPtr context)
+    std::set<String> processMetadataFiles()
     {
         std::set<String> result_files;
-        const auto checkpoint_version = getCheckpointIfExists(result_files, object_storage, configuration, context);
+        const auto checkpoint_version = getCheckpointIfExists(result_files);
 
         if (checkpoint_version)
         {
@@ -76,12 +83,12 @@ struct DeltaLakeMetadataParser::Impl
             while (true)
             {
                 const auto filename = withPadding(++current_version) + metadata_file_suffix;
-                const auto file_path = fs::path(configuration.getPath()) / deltalake_metadata_directory / filename;
+                const auto file_path = fs::path(configuration->getPath()) / deltalake_metadata_directory / filename;
 
                 if (!object_storage->exists(StoredObject(file_path)))
                     break;
 
-                processMetadataFile(file_path, result_files, object_storage, configuration, context);
+                processMetadataFile(file_path, result_files);
             }
 
             LOG_TRACE(
@@ -90,31 +97,12 @@ struct DeltaLakeMetadataParser::Impl
         }
         else
         {
-            const auto keys = listFiles(object_storage, configuration, deltalake_metadata_directory, metadata_file_suffix);
+            const auto keys = listFiles(*object_storage, *configuration, deltalake_metadata_directory, metadata_file_suffix);
             for (const String & key : keys)
-                processMetadataFile(key, result_files, object_storage, configuration, context);
+                processMetadataFile(key, result_files);
         }
 
         return result_files;
-    }
-
-    std::vector<String> listFiles(
-        const ObjectStoragePtr & object_storage,
-        const StorageObjectStorageConfiguration & configuration,
-        const String & prefix, const String & suffix)
-    {
-        auto key = std::filesystem::path(configuration.getPath()) / prefix;
-        RelativePathsWithMetadata files_with_metadata;
-        object_storage->listObjects(key, files_with_metadata, 0);
-        Strings res;
-        for (const auto & file_with_metadata : files_with_metadata)
-        {
-            const auto & filename = file_with_metadata->relative_path;
-            if (filename.ends_with(suffix))
-                res.push_back(filename);
-        }
-        LOG_TRACE(getLogger("DataLakeMetadataReadHelper"), "Listed {} files", res.size());
-        return res;
     }
 
     /**
@@ -146,14 +134,9 @@ struct DeltaLakeMetadataParser::Impl
      *             \"nullCount\":{\"col-6c990940-59bb-4709-8f2e-17083a82c01a\":0,\"col-763cd7e2-7627-4d8e-9fb7-9e85d0c8845b\":0}}"}}
      * "
      */
-    void processMetadataFile(
-        const String & key,
-        std::set<String> & result,
-        ObjectStoragePtr object_storage,
-        const StorageObjectStorageConfiguration & configuration,
-        ContextPtr context)
+    void processMetadataFile(const String & key, std::set<String> & result)
     {
-        auto read_settings = context->getReadSettings();
+        auto read_settings = getContext()->getReadSettings();
         auto buf = object_storage->readObject(StoredObject(key), read_settings);
 
         char c;
@@ -176,12 +159,12 @@ struct DeltaLakeMetadataParser::Impl
             if (json.has("add"))
             {
                 const auto path = json["add"]["path"].getString();
-                result.insert(fs::path(configuration.getPath()) / path);
+                result.insert(fs::path(configuration->getPath()) / path);
             }
             else if (json.has("remove"))
             {
                 const auto path = json["remove"]["path"].getString();
-                result.erase(fs::path(configuration.getPath()) / path);
+                result.erase(fs::path(configuration->getPath()) / path);
             }
         }
     }
@@ -199,17 +182,14 @@ struct DeltaLakeMetadataParser::Impl
      *
      *  We need to get "version", which is the version of the checkpoint we need to read.
      */
-    size_t readLastCheckpointIfExists(
-        ObjectStoragePtr object_storage,
-        const StorageObjectStorageConfiguration & configuration,
-        ContextPtr context) const
+    size_t readLastCheckpointIfExists()
     {
-        const auto last_checkpoint_file = fs::path(configuration.getPath()) / deltalake_metadata_directory / "_last_checkpoint";
+        const auto last_checkpoint_file = fs::path(configuration->getPath()) / deltalake_metadata_directory / "_last_checkpoint";
         if (!object_storage->exists(StoredObject(last_checkpoint_file)))
             return 0;
 
         String json_str;
-        auto read_settings = context->getReadSettings();
+        auto read_settings = getContext()->getReadSettings();
         auto buf = object_storage->readObject(StoredObject(last_checkpoint_file), read_settings);
         readJSONObjectPossiblyInvalid(json_str, *buf);
 
@@ -260,21 +240,18 @@ struct DeltaLakeMetadataParser::Impl
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Arrow error: {}", _s.ToString()); \
         } while (false)
 
-    size_t getCheckpointIfExists(
-        std::set<String> & result,
-        ObjectStoragePtr object_storage,
-        const StorageObjectStorageConfiguration & configuration,
-        ContextPtr context)
+    size_t getCheckpointIfExists(std::set<String> & result)
     {
-        const auto version = readLastCheckpointIfExists(object_storage, configuration, context);
+        const auto version = readLastCheckpointIfExists();
         if (!version)
             return 0;
 
         const auto checkpoint_filename = withPadding(version) + ".checkpoint.parquet";
-        const auto checkpoint_path = fs::path(configuration.getPath()) / deltalake_metadata_directory / checkpoint_filename;
+        const auto checkpoint_path = fs::path(configuration->getPath()) / deltalake_metadata_directory / checkpoint_filename;
 
         LOG_TRACE(log, "Using checkpoint file: {}", checkpoint_path.string());
 
+        auto context = getContext();
         auto read_settings = context->getReadSettings();
         auto buf = object_storage->readObject(StoredObject(checkpoint_path), read_settings);
         auto format_settings = getFormatSettings(context);
@@ -334,7 +311,7 @@ struct DeltaLakeMetadataParser::Impl
             if (filename.empty())
                 continue;
             LOG_TEST(log, "Adding {}", filename);
-            const auto [_, inserted] = result.insert(fs::path(configuration.getPath()) / filename);
+            const auto [_, inserted] = result.insert(fs::path(configuration->getPath()) / filename);
             if (!inserted)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", filename);
         }
@@ -345,15 +322,22 @@ struct DeltaLakeMetadataParser::Impl
     LoggerPtr log = getLogger("DeltaLakeMetadataParser");
 };
 
-DeltaLakeMetadataParser::DeltaLakeMetadataParser() : impl(std::make_unique<Impl>()) {}
-
-Strings DeltaLakeMetadataParser::getFiles(
-        ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationPtr configuration,
-        ContextPtr context)
+DeltaLakeMetadata::DeltaLakeMetadata(
+    ObjectStoragePtr object_storage_,
+    ConfigurationPtr configuration_,
+    ContextPtr context_)
+    : impl(std::make_unique<Impl>(object_storage_, configuration_, context_))
 {
-    auto result = impl->processMetadataFiles(object_storage, *configuration, context);
-    return Strings(result.begin(), result.end());
+}
+
+Strings DeltaLakeMetadata::getDataFiles() const
+{
+    if (!data_files.empty())
+        return data_files;
+
+    auto result = impl->processMetadataFiles();
+    data_files = Strings(result.begin(), result.end());
+    return data_files;
 }
 
 }

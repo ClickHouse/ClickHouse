@@ -1,4 +1,7 @@
-#include <Storages/ObjectStorage/S3Configuration.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+
+#if USE_AWS_S3
+
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageURL.h>
 #include <Formats/FormatFactory.h>
@@ -14,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 static const std::unordered_set<std::string_view> required_configuration_keys = {
@@ -51,17 +55,19 @@ void StorageS3Configuration::check(ContextPtr context) const
     context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers_from_ast);
 }
 
-StorageObjectStorageConfigurationPtr StorageS3Configuration::clone()
+StorageS3Configuration::StorageS3Configuration(const StorageS3Configuration & other)
 {
-    auto configuration = std::make_shared<StorageS3Configuration>();
-    configuration->url = url;
-    configuration->auth_settings = auth_settings;
-    configuration->request_settings = request_settings;
-    configuration->static_configuration = static_configuration;
-    configuration->headers_from_ast = headers_from_ast;
-    configuration->keys = keys;
-    configuration->initialized = initialized;
-    return configuration;
+    url = other.url;
+    auth_settings = other.auth_settings;
+    request_settings = other.request_settings;
+    static_configuration = other.static_configuration;
+    headers_from_ast = other.headers_from_ast;
+    keys = other.keys;
+    initialized = other.initialized;
+
+    format = other.format;
+    compression_method = other.compression_method;
+    structure = other.structure;
 }
 
 ObjectStoragePtr StorageS3Configuration::createOrUpdateObjectStorage(ContextPtr context, bool /* is_readonly */) /// NOLINT
@@ -489,3 +495,5 @@ void StorageS3Configuration::addStructureToArgs(ASTs & args, const String & stru
 }
 
 }
+
+#endif

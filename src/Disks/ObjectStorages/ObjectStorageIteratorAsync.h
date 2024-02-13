@@ -17,11 +17,7 @@ public:
         CurrentMetrics::Metric threads_metric,
         CurrentMetrics::Metric threads_active_metric,
         CurrentMetrics::Metric threads_scheduled_metric,
-        const std::string & thread_name)
-        : list_objects_pool(threads_metric, threads_active_metric, threads_scheduled_metric, 1)
-        , list_objects_scheduler(threadPoolCallbackRunner<BatchAndHasNext>(list_objects_pool, thread_name))
-    {
-    }
+        const std::string & thread_name);
 
     void next() override;
     void nextBatch() override;

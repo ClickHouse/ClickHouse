@@ -1,7 +1,12 @@
 #pragma once
+
+#include "config.h"
+
+#if USE_AWS_S3
+
 #include <IO/S3/getObjectInfo.h>
 #include <Storages/StorageS3Settings.h>
-#include <Storages/ObjectStorage/StorageObejctStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 
 namespace DB
 {
@@ -9,6 +14,9 @@ namespace DB
 class StorageS3Configuration : public StorageObjectStorageConfiguration
 {
 public:
+    StorageS3Configuration() = default;
+    StorageS3Configuration(const StorageS3Configuration & other);
+
     Path getPath() const override { return url.key; }
     void setPath(const Path & path) override { url.key = path; }
 
@@ -19,9 +27,8 @@ public:
     String getDataSourceDescription() override;
 
     void check(ContextPtr context) const override;
-    StorageObjectStorageConfigurationPtr clone() override;
-
     ObjectStoragePtr createOrUpdateObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
+    StorageObjectStorageConfigurationPtr clone() override { return std::make_shared<StorageS3Configuration>(*this); }
 
     void fromNamedCollection(const NamedCollection & collection) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
@@ -44,3 +51,5 @@ private:
 };
 
 }
+
+#endif

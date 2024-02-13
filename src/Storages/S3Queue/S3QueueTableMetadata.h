@@ -3,7 +3,7 @@
 #if USE_AWS_S3
 
 #include <Storages/S3Queue/S3QueueSettings.h>
-#include <Storages/ObjectStorage/StorageObejctStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <base/types.h>
 
 namespace DB

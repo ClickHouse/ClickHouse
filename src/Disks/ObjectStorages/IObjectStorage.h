@@ -47,8 +47,8 @@ using ObjectAttributes = std::map<std::string, std::string>;
 struct ObjectMetadata
 {
     uint64_t size_bytes = 0;
-    std::optional<Poco::Timestamp> last_modified;
-    std::optional<ObjectAttributes> attributes;
+    Poco::Timestamp last_modified;
+    ObjectAttributes attributes;
 };
 
 struct RelativePathWithMetadata
