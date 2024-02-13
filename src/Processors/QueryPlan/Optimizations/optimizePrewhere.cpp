@@ -4,9 +4,8 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Planner/ActionsChain.h>
-#include "Functions/FunctionsLogical.h"
-#include "Functions/IFunctionAdaptors.h"
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
 
 namespace DB
 {

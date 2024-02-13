@@ -249,7 +249,19 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
     {
         /// Set was_cancelled, so the query won't be sent after creating connections.
         was_cancelled = true;
-        read_context->cancel();
+
+        /// Cancellation may throw (i.e. some timeout), and in case of pipeline
+        /// had not been properly created properly (EXCEPTION_BEFORE_START)
+        /// cancel will not be sent, so cancellation will be done from dtor and
+        /// will throw.
+        try
+        {
+            read_context->cancel();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log ? log : getLogger("RemoteQueryExecutor"));
+        }
     }
 
     /** If interrupted in the middle of the loop of communication with replicas, then interrupt
@@ -257,7 +269,17 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
       * these connections did not remain hanging in the out-of-sync state.
       */
     if (established || (isQueryPending() && connections))
-        connections->disconnect();
+    {
+        /// May also throw (so as cancel() above)
+        try
+        {
+            connections->disconnect();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log ? log : getLogger("RemoteQueryExecutor"));
+        }
+    }
 }
 
 /** If we receive a block with slightly different column types, or with excessive columns,

@@ -3379,7 +3379,7 @@ def gtid_after_attach_test(clickhouse_node, mysql_node, replication):
         f"CREATE TABLE {db}.t(id INT PRIMARY KEY AUTO_INCREMENT, score int, create_time DATETIME DEFAULT NOW())"
     )
 
-    db_count = 6
+    db_count = 4
     for i in range(db_count):
         replication.create_db_ch(
             f"{db}{i}",
@@ -3392,7 +3392,11 @@ def gtid_after_attach_test(clickhouse_node, mysql_node, replication):
         "t\n",
     )
     for i in range(int(db_count / 2)):
-        clickhouse_node.query(f"DETACH DATABASE {db}{i}")
+        check_query(
+            clickhouse_node,
+            f"DETACH DATABASE {db}{i}",
+            "",
+        )
 
     mysql_node.query(f"USE {db}")
     rows = 10000

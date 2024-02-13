@@ -2494,7 +2494,8 @@ def main(args):
                     time DateTime,
                     test_name String,
                     coverage Array(UInt64)
-                ) ENGINE = MergeTree ORDER BY test_name;
+                ) ENGINE = MergeTree ORDER BY test_name
+                COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster';
             """,
         )
 
