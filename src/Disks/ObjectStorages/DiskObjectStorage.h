@@ -211,7 +211,7 @@ public:
 protected:
     /// Create actual disk object storage transaction for operations execution.
     virtual DiskTransactionPtr createObjectStorageTransaction();
-    DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk);
+    virtual DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk);
 
     String getReadResourceName() const;
     String getWriteResourceName() const;

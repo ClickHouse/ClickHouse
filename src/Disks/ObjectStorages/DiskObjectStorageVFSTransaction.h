@@ -5,7 +5,7 @@ namespace DB
 {
 class DiskObjectStorageVFS;
 
-struct DiskObjectStorageVFSTransaction final : public DiskObjectStorageTransaction
+struct DiskObjectStorageVFSTransaction : public DiskObjectStorageTransaction
 {
     DiskObjectStorageVFSTransaction(DiskObjectStorageVFS & disk_); // NOLINT
     void replaceFile(const String & from_path, const String & to_path) override;
@@ -35,9 +35,26 @@ struct DiskObjectStorageVFSTransaction final : public DiskObjectStorageTransacti
         return std::static_pointer_cast<DiskObjectStorageVFSTransaction>(DiskObjectStorageTransaction::shared_from_this());
     }
 
-private:
+protected:
     DiskObjectStorageVFS & disk;
 
     void addStoredObjectsOp(StoredObjects && link, StoredObjects && unlink);
+};
+
+struct MultipleDisksObjectStorageVFSTransaction final : DiskObjectStorageVFSTransaction
+{
+    IObjectStorage & destination_object_storage;
+    MultipleDisksObjectStorageVFSTransaction(DiskObjectStorageVFS & disk_, IObjectStorage & destination_object_storage_);
+
+    auto shared_from_this()
+    {
+        return std::static_pointer_cast<MultipleDisksObjectStorageVFSTransaction>(DiskObjectStorageVFSTransaction::shared_from_this());
+    }
+
+    void copyFile(
+        const String & from_file_path,
+        const String & to_file_path,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings) override;
 };
 }

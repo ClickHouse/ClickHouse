@@ -191,6 +191,11 @@ DiskTransactionPtr DiskObjectStorageVFS::createObjectStorageTransaction()
     return std::make_shared<DiskObjectStorageVFSTransaction>(*this);
 }
 
+DiskTransactionPtr DiskObjectStorageVFS::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk)
+{
+    return std::make_shared<MultipleDisksObjectStorageVFSTransaction>(*this, *to_disk.getObjectStorage());
+}
+
 StoredObject DiskObjectStorageVFS::getMetadataObject(std::string_view remote) const
 {
     // TODO myrrc this works only for S3 and Azure.

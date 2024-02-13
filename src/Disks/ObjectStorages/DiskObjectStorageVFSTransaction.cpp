@@ -168,12 +168,19 @@ struct CopyFileObjectStorageVFSOperation final : CopyFileObjectStorageOperation
 
     CopyFileObjectStorageVFSOperation(
         DiskObjectStorageVFS & disk_,
+        IObjectStorage & destination_object_storage_,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
         const String & from_path_,
         const String & to_path_)
         : CopyFileObjectStorageOperation(
-            *disk_.object_storage, *disk_.metadata_storage, *disk_.object_storage, read_settings_, write_settings_, from_path_, to_path_)
+            *disk_.object_storage,
+            *disk_.metadata_storage,
+            destination_object_storage_,
+            read_settings_,
+            write_settings_,
+            from_path_,
+            to_path_)
         , disk(disk_)
     {
     }
@@ -192,8 +199,8 @@ struct CopyFileObjectStorageVFSOperation final : CopyFileObjectStorageOperation
 void DiskObjectStorageVFSTransaction::copyFile(
     const String & from_file_path, const String & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
-    operations_to_execute.emplace_back(
-        std::make_unique<CopyFileObjectStorageVFSOperation>(disk, read_settings, write_settings, from_file_path, to_file_path));
+    operations_to_execute.emplace_back(std::make_unique<CopyFileObjectStorageVFSOperation>(
+        disk, *disk.object_storage, read_settings, write_settings, from_file_path, to_file_path));
 }
 
 // TODO myrrc A better approach would be to execute writes to Keeper as a single transaction when
@@ -225,5 +232,18 @@ void DiskObjectStorageVFSTransaction::addStoredObjectsOp(StoredObjects && link, 
 
     operations_to_execute.emplace_back(
         std::make_unique<CallbackOperation<decltype(callback)>>(object_storage, metadata_storage, std::move(callback)));
+}
+
+MultipleDisksObjectStorageVFSTransaction::MultipleDisksObjectStorageVFSTransaction(
+    DiskObjectStorageVFS & disk_, IObjectStorage & destination_object_storage_)
+    : DiskObjectStorageVFSTransaction(disk_), destination_object_storage(destination_object_storage_)
+{
+}
+
+void MultipleDisksObjectStorageVFSTransaction::copyFile(
+    const String & from_file_path, const String & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
+{
+    operations_to_execute.emplace_back(std::make_unique<CopyFileObjectStorageVFSOperation>(
+        disk, destination_object_storage, read_settings, write_settings, from_file_path, to_file_path));
 }
 }
