@@ -31,6 +31,7 @@ node_missing_value = cluster.add_instance(
     main_configs=["configs/missing_value.xml"],
 )
 
+
 def start_metadata_server():
     script_dir = os.path.join(os.path.dirname(__file__), "metadata_servers")
     start_mock_servers(
@@ -61,22 +62,34 @@ def test_placement_info_from_imds():
     node_imds.start_clickhouse()
 
     node_imds.query("SYSTEM FLUSH LOGS")
-    assert node_imds.contains_in_log("CloudPlacementInfo: Loaded info: availability_zone: ci-test-1a")
+    assert node_imds.contains_in_log(
+        "CloudPlacementInfo: Loaded info: availability_zone: ci-test-1a"
+    )
 
 
 def test_placement_info_from_config():
     node_config_value.query("SYSTEM FLUSH LOGS")
-    assert node_config_value.contains_in_log("CloudPlacementInfo: Loaded info: availability_zone: ci-test-1b")
+    assert node_config_value.contains_in_log(
+        "CloudPlacementInfo: Loaded info: availability_zone: ci-test-1b"
+    )
+
 
 def test_placement_info_from_file():
-    node_file_value.exec_in_container(["bash", "-c", "echo ci-test-1c > /tmp/node-zone"])
+    node_file_value.exec_in_container(
+        ["bash", "-c", "echo ci-test-1c > /tmp/node-zone"]
+    )
 
     node_file_value.stop_clickhouse(kill=True)
     node_file_value.start_clickhouse()
 
     node_file_value.query("SYSTEM FLUSH LOGS")
-    assert node_file_value.contains_in_log("CloudPlacementInfo: Loaded info: availability_zone: ci-test-1c")
+    assert node_file_value.contains_in_log(
+        "CloudPlacementInfo: Loaded info: availability_zone: ci-test-1c"
+    )
+
 
 def test_placement_info_missing_data():
     node_missing_value.query("SYSTEM FLUSH LOGS")
-    assert node_missing_value.contains_in_log("CloudPlacementInfo: Availability zone info not found")
+    assert node_missing_value.contains_in_log(
+        "CloudPlacementInfo: Availability zone info not found"
+    )
