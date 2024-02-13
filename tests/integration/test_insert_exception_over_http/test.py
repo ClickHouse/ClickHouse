@@ -25,13 +25,17 @@ def test_insert_exception_over_http(start_cluster):
     )
 
     assert True == instance.http_query_and_get_error(
-        "insert into tt settings insert_keeper_max_retries=0, insert_keeper_fault_injection_probability=1.0, log_comment='02988_66a57d6f-d1cc-4693-8bf4-206848edab87' values (1), (2), (3), (4), (5)"
+        "insert into tt settings insert_keeper_max_retries=0, insert_keeper_fault_injection_probability=1.0, log_comment='02988_66a57d6f-d1cc-4693-8bf4-206848edab87' values (1), (2), (3), (4), (5)", method='POST'
     ).startswith("500 Internal Server Error")
 
     assert "0\n" == instance.query("select count() from tt")
+
     instance.query("SYSTEM FLUSH LOGS")
-    assert "2\n" == instance.query(
-        "select count() from system.query_log where log_comment ='02988_66a57d6f-d1cc-4693-8bf4-206848edab87' and current_database = currentDatabase() and event_date >= yesterday()"
-    )
+
+    assert "1\n" == instance.query(
+        "select count() from system.query_log where log_comment ='02988_66a57d6f-d1cc-4693-8bf4-206848edab87' and current_database = currentDatabase() and event_date >= yesterday() and type = 'QueryStart'")
+
+    assert "1\n" == instance.query(
+        "select count() from system.query_log where log_comment ='02988_66a57d6f-d1cc-4693-8bf4-206848edab87' and current_database = currentDatabase() and event_date >= yesterday() and type = 'ExceptionWhileProcessing'")
 
     instance.query("DROP TABLE tt SYNC")

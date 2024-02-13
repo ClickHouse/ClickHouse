@@ -1511,13 +1511,17 @@ void executeQuery(
     }
     catch (...)
     {
+        /// first execute on exception callback, it includes updating query_log
+        /// otherwise closing record ('ExceptionWhileProcessing') can be not appended in query_log
+        /// due to possible exceptions in functions called bellow (passed as parameter here)
+        streams.onException();
+
         if (handle_exception_in_output_format)
         {
             update_format_on_exception_if_needed();
             if (output_format)
                 handle_exception_in_output_format(*output_format);
         }
-        streams.onException();
         throw;
     }
 
