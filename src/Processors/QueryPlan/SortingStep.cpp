@@ -51,6 +51,7 @@ static ITransformingStep::Traits getTraits(size_t limit)
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
             .preserves_sorting = false,
+            .preserves_data_hints = true,
         },
         {
             .preserves_number_of_rows = limit == 0,
@@ -77,6 +78,8 @@ SortingStep::SortingStep(
     /// TODO: check input_stream is partially sorted by the same description.
     output_stream->sort_description = result_description;
     output_stream->sort_scope = DataStream::SortScope::Global;
+
+    updateDataHintsWithOutputHeaderKeys(output_stream->hints, output_stream->header.getNames());
 }
 
 SortingStep::SortingStep(
@@ -110,6 +113,8 @@ SortingStep::SortingStep(
     /// TODO: check input_stream is sorted by prefix_description.
     output_stream->sort_description = result_description;
     output_stream->sort_scope = DataStream::SortScope::Global;
+
+    updateDataHintsWithOutputHeaderKeys(output_stream->hints, output_stream->header.getNames());
 }
 
 SortingStep::SortingStep(
@@ -129,6 +134,8 @@ SortingStep::SortingStep(
     /// TODO: check input_stream is partially sorted (each port) by the same description.
     output_stream->sort_description = result_description;
     output_stream->sort_scope = DataStream::SortScope::Global;
+
+    updateDataHintsWithOutputHeaderKeys(output_stream->hints, output_stream->header.getNames());
 }
 
 void SortingStep::updateOutputStream()
@@ -140,6 +147,8 @@ void SortingStep::updateOutputStream()
         output_stream->sort_scope = DataStream::SortScope::Global;
     else
         output_stream->sort_scope = DataStream::SortScope::Stream;
+
+    updateDataHintsWithOutputHeaderKeys(output_stream->hints, output_stream->header.getNames());
 }
 
 void SortingStep::updateLimit(size_t limit_)

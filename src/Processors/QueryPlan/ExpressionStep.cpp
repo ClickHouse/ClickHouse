@@ -18,6 +18,7 @@ static ITransformingStep::Traits getTraits(const ActionsDAGPtr & actions, const 
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = actions->isSortingPreserved(header, sort_description),
+            .preserves_data_hints = true,
         },
         {
             .preserves_number_of_rows = !actions->hasArrayJoin(),
@@ -32,6 +33,8 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, const ActionsDA
         getTraits(actions_dag_, input_stream_.header, input_stream_.sort_description))
     , actions_dag(actions_dag_)
 {
+    /// For now we only preserve hints of untouched columns
+    updateDataHintsWithExpressionActionsDAG(output_stream->hints, *actions_dag);
 }
 
 void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -75,6 +78,8 @@ void ExpressionStep::updateOutputStream()
 {
     output_stream = createOutputStream(
         input_streams.front(), ExpressionTransform::transformHeader(input_streams.front().header, *actions_dag), getDataStreamTraits());
+
+    updateDataHintsWithExpressionActionsDAG(output_stream->hints, *actions_dag);
 
     if (!getDataStreamTraits().preserves_sorting)
         return;

@@ -5,6 +5,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
+#include <Processors/QueryPlan/Optimizations/dataHints.h>
 #include <Core/SortDescription.h>
 
 namespace DB
@@ -19,6 +20,7 @@ static ITransformingStep::Traits getTraits(bool pre_distinct)
             .returns_single_stream = !pre_distinct,
             .preserves_number_of_streams = preserves_number_of_streams,
             .preserves_sorting = preserves_number_of_streams,
+            .preserves_data_hints = true,
         },
         {
             .preserves_number_of_rows = false,
@@ -55,6 +57,7 @@ DistinctStep::DistinctStep(
     , pre_distinct(pre_distinct_)
     , optimize_distinct_in_order(optimize_distinct_in_order_)
 {
+    updateDataHintsWithOutputHeaderKeys(output_stream->hints, output_stream->header.getNames());
 }
 
 void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

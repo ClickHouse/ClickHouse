@@ -17,6 +17,7 @@ static ITransformingStep::Traits getTraits(bool has_filter)
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
             .preserves_sorting = true,
+            .preserves_data_hints = false,
         },
         {
             .preserves_number_of_rows = !has_filter,

@@ -15,6 +15,7 @@ static ITransformingStep::Traits getTraits()
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = true,
+            .preserves_data_hints = true,
         },
         {
             .preserves_number_of_rows = false,
@@ -26,6 +27,7 @@ OffsetStep::OffsetStep(const DataStream & input_stream_, size_t offset_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , offset(offset_)
 {
+    updateDataHintsWithOutputHeaderKeys(output_stream->hints, output_stream->header.getNames());
 }
 
 void OffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

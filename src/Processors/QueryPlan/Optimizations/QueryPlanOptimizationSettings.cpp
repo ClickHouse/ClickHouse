@@ -44,6 +44,8 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     settings.force_use_projection = settings.optimize_projection && from.force_optimize_projection;
     settings.force_projection_name = from.force_optimize_projection_name;
     settings.optimize_use_implicit_projections = settings.optimize_projection && from.optimize_use_implicit_projections;
+    settings.aggregation_with_data_hints = from.optimize_aggregation_with_data_hints;
+    settings.sorting_with_data_hints = from.optimize_sorting_with_data_hints;
 
     return settings;
 }

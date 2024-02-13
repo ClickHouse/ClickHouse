@@ -16,7 +16,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 /// Third pass is used to apply filters such as key conditions and skip indexes to the storages that support them.
 /// After that it add CreateSetsStep for the subqueries that has not be used in the filters.
-void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+void optimizeTreeThirdPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
 /// Optimization (first pass) is a function applied to QueryPlan::Node.
 /// It can read and update subtree of specified node.
@@ -76,6 +76,10 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
 size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &);
 
+size_t tryReduceAggregationKeysSize(QueryPlan::Node * node, QueryPlan::Nodes & nodes);
+
+size_t tryReduceSortingKeysSize(QueryPlan::Node * node, QueryPlan::Nodes & nodes);
+
 inline const auto & getOptimizations()
 {
     static const std::array<Optimization, 10> optimizations = {{
@@ -88,7 +92,7 @@ inline const auto & getOptimizations()
         {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::reuse_storage_ordering_for_window_functions},
         {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::lift_up_union},
         {tryAggregatePartitionsIndependently, "aggregatePartitionsIndependently", &QueryPlanOptimizationSettings::aggregate_partitions_independently},
-        {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct},
+        {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct}
     }};
 
     return optimizations;

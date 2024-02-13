@@ -1025,7 +1025,8 @@ public:
     struct Params
     {
         /// What to count.
-        const Names keys;
+        /// Keys may change after query plan optimizations.
+        Names keys;
         const AggregateDescriptions aggregates;
         const size_t keys_size;
         const size_t aggregates_size;

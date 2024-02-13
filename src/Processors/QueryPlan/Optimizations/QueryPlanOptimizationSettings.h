@@ -67,6 +67,11 @@ struct QueryPlanOptimizationSettings
     String force_projection_name;
     bool optimize_use_implicit_projections = false;
 
+    /// If query is not remote
+    bool aggregation_with_data_hints = false;
+
+    bool sorting_with_data_hints = false;
+
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };

@@ -1,0 +1,15 @@
+<test>
+    <query><![CDATA[select k from (select number % 256 + 256 as k from numbers(100000000)) group by k format Null]]></query>
+    <query><![CDATA[select k from (select number % 256 + 65536 as k from numbers(100000000)) group by k format Null]]></query>
+    <query><![CDATA[select k from (select number % 256 + 10000000000 as k from numbers(100000000)) group by k format Null]]></query>
+
+    <query><![CDATA[select k from (select number % 65536 + 65536 as k from numbers(100000000)) group by k format Null]]></query>
+    <query><![CDATA[select k from (select number % 65536 + 10000000000 as k from numbers(100000000)) group by k format Null]]></query>
+
+    <query><![CDATA[select a, b from (select number % 256 + 256 as a, number % 256 + 256 + 256 as b from numbers(100000000)) group by a, b format Null]]></query>
+    <query><![CDATA[select a, b from (select number % 256 + 65536 as a, number % 256 + 65536 + 256 as b from numbers(100000000)) group by a, b format Null]]></query>
+    <query><![CDATA[select a, b from (select number % 256 + 10000000000 as a, number % 256 + 10000000000 + 256 as b from numbers(100000000)) group by a, b format Null]]></query>
+
+    <query><![CDATA[select a, b from (select number % 65536 + 65536 as a, number % 65536 + 65536 + 256 as b from numbers(100000000)) group by a, b format Null]]></query>
+    <query><![CDATA[select a, b from (select number % 65536 + 10000000000 as a, number % 65536 + 10000000000 + 256 as b from numbers(100000000)) group by a, b format Null]]></query>
+</test>

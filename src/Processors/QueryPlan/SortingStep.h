@@ -77,7 +77,7 @@ public:
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
 
-    const SortDescription & getSortDescription() const { return result_description; }
+    SortDescription & getSortDescription() { return result_description; }
 
     void convertToFinishSorting(SortDescription prefix_description);
 
@@ -119,7 +119,7 @@ private:
     Type type;
 
     SortDescription prefix_description;
-    const SortDescription result_description;
+    SortDescription result_description;
 
     SortDescription partition_by_description;
 

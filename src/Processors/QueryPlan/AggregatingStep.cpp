@@ -21,6 +21,8 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include <Processors/QueryPlan/Optimizations/dataHints.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 namespace DB
 {
@@ -46,6 +48,7 @@ static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_
             .returns_single_stream = should_produce_results_in_order_of_bucket_number,
             .preserves_number_of_streams = false,
             .preserves_sorting = false,
+            .preserves_data_hints = false,
         },
         {
             .preserves_number_of_rows = false,
@@ -128,6 +131,8 @@ AggregatingStep::AggregatingStep(
     , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
     , explicit_sorting_required_for_aggregation_in_order(explicit_sorting_required_for_aggregation_in_order_)
 {
+    hints = input_streams.front().hints;
+    updateDataHintsWithOutputHeaderKeys(output_stream->hints, output_stream->header.getNames());
     if (memoryBoundMergingWillBeUsed())
     {
         output_stream->sort_description = group_by_sort_description;
@@ -556,12 +561,22 @@ std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregating
     return aggregating_projection;
 }
 
+void AggregatingStep::updateParams(const Names & new_keys, const std::unordered_map<std::string, std::string> & changed_to_new_key_mapping)
+{
+    params.keys = new_keys;
+    for (auto & column_description : group_by_sort_description)
+        if (changed_to_new_key_mapping.contains(column_description.column_name))
+            column_description.column_name = changed_to_new_key_mapping.at(column_description.column_name);
+}
+
 void AggregatingStep::updateOutputStream()
 {
     output_stream = createOutputStream(
         input_streams.front(),
         appendGroupingColumn(params.getHeader(input_streams.front().header, final), params.keys, !grouping_sets_params.empty(), group_by_use_nulls),
         getDataStreamTraits());
+    hints = input_streams.front().hints;
+    updateDataHintsWithOutputHeaderKeys(output_stream->hints, output_stream->header.getNames());
 }
 
 bool AggregatingStep::memoryBoundMergingWillBeUsed() const

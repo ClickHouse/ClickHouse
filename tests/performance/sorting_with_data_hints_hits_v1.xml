@@ -1,0 +1,6 @@
+<test>
+    <query><![CDATA[SELECT RegionID, Title FROM hits_10m_single WHERE RegionID >= 4 AND RegionID <= 259 ORDER BY RegionID FORMAT Null]]></query>
+    <query><![CDATA[SELECT RegionID, Title FROM hits_10m_single WHERE RegionID >= 5 AND RegionID <= 605 ORDER BY RegionID FORMAT Null]]></query>
+    <query><![CDATA[SELECT EventDate, RegionID, Title FROM hits_10m_single WHERE RegionID >= 4 AND RegionID <= 255 AND EventDate BETWEEN toDate('2013-06-01') AND toDate('2013-08-30') ORDER BY EventDate, RegionID FORMAT Null]]></query>
+    <query>SELECT EventDate, Title FROM hits_10m_single WHERE EventDate BETWEEN toDate('2013-06-01') AND toDate('2013-08-30') ORDER BY EventDate FORMAT Null</query>
+</test>

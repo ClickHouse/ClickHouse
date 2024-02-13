@@ -15,6 +15,7 @@ static ITransformingStep::Traits getTraits()
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = true,
+            .preserves_data_hints = true,
         },
         {
             .preserves_number_of_rows = false,
@@ -33,6 +34,7 @@ LimitStep::LimitStep(
     , always_read_till_end(always_read_till_end_)
     , with_ties(with_ties_), description(std::move(description_))
 {
+    updateDataHintsWithOutputHeaderKeys(output_stream->hints, output_stream->header.getNames());
 }
 
 void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

@@ -67,6 +67,14 @@ public:
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
 
+    DataHints getHints() { return hints; }
+
+    void updateParams(const Names & new_keys, const std::unordered_map<std::string, std::string> & changed_to_new_key_mapping);
+
+    void setOptimizedWithDataHints() { optimized_with_data_hints = true; }
+
+    bool isOptimizedWithDataHints() { return optimized_with_data_hints; }
+
     bool canUseProjection() const;
     /// When we apply aggregate projection (which is full), this step will only merge data.
     /// Argument input_stream replaces current single input.
@@ -91,12 +99,16 @@ private:
     bool storage_has_evenly_distributed_read;
     bool group_by_use_nulls;
 
+    bool optimized_with_data_hints = false;
+
     /// Both sort descriptions are needed for aggregate-in-order optimization.
     /// Both sort descriptions are subset of GROUP BY key columns (or monotonic functions over it).
     /// Sort description for merging is a sort description for input and a prefix of group_by_sort_description.
     /// group_by_sort_description contains all GROUP BY keys and is used for final merging of aggregated data.
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
+
+    DataHints hints;
 
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
     const bool should_produce_results_in_order_of_bucket_number;
