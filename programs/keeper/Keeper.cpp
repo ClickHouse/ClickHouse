@@ -31,9 +31,10 @@
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
 #include <Server/HTTP/HTTPServer.h>
-#include <Server/TCPServer.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/KeeperReadinessHandler.h>
+#include <Server/PrometheusMetricsWriter.h>
+#include <Server/TCPServer.h>
 
 #include "Core/Defines.h"
 #include "config.h"
@@ -482,19 +483,28 @@ try
 
         /// Prometheus (if defined and not setup yet with http_port)
         port_name = "prometheus.port";
-        createServer(listen_host, port_name, listen_try, [&, my_http_context = std::move(http_context)](UInt16 port) mutable
-        {
-            Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port);
-            socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
-            socket.setSendTimeout(my_http_context->getSendTimeout());
-            servers->emplace_back(
-                listen_host,
-                port_name,
-                "Prometheus: http://" + address.toString(),
-                std::make_unique<HTTPServer>(
-                    std::move(my_http_context), createPrometheusMainHandlerFactory(*this, config_getter(), async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
-        });
+        createServer(
+            listen_host,
+            port_name,
+            listen_try,
+            [&, my_http_context = std::move(http_context)](UInt16 port) mutable
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(socket, listen_host, port);
+                socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
+                socket.setSendTimeout(my_http_context->getSendTimeout());
+                auto metrics_writer = std::make_shared<KeeperPrometheusMetricsWriter>(config, "prometheus", async_metrics);
+                servers->emplace_back(
+                    listen_host,
+                    port_name,
+                    "Prometheus: http://" + address.toString(),
+                    std::make_unique<HTTPServer>(
+                        std::move(my_http_context),
+                        createPrometheusMainHandlerFactory(*this, config_getter(), metrics_writer, "PrometheusHandler-factory"),
+                        server_pool,
+                        socket,
+                        http_params));
+            });
 
         /// HTTP control endpoints
         port_name = "keeper_server.http_control.port";
