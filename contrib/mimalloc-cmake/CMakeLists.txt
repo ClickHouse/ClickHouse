@@ -5,6 +5,7 @@ if (NOT ENABLE_MIMALLOC)
     return()
 endif ()
 
+
 if (ENABLE_JEMALLOC)
     message (FATAL_ERROR "Cannot enable both mimalloc and jemalloc")
 endif ()
