@@ -1,3 +1,5 @@
+-- Tags: long
+
 DROP TABLE IF EXISTS t;
 
 CREATE TABLE t
