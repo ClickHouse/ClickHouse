@@ -115,6 +115,11 @@ struct RadixSortFloatTraits
     {
         return x < y;
     }
+
+    static bool greater(Key x, Key y)
+    {
+        return x > y;
+    }
 };
 
 
@@ -149,6 +154,11 @@ struct RadixSortUIntTraits
     {
         return x < y;
     }
+
+    static bool greater(Key x, Key y)
+    {
+        return x > y;
+    }
 };
 
 
@@ -182,6 +192,11 @@ struct RadixSortIntTraits
     static bool less(Key x, Key y)
     {
         return x < y;
+    }
+
+    static bool greater(Key x, Key y)
+    {
+        return x > y;
     }
 };
 
@@ -227,7 +242,7 @@ private:
     {
         ALWAYS_INLINE bool operator()(Element & lhs, Element & rhs)
         {
-            return !Traits::less(Traits::extractKey(lhs), Traits::extractKey(rhs));
+            return Traits::greater(Traits::extractKey(lhs), Traits::extractKey(rhs));
         }
     };
 

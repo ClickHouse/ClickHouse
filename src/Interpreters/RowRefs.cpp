@@ -196,11 +196,7 @@ private:
                     static Result extractResult(Element & elem) { return elem; }
                 };
 
-                if constexpr (is_descending)
-                    RadixSort<RadixSortTraits>::executeLSDWithTrySort(entries.data(), entries.size(), true /*reverse*/);
-                else
-                    RadixSort<RadixSortTraits>::executeLSDWithTrySort(entries.data(), entries.size(), false /*reverse*/);
-
+                RadixSort<RadixSortTraits>::executeLSDWithTrySort(entries.data(), entries.size(), is_descending /*reverse*/);
                 sorted.store(true, std::memory_order_release);
                 return;
             }
