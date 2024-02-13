@@ -43,7 +43,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"data_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Paths to the table data in the file systems."},
         {"metadata_path", std::make_shared<DataTypeString>(), "Path to the table metadata in the file system."},
         {"metadata_modification_time", std::make_shared<DataTypeDateTime>(), "Time of latest modification of the table metadata."},
-        {"metadata_version", std::make_shared<DataTypeInt32>(), "Metadata version for ReplicatedMergeTree."},
+        {"metadata_version", std::make_shared<DataTypeInt32>(), "Metadata version for ReplicatedMergeTree table."},
         {"dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Database dependencies."},
         {"dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Table dependencies (materialized views the current table)."},
         {"create_table_query", std::make_shared<DataTypeString>(), "The query that was used to create the table."},
