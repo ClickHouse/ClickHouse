@@ -27,7 +27,7 @@ from lambda_shared_package.lambda_shared.pr import (
     check_pr_description,
 )
 from pr_info import FORCE_TESTS_LABEL, PRInfo
-from report import FAILURE
+from report import FAILURE, PENDING
 
 TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
@@ -188,7 +188,7 @@ def main():
     print("::notice ::Can run")
     post_commit_status(
         commit,
-        "pending",
+        PENDING,
         ci_report_url,
         description,
         CI_STATUS_NAME,

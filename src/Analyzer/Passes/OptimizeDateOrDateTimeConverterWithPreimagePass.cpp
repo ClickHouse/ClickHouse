@@ -215,7 +215,7 @@ private:
 
 }
 
-void OptimizeDateOrDateTimeConverterWithPreimagePass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void OptimizeDateOrDateTimeConverterWithPreimagePass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     OptimizeDateOrDateTimeConverterWithPreimageVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

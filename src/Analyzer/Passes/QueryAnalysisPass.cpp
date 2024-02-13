@@ -79,6 +79,8 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace ProfileEvents
 {
@@ -1066,7 +1068,7 @@ private:
 class QueryAnalyzer
 {
 public:
-    void resolve(QueryTreeNodePtr node, const QueryTreeNodePtr & table_expression, ContextPtr context)
+    void resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
     {
         IdentifierResolveScope scope(node, nullptr /*parent_scope*/);
 
@@ -2766,7 +2768,13 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
     {
         if (identifier_lookup.isExpressionLookup())
         {
-            return tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier, 1 /*identifier_bind_size*/, it->second, {}, scope);
+            return tryResolveIdentifierFromCompoundExpression(
+                identifier_lookup.identifier,
+                1 /*identifier_bind_size*/,
+                it->second,
+                {} /* compound_expression_source */,
+                scope,
+                identifier_resolve_settings.allow_to_check_join_tree /* can_be_not_found */);
         }
         else if (identifier_lookup.isFunctionLookup() || identifier_lookup.isTableExpressionLookup())
         {
@@ -5658,6 +5666,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 column = function_base->getConstantResultForNonConstArguments(argument_columns, result_type);
             }
 
+            if (column && column->getDataType() != result_type->getColumnType())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected return type from {}. Expected {}. Got {}",
+                    function->getName(),
+                    result_type->getColumnType(),
+                    column->getDataType());
+
             /** Do not perform constant folding if there are aggregate or arrayJoin functions inside function.
               * Example: SELECT toTypeName(sum(number)) FROM numbers(10);
               */
@@ -7635,7 +7651,7 @@ QueryAnalysisPass::QueryAnalysisPass(QueryTreeNodePtr table_expression_)
     : table_expression(std::move(table_expression_))
 {}
 
-void QueryAnalysisPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void QueryAnalysisPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     QueryAnalyzer analyzer;
     analyzer.resolve(query_tree_node, table_expression, context);
