@@ -1822,17 +1822,26 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
     for (const auto * input_node : inputs)
     {
-        const auto & cur = data[input_node];
-        if (cur.to_first)
-        {
-            first_inputs.push_back(cur.to_first);
+        auto & cur = data[input_node];
 
-            if (cur.to_second)
-                first_outputs.push_back(cur.to_first);
+        if (cur.to_second && !cur.to_first)
+        {
+            Node new_input;
+            new_input.type = ActionType::INPUT;
+            new_input.result_type = input_node->result_type;
+            new_input.result_name = input_node->result_name;
+
+            cur.to_first = &first_nodes.emplace_back(std::move(new_input));
         }
 
+        if (cur.to_first)
+            first_inputs.push_back(cur.to_first);
+
         if (cur.to_second)
+        {
+            first_outputs.push_back(cur.to_first);
             potential_duplicate_inputs[input_node->result_name] = 0;
+        }
     }
 
     for (const auto * input : new_inputs)
