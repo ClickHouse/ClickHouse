@@ -148,20 +148,25 @@ public:
     static constexpr bool allow_decimal = IsOperation<Operation>::allow_decimal;
     static constexpr bool only_integer = IsOperation<Operation>::div_int || IsOperation<Operation>::div_int_or_zero;
 
-    /// Appropriate result type for binary operator on numeric types. "Date" can also mean
-    /// DateTime, but if both operands are Dates, their type must be the same (e.g. Date - DateTime is invalid).
-    using ResultDataType = Switch<
-        /// Result must be Integer
-        Case<IsOperation<Operation>::div_int || IsOperation<Operation>::div_int_or_zero, DataTypeFromFieldType<typename Op::ResultType>>,
-
-        /// Decimal cases
-        Case<!allow_decimal && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>), InvalidType>,
+    using DecimalResultType = Switch<
         Case<
             IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType> && UseLeftDecimal<LeftDataType, RightDataType>,
             LeftDataType>,
         Case<IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>, RightDataType>,
         Case<IsDataTypeDecimal<LeftDataType> && IsIntegralOrExtended<RightDataType>, LeftDataType>,
         Case<IsDataTypeDecimal<RightDataType> && IsIntegralOrExtended<LeftDataType>, RightDataType>,
+
+        /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
+        Case<IsDataTypeDecimal<LeftDataType> && !IsIntegralOrExtendedOrDecimal<RightDataType>, InvalidType>,
+        Case<IsDataTypeDecimal<RightDataType> && !IsIntegralOrExtendedOrDecimal<LeftDataType>, InvalidType>>; /// Determine result decimal type as it would be with usual division (as we determine BinaryOperationTraits::ResultType)
+
+    /// Appropriate result type for binary operator on numeric types. "Date" can also mean
+    /// DateTime, but if both operands are Dates, their type must be the same (e.g. Date - DateTime is invalid).
+    using ResultDataType = Switch<
+        /// Result must be Integer
+        Case<IsOperation<Operation>::div_int || IsOperation<Operation>::div_int_or_zero, DataTypeFromFieldType<typename Op::ResultType>>,
+        /// Decimal cases
+        Case<IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>, DecimalResultType>,
 
         /// e.g Decimal +-*/ Float, least(Decimal, Float), greatest(Decimal, Float) = Float64
         Case<IsOperation<Operation>::allow_decimal && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>, DataTypeFloat64>,
@@ -1669,26 +1674,23 @@ public:
 
                 if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
                 {
+                    if constexpr (is_div_int || is_div_int_or_zero)
+                        type_res = std::make_shared<ResultDataType>();
                     if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                     {
-                        if constexpr (is_div_int || is_div_int_or_zero)
-                            type_res = std::make_shared<ResultDataType>();
-                        else
+                        if constexpr (is_division)
                         {
-                            if constexpr (is_division)
+                            if (context->getSettingsRef().decimal_check_overflow)
                             {
-                                if (context->getSettingsRef().decimal_check_overflow)
-                                {
-                                    /// Check overflow by using operands scale (based on big decimal division implementation details):
-                                    /// big decimal arithmetic is based on big integers, decimal operands are converted to big integers
-                                    /// i.e. int_operand = decimal_operand*10^scale
-                                    /// For division, left operand will be scaled by right operand scale also to do big integer division,
-                                    /// BigInt result = left*10^(left_scale + right_scale) / right * 10^right_scale
-                                    /// So, we can check upfront possible overflow just by checking max scale used for left operand
-                                    /// Note: it doesn't detect all possible overflow during big decimal division
-                                    if (left.getScale() + right.getScale() > ResultDataType::maxPrecision())
-                                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Overflow during decimal division");
-                                }
+                                /// Check overflow by using operands scale (based on big decimal division implementation details):
+                                /// big decimal arithmetic is based on big integers, decimal operands are converted to big integers
+                                /// i.e. int_operand = decimal_operand*10^scale
+                                /// For division, left operand will be scaled by right operand scale also to do big integer division,
+                                /// BigInt result = left*10^(left_scale + right_scale) / right * 10^right_scale
+                                /// So, we can check upfront possible overflow just by checking max scale used for left operand
+                                /// Note: it doesn't detect all possible overflow during big decimal division
+                                if (left.getScale() + right.getScale() > ResultDataType::maxPrecision())
+                                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Overflow during decimal division");
                             }
                             ResultDataType result_type = decimalResultType<is_multiply, is_division>(left, right);
                             type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
@@ -1697,24 +1699,15 @@ public:
                     else if constexpr (((IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>) ||
                         (IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>)))
                     {
-                        if constexpr (is_div_int || is_div_int_or_zero)
-                            type_res = std::make_shared<ResultDataType>();
-                        else
-                            type_res = std::make_shared<DataTypeFloat64>();
+                        type_res = std::make_shared<DataTypeFloat64>();
                     }
                     else if constexpr (IsDataTypeDecimal<LeftDataType>)
                     {
-                        if constexpr (is_div_int || is_div_int_or_zero)
-                            type_res = std::make_shared<ResultDataType>();
-                        else
-                            type_res = std::make_shared<LeftDataType>(left.getPrecision(), left.getScale());
+                        type_res = std::make_shared<LeftDataType>(left.getPrecision(), left.getScale());
                     }
                     else if constexpr (IsDataTypeDecimal<RightDataType>)
                     {
-                        if constexpr (is_div_int || is_div_int_or_zero)
-                            type_res = std::make_shared<ResultDataType>();
-                        else
-                            type_res = std::make_shared<RightDataType>(right.getPrecision(), right.getScale());
+                        type_res = std::make_shared<RightDataType>(right.getPrecision(), right.getScale());
                     }
                     else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
                     {
@@ -2024,6 +2017,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         using LeftDataType = std::decay_t<decltype(left)>;
         using RightDataType = std::decay_t<decltype(right)>;
         using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+        using DecimalResultType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::DecimalResultType;
 
         if constexpr (std::is_same_v<ResultDataType, InvalidType>)
             return nullptr;
@@ -2075,19 +2069,9 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     col_left_size,
                     right_nullmap);
             }
+            /// Here we check if we have `intDiv` or `intDivOrZero` and at least one of the arguments is decimal, because in this case originally we had result as decimal, so we need to convert result into integer after calculations
             else if constexpr (!decimal_with_float && (is_div_int || is_div_int_or_zero) && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>))
             {
-                using DecimalResultType = Switch<
-                    Case<
-                        IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType> && UseLeftDecimal<LeftDataType, RightDataType>,
-                        LeftDataType>,
-                    Case<IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>, RightDataType>,
-                    Case<IsDataTypeDecimal<LeftDataType> && IsIntegralOrExtended<RightDataType>, LeftDataType>,
-                    Case<IsDataTypeDecimal<RightDataType> && IsIntegralOrExtended<LeftDataType>, RightDataType>,
-
-                    /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
-                    Case<IsDataTypeDecimal<LeftDataType> && !IsIntegralOrExtendedOrDecimal<RightDataType>, InvalidType>,
-                    Case<IsDataTypeDecimal<RightDataType> && !IsIntegralOrExtendedOrDecimal<LeftDataType>, InvalidType>>; /// Determine result decimal type as it would be with usual division (as we determine BinaryOperationTraits::ResultType)
 
                 if constexpr (!std::is_same_v<DecimalResultType, InvalidType>)
                 {
