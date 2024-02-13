@@ -94,7 +94,7 @@ RUN mkdir /tmp/ccache \
     && rm -rf /tmp/ccache
 
 ARG TARGETARCH
-ARG SCCACHE_VERSION=v0.5.4
+ARG SCCACHE_VERSION=v0.7.7
 ENV SCCACHE_IGNORE_SERVER_IO_ERROR=1
 # sccache requires a value for the region. So by default we use The Default Region
 ENV SCCACHE_REGION=us-east-1
