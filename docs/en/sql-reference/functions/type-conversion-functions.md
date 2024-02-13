@@ -49,6 +49,171 @@ SETTINGS cast_keep_nullable = 1
 └──────────────────┴─────────────────────┴──────────────────┘
 ```
 
+## Example
+
+This function serves as an example of what function documentation should look like.
+
+**Syntax**
+
+```sql
+Example(input, secondary_input)
+```
+
+**Arguments**
+
+- `input`: This is an example input. [String literal](../syntax#syntax-string-literal)
+- `secondary_input`: This is another example input. [Expression](../syntax#syntax-expressions)
+
+**Returned value**
+
+This function doesn't exists. But if it did, they it would return a bool.
+
+**Implementation details**
+
+Any additional information pertaining to this function that users might need to know about. Things like known-bugs or edge cases would fit into this section. For example, if a function used _bankers rounding_ instead of standard rounding.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE example_table
+(
+    id UUID,
+    name String,
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO example_table VALUES (generateUUIDv4(), Example());
+SELECT * FROM example_table;
+```
+
+**Result**:
+
+```response
+9e22db8c-d343-4bc5-8a95-501f635c0fc4	Example
+```
+
+## toInt8 
+
+Converts an input value to a value an Int8.
+
+**Syntax**
+
+```sql
+toInt8(input_expression)
+```
+
+**Arguments**
+
+- `input_expression`: [Expression](../syntax#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
+
+**Returned value**
+
+Integer value in the Int8 data type.
+
+**Implementation details**
+
+This function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+
+This function is not compatible with the `Inf`, `-Inf`, or `NaN` data types.
+
+**Example**
+
+Query:
+
+```sql
+SELECT toInt8(1 + 100);
+SELECT toInt8(1 + 1000);
+```
+
+**Result**:
+
+```response
+101
+-23
+```
+
+## toInt16
+
+Converts an input value to a value an Int16.
+
+**Syntax**
+
+```sql
+toInt16(input_expression)
+```
+
+**Arguments**
+
+- `input_expression`: [Expression](../syntax#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
+
+**Returned value**
+
+Integer value in the Int16 data type.
+
+**Implementation details**
+
+This function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+
+This function is not compatible with the `Inf`, `-Inf`, or `NaN` data types.
+
+**Example**
+
+Query:
+
+```sql
+SELECT toInt16(1 + 1000);
+SELECT toInt16(1 + 40000);
+```
+
+**Result**:
+
+```response
+1001
+-25535
+```
+
+## toInt32
+
+Converts an input value to a value an Int32.
+
+**Syntax**
+
+```sql
+toInt32(input_expression)
+```
+
+**Arguments**
+
+- `input_expression`: [Expression](../syntax#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
+
+**Returned value**
+
+Integer value in the Int32 data type.
+
+**Implementation details**
+
+This function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+
+This function is not compatible with the `Inf`, `-Inf`, or `NaN` data types.
+
+**Example**
+
+Query:
+
+```sql
+SELECT toInt32(1 + 1000);
+SELECT toInt32(1 + 2147483647);
+```
+
+**Result**:
+
+```response
+1001
+-2147483648
+```
+
 ## toInt(8\|16\|32\|64\|128\|256)
 
 Converts an input value to a value the [Int](/docs/en/sql-reference/data-types/int-uint.md) data type. This function family includes:
