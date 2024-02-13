@@ -73,6 +73,7 @@ namespace
             .use_virtual_addressing = s3_uri.is_virtual_hosted_style,
             .disable_checksum = local_settings.s3_disable_checksum,
             .gcs_issue_compose_request = context->getConfigRef().getBool("s3.gcs_issue_compose_request", false),
+            .is_s3express_bucket = S3::isS3ExpressEndpoint(s3_uri.endpoint),
         };
 
         return S3::ClientFactory::instance().create(

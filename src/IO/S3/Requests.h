@@ -21,11 +21,31 @@
 #include <aws/s3/model/UploadPartCopyRequest.h>
 #include <aws/s3/model/DeleteObjectRequest.h>
 #include <aws/s3/model/DeleteObjectsRequest.h>
+#include <aws/s3/model/ChecksumAlgorithm.h>
+#include <aws/s3/model/CompletedPart.h>
+
+#include <base/defines.h>
 
 namespace DB::S3
 {
 
 namespace Model = Aws::S3::Model;
+
+/// Used only for S3Express
+namespace RequestChecksum
+{
+inline void setPartChecksum(Model::CompletedPart & part, const std::string & checksum)
+{
+    part.SetChecksumCRC32(checksum);
+}
+
+template <typename R>
+inline void setChecksumAlgorithm(R & request)
+{
+    if constexpr (requires { request.SetChecksumAlgorithm(Model::ChecksumAlgorithm::CRC32); })
+        request.SetChecksumAlgorithm(Model::ChecksumAlgorithm::CRC32);
+}
+};
 
 template <typename BaseRequest>
 class ExtendedRequest : public BaseRequest
@@ -49,11 +69,13 @@ public:
 
     Aws::String GetChecksumAlgorithmName() const override
     {
+        chassert(!is_s3express_bucket || checksum);
+
         /// Return empty string is enough to disable checksums (see
         /// AWSClient::AddChecksumToRequest [1] for more details).
         ///
         ///   [1]: https://github.com/aws/aws-sdk-cpp/blob/b0ee1c0d336dbb371c34358b68fba6c56aae2c92/src/aws-cpp-sdk-core/source/client/AWSClient.cpp#L783-L839
-        if (!checksum)
+        if (!is_s3express_bucket && !checksum)
             return "";
         return BaseRequest::GetChecksumAlgorithmName();
     }
@@ -84,9 +106,12 @@ public:
     }
 
     /// Disable checksum to avoid extra read of the input stream
-    void disableChecksum() const
+    void disableChecksum() const { checksum = false; }
+
+    void setIsS3ExpressBucket()
     {
-        checksum = false;
+        is_s3express_bucket = true;
+        RequestChecksum::setChecksumAlgorithm(*this);
     }
 
 protected:
@@ -94,6 +119,7 @@ protected:
     mutable std::optional<S3::URI> uri_override;
     mutable ApiMode api_mode{ApiMode::AWS};
     mutable bool checksum = true;
+    bool is_s3express_bucket = false;
 };
 
 class CopyObjectRequest : public ExtendedRequest<Model::CopyObjectRequest>

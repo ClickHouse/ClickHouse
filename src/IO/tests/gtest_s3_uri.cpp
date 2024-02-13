@@ -162,6 +162,14 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(false, uri.is_virtual_hosted_style);
     }
+    {
+        S3::URI uri("https://test-perf-bucket--eun1-az1--x-s3.s3express-eun1-az1.eu-north-1.amazonaws.com/test.csv");
+        ASSERT_EQ("https://s3express-eun1-az1.eu-north-1.amazonaws.com", uri.endpoint);
+        ASSERT_EQ("test-perf-bucket--eun1-az1--x-s3", uri.bucket);
+        ASSERT_EQ("test.csv", uri.key);
+        ASSERT_EQ("", uri.version_id);
+        ASSERT_EQ(true, uri.is_virtual_hosted_style);
+    }
 }
 
 TEST_P(S3UriTest, invalidPatterns)

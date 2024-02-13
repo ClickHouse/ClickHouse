@@ -35,7 +35,7 @@ URI::URI(const std::string & uri_)
     /// Case when bucket name represented in domain name of S3 URL.
     /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
     /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
-    static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3|cos|obs|oss|eos)([.\-][a-z0-9\-.:]+))");
+    static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3express[\-a-z0-9]+|s3|cos|obs|oss|eos)([.\-][a-z0-9\-.:]+))");
 
     /// Case when bucket name and key represented in path of S3 URL.
     /// E.g. (https://s3.Region.amazonaws.com/bucket-name/key)
@@ -43,6 +43,7 @@ URI::URI(const std::string & uri_)
     static const RE2 path_style_pattern("^/([^/]*)/(.*)");
 
     static constexpr auto S3 = "S3";
+    static constexpr auto S3EXPRESS = "S3EXPRESS";
     static constexpr auto COSN = "COSN";
     static constexpr auto COS = "COS";
     static constexpr auto OBS = "OBS";
@@ -115,21 +116,16 @@ URI::URI(const std::string & uri_)
         }
 
         boost::to_upper(name);
-        if (name != S3 && name != COS && name != OBS && name != OSS && name != EOS)
+        /// For S3Express it will look like s3express-eun1-az1, i.e. contain region and AZ info
+        if (name != S3 && !name.starts_with(S3EXPRESS) && name != COS && name != OBS && name != OSS && name != EOS)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Object storage system name is unrecognized in virtual hosted style S3 URI: {}",
                             quoteString(name));
 
-        if (name == S3)
-            storage_name = name;
-        else if (name == OBS)
-            storage_name = OBS;
-        else if (name == OSS)
-            storage_name = OSS;
-        else if (name == EOS)
-            storage_name = EOS;
-        else
+        if (name == COS || name == COSN)
             storage_name = COSN;
+        else
+            storage_name = name;
     }
     else if (re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
     {

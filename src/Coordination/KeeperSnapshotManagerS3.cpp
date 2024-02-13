@@ -103,6 +103,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             .use_virtual_addressing = new_uri.is_virtual_hosted_style,
             .disable_checksum = false,
             .gcs_issue_compose_request = false,
+            .is_s3express_bucket = S3::isS3ExpressEndpoint(new_uri.endpoint),
         };
 
         auto client = S3::ClientFactory::instance().create(

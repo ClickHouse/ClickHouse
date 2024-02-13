@@ -304,6 +304,9 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
     request.setApiMode(api_mode);
 
+    if (isS3ExpressBucket())
+        request.setIsS3ExpressBucket();
+
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
@@ -530,7 +533,11 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
-    if (client_settings.disable_checksum)
+
+    /// We have to use checksums for S3Express buckets, so the order of checks should be the following
+    if (client_settings.is_s3express_bucket)
+        request.setIsS3ExpressBucket();
+    else if (client_settings.disable_checksum)
         request.disableChecksum();
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
@@ -915,9 +922,9 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         std::move(sse_kms_config),
         credentials_provider,
         client_configuration, // Client configuration.
-        Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-        client_settings
-    );
+        client_settings.is_s3express_bucket ? Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::RequestDependent
+                                            : Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+        client_settings);
 }
 
 PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
@@ -956,6 +963,10 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     return config;
 }
 
+bool isS3ExpressEndpoint(const std::string & endpoint)
+{
+    return endpoint.contains("s3express");
+}
 }
 
 }

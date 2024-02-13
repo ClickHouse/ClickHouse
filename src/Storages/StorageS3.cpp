@@ -1427,6 +1427,7 @@ void StorageS3::Configuration::connect(const ContextPtr & context)
         .use_virtual_addressing = url.is_virtual_hosted_style,
         .disable_checksum = local_settings.s3_disable_checksum,
         .gcs_issue_compose_request = context->getConfigRef().getBool("s3.gcs_issue_compose_request", false),
+        .is_s3express_bucket = S3::isS3ExpressEndpoint(url.endpoint),
     };
 
     auto credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key, auth_settings.session_token);

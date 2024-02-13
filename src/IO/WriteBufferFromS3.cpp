@@ -18,7 +18,9 @@
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
+#include <aws/core/utils/HashingUtils.h>
 #include <aws/s3/model/StorageClass.h>
+#include <aws/s3/model/ChecksumAlgorithm.h>
 
 #include <utility>
 
@@ -456,6 +458,14 @@ S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, Pa
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
+    /// Checksums need to be provided on CompleteMultipartUpload requests, so we calculate then manually and store in multipart_checksums
+    if (client_ptr->isS3ExpressBucket())
+    {
+        chassert(req.GetChecksumAlgorithm() == Aws::S3::Model::ChecksumAlgorithm::CRC32);
+        req.SetChecksumCRC32(Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateCRC32(*(req.GetBody()))));
+        multipart_checksums.push_back(req.GetChecksumCRC32());
+    }
+
     return req;
 }
 
@@ -575,7 +585,10 @@ void WriteBufferFromS3::completeMultipartUpload()
     for (size_t i = 0; i < multipart_tags.size(); ++i)
     {
         Aws::S3::Model::CompletedPart part;
-        multipart_upload.AddParts(part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1)));
+        part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1));
+        if (!multipart_checksums.empty())
+            S3::RequestChecksum::setPartChecksum(part, multipart_checksums.at(i));
+        multipart_upload.AddParts(part);
     }
 
     req.SetMultipartUpload(multipart_upload);
