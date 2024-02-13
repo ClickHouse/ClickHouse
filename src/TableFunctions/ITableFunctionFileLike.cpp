@@ -12,6 +12,8 @@
 
 #include <Formats/FormatFactory.h>
 
+#include <filesystem>
+
 namespace DB
 {
 
@@ -24,6 +26,17 @@ namespace ErrorCodes
 
 void ITableFunctionFileLike::parseFirstArguments(const ASTPtr & arg, const ContextPtr &)
 {
+    auto type = (*arg->as<ASTLiteral>()).value.getType();
+    // Take Array argument like: ['file1.csv', 'file2.csv', ...]
+    if (type == Field::Types::Array)
+    {
+        filenames.clear();
+        auto file_paths = checkAndGetLiteralArgument<Array>(arg, "source");
+        for (const auto & file_path : file_paths)
+            filenames.push_back(file_path.safeGet<String>());
+        return;
+    }
+
     filename = checkAndGetLiteralArgument<String>(arg, "source");
 }
 

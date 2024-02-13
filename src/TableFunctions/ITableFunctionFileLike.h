@@ -42,7 +42,9 @@ protected:
     virtual String getFormatFromFirstArgument();
 
     String filename;
+    Strings filenames;
     String path_to_archive;
+    Strings paths_to_archive;
     String format = "auto";
     String structure = "auto";
     String compression_method = "auto";

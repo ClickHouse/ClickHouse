@@ -26,6 +26,38 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
     {
         ITableFunctionFileLike::parseFirstArguments(arg, context);
         StorageFile::parseFileSource(std::move(filename), filename, path_to_archive);
+        bool first = true;
+        String common_file_ext;
+        String common_archive_ext;
+        for (auto & file_path : filenames)
+        {
+            StorageFile::parseFileSource(std::move(file_path), file_path, path_to_archive);
+            String archive_ext;
+            if (!path_to_archive.empty())
+            {
+                paths_to_archive.push_back(path_to_archive);
+                std::filesystem::path archive_path(path_to_archive);
+                archive_ext = archive_path.extension().string();
+            }
+            std::filesystem::path path(file_path);
+            if (first)
+            {
+                first = false;
+                common_file_ext = path.extension().string();
+                common_archive_ext = archive_ext;
+            }
+            else
+            {
+                if (common_file_ext != path.extension().string())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only files with the same format are supported");
+                if (common_archive_ext != archive_ext)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only files with the same archive format are supported");
+            }
+        }
+
+        if (!paths_to_archive.empty() && paths_to_archive.size() != filenames.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The number of paths to archive does not match");
+
         return;
     }
 
@@ -58,6 +90,8 @@ String TableFunctionFile::getFormatFromFirstArgument()
 {
     if (fd >= 0)
         return FormatFactory::instance().getFormatFromFileDescriptor(fd);
+    else if (!filenames.empty())
+        return FormatFactory::instance().getFormatFromFileName(filenames.at(0), true);
     else
         return FormatFactory::instance().getFormatFromFileName(filename, true);
 }
@@ -84,8 +118,10 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
 
     if (fd >= 0)
         return std::make_shared<StorageFile>(fd, args);
-
-    return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), false, args);
+    else if (!filenames.empty())
+        return std::make_shared<StorageFile>(filenames, paths_to_archive, global_context->getUserFilesPath(), args);
+    else
+        return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), false, args);
 }
 
 ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
@@ -98,11 +134,23 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
 
         Strings paths;
         std::optional<StorageFile::ArchiveInfo> archive_info;
-        if (path_to_archive.empty())
-            paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
-        else
+        if (!paths_to_archive.empty())
+        {
+            archive_info
+                = StorageFile::getArchiveInfo(paths_to_archive, filenames, context->getUserFilesPath(), context, total_bytes_to_read);
+        }
+        else if (!path_to_archive.empty())
+        {
             archive_info
                 = StorageFile::getArchiveInfo(path_to_archive, filename, context->getUserFilesPath(), context, total_bytes_to_read);
+        }
+        else
+        {
+            if (filenames.empty())
+                paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
+            else
+                paths = StorageFile::getPathsList(filenames, context->getUserFilesPath(), context, total_bytes_to_read);
+        }
 
         return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context, archive_info);
     }

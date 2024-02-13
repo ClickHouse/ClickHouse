@@ -368,6 +368,19 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     return paths;
 }
 
+Strings StorageFile::getPathsList(
+    const std::vector<String> & table_paths, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read)
+{
+    Strings paths;
+    for (const auto & table_path : table_paths)
+    {
+        Strings sub_paths = getPathsList(table_path, user_files_path, context, total_bytes_to_read);
+        paths.insert(paths.end(), sub_paths.begin(), sub_paths.end());
+    }
+
+    return paths;
+}
+
 namespace
 {
     struct ReadBufferFromFileIterator : public IReadBufferIterator, WithContext
@@ -836,6 +849,30 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
         path_for_partitioned_write = paths.front();
     else
         path_for_partitioned_write = table_path_;
+
+    file_renamer = FileRenamer(args.rename_after_processing);
+
+    setStorageMetadata(args);
+}
+
+StorageFile::StorageFile(
+    const std::vector<std::string> & table_paths,
+    const std::vector<std::string> & paths_to_archive,
+    const std::string & user_files_path,
+    CommonArguments args)
+    : StorageFile(args)
+{
+    if (!paths_to_archive.empty())
+        archive_info = getArchiveInfo(paths_to_archive, table_paths, user_files_path, args.getContext(), total_bytes_to_read);
+    else
+        paths = getPathsList(table_paths, user_files_path, args.getContext(), total_bytes_to_read);
+
+    is_db_table = false;
+    is_path_with_globs = paths.size() > 1;
+    if (!paths.empty())
+        path_for_partitioned_write = paths.front();
+    else
+        path_for_partitioned_write = table_paths.empty() ? "" : table_paths.front();
 
     file_renamer = FileRenamer(args.rename_after_processing);
 
@@ -2066,6 +2103,27 @@ StorageFile::ArchiveInfo StorageFile::getArchiveInfo(
     }
 
     archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read);
+
+    return archive_info;
+}
+
+StorageFile::ArchiveInfo StorageFile::getArchiveInfo(
+    const std::vector<std::string> & paths_to_archive,
+    const std::vector<std::string> & files_in_archive,
+    const std::string & user_files_path,
+    ContextPtr context,
+    size_t & total_bytes_to_read)
+{
+    ArchiveInfo archive_info;
+    archive_info.paths_to_archives = getPathsList(paths_to_archive, user_files_path, context, total_bytes_to_read);
+    if (!files_in_archive.empty())
+    {
+        std::unordered_set<std::string> paths_in_archive;
+        paths_in_archive.insert(files_in_archive.begin(), files_in_archive.end());
+
+        archive_info.filter
+            = [paths_in_archive](const std::string & p) mutable { return paths_in_archive.find(p) != paths_in_archive.end(); };
+    }
 
     return archive_info;
 }
