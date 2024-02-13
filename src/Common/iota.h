@@ -38,6 +38,6 @@ extern template void iota_with_step(UInt8 * begin, size_t count, UInt8 first_val
 extern template void iota_with_step(UInt32 * begin, size_t count, UInt32 first_value, UInt32 step);
 extern template void iota_with_step(UInt64 * begin, size_t count, UInt64 first_value, UInt64 step);
 #if defined(OS_DARWIN)
-extern template void iota(size_t * begin, size_t count, size_t first_value, size_t step);
+extern template void iota_with_step(size_t * begin, size_t count, size_t first_value, size_t step);
 #endif
 }

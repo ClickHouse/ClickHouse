@@ -15,6 +15,7 @@
 
 #include <Common/logger_useful.h>
 #include "Core/Types.h"
+#include "base/Decimal_fwd.h"
 #include "base/types.h"
 
 namespace DB
@@ -31,13 +32,12 @@ namespace
 class NumbersSource : public ISource
 {
 public:
-    NumbersSource(UInt64 block_size_, UInt64 offset_, UInt64 chunk_step_, const std::string & column_name, UInt64 step_, UInt64 remainder_)
+    NumbersSource(UInt64 block_size_, UInt64 offset_, UInt64 chunk_step_, const std::string & column_name, UInt64 step_)
         : ISource(createHeader(column_name))
         , block_size(block_size_)
         , next(offset_)
         , chunk_step(chunk_step_)
         , step(step_)
-        , remainder(remainder_)
     {
     }
     String getName() const override { return "Numbers"; }
@@ -50,41 +50,19 @@ public:
 protected:
     Chunk generate() override
     {
-        UInt64 curr = next; /// The local variable for some reason works faster (>20%) than member of class.
-        UInt64 first_element = (curr / step) * step;
-        if (first_element > std::numeric_limits<UInt64>::max() - remainder)
-        {
-            auto column = ColumnUInt64::create(0);
-            return {Columns{std::move(column)}, 0};
-        }
-        first_element += remainder;
-        if (first_element < curr)
-        {
-            if (first_element > std::numeric_limits<UInt64>::max() - step)
-            {
-                auto column = ColumnUInt64::create(0);
-                return {Columns{std::move(column)}, 0};
-            }
-            first_element += step;
-        }
-        if (first_element - curr >= block_size)
-        {
-            auto column = ColumnUInt64::create(0);
-            return {Columns{std::move(column)}, 0};
-        }
-        UInt64 filtered_block_size = (block_size - (first_element - curr) - 1) / step + 1;
-
-        auto column = ColumnUInt64::create(filtered_block_size);
+        auto column = ColumnUInt64::create(block_size);
         ColumnUInt64::Container & vec = column->getData();
+
+        UInt64 curr = next; /// The local variable for some reason works faster (>20%) than member of class.
         UInt64 * pos = vec.data(); /// This also accelerates the code.
-        UInt64 * end = &vec[filtered_block_size];
-        iota_with_step(pos, static_cast<size_t>(end - pos), first_element, step);
+        UInt64 * end = &vec[block_size];
+        iota_with_step(pos, static_cast<size_t>(end - pos), curr, step);
 
         next += chunk_step;
 
         progress(column->size(), column->byteSize());
 
-        return {Columns{std::move(column)}, filtered_block_size};
+        return {Columns{std::move(column)}, block_size};
     }
 
 private:
@@ -92,14 +70,13 @@ private:
     UInt64 next;
     UInt64 chunk_step;
     UInt64 step;
-    UInt64 remainder;
 };
 
 struct RangeWithStep
 {
     UInt64 left;
-    UInt64 right;
     UInt64 step;
+    UInt128 size;
 };
 
 using RangesWithStep = std::vector<RangeWithStep>;
@@ -125,13 +102,8 @@ std::optional<RangeWithStep> stepped_range_from_range(const Range & r, UInt64 st
     if ((begin >= r.right_included) && (begin - r.right_included >= r.right.get<UInt64>()))
         return std::nullopt;
     UInt64 right_edge_included = r.right.get<UInt64>() - (1 - r.right_included);
-    return std::optional{RangeWithStep{begin, right_edge_included, step}};
+    return std::optional{RangeWithStep{begin, step, static_cast<UInt128>(right_edge_included - begin) / step + 1}};
 }
-
-[[maybe_unused]] UInt128 sizeOfRange(const RangeWithStep & r)
-{
-    return static_cast<UInt128>(r.right - r.left) / r.step + 1;
-};
 
 [[maybe_unused]] auto sizeOfRanges(const RangesWithStep & rs)
 {
@@ -139,7 +111,7 @@ std::optional<RangeWithStep> stepped_range_from_range(const Range & r, UInt64 st
     for (const RangeWithStep & r : rs)
     {
         /// total_size will never overflow
-        total_size += sizeOfRange(r);
+        total_size += r.size;
     }
     return total_size;
 };
@@ -211,7 +183,7 @@ protected:
         while (need != 0)
         {
             UInt128 can_provide = end.offset_in_ranges == ranges.size() ? static_cast<UInt128>(0)
-                                                                        : sizeOfRange(ranges[end.offset_in_ranges]) - end.offset_in_range;
+                                                                        : ranges[end.offset_in_ranges].size - end.offset_in_range;
             if (can_provide == 0)
                 break;
 
@@ -278,7 +250,7 @@ protected:
 
             UInt128 can_provide = cursor.offset_in_ranges == end.offset_in_ranges
                 ? end.offset_in_range - cursor.offset_in_range
-                : static_cast<UInt128>(range.right - range.left) / range.step + 1 - cursor.offset_in_range;
+                : range.size - cursor.offset_in_range;
 
             /// set value to block
             auto set_value = [&pos, this](UInt128 & start_value, UInt128 & end_value)
@@ -377,7 +349,7 @@ namespace
     size_t last_range_idx = 0;
     for (size_t i = 0; i < ranges.size(); i++)
     {
-        auto range_size = sizeOfRange(ranges[i]);
+        auto range_size = ranges[i].size;
         if (range_size < size)
         {
             size -= static_cast<UInt64>(range_size);
@@ -391,7 +363,7 @@ namespace
         else
         {
             auto & range = ranges[i];
-            range.right = range.left + static_cast<UInt64>(size) * range.step - 1;
+            range.size = static_cast<UInt128>(size);
             last_range_idx = i;
             break;
         }
@@ -587,11 +559,10 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     {
         auto source = std::make_shared<NumbersSource>(
             max_block_size,
-            numbers_storage.offset + i * max_block_size,
-            num_streams * max_block_size,
+            numbers_storage.offset + i * max_block_size * numbers_storage.step,
+            num_streams * max_block_size * numbers_storage.step,
             numbers_storage.column_name,
-            numbers_storage.step,
-            numbers_storage.offset % numbers_storage.step);
+            numbers_storage.step);
 
         if (numbers_storage.limit && i == 0)
         {
