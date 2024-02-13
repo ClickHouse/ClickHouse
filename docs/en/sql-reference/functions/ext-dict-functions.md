@@ -78,7 +78,7 @@ Retrieves values from a dictionary. If that value cannot be found, returns the d
 **Syntax**
 
 ```sql
-dictGet('dict_name', attr_names, id_expr, default_value_expr)
+dictGetOrDefault('dict_name', attr_names, id_expr, default_value_expr)
 ```
 
 **Arguments**
@@ -504,6 +504,68 @@ Result:
 28
 ```
 
+## dictGetInt8OrDefault
+
+Retrieves type Int8 values from a dictionary. If the Int8 attribute cannot be found, returns the specified default value instead.
+
+**Syntax**
+
+```sql
+dictGetInt8OrDefault('dictionary_name', 'attribute_name', key, default_value_expr)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `Int8` type. If the attribute cannot be found, the value of `default_value_expr` is returned instead.
+
+**Implementation details**
+
+This function will throw an exception if the key does not exist in the dictionary.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    code_designation Int8
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'Mali', 32);
+INSERT INTO countries VALUES (2, 'Czechia', 28);
+INSERT INTO countries VALUES (3, 'Brazil', 82);
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    code_designation Int8
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetInt8OrDefault('country_codes', 'code_designation', '999', 'Default return string.') AS code_designation_output;
+```
+
+Result:
+
+```response
+'Default return string.'
+```
+
 ## dictGetInt16
 
 Retrieves type Int16 values from a dictionary.
@@ -563,6 +625,68 @@ Result:
 
 ```response
 28372
+```
+
+## dictGetInt16OrDefault
+
+Retrieves type Int16 values from a dictionary. If the Int16 attribute cannot be found, returns the specified default value instead.
+
+**Syntax**
+
+```sql
+dictGetInt16OrDefault('dictionary_name', 'attribute_name', key, default_value_expr)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `Int16` type. If the attribute cannot be found, the value of `default_value_expr` is returned instead.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    code_designation Int16
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'Sweden', 32767);
+INSERT INTO countries VALUES (2, 'Burundi', 28372);
+INSERT INTO countries VALUES (3, 'Mozambique', 18372);
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    code_designation Int16
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetInt16OrDefault('country_codes', 'code_designation', '999', 'Default return string.') AS code_designation_output;
+```
+
+Result:
+
+```response
+'Default return string.'
 ```
 
 ## dictGetInt32
@@ -626,6 +750,68 @@ Result:
 1938273982
 ```
 
+## dictGetInt32OrDefault
+
+Retrieves type Int32 values from a dictionary. If the Int32 attribute cannot be found, returns the specified default value instead.
+
+**Syntax**
+
+```sql
+dictGetInt32OrDefault('dictionary_name', 'attribute_name', key, default_value_expr)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `Int32` type. If the attribute cannot be found, the value of `default_value_expr` is returned instead.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    code_designation Int32 
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'United States', 2147483647);
+INSERT INTO countries VALUES (2, 'Maldives', 1938273982);
+INSERT INTO countries VALUES (3, 'India', 928372817);
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    code_designation Int32
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetInt32OrDefault('country_codes', 'code_designation', '999', 'Default return string.') AS code_designation_output;
+```
+
+Result:
+
+```response
+'Default return string.'
+```
+
 ## dictGetInt64
 
 Retrieves type Int64 values from a dictionary.
@@ -685,6 +871,68 @@ Result:
 
 ```response
 384982938291
+```
+
+## dictGetInt64OrDefault
+
+Retrieves type Int64 values from a dictionary. If the Int64 attribute cannot be found, returns the specified default value instead.
+
+**Syntax**
+
+```sql
+dictGetInt64OrDefault('dictionary_name', 'attribute_name', key, default_value_expr)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `Int64` type. If the attribute cannot be found, the value of `default_value_expr` is returned instead.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    code_designation Int64 
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'Palau', 9223372036854775801);
+INSERT INTO countries VALUES (2, 'Jamaica', 384982938291);
+INSERT INTO countries VALUES (3, 'Tunisia', 910382938472827168);
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    code_designation Int64
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetInt64OrDefault('country_codes', 'code_designation', '999', 'Default return string.') AS code_designation_output;
+```
+
+Result:
+
+```response
+'Default return string.'
 ```
 
 ## dictGetUInt8
@@ -748,6 +996,68 @@ Result:
 28
 ```
 
+## dictGetUInt8OrDefault
+
+Retrieves type UInt8 values from a dictionary. If the UInt8 attribute cannot be found, returns the specified default value instead.
+
+**Syntax**
+
+```sql
+dictGetUInt8OrDefault('dictionary_name', 'attribute_name', key, default_value_expr)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `UInt8` type. If the attribute cannot be found, the value of `default_value_expr` is returned instead.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    code_designation UInt8
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'Mali', 32);
+INSERT INTO countries VALUES (2, 'Czechia', 28);
+INSERT INTO countries VALUES (3, 'Brazil', 82);
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    code_designation UInt8
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetUInt8OrDefault('country_codes', 'code_designation', '999', 'Default return string.') AS code_designation_output;
+```
+
+Result:
+
+```response
+'Default return string.'
+```
+
 ## dictGetUInt16
 
 Retrieves type UInt16 values from a dictionary.
@@ -807,6 +1117,68 @@ Result:
 
 ```response
 28372
+```
+
+## dictGetUInt16OrDefault
+
+Retrieves type UInt16 values from a dictionary. If the UInt16 attribute cannot be found, returns the specified default value instead.
+
+**Syntax**
+
+```sql
+dictGetUInt16OrDefault('dictionary_name', 'attribute_name', key, default_value_expr)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `UInt16` type. If the attribute cannot be found, the value of `default_value_expr` is returned instead.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    code_designation UInt16
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'Sweden', 32767);
+INSERT INTO countries VALUES (2, 'Burundi', 28372);
+INSERT INTO countries VALUES (3, 'Mozambique', 18372);
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    code_designation UInt16
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetUInt16OrDefault('country_codes', 'code_designation', '999', 'Default value string.') AS code_designation_output;
+```
+
+Result:
+
+```response
+'Default value string.'
 ```
 
 ## dictGetUInt32
@@ -870,6 +1242,68 @@ Result:
 1938273982
 ```
 
+## dictGetUInt32OrDefault
+
+Retrieves type UInt32 values from a dictionary. If the UInt32 attribute cannot be found, returns the specified default value instead.
+
+**Syntax**
+
+```sql
+dictGetUInt32OrDefault('dictionary_name', 'attribute_name', key, default_value_expr)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `UInt32` type. If the attribute cannot be found, the value of `default_value_expr` is returned instead.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    code_designation UInt32 
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'United States', 2147483647);
+INSERT INTO countries VALUES (2, 'Maldives', 1938273982);
+INSERT INTO countries VALUES (3, 'India', 928372817);
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    code_designation UInt32
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetUInt32OrDefault('country_codes', 'code_designation', '999', 'Default return string.') AS code_designation_output;
+```
+
+Result:
+
+```response
+'Default return string.'
+```
+
 ## dictGetUInt64
 
 Retrieves type UInt64 values from a dictionary.
@@ -929,6 +1363,68 @@ Result:
 
 ```response
 384982938291
+```
+
+## dictGetUInt64OrDefault
+
+Retrieves type UInt64 values from a dictionary. If the UInt64 attribute cannot be found, returns the specified default value instead.
+
+**Syntax**
+
+```sql
+dictGetUInt64OrDefault('dictionary_name', 'attribute_name', key, default_value_expr)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `UInt64` type. If the attribute cannot be found, the value of `default_value_expr` is returned instead.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    code_designation UInt64 
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'Palau', 9223372036854775801);
+INSERT INTO countries VALUES (2, 'Jamaica', 384982938291);
+INSERT INTO countries VALUES (3, 'Tunisia', 910382938472827168);
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    code_designation Int64
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetInt64OrDefault('country_codes', 'code_designation', '2', 'Default return string.') AS code_designation_output;
+```
+
+Result:
+
+```response
+'Default return string.'
 ```
 
 ## dictGetFloat32
@@ -992,6 +1488,68 @@ Result:
 2.39137
 ```
 
+## dictGetFloat32OrDefault
+
+Retrieves type Float32 values from a dictionary. If the Float32 attribute cannot be found, returns the specified default value instead.
+
+**Syntax**
+
+```sql
+dictGetFloat32OrDefault('dictionary_name', 'attribute_name', key, default_value_expr)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `Float32` type. If the attribute cannot be found, the value of `default_value_expr` is returned instead.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    float_designation Float32
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'Andora', 1.329382);
+INSERT INTO countries VALUES (2, 'Italy', 2.39137);
+INSERT INTO countries VALUES (3, 'El Salvador', 4.03928);
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    float_designation Float32
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetFloat32OrDefault('country_codes', 'float_designation', '999', 'Default return string.') AS dict_output;
+```
+
+Result:
+
+```response
+'Default return string.'
+```
+
 ## dictGetFloat64
 
 Retrieves type Float64 values from a dictionary.
@@ -1053,6 +1611,68 @@ Result:
 1084781.2
 ```
 
+## dictGetFloat64OrDefault
+
+Retrieves type Float64 values from a dictionary. If the Float64 attribute cannot be found, returns the specified default value instead.
+
+**Syntax**
+
+```sql
+dictGetFloat64OrDefault('dictionary_name', 'attribute_name', key, default_value_expr)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `Float64` type. If the attribute cannot be found, the value of `default_value_expr` is returned instead.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    float_designation Float64
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'Madagascar', 1084781.1984689625);
+INSERT INTO countries VALUES (2, 'Vanuatu', 109862.3);
+INSERT INTO countries VALUES (3, 'Peru', 19474.19);
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    float_designation Float64
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetFloat64OrDefault('country_codes', 'float_designation', '999', 'Default return string.') AS dict_output;
+```
+
+Result:
+
+```response
+'Default return string.'
+```
+
 ## dictGetDate
 
 Retrieves type Date values from a dictionary.
@@ -1110,6 +1730,66 @@ Result:
 
 ```response
 1991-06-03
+```
+
+## dictGetDateOrDefault
+
+Retrieves type Date values from a dictionary. If the Date attribute cannot be found, returns the specified default value instead.
+
+**Syntax**
+
+```sql
+dictGetDateOrDefault('dictionary_name', 'attribute_name', key, default_value_expr)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `Date` type. If the attribute cannot be found, the `default_value_expr` is returned instead.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    independence_day Date
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'Belarus', '1991-06-03');
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    independence_day Date
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetDate('country_codes', 'independence_day', '100', 'Default return string.') AS dict_output;
+```
+
+Result:
+
+```response
+'Default return string.'
 ```
 
 ## dictGetDateTime
@@ -1171,6 +1851,66 @@ Result:
 1970-10-10 00:00:01
 ```
 
+## dictGetDateTimeOrDefault
+
+Retrieves type DateTime values from a dictionary. If the DateTime attribute cannot be found, returns the specified default value instead.
+
+**Syntax**
+
+```sql
+dictGetDateTimeOrDefault('dictionary_name', 'attribute_name', key, default_value_expr)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `DateTime` type. If the attribute cannot be found, the `default_value_expr` is returned instead.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt64,
+    country String,
+    independence_day DateTime
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, 'Belarus', '1970-10-10 00:00:01');
+
+CREATE DICTIONARY country_codes
+(
+    id UInt64,
+    country String,
+    independence_day DateTime
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetDateTimeOrDefault('country_codes', 'independence_day', '999', 'Default return string.") AS dict_output;
+```
+
+Result:
+
+```response
+'Default return string.'
+```
+
 ## dictGetUUID
 
 Retrieves type UUID values from a dictionary.
@@ -1230,6 +1970,66 @@ Result:
 0ee3c544-f178-4e93-9112-9fec9a58957b
 ```
 
+## dictGetUUIDOrDefault
+
+Retrieves type UUID values from a dictionary. If the UUID attribute cannot be found, returns the specified default value instead.
+
+**Syntax**
+
+```sql
+dictGetUUIDOrDefault('dictionary_name', 'attribute_name', key, default_value_expr)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `UUID` type. If the attribute cannot be found, the `default_value_expr` is returned.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt8,
+    special_id UUID,
+    country String
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, generateUUIDv4(), ' Seychelles');
+
+CREATE DICTIONARY countries_dict
+(
+    id UInt8, 
+    special_id UUID,
+    country String
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetUUIDOrDefault('countries_dict', 'special_id', 999, 'Default return string.') AS dict_output;
+```
+
+Result:
+
+```response
+'Default return string.'
+```
+
 ## dictGetString
 
 Retrieves type String values from a dictionary.
@@ -1287,6 +2087,66 @@ Result:
 
 ```response
 Philippines
+```
+
+## dictGetStringOrDefault
+
+Retrieves type String values from a dictionary. If the String attribute cannot be found, returns the specified default value instead.
+
+**Syntax**
+
+```sql
+dictGetStringOrDefault('dictionary_name', 'attribute_name', key, default_value_expr)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `String` type. If the attribute cannot be found, the value of `default_value_expr` is returned instead.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt8,
+    unique_id UUID,
+    country String
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, generateUUIDv4(), 'Philippines');
+
+CREATE DICTIONARY countries_dict
+(
+    id UInt8, 
+    unique_id UUID,
+    country String
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetStringOrDefault('countries_dict', 'country', 999, 'Default return string.') AS dict_output;
+```
+
+Result:
+
+```response
+'Default return string.'
 ```
 
 ## dictGetIPv4
@@ -1350,6 +2210,68 @@ Result:
 103.202.232.0
 ```
 
+## dictGetIPv4OrDefault
+
+Retrieves type IPv4 values from a dictionary. If the IPv4 attribute cannot be found, returns the specified default value instead.
+
+**Syntax**
+
+```sql
+dictGetIPv4OrDefault('dictionary_name', 'attribute_name', key, default_value_expr)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `IPv4` type. If the attribute cannot be found, the value of `default_value_expr` is returned instead.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt8,
+    unique_id UUID,
+    ip_address IPv4,
+    country String
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, generateUUIDv4(), '103.202.232.0', 'Spain');
+
+CREATE DICTIONARY countries_dict
+(
+    id UInt8, 
+    unique_id UUID,
+    ip_address IPv4,
+    country String
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetIPv4OrDefault('countries_dict', 'ip_address', 999, 'Default return string.') AS dict_output;
+```
+
+Result:
+
+```response
+'Default return string.'
+```
+
 ## dictGetIPv6
 
 Retrieves type IPv6 values from a dictionary.
@@ -1409,4 +2331,66 @@ Result:
 
 ```response
 ::ffff:103.202.232.0
+```
+
+## dictGetIPv6OrDefault
+
+Retrieves type IPv6 values from a dictionary. If the IPv6 attribute cannot be found, returns the specified default value instead.
+
+**Syntax**
+
+```sql
+dictGetIPv6OrDefault('dictionary_name', 'attribute_name', key, default_value_expr)
+```
+
+**Arguments**
+
+- `dictionary_name`: the name of the dictionary you want to retrieve data from. [String literal](../syntax#syntax-string-literal)
+- `attribute_name`: the attribute whose value you want to get. [String literal](../syntax#syntax-string-literal), or [tuple](../data-types/tuple) of column names.
+- `key`: the key associated with the attribute. [Expression](../syntax#syntax-expressions) returning dictionary key-type value.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+
+**Returned value**
+
+The value of the dictionary attribute that corresponds to the given key. This value is parsed and returned as an `IPv6` type.
+
+**Implementation details**
+
+None.
+
+**Examples**
+
+Query:
+
+```sql
+CREATE TABLE countries
+(
+    id UInt8,
+    unique_id UUID,
+    ip_address IPv6,
+    country String
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO countries VALUES (1, generateUUIDv4(), '0:0:0:0:0:ffff:67ca:e800', 'Spain');
+
+CREATE DICTIONARY countries_dict
+(
+    id UInt8, 
+    unique_id UUID,
+    ip_address IPv6,
+    country String
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'countries'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+
+SELECT dictGetIPv6OrDefault('countries_dict', 'ip_address', 999, 'Default return string.') AS dict_output;
+```
+
+Result:
+
+```response
+'Default return string.'
 ```
