@@ -437,7 +437,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         serialization.serializeText(column, row_num, out_serialize, format_settings);
     }
 
-    if (size_t line_breake_pos = serialized_value.find_first_of('\n'); line_breake_pos != String::npos) {
+    if (size_t line_breake_pos = serialized_value.find_first_of('\n'); line_breake_pos != String::npos)
+    {
         has_line_breake = true;
         serialized_value = serialized_value.substr(0, line_breake_pos) + "…";
         value_width = serialized_value.size() - 3;
