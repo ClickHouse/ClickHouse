@@ -16,7 +16,6 @@ test_settings_profile/test.py::test_show_profiles
 test_shard_level_const_function/test.py::test_remote
 test_sql_user_defined_functions_on_cluster/test.py::test_sql_user_defined_functions_on_cluster
 test_storage_rabbitmq/test.py::test_rabbitmq_materialized_view
-test_user_defined_object_persistence/test.py::test_persistence
 test_wrong_db_or_table_name/test.py::test_wrong_table_name
 test_zookeeper_config/test.py::test_chroot_with_same_root
 test_zookeeper_config/test.py::test_chroot_with_different_root
