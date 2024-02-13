@@ -35,7 +35,6 @@ RUN apt-get update -y \
             sudo \
             tree \
             unixodbc \
-            wget \
             rustc \
             cargo \
             zstd \
@@ -73,11 +72,11 @@ ARG TARGETARCH
 
 # Download Minio-related binaries
 RUN arch=${TARGETARCH:-amd64} \
-    && wget "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio.RELEASE.${MINIO_SERVER_VERSION}" -O ./minio \
-    && wget "https://dl.min.io/client/mc/release/linux-${arch}/archive/mc.RELEASE.${MINIO_CLIENT_VERSION}" -O ./mc \
+    && curl -L "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio.RELEASE.${MINIO_SERVER_VERSION}" -o ./minio \
+    && curl -L "https://dl.min.io/client/mc/release/linux-${arch}/archive/mc.RELEASE.${MINIO_CLIENT_VERSION}" -o ./mc \
     && chmod +x ./mc ./minio
 
-RUN wget --no-verbose 'https://archive.apache.org/dist/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.gz' \
+RUN curl -L --no-verbose -O 'https://archive.apache.org/dist/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.gz' \
     && tar -xvf hadoop-3.3.1.tar.gz \
     && rm -rf hadoop-3.3.1.tar.gz
 
