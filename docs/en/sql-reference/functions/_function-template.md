@@ -1,4 +1,4 @@
-## Example()
+## Example
 
 This function serves as an example of what function documentation should look like.
 
@@ -18,6 +18,8 @@ Example(input, secondary_input)
 This function doesn't exists. But if it did, they it would return a bool.
 
 **Implementation details**
+
+Any additional information pertaining to this function that users might need to know about. Things like known-bugs or edge cases would fit into this section. For example, if a function used _bankers rounding_ instead of standard rounding.
 
 **Example**
 
