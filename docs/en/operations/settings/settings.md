@@ -508,7 +508,9 @@ Possible values:
 - Any positive integer number of hops.
 - 0 — No hops allowed.
 
-Default value: 0.
+Default value: `0`.
+
+Cloud default value: `10`.
 
 ## insert_null_as_default {#insert_null_as_default}
 
@@ -1126,7 +1128,9 @@ Possible values:
 - 0 (or 1) — `INSERT SELECT` no parallel execution.
 - Positive integer. Bigger than 1.
 
-Default value: 0.
+Default value: `0`.
+
+Cloud default value: from `2` to `4`, depending on the service size.
 
 Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [max_threads](#max_threads) setting.
 Higher values will lead to higher memory usage.
@@ -1207,7 +1211,9 @@ Default value: 10000.
 
 Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
 
-Default value: 0
+Default value: `0`.
+
+Cloud default value: `1`.
 
 ## poll_interval {#poll-interval}
 
@@ -1922,7 +1928,7 @@ Possible values:
 - Positive integer.
 - 0 — Asynchronous insertions are disabled.
 
-Default value: `100000`.
+Default value: `1000000`.
 
 ### async_insert_max_query_number {#async-insert-max-query-number}
 
@@ -1935,7 +1941,7 @@ Possible values:
 
 Default value: `450`.
 
-### async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
+### async_insert_busy_timeout_max_ms {#async-insert-busy-timeout-max-ms}
 
 The maximum timeout in milliseconds since the first `INSERT` query before inserting collected data.
 
@@ -1945,6 +1951,63 @@ Possible values:
 - 0 — Timeout disabled.
 
 Default value: `200`.
+
+Cloud default value: `1000`.
+
+### async_insert_poll_timeout_ms {#async-insert-poll-timeout-ms}
+
+Timeout in milliseconds for polling data from asynchronous insert queue.
+
+Possible values:
+
+- Positive integer.
+
+Default value: `10`.
+
+### async_insert_use_adaptive_busy_timeout {#allow-experimental-async-insert-adaptive-busy-timeout}
+
+Use adaptive asynchronous insert timeout.
+
+Possible values:
+
+- 0 - Disabled.
+- 1 - Enabled.
+
+Default value: `0`.
+
+### async_insert_busy_timeout_min_ms {#async-insert-busy-timeout-min-ms}
+
+If adaptive asynchronous insert timeout is allowed through [async_insert_use_adaptive_busy_timeout](#allow-experimental-async-insert-adaptive-busy-timeout), the setting specifies the minimum value of the asynchronous insert timeout in milliseconds. It also serves as the initial value, which may be increased later by the adaptive algorithm, up to the [async_insert_busy_timeout_ms](#async_insert_busy_timeout_ms).
+
+Possible values:
+
+- Positive integer.
+
+Default value: `50`.
+
+### async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
+
+Alias for [`async_insert_busy_timeout_max_ms`](#async_insert_busy_timeout_max_ms).
+
+### async_insert_busy_timeout_increase_rate {#async-insert-busy-timeout-increase-rate}
+
+If adaptive asynchronous insert timeout is allowed through [async_insert_use_adaptive_busy_timeout](#allow-experimental-async-insert-adaptive-busy-timeout), the setting specifies the exponential growth rate at which the adaptive asynchronous insert timeout increases.
+
+Possible values:
+
+- A positive floating-point number.
+
+Default value: `0.2`.
+
+### async_insert_busy_timeout_decrease_rate {#async-insert-busy-timeout-decrease-rate}
+
+If adaptive asynchronous insert timeout is allowed through [async_insert_use_adaptive_busy_timeout](#allow-experimental-async-insert-adaptive-busy-timeout), the setting specifies the exponential growth rate at which the adaptive asynchronous insert timeout decreases.
+
+Possible values:
+
+- A positive floating-point number.
+
+Default value: `0.2`.
 
 ### async_insert_stale_timeout_ms {#async-insert-stale-timeout-ms}
 
@@ -2042,7 +2105,7 @@ SELECT * FROM test_table
 
 ## update_insert_deduplication_token_in_dependent_materialized_views {#update-insert-deduplication-token-in-dependent-materialized-views}
 
-Allows to update `insert_deduplication_token` with table identifier during insert in dependent materialized views, if setting `deduplicate_blocks_in_dependent_materialized_views` is enabled and `insert_deduplication_token` is set.
+Allows to update `insert_deduplication_token` with view identifier during insert in dependent materialized views, if setting `deduplicate_blocks_in_dependent_materialized_views` is enabled and `insert_deduplication_token` is set.
 
 Possible values:
 
@@ -2075,7 +2138,9 @@ Possible values:
 - Positive integer.
 - 0 — Retries are disabled
 
-Default value: 0
+Default value: 20
+
+Cloud default value: `20`.
 
 Keeper request retries are done after some timeout. The timeout is controlled by the following settings: `insert_keeper_retry_initial_backoff_ms`, `insert_keeper_retry_max_backoff_ms`.
 The first retry is done after `insert_keeper_retry_initial_backoff_ms` timeout. The consequent timeouts will be calculated as follows:
@@ -2605,6 +2670,8 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Default value: 1000000000 nanoseconds (once a second).
 
+**Temporarily disabled in ClickHouse Cloud.**
+
 See also:
 
 - System table [trace_log](../../operations/system-tables/trace_log.md/#system_tables-trace_log)
@@ -2627,6 +2694,8 @@ Possible values:
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Default value: 1000000000 nanoseconds.
+
+**Temporarily disabled in ClickHouse Cloud.**
 
 See also:
 
@@ -2748,6 +2817,8 @@ Possible values:
 - 1 — Data is inserted in synchronous mode.
 
 Default value: `0`.
+
+Cloud default value: `1`.
 
 **See Also**
 
@@ -3264,7 +3335,9 @@ Possible values:
 
 - a string representing any valid table engine name
 
-Default value: `None`
+Default value: `MergeTree`.
+
+Cloud default value: `SharedMergeTree`.
 
 **Example**
 
@@ -3840,6 +3913,8 @@ Possible values:
 
 Default value: `0`.
 
+Cloud default value: `1`.
+
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
 Sets how long initial DDL query should wait for Replicated database to process previous DDL queue entries in seconds.
@@ -3877,6 +3952,8 @@ Possible values:
 - `throw_only_active` — similar to `throw`, but doesn't wait for inactive replicas of the `Replicated` database
 
 Default value: `throw`.
+
+Cloud default value: `none`.
 
 ## flatten_nested {#flatten-nested}
 
@@ -4012,6 +4089,8 @@ Possible values:
 - 2 — Wait for everyone.
 
 Default value: `1`.
+
+Cloud default value: `0`.
 
 :::note
 `alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
@@ -4668,6 +4747,8 @@ other connections are cancelled. Queries with `max_parallel_replicas > 1` are su
 
 Enabled by default.
 
+Disabled by default on Cloud.
+
 ## hedged_connection_timeout {#hedged_connection_timeout}
 
 If we can't establish connection with replica after this timeout in hedged requests, we start working with the next replica without cancelling connection to the previous.
@@ -5293,10 +5374,11 @@ Default value: `false`.
 
 ## max_partition_size_to_drop
 
-Restriction on dropping partitions in query time.
+Restriction on dropping partitions in query time. The value 0 means that you can drop partitions without any restrictions.
 
 Default value: 50 GB.
-The value 0 means that you can drop partitions without any restrictions.
+
+Cloud default value: 1 TB.
 
 :::note
 This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-partition-size-to-drop)
@@ -5304,10 +5386,11 @@ This query setting overwrites its server setting equivalent, see [max_partition_
 
 ## max_table_size_to_drop
 
-Restriction on deleting tables in query time.
+Restriction on deleting tables in query time. The value 0 means that you can delete all tables without any restrictions.
 
 Default value: 50 GB.
-The value 0 means that you can delete all tables without any restrictions.
+
+Cloud default value: 1 TB.
 
 :::note
 This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop)

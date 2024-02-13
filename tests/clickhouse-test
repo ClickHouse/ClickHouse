@@ -12,6 +12,7 @@ import itertools
 import sys
 import os
 import os.path
+import glob
 import platform
 import signal
 import re
@@ -75,6 +76,12 @@ def stringhash(s):
     return zlib.crc32(s.encode("utf-8"))
 
 
+def read_file_as_binary_string(file_path):
+    with open(file_path, "rb") as file:
+        binary_data = file.read()
+    return binary_data
+
+
 # First and last lines of the log
 def trim_for_log(s):
     if not s:
@@ -101,6 +108,7 @@ class HTTPError(Exception):
 def clickhouse_execute_http(
     base_args,
     query,
+    body=None,
     timeout=30,
     settings=None,
     default_format=None,
@@ -140,6 +148,7 @@ def clickhouse_execute_http(
             client.request(
                 "POST",
                 f"/?{base_args.client_options_query_str}{urllib.parse.urlencode(params)}",
+                body=body,
             )
             res = client.getresponse()
             data = res.read()
@@ -160,6 +169,7 @@ def clickhouse_execute_http(
 def clickhouse_execute(
     base_args,
     query,
+    body=None,
     timeout=30,
     settings=None,
     max_http_retries=5,
@@ -168,6 +178,7 @@ def clickhouse_execute(
     return clickhouse_execute_http(
         base_args,
         query,
+        body,
         timeout,
         settings,
         max_http_retries=max_http_retries,
@@ -181,6 +192,7 @@ def clickhouse_execute_json(
     data = clickhouse_execute_http(
         base_args,
         query,
+        None,
         timeout,
         settings,
         "JSONEachRow",
@@ -400,7 +412,6 @@ def get_stacktraces_from_gdb(server_pid):
 
 
 # collect server stacktraces from system.stack_trace table
-# it does not work in Sandbox
 def get_stacktraces_from_clickhouse(args):
     settings_str = " ".join(
         [
@@ -1262,17 +1273,34 @@ class TestCase:
         ):
             clickhouse_execute(
                 args,
-                f"INSERT INTO system.coverage SELECT now(), '{self.case}', coverage()",
+                f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', coverageCurrent()",
                 retry_error_codes=True,
             )
 
+            # Check for dumped coverage files
+            file_pattern = "coverage.*"
+            matching_files = glob.glob(file_pattern)
+            for file_path in matching_files:
+                try:
+                    body = read_file_as_binary_string(file_path)
+                    clickhouse_execute(
+                        args,
+                        f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', groupArray(data) FROM input('data UInt64') FORMAT RowBinary",
+                        body=body,
+                        retry_error_codes=True,
+                    )
+                except Exception as e:
+                    print("Cannot insert coverage data: ", str(e))
+                # Remove the file even in case of exception to avoid accumulation and quadratic complexity.
+                os.remove(file_path)
+
             coverage = clickhouse_execute(
                 args,
-                "SELECT length(coverage())",
+                "SELECT length(coverageCurrent())",
                 retry_error_codes=True,
             ).decode()
 
-            description_full += f" Coverage: {coverage}"
+            description_full += f" (coverage: {coverage})"
 
         description_full += "\n"
 
@@ -1335,6 +1363,7 @@ class TestCase:
         # We want to calculate per-test code coverage. That's why we reset it before each test.
         if (
             args.collect_per_test_coverage
+            and args.reset_coverage_before_every_test
             and BuildFlags.SANITIZE_COVERAGE in args.build_flags
         ):
             clickhouse_execute(
@@ -2460,19 +2489,20 @@ def main(args):
         clickhouse_execute(
             args,
             """
-                CREATE TABLE IF NOT EXISTS system.coverage
+                CREATE TABLE IF NOT EXISTS system.coverage_log
                 (
                     time DateTime,
                     test_name String,
                     coverage Array(UInt64)
-                ) ENGINE = MergeTree ORDER BY test_name;
+                ) ENGINE = MergeTree ORDER BY test_name
+                COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster';
             """,
         )
 
         # Coverage collected at the system startup before running any tests:
         clickhouse_execute(
             args,
-            "INSERT INTO system.coverage SELECT now(), '', coverage()",
+            "INSERT INTO system.coverage_log SELECT now(), '', coverageCurrent()",
         )
 
     total_tests_run = 0
@@ -2859,8 +2889,14 @@ def parse_args():
     parser.add_argument(
         "--collect-per-test-coverage",
         action="store_true",
-        default=False,
-        help="Create `system.coverage` table on the server and collect information about low-level code coverage on a per test basis there",
+        default=True,
+        help="Create `system.coverage_log` table on the server and collect information about low-level code coverage on a per test basis there",
+    )
+    parser.add_argument(
+        "--reset-coverage-before-every-test",
+        action="store_true",
+        default=True,
+        help="Collect isolated test coverage for every test instead of a cumulative. Useful only when tests are run sequentially.",
     )
     parser.add_argument(
         "--report-logs-stats",

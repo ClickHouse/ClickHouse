@@ -504,7 +504,7 @@ void Client::connect()
                         << "It may lack support for new features." << std::endl
                         << std::endl;
         }
-        else if (client_version_tuple > server_version_tuple)
+        else if (client_version_tuple > server_version_tuple && server_display_name != "clickhouse-cloud")
         {
             std::cout << "ClickHouse server version is older than ClickHouse client. "
                         << "It may indicate that the server is out of date and can be upgraded." << std::endl
@@ -1000,6 +1000,7 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
     std::cout << options_description.external_description.value() << "\n";
     std::cout << options_description.hosts_and_ports_description.value() << "\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
+    std::cout << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }
 
 
