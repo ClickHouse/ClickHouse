@@ -53,10 +53,10 @@ ColumnPtr FlatDictionary::getColumn(
     const DataTypePtr & attribute_type,
     const Columns & key_columns,
     const DataTypes & key_types [[maybe_unused]],
-    DefaultOrFilter defaultOrFilter) const
+    DefaultOrFilter default_or_filter) const
 {
-    bool is_short_circuit = std::holds_alternative<RefFilter>(defaultOrFilter);
-    assert(is_short_circuit || std::holds_alternative<RefDefault>(defaultOrFilter));
+    bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
+    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     ColumnPtr result;
 
@@ -91,7 +91,7 @@ ColumnPtr FlatDictionary::getColumn(
 
         if (is_short_circuit)
         {
-            IColumn::Filter & default_mask = std::get<RefFilter>(defaultOrFilter).get();
+            IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
             size_t keys_found = 0;
 
             if constexpr (std::is_same_v<ValueType, Array>)
@@ -154,7 +154,7 @@ ColumnPtr FlatDictionary::getColumn(
         }
         else
         {
-            const ColumnPtr & default_values_column = std::get<RefDefault>(defaultOrFilter).get();
+            const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
 
             DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(
                 dictionary_attribute.null_value, default_values_column);

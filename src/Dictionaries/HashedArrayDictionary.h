@@ -96,14 +96,14 @@ public:
         const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        DefaultOrFilter defaultOrFilter) const override;
+        DefaultOrFilter default_or_filter) const override;
 
     Columns getColumns(
         const Strings & attribute_names,
         const DataTypes & attribute_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        DefaultsOrFilter defaultsOrFilter) const override;
+        DefaultsOrFilter defaults_or_filter) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -216,7 +216,7 @@ private:
         const Attribute & attribute,
         const DictionaryAttribute & dictionary_attribute,
         size_t keys_size,
-        DefaultOrFilter defaultOrFilter,
+        DefaultOrFilter default_or_filter,
         KeysProvider && keys_object) const;
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>

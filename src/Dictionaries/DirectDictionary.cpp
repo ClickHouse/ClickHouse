@@ -45,10 +45,10 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     const DataTypes & attribute_types,
     const Columns & key_columns,
     const DataTypes & key_types,
-    DefaultsOrFilter defaultsOrFilter) const
+    DefaultsOrFilter defaults_or_filter) const
 {
-    bool is_short_circuit = std::holds_alternative<RefFilter>(defaultsOrFilter);
-    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaultsOrFilter));
+    bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
+    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
     if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
@@ -58,7 +58,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     const auto requested_keys = extractor.extractAllKeys();
 
     DictionaryStorageFetchRequest request(dict_struct, attribute_names, attribute_types,
-        is_short_circuit ? nullptr : &std::get<RefDefaults>(defaultsOrFilter).get() /*default_values_columns*/);
+        is_short_circuit ? nullptr : &std::get<RefDefaults>(defaults_or_filter).get() /*default_values_columns*/);
 
     HashMap<KeyType, size_t> key_to_fetched_index;
     key_to_fetched_index.reserve(requested_keys.size());
@@ -136,7 +136,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
 
     IColumn::Filter * default_mask = nullptr;
     if (is_short_circuit)
-        default_mask= &std::get<RefFilter>(defaultsOrFilter).get();
+        default_mask= &std::get<RefFilter>(defaults_or_filter).get();
 
     bool mask_filled = false;
     for (size_t attribute_index = 0; attribute_index < result_columns.size(); ++attribute_index)
@@ -199,19 +199,19 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
     const DataTypePtr & attribute_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    DefaultOrFilter defaultOrFilter) const
+    DefaultOrFilter default_or_filter) const
 {
-    bool is_short_circuit = std::holds_alternative<RefFilter>(defaultOrFilter);
-    assert(is_short_circuit || std::holds_alternative<RefDefault>(defaultOrFilter));
+    bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
+    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     if (is_short_circuit)
     {
-        IColumn::Filter & default_mask = std::get<RefFilter>(defaultOrFilter).get();
+        IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
         return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, default_mask).front();
     }
     else
     {
-        const ColumnPtr & default_values_column = std::get<RefDefault>(defaultOrFilter).get();
+        const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
         const Columns & columns= Columns({default_values_column});
         return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
     }

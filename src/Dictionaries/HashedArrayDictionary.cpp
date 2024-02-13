@@ -50,7 +50,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getColumn(
     const DataTypePtr & attribute_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    DefaultOrFilter defaultOrFilter) const
+    DefaultOrFilter default_or_filter) const
 {
     if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
@@ -66,7 +66,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getColumn(
     const size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
     auto & attribute = attributes[attribute_index];
 
-    return getAttributeColumn(attribute, dictionary_attribute, keys_size, defaultOrFilter, extractor);
+    return getAttributeColumn(attribute, dictionary_attribute, keys_size, default_or_filter, extractor);
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
@@ -75,10 +75,10 @@ Columns HashedArrayDictionary<dictionary_key_type, sharded>::getColumns(
     const DataTypes & attribute_types,
     const Columns & key_columns,
     const DataTypes & key_types,
-    DefaultsOrFilter defaultsOrFilter) const
+    DefaultsOrFilter defaults_or_filter) const
 {
-    bool is_short_circuit = std::holds_alternative<RefFilter>(defaultsOrFilter);
-    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaultsOrFilter));
+    bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
+    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
     if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
@@ -91,7 +91,7 @@ Columns HashedArrayDictionary<dictionary_key_type, sharded>::getColumns(
     IColumn::Filter * default_mask = nullptr;
     if (is_short_circuit)
     {
-        default_mask = &std::get<RefFilter>(defaultsOrFilter).get();
+        default_mask = &std::get<RefFilter>(defaults_or_filter).get();
         default_mask->resize(keys_size);
     }
 
@@ -172,7 +172,7 @@ Columns HashedArrayDictionary<dictionary_key_type, sharded>::getColumns(
         }
         else
         {
-            const Columns & default_values_columns = std::get<RefDefaults>(defaultsOrFilter).get();
+            const Columns & default_values_columns = std::get<RefDefaults>(defaults_or_filter).get();
             const auto & default_values_column = default_values_columns[i];
             if (attribute_names_size > 1)
                 result_column = getAttributeColumn(attribute, dictionary_attribute, keys_size,
@@ -619,11 +619,11 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
     const Attribute & attribute,
     const DictionaryAttribute & dictionary_attribute,
     size_t keys_size,
-    DefaultOrFilter defaultOrFilter,
+    DefaultOrFilter default_or_filter,
     KeysProvider && keys_object) const
 {
-    bool is_short_circuit = std::holds_alternative<RefFilter>(defaultOrFilter);
-    assert(is_short_circuit || std::holds_alternative<RefDefault>(defaultOrFilter));
+    bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
+    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     ColumnPtr result;
 
@@ -648,7 +648,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
 
         if (is_short_circuit)
         {
-            IColumn::Filter & default_mask = std::get<RefFilter>(defaultOrFilter).get();
+            IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
             size_t keys_found = 0;
 
             if constexpr (std::is_same_v<ValueType, Array>)
@@ -711,7 +711,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
         }
         else
         {
-            const ColumnPtr & default_values_column = std::get<RefDefault>(defaultOrFilter).get();
+            const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
 
             DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(
                 dictionary_attribute.null_value, default_values_column);

@@ -120,19 +120,19 @@ ColumnPtr CacheDictionary<dictionary_key_type>::getColumn(
         const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        DefaultOrFilter defaultOrFilter) const
+        DefaultOrFilter default_or_filter) const
 {
-    bool is_short_circuit = std::holds_alternative<RefFilter>(defaultOrFilter);
-    assert(is_short_circuit || std::holds_alternative<RefDefault>(defaultOrFilter));
+    bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
+    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     if (is_short_circuit)
     {
-        IColumn::Filter & default_mask = std::get<RefFilter>(defaultOrFilter).get();
+        IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
         return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, default_mask).front();
     }
     else
     {
-        const ColumnPtr & default_values_column = std::get<RefDefault>(defaultOrFilter).get();
+        const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
         const Columns & columns= Columns({default_values_column});
         return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
     }
@@ -144,7 +144,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     const DataTypes & attribute_types,
     const Columns & key_columns,
     const DataTypes & key_types,
-     DefaultsOrFilter defaultsOrFilter) const
+     DefaultsOrFilter defaults_or_filter) const
 {
     /**
     * Flow of getColumnsImpl
@@ -160,8 +160,8 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     * use default value.
     */
 
-    bool is_short_circuit = std::holds_alternative<RefFilter>(defaultsOrFilter);
-    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaultsOrFilter));
+    bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
+    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
     if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
@@ -171,13 +171,13 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     auto keys = extractor.extractAllKeys();
 
     DictionaryStorageFetchRequest request(dict_struct, attribute_names, attribute_types,
-        is_short_circuit ? nullptr : &std::get<RefDefaults>(defaultsOrFilter).get() /*default_values_columns*/);
+        is_short_circuit ? nullptr : &std::get<RefDefaults>(defaults_or_filter).get() /*default_values_columns*/);
 
     FetchResult result_of_fetch_from_storage;
 
     IColumn::Filter * default_mask = nullptr;
     if (is_short_circuit)
-        default_mask= &std::get<RefFilter>(defaultsOrFilter).get();
+        default_mask= &std::get<RefFilter>(defaults_or_filter).get();
 
     {
         const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};

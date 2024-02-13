@@ -167,9 +167,10 @@ public:
     /** Subclass must validate key columns and keys types
       * and return column representation of dictionary attribute.
       *
-      * Parameter default_values_column must be used to provide default values
-      * for keys that are not in dictionary. If null pointer is passed,
-      * then default attribute value must be used.
+      * Parameter default_or_filter is std::variant type, so either a column of
+      * default values is passed or a filter used in short circuit case, Filter's
+      * 1 represents to be filled later on by lazy execution, and 0 means we have
+      * the value right now.
       */
     using RefDefault = std::reference_wrapper<const ColumnPtr>;
     using RefFilter = std::reference_wrapper<IColumn::Filter>;
@@ -179,7 +180,7 @@ public:
         const DataTypePtr & attribute_type [[maybe_unused]],
         const Columns & key_columns [[maybe_unused]],
         const DataTypes & key_types [[maybe_unused]],
-        DefaultOrFilter defaultOrFilter [[maybe_unused]]) const = 0;
+        DefaultOrFilter default_or_filter [[maybe_unused]]) const = 0;
 
     /** Get multiple columns from dictionary.
       *
@@ -193,10 +194,10 @@ public:
         const DataTypes & attribute_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        DefaultsOrFilter defaultsOrFilter) const
+        DefaultsOrFilter defaults_or_filter) const
     {
-        bool is_short_circuit = std::holds_alternative<RefFilter>(defaultsOrFilter);
-        assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaultsOrFilter));
+        bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
+        assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
         size_t attribute_names_size = attribute_names.size();
 
@@ -208,8 +209,8 @@ public:
             const auto & attribute_name = attribute_names[i];
             const auto & attribute_type = attribute_types[i];
 
-            DefaultOrFilter var = is_short_circuit ? DefaultOrFilter{std::get<RefFilter>(defaultsOrFilter).get()} :
-                                                     std::get<RefDefaults>(defaultsOrFilter).get()[i];
+            DefaultOrFilter var = is_short_circuit ? DefaultOrFilter{std::get<RefFilter>(defaults_or_filter).get()} :
+                                                     std::get<RefDefaults>(defaults_or_filter).get()[i];
             result.emplace_back(getColumn(attribute_name, attribute_type, key_columns, key_types, var));
         }
 

@@ -676,11 +676,11 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
     const ColumnString::Chars & keys_data,
     const ColumnString::Offsets & keys_offsets,
     const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-    DefaultMapOrFilter defaultOrFilter,
+    DefaultMapOrFilter default_or_filter,
     std::optional<size_t> collect_values_limit) const
 {
-    bool is_short_circuit = std::holds_alternative<RefFilter>(defaultOrFilter);
-    assert(is_short_circuit || std::holds_alternative<RefDefaultMap>(defaultOrFilter));
+    bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
+    assert(is_short_circuit || std::holds_alternative<RefDefaultMap>(default_or_filter));
 
 
 #if USE_VECTORSCAN
@@ -712,12 +712,12 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
     std::optional<RefFilter> default_mask;
     if (is_short_circuit)
     {
-        default_mask = std::get<RefFilter>(defaultOrFilter).get();
+        default_mask = std::get<RefFilter>(default_or_filter).get();
         default_mask.value().get().resize(keys_offsets.size());
     }
     else
     {
-        default_map = std::get<RefDefaultMap>(defaultOrFilter).get();
+        default_map = std::get<RefDefaultMap>(default_or_filter).get();
     }
 
     UInt64 offset = 0;
@@ -907,11 +907,11 @@ Columns RegExpTreeDictionary::getColumnsImpl(
     const DataTypes & result_types,
     const Columns & key_columns,
     const DataTypes & key_types,
-    DefaultsOrFilter defaultsOrFilter,
+    DefaultsOrFilter defaults_or_filter,
     std::optional<size_t> collect_values_limit) const
 {
-    bool is_short_circuit = std::holds_alternative<RefFilter>(defaultsOrFilter);
-    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaultsOrFilter));
+    bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
+    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
     /// valid check
     if (key_columns.size() != 1)
@@ -939,7 +939,7 @@ Columns RegExpTreeDictionary::getColumnsImpl(
         attributes.emplace(attribute.name, attribute);
         if (!is_short_circuit)
         {
-            const Columns & default_values_columns = std::get<RefDefaults>(defaultsOrFilter).get();
+            const Columns & default_values_columns = std::get<RefDefaults>(defaults_or_filter).get();
             defaults[attribute.name] = default_values_columns[i];
         }
     }
@@ -953,7 +953,7 @@ Columns RegExpTreeDictionary::getColumnsImpl(
         key_column->getChars(),
         key_column->getOffsets(),
         attributes,
-        is_short_circuit ? std::get<RefFilter>(defaultsOrFilter).get()/*default_mask*/ : DefaultMapOrFilter{defaults},
+        is_short_circuit ? std::get<RefFilter>(defaults_or_filter).get()/*default_mask*/ : DefaultMapOrFilter{defaults},
         collect_values_limit);
 
     Columns result;

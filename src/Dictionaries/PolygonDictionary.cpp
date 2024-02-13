@@ -74,10 +74,10 @@ ColumnPtr IPolygonDictionary::getColumn(
     const DataTypePtr & attribute_type,
     const Columns & key_columns,
     const DataTypes &,
-    DefaultOrFilter defaultOrFilter) const
+    DefaultOrFilter default_or_filter) const
 {
-    bool is_short_circuit = std::holds_alternative<RefFilter>(defaultOrFilter);
-    assert(is_short_circuit || std::holds_alternative<RefDefault>(defaultOrFilter));
+    bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
+    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     const auto requested_key_points = extractPoints(key_columns);
 
@@ -87,11 +87,11 @@ ColumnPtr IPolygonDictionary::getColumn(
     std::optional<DefaultValueProvider> default_value_provider;
     if (is_short_circuit)
     {
-        default_mask = std::get<RefFilter>(defaultOrFilter).get();
+        default_mask = std::get<RefFilter>(default_or_filter).get();
     }
     else
     {
-        const ColumnPtr & default_values_column = std::get<RefDefault>(defaultOrFilter).get();
+        const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
         default_value_provider = DefaultValueProvider(attribute.null_value, default_values_column);
     }
 

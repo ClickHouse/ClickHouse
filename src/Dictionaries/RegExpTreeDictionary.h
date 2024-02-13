@@ -104,19 +104,19 @@ public:
         const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        DefaultOrFilter defaultOrFilter) const override
+        DefaultOrFilter default_or_filter) const override
     {
-        bool is_short_circuit = std::holds_alternative<RefFilter>(defaultOrFilter);
-        assert(is_short_circuit || std::holds_alternative<RefDefault>(defaultOrFilter));
+        bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
+        assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
         if (is_short_circuit)
         {
-            IColumn::Filter & default_mask = std::get<RefFilter>(defaultOrFilter).get();
+            IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
             return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, default_mask).front();
         }
         else
         {
-            const ColumnPtr & default_values_column = std::get<RefDefault>(defaultOrFilter).get();
+            const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
             const Columns & columns= Columns({default_values_column});
             return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
         }
@@ -127,9 +127,9 @@ public:
         const DataTypes & attribute_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        DefaultsOrFilter defaultsOrFilter) const override
+        DefaultsOrFilter defaults_or_filter) const override
     {
-        return getColumnsImpl(attribute_names, attribute_types, key_columns, key_types, defaultsOrFilter, std::nullopt);
+        return getColumnsImpl(attribute_names, attribute_types, key_columns, key_types, defaults_or_filter, std::nullopt);
     }
 
     ColumnPtr getColumnAllValues(
@@ -160,7 +160,7 @@ public:
         const DataTypes & result_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        DefaultsOrFilter defaultsOrFilter,
+        DefaultsOrFilter defaults_or_filter,
         std::optional<size_t> collect_values_limit) const;
 
 private:
@@ -190,7 +190,7 @@ private:
         const ColumnString::Chars & keys_data,
         const ColumnString::Offsets & keys_offsets,
         const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-        DefaultMapOrFilter defaultOrFilter,
+        DefaultMapOrFilter default_or_filter,
         std::optional<size_t> collect_values_limit) const;
 
     class AttributeCollector;
