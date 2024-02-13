@@ -160,6 +160,8 @@ void PrettyCompactBlockOutputFormat::writeRow(
 
     writeCString(grid_symbols.bar, out);
 
+    std::vector<String> transferred_row(num_columns);
+    bool has_transferred_row = false;
     for (size_t j = 0; j < num_columns; ++j)
     {
         if (j != 0)
@@ -167,11 +169,27 @@ void PrettyCompactBlockOutputFormat::writeRow(
 
         const auto & type = *header.getByPosition(j).type;
         const auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][row_num];
-        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], type.shouldAlignRightInPrettyFormats());
+        bool has_break_line = false;
+        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], type.shouldAlignRightInPrettyFormats(), has_break_line);
+
+        if (has_break_line) {
+            has_transferred_row = true;
+            String serialized_value = " ";
+            {
+                WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
+                serializations[j]->serializeText(*columns[j], row_num, out_serialize, format_settings);
+            }
+            size_t break_line_pos = serialized_value.find_first_of('\n');
+            transferred_row[j] = serialized_value.substr(break_line_pos + 1);
+        }
     }
 
     writeCString(grid_symbols.bar, out);
     writeCString("\n", out);
+
+    if (has_transferred_row) {
+        writeTransferredRow(max_widths, transferred_row);
+    }
 }
 
 void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind)

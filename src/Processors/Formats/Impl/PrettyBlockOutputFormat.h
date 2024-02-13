@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <Core/Block.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatSettings.h>
@@ -47,7 +48,9 @@ protected:
 
     void writeValueWithPadding(
         const IColumn & column, const ISerialization & serialization, size_t row_num,
-        size_t value_width, size_t pad_to_width, bool align_right);
+        size_t value_width, size_t pad_to_width, bool align_right, bool & has_line_breake);
+    
+    void writeTransferredRow(const Widths & max_widths, const std::vector<String> & transferred_row);
 
     void resetFormatterImpl() override
     {
