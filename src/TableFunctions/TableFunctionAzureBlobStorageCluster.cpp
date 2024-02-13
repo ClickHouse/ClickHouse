@@ -39,7 +39,7 @@ StoragePtr TableFunctionAzureBlobStorageCluster::executeImpl(
         /// On worker node this filename won't contains globs
         storage = std::make_shared<StorageAzureBlob>(
             configuration,
-            std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings)),
+            std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings), configuration.container),
             context,
             StorageID(getDatabaseName(), table_name),
             columns,
@@ -54,7 +54,7 @@ StoragePtr TableFunctionAzureBlobStorageCluster::executeImpl(
         storage = std::make_shared<StorageAzureBlobCluster>(
             cluster_name,
             configuration,
-            std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings)),
+            std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings), configuration.container),
             StorageID(getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},

@@ -97,11 +97,9 @@ extern const Event ParallelReplicasCollectingOwnedSegmentsMicroseconds;
 extern const Event ParallelReplicasReadAssignedMarks;
 extern const Event ParallelReplicasReadUnassignedMarks;
 extern const Event ParallelReplicasReadAssignedForStealingMarks;
-}
 
-namespace ProfileEvents
-{
-    extern const Event ParallelReplicasUsedCount;
+extern const Event ParallelReplicasUsedCount;
+extern const Event ParallelReplicasUnavailableCount;
 }
 
 namespace DB
@@ -1025,6 +1023,8 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 
 void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica_number)
 {
+    ProfileEvents::increment(ProfileEvents::ParallelReplicasUnavailableCount);
+
     std::lock_guard lock(mutex);
 
     if (!pimpl)

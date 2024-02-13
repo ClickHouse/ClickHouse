@@ -33,14 +33,14 @@ namespace DB
 */
 
 template <typename Value>
-class QuantileDDSketch
+class QuantileDD
 {
 public:
     using Weight = UInt64;
 
-    QuantileDDSketch() = default;
+    QuantileDD() = default;
 
-    explicit QuantileDDSketch(Float64 relative_accuracy) : data(relative_accuracy) { }
+    explicit QuantileDD(Float64 relative_accuracy) : data(relative_accuracy) { }
 
     void add(const Value & x)
     {
@@ -53,7 +53,7 @@ public:
             data.add(x, w);
     }
 
-    void merge(const QuantileDDSketch &other)
+    void merge(const QuantileDD &other)
     {
         data.merge(other.data);
     }

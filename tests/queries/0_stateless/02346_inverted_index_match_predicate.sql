@@ -1,3 +1,5 @@
+-- Tests that match() utilizes the inverted index
+
 SET allow_experimental_inverted_index = true;
 
 DROP TABLE IF EXISTS tab;

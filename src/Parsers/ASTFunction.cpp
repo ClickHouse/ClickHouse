@@ -71,6 +71,13 @@ namespace
             size_t count = 0; /// Mostly it's either 0 or 1. There are only a few cases where `count` can be greater than 1 (e.g. see `encrypt`).
                               /// In all known cases secret arguments are consecutive
             bool are_named = false; /// Arguments like `password = 'password'` are considered as named arguments.
+            /// E.g. "headers" in `url('..', headers('foo' = '[HIDDEN]'))`
+            std::vector<std::string> nested_maps;
+
+            bool hasSecrets() const
+            {
+                return count != 0 || !nested_maps.empty();
+            }
         };
 
         Result getResult() const { return result; }
@@ -127,6 +134,10 @@ namespace
                 /// encrypt('mode', 'plaintext', 'key' [, iv, aad])
                 findEncryptionFunctionSecretArguments();
             }
+            else if (function.name == "url")
+            {
+                findURLSecretArguments();
+            }
         }
 
         void findMySQLFunctionSecretArguments()
@@ -143,6 +154,25 @@ namespace
             }
         }
 
+        /// Returns the number of arguments excluding "headers" and "extra_credentials" (which should
+        /// always be at the end). Marks "headers" as secret, if found.
+        size_t excludeS3OrURLNestedMaps()
+        {
+            size_t count = arguments->size();
+            while (count > 0)
+            {
+                const ASTFunction * f = arguments->at(count - 1)->as<ASTFunction>();
+                if (!f)
+                    break;
+                if (f->name == "headers")
+                    result.nested_maps.push_back(f->name);
+                else if (f->name != "extra_credentials")
+                    break;
+                count -= 1;
+            }
+            return count;
+        }
+
         void findS3FunctionSecretArguments(bool is_cluster_function)
         {
             /// s3Cluster('cluster_name', 'url', ...) has 'url' as its second argument.
@@ -156,9 +186,10 @@ namespace
             }
 
             /// We should check other arguments first because we don't need to do any replacement in case of
-            /// s3('url', NOSIGN, 'format' [, 'compression'])
-            /// s3('url', 'format', 'structure' [, 'compression'])
-            if ((url_arg_idx + 3 <= arguments->size()) && (arguments->size() <= url_arg_idx + 4))
+            /// s3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
+            /// s3('url', 'format', 'structure' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
+            size_t count = excludeS3OrURLNestedMaps();
+            if ((url_arg_idx + 3 <= count) && (count <= url_arg_idx + 4))
             {
                 String second_arg;
                 if (tryGetStringFromArgument(url_arg_idx + 1, &second_arg))
@@ -174,7 +205,14 @@ namespace
             /// We're going to replace 'aws_secret_access_key' with '[HIDDEN]' for the following signatures:
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
-            markSecretArgument(url_arg_idx + 2);
+            if (url_arg_idx + 2 < count)
+                markSecretArgument(url_arg_idx + 2);
+        }
+
+        void findURLSecretArguments()
+        {
+            if (!isNamedCollectionName(0))
+                excludeS3OrURLNestedMaps();
         }
 
         bool tryGetStringFromArgument(size_t arg_idx, String * res, bool allow_identifier = true) const
@@ -347,6 +385,10 @@ namespace
                 /// S3('url', ['aws_access_key_id', 'aws_secret_access_key',] ...)
                 findS3TableEngineSecretArguments();
             }
+            else if (engine_name == "URL")
+            {
+                findURLSecretArguments();
+            }
         }
 
         void findExternalDistributedTableEngineSecretArguments()
@@ -373,9 +415,10 @@ namespace
             }
 
             /// We should check other arguments first because we don't need to do any replacement in case of
-            /// S3('url', NOSIGN, 'format' [, 'compression'])
-            /// S3('url', 'format', 'compression')
-            if ((3 <= arguments->size()) && (arguments->size() <= 4))
+            /// S3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
+            /// S3('url', 'format', 'compression' [, extra_credentials(..)] [, headers(..)])
+            size_t count = excludeS3OrURLNestedMaps();
+            if ((3 <= count) && (count <= 4))
             {
                 String second_arg;
                 if (tryGetStringFromArgument(1, &second_arg))
@@ -383,7 +426,7 @@ namespace
                     if (boost::iequals(second_arg, "NOSIGN"))
                         return; /// The argument after 'url' is "NOSIGN".
 
-                    if (arguments->size() == 3)
+                    if (count == 3)
                     {
                         if (second_arg == "auto" || KnownFormatNames::instance().exists(second_arg))
                             return; /// The argument after 'url' is a format: S3('url', 'format', ...)
@@ -391,11 +434,12 @@ namespace
                 }
             }
 
-            /// We replace 'aws_secret_access_key' with '[HIDDEN'] for the following signatures:
+            /// We replace 'aws_secret_access_key' with '[HIDDEN]' for the following signatures:
             /// S3('url', 'aws_access_key_id', 'aws_secret_access_key')
             /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format')
             /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
-            markSecretArgument(2);
+            if (2 < count)
+                markSecretArgument(2);
         }
 
         void findDatabaseEngineSecretArguments()
@@ -723,6 +767,25 @@ ASTSelectWithUnionQuery * ASTFunction::tryGetQueryArgument() const
     return nullptr;
 }
 
+
+static bool formatNamedArgWithHiddenValue(IAST * arg, const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame)
+{
+    const auto * equals_func = arg->as<ASTFunction>();
+    if (!equals_func || (equals_func->name != "equals"))
+        return false;
+    const auto * expr_list = equals_func->arguments->as<ASTExpressionList>();
+    if (!expr_list)
+        return false;
+    const auto & equal_args = expr_list->children;
+    if (equal_args.size() != 2)
+        return false;
+
+    equal_args[0]->formatImpl(settings, state, frame);
+    settings.ostr << (settings.hilite ? IAST::hilite_operator : "") << " = " << (settings.hilite ? IAST::hilite_none : "");
+    settings.ostr << "'[HIDDEN]'";
+
+    return true;
+}
 
 void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
@@ -1133,17 +1196,37 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             if (argument->as<ASTSetQuery>())
                 settings.ostr << "SETTINGS ";
 
-            if (!settings.show_secrets && (secret_arguments.start <= i) && (i < secret_arguments.start + secret_arguments.count))
+            if (!settings.show_secrets)
             {
-                if (secret_arguments.are_named)
+                if (secret_arguments.start <= i && i < secret_arguments.start + secret_arguments.count)
                 {
-                   assert_cast<const ASTFunction *>(argument.get())->arguments->children[0]->formatImpl(settings, state, nested_dont_need_parens);
-                   settings.ostr << (settings.hilite ? hilite_operator : "") << " = " << (settings.hilite ? hilite_none : "");
+                    if (secret_arguments.are_named)
+                    {
+                        assert_cast<const ASTFunction *>(argument.get())->arguments->children[0]->formatImpl(settings, state, nested_dont_need_parens);
+                        settings.ostr << (settings.hilite ? hilite_operator : "") << " = " << (settings.hilite ? hilite_none : "");
+                    }
+                    settings.ostr << "'[HIDDEN]'";
+                    if (size <= secret_arguments.start + secret_arguments.count && !secret_arguments.are_named)
+                        break; /// All other arguments should also be hidden.
+                    continue;
                 }
-                settings.ostr << "'[HIDDEN]'";
-                if (size <= secret_arguments.start + secret_arguments.count && !secret_arguments.are_named)
-                    break; /// All other arguments should also be hidden.
-                continue;
+
+                const ASTFunction * function = argument->as<ASTFunction>();
+                if (function && function->arguments && std::count(secret_arguments.nested_maps.begin(), secret_arguments.nested_maps.end(), function->name) != 0)
+                {
+                    /// headers('foo' = '[HIDDEN]', 'bar' = '[HIDDEN]')
+                    settings.ostr << (settings.hilite ? hilite_function : "") << function->name << (settings.hilite ? hilite_none : "") << "(";
+                    for (size_t j = 0; j < function->arguments->children.size(); ++j)
+                    {
+                        if (j != 0)
+                            settings.ostr << ", ";
+                        auto inner_arg = function->arguments->children[j];
+                        if (!formatNamedArgWithHiddenValue(inner_arg.get(), settings, state, nested_dont_need_parens))
+                            inner_arg->formatImpl(settings, state, nested_dont_need_parens);
+                    }
+                    settings.ostr << ")";
+                    continue;
+                }
             }
 
             if ((i == 1) && special_hilite_regexp
@@ -1166,7 +1249,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
 bool ASTFunction::hasSecretParts() const
 {
-    return (FunctionSecretArgumentsFinder{*this}.getResult().count > 0) || childrenHaveSecretParts();
+    return (FunctionSecretArgumentsFinder{*this}.getResult().hasSecrets()) || childrenHaveSecretParts();
 }
 
 String getFunctionName(const IAST * ast)

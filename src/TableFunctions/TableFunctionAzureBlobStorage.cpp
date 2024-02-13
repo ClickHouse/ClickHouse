@@ -332,7 +332,7 @@ ColumnsDescription TableFunctionAzureBlobStorage::getActualTableStructure(Contex
         auto client = StorageAzureBlob::createClient(configuration, !is_insert_query);
         auto settings = StorageAzureBlob::createSettings(context);
 
-        auto object_storage = std::make_unique<AzureObjectStorage>("AzureBlobStorageTableFunction", std::move(client), std::move(settings));
+        auto object_storage = std::make_unique<AzureObjectStorage>("AzureBlobStorageTableFunction", std::move(client), std::move(settings), configuration.container);
         if (configuration.format == "auto")
             return StorageAzureBlob::getTableStructureAndFormatFromData(object_storage.get(), configuration, std::nullopt, context).first;
         return StorageAzureBlob::getTableStructureFromData(object_storage.get(), configuration, std::nullopt, context);
@@ -365,7 +365,7 @@ StoragePtr TableFunctionAzureBlobStorage::executeImpl(const ASTPtr & /*ast_funct
 
     StoragePtr storage = std::make_shared<StorageAzureBlob>(
         configuration,
-        std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings)),
+        std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings), configuration.container),
         context,
         StorageID(getDatabaseName(), table_name),
         columns,

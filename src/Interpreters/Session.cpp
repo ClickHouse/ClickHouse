@@ -349,10 +349,9 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     try
     {
-        auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host());
+        auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo().getLastForwardedFor());
         user_id = auth_result.user_id;
         settings_from_auth_server = auth_result.settings;
-
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
     }
