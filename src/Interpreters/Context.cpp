@@ -3465,6 +3465,8 @@ void Context::setRemoteHostFilter(const Poco::Util::AbstractConfiguration & conf
 }
 
 const RemoteHostFilter & Context::getRemoteHostFilter() const
+TSA_NO_THREAD_SAFETY_ANALYSIS /// Clang >= 18 complains that returning something by reference requires holding a lock. Since we hold the
+                              /// lock and the reference is const, ignore the warning.
 {
     SharedLockGuard lock(shared->mutex);
     return shared->remote_host_filter;
@@ -3477,6 +3479,8 @@ void Context::setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & conf
 }
 
 const HTTPHeaderFilter & Context::getHTTPHeaderFilter() const
+TSA_NO_THREAD_SAFETY_ANALYSIS /// Clang >= 18 complains that returning something by reference requires a lock. Since we hold the lock and
+                              /// the reference is const, ignore the warning.
 {
     SharedLockGuard lock(shared->mutex);
     return shared->http_header_filter;
