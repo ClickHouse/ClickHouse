@@ -642,7 +642,28 @@ BlockIO InterpreterInsertQuery::execute()
     }
     else
     {
-        presink_chains.at(0).appendChain(std::move(sink_chains.at(0)));
+        auto & chain = presink_chains.at(0);
+        chain.appendChain(std::move(sink_chains.at(0)));
+
+        auto context_ptr = getContext();
+        auto counting = std::make_shared<SimpleCountingTransform>(chain.getInputHeader(), context_ptr->getQuota());
+        counting->setProcessListElement(context_ptr->getProcessListElement());
+        counting->setProgressCallback(context_ptr->getProgressCallback());
+
+        chain.addSource(std::move(counting));
+
+        if (shouldAddSquashingFroStorage(table))
+        {
+            bool table_prefers_large_blocks = table->prefersLargeBlocks();
+
+            auto squashing = std::make_shared<SimpleSquashingChunksTransform>(
+                chain.getInputHeader(),
+                table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
+                table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
+
+            chain.addSource(std::move(squashing));
+        }
+
         res.pipeline = QueryPipeline(std::move(presink_chains[0]));
         res.pipeline.setNumThreads(std::min<size_t>(res.pipeline.getNumThreads(), settings.max_threads));
         res.pipeline.setConcurrencyControl(settings.use_concurrency_control);
