@@ -1777,15 +1777,6 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
                         child = child_data.to_second;
                     }
-
-                    /// Input from second DAG should also be in the first.
-                    // if (copy.type == ActionType::INPUT)
-                    // {
-                    //     auto & input_copy = first_nodes.emplace_back(*cur.node);
-                    //     assert(cur_data.to_first == nullptr);
-                    //     cur_data.to_first = &input_copy;
-                    //     new_inputs.push_back(cur.node);
-                    // }
                 }
                 else
                 {
@@ -1837,10 +1828,8 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
     for (const auto * input : new_inputs)
     {
         const auto & cur = data[input];
-        if (cur.to_second)
-            second_inputs.push_back(cur.to_second);
-        if (cur.to_first)
-            first_outputs.push_back(cur.to_first);
+        second_inputs.push_back(cur.to_second);
+        first_outputs.push_back(cur.to_first);
     }
 
     for (const auto * input_node : inputs)
