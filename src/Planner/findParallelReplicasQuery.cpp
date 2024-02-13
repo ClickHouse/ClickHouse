@@ -1,4 +1,4 @@
-#include <Planner/findParallelReplicasQuery.h>
+#include <Planner/findQueryForParallelReplicas.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -152,7 +152,7 @@ QueryTreeNodePtr replaceTablesWithDummyTables(const QueryTreeNodePtr & query, co
 /// Find the best candidate for parallel replicas execution by verifying query plan.
 /// If query plan has only Expression, Filter of Join steps, we can execute it fully remotely and check the next query.
 /// Otherwise we can execute current query up to WithMergableStage only.
-const QueryNode * findParallelReplicasQuery(
+const QueryNode * findQueryForParallelReplicas(
     std::stack<const QueryNode *> stack,
     const std::unordered_map<const QueryNode *, const QueryPlan::Node *> & mapping)
 {
@@ -227,7 +227,7 @@ const QueryNode * findParallelReplicasQuery(
     return res;
 }
 
-const QueryNode * findParallelReplicasQuery(const QueryTreeNodePtr & query_tree_node, SelectQueryOptions & select_query_options)
+const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tree_node, SelectQueryOptions & select_query_options)
 {
     if (select_query_options.only_analyze)
         return nullptr;
@@ -269,10 +269,10 @@ const QueryNode * findParallelReplicasQuery(const QueryTreeNodePtr & query_tree_
     /// This part is a bit clumsy.
     /// We updated a query_tree with dummy storages, and mapping is using updated_query_tree now.
     /// But QueryNode result should be taken from initial query tree.
-    /// So that we build a list of candidates again, and call findParallelReplicasQuery for it.
+    /// So that we build a list of candidates again, and call findQueryForParallelReplicas for it.
     auto new_stack = getSupportingParallelReplicasQuery(updated_query_tree.get());
     const auto & mapping = planner.getQueryNodeToPlanStepMapping();
-    const auto * res = findParallelReplicasQuery(new_stack, mapping);
+    const auto * res = findQueryForParallelReplicas(new_stack, mapping);
 
     /// Now, return a query from initial stack.
     if (res)
@@ -292,8 +292,15 @@ const QueryNode * findParallelReplicasQuery(const QueryTreeNodePtr & query_tree_
 
 static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node)
 {
-    while (query_tree_node)
+    std::stack<const IQueryTreeNode *> right_join_nodes;
+    while (query_tree_node || !right_join_nodes.empty())
     {
+        if (!query_tree_node)
+        {
+            query_tree_node = right_join_nodes.top();
+            right_join_nodes.pop();
+        }
+
         auto join_tree_node_type = query_tree_node->getNodeType();
 
         switch (join_tree_node_type)
@@ -305,11 +312,13 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
                 if (std::dynamic_pointer_cast<MergeTreeData>(storage) || typeid_cast<const StorageDummy *>(storage.get()))
                     return &table_node;
 
-                return {};
+                query_tree_node = nullptr;
+                break;
             }
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
-                return {};
+                query_tree_node = nullptr;
+                break;
             }
             case QueryTreeNodeType::QUERY:
             {
@@ -322,10 +331,10 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
                 const auto & union_node = query_tree_node->as<UnionNode &>();
                 const auto & union_queries = union_node.getQueries().getNodes();
 
-                if (union_queries.empty())
-                    return {};
+                query_tree_node = nullptr;
+                if (!union_queries.empty())
+                    query_tree_node = union_queries.front().get();
 
-                query_tree_node = union_queries.front().get();
                 break;
             }
             case QueryTreeNodeType::ARRAY_JOIN:
@@ -337,10 +346,8 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
             case QueryTreeNodeType::JOIN:
             {
                 const auto & join_node = query_tree_node->as<JoinNode &>();
-                if (const auto * res = findTableForParallelReplicas(join_node.getLeftTableExpression().get()))
-                    return res;
-
-                query_tree_node = join_node.getRightTableExpression().get();
+                query_tree_node = join_node.getLeftTableExpression().get();
+                right_join_nodes.push(join_node.getRightTableExpression().get());
                 break;
             }
             default:

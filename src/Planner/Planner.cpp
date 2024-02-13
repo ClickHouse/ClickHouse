@@ -64,7 +64,7 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 
-#include <Planner/findParallelReplicasQuery.h>
+#include <Planner/findQueryForParallelReplicas.h>
 #include <Planner/Utils.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerActionsVisitor.h>
@@ -1163,7 +1163,7 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
     , select_query_options(select_query_options_)
     , planner_context(buildPlannerContext(query_tree, select_query_options,
         std::make_shared<GlobalPlannerContext>(
-            findParallelReplicasQuery(query_tree, select_query_options),
+            findQueryForParallelReplicas(query_tree, select_query_options),
             findTableForParallelReplicas(query_tree, select_query_options))))
 {
 }
