@@ -210,6 +210,7 @@ static size_t simplePushDownOverStep(QueryPlan::Node * parent_node, QueryPlan::N
 
 static size_t joinPushDown(
     QueryPlan::Node * filter_node,
+    const TableJoin & table_join,
     size_t child_idx,
     QueryPlan::Nodes & nodes,
     bool split_result_can_be_true_on_default)
@@ -223,6 +224,16 @@ static size_t joinPushDown(
     const auto & input_header = join_step->getInputStreams().at(child_idx).header;
     const auto & res_header = join_step->getOutputStream().header;
     Names allowed_keys;
+
+    NameSet prohibited_keys;
+    if (table_join.kind() == JoinKind::Full && table_join.hasUsing())
+    {
+        /// We cannot push down filter for USING column of FULL JOIN easily.
+        /// We can do push the condition into both sides at the same time, but it is tricky to check. Skip it for now.
+        auto keys = table_join.getAllNames(child_idx == 0 ? JoinTableSide::Left : JoinTableSide::Right);
+        prohibited_keys.insert(keys.begin(), keys.end());
+    }
+
     const auto & source_columns = input_header.getNames();
     for (const auto & name : source_columns)
     {
@@ -233,6 +244,9 @@ static size_t joinPushDown(
 
         /// Skip if type is changed. Push down expression expect equal types.
         if (!input_header.getByName(name).type->equals(*res_header.getByName(name).type))
+            continue;
+
+        if (prohibited_keys.contains(name))
             continue;
 
         allowed_keys.push_back(name);
@@ -407,32 +421,32 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
         if (table_join.kind() == JoinKind::Inner || table_join.kind() == JoinKind::Cross)
         {
-            left_depth = joinPushDown(parent_node, 0, nodes, true);
+            left_depth = joinPushDown(parent_node, table_join, 0, nodes, true);
 
             if (can_push_down_right)
-                right_depth = joinPushDown(parent_node, 1, nodes, true);
+                right_depth = joinPushDown(parent_node, table_join, 1, nodes, true);
         }
         else if (table_join.kind() == JoinKind::Left)
         {
-            left_depth = joinPushDown(parent_node, 0, nodes, true);
+            left_depth = joinPushDown(parent_node, table_join, 0, nodes, true);
 
             if (can_push_down_right && table_join.strictness() != JoinStrictness::Anti)
-                right_depth = joinPushDown(parent_node, 1, nodes, false);
+                right_depth = joinPushDown(parent_node, table_join, 1, nodes, false);
         }
         else if (table_join.kind() == JoinKind::Right)
         {
             if (can_push_down_right)
-                right_depth = joinPushDown(parent_node, 1, nodes, true);
+                right_depth = joinPushDown(parent_node, table_join, 1, nodes, true);
 
             if (table_join.strictness() != JoinStrictness::Anti)
-                left_depth = joinPushDown(parent_node, 0, nodes, false);
+                left_depth = joinPushDown(parent_node, table_join, 0, nodes, false);
         }
         else if (table_join.kind() == JoinKind::Full)
         {
-            left_depth = joinPushDown(parent_node, 0, nodes, false);
+            left_depth = joinPushDown(parent_node, table_join, 0, nodes, false);
             /// Probably there is no FilledRight Fill join. But check just in case.
             if (can_push_down_right)
-                right_depth = joinPushDown(parent_node, 1, nodes, false);
+                right_depth = joinPushDown(parent_node, table_join, 1, nodes, false);
         }
 
         return std::max(left_depth, right_depth);
