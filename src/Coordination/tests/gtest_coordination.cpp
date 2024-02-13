@@ -1508,7 +1508,7 @@ void addNode(DB::KeeperStorage & storage, const std::string & path, const std::s
     using Node = DB::KeeperStorage::Node;
     Node node{};
     node.setData(data);
-    node.stat.ephemeralOwner = ephemeral_owner;
+    node.setEphemeralOwner(ephemeral_owner);
     storage.container.insertOrReplace(path, node);
     auto child_it = storage.container.find(path);
     auto child_path = DB::getBaseNodeName(child_it->key);
@@ -1517,7 +1517,7 @@ void addNode(DB::KeeperStorage & storage, const std::string & path, const std::s
         [&](auto & parent)
         {
             parent.addChild(child_path);
-            parent.stat.numChildren++;
+            parent.increaseNumChildren();
         });
 }
 
@@ -1530,12 +1530,12 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
     DB::KeeperSnapshotManager manager(3, keeper_context, params.enable_compression);
 
     DB::KeeperStorage storage(500, "", keeper_context);
-    addNode(storage, "/hello", "world", 1);
-    addNode(storage, "/hello/somepath", "somedata", 3);
+    addNode(storage, "/hello1", "world", 1);
+    addNode(storage, "/hello2", "somedata", 3);
     storage.session_id_counter = 5;
     storage.zxid = 2;
-    storage.ephemerals[3] = {"/hello"};
-    storage.ephemerals[1] = {"/hello/somepath"};
+    storage.ephemerals[3] = {"/hello2"};
+    storage.ephemerals[1] = {"/hello1"};
     storage.getSessionID(130);
     storage.getSessionID(130);
 
@@ -1556,13 +1556,13 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
     auto [restored_storage, snapshot_meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 6);
-    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 2);
-    EXPECT_EQ(restored_storage->container.getValue("/hello").getChildren().size(), 1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getChildren().size(), 0);
+    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 3);
+    EXPECT_EQ(restored_storage->container.getValue("/hello1").getChildren().size(), 0);
+    EXPECT_EQ(restored_storage->container.getValue("/hello2").getChildren().size(), 0);
 
     EXPECT_EQ(restored_storage->container.getValue("/").getData(), "");
-    EXPECT_EQ(restored_storage->container.getValue("/hello").getData(), "world");
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getData(), "somedata");
+    EXPECT_EQ(restored_storage->container.getValue("/hello1").getData(), "world");
+    EXPECT_EQ(restored_storage->container.getValue("/hello2").getData(), "somedata");
     EXPECT_EQ(restored_storage->session_id_counter, 7);
     EXPECT_EQ(restored_storage->zxid, 2);
     EXPECT_EQ(restored_storage->ephemerals.size(), 2);
@@ -2251,12 +2251,12 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     DB::KeeperSnapshotManager manager(3, keeper_context, params.enable_compression);
 
     DB::KeeperStorage storage(500, "", keeper_context);
-    addNode(storage, "/hello", "world", 1);
-    addNode(storage, "/hello/somepath", "somedata", 3);
+    addNode(storage, "/hello1", "world", 1);
+    addNode(storage, "/hello2", "somedata", 3);
     storage.session_id_counter = 5;
     storage.zxid = 2;
-    storage.ephemerals[3] = {"/hello"};
-    storage.ephemerals[1] = {"/hello/somepath"};
+    storage.ephemerals[3] = {"/hello2"};
+    storage.ephemerals[1] = {"/hello1"};
     storage.getSessionID(130);
     storage.getSessionID(130);
 
@@ -2273,13 +2273,13 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     auto [restored_storage, snapshot_meta, _] = new_manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 6);
-    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 2);
-    EXPECT_EQ(restored_storage->container.getValue("/hello").getChildren().size(), 1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getChildren().size(), 0);
+    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 3);
+    EXPECT_EQ(restored_storage->container.getValue("/hello1").getChildren().size(), 0);
+    EXPECT_EQ(restored_storage->container.getValue("/hello2").getChildren().size(), 0);
 
     EXPECT_EQ(restored_storage->container.getValue("/").getData(), "");
-    EXPECT_EQ(restored_storage->container.getValue("/hello").getData(), "world");
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getData(), "somedata");
+    EXPECT_EQ(restored_storage->container.getValue("/hello1").getData(), "world");
+    EXPECT_EQ(restored_storage->container.getValue("/hello2").getData(), "somedata");
     EXPECT_EQ(restored_storage->session_id_counter, 7);
     EXPECT_EQ(restored_storage->zxid, 2);
     EXPECT_EQ(restored_storage->ephemerals.size(), 2);
@@ -2948,7 +2948,7 @@ TEST_P(CoordinationTest, TestCheckNotExistsRequest)
     create_path("/test_node");
     auto node_it = storage.container.find("/test_node");
     ASSERT_NE(node_it, storage.container.end());
-    auto node_version = node_it->value.stat.version;
+    auto node_version = node_it->value.version;
 
     {
         SCOPED_TRACE("CheckNotExists returns ZNODEEXISTS");
