@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstddef>
 #include <Core/Block.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatSettings.h>

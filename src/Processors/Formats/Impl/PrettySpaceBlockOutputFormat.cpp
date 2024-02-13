@@ -114,9 +114,8 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
         writeReadableNumberTip(chunk);
         writeChar('\n', out);
 
-        if (has_transferred_row) {
+        if (has_transferred_row)
             writeTransferredRow(max_widths, transferred_row);
-        }
     }
 
     total_rows += num_rows;

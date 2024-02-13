@@ -180,7 +180,8 @@ void PrettyCompactBlockOutputFormat::writeRow(
         bool has_break_line = false;
         writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type), has_break_line);
 
-        if (has_break_line) {
+        if (has_break_line)
+        {
             has_transferred_row = true;
             String serialized_value = " ";
             {
@@ -196,9 +197,8 @@ void PrettyCompactBlockOutputFormat::writeRow(
     writeReadableNumberTip(chunk);
     writeCString("\n", out);
 
-    if (has_transferred_row) {
+    if (has_transferred_row)
         writeTransferredRow(max_widths, transferred_row);
-    }
 }
 
 void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind)
