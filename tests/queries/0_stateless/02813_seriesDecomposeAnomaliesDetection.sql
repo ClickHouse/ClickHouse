@@ -1,4 +1,4 @@
--- Tags: no-cpu-aarch64
+-- Tags: no-cpu-aarch64, no-fasttest
 -- Tag no-cpu-aarch64: values generated are slighly different on aarch64
 
 DROP TABLE IF EXISTS tb2;
