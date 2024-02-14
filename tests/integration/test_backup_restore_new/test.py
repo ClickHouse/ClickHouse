@@ -642,6 +642,7 @@ def test_tar_archive_with_bad_compression_method():
         == "BACKUP_FAILED\n"
     )
 
+
 def test_async():
     create_and_fill_table()
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"

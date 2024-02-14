@@ -1,9 +1,9 @@
 #pragma once
 
-#include "config.h"
 #include <mutex>
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/Archives/LibArchiveReader.h>
+#include "config.h"
 
 
 namespace DB
@@ -53,7 +53,8 @@ protected:
     /// Constructs an archive's reader that will read from a file in the local filesystem.
     LibArchiveReader(std::string archive_name_, bool lock_on_reading_, std::string path_to_archive_);
 
-    LibArchiveReader(std::string archive_name_, bool lock_on_reading_, std::string path_to_archive_, const ReadArchiveFunction & archive_read_function_);
+    LibArchiveReader(
+        std::string archive_name_, bool lock_on_reading_, std::string path_to_archive_, const ReadArchiveFunction & archive_read_function_);
 
 private:
     class ReadBufferFromLibArchive;
@@ -68,22 +69,28 @@ private:
     const String path_to_archive;
     const ReadArchiveFunction archive_read_function;
     mutable std::mutex mutex;
-    
 };
 
 class TarArchiveReader : public LibArchiveReader
 {
 public:
-    explicit TarArchiveReader(std::string path_to_archive) : LibArchiveReader("tar", /*lock_on_reading_=*/ true, std::move(path_to_archive)) { }
+    explicit TarArchiveReader(std::string path_to_archive) : LibArchiveReader("tar", /*lock_on_reading_=*/true, std::move(path_to_archive))
+    {
+    }
 
-    explicit TarArchiveReader(std::string path_to_archive, const ReadArchiveFunction & archive_read_function ) : LibArchiveReader("tar", /*lock_on_reading_=*/ true, std::move(path_to_archive), archive_read_function) { }
-
+    explicit TarArchiveReader(std::string path_to_archive, const ReadArchiveFunction & archive_read_function)
+        : LibArchiveReader("tar", /*lock_on_reading_=*/true, std::move(path_to_archive), archive_read_function)
+    {
+    }
 };
 
 class SevenZipArchiveReader : public LibArchiveReader
 {
 public:
-    explicit SevenZipArchiveReader(std::string path_to_archive) : LibArchiveReader("7z", /*lock_on_reading_=*/ false, std::move(path_to_archive)) { }
+    explicit SevenZipArchiveReader(std::string path_to_archive)
+        : LibArchiveReader("7z", /*lock_on_reading_=*/false, std::move(path_to_archive))
+    {
+    }
 };
 
 #endif
