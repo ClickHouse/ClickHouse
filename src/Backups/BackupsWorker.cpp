@@ -375,11 +375,12 @@ private:
 };
 
 
-BackupsWorker::BackupsWorker(ContextMutablePtr global_context, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_, bool test_inject_sleep_)
+BackupsWorker::BackupsWorker(ContextMutablePtr global_context, size_t num_backup_threads, size_t num_restore_threads)
     : thread_pools(std::make_unique<ThreadPools>(num_backup_threads, num_restore_threads))
-    , allow_concurrent_backups(allow_concurrent_backups_)
-    , allow_concurrent_restores(allow_concurrent_restores_)
-    , test_inject_sleep(test_inject_sleep_)
+    , allow_concurrent_backups(global_context->getConfigRef().getBool("backups.allow_concurrent_backups", true))
+    , allow_concurrent_restores(global_context->getConfigRef().getBool("backups.allow_concurrent_restores", true))
+    , remove_backup_files_after_failure(global_context->getConfigRef().getBool("backups.remove_backup_files_after_failure", true))
+    , test_inject_sleep(global_context->getConfigRef().getBool("backups.test_inject_sleep", false))
     , log(getLogger("BackupsWorker"))
     , backup_log(global_context->getBackupLog())
     , process_list(global_context->getProcessList())
@@ -533,6 +534,8 @@ void BackupsWorker::doBackup(
             CurrentThread::detachFromGroupIfNotDetached();
     );
 
+    BackupMutablePtr backup;
+
     try
     {
         if (called_async && thread_group)
@@ -582,7 +585,7 @@ void BackupsWorker::doBackup(
         backup_create_params.use_same_s3_credentials_for_base_backup = backup_settings.use_same_s3_credentials_for_base_backup;
         backup_create_params.read_settings = getReadSettingsForBackup(context, backup_settings);
         backup_create_params.write_settings = getWriteSettingsForBackup(context);
-        BackupMutablePtr backup = BackupFactory::instance().createBackup(backup_create_params);
+        backup = BackupFactory::instance().createBackup(backup_create_params);
 
         /// Write the backup.
         if (on_cluster)
@@ -659,11 +662,16 @@ void BackupsWorker::doBackup(
             setStatusSafe(backup_id, getBackupStatusFromCurrentException());
             sendCurrentExceptionToCoordination(backup_coordination);
         }
-        else
+
+        if (backup)
         {
-            /// setStatus() and sendCurrentExceptionToCoordination() will be called by startMakingBackup().
-            throw;
+            if (remove_backup_files_after_failure)
+                backup->tryRemoveAllFiles();
+            backup.reset();
         }
+
+        if (!called_async)
+            throw; /// setStatus() and sendCurrentExceptionToCoordination() will be called by startMakingBackup().
     }
 }
 

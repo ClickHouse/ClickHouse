@@ -144,6 +144,13 @@ BackupImpl::BackupImpl(
 
 BackupImpl::~BackupImpl()
 {
+    if ((open_mode == OpenMode::WRITE) && !is_internal_backup && !writing_finalized && !std::uncaught_exceptions() && !std::current_exception())
+    {
+        /// It is suspicious to destroy BackupImpl without finalization while writing a backup when there is no exception.
+        LOG_ERROR(log, "BackupImpl is not finalized when destructor is called. Stack trace: {}", StackTrace().toString());
+        chassert(false && "BackupImpl is not finalized when destructor is called.");
+    }
+
     try
     {
         close();
@@ -195,10 +202,6 @@ void BackupImpl::close()
 {
     std::lock_guard lock{mutex};
     closeArchive(/* finalize= */ false);
-
-    if (!is_internal_backup && writer && !writing_finalized)
-        removeAllFilesAfterFailure();
-
     writer.reset();
     reader.reset();
     coordination.reset();
@@ -1005,14 +1008,18 @@ void BackupImpl::setCompressedSize()
 }
 
 
-void BackupImpl::removeAllFilesAfterFailure()
+void BackupImpl::tryRemoveAllFiles()
 {
+    if (open_mode != OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for writing");
+
     if (is_internal_backup)
-        return; /// Let the initiator remove unnecessary files.
+        return;
 
     try
     {
-        LOG_INFO(log, "Removing all files of backup {} after failure", backup_name_for_logging);
+        LOG_INFO(log, "Removing all files of backup {}", backup_name_for_logging);
+        closeArchive(/* finalize= */ false);
 
         Strings files_to_remove;
         if (use_archive)

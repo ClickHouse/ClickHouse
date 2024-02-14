@@ -1564,6 +1564,11 @@
 
     <backups>
         <allowed_path>backups</allowed_path>
+
+        <!-- If the BACKUP command fails and this setting is true then the files
+             copied before the failure will be removed automatically.
+        -->
+        <remove_backup_files_after_failure>true</remove_backup_files_after_failure>
     </backups>
 
     <!-- This allows to disable exposing addresses in stack traces for security reasons.

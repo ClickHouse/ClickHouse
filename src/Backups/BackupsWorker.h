@@ -38,14 +38,7 @@ class ProcessList;
 class BackupsWorker
 {
 public:
-    BackupsWorker(
-        ContextMutablePtr global_context,
-        size_t num_backup_threads,
-        size_t num_restore_threads,
-        bool allow_concurrent_backups_,
-        bool allow_concurrent_restores_,
-        bool test_inject_sleep_);
-
+    BackupsWorker(ContextMutablePtr global_context, size_t num_backup_threads, size_t num_restore_threads);
     ~BackupsWorker();
 
     /// Waits until all tasks have been completed.
@@ -125,6 +118,7 @@ private:
 
     const bool allow_concurrent_backups;
     const bool allow_concurrent_restores;
+    const bool remove_backup_files_after_failure;
     const bool test_inject_sleep;
 
     LoggerPtr log;
