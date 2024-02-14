@@ -16,7 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_COLUMN;
 }
 
 using Pos = const char *;
@@ -48,7 +48,7 @@ public:
         const IColumn * col_pattern = arguments[1].column.get();
         const ColumnConst * col_pattern_const = checkAndGetColumnConst<ColumnString>(col_pattern);
         if (col_pattern_const == nullptr)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Pattern argument is not const");
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Pattern argument is not const");
 
         const OptimizedRegularExpression re = Regexps::createRegexp</*is_like*/ false, /*no_capture*/ true, CountMatchesBase::case_insensitive>(col_pattern_const->getValue<String>());
 
@@ -101,7 +101,7 @@ public:
             return col_res;
         }
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast haystack argument to String or FixedString");
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Could not cast haystack argument to String or FixedString");
     }
 
     static uint64_t countMatches(std::string_view src, const OptimizedRegularExpression & re, OptimizedRegularExpression::MatchVec & matches)
