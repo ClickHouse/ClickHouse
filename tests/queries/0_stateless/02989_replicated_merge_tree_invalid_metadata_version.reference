@@ -1,5 +1,10 @@
 Row 1:
 ──────
+name:    metadata
+version: 1
+--
+Row 1:
+──────
 name:  metadata_version
 value: 1
 --

@@ -9,6 +9,10 @@ CREATE TABLE test_table_replicated
 
 ALTER TABLE test_table_replicated ADD COLUMN insert_time DateTime;
 
+SELECT name, version FROM system.zookeeper
+WHERE path = '/clickhouse/tables/' || currentDatabase() ||'/test_table_replicated/'
+AND name = 'metadata' FORMAT Vertical;
+
 DROP TABLE test_table_replicated;
 
 CREATE TABLE test_table_replicated
@@ -17,6 +21,8 @@ CREATE TABLE test_table_replicated
     value String,
     insert_time DateTime
 ) ENGINE=ReplicatedMergeTree('/clickhouse/tables/{database}/test_table_replicated', '2_replica') ORDER BY id;
+
+SELECT '--';
 
 SELECT name, value FROM system.zookeeper
 WHERE path = '/clickhouse/tables/' || currentDatabase() ||'/test_table_replicated/replicas/2_replica'
