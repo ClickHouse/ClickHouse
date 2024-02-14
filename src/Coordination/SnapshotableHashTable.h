@@ -2,16 +2,10 @@
 #include <base/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/ArenaUtils.h>
-#include <list>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 template<typename V>
 struct ListNode
@@ -19,55 +13,47 @@ struct ListNode
     StringRef key;
     V value;
 
-    /// |*                *            ****** |
-    ///  ^                ^            ^
-    ///  active_in_map    free_key     version
-    ///  (1 byte)         (1 byte)     (6 bytes)
-    uint64_t node_metadata = 0;
+    struct
+    {
+        bool active_in_map : 1;
+        bool free_key : 1;
+        uint64_t version : 62;
+    } node_metadata{false, false, 0};
 
     void setInactiveInMap()
     {
-        node_metadata &= ~active_in_map_mask;
+        node_metadata.active_in_map = false;
     }
 
     void setActiveInMap()
     {
-        node_metadata |= active_in_map_mask;
+        node_metadata.active_in_map = true;
     }
 
     bool isActiveInMap()
     {
-        return node_metadata & active_in_map_mask;
+        return node_metadata.active_in_map;
     }
 
     void setFreeKey()
     {
-        node_metadata |= free_key_mask;
+        node_metadata.free_key = true;
     }
 
     bool getFreeKey()
     {
-        return node_metadata & free_key_mask;
+        return node_metadata.free_key;
     }
 
     uint64_t getVersion()
     {
-        return node_metadata & version_mask;
+        return node_metadata.version;
     }
 
     void setVersion(uint64_t version)
     {
-        if (version > version_mask)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Snapshot version {} is larger than maximum allowed value {}", version, version_mask);
-
-        node_metadata &= ~version_mask;
-        node_metadata |= version;
+        node_metadata.version = version;
     }
-
-    static constexpr uint64_t active_in_map_mask = static_cast<uint64_t>(1) << 63;
-    static constexpr uint64_t free_key_mask      = static_cast<uint64_t>(1) << 62;
-    static constexpr uint64_t version_mask       = ~(static_cast<uint64_t>(3) << 62);
 };
 
 template <class V>
