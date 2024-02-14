@@ -20,7 +20,6 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     size_t ephemerals_count = 0;
     size_t approximate_data_size = 0;
     size_t key_arena_size = 0;
-    size_t latest_snapshot_size = 0;
     size_t open_file_descriptor_count = 0;
     std::optional<size_t> max_file_descriptor_count = 0;
     size_t followers = 0;
@@ -46,11 +45,8 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
         ephemerals_count = state_machine.getTotalEphemeralNodesCount();
         approximate_data_size = state_machine.getApproximateDataSize();
         key_arena_size = state_machine.getKeyArenaSize();
-        latest_snapshot_size = state_machine.getLatestSnapshotBufSize();
         session_with_watches = state_machine.getSessionsWithWatchesCount();
         paths_watched = state_machine.getWatchedPathsCount();
-        //snapshot_dir_size = keeper_dispatcher.getSnapDirSize();
-        //log_dir_size = keeper_dispatcher.getLogDirSize();
 
 #    if defined(__linux__) || defined(__APPLE__)
         open_file_descriptor_count = getCurrentProcessFDCount();
@@ -76,7 +72,9 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
 
     new_values["KeeperApproximateDataSize"] = { approximate_data_size, "The approximate data size of ClickHouse Keeper, in bytes." };
     new_values["KeeperKeyArenaSize"] = { key_arena_size, "The size in bytes of the memory arena for keys in ClickHouse Keeper." };
-    new_values["KeeperLatestSnapshotSize"] = { latest_snapshot_size, "The uncompressed size in bytes of the latest snapshot created by ClickHouse Keeper." };
+    /// TODO: value was incorrectly set to 0 previously for local snapshots
+    /// it needs to be fixed and it needs to be atomic to avoid deadlock
+    ///new_values["KeeperLatestSnapshotSize"] = { latest_snapshot_size, "The uncompressed size in bytes of the latest snapshot created by ClickHouse Keeper." };
 
     new_values["KeeperOpenFileDescriptorCount"] = { open_file_descriptor_count, "The number of open file descriptors in ClickHouse Keeper." };
     if (max_file_descriptor_count.has_value())

@@ -1,5 +1,7 @@
+#include <chrono>
 #include <filesystem>
 #include <Coordination/Changelog.h>
+#include <Coordination/CoordinationSettings.h>
 #include <Disks/DiskLocal.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -35,21 +37,86 @@ namespace
 
 constexpr std::string_view tmp_prefix = "tmp_";
 
-void moveFileBetweenDisks(DiskPtr disk_from, ChangelogFileDescriptionPtr description, DiskPtr disk_to, const std::string & path_to)
+void moveFileBetweenDisks(
+    DiskPtr disk_from,
+    ChangelogFileDescriptionPtr description,
+    DiskPtr disk_to,
+    const std::string & path_to,
+    const KeeperContextPtr & keeper_context)
 {
+    auto logger = getLogger("Changelog");
+    LOG_TRACE(logger, "Moving {} to {} from disk {} to disk {}", description->path, path_to, disk_from->getName(), disk_to->getName());
     /// we use empty file with prefix tmp_ to detect incomplete copies
     /// if a copy is complete we don't care from which disk we use the same file
     /// so it's okay if a failure happens after removing of tmp file but before we remove
     /// the changelog from the source disk
     auto from_path = fs::path(description->path);
     auto tmp_changelog_name = from_path.parent_path() / (std::string{tmp_prefix} + from_path.filename().string());
+
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
+    auto max_retries_on_init = coordination_settings->disk_move_retries_during_init.value;
+    auto retries_sleep = std::chrono::milliseconds(coordination_settings->disk_move_retries_wait_ms);
+    auto run_with_retries = [&](const auto & op, std::string_view operation_description)
     {
-        auto buf = disk_to->writeFile(tmp_changelog_name);
-        buf->finalize();
+        /// we limit the amount of retries during initialization phase because shutdown won't be set
+        /// before initialization is done, i.e. we would be stuck in infinite loop
+        size_t retry_num = 0;
+        do
+        {
+            try
+            {
+                op();
+                return true;
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    logger,
+                    fmt::format(
+                        "While moving changelog {} to disk {} and running '{}'",
+                        description->path,
+                        disk_to->getName(),
+                        operation_description));
+                std::this_thread::sleep_for(retries_sleep);
+            }
+
+            ++retry_num;
+            if (keeper_context->getServerState() == KeeperContext::Phase::INIT && retry_num == max_retries_on_init)
+            {
+                LOG_ERROR(logger, "Operation '{}' failed too many times", operation_description);
+                break;
+            }
+
+        } while (!keeper_context->isShutdownCalled());
+
+        LOG_ERROR(
+            getLogger("Changelog"),
+            "Failed to run '{}' while moving changelog {} to disk {}",
+            operation_description,
+            description->path,
+            disk_to->getName());
+        return false;
+    };
+
+    std::array<std::pair<std::function<void()>, std::string_view>, 4> operations{
+        std::pair{
+            [&]
+            {
+                auto buf = disk_to->writeFile(tmp_changelog_name);
+                buf->finalize();
+            },
+            "creating temporary file"},
+        std::pair{[&] { disk_from->copyFile(from_path, *disk_to, path_to, {}); }, "copying file"},
+        std::pair{[&] { disk_to->removeFileIfExists(tmp_changelog_name); }, "removing temporary file"},
+        std::pair{[&] { disk_from->removeFileIfExists(description->path); }, "removing changelog file from source disk"},
+    };
+
+    for (const auto & [op, operation_description] : operations)
+    {
+        if (!run_with_retries(op, operation_description))
+            return;
     }
-    disk_from->copyFile(from_path, *disk_to, path_to, {});
-    disk_to->removeFile(tmp_changelog_name);
-    disk_from->removeFile(description->path);
+
     description->path = path_to;
     description->disk = disk_to;
 }
@@ -173,7 +240,7 @@ public:
                     }
                     else
                     {
-                        moveFileBetweenDisks(log_disk, current_file_description, disk, new_path);
+                        moveFileBetweenDisks(log_disk, current_file_description, disk, new_path, keeper_context);
                     }
                 }
             }
@@ -196,7 +263,7 @@ public:
         }
         catch (...)
         {
-            tryLogCurrentException(log);
+            tryLogCurrentException(log, "While setting new changelog file");
             throw;
         }
     }
@@ -813,7 +880,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
         auto disk = getDisk();
 
         if (latest_log_disk != disk && latest_log_disk == description->disk)
-            moveFileBetweenDisks(latest_log_disk, description, disk, description->path);
+            moveFileBetweenDisks(latest_log_disk, description, disk, description->path, keeper_context);
     };
 
     /// we can have empty log (with zero entries) and last_log_read_result will be initialized
@@ -899,7 +966,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
         }
 
         if (description->disk != disk)
-            moveFileBetweenDisks(description->disk, description, disk, description->path);
+            moveFileBetweenDisks(description->disk, description, disk, description->path, keeper_context);
     }
 
 
@@ -921,7 +988,7 @@ void Changelog::initWriter(ChangelogFileDescriptionPtr description)
     auto log_disk = description->disk;
     auto latest_log_disk = getLatestLogDisk();
     if (log_disk != latest_log_disk)
-        moveFileBetweenDisks(log_disk, description, latest_log_disk, description->path);
+        moveFileBetweenDisks(log_disk, description, latest_log_disk, description->path, keeper_context);
 
     current_writer->setFile(std::move(description), WriteMode::Append);
 }
@@ -984,11 +1051,11 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
             catch (const DB::Exception & e)
             {
                 if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED)
-                    moveFileBetweenDisks(changelog_disk, changelog_description, disk, new_path);
+                    moveFileBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
             }
         }
         else
-            moveFileBetweenDisks(changelog_disk, changelog_description, disk, new_path);
+            moveFileBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
 
         itr = existing_changelogs.erase(itr);
     }
@@ -1085,69 +1152,77 @@ void Changelog::writeThread()
             LOG_WARNING(log, "Changelog is shut down");
     };
 
-    /// NuRaft writes a batch of request by first calling multiple store requests, i.e. AppendLog
-    /// finished by a flush request
-    /// We assume that after some number of appends, we always get flush request
-    while (true)
+    try
     {
-        if (try_batch_flush)
+        /// NuRaft writes a batch of request by first calling multiple store requests, i.e. AppendLog
+        /// finished by a flush request
+        /// We assume that after some number of appends, we always get flush request
+        while (true)
         {
-            try_batch_flush = false;
-            /// we have Flush request stored in write operation
-            /// but we try to get new append operations
-            /// if there are none, we apply the currently set Flush
-            chassert(std::holds_alternative<Flush>(write_operation));
-            if (!write_operations.tryPop(write_operation))
+            if (try_batch_flush)
             {
-                chassert(batch_append_ok);
-                const auto & flush = std::get<Flush>(write_operation);
-                flush_logs(flush);
-                notify_append_completion();
-                if (!write_operations.pop(write_operation))
-                    break;
-            }
-        }
-        else if (!write_operations.pop(write_operation))
-        {
-            break;
-        }
-
-        assert(initialized);
-
-        if (auto * append_log = std::get_if<AppendLog>(&write_operation))
-        {
-            if (!batch_append_ok)
-                continue;
-
-            std::lock_guard writer_lock(writer_mutex);
-            assert(current_writer);
-
-            batch_append_ok = current_writer->appendRecord(buildRecord(append_log->index, append_log->log_entry));
-            ++pending_appends;
-        }
-        else
-        {
-            const auto & flush = std::get<Flush>(write_operation);
-
-            if (batch_append_ok)
-            {
-                /// we can try batching more logs for flush
-                if (pending_appends < flush_settings.max_flush_batch_size)
+                try_batch_flush = false;
+                /// we have Flush request stored in write operation
+                /// but we try to get new append operations
+                /// if there are none, we apply the currently set Flush
+                chassert(std::holds_alternative<Flush>(write_operation));
+                if (!write_operations.tryPop(write_operation))
                 {
-                    try_batch_flush = true;
-                    continue;
+                    chassert(batch_append_ok);
+                    const auto & flush = std::get<Flush>(write_operation);
+                    flush_logs(flush);
+                    notify_append_completion();
+                    if (!write_operations.pop(write_operation))
+                        break;
                 }
-                /// we need to flush because we have maximum allowed pending records
-                flush_logs(flush);
+            }
+            else if (!write_operations.pop(write_operation))
+            {
+                break;
+            }
+
+            assert(initialized);
+
+            if (auto * append_log = std::get_if<AppendLog>(&write_operation))
+            {
+                if (!batch_append_ok)
+                    continue;
+
+                std::lock_guard writer_lock(writer_mutex);
+                assert(current_writer);
+
+                batch_append_ok = current_writer->appendRecord(buildRecord(append_log->index, append_log->log_entry));
+                ++pending_appends;
             }
             else
             {
-                std::lock_guard lock{durable_idx_mutex};
-                *flush.failed = true;
+                const auto & flush = std::get<Flush>(write_operation);
+
+                if (batch_append_ok)
+                {
+                    /// we can try batching more logs for flush
+                    if (pending_appends < flush_settings.max_flush_batch_size)
+                    {
+                        try_batch_flush = true;
+                        continue;
+                    }
+                    /// we need to flush because we have maximum allowed pending records
+                    flush_logs(flush);
+                }
+                else
+                {
+                    std::lock_guard lock{durable_idx_mutex};
+                    *flush.failed = true;
+                }
+                notify_append_completion();
+                batch_append_ok = true;
             }
-            notify_append_completion();
-            batch_append_ok = true;
         }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Write thread failed, aborting");
+        std::abort();
     }
 }
 
@@ -1191,7 +1266,7 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             auto log_disk = description->disk;
             auto latest_log_disk = getLatestLogDisk();
             if (log_disk != latest_log_disk)
-                moveFileBetweenDisks(log_disk, description, latest_log_disk, description->path);
+                moveFileBetweenDisks(log_disk, description, latest_log_disk, description->path, keeper_context);
 
             current_writer->setFile(std::move(description), WriteMode::Append);
 

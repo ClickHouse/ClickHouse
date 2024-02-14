@@ -3,6 +3,7 @@
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
+#include <Coordination/CoordinationSettings.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -34,21 +35,77 @@ namespace
 {
     constexpr std::string_view tmp_prefix = "tmp_";
 
-    void moveFileBetweenDisks(DiskPtr disk_from, const std::string & path_from, DiskPtr disk_to, const std::string & path_to)
+    void moveFileBetweenDisks(
+        DiskPtr disk_from,
+        const std::string & path_from,
+        DiskPtr disk_to,
+        const std::string & path_to,
+        const KeeperContextPtr & keeper_context)
     {
+        auto logger = getLogger("KeeperSnapshotManager");
+        LOG_TRACE(logger, "Moving {} to {} from disk {} to disk {}", path_from, path_to, disk_from->getName(), disk_to->getName());
         /// we use empty file with prefix tmp_ to detect incomplete copies
         /// if a copy is complete we don't care from which disk we use the same file
         /// so it's okay if a failure happens after removing of tmp file but before we remove
         /// the snapshot from the source disk
         auto from_path = fs::path(path_from);
         auto tmp_snapshot_name = from_path.parent_path() / (std::string{tmp_prefix} + from_path.filename().string());
+
+        const auto & coordination_settings = keeper_context->getCoordinationSettings();
+        auto max_retries_on_init = coordination_settings->disk_move_retries_during_init.value;
+        auto retries_sleep = std::chrono::milliseconds(coordination_settings->disk_move_retries_wait_ms);
+        auto run_with_retries = [&](const auto & op, std::string_view operation_description)
         {
-            auto buf = disk_to->writeFile(tmp_snapshot_name);
-            buf->finalize();
-        }
-        disk_from->copyFile(from_path, *disk_to, path_to, {});
-        disk_to->removeFile(tmp_snapshot_name);
-        disk_from->removeFile(path_from);
+            size_t retry_num = 0;
+            do
+            {
+                try
+                {
+                    op();
+                    return true;
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(
+                        logger,
+                        fmt::format(
+                            "While moving snapshot {} to disk {} and running '{}'", path_from, disk_to->getName(), operation_description));
+                    std::this_thread::sleep_for(retries_sleep);
+                }
+
+                ++retry_num;
+                if (keeper_context->getServerState() == KeeperContext::Phase::INIT && retry_num == max_retries_on_init)
+                {
+                    LOG_ERROR(logger, "Operation '{}' failed too many times", operation_description);
+                    break;
+                }
+            } while (!keeper_context->isShutdownCalled());
+
+            LOG_ERROR(
+                logger,
+                "Failed to run '{}' while moving snapshot {} to disk {}",
+                operation_description,
+                path_from,
+                disk_to->getName());
+            return false;
+        };
+
+        std::array<std::pair<std::function<void()>, std::string_view>, 4> operations{
+            std::pair{
+                [&]
+                {
+                    auto buf = disk_to->writeFile(tmp_snapshot_name);
+                    buf->finalize();
+                },
+                "creating temporary file"},
+            std::pair{[&] { disk_from->copyFile(from_path, *disk_to, path_to, {}); }, "copying file"},
+            std::pair{[&] { disk_to->removeFileIfExists(tmp_snapshot_name); }, "removing temporary file"},
+            std::pair{[&] { disk_from->removeFileIfExists(path_from); }, "removing snapshot file from source disk"},
+        };
+
+        for (const auto & [op, operation_description] : operations)
+            if (!run_with_retries(op, operation_description))
+                return;
     }
 
     uint64_t getSnapshotPathUpToLogIdx(const String & snapshot_path)
@@ -774,7 +831,7 @@ void KeeperSnapshotManager::moveSnapshotsIfNeeded()
         {
             if (file_info.disk != latest_snapshot_disk)
             {
-                moveFileBetweenDisks(file_info.disk, file_info.path, latest_snapshot_disk, file_info.path);
+                moveFileBetweenDisks(file_info.disk, file_info.path, latest_snapshot_disk, file_info.path, keeper_context);
                 file_info.disk = latest_snapshot_disk;
             }
         }
@@ -782,7 +839,7 @@ void KeeperSnapshotManager::moveSnapshotsIfNeeded()
         {
             if (file_info.disk != disk)
             {
-                moveFileBetweenDisks(file_info.disk, file_info.path, disk, file_info.path);
+                moveFileBetweenDisks(file_info.disk, file_info.path, disk, file_info.path, keeper_context);
                 file_info.disk = disk;
             }
         }
