@@ -39,6 +39,12 @@ namespace
 }
 
 
+PlacementInfo & PlacementInfo::instance()
+{
+    static PlacementInfo instance;
+    return instance;
+}
+
 void PlacementInfo::initialize(const Poco::Util::AbstractConfiguration & config)
 {
     use_imds = config.getBool(getConfigPath("use_imds"), false);

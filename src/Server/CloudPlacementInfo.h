@@ -18,11 +18,7 @@ static constexpr auto DEFAULT_AZ_FILE_PATH = "/run/instance-metadata/node-zone";
 class PlacementInfo : private boost::noncopyable
 {
 public:
-    static PlacementInfo & instance()
-    {
-        static PlacementInfo instance;
-        return instance;
-    }
+    static PlacementInfo & instance();
 
     void initialize(const Poco::Util::AbstractConfiguration & config);
 
