@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config.h"
 #include <Common/Exception.h>
 #include <Core/Types.h>
 #include <Poco/Util/AbstractConfiguration.h>

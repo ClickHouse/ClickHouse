@@ -1380,7 +1380,7 @@ void executeQuery(
                     result_details.content_type = output_format->getContentType();
                     result_details.format = format_name;
 
-                    fiu_do_on(FailPoint::execute_query_calling_empty_set_result_func_on_exception, {
+                    fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception, {
                         set_result_details = nullptr;
                         set_result_details(result_details);
                     });
