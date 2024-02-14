@@ -516,10 +516,10 @@ BlockIO InterpreterInsertQuery::execute()
                 auto table_id = table->getStorageID();
                 auto views = DatabaseCatalog::instance().getDependentViews(table_id);
 
-                /// TODO: should we really skip views or not? they have special `parallel_view_processing`, it should be enough?
-                pre_streams_size = !table->isView() && views.empty()
-                    ? settings.max_insert_threads
-                    : std::min<size_t>(settings.max_insert_threads, pipeline.getNumStreams());
+                /// It breaks some views-related tests and we have dedicated `parallel_view_processing` for views, so let's just skip them.
+                const bool resize_to_max_insert_threads = !table->isView() && views.empty();
+                pre_streams_size = resize_to_max_insert_threads ? settings.max_insert_threads
+                                                                : std::min<size_t>(settings.max_insert_threads, pipeline.getNumStreams());
                 if (table->supportsParallelInsert())
                     sink_streams_size = pre_streams_size;
             }

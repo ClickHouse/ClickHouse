@@ -65,7 +65,6 @@ struct ViewsData
     StorageID source_storage_id;
     StorageMetadataPtr source_metadata_snapshot;
     StoragePtr source_storage;
-    /// This value is actually only for logs.
     size_t max_threads = 1;
 
     /// In case of exception happened while inserting into main table, it is pushed to pipeline.
