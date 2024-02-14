@@ -65,7 +65,6 @@ DESCRIBE remote(default, currentDatabase(), t_describe_options) FORMAT PrettyCom
 │ t              │ Tuple(
     a String,
     b UInt64) │ DEFAULT      │ ('foo', 0)         │              │ ZSTD(1)          │                │          0 │
-│ _table         │ LowCardinality(String)           │              │                    │              │                  │                │          1 │
 │ _part          │ LowCardinality(String)           │              │                    │              │                  │                │          1 │
 │ _part_index    │ UInt64                           │              │                    │              │                  │                │          1 │
 │ _part_uuid     │ UUID                             │              │                    │              │                  │                │          1 │
@@ -104,7 +103,6 @@ DESCRIBE remote(default, currentDatabase(), t_describe_options) FORMAT PrettyCom
 │ t              │ Tuple(
     a String,
     b UInt64) │ DEFAULT      │ ('foo', 0)         │              │ ZSTD(1)          │                │            0 │          0 │
-│ _table         │ LowCardinality(String)           │              │                    │              │                  │                │            0 │          1 │
 │ _part          │ LowCardinality(String)           │              │                    │              │                  │                │            0 │          1 │
 │ _part_index    │ UInt64                           │              │                    │              │                  │                │            0 │          1 │
 │ _part_uuid     │ UUID                             │              │                    │              │                  │                │            0 │          1 │
@@ -183,7 +181,6 @@ DESCRIBE remote(default, currentDatabase(), t_describe_options) FORMAT PrettyCom
 │ t              │ Tuple(
     a String,
     b UInt64) │          0 │
-│ _table         │ LowCardinality(String)           │          1 │
 │ _part          │ LowCardinality(String)           │          1 │
 │ _part_index    │ UInt64                           │          1 │
 │ _part_uuid     │ UUID                             │          1 │
@@ -222,7 +219,6 @@ DESCRIBE remote(default, currentDatabase(), t_describe_options) FORMAT PrettyCom
 │ t              │ Tuple(
     a String,
     b UInt64) │            0 │          0 │
-│ _table         │ LowCardinality(String)           │            0 │          1 │
 │ _part          │ LowCardinality(String)           │            0 │          1 │
 │ _part_index    │ UInt64                           │            0 │          1 │
 │ _part_uuid     │ UUID                             │            0 │          1 │
