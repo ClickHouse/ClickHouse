@@ -82,7 +82,7 @@ WebObjectStorage::loadFiles(const String & path, const std::unique_lock<std::sha
             if (!inserted)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Loading data for {} more than once", file_path);
 
-            LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Adding file: {}, size: {}", file_path, size);
+            LOG_TRACE(getLogger("DiskWeb"), "Adding file: {}, size: {}", file_path, size);
             loaded_files.emplace_back(file_path);
         }
 

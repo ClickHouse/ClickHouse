@@ -100,6 +100,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             std::cout << "Usage: " << argv[0] << " [options] < INPUT > OUTPUT" << std::endl;
             std::cout << "Usage: " << argv[0] << " [options] INPUT OUTPUT" << std::endl;
             std::cout << desc << std::endl;
+            std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-compressor/\n";
             return 0;
         }
 

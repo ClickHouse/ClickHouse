@@ -76,7 +76,7 @@ namespace
         static std::once_flag once_flag;
         std::call_once(once_flag, [&config]
         {
-            static LoggerPtr logger = getLogger("grpc");
+            static LoggerRawPtr logger = getRawLogger("grpc");
             gpr_set_log_function([](gpr_log_func_args* args)
             {
                 if (args->severity == GPR_LOG_SEVERITY_DEBUG)
@@ -622,7 +622,7 @@ namespace
     class Call
     {
     public:
-        Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerPtr log_);
+        Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_);
         ~Call();
 
         void start(const std::function<void(void)> & on_finish_call_callback);
@@ -664,7 +664,7 @@ namespace
         const CallType call_type;
         std::unique_ptr<BaseResponder> responder;
         IServer & iserver;
-        LoggerPtr log = nullptr;
+        LoggerRawPtr log = nullptr;
 
         std::optional<Session> session;
         ContextMutablePtr query_context;
@@ -726,7 +726,7 @@ namespace
     };
 // NOLINTEND(clang-analyzer-optin.performance.Padding)
 
-    Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerPtr log_)
+    Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_)
         : call_type(call_type_), responder(std::move(responder_)), iserver(iserver_), log(log_)
     {
     }
@@ -1851,7 +1851,7 @@ private:
 GRPCServer::GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & address_to_listen_)
     : iserver(iserver_)
     , address_to_listen(address_to_listen_)
-    , log(getLogger("GRPCServer"))
+    , log(getRawLogger("GRPCServer"))
     , runner(std::make_unique<Runner>(*this))
 {}
 
