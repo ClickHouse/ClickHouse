@@ -1,151 +1,17 @@
 #!/usr/bin/env python3
 
+from enum import Enum
 import logging
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Literal, Optional, Union
 
-from ci_utils import WithIter
 from integration_test_images import IMAGES
 
 
-class Labels(metaclass=WithIter):
-    """
-    Label names or commit tokens in normalized form
-    """
-
-    DO_NOT_TEST_LABEL = "do_not_test"
-    NO_MERGE_COMMIT = "no_merge_commit"
-    NO_CI_CACHE = "no_ci_cache"
-    CI_SET_REDUCED = "ci_set_reduced"
-    CI_SET_ARM = "ci_set_arm"
-    CI_SET_INTEGRATION = "ci_set_integration"
-
-    libFuzzer = "libFuzzer"
-
-
-class Build(metaclass=WithIter):
-    PACKAGE_RELEASE = "package_release"
-    PACKAGE_AARCH64 = "package_aarch64"
-    PACKAGE_ASAN = "package_asan"
-    PACKAGE_UBSAN = "package_ubsan"
-    PACKAGE_TSAN = "package_tsan"
-    PACKAGE_MSAN = "package_msan"
-    PACKAGE_DEBUG = "package_debug"
-    BINARY_RELEASE = "binary_release"
-    BINARY_TIDY = "binary_tidy"
-    BINARY_DARWIN = "binary_darwin"
-    BINARY_AARCH64 = "binary_aarch64"
-    BINARY_AARCH64_V80COMPAT = "binary_aarch64_v80compat"
-    BINARY_FREEBSD = "binary_freebsd"
-    BINARY_DARWIN_AARCH64 = "binary_darwin_aarch64"
-    BINARY_PPC64LE = "binary_ppc64le"
-    BINARY_AMD64_COMPAT = "binary_amd64_compat"
-    BINARY_AMD64_MUSL = "binary_amd64_musl"
-    BINARY_RISCV64 = "binary_riscv64"
-    BINARY_S390X = "binary_s390x"
-    FUZZERS = "fuzzers"
-
-
-class JobNames(metaclass=WithIter):
-    STYLE_CHECK = "Style check"
-    FAST_TEST = "Fast test"
-    DOCKER_SERVER = "Docker server image"
-    DOCKER_KEEPER = "Docker keeper image"
-    INSTALL_TEST_AMD = "Install packages (amd64)"
-    INSTALL_TEST_ARM = "Install packages (arm64)"
-
-    STATELESS_TEST_DEBUG = "Stateless tests (debug)"
-    STATELESS_TEST_RELEASE = "Stateless tests (release)"
-    STATELESS_TEST_AARCH64 = "Stateless tests (aarch64)"
-    STATELESS_TEST_ASAN = "Stateless tests (asan)"
-    STATELESS_TEST_TSAN = "Stateless tests (tsan)"
-    STATELESS_TEST_MSAN = "Stateless tests (msan)"
-    STATELESS_TEST_UBSAN = "Stateless tests (ubsan)"
-    STATELESS_TEST_ANALYZER_RELEASE = "Stateless tests (release, analyzer)"
-    STATELESS_TEST_DB_REPL_RELEASE = "Stateless tests (release, DatabaseReplicated)"
-    STATELESS_TEST_S3_RELEASE = "Stateless tests (release, s3 storage)"
-    STATELESS_TEST_S3_DEBUG = "Stateless tests (debug, s3 storage)"
-    STATELESS_TEST_S3_TSAN = "Stateless tests (tsan, s3 storage)"
-    STATELESS_TEST_FLAKY_ASAN = "Stateless tests flaky check (asan)"
-
-    STATEFUL_TEST_DEBUG = "Stateful tests (debug)"
-    STATEFUL_TEST_RELEASE = "Stateful tests (release)"
-    STATEFUL_TEST_AARCH64 = "Stateful tests (aarch64)"
-    STATEFUL_TEST_ASAN = "Stateful tests (asan)"
-    STATEFUL_TEST_TSAN = "Stateful tests (tsan)"
-    STATEFUL_TEST_MSAN = "Stateful tests (msan)"
-    STATEFUL_TEST_UBSAN = "Stateful tests (ubsan)"
-    STATEFUL_TEST_PARALLEL_REPL_RELEASE = "Stateful tests (release, ParallelReplicas)"
-    STATEFUL_TEST_PARALLEL_REPL_DEBUG = "Stateful tests (debug, ParallelReplicas)"
-    STATEFUL_TEST_PARALLEL_REPL_ASAN = "Stateful tests (asan, ParallelReplicas)"
-    STATEFUL_TEST_PARALLEL_REPL_MSAN = "Stateful tests (msan, ParallelReplicas)"
-    STATEFUL_TEST_PARALLEL_REPL_UBSAN = "Stateful tests (ubsan, ParallelReplicas)"
-    STATEFUL_TEST_PARALLEL_REPL_TSAN = "Stateful tests (tsan, ParallelReplicas)"
-
-    STRESS_TEST_ASAN = "Stress test (asan)"
-    STRESS_TEST_TSAN = "Stress test (tsan)"
-    STRESS_TEST_UBSAN = "Stress test (ubsan)"
-    STRESS_TEST_MSAN = "Stress test (msan)"
-    STRESS_TEST_DEBUG = "Stress test (debug)"
-
-    INTEGRATION_TEST = "Integration tests (release)"
-    INTEGRATION_TEST_ASAN = "Integration tests (asan)"
-    INTEGRATION_TEST_ASAN_ANALYZER = "Integration tests (asan, analyzer)"
-    INTEGRATION_TEST_TSAN = "Integration tests (tsan)"
-    INTEGRATION_TEST_ARM = "Integration tests (aarch64)"
-    INTEGRATION_TEST_FLAKY = "Integration tests flaky check (asan)"
-
-    UPGRADE_TEST_DEBUG = "Upgrade check (debug)"
-    UPGRADE_TEST_ASAN = "Upgrade check (asan)"
-    UPGRADE_TEST_TSAN = "Upgrade check (tsan)"
-    UPGRADE_TEST_MSAN = "Upgrade check (msan)"
-
-    UNIT_TEST = "Unit tests (release)"
-    UNIT_TEST_ASAN = "Unit tests (asan)"
-    UNIT_TEST_MSAN = "Unit tests (msan)"
-    UNIT_TEST_TSAN = "Unit tests (tsan)"
-    UNIT_TEST_UBSAN = "Unit tests (ubsan)"
-
-    AST_FUZZER_TEST_DEBUG = "AST fuzzer (debug)"
-    AST_FUZZER_TEST_ASAN = "AST fuzzer (asan)"
-    AST_FUZZER_TEST_MSAN = "AST fuzzer (msan)"
-    AST_FUZZER_TEST_TSAN = "AST fuzzer (tsan)"
-    AST_FUZZER_TEST_UBSAN = "AST fuzzer (ubsan)"
-
-    JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
-    JEPSEN_SERVER = "ClickHouse Server Jepsen"
-
-    PERFORMANCE_TEST_AMD64 = "Performance Comparison"
-    PERFORMANCE_TEST_ARM64 = "Performance Comparison Aarch64"
-
-    SQL_LOGIC_TEST = "Sqllogic test (release)"
-
-    SQLANCER = "SQLancer (release)"
-    SQLANCER_DEBUG = "SQLancer (debug)"
-    SQLTEST = "SQLTest"
-
-    COMPATIBILITY_TEST = "Compatibility check (amd64)"
-    COMPATIBILITY_TEST_ARM = "Compatibility check (aarch64)"
-
-    CLCIKBENCH_TEST = "ClickBench (amd64)"
-    CLCIKBENCH_TEST_ARM = "ClickBench (aarch64)"
-
-    LIBFUZZER_TEST = "libFuzzer tests"
-
-    BUILD_CHECK = "ClickHouse build check"
-    BUILD_CHECK_SPECIAL = "ClickHouse special build check"
-
-    DOCS_CHECK = "Docs check"
-    BUGFIX_VALIDATE = "tests bugfix validate check"
-
-
-# dynamically update JobName with Build jobs
-for attr_name in dir(Build):
-    if not attr_name.startswith("__") and not callable(getattr(Build, attr_name)):
-        setattr(JobNames, attr_name, getattr(Build, attr_name))
+class Labels(Enum):
+    DO_NOT_TEST_LABEL = "do not test"
 
 
 @dataclass
@@ -181,7 +47,7 @@ class JobConfig:
     @num_batches - sets number of batches for multi-batch job
     """
 
-    digest: DigestConfig = field(default_factory=DigestConfig)
+    digest: DigestConfig = DigestConfig()
     run_command: str = ""
     timeout: Optional[int] = None
     num_batches: int = 1
@@ -247,14 +113,14 @@ class BuildConfig:
 @dataclass
 class BuildReportConfig:
     builds: List[str]
-    job_config: JobConfig = field(default_factory=JobConfig)
+    job_config: JobConfig = JobConfig()
 
 
 @dataclass
 class TestConfig:
     required_build: str
     force_tests: bool = False
-    job_config: JobConfig = field(default_factory=JobConfig)
+    job_config: JobConfig = JobConfig()
 
 
 BuildConfigs = Dict[str, BuildConfig]
@@ -566,7 +432,7 @@ class CiConfig:
 
 CI_CONFIG = CiConfig(
     label_configs={
-        Labels.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=["Style check"]),
+        Labels.DO_NOT_TEST_LABEL.value: LabelConfig(run_jobs=["Style check"]),
     },
     build_config={
         "package_release": BuildConfig(
@@ -728,7 +594,7 @@ CI_CONFIG = CiConfig(
         ),
     },
     other_jobs_configs={
-        JobNames.DOCKER_SERVER: TestConfig(
+        "Docker server and keeper images": TestConfig(
             "",
             job_config=JobConfig(
                 digest=DigestConfig(
