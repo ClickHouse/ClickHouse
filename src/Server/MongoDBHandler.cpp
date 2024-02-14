@@ -1,4 +1,5 @@
-#include <memory>
+#include "MongoDBHandler.h"
+#include <Common/BSONParser/Array.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -7,14 +8,23 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Server/TCPServer.h>
-#include "Common/AsyncTaskExecutor.h"
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 #include <base/scope_guard.h>
 #include <pcg_random.hpp>
+#include <Poco/Exception.h>
 #include <Common/config_version.h>
-#include "Interpreters/Session.h"
-#include <Server/MongoDBHandler.h>
+#include <Core/MongoDB/MessageHeader.h>
+#include <Interpreters/Session.h>
+#include <base/types.h>
+#include <Core/MongoDB/Message.h>
+#include <Core/MongoDB/MessageReader.h>
+#include <Core/MongoDB/MessageWriter.h>
+#include <fmt/core.h>
+#include <fmt/format.h>
+#include <Core/MongoDB/Commands/MessageHandler.h>
+
+#include <memory>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -24,10 +34,77 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int SYNTAX_ERROR;
+namespace BSON {
+
+Int32 Document::read(ReadBuffer& reader) {
+	Int32 size;
+	try {
+		readIntBinary(size, reader);
+	} catch(const std::exception&) {
+		return 0;
+	}
+
+	char type; 
+	if (!reader.read(type)) {
+        throw std::exception(); // FIXME
+    }
+
+	while (type != '\0')
+	{
+		Element::Ptr element;
+
+		std::string name;
+        readNullTerminated(name, reader);
+
+		switch (type)
+		{
+		case ElementTraits<double>::TypeId:
+			element = new ConcreteElement<double>(name, 0);
+			break;
+		case ElementTraits<Int32>::TypeId:
+			element = new ConcreteElement<Int32>(name, 0);
+			break;
+		case ElementTraits<std::string>::TypeId:
+			element = new ConcreteElement<std::string>(name, "");
+			break;
+		case ElementTraits<Document::Ptr>::TypeId:
+			element = new ConcreteElement<Document::Ptr>(name, new Document);
+			break;
+		case ElementTraits<bool>::TypeId:
+			element = new ConcreteElement<bool>(name, false);
+			break;
+		case ElementTraits<Int64>::TypeId:
+			element = new ConcreteElement<Int64>(name, 0);
+			break;
+		case ElementTraits<Array::Ptr>::TypeId:
+			element = new ConcreteElement<Array::Ptr>(name, new Array);
+			break;
+		default:
+			{
+				std::stringstream ss;
+				ss << "Element " << name << " contains an unsupported type 0x" << std::hex << static_cast<int>(type);
+				throw Poco::NotImplementedException(ss.str());
+			}
+		// TODO: everything else:)
+		}
+		element->read(reader);
+		elements.push_back(element);
+
+		if (!reader.read(type)) {
+            throw std::exception(); // FIXME
+        }
+	}
+	return size;
 }
+
+Array& Document::addNewArray(const std::string& name)
+{
+	Array::Ptr new_array = new Array();
+	add(name, new_array);
+	return *new_array;
+}
+}
+
 
 MongoDBHandler::MongoDBHandler(
     const Poco::Net::StreamSocket & socket_,
@@ -41,30 +118,41 @@ MongoDBHandler::MongoDBHandler(
 {
 }
 
-
-
-
 void MongoDBHandler::run()
 {
-    LOG_INFO(log, "MONGODB has new connection");
+    LOG_INFO(log, "MongoDB has new connection");
     setThreadName(this->handler_name);
     ThreadStatus thread_status;
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MONGODB);
     SCOPE_EXIT({ session.reset(); });
+
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
     session->setClientConnectionId(connection_id);
-
-    char c;
-    while (tcp_server.isOpen()) {
-        if (!in->read(c)) {
-            break;
+    DB::MongoDB::MessageReader reader(*in);
+	DB::MongoDB::MessageWriter writer(*out);
+	{ // HELLO
+        MongoDB::Message::Ptr message = reader.read();
+        MongoDB::MessageHeader::OpCode op_code = message->getHeader().getOpCode();
+		LOG_INFO(log, "GOT OPCODE {}", static_cast<int>(op_code));
+        switch (op_code) {
+            case MongoDB::MessageHeader::OP_QUERY:
+            {
+                BSON::Document::Ptr response = MongoDB::MessageHandler::handleIsMaster();
+				writer.writeHelloCmd(response, message->getHeader().getRequestID());
+            }
+                break;
+            default:
+                throw Poco::NotImplementedException();
         }
-        out->write(c);
-        out->next();
+	}
+    while (tcp_server.isOpen()) {
+		while (!in->poll(1'000'000))
+                if (!tcp_server.isOpen())
+                    return;
     }
     out->finalize();
 }
 
-}
+} // namespace DB

@@ -182,7 +182,7 @@
     <!-- Compatibility with MongoDB protocol.
          ClickHouse will pretend to be MongoDB for applications connecting to this port.
     -->
-    <mongodb_port>9006</mongodb_port>
+    <mongodb_port>27017</mongodb_port>
 
     <!-- HTTP API with TLS (HTTPS).
          You have to configure certificate to enable this interface.
