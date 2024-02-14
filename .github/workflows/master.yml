@@ -313,6 +313,7 @@ jobs:
       run_command: |
         python3 build_report_check.py "$CHECK_NAME"
   MarkReleaseReady:
+    if: ${{ !failure() && !cancelled() }}
     needs:
       - BuilderBinDarwin
       - BuilderBinDarwinAarch64
@@ -322,6 +323,8 @@ jobs:
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
       - name: Mark Commit Release Ready
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"

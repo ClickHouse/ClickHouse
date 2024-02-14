@@ -138,13 +138,6 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         help="skip fetching data about job runs, used in --configure action (for debugging and nigthly ci)",
     )
     parser.add_argument(
-        "--force",
-        action="store_true",
-        default=False,
-        help="Used with --run, force the job to run, omitting the ci cache",
-    )
-    # FIXME: remove, not used
-    parser.add_argument(
         "--rebuild-all-docker",
         action="store_true",
         default=False,
@@ -669,40 +662,24 @@ def main() -> int:
             os.environ["KILL_TIMEOUT"] = str(
                 CI_CONFIG.get_job_config(args.job_name).timeout
             )
-            rerun_helper = RerunHelper(commit, check_name_with_group)
-            if rerun_helper.is_already_finished_by_status():
-                status = rerun_helper.get_finished_status()
-                assert status
-                previous_status = status.state
-                print("::group::Commit Status")
-                print(status)
-                print("::endgroup::")
-
-            # ci cache check
-            elif not indata["ci_flags"][Labels.NO_CI_CACHE]:
-                ci_cache = CiCache(s3, indata["jobs_data"]["digests"]).update()
-                job_config = CI_CONFIG.get_job_config(check_name)
-                if ci_cache.is_successful(
-                    check_name,
-                    args.batch,
-                    job_config.num_batches,
-                    job_config.required_on_release_branch,
-                ):
-                    job_status = ci_cache.get_successful(
-                        check_name, args.batch, job_config.num_batches
-                    )
-                    assert job_status, "BUG"
-                    _create_gh_status(
-                        commit,
-                        check_name,
-                        args.batch,
-                        job_config.num_batches,
-                        job_status,
-                    )
-                    previous_status = job_status.status
-                    GHActions.print_in_group("Commit Status Data", job_status)
-
-        if previous_status and not args.force:
+        os.environ["CHECK_NAME"] = args.job_name
+        run_command = (
+            "./tests/ci/" + CI_CONFIG.get_job_config(args.job_name).run_command
+        )
+        if ".py" in run_command:
+            run_command = "python3 " + run_command
+        print(f"Going to start run command [{run_command}]")
+        process = subprocess.run(
+            run_command,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            text=True,
+            check=False,
+            shell=True,
+        )
+        if process.returncode == 0:
+            print(f"Run action done for: [{args.job_name}]")
+        else:
             print(
                 f"Run action failed for: [{args.job_name}] with exit code [{process.returncode}]"
             )
