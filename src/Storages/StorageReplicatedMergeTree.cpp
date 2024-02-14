@@ -513,8 +513,15 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             if (same_structure)
             {
                 Coordination::Stat metadata_stat;
-                current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+                current_zookeeper->get(fs::path(zookeeper_path) / "metadata", &metadata_stat);
+
+                /** We change metadata_snapshot so that `createReplica` method will create `metadata_version` node in ZooKeeper
+                  * with version of table '/metadata' node in Zookeeper.
+                  *
+                  * Otherwise `metadata_version` for not first replica will be initialized with 0 by default.
+                  */
                 setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_stat.version));
+                metadata_snapshot = getInMemoryMetadataPtr();
             }
         }
         catch (Coordination::Exception & e)
