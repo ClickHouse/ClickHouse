@@ -69,7 +69,10 @@ bool AsynchronousBoundedReadBuffer::hasPendingDataToRead()
             return false;
 
         if (file_offset_of_buffer_end > *read_until_position)
-            throwReadBeyondLastOffset();
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Read beyond last offset ({} > {}): file size = {}, info: {}",
+                file_offset_of_buffer_end, *read_until_position, impl->getFileSize(), impl->getInfoForLog());
     }
 
     return true;
@@ -98,18 +101,6 @@ IAsynchronousReader::Result AsynchronousBoundedReadBuffer::readSync(char * data,
     return reader.execute(request);
 }
 
-size_t AsynchronousBoundedReadBuffer::getBufferSizeForReading() const
-{
-    size_t buffer_size = chooseBufferSizeForRemoteReading(read_settings, impl->getFileSize());
-    if (read_until_position)
-    {
-        if (file_offset_of_buffer_end > *read_until_position)
-            throwReadBeyondLastOffset();
-        buffer_size = std::min(buffer_size, *read_until_position - file_offset_of_buffer_end);
-    }
-    return buffer_size;
-}
-
 void AsynchronousBoundedReadBuffer::prefetch(Priority priority)
 {
     if (prefetch_future.valid())
@@ -121,7 +112,7 @@ void AsynchronousBoundedReadBuffer::prefetch(Priority priority)
     last_prefetch_info.submit_time = std::chrono::system_clock::now();
     last_prefetch_info.priority = priority;
 
-    prefetch_buffer.resize(getBufferSizeForReading());
+    prefetch_buffer.resize(chooseBufferSizeForRemoteReading(read_settings, impl->getFileSize()));
     prefetch_future = readAsync(prefetch_buffer.data(), prefetch_buffer.size(), priority);
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
 }
@@ -163,16 +154,6 @@ void AsynchronousBoundedReadBuffer::setReadUntilPosition(size_t position)
     }
 }
 
-void AsynchronousBoundedReadBuffer::throwReadBeyondLastOffset() const
-{
-    size_t file_size = impl->getFileSize();
-    size_t read_end_position = read_until_position ? *read_until_position : file_size;
-    throw Exception(
-        ErrorCodes::LOGICAL_ERROR,
-        "Read beyond last offset ({} > {}): file size = {}, info: {}",
-        file_offset_of_buffer_end, read_end_position, file_size, impl->getInfoForLog());
-}
-
 void AsynchronousBoundedReadBuffer::appendToPrefetchLog(
     FilesystemPrefetchState state,
     int64_t size,
@@ -204,6 +185,7 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
         return false;
 
     chassert(file_offset_of_buffer_end <= impl->getFileSize());
+    size_t old_file_offset_of_buffer_end = file_offset_of_buffer_end;
 
     IAsynchronousReader::Result result;
     if (prefetch_future.valid())
@@ -228,7 +210,7 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     }
     else
     {
-        memory.resize(getBufferSizeForReading());
+        memory.resize(chooseBufferSizeForRemoteReading(read_settings, impl->getFileSize()));
 
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousRemoteReadWaitMicroseconds);
@@ -238,6 +220,9 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedBytes, result.size);
     }
+
+    bytes_to_ignore = 0;
+    resetWorkingBuffer();
 
     size_t bytes_read = result.size - result.offset;
     if (bytes_read)
@@ -249,7 +234,6 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     }
 
     file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
-    bytes_to_ignore = 0;
 
     /// In case of multiple files for the same file in clickhouse (i.e. log family)
     /// file_offset_of_buffer_end will not match getImplementationBufferOffset()
@@ -257,9 +241,19 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     chassert(file_offset_of_buffer_end <= impl->getFileSize());
 
     if (read_until_position && (file_offset_of_buffer_end > *read_until_position))
-        throwReadBeyondLastOffset();
+    {
+        size_t excessive_bytes_read = file_offset_of_buffer_end - *read_until_position;
 
-    return bytes_read;
+        if (excessive_bytes_read > working_buffer.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "File offset moved too far: old_file_offset = {}, new_file_offset = {}, read_until_position = {}, bytes_read = {}",
+                            old_file_offset_of_buffer_end, file_offset_of_buffer_end, *read_until_position, bytes_read);
+
+        working_buffer.resize(working_buffer.size() - excessive_bytes_read);
+        file_offset_of_buffer_end = *read_until_position;
+    }
+
+    return !working_buffer.empty();
 }
 
 

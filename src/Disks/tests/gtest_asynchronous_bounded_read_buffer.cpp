@@ -35,7 +35,7 @@ private:
 
 String getAlphabetWithDigits()
 {
-    String contents = "";
+    String contents;
     for (char c = 'a'; c <= 'z'; ++c)
         contents += c;
     for (char c = '0'; c <= '9'; ++c)
