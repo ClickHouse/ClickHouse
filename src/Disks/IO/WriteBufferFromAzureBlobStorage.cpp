@@ -126,8 +126,6 @@ void WriteBufferFromAzureBlobStorage::allocateBuffer()
 
 void WriteBufferFromAzureBlobStorage::reallocateBuffer()
 {
-    chassert(offset() == 0);
-
     if (available() > 0)
         return;
 
