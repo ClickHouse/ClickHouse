@@ -11,6 +11,7 @@
 #include <Storages/StorageFactory.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
@@ -41,35 +42,35 @@ template <typename TStorageKafka>
 rd_kafka_resp_err_t
 StorageKafkaInterceptors<TStorageKafka>::rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_thread_type_t thread_type, const char *, void * ctx)
 {
-    TStorageKafka * self = reinterpret_cast<TStorageKafka *>(ctx);
-    CurrentMetrics::add(CurrentMetrics::KafkaLibrdkafkaThreads, 1);
+        TStorageKafka * self = reinterpret_cast<TStorageKafka *>(ctx);
+        CurrentMetrics::add(CurrentMetrics::KafkaLibrdkafkaThreads, 1);
 
-    const auto & storage_id = self->getStorageID();
-    const auto & table = storage_id.getTableName();
+        const auto & storage_id = self->getStorageID();
+        const auto & table = storage_id.getTableName();
 
-    switch (thread_type)
-    {
-        case RD_KAFKA_THREAD_MAIN:
-            setThreadName(("rdk:m/" + table.substr(0, 9)).c_str());
-            break;
-        case RD_KAFKA_THREAD_BACKGROUND:
-            setThreadName(("rdk:bg/" + table.substr(0, 8)).c_str());
-            break;
-        case RD_KAFKA_THREAD_BROKER:
-            setThreadName(("rdk:b/" + table.substr(0, 9)).c_str());
-            break;
-    }
+        switch (thread_type)
+        {
+            case RD_KAFKA_THREAD_MAIN:
+                setThreadName(("rdk:m/" + table.substr(0, 9)).c_str());
+                break;
+            case RD_KAFKA_THREAD_BACKGROUND:
+                setThreadName(("rdk:bg/" + table.substr(0, 8)).c_str());
+                break;
+            case RD_KAFKA_THREAD_BROKER:
+                setThreadName(("rdk:b/" + table.substr(0, 9)).c_str());
+                break;
+        }
 
-    /// Create ThreadStatus to track memory allocations from librdkafka threads.
-    //
-    /// And store them in a separate list (thread_statuses) to make sure that they will be destroyed,
-    /// regardless how librdkafka calls the hooks.
-    /// But this can trigger use-after-free if librdkafka will not destroy threads after rd_kafka_wait_destroyed()
-    auto thread_status = std::make_shared<ThreadStatus>();
-    std::lock_guard lock(self->thread_statuses_mutex);
-    self->thread_statuses.emplace_back(std::move(thread_status));
+        /// Create ThreadStatus to track memory allocations from librdkafka threads.
+        //
+        /// And store them in a separate list (thread_statuses) to make sure that they will be destroyed,
+        /// regardless how librdkafka calls the hooks.
+        /// But this can trigger use-after-free if librdkafka will not destroy threads after rd_kafka_wait_destroyed()
+        auto thread_status = std::make_shared<ThreadStatus>();
+        std::lock_guard lock(self->thread_statuses_mutex);
+        self->thread_statuses.emplace_back(std::move(thread_status));
 
-    return RD_KAFKA_RESP_ERR_NO_ERROR;
+        return RD_KAFKA_RESP_ERR_NO_ERROR;
 }
 
 template <typename TStorageKafka>
@@ -80,16 +81,16 @@ StorageKafkaInterceptors<TStorageKafka>::rdKafkaOnThreadExit(rd_kafka_t *, rd_ka
     CurrentMetrics::sub(CurrentMetrics::KafkaLibrdkafkaThreads, 1);
 
     std::lock_guard lock(self->thread_statuses_mutex);
-    const auto it = std::find_if(
-        self->thread_statuses.begin(),
-        self->thread_statuses.end(),
-        [](const auto & thread_status_ptr) { return thread_status_ptr.get() == current_thread; });
+    const auto it = std::find_if(self->thread_statuses.begin(), self->thread_statuses.end(), [](const auto & thread_status_ptr)
+    {
+        return thread_status_ptr.get() == current_thread;
+    });
     if (it == self->thread_statuses.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No thread status for this librdkafka thread.");
 
     self->thread_statuses.erase(it);
 
-    return RD_KAFKA_RESP_ERR_NO_ERROR;
+        return RD_KAFKA_RESP_ERR_NO_ERROR;
 }
 
 template <typename TStorageKafka>
@@ -369,6 +370,8 @@ void registerStorageKafka(StorageFactory & factory)
                 args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
         }
 
+        //return std::make_shared<StorageKafka>(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
+        // [[maybe_unused]] auto * a = new StorageKafka(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
         return std::make_shared<StorageKafka>(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
     };
 

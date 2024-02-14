@@ -60,13 +60,6 @@ public:
     bool isSystemStorage() const override { return true; }
 
     bool supportsTransactions() const override { return true; }
-    bool supportsIndexForIn() const override { return true; }
-
-    bool mayBenefitFromIndexForIn(
-        const ASTPtr & left_in_operand, ContextPtr /* query_context */, const StorageMetadataPtr & /* metadata_snapshot */) const override
-    {
-        return left_in_operand->as<ASTIdentifier>() && left_in_operand->getColumnName() == "number";
-    }
 
 private:
     friend class ReadFromSystemNumbersStep;

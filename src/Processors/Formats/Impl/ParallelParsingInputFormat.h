@@ -111,7 +111,7 @@ public:
         // bump into reader thread on wraparound.
         processing_units.resize(params.max_threads + 2);
 
-        LOG_TRACE(&Poco::Logger::get("ParallelParsingInputFormat"), "Parallel parsing is used");
+        LOG_TRACE(getLogger("ParallelParsingInputFormat"), "Parallel parsing is used");
     }
 
     ~ParallelParsingInputFormat() override
@@ -135,7 +135,7 @@ public:
 
 private:
 
-    Chunk generate() override final;
+    Chunk read() override final;
 
     void onCancel() override final
     {
@@ -333,7 +333,7 @@ private:
     /// threads. This function is used by segmentator and parsed threads.
     /// readImpl() is called from the main thread, so the exception handling
     /// is different.
-    void onBackgroundException(size_t offset);
+    void onBackgroundException();
 };
 
 }

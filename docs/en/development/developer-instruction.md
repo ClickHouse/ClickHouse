@@ -7,42 +7,39 @@ description: Prerequisites and an overview of how to build ClickHouse
 
 # Getting Started Guide for Building ClickHouse
 
-The building of ClickHouse is supported on Linux, FreeBSD and macOS.
+ClickHouse can be build on Linux, FreeBSD and macOS. If you use Windows, you can still build ClickHouse in a virtual machine running Linux, e.g. [VirtualBox](https://www.virtualbox.org/) with Ubuntu.
 
-If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/#download. Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command-line terminal in Ubuntu, please locate a program containing the word “terminal” in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
-
-ClickHouse cannot work or build on a 32-bit system. You should acquire access to a 64-bit system and you can continue reading.
+ClickHouse requires a 64-bit system to compile and run, 32-bit systems do not work.
 
 ## Creating a Repository on GitHub {#creating-a-repository-on-github}
 
-To start working with ClickHouse repository you will need a GitHub account.
+To start developing for ClickHouse you will need a [GitHub](https://www.virtualbox.org/) account. Please also generate a SSH key locally (if you don't have one already) and upload the public key to GitHub as this is a prerequisite for contributing patches.
 
-You probably already have one, but if you do not, please register at https://github.com. In case you do not have SSH keys, you should generate them and then upload them on GitHub. It is required for sending over your patches. It is also possible to use the same SSH keys that you use with any other SSH servers - probably you already have those.
+Next, create a fork of the [ClickHouse repository](https://github.com/ClickHouse/ClickHouse/) in your personal account by clicking the "fork" button in the upper right corner.
 
-Create a fork of ClickHouse repository. To do that please click on the “fork” button in the upper right corner at https://github.com/ClickHouse/ClickHouse. It will fork your own copy of ClickHouse/ClickHouse to your account.
+To contribute, e.g. a fix for an issue or a feature, please commit your changes to a branch in your fork, then create a "pull request" with the changes to the main repository.
 
-The development process consists of first committing the intended changes into your fork of ClickHouse and then creating a “pull request” for these changes to be accepted into the main repository (ClickHouse/ClickHouse).
+For working with Git repositories, please install `git`. In Ubuntu run these commands in a terminal:
 
-To work with Git repositories, please install `git`. To do that in Ubuntu you would run in the command line terminal:
+```sh
+sudo apt update
+sudo apt install git
+```
 
-    sudo apt update
-    sudo apt install git
-
-A brief manual on using Git can be found [here](https://education.github.com/git-cheat-sheet-education.pdf).
-For a detailed manual on Git see [here](https://git-scm.com/book/en/v2).
+A cheatsheet for using Git can be found [here](https://education.github.com/git-cheat-sheet-education.pdf). The detailed manual for Git is [here](https://git-scm.com/book/en/v2).
 
 ## Cloning a Repository to Your Development Machine {#cloning-a-repository-to-your-development-machine}
 
-Next, you need to download the source files onto your working machine. This is called “to clone a repository” because it creates a local copy of the repository on your working machine.
+First, download the source files to your working machine, i.e. clone the repository:
 
-Run in your terminal:
+```sh
+git clone git@github.com:your_github_username/ClickHouse.git  # replace placeholder with your GitHub user name
+cd ClickHouse
+```
 
-    git clone git@github.com:your_github_username/ClickHouse.git  # replace placeholder with your GitHub user name
-    cd ClickHouse
+This command creates a directory `ClickHouse/` containing the source code of ClickHouse. If you specify a custom checkout directory after the URL but it is important that this path does not contain whitespaces as it may lead to problems with the build later on.
 
-This command will create a directory `ClickHouse/` containing the source code of ClickHouse. If you specify a custom checkout directory (after the URL), it is important that this path does not contain whitespaces as it may lead to problems with the build system.
-
-To make library dependencies available for the build, the ClickHouse repository uses Git submodules, i.e. references to external repositories. These are not checked out by default. To do so, you can either
+The ClickHouse repository uses Git submodules, i.e. references to external repositories (usually 3rd party libraries used by ClickHouse). These are not checked out by default. To do so, you can either
 
 - run `git clone` with option `--recurse-submodules`,
 
@@ -52,7 +49,7 @@ To make library dependencies available for the build, the ClickHouse repository 
 
 You can check the Git status with the command: `git submodule status`.
 
-If you get the following error message:
+If you get the following error message
 
     Permission denied (publickey).
     fatal: Could not read from remote repository.
@@ -60,7 +57,7 @@ If you get the following error message:
     Please make sure you have the correct access rights
     and the repository exists.
 
-It generally means that the SSH keys for connecting to GitHub are missing. These keys are normally located in `~/.ssh`. For SSH keys to be accepted you need to upload them in the settings section of GitHub UI.
+it generally means that the SSH keys for connecting to GitHub are missing. These keys are normally located in `~/.ssh`. For SSH keys to be accepted you need to upload them in GitHub's settings.
 
 You can also clone the repository via https protocol:
 
@@ -74,12 +71,17 @@ You can also add original ClickHouse repo address to your local repository to pu
 
 After successfully running this command you will be able to pull updates from the main ClickHouse repo by running `git pull upstream master`.
 
+:::note 
+Instructions below assume you are building on Linux. If you are cross-compiling or building on macOS, please also check for operating system and architecture specific guides, such as building [on macOS for macOS](build-osx.md), [on Linux for macOS](build-cross-osx.md), [on Linux for Linux/RISC-V](build-cross-riscv.md) and so on.
+:::
+
 ## Build System {#build-system}
 
 ClickHouse uses CMake and Ninja for building.
 
-CMake - a meta-build system that can generate Ninja files (build tasks).
-Ninja - a smaller build system with a focus on the speed used to execute those cmake generated tasks.
+- CMake - a meta-build system that can generate Ninja files (build tasks).
+
+- Ninja - a smaller build system with a focus on the speed used to execute those cmake generated tasks.
 
 To install on Ubuntu, Debian or Mint run `sudo apt install cmake ninja-build`.
 

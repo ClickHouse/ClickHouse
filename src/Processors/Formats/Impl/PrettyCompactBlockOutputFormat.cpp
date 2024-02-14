@@ -48,8 +48,8 @@ GridSymbols ascii_grid_symbols {
 
 }
 
-PrettyCompactBlockOutputFormat::PrettyCompactBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_, bool mono_block_)
-    : PrettyBlockOutputFormat(out_, header, format_settings_, mono_block_)
+PrettyCompactBlockOutputFormat::PrettyCompactBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_, bool mono_block_, bool color_)
+    : PrettyBlockOutputFormat(out_, header, format_settings_, mono_block_, color_)
 {
 }
 
@@ -87,18 +87,18 @@ void PrettyCompactBlockOutputFormat::writeHeader(
             for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
                 writeCString(grid_symbols.dash, out);
 
-            if (format_settings.pretty.color)
+            if (color)
                 writeCString("\033[1m", out);
             writeString(col.name, out);
-            if (format_settings.pretty.color)
+            if (color)
                 writeCString("\033[0m", out);
         }
         else
         {
-            if (format_settings.pretty.color)
+            if (color)
                 writeCString("\033[1m", out);
             writeString(col.name, out);
-            if (format_settings.pretty.color)
+            if (color)
                 writeCString("\033[0m", out);
 
             for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)

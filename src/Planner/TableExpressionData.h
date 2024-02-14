@@ -63,7 +63,7 @@ public:
     void addColumn(const NameAndTypePair & column, const ColumnIdentifier & column_identifier)
     {
         if (hasColumn(column.name))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column with name {} already exists");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column with name {} already exists", column.name);
 
         addColumnImpl(column, column_identifier);
     }
@@ -80,9 +80,11 @@ public:
     }
 
     /// Add alias column name
-    void addAliasColumnName(const std::string & column_name)
+    void addAliasColumnName(const std::string & column_name, const ColumnIdentifier & column_identifier)
     {
         alias_columns_names.insert(column_name);
+
+        column_name_to_column_identifier.emplace(column_name, column_identifier);
     }
 
     /// Get alias columns names

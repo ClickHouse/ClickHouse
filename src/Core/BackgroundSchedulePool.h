@@ -106,8 +106,10 @@ public:
     bool schedule();
 
     /// Schedule for execution after specified delay.
-    /// If overwrite is set then the task will be re-scheduled (if it was already scheduled, i.e. delayed == true).
-    bool scheduleAfter(size_t milliseconds, bool overwrite = true);
+    /// If overwrite is set, and the task is already scheduled with a delay (delayed == true),
+    /// the task will be re-scheduled with the new delay.
+    /// If only_if_scheduled is set, don't do anything unless the task is already scheduled with a delay.
+    bool scheduleAfter(size_t milliseconds, bool overwrite = true, bool only_if_scheduled = false);
 
     /// Further attempts to schedule become no-op. Will wait till the end of the current execution of the task.
     void deactivate();

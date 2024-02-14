@@ -60,7 +60,7 @@ private:
     Block right_sample_block;
     Block right_sample_block_with_storage_column_names;
     Block sample_block_with_columns_to_add;
-    Poco::Logger * log;
+    LoggerPtr log;
 
 };
 

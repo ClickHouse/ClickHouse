@@ -1,0 +1,103 @@
+Array(UInt8)	[1,2,3]
+Array(UInt8)	[1,2,3]
+String	str_1
+Nullable(String)	str_1
+String	str_1
+Nullable(String)	str_1
+Variant(Array(UInt8), String)	str_1
+Variant(Array(UInt8), String)	str_1
+Array(UInt8)	[1,2,3]
+Array(UInt8)	[1,2,3]
+String	str_1
+Nullable(String)	str_1
+String	str_1
+Nullable(String)	str_1
+Variant(Array(UInt8), String)	str_1
+Variant(Array(UInt8), String)	str_1
+Array(UInt8)	[1,2,3]
+Array(UInt8)	[1,2,3]
+String	str_1
+Nullable(String)	str_1
+String	str_1
+Nullable(String)	str_1
+Variant(Array(UInt8), String)	str_1
+Variant(Array(UInt8), String)	str_1
+String	str_0
+String	str_1
+String	str_2
+String	str_3
+Nullable(String)	str_0
+Nullable(String)	str_1
+Nullable(String)	str_2
+Nullable(String)	str_3
+Array(UInt64)	[0]
+Array(UInt64)	[0,1]
+Array(UInt64)	[0,1,2]
+Array(UInt64)	[0,1,2,3]
+Array(UInt64)	[0]
+Array(UInt64)	[0,1]
+Array(UInt64)	[0,1,2]
+Array(UInt64)	[0,1,2,3]
+String	str_0
+String	str_1
+String	str_2
+String	str_3
+Nullable(String)	str_0
+Nullable(String)	str_1
+Nullable(String)	str_2
+Nullable(String)	str_3
+Variant(Array(UInt64), String)	str_0
+Variant(Array(UInt64), String)	str_1
+Variant(Array(UInt64), String)	str_2
+Variant(Array(UInt64), String)	str_3
+Variant(Array(UInt64), String)	str_0
+Variant(Array(UInt64), String)	str_1
+Variant(Array(UInt64), String)	str_2
+Variant(Array(UInt64), String)	str_3
+Variant(Array(UInt64), String)	str_0
+Variant(Array(UInt64), String)	[0,1]
+Variant(Array(UInt64), String)	str_2
+Variant(Array(UInt64), String)	[0,1,2,3]
+Variant(Array(UInt64), String)	str_0
+Variant(Array(UInt64), String)	[0,1]
+Variant(Array(UInt64), String)	str_2
+Variant(Array(UInt64), String)	[0,1,2,3]
+Variant(Array(UInt64), String)	str_0
+Variant(Array(UInt64), String)	[0,1]
+Variant(Array(UInt64), String)	str_2
+Variant(Array(UInt64), String)	[0,1,2,3]
+Variant(Array(UInt64), String)	str_0
+Variant(Array(UInt64), String)	[0,1]
+Variant(Array(UInt64), String)	str_2
+Variant(Array(UInt64), String)	[0,1,2,3]
+Variant(Array(UInt64), String, UInt64)	[0]
+Variant(Array(UInt64), String, UInt64)	1
+Variant(Array(UInt64), String, UInt64)	str_2
+Variant(Array(UInt64), String, UInt64)	[0,1,2,3]
+Variant(Array(UInt64), String, UInt64)	4
+Variant(Array(UInt64), String, UInt64)	str_5
+Variant(Array(UInt64), String, UInt64)	[0]
+Variant(Array(UInt64), String, UInt64)	1
+Variant(Array(UInt64), String, UInt64)	str_2
+Variant(Array(UInt64), String, UInt64)	[0,1,2,3]
+Variant(Array(UInt64), String, UInt64)	4
+Variant(Array(UInt64), String, UInt64)	str_5
+Variant(Array(UInt64), String, UInt64)	[0]
+Variant(Array(UInt64), String, UInt64)	1
+Variant(Array(UInt64), String, UInt64)	str_2
+Variant(Array(UInt64), String, UInt64)	[0,1,2,3]
+Variant(Array(UInt64), String, UInt64)	4
+Variant(Array(UInt64), String, UInt64)	str_5
+Variant(Array(UInt64), String, UInt64)	[0]
+Variant(Array(UInt64), String, UInt64)	1
+Variant(Array(UInt64), String, UInt64)	str_2
+Variant(Array(UInt64), String, UInt64)	[0,1,2,3]
+Variant(Array(UInt64), String, UInt64)	4
+Variant(Array(UInt64), String, UInt64)	str_5
+Array(Variant(String, UInt8))	[1,'str_1',2,'str_2']
+Array(Variant(Array(String), Array(UInt8)))	[[1,2,3],['str_1','str_2','str_3']]
+Array(Variant(Array(UInt8), Array(Variant(Array(String), Array(UInt8)))))	[[[1,2,3],['str_1','str_2','str_3']],[1,2,3]]
+Array(Variant(Array(Array(UInt8)), Array(UInt8)))	[[1,2,3],[[1,2,3]]]
+Map(String, Variant(String, UInt8))	{'a':1,'b':'str_1'}
+Map(String, Variant(Map(String, Variant(String, UInt8)), UInt8))	{'a':1,'b':{'c':2,'d':'str_1'}}
+Map(String, Variant(Array(Array(UInt8)), Array(UInt8), UInt8))	{'a':1,'b':[1,2,3],'c':[[4,5,6]]}

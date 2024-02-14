@@ -1,12 +1,10 @@
 #pragma once
+
 #include <Core/UUID.h>
+#include <Common/Logger.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
-namespace Poco
-{
-    class Logger;
-}
 
 namespace DB
 {

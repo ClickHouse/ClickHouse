@@ -53,10 +53,11 @@ DataTypePtr getCoordinationErrorCodesEnumType()
                 {"ZCLOSING",                    static_cast<Int8>(Coordination::Error::ZCLOSING)},
                 {"ZNOTHING",                    static_cast<Int8>(Coordination::Error::ZNOTHING)},
                 {"ZSESSIONMOVED",               static_cast<Int8>(Coordination::Error::ZSESSIONMOVED)},
+                {"ZNOTREADONLY",                static_cast<Int8>(Coordination::Error::ZNOTREADONLY)},
             });
 }
 
-NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
+ColumnsDescription ZooKeeperLogElement::getColumnsDescription()
 {
     auto type_enum = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -115,10 +116,11 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
                 {"CONNECTING",              static_cast<Int16>(Coordination::State::CONNECTING)},
                 {"ASSOCIATING",             static_cast<Int16>(Coordination::State::ASSOCIATING)},
                 {"CONNECTED",               static_cast<Int16>(Coordination::State::CONNECTED)},
+                {"READONLY",                static_cast<Int16>(Coordination::State::READONLY)},
                 {"NOTCONNECTED",            static_cast<Int16>(Coordination::State::NOTCONNECTED)},
             });
 
-    return
+    return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"type", std::move(type_enum)},

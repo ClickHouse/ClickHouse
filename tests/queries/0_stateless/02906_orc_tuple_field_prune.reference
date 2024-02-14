@@ -1,9 +1,9 @@
 int64_column	Nullable(Int64)					
 string_column	Nullable(String)					
 float64_column	Nullable(Float64)					
-tuple_column	Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64))					
-array_tuple_column	Array(Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64)))					
-map_tuple_column	Map(String, Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64)))					
+tuple_column	Tuple(\n    a Nullable(String),\n    b Nullable(Float64),\n    c Nullable(Int64))					
+array_tuple_column	Array(Tuple(\n    a Nullable(String),\n    b Nullable(Float64),\n    c Nullable(Int64)))					
+map_tuple_column	Map(String, Tuple(\n    a Nullable(String),\n    b Nullable(Float64),\n    c Nullable(Int64)))					
 -- { echoOn }
 -- Test primitive types
 select int64_column, string_column, float64_column from file('02906.orc') where int64_column % 15 = 0;

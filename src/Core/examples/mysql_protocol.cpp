@@ -314,12 +314,12 @@ int main(int argc, char ** argv)
                 return 1;
             }
 
-            auto host = options.at("host").as<DB::String>();
-            auto port = options.at("port").as<DB::Int32>();
-            auto master_user = options.at("user").as<DB::String>();
-            auto master_password = options.at("password").as<DB::String>();
-            auto gtid_sets = options.at("gtid").as<DB::String>();
-            auto replicate_db = options.at("db").as<DB::String>();
+            auto host = options.at("host").as<String>();
+            auto port = options.at("port").as<Int32>();
+            auto master_user = options.at("user").as<String>();
+            auto master_password = options.at("password").as<String>();
+            auto gtid_sets = options.at("gtid").as<String>();
+            auto replicate_db = options.at("db").as<String>();
             auto binlog_checksum = options.at("binlog_checksum").as<String>();
 
             std::cerr << "Master Host: " << host << ", Port: " << port << ", User: " << master_user << ", Password: " << master_password

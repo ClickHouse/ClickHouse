@@ -1,6 +1,6 @@
 <test>
     <create_query>CREATE TABLE test_join_used_flags (i64 Int64, i32 Int32) ENGINE = Memory</create_query>
-    <fill_query>INSERT INTO test_join_used_flags SELECT number AS i64, rand32() AS i32 FROM numbers(20000000)</fill_query>
+    <fill_query>INSERT INTO test_join_used_flags SELECT number AS i64, rand32() AS i32 FROM numbers_mt(1500000)</fill_query>
     <query>SELECT l.i64, r.i64, l.i32, r.i32 FROM test_join_used_flags l RIGHT JOIN test_join_used_flags r USING i64 format Null</query>
     <drop_query>DROP TABLE IF EXISTS test_join_used_flags</drop_query>
 </test>

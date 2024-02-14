@@ -1483,6 +1483,17 @@ public:
             return getReturnTypeImplStatic(new_arguments, context);
         }
 
+        /// Special case - one or both arguments are IPv6
+        if (isIPv6(arguments[0]) || isIPv6(arguments[1]))
+        {
+            DataTypes new_arguments {
+                    isIPv6(arguments[0]) ? std::make_shared<DataTypeUInt128>() : arguments[0],
+                    isIPv6(arguments[1]) ? std::make_shared<DataTypeUInt128>() : arguments[1],
+            };
+
+            return getReturnTypeImplStatic(new_arguments, context);
+        }
+
 
         if constexpr (is_plus || is_minus)
         {
@@ -2174,6 +2185,25 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 {
                     isIPv4(arguments[1].type) ? castColumn(arguments[1], std::make_shared<DataTypeUInt32>()) : arguments[1].column,
                     isIPv4(arguments[1].type) ? std::make_shared<DataTypeUInt32>() : arguments[1].type,
+                    arguments[1].name
+                }
+            };
+
+            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
+        }
+
+        /// Special case - one or both arguments are IPv6
+        if (isIPv6(arguments[0].type) || isIPv6(arguments[1].type))
+        {
+            ColumnsWithTypeAndName new_arguments {
+                {
+                    isIPv6(arguments[0].type) ? castColumn(arguments[0], std::make_shared<DataTypeUInt128>()) : arguments[0].column,
+                    isIPv6(arguments[0].type) ? std::make_shared<DataTypeUInt128>() : arguments[0].type,
+                    arguments[0].name,
+                },
+                {
+                    isIPv6(arguments[1].type) ? castColumn(arguments[1], std::make_shared<DataTypeUInt128>()) : arguments[1].column,
+                    isIPv6(arguments[1].type) ? std::make_shared<DataTypeUInt128>() : arguments[1].type,
                     arguments[1].name
                 }
             };

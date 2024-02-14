@@ -64,7 +64,7 @@ class MergeTreeConditionInverted final : public IMergeTreeIndexCondition, WithCo
 {
 public:
     MergeTreeConditionInverted(
-            const SelectQueryInfo & query_info,
+            const ActionsDAGPtr & filter_actions_dag,
             ContextPtr context,
             const Block & index_sample_block,
             const GinFilterParameters & params_,
@@ -101,6 +101,7 @@ private:
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,
+            FUNCTION_MATCH,
             FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,
@@ -116,6 +117,7 @@ private:
                 : function(function_), key_column(key_column_), gin_filter(std::move(const_gin_filter_)) {}
 
         Function function = FUNCTION_UNKNOWN;
+
         /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS and FUNCTION_MULTI_SEARCH
         size_t key_column;
 
@@ -169,9 +171,7 @@ public:
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & /*settings*/) const override;
-    MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const override;
-
-    bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
+    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const override;
 
     GinFilterParameters params;
     /// Function for selecting next token.

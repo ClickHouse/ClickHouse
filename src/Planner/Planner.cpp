@@ -71,7 +71,6 @@
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerSorting.h>
 #include <Planner/PlannerWindowFunctions.h>
-#include <Planner/ActionsChain.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/PlannerJoinTree.h>
@@ -97,14 +96,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
-
-/** ClickHouse query planner.
-  *
-  * TODO: Support projections.
-  * TODO: Support trivial count using partition predicates.
-  * TODO: Support trivial count for table functions.
-  * TODO: Support indexes for IN function.
-  */
 
 namespace
 {
@@ -215,7 +206,7 @@ void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const Planne
         if (!read_from_dummy)
             continue;
 
-        auto filter_actions = ActionsDAG::buildFilterActionsDAG(read_from_dummy->getFilterNodes().nodes, {}, query_context);
+        auto filter_actions = ActionsDAG::buildFilterActionsDAG(read_from_dummy->getFilterNodes().nodes);
         auto & table_expression_data = dummy_storage_to_table_expression_data.at(&read_from_dummy->getStorage());
         table_expression_data->setFilterActions(std::move(filter_actions));
     }
@@ -257,8 +248,9 @@ public:
             && !query_node.isGroupByWithTotals() && !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
         aggregation_with_rollup_or_cube_or_grouping_sets = query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() ||
             query_node.isGroupByWithGroupingSets();
-        aggregation_should_produce_results_in_order_of_bucket_number = query_processing_info.getToStage() == QueryProcessingStage::WithMergeableState &&
-            settings.distributed_aggregation_memory_efficient;
+        aggregation_should_produce_results_in_order_of_bucket_number
+            = query_processing_info.getToStage() == QueryProcessingStage::WithMergeableState
+            && (settings.distributed_aggregation_memory_efficient || settings.enable_memory_bound_merging_of_aggregation_results);
 
         query_has_array_join_in_join_tree = queryHasArrayJoinInJoinTree(query_tree);
         query_has_with_totals_in_any_subquery_in_join_tree = queryHasWithTotalsInAnySubqueryInJoinTree(query_tree);
@@ -374,6 +366,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings.enable_software_prefetch_in_aggregation,
         /* only_merge */ false,
         settings.optimize_group_by_constant_keys,
+        settings.min_hit_rate_to_use_consecutive_keys_optimization,
         stats_collecting_params);
 
     return aggregator_params;
@@ -476,7 +469,8 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         aggregation_analysis_result.aggregate_descriptions,
         query_analysis_result.aggregate_overflow_row,
         settings.max_threads,
-        settings.max_block_size);
+        settings.max_block_size,
+        settings.min_hit_rate_to_use_consecutive_keys_optimization);
 
     bool is_remote_storage = false;
     bool parallel_replicas_from_merge_tree = false;
@@ -906,9 +900,17 @@ void addWindowSteps(QueryPlan & query_plan,
           * has suitable sorting. Also don't create sort steps when there are no
           * columns to sort by, because the sort nodes are confused by this. It
           * happens in case of `over ()`.
+          * Even if full_sort_description of both windows match, in case of different
+          * partitioning we need to add a SortingStep to reshuffle data in the streams.
           */
-        if (!window_description.full_sort_description.empty() &&
-            (i == 0 || !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)))
+
+        bool need_sort = !window_description.full_sort_description.empty();
+        if (need_sort && i != 0)
+        {
+            need_sort = !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)
+                        || (settings.max_threads != 1 && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
+        }
+        if (need_sort)
         {
             SortingStep::Settings sort_settings(*query_context);
 
@@ -1055,7 +1057,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         Planner subquery_planner(
             query_tree,
             subquery_options,
-            planner_context->getGlobalPlannerContext());
+            std::make_shared<GlobalPlannerContext>()); //planner_context->getGlobalPlannerContext());
         subquery_planner.buildQueryPlanIfNeeded();
 
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
@@ -1185,7 +1187,7 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_plan.isInitialized())
         return;
 
-    LOG_TRACE(&Poco::Logger::get("Planner"), "Query {} to stage {}{}",
+    LOG_TRACE(getLogger("Planner"), "Query {} to stage {}{}",
         query_tree->formatConvertedASTForErrorMessage(),
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
@@ -1333,34 +1335,72 @@ void Planner::buildPlanForQueryNode()
     }
 
     collectSets(query_tree, *planner_context);
+
+    const auto & settings = query_context->getSettingsRef();
+    if (query_context->canUseTaskBasedParallelReplicas())
+    {
+        if (planner_context->getPreparedSets().hasSubqueries())
+        {
+            if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");
+
+            auto & mutable_context = planner_context->getMutableQueryContext();
+            mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas to execute a query with IN with subquery");
+        }
+    }
+
     collectTableExpressionData(query_tree, planner_context);
     checkStoragesSupportTransactions(planner_context);
 
     if (!select_query_options.only_analyze)
         collectFiltersForAnalysis(query_tree, planner_context);
 
-    const auto & settings = query_context->getSettingsRef();
-
-    /// Check support for JOIN for parallel replicas with custom key
-    if (planner_context->getTableExpressionNodeToData().size() > 1)
+    if (query_context->canUseTaskBasedParallelReplicas())
     {
-        if (settings.allow_experimental_parallel_reading_from_replicas == 1 || !settings.parallel_replicas_custom_key.value.empty())
+        const auto & table_expression_nodes = planner_context->getTableExpressionNodeToData();
+        for (const auto & it : table_expression_nodes)
         {
-            LOG_DEBUG(
-                &Poco::Logger::get("Planner"),
-                "JOINs are not supported with parallel replicas. Query will be executed without using them.");
+            auto * table_node = it.first->as<TableNode>();
+            if (!table_node)
+                continue;
 
-            auto & mutable_context = planner_context->getMutableQueryContext();
-            mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            mutable_context->setSetting("parallel_replicas_custom_key", String{""});
-        }
-        else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
-        {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
+            const auto & modifiers = table_node->getTableExpressionModifiers();
+            if (modifiers.has_value() && modifiers->hasFinal())
+            {
+                if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
+                else
+                {
+                    LOG_DEBUG(
+                        getLogger("Planner"),
+                        "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
+                    auto & mutable_context = planner_context->getMutableQueryContext();
+                    mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                }
+            }
         }
     }
 
-    /// TODO: Also disable parallel replicas in case of FINAL
+    if (!settings.parallel_replicas_custom_key.value.empty())
+    {
+        /// Check support for JOIN for parallel replicas with custom key
+        if (planner_context->getTableExpressionNodeToData().size() > 1)
+        {
+            if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
+            else
+            {
+                LOG_DEBUG(
+                    getLogger("Planner"),
+                    "JOINs are not supported with parallel replicas. Query will be executed without using them.");
+
+                auto & mutable_context = planner_context->getMutableQueryContext();
+                mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                mutable_context->setSetting("parallel_replicas_custom_key", String{""});
+            }
+        }
+    }
 
     auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
     auto join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,
@@ -1373,7 +1413,7 @@ void Planner::buildPlanForQueryNode()
     query_plan = std::move(join_tree_query_plan.query_plan);
     used_row_policies = std::move(join_tree_query_plan.used_row_policies);
 
-    LOG_TRACE(&Poco::Logger::get("Planner"), "Query {} from stage {} to stage {}{}",
+    LOG_TRACE(getLogger("Planner"), "Query {} from stage {} to stage {}{}",
         query_tree->formatConvertedASTForErrorMessage(),
         QueryProcessingStage::toString(from_stage),
         QueryProcessingStage::toString(select_query_options.to_stage),

@@ -92,13 +92,8 @@ extern const int QUERY_NOT_ALLOWED;
 
 namespace
 {
-constexpr auto RESCHEDULE_MS = 500;
-// const auto CLEANUP_TIMEOUT_MS = 3000;
-constexpr auto MAX_THREAD_WORK_DURATION_MS = 60000; // once per minute leave do reschedule (we can't lock threads in pool forever)
-
 constexpr auto MAX_FAILED_POLL_ATTEMPTS = 10;
 }
-
 // TODO(antaljanosbenjamin): check performance
 
 StorageKafka2::StorageKafka2(
@@ -868,7 +863,7 @@ void StorageKafka2::threadFunc(size_t idx)
 
                 auto ts = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
-                if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
+                if (duration.count() > KAFKA_MAX_THREAD_WORK_DURATION_MS)
                 {
                     LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
                     break;
@@ -885,7 +880,7 @@ void StorageKafka2::threadFunc(size_t idx)
 
     // Wait for attached views
     if (!task->stream_cancelled)
-        task->holder->scheduleAfter(RESCHEDULE_MS);
+        task->holder->scheduleAfter(KAFKA_RESCHEDULE_MS);
 }
 
 bool StorageKafka2::streamToViews(size_t idx)

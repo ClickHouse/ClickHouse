@@ -32,15 +32,11 @@ from pathlib import Path
 from subprocess import CalledProcessError
 from typing import List, Optional
 
+import __main__
 from env_helper import TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import git_runner, is_shallow
-from github_helper import (
-    GitHub,
-    PullRequest,
-    PullRequests,
-    Repository,
-)
+from github_helper import GitHub, PullRequest, PullRequests, Repository
 from ssh import SSHKey
 
 
@@ -423,7 +419,9 @@ class Backport:
             logging.info("Fetching from %s", self._fetch_from)
             fetch_from_repo = self.gh.get_repo(self._fetch_from)
             git_runner(
-                f"git fetch {fetch_from_repo.ssh_url if self.is_remote_ssh else fetch_from_repo.clone_url} {fetch_from_repo.default_branch} --no-tags"
+                "git fetch "
+                f"{fetch_from_repo.ssh_url if self.is_remote_ssh else fetch_from_repo.clone_url} "
+                f"{fetch_from_repo.default_branch} --no-tags"
             )
 
         logging.info("Active releases: %s", ", ".join(self.release_branches))
@@ -443,7 +441,7 @@ class Backport:
             logging.info("Resetting %s to %s/%s", branch, self.remote, branch)
             git_runner(f"git branch -f {branch} {self.remote}/{branch}")
 
-    def receive_prs_for_backport(self):
+    def receive_prs_for_backport(self, reserve_search_days: int) -> None:
         # The commits in the oldest open release branch
         oldest_branch_commits = git_runner(
             "git log --no-merges --format=%H --reverse "
@@ -453,16 +451,18 @@ class Backport:
         since_commit = oldest_branch_commits.split("\n", 1)[0]
         since_date = date.fromisoformat(
             git_runner.run(f"git log -1 --format=format:%cs {since_commit}")
-        )
+        ) - timedelta(days=reserve_search_days)
         # To not have a possible TZ issues
         tomorrow = date.today() + timedelta(days=1)
         logging.info("Receive PRs suppose to be backported")
 
-        self.prs_for_backport = self.gh.get_pulls_from_search(
+        query_args = dict(
             query=f"type:pr repo:{self._fetch_from} -label:{self.backport_created_label}",
             label=",".join(self.labels_to_backport + [self.must_create_backport_label]),
             merged=[since_date, tomorrow],
         )
+        logging.info("Query to find the backport PRs:\n %s", query_args)
+        self.prs_for_backport = self.gh.get_pulls_from_search(**query_args)
         logging.info(
             "PRs to be backported:\n %s",
             "\n ".join([pr.html_url for pr in self.prs_for_backport]),
@@ -584,12 +584,17 @@ def parse_args():
         choices=(Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_CLOUD),
         help="label to filter PRs to backport",
     )
-
     parser.add_argument(
         "--backport-created-label",
         default=Labels.BACKPORTS_CREATED,
         choices=(Labels.BACKPORTS_CREATED, Labels.BACKPORTS_CREATED_CLOUD),
         help="label to mark PRs as backported",
+    )
+    parser.add_argument(
+        "--reserve-search-days",
+        default=0,
+        type=int,
+        help="safity reserve for the PRs search days, necessary for cloud",
     )
 
     parser.add_argument(
@@ -602,16 +607,18 @@ def parse_args():
 
 @contextmanager
 def clear_repo():
-    orig_ref = git_runner("git branch --show-current") or git_runner(
-        "git rev-parse HEAD"
-    )
+    def ref():
+        return git_runner("git branch --show-current") or git_runner(
+            "git rev-parse HEAD"
+        )
+
+    orig_ref = ref()
     try:
         yield
-    except (Exception, KeyboardInterrupt):
-        git_runner(f"git checkout -f {orig_ref}")
-        raise
-    else:
-        git_runner(f"git checkout -f {orig_ref}")
+    finally:
+        current_ref = ref()
+        if orig_ref != current_ref:
+            git_runner(f"git checkout -f {orig_ref}")
 
 
 @contextmanager
@@ -619,15 +626,14 @@ def stash():
     # diff.ignoreSubmodules=all don't show changed submodules
     need_stash = bool(git_runner("git -c diff.ignoreSubmodules=all diff HEAD"))
     if need_stash:
-        git_runner("git stash push --no-keep-index -m 'running cherry_pick.py'")
+        script = (
+            __main__.__file__ if hasattr(__main__, "__file__") else "unknown script"
+        )
+        git_runner(f"git stash push --no-keep-index -m 'running {script}'")
     try:
         with clear_repo():
             yield
-    except (Exception, KeyboardInterrupt):
-        if need_stash:
-            git_runner("git stash pop")
-        raise
-    else:
+    finally:
         if need_stash:
             git_runner("git stash pop")
 
@@ -655,7 +661,7 @@ def main():
     bp.gh.cache_path = temp_path / "gh_cache"
     bp.receive_release_prs()
     bp.update_local_release_branches()
-    bp.receive_prs_for_backport()
+    bp.receive_prs_for_backport(args.reserve_search_days)
     bp.process_backports()
     if bp.error is not None:
         logging.error("Finished successfully, but errors occured!")

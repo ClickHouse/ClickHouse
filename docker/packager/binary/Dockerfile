@@ -49,6 +49,7 @@ RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
     chmod 777 -R /rust && \
     rustup toolchain install nightly-2023-07-04 && \
     rustup default nightly-2023-07-04 && \
+    rustup toolchain remove stable && \
     rustup component add rust-src && \
     rustup target add x86_64-unknown-linux-gnu && \
     rustup target add aarch64-unknown-linux-gnu && \
@@ -71,7 +72,7 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
         zstd \
         zip \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # Download toolchain and SDK for Darwin
 RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
