@@ -8,6 +8,7 @@
     M(Query, "Number of queries to be interpreted and potentially executed. Does not include queries that failed to parse or were rejected due to AST size limits, quota limits or limits on the number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.") \
     M(SelectQuery, "Same as Query, but only for SELECT queries.") \
     M(InsertQuery, "Same as Query, but only for INSERT queries.") \
+    M(InitialQuery, "Same as Query, but only counts initial queries (see is_initial_query).")\
     M(QueriesWithSubqueries, "Count queries with all subqueries") \
     M(SelectQueriesWithSubqueries, "Count SELECT queries with all subqueries") \
     M(InsertQueriesWithSubqueries, "Count INSERT queries with all subqueries") \
@@ -629,6 +630,8 @@ The server successfully detected this situation and will download merged part fr
     M(InterfacePostgreSQLReceiveBytes, "Number of bytes received through PostgreSQL interfaces") \
     \
     M(ParallelReplicasUsedCount, "Number of replicas used to execute a query with task-based parallel replicas") \
+    M(ParallelReplicasAvailableCount, "Number of replicas available to execute a query with task-based parallel replicas") \
+    M(ParallelReplicasUnavailableCount, "Number of replicas which was chosen, but found to be unavailable during query execution with task-based parallel replicas") \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)
