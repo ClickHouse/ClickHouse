@@ -553,11 +553,6 @@ void QueryPipeline::setProcessListElement(QueryStatusPtr elem)
         {
             counting->setProcessListElement(elem);
         }
-
-        if (auto * counting = dynamic_cast<SimpleCountingTransform *>(&input->getProcessor()))
-        {
-            counting->setProcessListElement(elem);
-        }
     }
 }
 

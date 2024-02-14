@@ -580,7 +580,7 @@ BlockIO InterpreterInsertQuery::execute()
         pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {
             auto context_ptr = getContext();
-            auto counting = std::make_shared<SimpleCountingTransform>(in_header, context_ptr->getQuota());
+            auto counting = std::make_shared<CountingTransform>(in_header, nullptr, context_ptr->getQuota());
             counting->setProcessListElement(context_ptr->getProcessListElement());
             counting->setProgressCallback(context_ptr->getProgressCallback());
 
@@ -645,13 +645,6 @@ BlockIO InterpreterInsertQuery::execute()
         auto & chain = presink_chains.at(0);
         chain.appendChain(std::move(sink_chains.at(0)));
 
-        auto context_ptr = getContext();
-        auto counting = std::make_shared<SimpleCountingTransform>(chain.getInputHeader(), context_ptr->getQuota());
-        counting->setProcessListElement(context_ptr->getProcessListElement());
-        counting->setProgressCallback(context_ptr->getProgressCallback());
-
-        chain.addSource(std::move(counting));
-
         if (shouldAddSquashingFroStorage(table))
         {
             bool table_prefers_large_blocks = table->prefersLargeBlocks();
@@ -663,6 +656,12 @@ BlockIO InterpreterInsertQuery::execute()
 
             chain.addSource(std::move(squashing));
         }
+
+        auto context_ptr = getContext();
+        auto counting = std::make_shared<CountingTransform>(chain.getInputHeader(), nullptr, context_ptr->getQuota());
+        counting->setProcessListElement(context_ptr->getProcessListElement());
+        counting->setProgressCallback(context_ptr->getProgressCallback());
+        chain.addSource(std::move(counting));
 
         res.pipeline = QueryPipeline(std::move(presink_chains[0]));
         res.pipeline.setNumThreads(std::min<size_t>(res.pipeline.getNumThreads(), settings.max_threads));

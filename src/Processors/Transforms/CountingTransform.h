@@ -2,7 +2,6 @@
 
 #include <IO/Progress.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
-#include <Processors/ISimpleTransform.h>
 #include <Access/EnabledQuota.h>
 
 
@@ -14,13 +13,17 @@ using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 class ThreadStatus;
 
 /// Proxy class which counts number of written block, rows, bytes
-class CountingBase
+class CountingTransform final : public ExceptionKeepingTransform
 {
 public:
-    explicit CountingBase(
+    explicit CountingTransform(
+        const Block & header,
         ThreadStatus * thread_status_ = nullptr,
         std::shared_ptr<const EnabledQuota> quota_ = nullptr)
-        : thread_status(thread_status_), quota(std::move(quota_)) {}
+        : ExceptionKeepingTransform(header, header)
+        , thread_status(thread_status_), quota(std::move(quota_)) {}
+
+    String getName() const override { return "CountingTransform"; }
 
     void setProgressCallback(const ProgressCallback & callback)
     {
@@ -37,7 +40,13 @@ public:
         return progress;
     }
 
-    void count(const Chunk & chunk);
+    void onConsume(Chunk chunk) override;
+    GenerateResult onGenerate() override
+    {
+        GenerateResult res;
+        res.chunk = std::move(cur_chunk);
+        return res;
+    }
 
 protected:
     Progress progress;
@@ -47,74 +56,7 @@ protected:
 
     /// Quota is used to limit amount of written bytes.
     std::shared_ptr<const EnabledQuota> quota;
-};
-
-class CountingTransform final : public ExceptionKeepingTransform
-{
-public:
-    explicit CountingTransform(
-        const Block & header,
-        ThreadStatus * thread_status_ = nullptr,
-        std::shared_ptr<const EnabledQuota> quota_ = nullptr)
-        : ExceptionKeepingTransform(header, header), counting(thread_status_, std::move(quota_)) {}
-
-    String getName() const override { return "CountingTransform"; }
-    void onConsume(Chunk chunk) override
-    {
-        counting.count(chunk);
-        cur_chunk = std::move(chunk);
-    }
-
-    GenerateResult onGenerate() override
-    {
-        GenerateResult res;
-        res.chunk = std::move(cur_chunk);
-        return res;
-    }
-
-    void setProgressCallback(const ProgressCallback & callback)
-    {
-        counting.setProgressCallback(callback);
-    }
-
-    void setProcessListElement(QueryStatusPtr elem)
-    {
-        counting.setProcessListElement(std::move(elem));
-    }
-
-protected:
-    CountingBase counting;
     Chunk cur_chunk;
-};
-
-class SimpleCountingTransform final : public ISimpleTransform
-{
-public:
-    explicit SimpleCountingTransform(
-        const Block & header,
-        std::shared_ptr<const EnabledQuota> quota_ = nullptr)
-        : ISimpleTransform(header, header, false)
-        , counting(nullptr, std::move(quota_))
-    {}
-
-    String getName() const override { return "SimpleCountingTransform"; }
-    void transform(Chunk & chunk) override
-    {
-        counting.count(chunk);
-    }
-
-    void setProgressCallback(const ProgressCallback & callback)
-    {
-        counting.setProgressCallback(callback);
-    }
-
-    void setProcessListElement(QueryStatusPtr elem)
-    {
-        counting.setProcessListElement(std::move(elem));
-    }
-
-protected:
-    CountingBase counting;
 };
 
 }
