@@ -10,7 +10,16 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 import docker_images_helper
+import upload_result_helper
+from build_check import get_release_or_pr
 from ci_config import CI_CONFIG, Labels
+from clickhouse_helper import (
+    CiLogsCredentials,
+    ClickHouseHelper,
+    get_instance_id,
+    get_instance_type,
+    prepare_tests_results_for_clickhouse,
+)
 from commit_status_helper import (
     CommitStatusData,
     RerunHelper,
@@ -36,15 +45,6 @@ from github import Github
 from pr_info import PRInfo
 from report import SUCCESS, BuildResult, JobReport
 from s3_helper import S3Helper
-from clickhouse_helper import (
-    CiLogsCredentials,
-    ClickHouseHelper,
-    get_instance_id,
-    get_instance_type,
-    prepare_tests_results_for_clickhouse,
-)
-from build_check import get_release_or_pr
-import upload_result_helper
 from version_helper import get_version_from_repo
 
 
@@ -156,6 +156,12 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         help="Used with --run, force the job to run, omitting the ci cache",
     )
     # FIXME: remove, not used
+    parser.add_argument(
+        "--rebuild-all-docker",
+        action="store_true",
+        default=False,
+        help="will create run config for rebuilding all dockers, used in --configure action (for nightly docker job)",
+    )
     parser.add_argument(
         "--rebuild-all-binaries",
         action="store_true",
