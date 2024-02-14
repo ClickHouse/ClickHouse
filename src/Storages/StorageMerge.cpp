@@ -1001,34 +1001,37 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
         Block pipe_header = builder->getHeader();
 
-        if (has_database_virtual_column && !pipe_header.has("_database"))
+        if (!allow_experimental_analyzer)
         {
-            ColumnWithTypeAndName column;
-            column.name = "_database";
-            column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-            column.column = column.type->createColumnConst(0, Field(database_name));
+            if (has_database_virtual_column && !pipe_header.has("_database"))
+            {
+                ColumnWithTypeAndName column;
+                column.name = "_database";
+                column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+                column.column = column.type->createColumnConst(0, Field(database_name));
 
-            auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
-            auto adding_column_actions = std::make_shared<ExpressionActions>(
-                std::move(adding_column_dag), ExpressionActionsSettings::fromContext(modified_context, CompileExpressions::yes));
+                auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+                auto adding_column_actions = std::make_shared<ExpressionActions>(
+                    std::move(adding_column_dag), ExpressionActionsSettings::fromContext(modified_context, CompileExpressions::yes));
 
-            builder->addSimpleTransform([&](const Block & stream_header)
-                                        { return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); });
-        }
+                builder->addSimpleTransform([&](const Block & stream_header)
+                                            { return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); });
+            }
 
-        if (has_table_virtual_column && !pipe_header.has("_table"))
-        {
-            ColumnWithTypeAndName column;
-            column.name = "_table";
-            column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-            column.column = column.type->createColumnConst(0, Field(table_name));
+            if (has_table_virtual_column && !pipe_header.has("_table"))
+            {
+                ColumnWithTypeAndName column;
+                column.name = "_table";
+                column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+                column.column = column.type->createColumnConst(0, Field(table_name));
 
-            auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
-            auto adding_column_actions = std::make_shared<ExpressionActions>(
-                std::move(adding_column_dag), ExpressionActionsSettings::fromContext(modified_context, CompileExpressions::yes));
+                auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+                auto adding_column_actions = std::make_shared<ExpressionActions>(
+                    std::move(adding_column_dag), ExpressionActionsSettings::fromContext(modified_context, CompileExpressions::yes));
 
-            builder->addSimpleTransform([&](const Block & stream_header)
-                                        { return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); });
+                builder->addSimpleTransform([&](const Block & stream_header)
+                                            { return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); });
+            }
         }
 
         /// Subordinary tables could have different but convertible types, like numeric types of different width.

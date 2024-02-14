@@ -88,7 +88,10 @@ public:
             case QueryTreeNodeType::CONSTANT:
             {
                 const auto & constant_node = node->as<ConstantNode &>();
-                result = calculateConstantActionNodeName(constant_node.getValue(), constant_node.getResultType());
+                if (constant_node.hasSourceExpression())
+                    result = calculateActionNodeName(constant_node.getSourceExpression());
+                else
+                    result = calculateConstantActionNodeName(constant_node.getValue(), constant_node.getResultType());
                 break;
             }
             case QueryTreeNodeType::FUNCTION:
@@ -527,7 +530,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     const auto & constant_literal = constant_node.getValue();
     const auto & constant_type = constant_node.getResultType();
 
-    auto constant_node_name = calculateConstantActionNodeName(constant_literal, constant_type);
+    auto constant_node_name = constant_node.hasSourceExpression()
+                                    ? action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression())
+                                    : calculateConstantActionNodeName(constant_literal, constant_type);
 
     ColumnWithTypeAndName column;
     column.name = constant_node_name;
