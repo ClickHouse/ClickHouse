@@ -539,7 +539,6 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
 
         if (*buf.position() == '\r')
             ++buf.position();
-
     }
 }
 
