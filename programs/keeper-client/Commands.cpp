@@ -115,7 +115,7 @@ bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
     else if (ParserKeyword{"PERSISTENT SEQUENTIAL"}.ignore(pos, expected))
         mode = zkutil::CreateMode::PersistentSequential;
 
-    node->args.push_back(mode);
+    node->args.push_back(std::move(mode));
 
     return true;
 }
