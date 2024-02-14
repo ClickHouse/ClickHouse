@@ -81,6 +81,27 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
     bool group_by_use_nulls = planner_context->getQueryContext()->getSettingsRef().group_by_use_nulls &&
         (query_node.isGroupByWithGroupingSets() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube());
 
+    auto add_aggregation_column = [&](const auto & expression_dag_node)
+    {
+        auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
+        /// Const columns are special, the return value of the
+        /// function depens on it, and there is a special case for
+        /// const columns with LowCardinality column (see
+        /// IFunctionOverloadResolver::getReturnType()), and return
+        /// values of the function had been already obtained by the
+        /// QueryAnalyzer::resolveFunction(), and if const-ness of
+        /// the column will be ignored here, the return value of
+        /// the function can be changed, and this is UB.
+        if (typeid_cast<const ColumnConst *>(expression_dag_node->column.get()))
+            available_columns_after_aggregation.emplace_back(nullptr, expression_type_after_aggregation, expression_dag_node->result_name + "__group_by");
+        else
+            available_columns_after_aggregation.emplace_back(nullptr, expression_type_after_aggregation, expression_dag_node->result_name);
+
+        aggregation_keys.push_back(expression_dag_node->result_name);
+        before_aggregation_actions->getOutputs().push_back(expression_dag_node);
+        before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
+    };
+
     if (query_node.hasGroupBy())
     {
         if (query_node.isGroupByWithGroupingSets())
@@ -108,11 +129,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
                         if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
                             continue;
 
-                        auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                        available_columns_after_aggregation.emplace_back(nullptr, expression_type_after_aggregation, expression_dag_node->result_name);
-                        aggregation_keys.push_back(expression_dag_node->result_name);
-                        before_aggregation_actions->getOutputs().push_back(expression_dag_node);
-                        before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
+                        add_aggregation_column(expression_dag_node);
                     }
                 }
             }
@@ -158,11 +175,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
                     if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
                         continue;
 
-                    auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                    available_columns_after_aggregation.emplace_back(nullptr, expression_type_after_aggregation, expression_dag_node->result_name);
-                    aggregation_keys.push_back(expression_dag_node->result_name);
-                    before_aggregation_actions->getOutputs().push_back(expression_dag_node);
-                    before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
+                    add_aggregation_column(expression_dag_node);
                 }
             }
         }
