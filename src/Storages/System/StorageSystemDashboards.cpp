@@ -214,7 +214,6 @@ GROUP BY t
 ORDER BY t WITH FILL STEP {rounding:UInt32}
 )EOQ") }
         },
-        
         /// Default dashboard for ClickHouse Cloud
         {
             { "dashboard", "Cloud overview" },
