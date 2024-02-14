@@ -113,6 +113,9 @@ function test_joins()
 
     # Joins conditions works perfectly with Variant columns matching the underlying data type first and then the actual data
     $CH_CLIENT -nmq "select t1.id, t1.v, variantType(t1.v), t2.id, t2.v, variantType(t2.v) from test1 t1 join test2 t2 on t1.v = t2.v order by t1.id;"
+
+    $CH_CLIENT -q "drop table if exists test1;"
+    $CH_CLIENT -q "drop table if exists test2;"
 }
 
 engines=("Memory" "MergeTree order by id settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000" "MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1")
