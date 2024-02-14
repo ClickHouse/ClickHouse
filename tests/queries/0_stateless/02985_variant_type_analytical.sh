@@ -45,7 +45,7 @@ function test_order_by
     $CH_CLIENT -q  "insert into test values(17, 15.25);"
     $CH_CLIENT -q  "insert into test values(18, 14.0);"
 
-    #$CH_CLIENT -nmq "select id, v, variantType(v) from test order by v;" # Does not sort
+    #$CH_CLIENT -nmq "select id, v, variantType(v) from test order by v;" # Does not sort - expected
 
     $CH_CLIENT -nmq "select id, v, variantType(v) from test order by v.UInt64;"
 
@@ -91,6 +91,30 @@ function test_group_by()
     #$CH_CLIENT -nmq "select id, v, variantType(v), max(id) over (partition by v) as max_id from test;" # bucketing is wrong
 }
 
+function test_joins()
+{
+    $CH_CLIENT -q "drop table if exists test1;"
+    $CH_CLIENT -q "drop table if exists test2;"
+
+    $CH_CLIENT -q "create table test1 (id UInt64, v Variant(UInt64, String)) engine = $1;"
+    $CH_CLIENT -q "create table test2 (id UInt64, v Variant(UInt64, String)) engine = $1;"
+
+    $CH_CLIENT -q "insert into test1 values (1, 1) (2, 2), (3,3);"
+    $CH_CLIENT -q "insert into test2 values (1, 1) (2, 2), (3,3);"
+
+    $CH_CLIENT -q "insert into test1 values (4, 'a'), (5, 'b'), (6, 'c');"
+    $CH_CLIENT -q "insert into test2 values (4, 'a'), (5, 'b'), (6, 'c');"
+
+    $CH_CLIENT -q "insert into test1 values (7, '7');"
+    $CH_CLIENT -q "insert into test2 values (7, '7');"
+
+    $CH_CLIENT -q "insert into test1 values (8, '1');"
+    $CH_CLIENT -q "insert into test2 values (8, '2');"
+
+    # Joins conditions works perfectly with Variant columns matching the underlying data type first and then the actual data
+    $CH_CLIENT -nmq "select t1.id, t1.v, variantType(t1.v), t2.id, t2.v, variantType(t2.v) from test1 t1 join test2 t2 on t1.v = t2.v order by t1.id;"
+}
+
 engines=("Memory" "MergeTree order by id settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000" "MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1")
 
 for engine in "${engines[@]}"; do
@@ -104,5 +128,9 @@ for engine in "${engines[@]}"; do
     drop_table
 
     test_group_by "$engine"
+
+    drop_table
+
+    test_joins "$engine"
 
  done
