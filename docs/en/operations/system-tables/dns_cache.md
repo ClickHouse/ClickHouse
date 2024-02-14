@@ -10,7 +10,7 @@ Columns:
 - `hostname` ([String](../../sql-reference/data-types/string.md)) — cached hostname
 - `ip_address` ([String](../../sql-reference/data-types/string.md)) — ip address for the hostname
 - `family` ([String](../../sql-reference/data-types/string.md)) — family of the ip address: `IPv4`, `IPv6`, or `UNIX_LOCAL`.
-- `cached_at` ([String](../../sql-reference/data-types/datetime.md)) - datetime when the record has cached
+- `cached_at` ([String](../../sql-reference/data-types/datetime.md)) - datetime when the record was cached
 
 **Example**
 

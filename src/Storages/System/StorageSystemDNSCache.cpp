@@ -44,13 +44,13 @@ void StorageSystemDNSCache::fillData(MutableColumns & res_columns, ContextPtr, c
             {
                 case Poco::Net::AddressFamily::IPv4:
                     family_str = "IPv4";
-                break;
+                    break;
                 case Poco::Net::AddressFamily::IPv6:
                     family_str = "IPv6";
-                break;
+                    break;
                 case Poco::Net::AddressFamily::UNIX_LOCAL:
                     family_str = "UNIX_LOCAL";
-                break;
+                    break;
             }
 
             size_t i = 0;
