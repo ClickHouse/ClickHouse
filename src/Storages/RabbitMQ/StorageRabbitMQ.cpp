@@ -1084,7 +1084,7 @@ bool StorageRabbitMQ::tryStreamToViews()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG_ERROR(log, "Failed to push to views. Error: {}", getCurrentExceptionMessage(true));
         write_failed = true;
     }
 
