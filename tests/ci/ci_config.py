@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
-from enum import Enum
 import logging
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Literal, Optional, Union
 
+from ci_utils import WithIter
 from integration_test_images import IMAGES
 
 
@@ -180,7 +181,7 @@ class JobConfig:
     @num_batches - sets number of batches for multi-batch job
     """
 
-    digest: DigestConfig = DigestConfig()
+    digest: DigestConfig = field(default_factory=DigestConfig)
     run_command: str = ""
     timeout: Optional[int] = None
     num_batches: int = 1
@@ -246,14 +247,14 @@ class BuildConfig:
 @dataclass
 class BuildReportConfig:
     builds: List[str]
-    job_config: JobConfig = JobConfig()
+    job_config: JobConfig = field(default_factory=JobConfig)
 
 
 @dataclass
 class TestConfig:
     required_build: str
     force_tests: bool = False
-    job_config: JobConfig = JobConfig()
+    job_config: JobConfig = field(default_factory=JobConfig)
 
 
 BuildConfigs = Dict[str, BuildConfig]
@@ -565,7 +566,7 @@ class CiConfig:
 
 CI_CONFIG = CiConfig(
     label_configs={
-        Labels.DO_NOT_TEST_LABEL.value: LabelConfig(run_jobs=["Style check"]),
+        Labels.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=["Style check"]),
     },
     build_config={
         "package_release": BuildConfig(
