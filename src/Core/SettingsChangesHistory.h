@@ -84,7 +84,8 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
-    {"24.2", {{"async_insert_max_data_size", 1000000, 10485760, "The previous value appeared to be too small."},
+    {"24.2", {
+              {"async_insert_max_data_size", 1000000, 10485760, "The previous value appeared to be too small."},
               {"async_insert_poll_timeout_ms", 10, 10, "Timeout in milliseconds for polling data from asynchronous insert queue"},
               {"async_insert_use_adaptive_busy_timeout", true, true, "Use adaptive asynchronous insert timeout"},
               {"async_insert_busy_timeout_min_ms", 50, 50, "The minimum value of the asynchronous insert timeout in milliseconds; it also serves as the initial value, which may be increased later by the adaptive algorithm"},
@@ -99,7 +100,8 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"min_external_table_block_size_rows", DEFAULT_INSERT_BLOCK_SIZE, DEFAULT_INSERT_BLOCK_SIZE, "Squash blocks passed to external table to specified size in rows, if blocks are not big enough"},
               {"min_external_table_block_size_bytes", DEFAULT_INSERT_BLOCK_SIZE * 256, DEFAULT_INSERT_BLOCK_SIZE * 256, "Squash blocks passed to external table to specified size in bytes, if blocks are not big enough."},
               {"parallel_replicas_prefer_local_join", true, true, "If true, and JOIN can be executed with parallel replicas algorithm, and all storages of right JOIN part are *MergeTree, local JOIN will be used instead of GLOBAL JOIN."},
-              {"extract_key_value_pairs_max_pairs_per_row", 0, 0, "Max number of pairs that can be produced by the `extractKeyValuePairs` function. Used as a safeguard against consuming too much memory."}}},
+              {"extract_key_value_pairs_max_pairs_per_row", 0, 0, "Max number of pairs that can be produced by the `extractKeyValuePairs` function. Used as a safeguard against consuming too much memory."},
+              }},
     {"24.1", {{"print_pretty_type_names", false, true, "Better user experience."},
               {"input_format_json_read_bools_as_strings", false, true, "Allow to read bools as strings in JSON formats by default"},
               {"output_format_arrow_use_signed_indexes_for_dictionary", false, true, "Use signed indexes type for Arrow dictionaries by default as it's recommended"},
