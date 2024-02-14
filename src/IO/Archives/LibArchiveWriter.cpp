@@ -9,16 +9,13 @@
 
 #if USE_LIBARCHIVE
 
-// this implemation follows the ZipArchiveWriter implemation as closely as possible.  
+// this implemation follows the ZipArchiveWriter implemation as closely as possible.
 
 namespace DB
 {
 namespace ErrorCodes
 {
 extern const int CANNOT_PACK_ARCHIVE;
-extern const int LOGICAL_ERROR;
-extern const int CANNOT_READ_ALL_DATA;
-extern const int UNSUPPORTED_METHOD;
 extern const int NOT_IMPLEMENTED;
 }
 
@@ -135,8 +132,13 @@ private:
         }
         if (throw_if_error and bytes != expected_size)
         {
-            throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Couldn't pack tar archive: Wrote {} of expected {} , filename={}", bytes, expected_size, quoteString(filename)); 
-        } 
+            throw Exception(
+                ErrorCodes::CANNOT_PACK_ARCHIVE,
+                "Couldn't pack tar archive: Wrote {} of expected {} , filename={}",
+                bytes,
+                expected_size,
+                quoteString(filename));
+        }
     }
 
     void endWritingFile()
@@ -188,7 +190,7 @@ LibArchiveWriter::LibArchiveWriter(const String & path_to_archive_, std::unique_
 LibArchiveWriter::~LibArchiveWriter()
 {
     if (!finalized && !std::uncaught_exceptions() && !std::current_exception())
-            chassert(false && "TarArchiveWriter is not finalized in destructor.");
+        chassert(false && "TarArchiveWriter is not finalized in destructor.");
     if (archive)
         archive_write_free(archive);
 }
@@ -240,12 +242,10 @@ void LibArchiveWriter::finalize()
 
 void LibArchiveWriter::setCompression(const String & compression_method_, int compression_level)
 {
-    // throw an error unless setCompression is passed the defualt value
+    // throw an error unless setCompression is passed the default value
     if (compression_method_.empty() == 0 && compression_level == -1)
-    {
-            return;
-    }
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Tar archives are currenly supported without compression");
+        return;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "tar archives are currently supported without compression");
 }
 
 void LibArchiveWriter::setPassword([[maybe_unused]] const String & password_)

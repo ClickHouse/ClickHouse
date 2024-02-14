@@ -1,8 +1,8 @@
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/LibArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
-#include <IO/Archives/ArchiveUtils.h>
 
 
 namespace DB
@@ -21,10 +21,7 @@ extern const int UNSUPPORTED_METHOD;
 class LibArchiveReader::StreamInfo
 {
 public:
-    explicit StreamInfo(std::unique_ptr<SeekableReadBuffer> read_buffer_)
-        : read_buffer(std::move(read_buffer_))
-    {
-    }
+    explicit StreamInfo(std::unique_ptr<SeekableReadBuffer> read_buffer_) : read_buffer(std::move(read_buffer_)) { }
 
     static ssize_t read([[maybe_unused]] struct archive * a, void * client_data, const void ** buff)
     {
@@ -41,12 +38,12 @@ class LibArchiveReader::Handle
 {
 public:
     explicit Handle(std::string path_to_archive_, bool lock_on_reading_)
-        : path_to_archive(std::move(path_to_archive_)), lock_on_reading(lock_on_reading_) 
+        : path_to_archive(std::move(path_to_archive_)), lock_on_reading(lock_on_reading_)
     {
         current_archive = openWithPath(path_to_archive);
     }
     explicit Handle(std::string path_to_archive_, bool lock_on_reading_, const ReadArchiveFunction & archive_read_function_)
-        : path_to_archive(std::move(path_to_archive_)), archive_read_function(archive_read_function_), lock_on_reading(lock_on_reading_) 
+        : path_to_archive(std::move(path_to_archive_)), archive_read_function(archive_read_function_), lock_on_reading(lock_on_reading_)
     {
         read_stream = std::make_unique<StreamInfo>(archive_read_function());
         current_archive = openWithReader(read_stream.get());
@@ -59,7 +56,7 @@ public:
         , current_entry(other.current_entry)
         , archive_read_function(std::move(other.archive_read_function))
         , lock_on_reading(other.lock_on_reading)
-        
+
     {
         other.current_archive = nullptr;
         other.current_entry = nullptr;
@@ -114,12 +111,11 @@ public:
 
     std::vector<std::string> getAllFiles(NameFilter filter)
     {
-        std::unique_ptr<LibArchiveReader::StreamInfo> rs = archive_read_function ? std::make_unique<StreamInfo>(archive_read_function()) : nullptr;
+        std::unique_ptr<LibArchiveReader::StreamInfo> rs
+            = archive_read_function ? std::make_unique<StreamInfo>(archive_read_function()) : nullptr;
         auto archive = rs ? openWithReader(rs.get()) : openWithPath(path_to_archive);
 
-        SCOPE_EXIT(
-            close(archive);
-        );
+        SCOPE_EXIT(close(archive););
 
         Entry entry = nullptr;
 
@@ -166,15 +162,9 @@ public:
         return *file_info;
     }
 
-    la_ssize_t readData(void * buf, size_t len)
-    {
-        return archive_read_data(current_archive, buf, len);
-    }
+    la_ssize_t readData(void * buf, size_t len) { return archive_read_data(current_archive, buf, len); }
 
-    const char * getArchiveError()
-    {
-        return archive_error_string(current_archive);
-    }
+    const char * getArchiveError() { return archive_error_string(current_archive); }
 
 private:
     using Archive = struct archive *;
@@ -183,7 +173,10 @@ private:
     void checkError(int error) const
     {
         if (error == ARCHIVE_FATAL)
-            throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Failed to read archive while fetching all files: {}", archive_error_string(current_archive));
+            throw Exception(
+                ErrorCodes::CANNOT_UNPACK_ARCHIVE,
+                "Failed to read archive while fetching all files: {}",
+                archive_error_string(current_archive));
     }
 
     void resetFileInfo()
@@ -228,7 +221,11 @@ private:
             archive_read_support_filter_all(archive);
             archive_read_support_format_all(archive);
             if (archive_read_open_filename(archive, path_to_archive_.c_str(), 10240) != ARCHIVE_OK)
-                throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't open archive {}: {}", quoteString(path_to_archive), archive_error_string(archive));
+                throw Exception(
+                    ErrorCodes::CANNOT_UNPACK_ARCHIVE,
+                    "Couldn't open archive {}: {}",
+                    quoteString(path_to_archive),
+                    archive_error_string(archive));
         }
         catch (...)
         {
@@ -320,7 +317,12 @@ private:
     {
         auto bytes_read = handle.readData(internal_buffer.begin(), internal_buffer.size());
         if (bytes_read < 0)
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to read file {} from {}: {}", handle.getFileName(), path_to_archive, handle.getArchiveError());
+            throw Exception(
+                ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Failed to read file {} from {}: {}",
+                handle.getFileName(),
+                path_to_archive,
+                handle.getArchiveError());
 
         if (!bytes_read)
             return false;
@@ -368,7 +370,11 @@ LibArchiveReader::FileInfo LibArchiveReader::getFileInfo(const String & filename
 {
     Handle handle = acquireHandle();
     if (!handle.locateFile(filename))
-        throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't unpack archive {}: File {} was not found in archive", path_to_archive, quoteString(filename));
+        throw Exception(
+            ErrorCodes::CANNOT_UNPACK_ARCHIVE,
+            "Couldn't unpack archive {}: File {} was not found in archive",
+            path_to_archive,
+            quoteString(filename));
     return handle.getFileInfo();
 }
 
@@ -388,7 +394,10 @@ std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader::readFile(const String 
     {
         if (throw_on_not_found)
             throw Exception(
-                ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't unpack archive {}: File {} was not found in archive", path_to_archive, quoteString(filename));
+                ErrorCodes::CANNOT_UNPACK_ARCHIVE,
+                "Couldn't unpack archive {}: File {} was not found in archive",
+                path_to_archive,
+                quoteString(filename));
         return nullptr;
     }
     return std::make_unique<ReadBufferFromLibArchive>(std::move(handle), path_to_archive);
@@ -457,7 +466,8 @@ void LibArchiveReader::setPassword([[maybe_unused]] const String & password_)
 LibArchiveReader::Handle LibArchiveReader::acquireHandle()
 {
     std::lock_guard lock{mutex};
-    return archive_read_function ? Handle{path_to_archive, lock_on_reading, archive_read_function} : Handle{path_to_archive, lock_on_reading};
+    return archive_read_function ? Handle{path_to_archive, lock_on_reading, archive_read_function}
+                                 : Handle{path_to_archive, lock_on_reading};
 }
 
 #endif
