@@ -1,6 +1,7 @@
 #include <Server/CloudPlacementInfo.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <IO/S3/Credentials.h>
 #include <fmt/core.h>
 #include <filesystem>
