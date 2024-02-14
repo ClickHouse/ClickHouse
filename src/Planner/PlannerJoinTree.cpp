@@ -594,7 +594,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     bool is_single_table_expression,
     bool wrap_read_columns_in_subquery)
 {
-    auto query_context = Context::createCopy(planner_context->getQueryContext());
+    const auto & query_context = planner_context->getMutableQueryContext();
     {
         Settings settings = query_context->getSettings();
         settings.limit = 0;
