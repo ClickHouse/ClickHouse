@@ -2359,6 +2359,30 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     cleanup_thread.wakeup();
 }
 
+auto get_destination_partition_and_partition_id =
+    [](bool is_partition_exp_the_same,
+       const MergeTreeData & source_data,
+       const MergeTreeData & dst_data,
+       const std::vector<DataPartPtr> & src_parts,
+       const String & source_partition_id)
+{
+    /*
+     * If the partition expression is the same, there is no need to create a new partition
+     * and the source partition id can be used as the destination partition id.
+     * */
+    if (is_partition_exp_the_same)
+    {
+        return std::make_pair(MergeTreePartition(), source_partition_id);
+    }
+
+    auto dst_partition = MergeTreePartitionCompatibilityVerifier::verifyCompatibilityAndCreatePartition(
+        source_data,
+        dst_data,
+        src_parts);
+
+    return std::make_pair(dst_partition, dst_partition.getID(dst_data));
+};
+
 
 bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 {
@@ -2708,31 +2732,9 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
             const auto my_partition_expression = metadata_snapshot->getPartitionKeyAST();
             const auto src_partition_expression = source_table->getInMemoryMetadataPtr()->getPartitionKeyAST();
 
-            const auto is_partition_exp_different = queryToStringNullable(my_partition_expression) != queryToStringNullable(src_partition_expression);
+            const auto is_partition_exp_the_same = queryToStringNullable(my_partition_expression) == queryToStringNullable(src_partition_expression);
 
-            if (is_partition_exp_different)
-            {
-                auto [new_partition, new_min_max_index] = createPartitionAndMinMaxIndexFromSourcePart(
-                    part_desc->src_table_part, metadata_snapshot, getContext());
-
-                auto partition_id = new_partition.getID(*this);
-
-                auto [res_part, temporary_part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
-                    part_desc->src_table_part,
-                    new_partition,
-                    partition_id,
-                    new_min_max_index,
-                    TMP_PREFIX + "clone_",
-                    metadata_snapshot,
-                    clone_params,
-                    getContext(),
-                    part_desc->new_part_info.min_block,
-                    part_desc->new_part_info.max_block);
-
-                part_desc->res_part = std::move(res_part);
-                part_desc->temporary_part_lock = std::move(temporary_part_lock);
-            }
-            else
+            if (is_partition_exp_the_same)
             {
                 auto [res_part, temporary_part_lock] = cloneAndLoadDataPartOnSameDisk(
                     part_desc->src_table_part,
@@ -2742,6 +2744,31 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
                     clone_params,
                     getContext()->getReadSettings(),
                     getContext()->getWriteSettings());
+
+                part_desc->res_part = std::move(res_part);
+                part_desc->temporary_part_lock = std::move(temporary_part_lock);
+            }
+            else
+            {
+                const auto src_part = part_desc->src_table_part;
+                const auto & src_data = src_part->storage;
+                auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
+                IMergeTreeDataPart::MinMaxIndex destination_min_max_index;
+
+                destination_min_max_index.load(src_data, metadata_manager);
+
+                MergeTreePartition destination_partition;
+                destination_partition.create(metadata_snapshot, destination_min_max_index.getBlock(*this), 0, getContext());
+
+                auto [res_part, temporary_part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
+                    part_desc->src_table_part,
+                    destination_partition,
+                    part_desc->new_part_info,
+                    destination_min_max_index,
+                    TMP_PREFIX + "clone_",
+                    metadata_snapshot,
+                    clone_params,
+                    getContext());
 
                 part_desc->res_part = std::move(res_part);
                 part_desc->temporary_part_lock = std::move(temporary_part_lock);
@@ -7883,14 +7910,14 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     ProfileEventsScope profile_events_scope;
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, metadata_snapshot);
-    String partition_id = src_data.getPartitionIDFromQuery(partition, query_context);
+    String source_partition_id = src_data.getPartitionIDFromQuery(partition, query_context);
 
     /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
-    DataPartsVector src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, partition_id);
+    DataPartsVector src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, source_partition_id);
 
     const auto my_partition_expression = metadata_snapshot->getPartitionKeyAST();
     const auto src_partition_expression = source_metadata_snapshot->getPartitionKeyAST();
-    const auto is_partition_exp_different = queryToStringNullable(my_partition_expression) != queryToStringNullable(src_partition_expression);
+    const auto is_partition_exp_the_same = queryToStringNullable(my_partition_expression) == queryToStringNullable(src_partition_expression);
 
     if (src_all_parts.empty())
     {
@@ -7899,7 +7926,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             return;
         }
 
-        if (is_partition_exp_different)
+        if (!is_partition_exp_the_same)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Cannot replace partition '{}' because it is empty and has different partition expression."
@@ -7908,7 +7935,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         }
     }
 
-    MergeTreePartitionCompatibilityVerifier::verify(src_data, /* destination_storage */ *this, src_all_parts);
+    auto [destination_partition, destination_partition_id] =
+        get_destination_partition_and_partition_id(is_partition_exp_the_same, src_data, *this, src_all_parts, source_partition_id);
 
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
@@ -7934,7 +7962,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         /// TODO why not to add normal DROP_RANGE entry to replication queue if `replace` is true?
         MergeTreePartInfo drop_range;
         std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
-        bool partition_was_empty = !getFakePartCoveringAllPartsInPartition(partition_id, drop_range, delimiting_block_lock, true);
+        bool partition_was_empty = !getFakePartCoveringAllPartsInPartition(destination_partition_id, drop_range, delimiting_block_lock, true);
         if (replace && partition_was_empty)
         {
             /// Nothing to drop, will just attach new parts
@@ -7945,7 +7973,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         if (!replace)
         {
             /// It's ATTACH PARTITION FROM, not REPLACE PARTITION. We have to reset drop range
-            drop_range = makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(partition_id);
+            drop_range = makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(destination_partition_id);
         }
 
         assert(replace == !LogEntry::ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range));
@@ -7959,22 +7987,11 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             /// Assume that merges in the partition are quite rare
             /// Save deduplication block ids with special prefix replace_partition
 
+            // TODO think about below
             if (!canReplacePartition(src_part))
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Cannot replace partition '{}' because part '{}"
-                                "' has inconsistent granularity with table", partition_id, src_part->name);
-
-            IMergeTreeDataPart::MinMaxIndex min_max_index = *src_part->minmax_idx;
-            MergeTreePartition merge_tree_partition = src_part->partition;
-
-            if (is_partition_exp_different)
-            {
-                auto [new_partition, new_min_max_index] = createPartitionAndMinMaxIndexFromSourcePart(src_part, metadata_snapshot, query_context);
-
-                merge_tree_partition = new_partition;
-                min_max_index = new_min_max_index;
-                partition_id = merge_tree_partition.getID(*this);
-            }
+                                "' has inconsistent granularity with table", source_partition_id, src_part->name);
 
             String hash_hex = src_part->checksums.getTotalChecksumHex();
             const bool is_duplicated_part = replaced_parts.contains(hash_hex);
@@ -7985,9 +8002,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             else
                 LOG_INFO(log, "Trying to attach {} with hash_hex {}", src_part->name, hash_hex);
 
-            String block_id_path = (replace || is_duplicated_part) ? "" : (fs::path(zookeeper_path) / "blocks" / (partition_id + "_replace_from_" + hash_hex));
+            String block_id_path = (replace || is_duplicated_part) ? "" : (fs::path(zookeeper_path) / "blocks" / (destination_partition_id + "_replace_from_" + hash_hex));
 
-            auto lock = allocateBlockNumber(partition_id, zookeeper, block_id_path);
+            auto lock = allocateBlockNumber(destination_partition_id, zookeeper, block_id_path);
             if (!lock)
             {
                 LOG_INFO(log, "Part {} (hash {}) has been already attached", src_part->name, hash_hex);
@@ -8005,27 +8022,10 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
 
-            if (is_partition_exp_different)
-            {
-                auto [dst_part, part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
-                    src_part,
-                    merge_tree_partition,
-                    partition_id,
-                    min_max_index,
-                    TMP_PREFIX,
-                    metadata_snapshot,
-                    clone_params,
-                    query_context,
-                    index,
-                    index);
+            MergeTreePartInfo dst_part_info(destination_partition_id, index, index, src_part->info.level);
 
-                dst_parts.emplace_back(dst_part);
-                dst_parts_locks.emplace_back(std::move(part_lock));
-            }
-            else
+            if (is_partition_exp_the_same)
             {
-                MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
-
                 auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
                     src_part,
                     TMP_PREFIX,
@@ -8034,6 +8034,26 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                     clone_params,
                     query_context->getReadSettings(),
                     query_context->getWriteSettings());
+
+                dst_parts.emplace_back(dst_part);
+                dst_parts_locks.emplace_back(std::move(part_lock));
+            }
+            else
+            {
+                auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
+                IMergeTreeDataPart::MinMaxIndex destination_min_max_index;
+
+                destination_min_max_index.load(src_data, metadata_manager);
+
+                auto [dst_part, part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
+                    src_part,
+                    destination_partition,
+                    dst_part_info,
+                    destination_min_max_index,
+                    TMP_PREFIX,
+                    metadata_snapshot,
+                    clone_params,
+                    query_context);
 
                 dst_parts.emplace_back(dst_part);
                 dst_parts_locks.emplace_back(std::move(part_lock));

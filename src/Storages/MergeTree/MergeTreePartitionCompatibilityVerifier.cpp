@@ -61,7 +61,7 @@ bool isExpressionDirectSubsetOf(const ASTPtr source, const ASTPtr destination)
 }
 }
 
-void MergeTreePartitionCompatibilityVerifier::verify(
+MergeTreePartition MergeTreePartitionCompatibilityVerifier::verifyCompatibilityAndCreatePartition(
     const MergeTreeData & source_storage, const MergeTreeData & destination_storage, const DataPartsVector & source_parts)
 {
     const auto source_metadata = source_storage.getInMemoryMetadataPtr();
@@ -70,10 +70,24 @@ void MergeTreePartitionCompatibilityVerifier::verify(
     const auto source_partition_key_ast = source_metadata->getPartitionKeyAST();
     const auto destination_partition_key_ast = destination_metadata->getPartitionKeyAST();
 
+    MergeTreePartition partition;
+
     // If destination partition expression columns are a subset of source partition expression columns,
     // there is no need to check for monotonicity.
     if (isExpressionDirectSubsetOf(source_partition_key_ast, destination_partition_key_ast))
-        return;
+    {
+        if (!destination_metadata->hasPartitionKey())
+        {
+            return partition;
+        }
+
+        const auto src_global_min_max_indexes = MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(source_parts, destination_storage);
+
+        assert(!src_global_min_max_indexes.hyperrectangle.empty());
+
+        partition.create(destination_metadata, src_global_min_max_indexes.getBlock(destination_storage), 0u, destination_storage.getContext());
+        return partition;
+    }
 
     const auto src_global_min_max_indexes = MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(source_parts, destination_storage);
 
@@ -82,10 +96,12 @@ void MergeTreePartitionCompatibilityVerifier::verify(
     if (!isDestinationPartitionExpressionMonotonicallyIncreasing(src_global_min_max_indexes.hyperrectangle, destination_storage))
         throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Destination table partition expression is not monotonically increasing");
 
-    MergeTreePartition().createAndValidateMinMaxPartitionIds(
+    partition.createAndValidateMinMaxPartitionIds(
         destination_storage.getInMemoryMetadataPtr(),
         src_global_min_max_indexes.getBlock(destination_storage),
         destination_storage.getContext());
+
+    return partition;
 }
 
 }
