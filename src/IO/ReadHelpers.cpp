@@ -510,7 +510,6 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
         {
             next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
         }
-        
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
@@ -539,9 +538,8 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
         }
 
         if (*buf.position() == '\r')
-        {
-            ++buf.position();   
-        }
+            ++buf.position();
+
     }
 }
 
@@ -1987,7 +1985,4 @@ void readTSVField(String & s, ReadBuffer & buf)
 
 template void readTSVField<true>(String & s, ReadBuffer & buf);
 template void readTSVField<false>(String & s, ReadBuffer & buf);
-
 }
-
-
