@@ -27,7 +27,7 @@ Columns:
 
 - `metadata_modification_time` ([DateTime](../../sql-reference/data-types/datetime.md)) - Time of latest modification of the table metadata.
 
-- `metadata_version` ([Int32](../../sql-reference/data-types/int-uint.md)) - Metadata version for ReplicatedMergeTree table, -1 for non replicated table.
+- `metadata_version` ([Int32](../../sql-reference/data-types/int-uint.md)) - Metadata version for ReplicatedMergeTree table, 0 for non ReplicatedMergeTree table.
 
 - `dependencies_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Database dependencies.
 
