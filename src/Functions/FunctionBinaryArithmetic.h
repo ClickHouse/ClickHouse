@@ -644,7 +644,8 @@ private:
             {
                 if ((*right_nullmap)[0])
                 {
-                    c[0] = ResultType();
+                    for (size_t i = 0; i < size; ++i)
+                        c[i] = ResultType();
                     return;
                 }
 
