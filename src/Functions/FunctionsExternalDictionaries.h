@@ -619,23 +619,19 @@ private:
         const DataTypePtr & result_type,
         const ColumnWithTypeAndName & last_argument) const
     {
-        auto rows = default_mask.size();
-
-        auto mask_col = ColumnUInt8::create();
-        mask_col->getData() = std::move(default_mask);
-        ColumnPtr mask_col_res = std::move(mask_col);
-
-        IColumn::Filter mask(rows, 1);
-        auto mask_info = extractMask(mask, mask_col_res);
         ColumnWithTypeAndName column_before_cast = last_argument;
-        maskedExecute(column_before_cast, mask, mask_info);
+        maskedExecute(column_before_cast, default_mask);
 
         ColumnWithTypeAndName column_to_cast = {
             column_before_cast.column->convertToFullColumnIfConst(),
             column_before_cast.type,
             column_before_cast.name};
+
         auto casted = IColumn::mutate(castColumnAccurate(column_to_cast, result_type));
-        return {std::move(casted), mask_col_res};
+
+        auto mask_col = ColumnUInt8::create();
+        mask_col->getData() = std::move(default_mask);
+        return {std::move(casted), std::move(mask_col)};
     }
 
     void restoreShortCircuitColumn(
