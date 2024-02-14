@@ -1,4 +1,3 @@
-#include "config.h"
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Config/ConfigHelper.h>
