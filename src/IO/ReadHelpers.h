@@ -607,6 +607,8 @@ void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 /// Only 0x20 as whitespace character
 void readStringUntilWhitespace(String & s, ReadBuffer & buf);
 
+void readStringUntilAmpersand(String & s, ReadBuffer & buf);
+
 
 /** Read string in CSV format.
   * Parsing rules:

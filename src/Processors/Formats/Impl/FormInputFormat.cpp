@@ -9,7 +9,7 @@
 #include <Formats/FormatFactory.h>
 
 namespace DB
-{
+{  
 
 FormInputFormat::FormInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_) 
     : IRowInputFormat(std::move(header_), in_, params_), format_settings(format_settings_)
@@ -22,13 +22,19 @@ void FormInputFormat::readPrefix()
     skipBOMIfExists(*in);
 }
 
+/** Read the field name in the `Form` format.
+  * Return true if field name is followed by an equal sign,
+  * otherwise (field with no value) return false.
+  * The reference to the field name is written to `ref`.
+  * Temporary buffer `tmp` is used to copy the field name to it.
+  */
 static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
 {
     tmp.clear();
 
     while (!buf.eof())
     {
-        const char * next_pos = find_first_symbols<'='>(buf.position(), buf.buffer().end());
+        const char * next_pos = find_first_symbols<'=','&'>(buf.position(), buf.buffer().end());
         
         bool have_value = *next_pos == '=';
         if (next_pos == buf.buffer().end())
@@ -43,14 +49,9 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
         if (*next_pos == '=')
         {
             ref = StringRef(buf.position(), next_pos - buf.position());
-
+            buf.position() += next_pos + have_value - buf.position();
         }
 
-        // data occurs before &
-        if (*next_pos == '&')
-        {
-
-        }
         return have_value;
     }
     throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while reading key name from Form format");
@@ -58,8 +59,15 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
 
 bool FormInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
+
+    if (in->eof())
+        return false;
+
     size_t num_columns = columns.size();
-    if (!num_columns){}
+
+    read_columns.assign(num_columns, false);
+    seen_columns.assign(num_columns, false);
+    
     return false;
 }
 
@@ -85,16 +93,15 @@ NamesAndTypesList FormSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
         String name = String(name_ref);
         if (has_value)
         {
-            readEscapedString(value,in);
+            readStringUntilAmpersand(value,in);
             names_and_types.emplace_back(std::move(name), tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped));
         }
         else
         {
-
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Found field without value while parsing Form format: {}", name_ref.toString());
         }
-        
     }
-    while (checkChar('=',in));
+    while (checkChar('&',in));
     return names_and_types;
 }
 

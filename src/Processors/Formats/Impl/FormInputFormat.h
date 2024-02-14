@@ -20,6 +20,9 @@ private:
     bool readRow(MutableColumns & columns, RowReadExtension & extra) override;
 
     const FormatSettings format_settings;
+    String name_buf;
+    std::vector<UInt8> read_columns;
+    std::vector<UInt8> seen_columns;
 };
 
 class FormSchemaReader : public IRowWithNamesSchemaReader
