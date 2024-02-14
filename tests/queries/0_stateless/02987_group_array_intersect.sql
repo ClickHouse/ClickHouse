@@ -15,7 +15,7 @@ SELECT groupArrayIntersect(*) FROM test_string;
 DROP TABLE test_string;
 
 DROP TABLE IF EXISTS test_datetime;
-CREATE TABLE test_datetime (a Array(DateTime64)) engine=MergeTree ORDER BY a;
+CREATE TABLE test_datetime (a Array(DateTime)) engine=MergeTree ORDER BY a;
 INSERT INTO test_datetime VALUES ([toDateTime('2023-01-01 00:00:00'), toDateTime('2023-01-01 01:02:03'), toDateTime('2023-01-01 02:03:04')]);
 INSERT INTO test_datetime VALUES ([toDateTime('2023-01-01 00:00:00'), toDateTime('2023-01-01 01:02:04'), toDateTime('2023-01-01 02:03:05')]);
 SELECT groupArrayIntersect(*) from test_datetime;
