@@ -278,7 +278,6 @@ public:
     static ColumnsWithTypeAndName evaluatePartialResult(
         IntermediateExecutionResult & node_to_column,
         const NodeRawConstPtrs & outputs,
-        size_t input_rows_count,
         bool throw_on_error);
 
     /// For apply materialize() function for every output.

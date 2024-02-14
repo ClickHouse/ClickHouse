@@ -212,8 +212,6 @@ Possible values:
 
 Default value: `'basic'`.
 
-Cloud default value: `'best_effort'`.
-
 See also:
 
 - [DateTime data type.](../../sql-reference/data-types/datetime.md)

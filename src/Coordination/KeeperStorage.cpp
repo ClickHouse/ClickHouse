@@ -175,6 +175,7 @@ uint64_t calculateDigest(std::string_view path, std::string_view data, const Kee
     hash.update(data);
 
     hash.update(stat.czxid);
+    hash.update(stat.czxid);
     hash.update(stat.mzxid);
     hash.update(stat.ctime);
     hash.update(stat.mtime);
@@ -182,6 +183,7 @@ uint64_t calculateDigest(std::string_view path, std::string_view data, const Kee
     hash.update(stat.cversion);
     hash.update(stat.aversion);
     hash.update(stat.ephemeralOwner);
+    hash.update(data.length());
     hash.update(stat.numChildren);
     hash.update(stat.pzxid);
 
@@ -2527,17 +2529,6 @@ uint64_t KeeperStorage::getTotalEphemeralNodesCount() const
 void KeeperStorage::recalculateStats()
 {
     container.recalculateDataSize();
-}
-
-bool KeeperStorage::checkDigest(const Digest & first, const Digest & second)
-{
-    if (first.version != second.version)
-        return true;
-
-    if (first.version == DigestVersion::NO_DIGEST)
-        return true;
-
-    return first.value == second.value;
 }
 
 String KeeperStorage::generateDigest(const String & userdata)

@@ -6,7 +6,7 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
-#include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Storages/MergeTree/ZooKeeperRetries.h>
 #include <filesystem>
 #include <queue>
 
