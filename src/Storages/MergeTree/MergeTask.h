@@ -246,6 +246,7 @@ private:
         bool prepare();
         bool executeImpl();
 
+        /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
         using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)(), 2>;
 
         const ExecuteAndFinalizeHorizontalPartSubtasks subtasks
@@ -323,6 +324,7 @@ private:
         bool executeVerticalMergeForAllColumns() const;
         bool finalizeVerticalMergeForAllColumns() const;
 
+        /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
         using VerticalMergeStageSubtasks = std::array<bool(VerticalMergeStage::*)()const, 3>;
 
         const VerticalMergeStageSubtasks subtasks
@@ -373,6 +375,7 @@ private:
         bool executeProjections() const;
         bool finalizeProjectionsAndWholeMerge() const;
 
+        /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
         using MergeProjectionsStageSubtasks = std::array<bool(MergeProjectionsStage::*)()const, 3>;
 
         const MergeProjectionsStageSubtasks subtasks
