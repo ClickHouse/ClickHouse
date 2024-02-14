@@ -440,14 +440,11 @@ std::vector<std::pair<std::string, DNSResolver::CacheEntry>> DNSResolver::cacheE
     std::lock_guard lock(impl->drop_mutex);
     std::vector<std::pair<std::string, DNSResolver::CacheEntry>> entries;
 
-    for (const auto & host : impl->known_hosts)
+    for (const auto & [key, entry] : impl->cache_host.dump())
     {
-        const String &hostname = host.first;
-
-        const auto cache_entry = impl->cache_host.get(hostname);
-        if (cache_entry)
-            entries.emplace_back(hostname, *cache_entry);
+        entries.emplace_back(key, *entry);
     }
+
     return entries;
 }
 
