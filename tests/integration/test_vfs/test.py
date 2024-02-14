@@ -56,36 +56,39 @@ def test_reconcile(started_cluster):
     while int(node.count_in_log("VFSGC(reconcile): Removed lock for")) < 1:
         time.sleep(0.3)
 
-    # Already processed log batch
+    # 1. Already processed log batch (no new log items added)
 
     zk: KazooClient = started_cluster.get_kazoo_client("zoo1")
     disk_prefix: str = "/vfs/reconcile"
     assert zk.get_children(f"{disk_prefix}/ops") == []
-    for i in range(11, 15):  # snapshot for 10 doesn't exist
+    for i in range(11, 16):  # snapshot for 10 doesn't exist
         zk.create(f"{disk_prefix}/ops/log-00000000{i}", b"")
 
     started_cluster.minio_client.put_object(
         started_cluster.minio_bucket,
-        "data/vfs/reconcile/snapshots/14",  # last written log item is 14
+        # last written log item is 15, we want to discard [11; 14]
+        "data/vfs/reconcile/snapshots/14",
         io.StringIO(""),
         0,
     )
 
-    time.sleep(5)
-    assert int(node.count_in_log("Found leftover from previous GC run")) == 1
+    time.sleep(5)  # Snapshot for 15 written, [11;14] discarded
+    assert int(node.count_in_log("Selected snapshot 14 as best candidate")) == 1
     assert zk.get_children(f"{disk_prefix}/ops") == []
 
-    # Zookeeper full loss -- node counter resets but snapshot present
+    # 2. Zookeeper full loss -- node counter resets but snapshot present
 
     zk.delete(disk_prefix, recursive=True)
-    for i in range(5):  # we have leftover snapshot 1 and 14 but not 0
+    for i in range(5):  # we have leftover snapshot 1 and 15 but not 0
         zk.create(f"{disk_prefix}/ops/log-", b"", sequence=True, makepath=True)
     time.sleep(11)  # GC will fail, reschedule, and then succeed
-    assert int(node.count_in_log("Selected snapshot 14 as best candidate")) == 1
+    assert int(node.count_in_log("Selected snapshot 15 as best candidate")) == 1
 
-    # Log part loss -- select best snapshot from past
+    # 3. Best snapshot from past
 
-    for i in range(11, 15):  # we have snapshot for 1 and 4
+    for i in range(
+        11, 17
+    ):  # we have snapshot for 1 and 4, snapshot for 15 already deleted
         zk.create(f"{disk_prefix}/ops/log-00000000{i}", b"")
     time.sleep(6)
     assert int(node.count_in_log("Selected snapshot 4 as best candidate")) == 1

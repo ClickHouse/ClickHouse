@@ -167,10 +167,19 @@ void VFSGarbageCollector::updateSnapshotWithLogEntries(Logpointer start, Logpoin
     catch (std::exception & e)
     {
         const Logpointer new_start = reconcile(start_regarding_zero, end, std::move(e));
-        if (new_start == end)
-            return;
-        // TODO myrrc if there are multiple candidates, shouldn't we remove all of them?
         LOG_DEBUG(log, "Selected snapshot {} as best candidate", new_start);
+
+        // If start=0 we can't assume [start;end] were created after loss thus we can't discard anything
+        if (start > 0 && new_start > start)
+        {
+            chassert(new_start <= end);
+            LOG_DEBUG(log, "Discarding [{};{}]", start, new_start);
+            if (new_start == end)
+                return;
+            start = new_start;
+        }
+
+        // TODO myrrc if there are multiple candidates, shouldn't we remove all of them?
         populate_old_snapshot(new_start);
     }
 
@@ -257,18 +266,17 @@ Logpointer VFSGarbageCollector::reconcile(Logpointer start, Logpointer end, std:
     std::ranges::sort(candidates);
     LOG_DEBUG(log, "Snapshot candidates: [{}]", fmt::join(candidates, ", "));
 
-    if (const auto it = std::ranges::find(candidates, end); it != candidates.end())
-    {
-        LOG_INFO(log, "Found leftover from previous GC run, discarding batch [{};{}]", start, end);
-        return end;
-    }
-
     if (const Logpointer greatest_end = *candidates.rbegin(); starting && greatest_end > 0)
-        return greatest_end; // First run after Zookeeper base node loss
-    else if (const auto it = std::ranges::lower_bound(candidates, start); it != candidates.begin())
+        // ZK lost root vfs node, some replica created it. Next GC run sees snapshot before ZK loss thus it's
+        // safe to select snapshot from future
+        return greatest_end;
+    else if (const auto it = std::ranges::lower_bound(candidates, end, std::less_equal{}); it != candidates.begin())
+        // Replica processed [a;b], wrote snapshot "b", and failed to remove [a;b] from ZK. Log entries were
+        // possibly added, next run processes [a;b + k], k >=0. Select "b" and discard [a;b] part of batch
         return it == candidates.end() ? greatest_end : *std::prev(it);
 
-    throw e; // TODO myrrc add more heuristics. Current approach may be too conservative
+    // We have only snapshots from the future and there was no loss.
+    throw e; // TODO myrrc add more heuristics
 }
 
 VFSLogItem VFSGarbageCollector::getBatch(Logpointer start, Logpointer end) const
