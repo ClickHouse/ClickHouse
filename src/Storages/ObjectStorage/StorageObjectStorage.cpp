@@ -289,7 +289,8 @@ ColumnsDescription StorageObjectStorage<StorageSettings>::getTableStructureFromD
     const auto settings = StorageSettings::create(context->getSettingsRef());
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration, object_storage, /* distributed_processing */false,
-        context, /* predicate */{}, /* virtual_columns */{}, &read_keys, settings.list_object_keys_size);
+        context, /* predicate */{}, /* virtual_columns */{}, &read_keys, settings.list_object_keys_size,
+        StorageSettings::ObjectStorageThreads(), StorageSettings::ObjectStorageThreadsActive(), StorageSettings::ObjectStorageThreadsScheduled());
 
     ReadBufferIterator read_buffer_iterator(
         object_storage, configuration, file_iterator,

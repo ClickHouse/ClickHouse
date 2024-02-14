@@ -21,25 +21,23 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, StorageSettings, Config
 {
     using Base = TableFunctionObjectStorage<Definition, StorageSettings, Configuration>;
 
-    StoragePtr storage;
+    auto configuration = Base::getConfiguration();
+    bool structure_argument_was_provided = configuration->structure != "auto";
+
     ColumnsDescription columns;
-    bool structure_argument_was_provided = Base::configuration->structure != "auto";
-
     if (structure_argument_was_provided)
-    {
-        columns = parseColumnsListFromString(Base::configuration->structure, context);
-    }
+        columns = parseColumnsListFromString(configuration->structure, context);
     else if (!Base::structure_hint.empty())
-    {
         columns = Base::structure_hint;
-    }
 
+    auto object_storage = Base::getObjectStorage(context, !is_insert_query);
+    StoragePtr storage;
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         /// On worker node this filename won't contains globs
         storage = std::make_shared<StorageObjectStorage<StorageSettings>>(
-            Base::configuration,
-            Base::configuration->createOrUpdateObjectStorage(context, !is_insert_query),
+            configuration,
+            object_storage,
             Definition::storage_type_name,
             context,
             StorageID(Base::getDatabaseName(), table_name),
@@ -54,8 +52,8 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, StorageSettings, Config
     {
         storage = std::make_shared<StorageObjectStorageCluster<Definition, StorageSettings, Configuration>>(
             ITableFunctionCluster<Base>::cluster_name,
-            Base::configuration,
-            Base::configuration->createOrUpdateObjectStorage(context, !is_insert_query),
+            configuration,
+            object_storage,
             Definition::storage_type_name,
             StorageID(Base::getDatabaseName(), table_name),
             columns,
@@ -87,7 +85,10 @@ void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory)
     {
         .documentation = {
             .description=R"(The table function can be used to read the data stored on Azure Blob Storage in parallel for many nodes in a specified cluster.)",
-            .examples{{"azureBlobStorageCluster", "SELECT * FROM  azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])", ""}}},
+            .examples{{
+                "azureBlobStorageCluster",
+                "SELECT * FROM  azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, "
+                "[account_name, account_key, format, compression, structure])", ""}}},
             .allow_readonly = false
         }
     );

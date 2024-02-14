@@ -42,7 +42,10 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     std::shared_ptr<IIterator> file_iterator_,
     bool need_only_count_,
     SchemaCache & schema_cache_,
-    std::shared_ptr<ThreadPool> reader_pool_)
+    std::shared_ptr<ThreadPool> reader_pool_,
+    CurrentMetrics::Metric metric_threads_,
+    CurrentMetrics::Metric metric_threads_active_,
+    CurrentMetrics::Metric metric_threads_scheduled_)
     : SourceWithKeyCondition(info.source_header, false)
     , WithContext(context_)
     , name(std::move(name_))
@@ -57,6 +60,9 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , columns_desc(info.columns_description)
     , file_iterator(file_iterator_)
     , schema_cache(schema_cache_)
+    , metric_threads(metric_threads_)
+    , metric_threads_active(metric_threads_active_)
+    , metric_threads_scheduled(metric_threads_scheduled_)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(*create_reader_pool, "Reader"))
 {
 }
@@ -75,10 +81,16 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
     const NamesAndTypesList & virtual_columns,
     ObjectInfos * read_keys,
     size_t list_object_keys_size,
+    CurrentMetrics::Metric metric_threads_,
+    CurrentMetrics::Metric metric_threads_active_,
+    CurrentMetrics::Metric metric_threads_scheduled_,
     std::function<void(FileProgress)> file_progress_callback)
 {
     if (distributed_processing)
-        return std::make_shared<ReadTaskIterator>(local_context->getReadTaskCallback());
+        return std::make_shared<ReadTaskIterator>(
+            local_context->getReadTaskCallback(),
+            local_context->getSettingsRef().max_threads,
+            metric_threads_, metric_threads_active_, metric_threads_scheduled_);
 
     if (configuration->isNamespaceWithGlobs())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression can not have wildcards inside namespace name");
@@ -380,19 +392,16 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::next(size_t /* processor
         while (new_batch.empty())
         {
             auto result = object_storage_iterator->getCurrentBatchAndScheduleNext();
-            LOG_TEST(&Poco::Logger::get("kssenii"), "KSSENII: {}", result.has_value());
-            if (result.has_value())
-            {
-                new_batch = std::move(result.value());
-            }
-            else
+            if (!result.has_value())
             {
                 is_finished = true;
                 return {};
             }
 
+            new_batch = std::move(result.value());
             for (auto it = new_batch.begin(); it != new_batch.end();)
             {
+                chassert(*it);
                 if (!recursive && !re2::RE2::FullMatch((*it)->relative_path, *matcher))
                     it = new_batch.erase(it);
                 else
@@ -406,8 +415,11 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::next(size_t /* processor
         {
             std::vector<String> paths;
             paths.reserve(new_batch.size());
-            for (auto & object_info : new_batch)
+            for (const auto & object_info : new_batch)
+            {
+                chassert(object_info);
                 paths.push_back(fs::path(configuration->getNamespace()) / object_info->relative_path);
+            }
 
             VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_dag, virtual_columns, getContext());
         }
@@ -416,6 +428,7 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::next(size_t /* processor
             read_keys->insert(read_keys->end(), new_batch.begin(), new_batch.end());
 
         object_infos = std::move(new_batch);
+
         if (file_progress_callback)
         {
             for (const auto & object_info : object_infos)
@@ -499,4 +512,36 @@ StorageObjectStorageSource::ReaderHolder & StorageObjectStorageSource::ReaderHol
     object_info = std::move(other.object_info);
     return *this;
 }
+
+StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
+    const ReadTaskCallback & callback_,
+    size_t max_threads_count,
+    CurrentMetrics::Metric metric_threads_,
+    CurrentMetrics::Metric metric_threads_active_,
+    CurrentMetrics::Metric metric_threads_scheduled_)
+    : callback(callback_)
+{
+    ThreadPool pool(metric_threads_, metric_threads_active_, metric_threads_scheduled_, max_threads_count);
+    auto pool_scheduler = threadPoolCallbackRunner<String>(pool, "ReadTaskIter");
+
+    std::vector<std::future<String>> keys;
+    keys.reserve(max_threads_count);
+    for (size_t i = 0; i < max_threads_count; ++i)
+        keys.push_back(pool_scheduler([this] { return callback(); }, Priority{}));
+
+    pool.wait();
+    buffer.reserve(max_threads_count);
+    for (auto & key_future : keys)
+        buffer.emplace_back(std::make_shared<ObjectInfo>(key_future.get(), std::nullopt));
+}
+
+ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
+{
+    size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+    if (current_index >= buffer.size())
+        return std::make_shared<ObjectInfo>(callback());
+
+    return buffer[current_index];
+}
+
 }

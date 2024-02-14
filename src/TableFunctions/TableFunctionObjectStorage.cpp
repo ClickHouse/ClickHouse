@@ -93,6 +93,7 @@ template <typename Definition, typename StorageSettings, typename Configuration>
 ColumnsDescription TableFunctionObjectStorage<
     Definition, StorageSettings, Configuration>::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
+    chassert(configuration);
     if (configuration->structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
@@ -107,6 +108,7 @@ template <typename Definition, typename StorageSettings, typename Configuration>
 bool TableFunctionObjectStorage<
     Definition, StorageSettings, Configuration>::supportsReadingSubsetOfColumns(const ContextPtr & context)
 {
+    chassert(configuration);
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context);
 }
 
@@ -127,6 +129,7 @@ StoragePtr TableFunctionObjectStorage<Definition, StorageSettings, Configuration
     bool is_insert_query) const
 {
     ColumnsDescription columns;
+    chassert(configuration);
     if (configuration->structure != "auto")
         columns = parseColumnsListFromString(configuration->structure, context);
     else if (!structure_hint.empty())

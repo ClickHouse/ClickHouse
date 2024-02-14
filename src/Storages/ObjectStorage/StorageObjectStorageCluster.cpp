@@ -88,7 +88,14 @@ StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::getTask
     auto iterator = std::make_shared<StorageObjectStorageSource::GlobIterator>(
         object_storage, configuration, predicate, virtual_columns, local_context, nullptr, settings.list_object_keys_size);
 
-    auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String{ return iterator->next(0)->relative_path; });
+    auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String
+    {
+        auto object_info = iterator->next(0);
+        if (object_info)
+            return object_info->relative_path;
+        else
+            return "";
+    });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
 

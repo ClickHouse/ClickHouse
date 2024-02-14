@@ -364,7 +364,10 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
         file_iterator,
         false,
         Storage::getSchemaCache(local_context),
-        threadpool);
+        threadpool,
+        CurrentMetrics::ObjectStorageS3Threads,
+        CurrentMetrics::ObjectStorageS3ThreadsActive,
+        CurrentMetrics::ObjectStorageS3ThreadsScheduled);
 
     auto file_deleter = [=, this](const std::string & path) mutable
     {

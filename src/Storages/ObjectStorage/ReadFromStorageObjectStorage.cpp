@@ -49,7 +49,8 @@ void ReadFromStorageObejctStorage::createIterator(const ActionsDAG::Node * predi
         auto context = getContext();
         iterator_wrapper = StorageObjectStorageSource::createFileIterator(
             configuration, object_storage, distributed_processing, context, predicate,
-            virtual_columns, nullptr, query_settings.list_object_keys_size, context->getFileProgressCallback());
+            virtual_columns, nullptr, query_settings.list_object_keys_size, metric_threads_count,
+            metric_threads_active, metric_threads_scheduled, context->getFileProgressCallback());
     }
 }
 
@@ -75,7 +76,8 @@ void ReadFromStorageObejctStorage::initializePipeline(QueryPipelineBuilder & pip
 
         auto source = std::make_shared<StorageObjectStorageSource>(
             getName(), object_storage, configuration, info, format_settings, query_settings,
-            context, max_block_size, iterator_wrapper, need_only_count, schema_cache, std::move(threadpool));
+            context, max_block_size, iterator_wrapper, need_only_count, schema_cache,
+            std::move(threadpool), metric_threads_count, metric_threads_active, metric_threads_scheduled);
 
         pipes.emplace_back(std::move(source));
     }

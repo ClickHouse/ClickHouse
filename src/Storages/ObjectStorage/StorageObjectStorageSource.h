@@ -30,7 +30,10 @@ public:
         std::shared_ptr<IIterator> file_iterator_,
         bool need_only_count_,
         SchemaCache & schema_cache_,
-        std::shared_ptr<ThreadPool> reader_pool_);
+        std::shared_ptr<ThreadPool> reader_pool_,
+        CurrentMetrics::Metric metric_threads_,
+        CurrentMetrics::Metric metric_threads_active_,
+        CurrentMetrics::Metric metric_threads_scheduled_);
 
     ~StorageObjectStorageSource() override;
 
@@ -47,6 +50,9 @@ public:
         const NamesAndTypesList & virtual_columns,
         ObjectInfos * read_keys,
         size_t list_object_keys_size,
+        CurrentMetrics::Metric metric_threads_,
+        CurrentMetrics::Metric metric_threads_active_,
+        CurrentMetrics::Metric metric_threads_scheduled_,
         std::function<void(FileProgress)> file_progress_callback = {});
 
 protected:
@@ -63,6 +69,10 @@ protected:
     std::shared_ptr<IIterator> file_iterator;
     SchemaCache & schema_cache;
     bool initialized = false;
+
+    const CurrentMetrics::Metric metric_threads;
+    const CurrentMetrics::Metric metric_threads_active;
+    const CurrentMetrics::Metric metric_threads_scheduled;
 
     size_t total_rows_in_file = 0;
     LoggerPtr log = getLogger("StorageObjectStorageSource");
@@ -123,14 +133,21 @@ public:
 class StorageObjectStorageSource::ReadTaskIterator : public IIterator
 {
 public:
-    explicit ReadTaskIterator(const ReadTaskCallback & callback_) : callback(callback_) {}
+    ReadTaskIterator(
+        const ReadTaskCallback & callback_,
+        size_t max_threads_count,
+        CurrentMetrics::Metric metric_threads_,
+        CurrentMetrics::Metric metric_threads_active_,
+        CurrentMetrics::Metric metric_threads_scheduled_);
 
-    size_t estimatedKeysCount() override { return 0; } /// TODO FIXME
+    size_t estimatedKeysCount() override { return buffer.size(); }
 
-    ObjectInfoPtr next(size_t) override { return std::make_shared<ObjectInfo>(callback(), ObjectMetadata{}); }
+    ObjectInfoPtr next(size_t) override;
 
 private:
     ReadTaskCallback callback;
+    ObjectInfos buffer;
+    std::atomic_size_t index = 0;
 };
 
 class StorageObjectStorageSource::GlobIterator : public IIterator, WithContext
