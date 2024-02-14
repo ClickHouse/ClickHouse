@@ -575,7 +575,8 @@ CI_CONFIG = CiConfig(
                 "package_debug",
                 "binary_release",
                 "fuzzers",
-            ]
+            ],
+            job_config=JobConfig(run_always=True),
         ),
         "ClickHouse special build check": BuildReportConfig(
             builds=[
@@ -590,7 +591,8 @@ CI_CONFIG = CiConfig(
                 "binary_s390x",
                 "binary_amd64_compat",
                 "binary_amd64_musl",
-            ]
+            ],
+            job_config=JobConfig(run_always=True),
         ),
     },
     other_jobs_configs={
