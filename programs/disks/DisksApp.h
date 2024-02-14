@@ -21,6 +21,7 @@ class DisksApp : public Poco::Util::Application, public Loggers
 {
 public:
     DisksApp() = default;
+    ~DisksApp() override;
 
     void init(std::vector<String> & common_arguments);
 

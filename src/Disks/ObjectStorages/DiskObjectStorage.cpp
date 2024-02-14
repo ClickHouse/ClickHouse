@@ -389,6 +389,7 @@ void DiskObjectStorage::shutdown()
 {
     LOG_INFO(log, "Shutting down disk {}", name);
     object_storage->shutdown();
+    metadata_storage->shutdown();
     LOG_INFO(log, "Disk {} shut down", name);
 }
 

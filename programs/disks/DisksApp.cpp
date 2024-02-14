@@ -89,6 +89,11 @@ void DisksApp::processOptions()
         config().setString("log-level", options["log-level"].as<String>());
 }
 
+DisksApp::~DisksApp()
+{
+    global_context->shutdown();
+}
+
 void DisksApp::init(std::vector<String> & common_arguments)
 {
     stopOptionsProcessing();
