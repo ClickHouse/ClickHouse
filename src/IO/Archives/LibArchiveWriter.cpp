@@ -243,7 +243,7 @@ void LibArchiveWriter::finalize()
 void LibArchiveWriter::setCompression(const String & compression_method_, int compression_level)
 {
     // throw an error unless setCompression is passed the default value
-    if (compression_method_.empty() == 0 && compression_level == -1)
+    if (compression_method_.empty() && compression_level == -1)
         return;
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "tar archives are currently supported without compression");
 }

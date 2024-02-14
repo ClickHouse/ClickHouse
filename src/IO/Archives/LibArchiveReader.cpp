@@ -113,7 +113,7 @@ public:
     {
         std::unique_ptr<LibArchiveReader::StreamInfo> rs
             = archive_read_function ? std::make_unique<StreamInfo>(archive_read_function()) : nullptr;
-        auto archive = rs ? openWithReader(rs.get()) : openWithPath(path_to_archive);
+        auto * archive = rs ? openWithReader(rs.get()) : openWithPath(path_to_archive);
 
         SCOPE_EXIT(close(archive););
 
