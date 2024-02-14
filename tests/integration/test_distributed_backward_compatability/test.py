@@ -8,7 +8,7 @@ node_old = cluster.add_instance(
     "node1",
     main_configs=["configs/remote_servers.xml"],
     image="clickhouse/clickhouse-server",
-    tag="23.12",
+    tag="24.1",
     stay_alive=True,
     with_installed_binary=True,
 )
