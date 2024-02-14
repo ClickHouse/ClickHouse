@@ -150,11 +150,12 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         help="skip fetching data about job runs, used in --configure action (for debugging and nigthly ci)",
     )
     parser.add_argument(
-        "--rebuild-all-docker",
+        "--force",
         action="store_true",
         default=False,
-        help="will create run config for rebuilding all dockers, used in --configure action (for nightly docker job)",
+        help="Used with --run, force the job to run, omitting the ci cache",
     )
+    # FIXME: remove, not used
     parser.add_argument(
         "--rebuild-all-binaries",
         action="store_true",
@@ -1005,7 +1006,7 @@ def main() -> int:
                 print(status)
                 print("::endgroup::")
 
-        if previous_status:
+        if previous_status and not args.force:
             print(
                 f"Commit status or Build Report is already present - job will be skipped with status: [{previous_status}]"
             )
