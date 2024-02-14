@@ -97,6 +97,14 @@ jobs:
       build_name: package_release
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
+  BuilderDebReleaseCoverage:
+    needs: [RunConfig, BuildDockers]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: package_release_coverage
+      checkout_depth: 0
+      data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebAarch64:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -277,6 +285,7 @@ jobs:
       - BuilderDebDebug
       - BuilderDebMsan
       - BuilderDebRelease
+      - BuilderDebReleaseCoverage
       - BuilderDebTsan
       - BuilderDebUBsan
     uses: ./.github/workflows/reusable_test.yml
@@ -318,15 +327,19 @@ jobs:
       run_command: |
         python3 build_report_check.py "$CHECK_NAME"
   MarkReleaseReady:
-    needs: [RunConfig, BuilderBinDarwin, BuilderBinDarwinAarch64, BuilderDebRelease, BuilderDebAarch64]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Mark Commit Release Ready
-      runner_type: style-checker
-      data: ${{ needs.RunConfig.outputs.data }}
-      run_command: |
-        python3 mark_release_ready.py
+    needs:
+      - BuilderBinDarwin
+      - BuilderBinDarwinAarch64
+      - BuilderDebRelease
+      - BuilderDebAarch64
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+      - name: Mark Commit Release Ready
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 mark_release_ready.py
 ############################################################################################
 #################################### INSTALL PACKAGES ######################################
 ############################################################################################
@@ -359,6 +372,14 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateless tests (release)
+      runner_type: func-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+  FunctionalStatelessTestCoverage:
+    needs: [RunConfig, BuilderDebReleaseCoverage]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Stateless tests (coverage)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestReleaseDatabaseReplicated:
@@ -459,6 +480,14 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateful tests (release)
+      runner_type: func-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+  FunctionalStatefulTestCoverage:
+    needs: [RunConfig, BuilderDebReleaseCoverage]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Stateful tests (coverage)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatefulTestAarch64:
