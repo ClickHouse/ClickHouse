@@ -10,7 +10,16 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 import docker_images_helper
+import upload_result_helper
+from build_check import get_release_or_pr
 from ci_config import CI_CONFIG, Labels
+from clickhouse_helper import (
+    CiLogsCredentials,
+    ClickHouseHelper,
+    get_instance_id,
+    get_instance_type,
+    prepare_tests_results_for_clickhouse,
+)
 from commit_status_helper import (
     CommitStatusData,
     RerunHelper,
@@ -36,15 +45,6 @@ from github import Github
 from pr_info import PRInfo
 from report import SUCCESS, BuildResult, JobReport
 from s3_helper import S3Helper
-from clickhouse_helper import (
-    CiLogsCredentials,
-    ClickHouseHelper,
-    get_instance_id,
-    get_instance_type,
-    prepare_tests_results_for_clickhouse,
-)
-from build_check import get_release_or_pr
-import upload_result_helper
 from version_helper import get_version_from_repo
 
 
@@ -149,6 +149,13 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         default=False,
         help="skip fetching data about job runs, used in --configure action (for debugging and nigthly ci)",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Used with --run, force the job to run, omitting the ci cache",
+    )
+    # FIXME: remove, not used
     parser.add_argument(
         "--rebuild-all-docker",
         action="store_true",
@@ -1005,7 +1012,7 @@ def main() -> int:
                 print(status)
                 print("::endgroup::")
 
-        if previous_status:
+        if previous_status and not args.force:
             print(
                 f"Commit status or Build Report is already present - job will be skipped with status: [{previous_status}]"
             )
