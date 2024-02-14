@@ -636,8 +636,11 @@ void StorageKafka2::saveIntent(zkutil::ZooKeeper & keeper_to_use, const TopicPar
 }
 
 
-StorageKafka2::PolledBatchInfo
-StorageKafka2::pollConsumer(KafkaConsumer2 & consumer, const TopicPartition & topic_partition, const ContextPtr & modified_context)
+StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
+    KafkaConsumer2 & consumer,
+    const TopicPartition & topic_partition,
+    std::optional<int64_t> message_count,
+    const ContextPtr & modified_context)
 {
     PolledBatchInfo batch_info;
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
@@ -717,7 +720,7 @@ StorageKafka2::pollConsumer(KafkaConsumer2 & consumer, const TopicPartition & to
     {
         size_t new_rows = 0;
         exception_message.reset();
-        if (auto buf = consumer.consume(topic_partition))
+        if (auto buf = consumer.consume(topic_partition, message_count))
         {
             ProfileEvents::increment(ProfileEvents::KafkaMessagesRead);
             new_rows = executor.execute(*buf);
@@ -906,18 +909,72 @@ bool StorageKafka2::streamToViews(size_t idx)
     ProfileEvents::increment(ProfileEvents::KafkaBackgroundReads);
 
     auto & consumer_info = consumers[idx];
+    auto & consumer = consumer_info.consumer;
+
+    // To keep the consumer alive
+    LOG_TRACE(log, "Polling consumer for events");
+    consumer->pollEvents();
+
+    if (consumer->needsOffsetUpdate() || consumer_info.locks.empty())
+    {
+        // First release the locks so let other consumers acquire them ASAP
+        consumer_info.locks.clear();
+
+        const auto * current_assignment = consumer->getKafkaAssignment();
+        if (current_assignment == nullptr)
+        {
+            // The consumer lost its assignment and haven't received a new one.
+            // TODO(antaljanosbenjamin): returning a proper value representing the state
+            // By returning true this function reports the current consumer as a "stalled" stream, which
+            return true;
+        }
+          LOG_TRACE(log, "Consumer needs update offset");
+        consumer_info.consume_from_topic_partition_index = 0;
+
+        consumer_info.locks.clear();
+        consumer_info.topic_partitions.clear();
+
+        auto maybe_locks = lockTopicPartitions(*consumer_info.keeper, *current_assignment);
+
+        if (!maybe_locks.has_value())
+        {
+            // We couldn't acquire locks, probably some other consumers are still holding them.
+            return true;
+        }
+
+        consumer_info.locks = std::move(*maybe_locks);
+
+        consumer_info.topic_partitions.reserve(current_assignment->size());
+        for (const auto & topic_partition : *current_assignment)
+        {
+            TopicPartition topic_partition_copy{topic_partition};
+            if (const auto & maybe_committed_offset = consumer_info.locks.at(topic_partition).committed_offset;
+                maybe_committed_offset.has_value())
+                topic_partition_copy.offset = *maybe_committed_offset + 1;
+            else
+                topic_partition_copy.offset = KafkaConsumer2::BEGINNING_OFFSET;
+
+            consumer_info.topic_partitions.push_back(std::move(topic_partition_copy));
+        }
+        consumer_info.consumer->updateOffsets(consumer_info.topic_partitions);
+
+    }
+
+    LOG_TRACE(log, "Consumer has assignment");
+
+    // Here we will try to pull messages regardless if we loose our assignment
     try
     {
         LOG_TRACE(log, "Trying to consume from consumer {}", idx);
-        const auto rows = streamFromConsumer(consumer_info);
-        if (rows.has_value())
+        const auto maybe_rows = streamFromConsumer(consumer_info);
+        if (maybe_rows.has_value())
         {
             const auto milliseconds = watch.elapsedMilliseconds();
-            LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", formatReadableQuantity(*rows), table_id.getNameForLogs(), milliseconds);
+            LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", formatReadableQuantity(*maybe_rows), table_id.getNameForLogs(), milliseconds);
         }
         else
         {
-            LOG_DEBUG(log, "Couldn't push any rows");
+            LOG_DEBUG(log, "Couldn't stream any messages");
             return true;
         }
     }
@@ -939,56 +996,6 @@ bool StorageKafka2::streamToViews(size_t idx)
 
 std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInfo & consumer_info)
 {
-    auto & consumer = consumer_info.consumer;
-    auto & keeper_to_use = *consumer_info.keeper;
-    // To keep the consumer alive
-
-    LOG_TRACE(log, "Polling consumer for events");
-    consumer->pollEvents();
-    if (nullptr == consumer->getKafkaAssignment())
-        return std::nullopt;
-    LOG_TRACE(log, "Consumer has assignment");
-
-    if (consumer->needsOffsetUpdate() || consumer_info.locks.empty())
-    {
-        LOG_TRACE(log, "Consumer needs update offset");
-        consumer_info.consume_from_topic_partition_index = 0;
-
-        consumer_info.locks.clear();
-        consumer_info.topic_partitions.clear();
-
-        if (const auto * current_assignment = consumer->getKafkaAssignment(); nullptr != current_assignment)
-        {
-            auto maybe_locks = lockTopicPartitions(keeper_to_use, *current_assignment);
-
-            if (!maybe_locks.has_value())
-            {
-                // TODO(antaljanosbenjamin): signal this somehow to caller, maybe wait a bit longer.
-                return true;
-            }
-
-            consumer_info.locks = std::move(*maybe_locks);
-
-            consumer_info.topic_partitions.reserve(current_assignment->size());
-            for (const auto & topic_partition : *current_assignment)
-            {
-                TopicPartition topic_partition_copy{topic_partition};
-                if (const auto & maybe_committed_offset = consumer_info.locks.at(topic_partition).committed_offset;
-                    maybe_committed_offset.has_value())
-                    topic_partition_copy.offset = *maybe_committed_offset + 1;
-                else
-                    topic_partition_copy.offset = KafkaConsumer2::BEGINNING_OFFSET;
-
-                consumer_info.topic_partitions.push_back(std::move(topic_partition_copy));
-            }
-            consumer_info.consumer->updateOffsets(consumer_info.topic_partitions);
-        }
-        else
-        {
-            LOG_TRACE(log, "Consumer lost assignment while trying to lock partitions");
-        }
-    }
-
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = getStorageID();
@@ -1018,7 +1025,8 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
             return;
         consumer_info.consumer->updateOffsets(consumer_info.topic_partitions);
     });
-    auto [blocks, last_read_offset] = pollConsumer(*consumer_info.consumer, topic_partition, kafka_context);
+    auto [blocks, last_read_offset]
+        = pollConsumer(*consumer_info.consumer, topic_partition, consumer_info.locks[topic_partition].intent_size, kafka_context);
 
     if (blocks.empty())
     {
@@ -1040,6 +1048,7 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
     // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
     // It will be cancelled on underlying layer (kafka buffer)
 
+    auto & keeper_to_use = *consumer_info.keeper;
     auto & lock_info = consumer_info.locks.at(topic_partition);
     lock_info.intent_size = last_read_offset - lock_info.committed_offset.value_or(0);
     saveIntent(keeper_to_use, topic_partition, *lock_info.intent_size);
@@ -1057,19 +1066,20 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
     lock_info.committed_offset = last_read_offset;
     topic_partition.offset = last_read_offset + 1;
     needs_offset_reset = false;
+
     return rows;
 }
 
 
-    zkutil::ZooKeeperPtr StorageKafka2::getZooKeeper()
+zkutil::ZooKeeperPtr StorageKafka2::getZooKeeper()
+{
+    if (keeper->expired())
     {
-        if (keeper->expired())
-        {
-            // TODO(antaljanosbenjamin): this can go wrong if we start a new session simultaneously from multiple threads.
-            keeper = keeper->startNewSession();
-            //TODO(antaljanosbenjamin): handle ephemeral nodes
-        }
-        return keeper;
+        // TODO(antaljanosbenjamin): this can go wrong if we start a new session simultaneously from multiple threads.
+        keeper = keeper->startNewSession();
+        //TODO(antaljanosbenjamin): handle ephemeral nodes
+    }
+    return keeper;
 }
 
 

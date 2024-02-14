@@ -103,7 +103,7 @@ public:
     // no topic partitions or all of them were revoked, it returns a null pointer.
     TopicPartitions const * getKafkaAssignment() const;
 
-    // As the main source of offsets is not Kafka, the offsets needs to pushed to the consumer from outside
+    // As the main source of offsets is not Kafka, the offsets needs to be pushed to the consumer from outside
     bool needsOffsetUpdate() const { return needs_offset_update; }
 
     // Returns true if it received new assignment and could update the internal state accordingly, false otherwise
@@ -112,7 +112,7 @@ public:
     /// Polls batch of messages from Kafka and returns read buffer containing the next message or
     /// nullptr when there are no messages to process.
     /// TODO(antaljanosbenjamin): add batch size param
-    ReadBufferPtr consume(const TopicPartition & topic_partition);
+    ReadBufferPtr consume(const TopicPartition & topic_partition, const std::optional<int64_t> & message_count);
 
     // Return values for the message that's being read.
     String currentTopic() const { return current[-1].get_topic(); }

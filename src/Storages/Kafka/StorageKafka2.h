@@ -80,30 +80,6 @@ public:
     StreamingHandleErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
 
 private:
-    // Configuration and state
-    std::mutex keeper_mutex;
-    zkutil::ZooKeeperPtr keeper;
-    std::unique_ptr<KafkaSettings> kafka_settings;
-    Macros::MacroExpansionInfo macros_info;
-    const Names topics;
-    const String brokers;
-    const String group;
-    const String client_id;
-    const String format_name;
-    const size_t max_rows_per_message;
-    const String schema_name;
-    const size_t num_consumers; /// total number of consumers
-    Poco::Logger * log;
-    Poco::Semaphore semaphore;
-    const bool intermediate_commit;
-    const SettingsChanges settings_adjustments;
-
-    std::atomic<bool> mv_attached = false;
-
-    /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
-    /// In this case we still need to be able to shutdown() properly.
-    size_t num_created_consumers = 0; /// number of actually created consumers.
-
     using TopicPartition = KafkaConsumer2::TopicPartition;
     using TopicPartitions = KafkaConsumer2::TopicPartitions;
 
@@ -136,8 +112,6 @@ private:
         int64_t last_offset;
     };
 
-    std::vector<ConsumerAndAssignmentInfo> consumers;
-
     // Stream thread
     struct TaskContext
     {
@@ -145,20 +119,48 @@ private:
         std::atomic<bool> stream_cancelled{false};
         explicit TaskContext(BackgroundSchedulePool::TaskHolder && task_) : holder(std::move(task_)) { }
     };
+
+    enum class AssignmentChange
+    {
+        NotChanged,
+        Updated,
+        Lost
+    };
+
+    // Configuration and state
+    std::mutex keeper_mutex;
+    zkutil::ZooKeeperPtr keeper;
+    std::unique_ptr<KafkaSettings> kafka_settings;
+    Macros::MacroExpansionInfo macros_info;
+    const Names topics;
+    const String brokers;
+    const String group;
+    const String client_id;
+    const String format_name;
+    const size_t max_rows_per_message;
+    const String schema_name;
+    const size_t num_consumers; /// total number of consumers
+    Poco::Logger * log;
+    Poco::Semaphore semaphore;
+    const bool intermediate_commit;
+    const SettingsChanges settings_adjustments;
+    std::atomic<bool> mv_attached = false;
+    /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
+    /// In this case we still need to be able to shutdown() properly.
+    size_t num_created_consumers = 0; /// number of actually created consumers.
+    std::vector<ConsumerAndAssignmentInfo> consumers;
     std::vector<std::shared_ptr<TaskContext>> tasks;
     bool thread_per_consumer = false;
-
     /// For memory accounting in the librdkafka threads.
     std::mutex thread_statuses_mutex;
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
+    /// If named_collection is specified.
+    String collection_name;
+    std::atomic<bool> shutdown_called = false;
 
     SettingsChanges createSettingsAdjustments();
     KafkaConsumer2Ptr createConsumer(size_t consumer_number);
 
-    /// If named_collection is specified.
-    String collection_name;
-
-    std::atomic<bool> shutdown_called = false;
     UUID uuid{UUIDHelpers::generateV4()};
 
     // Update Kafka configuration with values from CH user configuration.
@@ -175,7 +177,7 @@ private:
 
     bool streamToViews(size_t idx);
 
-    std::optional<size_t> streamFromConsumer(ConsumerAndAssignmentInfo& consumer_info);
+    std::optional<size_t> streamFromConsumer(ConsumerAndAssignmentInfo & consumer_info);
 
     bool checkDependencies(const StorageID & table_id);
 
@@ -186,7 +188,11 @@ private:
     void saveCommittedOffset(zkutil::ZooKeeper& keeper_to_use,const TopicPartition & topic_partition, int64_t committed_offset);
     void saveIntent(zkutil::ZooKeeper& keeper_to_use,const TopicPartition & topic_partition, int64_t intent);
 
-    PolledBatchInfo pollConsumer(KafkaConsumer2 & consumer, const TopicPartition & topic_partition, const ContextPtr & context);
+    PolledBatchInfo pollConsumer(
+        KafkaConsumer2 & consumer,
+        const TopicPartition & topic_partition,
+        std::optional<int64_t> message_count,
+        const ContextPtr & context);
 
     zkutil::ZooKeeperPtr getZooKeeper();
 

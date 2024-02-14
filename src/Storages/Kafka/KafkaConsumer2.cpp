@@ -280,7 +280,7 @@ void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic
 }
 
 // it do the poll when needed
-ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition)
+ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, const std::optional<int64_t> & message_count)
 {
     resetIfStopped();
 
@@ -288,10 +288,12 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition)
         return nullptr;
 
     if (hasMorePolledMessages())
-        return getNextMessage();
+    {
+        if (auto next_message = getNextMessage(); next_message)
+            return next_message;
+    }
 
-
-        // TODO(antaljanosbenjamin): check if we should poll new messages or not
+    // TODO(antaljanosbenjamin): check if we should poll new messages or not
     while (true)
     {
         stalled_status = StalledStatus::NO_MESSAGES_RETURNED;
@@ -309,8 +311,9 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition)
         queue_to_poll_from.forward_to_queue(consumer->get_consumer_queue());
         SCOPE_EXIT({ queue_to_poll_from.disable_queue_forwarding(); });
 
+        const auto messages_to_pull = message_count.value_or(batch_size);
         /// Don't drop old messages immediately, since we may need them for virtual columns.
-        auto new_messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(actual_poll_timeout_ms));
+        auto new_messages = consumer->poll_batch(messages_to_pull, std::chrono::milliseconds(actual_poll_timeout_ms));
 
         resetIfStopped();
         if (stalled_status == StalledStatus::CONSUMER_STOPPED)
@@ -376,17 +379,18 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition)
 
 ReadBufferPtr KafkaConsumer2::getNextMessage()
 {
-    if (current == messages.end())
-        return nullptr;
+    while (current != messages.end())
+    {
+        const auto * data = current->get_payload().get_data();
+        size_t size = current->get_payload().get_size();
+        ++current;
 
-    const auto * data = current->get_payload().get_data();
-    size_t size = current->get_payload().get_size();
-    ++current;
+        // TODO(antaljanosbenjamin): When this can be nullptr?
+        if (data)
+            return std::make_shared<ReadBufferFromMemory>(data, size);
+    }
 
-    if (data)
-        return std::make_shared<ReadBufferFromMemory>(data, size);
-
-    return getNextMessage();
+    return nullptr;
 }
 
 size_t KafkaConsumer2::filterMessageErrors()
