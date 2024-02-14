@@ -3601,7 +3601,9 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
 
     connection.close()
 
-    instance3.wait_for_log_line("Failed to push to views. Error: Code: 252. DB::Exception: Too many parts")
+    instance3.wait_for_log_line(
+        "Failed to push to views. Error: Code: 252. DB::Exception: Too many parts"
+    )
 
     instance3.replace_in_config(
         "/etc/clickhouse-server/config.d/mergetree.xml",
