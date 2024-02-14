@@ -194,7 +194,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     auto add_optional_param = [&](const char * desc)
     {
         ++max_num_params;
-        needed_params += needed_params.empty() ? "\n" : ",\n[";
+        needed_params += needed_params.empty() ? "\n[" : ",\n[";
         needed_params += desc;
         needed_params += "]";
     };
