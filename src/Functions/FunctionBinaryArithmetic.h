@@ -1708,9 +1708,9 @@ public:
                                 if (left.getScale() + right.getScale() > ResultDataType::maxPrecision())
                                     throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Overflow during decimal division");
                             }
-                            ResultDataType result_type = decimalResultType<is_multiply, is_division>(left, right);
-                            type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
                         }
+                        ResultDataType result_type = decimalResultType<is_multiply, is_division>(left, right);
+                        type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
                     }
                     else if constexpr (((IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>) ||
                         (IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>)))
