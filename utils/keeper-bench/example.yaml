@@ -4,6 +4,7 @@ delay: 4
 timelimit: 300
 continue_on_errors: true
 
+# Example of using zookeeper
 connections:
   operation_timeout_ms: 3000
   connection_timeout_ms: 40000
@@ -17,6 +18,18 @@ connections:
     sessions: 1
 
   host: "localhost:9181"
+
+# # Example of using fdbkeeper
+# connections:
+#   # Unlike the zookeeper, here only need to fill in one connection item.
+#   # And if there are more than one, it will throw an exception.
+#   connection:
+#     secure: false
+#     operation_timeout_ms: 2000
+#     session_timeout_ms: 2000
+#     connection_timeout_ms: 50000
+#     host: "fdb://"
+#     sessions: 1
 
 generator:
   setup:

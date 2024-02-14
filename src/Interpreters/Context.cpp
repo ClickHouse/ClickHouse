@@ -90,6 +90,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/FoundationDB/FoundationDBCommon.h>
 #include <Common/ShellCommand.h>
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
@@ -581,6 +582,8 @@ struct ContextSharedPart : boost::noncopyable
 
         LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown();
+
+        FoundationDBNetwork::shutdownIfNeed();
 
         SHUTDOWN(log, "merges executor", merge_mutate_executor, wait());
         SHUTDOWN(log, "fetches executor", fetch_executor, wait());

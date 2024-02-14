@@ -2733,3 +2733,7 @@ zstd
 iTerm
 shortkeys
 Shortkeys
+fdbkeeper
+FoundationDB
+IKeeper
+testkeeper

@@ -48,6 +48,10 @@ fi
 ./setup_minio.sh stateless
 ./setup_hdfs_minicluster.sh
 
+if [[ -f "setup_fdb.sh" ]] && [[ "$(uname -m)" == "x86_64" ]]; then
+    ./setup_fdb.sh
+fi
+
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
@@ -217,6 +221,7 @@ function run_tests()
     ADDITIONAL_OPTIONS+=('--report-logs-stats')
 
     try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
+    try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('api_version', '/keeper/', 2)"
 
     set +e
     clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \

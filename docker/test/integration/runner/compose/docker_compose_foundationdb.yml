@@ -1,0 +1,44 @@
+version: '3'
+services:
+  foundationdb1:
+    image: foundationdb/foundationdb:7.1.27
+    environment:
+      FDB_NETWORKING_MODE: container
+      FDB_COORDINATOR_PORT: ${FDB_PORT:-4501}
+      FDB_PORT: ${FDB_PORT:-4501}
+      FDB_CLUSTER_FILE: /etc/foundationdb/fdb.cluster
+    volumes:
+      - fdb_config1:/etc/foundationdb
+  # Usually we only need the foundationdb1 cluster. foundationdb2 and dr are
+  # used to test the switching of fdb clusters for clickhouse.
+  foundationdb2:
+    image: foundationdb/foundationdb:7.1.27
+    environment:
+      FDB_NETWORKING_MODE: container
+      FDB_COORDINATOR_PORT: ${FDB_PORT:-4501}
+      FDB_PORT: ${FDB_PORT:-4501}
+      FDB_CLUSTER_FILE: /etc/foundationdb/fdb.cluster
+    volumes:
+      - fdb_config2:/etc/foundationdb
+  foundationdb-dr:
+    image: foundationdb/foundationdb:7.1.27
+    init: True
+    entrypoint: [bash, -ec]
+    command:
+      - |
+        fdbcli -C /etc/foundationdb2/fdb.cluster --exec "configure new single memory"
+        dr_agent -s /etc/foundationdb1/fdb.cluster -d /etc/foundationdb2/fdb.cluster &
+        fdbdr start -s /etc/foundationdb1/fdb.cluster -d /etc/foundationdb2/fdb.cluster 
+
+        echo -e "#! /bin/sh\nfdbdr abort -s /etc/foundationdb1/fdb.cluster -d /etc/foundationdb2/fdb.cluster --dstonly" > /usr/local/bin/stop-dr
+        chmod +x /usr/local/bin/stop-dr
+        wait
+    volumes:
+      - fdb_config1:/etc/foundationdb1
+      - fdb_config2:/etc/foundationdb2
+    depends_on:
+      - foundationdb1
+      - foundationdb2
+volumes:
+  fdb_config1:
+  fdb_config2:

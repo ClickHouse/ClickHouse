@@ -25,6 +25,9 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
     else
         initFromKeeperSection(config, config_name);
 
+    if (implementation == "fdbkeeper" && fdb_cluster.empty())
+        throw KeeperException(Coordination::Error::ZBADARGUMENTS, "fdb_cluster is requested by fdbkeeper implementation");
+
     if (!chroot.empty())
     {
         if (chroot.front() != '/')
@@ -217,6 +220,14 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         else if (key == "use_compression")
         {
             use_compression = config.getBool(config_name + "." + key);
+        }
+        else if (key == "fdb_cluster")
+        {
+            fdb_cluster = config.getString(config_name + "." + key);
+        }
+        else if (key == "fdb_prefix")
+        {
+            fdb_prefix = config.getString(config_name + "." + key);
         }
         else
             throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Unknown key {} in config file", key);

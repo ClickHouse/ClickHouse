@@ -48,7 +48,7 @@ struct PathGetter
     std::string getPath() const;
     std::string description() const;
 
-    void initialize(Coordination::ZooKeeper & zookeeper);
+    void initialize(Coordination::IKeeper & zookeeper);
 private:
     std::vector<std::string> parent_paths;
 
@@ -68,14 +68,14 @@ struct RequestGenerator
 
     std::string description();
 
-    void startup(Coordination::ZooKeeper & zookeeper);
+    void startup(Coordination::IKeeper & zookeeper);
 
     size_t getWeight() const;
 private:
     virtual void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) = 0;
     virtual std::string descriptionImpl() = 0;
     virtual Coordination::ZooKeeperRequestPtr generateImpl(const Coordination::ACLs & acls) = 0;
-    virtual void startupImpl(Coordination::ZooKeeper &) {}
+    virtual void startupImpl(Coordination::IKeeper &) { }
 
     size_t weight = 1;
 };
@@ -89,7 +89,7 @@ private:
     void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
     std::string descriptionImpl() override;
     Coordination::ZooKeeperRequestPtr generateImpl(const Coordination::ACLs & acls) override;
-    void startupImpl(Coordination::ZooKeeper & zookeeper) override;
+    void startupImpl(Coordination::IKeeper & zookeeper) override;
 
     PathGetter parent_path;
     StringGetter name;
@@ -108,7 +108,7 @@ private:
     void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
     std::string descriptionImpl() override;
     Coordination::ZooKeeperRequestPtr generateImpl(const Coordination::ACLs & acls) override;
-    void startupImpl(Coordination::ZooKeeper & zookeeper) override;
+    void startupImpl(Coordination::IKeeper & zookeeper) override;
 
     PathGetter path;
     StringGetter data;
@@ -120,7 +120,7 @@ private:
     void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
     std::string descriptionImpl() override;
     Coordination::ZooKeeperRequestPtr generateImpl(const Coordination::ACLs & acls) override;
-    void startupImpl(Coordination::ZooKeeper & zookeeper) override;
+    void startupImpl(Coordination::IKeeper & zookeeper) override;
 
     PathGetter path;
 };
@@ -131,7 +131,7 @@ private:
     void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
     std::string descriptionImpl() override;
     Coordination::ZooKeeperRequestPtr generateImpl(const Coordination::ACLs & acls) override;
-    void startupImpl(Coordination::ZooKeeper & zookeeper) override;
+    void startupImpl(Coordination::IKeeper & zookeeper) override;
 
     PathGetter path;
 };
@@ -146,7 +146,7 @@ struct RequestGetter
 
     RequestGeneratorPtr getRequestGenerator() const;
     std::string description() const;
-    void startup(Coordination::ZooKeeper & zookeeper);
+    void startup(Coordination::IKeeper & zookeeper);
     const std::vector<RequestGeneratorPtr> & requestGenerators() const;
 private:
     std::vector<RequestGeneratorPtr> request_generators;
@@ -160,7 +160,7 @@ private:
     void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
     std::string descriptionImpl() override;
     Coordination::ZooKeeperRequestPtr generateImpl(const Coordination::ACLs & acls) override;
-    void startupImpl(Coordination::ZooKeeper & zookeeper) override;
+    void startupImpl(Coordination::IKeeper & zookeeper) override;
 
     std::optional<NumberGetter> size;
     RequestGetter request_getter;
@@ -171,9 +171,9 @@ class Generator
 public:
     explicit Generator(const Poco::Util::AbstractConfiguration & config);
 
-    void startup(Coordination::ZooKeeper & zookeeper);
+    void startup(Coordination::IKeeper & zookeeper);
     Coordination::ZooKeeperRequestPtr generate();
-    void cleanup(Coordination::ZooKeeper & zookeeper);
+    void cleanup(Coordination::IKeeper & zookeeper);
 private:
     struct Node
     {
@@ -184,7 +184,7 @@ private:
 
         std::shared_ptr<Node> clone() const;
 
-        void createNode(Coordination::ZooKeeper & zookeeper, const std::string & parent_path, const Coordination::ACLs & acls) const;
+        void createNode(Coordination::IKeeper & zookeeper, const std::string & parent_path, const Coordination::ACLs & acls) const;
         void dumpTree(int level = 0) const;
     };
 

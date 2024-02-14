@@ -56,6 +56,9 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
    && rm -rf /tmp/clickhouse-odbc-tmp
 
+RUN mkdir -p /etc/foundationdb \
+   && chmod 777 /etc/foundationdb
+
 ENV TZ=Europe/Amsterdam
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
@@ -78,6 +81,7 @@ RUN wget --no-verbose 'https://archive.apache.org/dist/hadoop/common/hadoop-3.3.
     && tar -xvf hadoop-3.3.1.tar.gz \
     && rm -rf hadoop-3.3.1.tar.gz
 
+
 ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
 ENV EXPORT_S3_STORAGE_POLICIES=1
@@ -88,6 +92,7 @@ RUN npm install -g azurite \
 COPY run.sh /
 COPY setup_minio.sh /
 COPY setup_hdfs_minicluster.sh /
+COPY setup_fdb.sh /
 COPY attach_gdb.lib /
 COPY utils.lib /
 

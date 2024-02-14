@@ -12,6 +12,8 @@ TU_EXCLUDES=(
     RangeHashedDictionary
 
     Aggregator
+
+    NativeAPI # contrib/fdb-c
 )
 
 if find $1 -name '*.o' | xargs wc -c | grep -v total | sort -rn | awk '{ if ($1 > 50000000) print }' \

@@ -244,6 +244,9 @@ function configure
     cp -a "$FASTTEST_SOURCE/programs/server/config.d/log_to_console.xml" "$FASTTEST_DATA/config.d"
     # doesn't support SSL
     rm -f "$FASTTEST_DATA/config.d/secure_ports.xml"
+    # doesn't support FDBKeeper
+    rm -f "$FASTTEST_DATA/config.d/fdbkeeper.xml"
+    rm -f "$FASTTEST_SOURCE/tests/config/config.d/fdbkeeper.xml"
 }
 
 function run_tests

@@ -19,6 +19,8 @@
 
 namespace DB
 {
+class ZooKeeperLog;
+
 namespace ErrorCodes
 {
     extern const int KEEPER_EXCEPTION;
@@ -629,6 +631,8 @@ public:
     virtual bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const = 0;
 
     virtual const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return nullptr; }
+
+    virtual void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> /* zk_log_ */) {}
 
     /// A ZooKeeper session can have an optional deadline set on it.
     /// After it has been reached, the session needs to be finalized.

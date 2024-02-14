@@ -195,6 +195,10 @@ add_subdirectory(Access/Common)
 add_subdirectory(Common/ZooKeeper)
 add_subdirectory(Common/Config)
 
+if(ENABLE_FDB)
+    add_subdirectory(Common/FoundationDB)
+endif()
+
 set (all_modules)
 macro(add_object_library name common_path)
     add_headers_and_sources(dbms ${common_path})
@@ -645,6 +649,10 @@ if (ENABLE_TESTS)
         string_utils
         hilite_comparator)
 
+    if (TARGET clickhouse_common_foundationdb)
+        target_link_libraries(unit_tests_dbms PRIVATE clickhouse_common_foundationdb)
+    endif()
+
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
     endif()
@@ -659,5 +667,9 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::parquet)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
+    endif()
+
+    if (TARGET ch_contrib::fdb_c)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::fdb_c)
     endif()
 endif ()

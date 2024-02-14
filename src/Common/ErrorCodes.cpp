@@ -598,7 +598,10 @@
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
     M(1001, STD_EXCEPTION) \
-    M(1002, UNKNOWN_EXCEPTION) \
+    \
+    M(1101, FDB_EXCEPTION) \
+    M(1102, FDB_META_EXCEPTION) \
+    M(1103, UNKNOWN_EXCEPTION) \
 /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -615,7 +618,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1002;
+    constexpr ErrorCode END = 1103;
     ErrorPairHolder values[END + 1]{};
 
     struct ErrorCodesNames

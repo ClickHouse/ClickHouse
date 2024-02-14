@@ -10,6 +10,9 @@
 #include <ranges>
 #include <vector>
 
+#if USE_FDB
+#include <Common/FoundationDB/FDBKeeper.h>
+#endif
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/randomSeed.h>
@@ -120,6 +123,12 @@ void ZooKeeper::init(ZooKeeperArgs args_)
         else
             LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(args.hosts, ","), args.chroot);
     }
+#if USE_FDB
+    else if (args.implementation == "fdbkeeper")
+    {
+        impl = std::make_unique<Coordination::FDBKeeper>(args, zk_log);
+    }
+#endif
     else if (args.implementation == "testkeeper")
     {
         impl = std::make_unique<Coordination::TestKeeper>(args);
@@ -1315,8 +1324,7 @@ void ZooKeeper::finalize(const String & reason)
 void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
 {
     zk_log = std::move(zk_log_);
-    if (auto * zk = dynamic_cast<Coordination::ZooKeeper *>(impl.get()))
-        zk->setZooKeeperLog(zk_log);
+    impl->setZooKeeperLog(zk_log);
 }
 
 void ZooKeeper::setServerCompletelyStarted()

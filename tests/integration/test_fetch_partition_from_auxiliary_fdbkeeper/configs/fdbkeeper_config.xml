@@ -1,0 +1,14 @@
+<clickhouse>
+    <zookeeper>
+        <implementation>fdbkeeper</implementation>
+        <fdb_prefix>fdbkeeper</fdb_prefix>
+        <fdb_cluster>/etc/foundationdb/fdb.cluster</fdb_cluster>
+    </zookeeper>
+    <auxiliary_zookeepers>
+        <zookeeper2>
+            <implementation>fdbkeeper</implementation>
+            <fdb_prefix>fdbkeeper</fdb_prefix>
+            <fdb_cluster>/etc/foundationdb/fdb.cluster</fdb_cluster>
+        </zookeeper2>
+    </auxiliary_zookeepers>
+</clickhouse>

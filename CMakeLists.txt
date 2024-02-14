@@ -470,6 +470,15 @@ endif ()
 
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE}")
 
+# The use_musl option is only used when compiling clickhouse-keeper. 
+# clickhouse-keeper doesn't require fdbkeeper, so when use_musl is enabled,
+# fdb is not compiled.
+option(ENABLE_FDB "Enable compilation of FDB" ON)
+if(USE_MUSL AND ENABLE_FDB)
+    message(WARNING "Cannot compile FDB with USE_MUSL. Disabling FDB.")
+    set(ENABLE_FDB OFF CACHE BOOL "Enable compilation of FDB" FORCE)
+endif()
+
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
 if (NOT ENABLE_JEMALLOC)

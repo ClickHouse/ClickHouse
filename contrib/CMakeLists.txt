@@ -159,6 +159,11 @@ add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (incbin-cmake incbin)
 add_contrib (sqids-cpp-cmake sqids-cpp)
 
+if(ENABLE_FDB)
+    add_contrib (fdb-c-cmake fdb-c)
+endif()
+
+
 option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
 if (ENABLE_NLP)
     add_contrib (libstemmer-c-cmake libstemmer_c)

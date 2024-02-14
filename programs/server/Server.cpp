@@ -99,6 +99,7 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Core/ServerSettings.h>
+#include <Common/FoundationDB/FoundationDBCommon.h>
 #include <filesystem>
 #include <unordered_set>
 
@@ -867,6 +868,10 @@ try
             return metrics;
         }
     );
+
+#if USE_FDB
+    FoundationDBNetwork::ensureStarted(FoundationDBOptions(config(), "foundationdb"));
+#endif
 
     zkutil::validateZooKeeperConfig(config());
     bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
