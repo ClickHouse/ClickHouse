@@ -126,7 +126,8 @@ private:
     UInt64 getMetadataHash(const String & table_name) const;
     bool checkDigestValid(const ContextPtr & local_context, bool debug_check = true) const TSA_REQUIRES(metadata_mutex);
 
-    void waitDatabaseStarted(bool no_throw) const override;
+    void waitDatabaseStarted() const override;
+    void stopLoading() override;
 
     String zookeeper_path;
     String shard_name;
@@ -155,7 +156,7 @@ private:
 
     mutable ClusterPtr cluster;
 
-    LoadTaskPtr startup_replicated_database_task;
+    LoadTaskPtr startup_replicated_database_task TSA_GUARDED_BY(mutex);
 };
 
 }

@@ -102,6 +102,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int INCORRECT_DATA;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -662,15 +663,17 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     if (query_span && query_span->trace_id != UUID{})
         LOG_TRACE(getLogger("executeQuery"), "Query span trace_id for opentelemetry log: {}", query_span->trace_id);
 
+    /// Used for logging query start time in system.query_log
     auto query_start_time = std::chrono::system_clock::now();
 
-    /// Used to set the watch in QueryStatus and the output formats. It is not based on query_start_time as that might be based on
-    /// the value passed by the client
+    /// Used for:
+    /// * Setting the watch in QueryStatus (controls timeouts and progress) and the output formats
+    /// * Logging query duration (system.query_log)
     Stopwatch start_watch{CLOCK_MONOTONIC};
 
     const auto & client_info = context->getClientInfo();
 
-    if (!internal)
+    if (!internal && client_info.initial_query_start_time == 0)
     {
         // If it's not an internal query and we don't see an initial_query_start_time yet, initialize it
         // to current time. Internal queries are those executed without an independent client context,
@@ -678,15 +681,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         // possible to have unset initial_query_start_time for non-internal and non-initial queries. For
         // example, the query is from an initiator that is running an old version of clickhouse.
         // On the other hand, if it's initialized then take it as the start of the query
-        if (client_info.initial_query_start_time == 0)
-        {
-            context->setInitialQueryStartTime(query_start_time);
-        }
-        else
-        {
-            query_start_time = std::chrono::time_point<std::chrono::system_clock>(
-                std::chrono::microseconds{client_info.initial_query_start_time_microseconds});
-        }
+        context->setInitialQueryStartTime(query_start_time);
     }
 
     assert(internal || CurrentThread::get().getQueryContext());
@@ -709,10 +704,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     {
         if (settings.dialect == Dialect::kusto && !internal)
         {
-            ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
-
-            /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Kusto dialect is disabled until these two bugs will be fixed: https://github.com/ClickHouse/ClickHouse/issues/59037 and https://github.com/ClickHouse/ClickHouse/issues/59036");
         }
         else if (settings.dialect == Dialect::prql && !internal)
         {
@@ -935,6 +927,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 reason = "asynchronous insert queue is not configured";
             else if (insert_query->select)
                 reason = "insert query has select";
+            else if (settings.deduplicate_blocks_in_dependent_materialized_views)
+                reason = "dependent materialized views block deduplication is enabled";
             else if (insert_query->hasInlinedData())
                 async_insert = true;
 
@@ -1380,8 +1374,11 @@ void executeQuery(
                     /// Force an update of the headers before we start writing
                     result_details.content_type = output_format->getContentType();
                     result_details.format = format_name;
-                    set_result_details(result_details);
-                    set_result_details = nullptr;
+                    if (set_result_details)
+                    {
+                        set_result_details(result_details);
+                        set_result_details = nullptr;
+                    }
                 }
             }
             catch (const DB::Exception & e)

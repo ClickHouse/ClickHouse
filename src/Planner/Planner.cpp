@@ -71,7 +71,6 @@
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerSorting.h>
 #include <Planner/PlannerWindowFunctions.h>
-#include <Planner/ActionsChain.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/PlannerJoinTree.h>
@@ -97,14 +96,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
-
-/** ClickHouse query planner.
-  *
-  * TODO: Support projections.
-  * TODO: Support trivial count using partition predicates.
-  * TODO: Support trivial count for table functions.
-  * TODO: Support indexes for IN function.
-  */
 
 namespace
 {
@@ -215,7 +206,7 @@ void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const Planne
         if (!read_from_dummy)
             continue;
 
-        auto filter_actions = ActionsDAG::buildFilterActionsDAG(read_from_dummy->getFilterNodes().nodes, {}, query_context);
+        auto filter_actions = ActionsDAG::buildFilterActionsDAG(read_from_dummy->getFilterNodes().nodes);
         auto & table_expression_data = dummy_storage_to_table_expression_data.at(&read_from_dummy->getStorage());
         table_expression_data->setFilterActions(std::move(filter_actions));
     }

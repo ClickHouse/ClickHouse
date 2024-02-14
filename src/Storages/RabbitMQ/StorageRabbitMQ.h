@@ -27,7 +27,7 @@ public:
             ContextPtr context_,
             const ColumnsDescription & columns_,
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
-            bool is_attach_);
+            bool is_attach);
 
     std::string getName() const override { return "RabbitMQ"; }
 
@@ -158,10 +158,9 @@ private:
 
     size_t read_attempts = 0;
     mutable bool drop_table = false;
-    bool is_attach;
 
     RabbitMQConsumerPtr createConsumer();
-    bool initialized = false;
+    std::atomic<bool> initialized = false;
 
     /// Functions working in the background
     void streamingToViewsFunc();
