@@ -745,13 +745,11 @@ namespace
 {
 
 QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
+    const ContextPtr & query_context,
     const StorageSnapshotPtr & distributed_storage_snapshot,
     const StorageID & remote_storage_id,
     const ASTPtr & remote_table_function)
 {
-    auto & planner_context = query_info.planner_context;
-    const auto & query_context = planner_context->getQueryContext();
-
     std::optional<TableExpressionModifiers> table_expression_modifiers;
 
     if (auto * query_info_table_node = query_info.table_expression->as<TableNode>())
@@ -763,13 +761,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
     if (remote_table_function)
     {
-        auto context = Context::createCopy(query_context);
-        Settings settings = query_context->getSettings();
-        settings.limit = 0;
-        settings.offset = 0;
-        context->setSettings(settings);
-
-        auto remote_table_function_query_tree = buildQueryTree(remote_table_function, context);
+        auto remote_table_function_query_tree = buildQueryTree(remote_table_function, query_context);
         auto & remote_table_function_node = remote_table_function_query_tree->as<FunctionNode &>();
 
         auto table_function_node = std::make_shared<TableFunctionNode>(remote_table_function_node.getFunctionName());
@@ -780,7 +772,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
         QueryAnalysisPass query_analysis_pass;
         QueryTreeNodePtr node = table_function_node;
-        query_analysis_pass.run(node, context);
+        query_analysis_pass.run(node, query_context);
 
         replacement_table_expression = std::move(table_function_node);
     }
@@ -828,6 +820,7 @@ void StorageDistributed::read(
             remote_storage_id = StorageID{remote_database, remote_table};
 
         auto query_tree_distributed = buildQueryTreeDistributed(query_info,
+            local_context,
             storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr);

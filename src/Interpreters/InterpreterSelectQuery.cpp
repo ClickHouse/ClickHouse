@@ -251,6 +251,8 @@ ContextPtr getSubqueryContext(const ContextPtr & context)
     Settings subquery_settings = context->getSettings();
     subquery_settings.max_result_rows = 0;
     subquery_settings.max_result_bytes = 0;
+    subquery_settings.limit = 0;
+    subquery_settings.offset = 0;
     /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
     subquery_settings.extremes = false;
     subquery_context->setSettings(subquery_settings);

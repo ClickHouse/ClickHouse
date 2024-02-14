@@ -98,8 +98,6 @@ ContextPtr getViewContext(ContextPtr context)
     view_settings.max_result_rows = 0;
     view_settings.max_result_bytes = 0;
     view_settings.extremes = false;
-    view_settings.limit = 0;
-    view_settings.offset = 0;
     view_context->setSettings(view_settings);
     return view_context;
 }
