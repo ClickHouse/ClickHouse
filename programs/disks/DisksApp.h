@@ -53,9 +53,9 @@ protected:
     std::vector<String> command_arguments;
 
     std::unordered_set<String> supported_commands;
-
     std::unordered_map<String, CommandPtr> command_descriptions;
 
     po::variables_map options;
 };
+
 }

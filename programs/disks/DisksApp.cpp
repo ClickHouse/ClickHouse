@@ -65,6 +65,9 @@ void DisksApp::addOptions(
     positional_options_description.add("command_name", 1);
 
     supported_commands = {"list-disks", "list", "move", "remove", "link", "copy", "write", "read", "mkdir"};
+#ifdef CLICKHOUSE_CLOUD
+    supported_commands.insert("packed-io");
+#endif
 
     command_descriptions.emplace("list-disks", makeCommandListDisks());
     command_descriptions.emplace("list", makeCommandList());
@@ -75,6 +78,9 @@ void DisksApp::addOptions(
     command_descriptions.emplace("write", makeCommandWrite());
     command_descriptions.emplace("read", makeCommandRead());
     command_descriptions.emplace("mkdir", makeCommandMkDir());
+#ifdef CLICKHOUSE_CLOUD
+    command_descriptions.emplace("packed-io", makeCommandPackedIO());
+#endif
 }
 
 void DisksApp::processOptions()
