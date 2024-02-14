@@ -4,6 +4,8 @@
 #include <Common/re2.h>
 #include <algorithm>
 
+#include "config.h"
+
 namespace
 {
 
@@ -103,6 +105,7 @@ void writeAsyncMetrics(DB::WriteBuffer & wb, const DB::AsynchronousMetricValues 
 
 }
 
+#if USE_NURAFT
 namespace ProfileEvents
 {
     extern const std::vector<Event> keeper_profile_events;
@@ -112,6 +115,7 @@ namespace CurrentMetrics
 {
     extern const std::vector<Metric> keeper_metrics;
 }
+#endif
 
 
 namespace DB
@@ -177,8 +181,9 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
 
 }
 
-void KeeperPrometheusMetricsWriter::write(WriteBuffer & wb) const
+void KeeperPrometheusMetricsWriter::write([[maybe_unused]] WriteBuffer & wb) const
 {
+#if USE_NURAFT
     if (send_events)
     {
         for (auto event : ProfileEvents::keeper_profile_events)
@@ -193,6 +198,7 @@ void KeeperPrometheusMetricsWriter::write(WriteBuffer & wb) const
 
     if (send_asynchronous_metrics)
         writeAsyncMetrics(wb, async_metrics.getValues());
+#endif
 }
 
 }
