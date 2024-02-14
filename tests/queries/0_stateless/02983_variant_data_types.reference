@@ -47,6 +47,7 @@ Boolean Types
 true
 String Types
 Hello
+12345
 Date Types
 2019-01-01
 1969-01-01
@@ -78,6 +79,11 @@ Map Types
 {}
 {'a':'4','b':'str_4'}
 Nested Types
+[(0,'str_0')]
+[]
+[(2,'str_2')]
+[]
+[(4,'str_4')]
 Tuple Types
 (0,'str_0')
 (1,'str_1')
@@ -141,6 +147,7 @@ Boolean Types
 true
 String Types
 Hello
+12345
 Date Types
 2019-01-01
 1969-01-01
@@ -172,6 +179,11 @@ Map Types
 {}
 {'a':'4','b':'str_4'}
 Nested Types
+[(0,'str_0')]
+[]
+[(2,'str_2')]
+[]
+[(4,'str_4')]
 Tuple Types
 (0,'str_0')
 (1,'str_1')
@@ -235,6 +247,7 @@ Boolean Types
 true
 String Types
 Hello
+12345
 Date Types
 2019-01-01
 1969-01-01
@@ -266,6 +279,11 @@ Map Types
 {}
 {'a':'4','b':'str_4'}
 Nested Types
+[(0,'str_0')]
+[]
+[(2,'str_2')]
+[]
+[(4,'str_4')]
 Tuple Types
 (0,'str_0')
 (1,'str_1')

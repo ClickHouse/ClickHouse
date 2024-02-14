@@ -130,8 +130,8 @@ function test_strings()
     drop_table
 
     create_table "$1" "FixedString(5)"
-    #$CH_CLIENT -q  "insert into test values (1, '12345');"
-    #run_select "FixedString(5)"  # Cannot select referring to data type FixedString or FixedString(5)
+    $CH_CLIENT -q  "insert into test values (1, '12345');"
+    run_select "FixedString(5)"  # Cannot select referring to data type FixedString or FixedString(5)
     drop_table
 }
 
@@ -230,8 +230,9 @@ function test_nested_types()
     echo "Nested Types"
 
     create_table "$1" "Nested(i UInt64, s String)" # Create table allowed with Nested type as valid type
-    #$CH_CLIENT -q  "insert into test run_select 1, (number % 2 ? toString(number) : map('a', toString(number), 'b', 'str_' || toString(number) ) from numbers(5);"
-    #run_select "Nested(i UInt64, s String)"
+    $CH_CLIENT -q "insert into test select 1, number % 2 ? toString('str_' || toString(number)) : [(number, 'str_' || toString(number))]::Nested(i UInt64, s String) from numbers(5);"
+    run_select "Nested(i UInt64, s String)"
+
     drop_table
 }
 
