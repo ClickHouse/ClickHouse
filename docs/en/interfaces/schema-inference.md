@@ -1994,8 +1994,7 @@ If data format is not specified and cannot be determined by the file extension, 
 
 **Examples:**
 
-Let's say we have `data` with the next content:
-`data1`:
+Let's say we have `data` with the following content:
 ```
 "a","b"
 1,"Data1"
@@ -2027,4 +2026,6 @@ We can inspect and query this file without specifying format or structure:
 └───┴───────┘
 ```
 
-**Note:** ClickHouse can detect only some subset of formats and this detection takes some time, it's always better to specify the format explicitly.
+:::note
+ClickHouse can detect only some subset of formats and this detection takes some time, it's always better to specify the format explicitly.
+:::
