@@ -139,6 +139,7 @@ void DisksApp::parseAndCheckOptions(
         .options(options_description_)
         .positional(positional_options_description)
         .allow_unregistered();
+
     po::parsed_options parsed = parser.run();
     po::store(parsed, options);
 
@@ -204,8 +205,8 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         po::parsed_options parsed = parser.run();
         po::store(parsed, options);
         po::notify(options);
-        args = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
 
+        args = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
         command->processOptions(config(), options);
     }
     else
