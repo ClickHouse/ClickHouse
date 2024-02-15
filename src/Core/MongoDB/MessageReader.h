@@ -1,18 +1,21 @@
-#include "QueryRequest.h"
-#include "Message.h"
 #include <Poco/Exception.h>
+#include "Message.h"
+#include "QueryRequest.h"
 
 
-namespace DB {
-namespace MongoDB {
-    
+namespace DB
+{
+namespace MongoDB
+{
 
-class MessageReader {
-    public:
 
-    explicit MessageReader(ReadBuffer& reader_) : reader(reader_) {}
+class MessageReader
+{
+public:
+    explicit MessageReader(ReadBuffer & reader_) : reader(reader_) { }
 
-    Message::Ptr read() {
+    Message::Ptr read()
+    {
         RequestMessage::Ptr message;
         MessageHeader header;
         header.read(reader);
@@ -28,9 +31,10 @@ class MessageReader {
         return message;
     }
 
-    private:
-        ReadBuffer& reader;
+private:
+    ReadBuffer & reader;
 };
 
 
-}} // namespace DB::MongoDB
+}
+} // namespace DB::MongoDB

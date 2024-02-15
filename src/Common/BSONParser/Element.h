@@ -1,18 +1,18 @@
 #pragma once
-#include "BSONReader.h"
-#include "BSONWriter.h"
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
-#include <Poco/SharedPtr.h>
-#include <Poco/NumberFormatter.h>
-#include <Poco/DateTimeFormatter.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <Common/logger_useful.h>
 #include <iomanip>
 #include <list>
 #include <sstream>
 #include <string>
+#include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <Poco/DateTimeFormatter.h>
+#include <Poco/NumberFormatter.h>
+#include <Poco/SharedPtr.h>
+#include <Common/logger_useful.h>
+#include "BSONReader.h"
+#include "BSONWriter.h"
 
 namespace DB
 {
@@ -27,7 +27,7 @@ public:
     using Key = std::string;
     using Ptr = Poco::SharedPtr<Element>;
 
-    Element(const Key & name_) : name(name_) {}
+    Element(const Key & name_) : name(name_) { }
     /// Creates the Element with the given name.
 
     virtual ~Element();
@@ -86,15 +86,17 @@ public:
 
     void read(ReadBuffer & reader) override { value = BSONReader(reader).read<T>(); }
 
-    Int32 getLength() const override {
+    Int32 getLength() const override
+    {
         Int32 length = sizeof(unsigned char);
         length += name.length() + sizeof('\0');
         return length + BSONWriter::getLength<T>(value);
     }
 
-    void write(WriteBuffer & writer) const override {
-		writer.write(static_cast<unsigned char>(this->type()));
-		writeNullTerminatedString(this->name, writer);
+    void write(WriteBuffer & writer) const override
+    {
+        writer.write(static_cast<unsigned char>(this->type()));
+        writeNullTerminatedString(this->name, writer);
         BSONWriter(writer).write<T>(value);
     }
 
@@ -115,16 +117,18 @@ struct ElementTraits<double>
     static std::string toString(const double & value) { return Poco::NumberFormatter::format(value); }
 };
 
-template<>
-double BSONReader::read<double>() {
+template <>
+double BSONReader::read<double>()
+{
     double value;
     readFloatBinary(value, reader);
     return value;
 }
 
 
-template<>
-void BSONWriter::write<double>(const double& t) {
+template <>
+void BSONWriter::write<double>(const double & t)
+{
     writeFloatBinary(t, writer);
 }
 
@@ -227,9 +231,9 @@ template <>
 inline bool BSONReader::read<bool>()
 {
     char b;
-    if (!reader.read(b)) {
+    if (!reader.read(b))
         throw std::exception(); // FIXME
-    }
+
     return b != 0;
 }
 
@@ -255,15 +259,17 @@ struct ElementTraits<Int32>
     static std::string toString(const Int32 & value) { return Poco::NumberFormatter::format(value); }
 };
 
-template<>
-inline Int32 BSONReader::read<Int32>() {
+template <>
+inline Int32 BSONReader::read<Int32>()
+{
     Int32 value;
     readIntBinary(value, reader);
     return value;
 }
 
-template<>
-inline void BSONWriter::write<Int32>(const Int32& t) {
+template <>
+inline void BSONWriter::write<Int32>(const Int32 & t)
+{
     writeIntBinary(t, writer);
 }
 
@@ -280,15 +286,17 @@ struct ElementTraits<Int64>
     static std::string toString(const Int64 & value) { return Poco::NumberFormatter::format(value); }
 };
 
-template<>
-inline Int64 BSONReader::read<Int64>() {
+template <>
+inline Int64 BSONReader::read<Int64>()
+{
     Int64 value;
     readIntBinary(value, reader);
     return value;
 }
 
-template<>
-inline void BSONWriter::write<Int64>(const Int64& t) {
+template <>
+inline void BSONWriter::write<Int64>(const Int64 & t)
+{
     writeIntBinary(t, writer);
 }
 
@@ -326,10 +334,11 @@ inline Poco::Timestamp BSONReader::read<Poco::Timestamp>()
 
 
 template <>
-inline void BSONWriter::write<Poco::Timestamp>(const Poco::Timestamp& t)
+inline void BSONWriter::write<Poco::Timestamp>(const Poco::Timestamp & t)
 {
     writeIntBinary(t.epochMicroseconds() / 1000, writer);
 }
 
 
-}} // namespace DB::BSON
+}
+} // namespace DB::BSON

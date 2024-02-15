@@ -1,10 +1,11 @@
 #include "Array.h"
 
 
-namespace Poco {
-namespace MongoDB {
+namespace DB
+{
+namespace BSON
+{
 
 
-
-
-} } // Namespace Poco::Mongo
+}
+} // Namespace DB::BSON

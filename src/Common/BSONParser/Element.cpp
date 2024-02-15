@@ -7,4 +7,4 @@ namespace BSON
 {
 
 }
-} // namespace Poco::MongoDB
+} // namespace DB::BSON

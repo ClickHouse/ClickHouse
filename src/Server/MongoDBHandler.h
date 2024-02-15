@@ -9,12 +9,12 @@
 #include "IServer.h"
 
 #if USE_SSL
-#   include <Poco/Net/SecureStreamSocket.h>
+#    include <Poco/Net/SecureStreamSocket.h>
 #endif
 
 namespace CurrentMetrics
 {
-    extern const Metric MongoDBConnection;
+extern const Metric MongoDBConnection;
 }
 
 namespace DB
@@ -29,11 +29,7 @@ class TCPServer;
 class MongoDBHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    MongoDBHandler(
-        const Poco::Net::StreamSocket & socket_,
-        IServer & server_,
-        TCPServer & tcp_server_,
-        Int32 connection_id_);
+    MongoDBHandler(const Poco::Net::StreamSocket & socket_, IServer & server_, TCPServer & tcp_server_, Int32 connection_id_);
 
     void run() final;
 
@@ -55,7 +51,6 @@ private:
 #if USE_SSL
     std::shared_ptr<Poco::Net::SecureStreamSocket> ss;
 #endif
-
 };
 
 }

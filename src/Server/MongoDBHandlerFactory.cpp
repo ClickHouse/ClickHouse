@@ -6,9 +6,7 @@
 namespace DB
 {
 
-MongoDBHandlerFactory::MongoDBHandlerFactory(
-    IServer & server_)
-    : server(server_), log(getLogger(factory_name))
+MongoDBHandlerFactory::MongoDBHandlerFactory(IServer & server_) : server(server_), log(getLogger(factory_name))
 {
     // auth_methods =
     // {
