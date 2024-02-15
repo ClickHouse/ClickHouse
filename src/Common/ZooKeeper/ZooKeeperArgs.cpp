@@ -193,6 +193,10 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         {
             chroot = config.getString(config_name + "." + key);
         }
+        else if (key == "sessions_path")
+        {
+            chroot = config.getString(config_name + "." + key);
+        }
         else if (key == "implementation")
         {
             implementation = config.getString(config_name + "." + key);

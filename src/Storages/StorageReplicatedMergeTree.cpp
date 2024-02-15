@@ -1840,7 +1840,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
             Coordination::SimpleFaultInjection fault(getSettings()->fault_probability_before_part_commit,
                                                      getSettings()->fault_probability_after_part_commit, "part commit");
             ThreadFuzzer::maybeInjectSleep();
-            e = zookeeper->tryMulti(ops, responses);
+            e = zookeeper->tryMulti(ops, responses, /* check_session_valid */ true);
         }
         if (e == Coordination::Error::ZOK)
         {
@@ -10006,7 +10006,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
             ThreadFuzzer::maybeInjectSleep();
 
             Coordination::Responses responses;
-            auto code = zookeeper->tryMulti(ops, responses);
+            auto code = zookeeper->tryMulti(ops, responses, /* check_session_valid */ true);
             if (code == Coordination::Error::ZOK)
             {
                 transaction.commit();
