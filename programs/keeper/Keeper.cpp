@@ -14,6 +14,7 @@
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
 #include <Server/waitServersToFinish.h>
+#include <Server/CloudPlacementInfo.h>
 #include <base/getMemoryAmount.h>
 #include <base/scope_guard.h>
 #include <base/safeExit.h>
@@ -351,6 +352,11 @@ try
     DB::ServerUUID::load(path + "/uuid", log);
 
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
+
+    if (config().has(DB::PlacementInfo::PLACEMENT_CONFIG_PREFIX))
+    {
+        PlacementInfo::PlacementInfo::instance().initialize(config());
+    }
 
     GlobalThreadPool::initialize(
         config().getUInt("max_thread_pool_size", 100),
