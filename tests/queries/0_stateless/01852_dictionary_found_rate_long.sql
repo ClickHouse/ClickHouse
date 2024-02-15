@@ -22,7 +22,7 @@ CREATE DICTIONARY simple_key_flat_dictionary_01862
     value String
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'simple_key_source_table_01862'))
+SOURCE(CLICKHOUSE(TABLE 'simple_key_source_table_01862'))
 LAYOUT(FLAT())
 LIFETIME(MIN 0 MAX 1000);
 
@@ -43,7 +43,7 @@ CREATE DICTIONARY simple_key_direct_dictionary_01862
     value String
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'simple_key_source_table_01862'))
+SOURCE(CLICKHOUSE(TABLE 'simple_key_source_table_01862'))
 LAYOUT(DIRECT());
 
 -- check that found_rate is 0, not nan
@@ -65,7 +65,7 @@ CREATE DICTIONARY simple_key_hashed_dictionary_01862
     value String
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'simple_key_source_table_01862'))
+SOURCE(CLICKHOUSE(TABLE 'simple_key_source_table_01862'))
 LAYOUT(HASHED())
 LIFETIME(MIN 0 MAX 1000);
 
@@ -85,7 +85,7 @@ CREATE DICTIONARY simple_key_sparse_hashed_dictionary_01862
     value String
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'simple_key_source_table_01862'))
+SOURCE(CLICKHOUSE(TABLE 'simple_key_source_table_01862'))
 LAYOUT(SPARSE_HASHED())
 LIFETIME(MIN 0 MAX 1000);
 
@@ -105,7 +105,7 @@ CREATE DICTIONARY simple_key_cache_dictionary_01862
     value String
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'simple_key_source_table_01862'))
+SOURCE(CLICKHOUSE(TABLE 'simple_key_source_table_01862'))
 LAYOUT(CACHE(SIZE_IN_CELLS 100000))
 LIFETIME(MIN 0 MAX 1000);
 
@@ -143,7 +143,7 @@ CREATE DICTIONARY complex_key_hashed_dictionary_01862
     value String
 )
 PRIMARY KEY id, id_key
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'complex_key_source_table_01862'))
+SOURCE(CLICKHOUSE(TABLE 'complex_key_source_table_01862'))
 LAYOUT(COMPLEX_KEY_HASHED())
 LIFETIME(MIN 0 MAX 1000);
 
@@ -164,7 +164,7 @@ CREATE DICTIONARY complex_key_direct_dictionary_01862
     value String
 )
 PRIMARY KEY id, id_key
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'complex_key_source_table_01862'))
+SOURCE(CLICKHOUSE(TABLE 'complex_key_source_table_01862'))
 LAYOUT(COMPLEX_KEY_DIRECT());
 
 SELECT name, found_rate FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_direct_dictionary_01862';
@@ -184,7 +184,7 @@ CREATE DICTIONARY complex_key_cache_dictionary_01862
     value String
 )
 PRIMARY KEY id, id_key
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'complex_key_source_table_01862'))
+SOURCE(CLICKHOUSE(TABLE 'complex_key_source_table_01862'))
 LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100000))
 LIFETIME(MIN 0 MAX 1000);
 
@@ -223,7 +223,7 @@ CREATE DICTIONARY simple_key_range_hashed_dictionary_01862
     last Date
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'range_key_source_table_01862'))
+SOURCE(CLICKHOUSE(TABLE 'range_key_source_table_01862'))
 LAYOUT(RANGE_HASHED())
 RANGE(MIN first MAX last)
 LIFETIME(MIN 0 MAX 1000);
@@ -259,7 +259,7 @@ CREATE DICTIONARY ip_trie_dictionary_01862
     value String
 )
 PRIMARY KEY prefix
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'ip_trie_source_table_01862'))
+SOURCE(CLICKHOUSE(TABLE 'ip_trie_source_table_01862'))
 LAYOUT(IP_TRIE())
 LIFETIME(MIN 0 MAX 1000);
 
@@ -302,7 +302,7 @@ CREATE DICTIONARY polygon_dictionary_01862
     name String
 )
 PRIMARY KEY key
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'polygons_01862'))
+SOURCE(CLICKHOUSE(USER 'default' TABLE 'polygons_01862'))
 LIFETIME(0)
 LAYOUT(POLYGON());
 
