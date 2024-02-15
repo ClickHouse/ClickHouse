@@ -13,7 +13,7 @@ public:
     static String getExprFromPipe(Pos & pos);
     static bool setSubQuerySource(ASTPtr & select_query, ASTPtr & source, bool dest_is_subquery, bool src_is_subquery);
     static bool parseSQLQueryByString(ParserPtr && parser, String & query, ASTPtr & select_node, int32_t max_depth);
-    bool parseByString(const String expr, ASTPtr & node, const uint32_t max_depth);
+    bool parseByString(const String & expr, ASTPtr & node, const uint32_t max_depth);
 };
 
 class ParserKQLQuery : public IParserBase

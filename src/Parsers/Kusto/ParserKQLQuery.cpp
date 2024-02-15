@@ -32,7 +32,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-bool ParserKQLBase::parseByString(const String expr, ASTPtr & node, const uint32_t max_depth)
+bool ParserKQLBase::parseByString(const String & expr, ASTPtr & node, const uint32_t max_depth)
 {
     Expected expected;
 
