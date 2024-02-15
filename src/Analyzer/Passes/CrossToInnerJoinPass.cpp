@@ -12,7 +12,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Functions/functionsLogical.h>
+#include <Functions/logical.h>
 
 #include <Common/logger_useful.h>
 

@@ -12,7 +12,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/multiMatchAny.h>
-#include <Functions/functionsLogical.h>
+#include <Functions/logical.h>
 
 #include <Interpreters/Context.h>
 

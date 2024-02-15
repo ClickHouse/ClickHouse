@@ -10,7 +10,7 @@
 #include <IO/Operators.h>
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/functionsLogical.h>
+#include <Functions/logical.h>
 
 #include <Common/checkStackSize.h>
 
