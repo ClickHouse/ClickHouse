@@ -33,7 +33,7 @@ The supported formats are:
 | [JSONAsString](#jsonasstring)                                                             | ✔    | ✗     |
 | [JSONStrings](#jsonstrings)                                                               | ✔    | ✔     |
 | [JSONColumns](#jsoncolumns)                                                               | ✔    | ✔     |
-| [JSONColumnsWithMetadata](#jsoncolumnsmonoblock))                                         | ✔    | ✔     |
+| [JSONColumnsWithMetadata](#jsoncolumnsmonoblock)                                          | ✔    | ✔     |
 | [JSONCompact](#jsoncompact)                                                               | ✔    | ✔     |
 | [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗    | ✔     |
 | [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔    | ✔     |
