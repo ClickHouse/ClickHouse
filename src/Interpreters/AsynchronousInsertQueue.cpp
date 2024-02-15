@@ -353,7 +353,18 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
 
         auto [it, inserted] = shard.iterators.try_emplace(key.hash);
         auto now = std::chrono::steady_clock::now();
-        auto timeout_ms = getBusyWaitTimeoutMs(settings, shard, shard_num, flush_time_points, now);
+        auto timeout_ms = getBusyWaitTimeoutMs(settings, shard, flush_time_points, now);
+        if (timeout_ms != shard.busy_timeout_ms)
+        {
+            LOG_TRACE(
+                log,
+                "Asynchronous timeout {} from {} to {} for queue shard {}.",
+                timeout_ms < shard.busy_timeout_ms ? "decreased" : "increased",
+                shard.busy_timeout_ms.count(),
+                timeout_ms.count(),
+                size_t(shard_num));
+        }
+
         if (inserted)
             it->second = shard.queue.emplace(now + timeout_ms, Container{key, std::make_unique<InsertData>(timeout_ms)}).first;
 
@@ -431,7 +442,6 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
 AsynchronousInsertQueue::Milliseconds AsynchronousInsertQueue::getBusyWaitTimeoutMs(
     const Settings & settings,
     const QueueShard & shard,
-    size_t shard_num,
     const QueueShardFlushTimeHistory::TimePoints & flush_time_points,
     std::chrono::steady_clock::time_point now) const
 {
@@ -460,13 +470,6 @@ AsynchronousInsertQueue::Milliseconds AsynchronousInsertQueue::getBusyWaitTimeou
         auto timeout_ms = std::max(
             std::chrono::duration_cast<Milliseconds>(shard.busy_timeout_ms * (1.0 + increase_rate)),
             shard.busy_timeout_ms + Milliseconds(1));
-        if (timeout_ms != shard.busy_timeout_ms)
-            LOG_TRACE(
-                log,
-                "Async timeout increased from {} to {} for queue shard {}.",
-                shard.busy_timeout_ms.count(),
-                timeout_ms.count(),
-                shard_num);
 
         return normalize(timeout_ms);
     }
@@ -475,18 +478,7 @@ AsynchronousInsertQueue::Milliseconds AsynchronousInsertQueue::getBusyWaitTimeou
     /// long enough (exceeding the adjusted timeout).
     /// This ensures the timeout value converges to the minimum over time for non-frequent inserts.
     else if (last_insert_time + decreased_timeout_ms < now && t1 + decreased_timeout_ms < t2)
-    {
-        auto timeout_ms = decreased_timeout_ms;
-        if (timeout_ms != shard.busy_timeout_ms)
-            LOG_TRACE(
-                log,
-                "Async timeout decreased from {} to {} for queue shard {}.",
-                shard.busy_timeout_ms.count(),
-                timeout_ms.count(),
-                shard_num);
-
-        return normalize(timeout_ms);
-    }
+        return normalize(decreased_timeout_ms);
 
     return normalize(shard.busy_timeout_ms);
 }

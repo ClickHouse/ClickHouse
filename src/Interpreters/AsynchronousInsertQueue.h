@@ -248,7 +248,6 @@ private:
     Milliseconds getBusyWaitTimeoutMs(
         const Settings & settings,
         const QueueShard & shard,
-        size_t shard_num,
         const QueueShardFlushTimeHistory::TimePoints & flush_time_points,
         std::chrono::steady_clock::time_point now) const;
 
