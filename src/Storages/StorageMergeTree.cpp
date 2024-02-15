@@ -2255,7 +2255,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     const auto is_partition_exp_the_same = queryToStringNullable(src_partition_expression) == queryToStringNullable(dst_partition_expression);
 
     auto [destination_partition, destination_partition_id] =
-        get_destination_partition_and_partition_id(is_partition_exp_the_same, src_data, *this, src_parts, source_partition_id);
+        get_destination_partition_and_partition_id(is_partition_exp_the_same, src_data, *dest_table_storage, src_parts, source_partition_id);
 
     for (const DataPartPtr & src_part : src_parts)
     {
