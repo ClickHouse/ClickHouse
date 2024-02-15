@@ -6626,7 +6626,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     QueryExpressionsAliasVisitor & expressions_visitor,
     bool nested_table_function)
 {
-    auto &table_function_node_typed = table_function_node->as<TableFunctionNode &>();
+    auto & table_function_node_typed = table_function_node->as<TableFunctionNode &>();
 
     if (!nested_table_function)
         expressions_visitor.visit(table_function_node_typed.getArgumentsNode());
