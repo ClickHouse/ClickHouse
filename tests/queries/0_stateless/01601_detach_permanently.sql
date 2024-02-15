@@ -73,10 +73,7 @@ SELECT 'database ordinary tests';
 
 DROP DATABASE IF EXISTS test1601_detach_permanently_ordinary;
 set allow_deprecated_database_ordinary=1;
--- Creation of a database with ENGINE=Ordinary results in a warning in server logs
-SET send_logs_level='fatal';
 CREATE DATABASE test1601_detach_permanently_ordinary Engine=Ordinary;
-SET send_logs_level='warning';
 
 create table test1601_detach_permanently_ordinary.test_name_reuse (number UInt64) engine=MergeTree order by tuple();
 

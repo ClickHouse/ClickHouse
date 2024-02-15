@@ -3,10 +3,7 @@
 drop database if exists db_hang;
 drop database if exists db_hang_temp;
 set allow_deprecated_database_ordinary=1;
--- Creation of a database with ENGINE=Ordinary results in a warning in server logs
-SET send_logs_level='fatal';
 create database db_hang engine=Ordinary;
-SET send_logs_level='warning';
 use db_hang;
 create table db_hang.test(A Int64) Engine=MergeTree order by A;
 create materialized view db_hang.test_mv(A Int64) Engine=MergeTree order by A as select * from db_hang.test;

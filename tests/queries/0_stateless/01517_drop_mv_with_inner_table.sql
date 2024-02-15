@@ -33,10 +33,7 @@ show tables from db_01517_atomic_sync;
 ---
 drop database if exists db_01517_ordinary;
 set allow_deprecated_database_ordinary=1;
--- Creation of a database with ENGINE=Ordinary results in a warning in server logs
-SET send_logs_level='fatal';
 create database db_01517_ordinary Engine=Ordinary;
-SET send_logs_level='warning';
 
 create table db_01517_ordinary.source (key Int) engine=Null;
 create materialized view db_01517_ordinary.mv engine=Null as select * from db_01517_ordinary.source;

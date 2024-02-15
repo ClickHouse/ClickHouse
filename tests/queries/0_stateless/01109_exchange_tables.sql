@@ -31,10 +31,7 @@ DROP DATABASE IF EXISTS test_01109_other_atomic;
 DROP DATABASE IF EXISTS test_01109_ordinary;
 CREATE DATABASE test_01109_other_atomic;
 set allow_deprecated_database_ordinary=1;
--- Creation of a database with ENGINE=Ordinary results in a warning in server logs
-SET send_logs_level='fatal';
 CREATE DATABASE test_01109_ordinary ENGINE=Ordinary;
-SET send_logs_level='warning';
 
 CREATE TABLE test_01109_other_atomic.t3 ENGINE=MergeTree() ORDER BY tuple()
     AS SELECT rowNumberInAllBlocks() + (SELECT max((*,*).1.1) + 1 FROM (SELECT (*,) FROM t1 UNION ALL SELECT (*,) FROM t2)), *
@@ -66,3 +63,6 @@ DROP DATABASE test_01109;
 DROP DATABASE test_01109_other_atomic;
 DROP DATABASE test_01109_ordinary;
 DROP DATABASE test_01109_rename_exists;
+
+
+

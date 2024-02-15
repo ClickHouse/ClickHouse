@@ -3,10 +3,7 @@
 DROP DATABASE IF EXISTS dict_db_01224;
 DROP DATABASE IF EXISTS dict_db_01224_dictionary;
 set allow_deprecated_database_ordinary=1;
--- Creation of a database with ENGINE=Ordinary results in a warning in server logs
-SET send_logs_level='fatal';
 CREATE DATABASE dict_db_01224 ENGINE=Ordinary;  -- Different internal dictionary name with Atomic
-SET send_logs_level='warning';
 CREATE DATABASE dict_db_01224_dictionary Engine=Dictionary;
 
 CREATE TABLE dict_db_01224.dict_data (key UInt64, val UInt64) Engine=Memory();
