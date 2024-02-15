@@ -5,7 +5,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/StorageSnapshot.h>
-#include <Storages/StorageView.h>
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -74,14 +73,7 @@ public:
     /// Returns true, if table function is resolved, false otherwise
     bool isResolved() const
     {
-        /// For parameterized view, we only have storage
-        if (storage)
-            if (storage->as<StorageView>() && storage->as<StorageView>()->isParameterizedView())
-                return true;
-            else
-                return table_function != nullptr;
-        else
-            return false;
+        return storage != nullptr && table_function != nullptr;
     }
 
     /// Get table function, returns nullptr if table function node is not resolved
@@ -107,9 +99,6 @@ public:
 
     /// Resolve table function with table function, storage and context
     void resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context, std::vector<size_t> unresolved_arguments_indexes_);
-
-    /// Resolve table function as parameterized view with storage and context
-    void resolve(StoragePtr storage_value, ContextPtr context);
 
     /// Get storage id, throws exception if function node is not resolved
     const StorageID & getStorageID() const;
