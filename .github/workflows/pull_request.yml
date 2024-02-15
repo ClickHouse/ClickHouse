@@ -147,6 +147,14 @@ jobs:
       build_name: package_release
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
+  BuilderDebReleaseCoverage:
+    needs: [RunConfig, FastTest]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: package_release_coverage
+      checkout_depth: 0
+      data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebAarch64:
     needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
@@ -309,6 +317,7 @@ jobs:
       - BuilderDebDebug
       - BuilderDebMsan
       - BuilderDebRelease
+      - BuilderDebReleaseCoverage
       - BuilderDebTsan
       - BuilderDebUBsan
     uses: ./.github/workflows/reusable_test.yml
