@@ -37,6 +37,8 @@
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/CollectSets.h>
 
+#include <stack>
+
 namespace DB
 {
 
@@ -128,6 +130,34 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query node invalid conversion to select query");
 
     return result_ast;
+}
+
+static void removeCTEs(ASTPtr & ast)
+{
+    std::stack<IAST *> stack;
+    stack.push(ast.get());
+    while (!stack.empty())
+    {
+        auto * node = stack.top();
+        stack.pop();
+
+        if (auto * subquery = typeid_cast<ASTSubquery *>(node))
+            subquery->cte_name = {};
+
+        for (const auto & child : node->children)
+            stack.push(child.get());
+    }
+}
+
+ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
+{
+    auto ast = queryNodeToSelectQuery(query_node);
+    /// Remove CTEs information from distributed queries.
+    /// Now, if cte_name is set for subquery node, AST -> String serialization will only print cte name.
+    /// But CTE is defined only for top-level query part, so may not be sent.
+    /// Removing cte_name forces subquery to be always printed.
+    removeCTEs(ast);
+    return ast;
 }
 
 /** There are no limits on the maximum size of the result for the subquery.
