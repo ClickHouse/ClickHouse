@@ -12,7 +12,7 @@ from docker_images_helper import get_docker_image, pull_image
 from env_helper import REPO_COPY, TEMP_PATH
 from git_helper import GIT_PREFIX, git_runner
 from pr_info import PRInfo
-from report import JobReport, TestResults, read_test_results
+from report import ERROR, FAILURE, SUCCESS, JobReport, TestResults, read_test_results
 from ssh import SSHKey
 from stopwatch import Stopwatch
 
@@ -36,7 +36,7 @@ def process_result(
             status = list(csv.reader(status_file, delimiter="\t"))
     if len(status) != 1 or len(status[0]) != 2:
         logging.info("Files in result folder %s", os.listdir(result_directory))
-        return "error", "Invalid check_status.tsv", test_results, additional_files
+        return ERROR, "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     try:
@@ -47,8 +47,8 @@ def process_result(
 
         return state, description, test_results, additional_files
     except Exception:
-        if state == "success":
-            state, description = "error", "Failed to read test_results.tsv"
+        if state == SUCCESS:
+            state, description = ERROR, "Failed to read test_results.tsv"
         return state, description, test_results, additional_files
 
 
@@ -161,7 +161,7 @@ def main():
         additional_files=additional_files,
     ).dump()
 
-    if state in ["error", "failure"]:
+    if state in [ERROR, FAILURE]:
         print(f"Style check failed: [{description}]")
         sys.exit(1)
 

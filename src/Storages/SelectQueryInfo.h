@@ -161,6 +161,8 @@ struct SelectQueryInfo
     /// It's guaranteed to be present in JOIN TREE of `query_tree`
     QueryTreeNodePtr table_expression;
 
+    bool analyzer_can_use_parallel_replicas_on_follower = false;
+
     /// Table expression modifiers for storage
     std::optional<TableExpressionModifiers> table_expression_modifiers;
 
