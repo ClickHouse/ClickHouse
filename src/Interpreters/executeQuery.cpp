@@ -1381,6 +1381,7 @@ void executeQuery(
                     result_details.format = format_name;
 
                     fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception, {
+                        // it will throw std::bad_function_call
                         set_result_details = nullptr;
                         set_result_details(result_details);
                     });
