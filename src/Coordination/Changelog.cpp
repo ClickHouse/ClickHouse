@@ -69,10 +69,7 @@ void moveFileBetweenDisks(DiskPtr disk_from, ChangelogFileDescriptionPtr descrip
 
     /// a different thread could be trying to read from the file
     /// we should make sure the source disk contains the file while read is in progress
-    {
-        std::lock_guard file_lock(description->file_mutex);
-        description->disk = disk_to;
-    }
+    description->withLock([&]{ description->disk = disk_to; });
     disk_from->removeFile(description->path);
     description->path = path_to;
 }
@@ -723,29 +720,33 @@ void LogEntryStorage::prefetchCommitLogs()
             for (const auto & prefetch_file_info : prefetch_info->file_infos)
             {
                 const auto & [changelog_description, position, count] = prefetch_file_info;
-                std::lock_guard file_lock(changelog_description->file_mutex);
-                auto file = changelog_description->disk->readFile(changelog_description->path, ReadSettings());
-                file->seek(position, SEEK_SET);
-                LOG_TRACE(log, "Prefetching {} log entries from path {}, from position {}", count, changelog_description->path, position);
-                ProfileEvents::increment(ProfileEvents::KeeperLogsPrefetchedEntries, count);
+                changelog_description->withLock(
+                    [&]
+                    {
+                        auto file = changelog_description->disk->readFile(changelog_description->path, ReadSettings());
+                        file->seek(position, SEEK_SET);
+                        LOG_TRACE(
+                            log, "Prefetching {} log entries from path {}, from position {}", count, changelog_description->path, position);
+                        ProfileEvents::increment(ProfileEvents::KeeperLogsPrefetchedEntries, count);
 
-                for (size_t i = 0; i < count; ++i)
-                {
-                    if (prefetch_info->cancel)
-                        break;
+                        for (size_t i = 0; i < count; ++i)
+                        {
+                            if (prefetch_info->cancel)
+                                break;
 
-                    auto record = readChangelogRecord(*file, changelog_description->path);
-                    auto entry = logEntryFromRecord(record);
-                    if (current_index != record.header.index)
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Invalid index prefetched, expected {}, actual {}",
-                            current_index,
-                            record.header.index);
+                            auto record = readChangelogRecord(*file, changelog_description->path);
+                            auto entry = logEntryFromRecord(record);
+                            if (current_index != record.header.index)
+                                throw Exception(
+                                    ErrorCodes::LOGICAL_ERROR,
+                                    "Invalid index prefetched, expected {}, actual {}",
+                                    current_index,
+                                    record.header.index);
 
-                    commit_logs_cache.getPrefetchedCacheEntry(record.header.index).resolve(std::move(entry));
-                    ++current_index;
-                }
+                            commit_logs_cache.getPrefetchedCacheEntry(record.header.index).resolve(std::move(entry));
+                            ++current_index;
+                        }
+                    });
 
                 if (prefetch_info->cancel)
                     break;
@@ -770,6 +771,7 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
     if (keeper_context->isShutdownCalled())
         return;
 
+    /// commit logs is not empty and it's not next log
     if (!commit_logs_cache.empty() && commit_logs_cache.max_index_in_cache != last_committed_index)
         return;
 
@@ -782,14 +784,24 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
 
     auto new_prefetch_info = std::make_shared<PrefetchInfo>();
     auto & [prefetch_from, prefetch_to] = new_prefetch_info->commit_prefetch_index_range;
+
     /// if there are no entries in commit cache we will start from the next log that will be committed
     /// otherwise we continue appending the commit cache from the latest entry stored in it
-    size_t current_index = commit_logs_cache.cache.empty() ? last_committed_index + 1 : commit_logs_cache.max_index_in_cache + 1;
+    size_t current_index = commit_logs_cache.empty() ? last_committed_index + 1 : commit_logs_cache.max_index_in_cache + 1;
+
     prefetch_from = current_index;
+
     size_t total_size = 0;
     std::vector<FileReadInfo> file_infos;
     FileReadInfo * current_file_info = nullptr;
-    for (; latest_logs_cache.empty() || current_index < latest_logs_cache.min_index_in_cache; ++current_index)
+
+    size_t max_index_for_prefetch = 0;
+    if (!latest_logs_cache.empty())
+        max_index_for_prefetch = latest_logs_cache.min_index_in_cache - 1;
+    else
+        max_index_for_prefetch = max_index_with_location;
+
+    for (; current_index <= max_index_for_prefetch; ++current_index)
     {
         const auto & [changelog_description, position, size] = logs_location.at(current_index);
         if (total_size == 0)
@@ -841,9 +853,8 @@ void LogEntryStorage::InMemoryCache::addEntry(uint64_t index, size_t size, Cache
 {
     auto [_, inserted] = cache.emplace(index, std::move(log_entry));
     if (!inserted)
-    {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert log with index {} which is already present in cache", index);
-    }
+
     updateStatsWithNewEntry(index, size);
 }
 
@@ -991,6 +1002,8 @@ void LogEntryStorage::addEntry(uint64_t index, const LogEntryPtr & log_entry)
         latest_config_index = index;
         logs_with_config_changes.insert(index);
     }
+
+    updateTermInfoWithNewEntry(index, log_entry->get_term());
 }
 
 bool LogEntryStorage::shouldMoveLogToCommitCache(uint64_t index, size_t log_entry_size)
@@ -1000,6 +1013,15 @@ bool LogEntryStorage::shouldMoveLogToCommitCache(uint64_t index, size_t log_entr
         return keeper_context->lastCommittedIndex() + 1 == index;
 
     return commit_logs_cache.max_index_in_cache == index - 1 && commit_logs_cache.hasSpaceAvailable(log_entry_size);
+}
+
+void LogEntryStorage::updateTermInfoWithNewEntry(uint64_t index, uint64_t term)
+{
+    if (!log_term_infos.empty() && log_term_infos.back().term == term)
+        return;
+
+    chassert(log_term_infos.empty() || log_term_infos.back().term == term - 1);
+    log_term_infos.push_back(LogTermInfo{.term = term, .first_index = index});
 }
 
 void LogEntryStorage::addEntryWithLocation(uint64_t index, const LogEntryPtr & log_entry, LogLocation log_location)
@@ -1026,14 +1048,13 @@ void LogEntryStorage::addEntryWithLocation(uint64_t index, const LogEntryPtr & l
         latest_config_index = index;
         logs_with_config_changes.insert(index);
     }
+
+    updateTermInfoWithNewEntry(index, log_entry->get_term());
 }
 
 void LogEntryStorage::cleanUpTo(uint64_t index)
 {
     latest_logs_cache.cleanUpTo(index);
-    /// uncommitted logs should never be compacted so we don't have to handle
-    /// logs that are currently being prefetched
-    commit_logs_cache.cleanUpTo(index);
 
     if (!logs_location.empty() && index > min_index_with_location)
     {
@@ -1056,6 +1077,27 @@ void LogEntryStorage::cleanUpTo(uint64_t index)
         }
     }
 
+
+    /// uncommitted logs should be compacted only if we received snapshot from leader
+    if (current_prefetch_info && !current_prefetch_info->done)
+    {
+        auto [prefetch_from, prefetch_to] = current_prefetch_info->commit_prefetch_index_range;
+        /// if we will clean some logs that are currently prefetched, stop prefetching
+        /// and clean all logs that were being prefetched
+        if (index > prefetch_from)
+        {
+            current_prefetch_info->cancel = true;
+            current_prefetch_info->done.wait(false);
+            commit_logs_cache.cleanUpTo(std::max(prefetch_to + 1, index));
+        }
+        /// start prefetching logs for committing at the current index
+        /// the last log index in the snapshot should be the
+        /// last log we cleaned up
+        startCommitLogsPrefetch(index - 1);
+    }
+    else
+        commit_logs_cache.cleanUpTo(index);
+
     std::erase_if(logs_with_config_changes, [&](const auto conf_index) { return conf_index < index; });
     if (auto it = std::max_element(logs_with_config_changes.begin(), logs_with_config_changes.end()); it != logs_with_config_changes.end())
     {
@@ -1067,31 +1109,24 @@ void LogEntryStorage::cleanUpTo(uint64_t index)
 
     if (first_log_index < index)
         first_log_entry = nullptr;
+
+    /// remove all the term infos we don't need (all terms that start before index)
+    uint64_t last_removed_term = 0;
+    while (!log_term_infos.empty() && log_term_infos.front().first_index < index)
+    {
+        last_removed_term = log_term_infos.front().term;
+        log_term_infos.pop_front();
+    }
+
+    /// the last removed term info could contain terms for some indices we didn't cleanup
+    /// so we add the last removed term info back but with new first index
+    if (last_removed_term != 0 && (log_term_infos.empty() || log_term_infos.front().first_index > index))
+        log_term_infos.push_front(LogTermInfo{.term = last_removed_term, .first_index = index});
 }
 
 void LogEntryStorage::cleanAfter(uint64_t index)
 {
     latest_logs_cache.cleanAfter(index);
-    /// if we cleared all latest logs, there is a possibility we would need to clear commit logs
-    if (latest_logs_cache.empty())
-    {
-        /// we will clean everything after the index, if there is a prefetch in progress
-        /// wait until we fetch everything until index
-        /// afterwards we can stop prefetching of newer logs because they will be cleaned up
-        commit_logs_cache.getEntry(index);
-        if (current_prefetch_info && !current_prefetch_info->done)
-        {
-            auto [prefetch_from, prefetch_to] = current_prefetch_info->commit_prefetch_index_range;
-            if (index >= prefetch_from && index <= prefetch_to)
-            {
-                current_prefetch_info->cancel = true;
-                current_prefetch_info->done.wait(false);
-            }
-        }
-
-        commit_logs_cache.cleanAfter(index);
-        startCommitLogsPrefetch(keeper_context->lastCommittedIndex());
-    }
 
     if (!logs_location.empty() && index < max_index_with_location)
     {
@@ -1114,9 +1149,33 @@ void LogEntryStorage::cleanAfter(uint64_t index)
         }
     }
 
-    if (empty())
-        /// if we don't store any logs, reset first log cache
+    /// if we cleared all latest logs, there is a possibility we would need to clear commit logs
+    if (latest_logs_cache.empty())
+    {
+        /// we will clean everything after the index, if there is a prefetch in progress
+        /// wait until we fetch everything until index
+        /// afterwards we can stop prefetching of newer logs because they will be cleaned up
+        commit_logs_cache.getEntry(index);
+        if (current_prefetch_info && !current_prefetch_info->done)
+        {
+            auto [prefetch_from, prefetch_to] = current_prefetch_info->commit_prefetch_index_range;
+            /// if we will clean some logs that are currently prefetched, stop prefetching
+            if (index < prefetch_to)
+            {
+                current_prefetch_info->cancel = true;
+                current_prefetch_info->done.wait(false);
+            }
+        }
+
+        commit_logs_cache.cleanAfter(index);
+        startCommitLogsPrefetch(keeper_context->lastCommittedIndex());
+    }
+
+    if (empty() || first_log_index > index)
+    {
+        /// if we don't store any logs or if the first log index changed, reset first log cache
         first_log_entry = nullptr;
+    }
 
     std::erase_if(logs_with_config_changes, [&](const auto conf_index) { return conf_index > index; });
     if (auto it = std::max_element(logs_with_config_changes.begin(), logs_with_config_changes.end()); it != logs_with_config_changes.end())
@@ -1127,8 +1186,9 @@ void LogEntryStorage::cleanAfter(uint64_t index)
     else
         latest_config = nullptr;
 
-    if (first_log_index > index)
-        first_log_entry = nullptr;
+    /// remove all the term infos we don't need (all terms that start after index)
+    while (!log_term_infos.empty() && log_term_infos.back().first_index > index)
+        log_term_infos.pop_back();
 }
 
 bool LogEntryStorage::contains(uint64_t index) const
@@ -1165,13 +1225,22 @@ LogEntryPtr LogEntryStorage::getEntry(uint64_t index) const
     else if (auto it = logs_location.find(index); it != logs_location.end())
     {
         const auto & [changelog_description, position, size] = it->second;
-        std::lock_guard file_lock(changelog_description->file_mutex);
-        auto file = changelog_description->disk->readFile(changelog_description->path, ReadSettings());
-        file->seek(position, SEEK_SET);
-        LOG_TRACE(log, "Reading log entry at index {} from path {}, position {}, size {}", index, changelog_description->path, position, size);
+        changelog_description->withLock(
+            [&]
+            {
+                auto file = changelog_description->disk->readFile(changelog_description->path, ReadSettings());
+                file->seek(position, SEEK_SET);
+                LOG_TRACE(
+                    log,
+                    "Reading log entry at index {} from path {}, position {}, size {}",
+                    index,
+                    changelog_description->path,
+                    position,
+                    size);
 
-        auto record = readChangelogRecord(*file, changelog_description->path);
-        entry = logEntryFromRecord(record);
+                auto record = readChangelogRecord(*file, changelog_description->path);
+                entry = logEntryFromRecord(record);
+            });
 
         /// if we fetched the first log entry, we will cache it because it's often accessed
         if (first_log_entry == nullptr && index == getFirstIndex())
@@ -1197,10 +1266,18 @@ LogEntryPtr LogEntryStorage::getLatestConfigChange() const
     return latest_config;
 }
 
-void LogEntryStorage::cacheFirstLog(uint64_t first_index)
+uint64_t LogEntryStorage::termAt(uint64_t index) const
 {
-    first_log_entry = getEntry(first_index);
-    first_log_index = first_index;
+    uint64_t term_for_index = 0;
+    for (const auto [term, first_index] : log_term_infos)
+    {
+        if (index < first_index)
+            return term_for_index;
+
+        term_for_index = term;
+    }
+
+    return term_for_index;
 }
 
 void LogEntryStorage::addLogLocations(std::vector<std::pair<uint64_t, LogLocation>> && indices_with_log_locations)
@@ -1268,16 +1345,19 @@ LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end
 
         const auto & [file_description, start_position, count] = *read_info;
         LOG_TRACE(log, "Reading from path {} {} entries", file_description->path, count);
-        std::lock_guard file_lock(file_description->file_mutex);
-        auto file = file_description->disk->readFile(file_description->path);
-        file->seek(start_position, SEEK_SET);
+        file_description->withLock(
+            [&]
+            {
+                auto file = file_description->disk->readFile(file_description->path);
+                file->seek(start_position, SEEK_SET);
 
-        for (size_t i = 0; i < count; ++i)
-        {
-            auto record = readChangelogRecord(*file, file_description->path);
-            ret->push_back(logEntryFromRecord(record));
-            ProfileEvents::increment(ProfileEvents::KeeperLogsEntryReadFromFile);
-        }
+                for (size_t i = 0; i < count; ++i)
+                {
+                    auto record = readChangelogRecord(*file, file_description->path);
+                    ret->push_back(logEntryFromRecord(record));
+                    ProfileEvents::increment(ProfileEvents::KeeperLogsEntryReadFromFile);
+                }
+            });
 
         read_info.reset();
     };
@@ -2168,7 +2248,11 @@ void Changelog::applyEntriesFromBuffer(uint64_t index, nuraft::buffer & buffer)
 bool Changelog::isConfigLog(uint64_t index) const
 {
     return entry_storage.isConfigLog(index);
+}
 
+uint64_t Changelog::termAt(uint64_t index) const
+{
+    return entry_storage.termAt(index);
 }
 
 bool Changelog::flush()

@@ -75,10 +75,7 @@ bool KeeperLogStore::is_conf(uint64_t index)
 uint64_t KeeperLogStore::term_at(uint64_t index)
 {
     std::lock_guard lock(changelog_lock);
-    auto entry = changelog.entryAt(index);
-    if (entry)
-        return entry->get_term();
-    return 0;
+    return changelog.termAt(index);
 }
 
 nuraft::ptr<nuraft::buffer> KeeperLogStore::pack(uint64_t index, int32_t cnt)

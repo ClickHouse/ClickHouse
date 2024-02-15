@@ -1762,19 +1762,25 @@ getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Co
 void testLogAndStateMachine(
     Coordination::CoordinationSettingsPtr settings,
     uint64_t total_logs,
-    bool enable_compression,
-    Coordination::KeeperContextPtr keeper_context)
+    bool enable_compression)
 {
     using namespace Coordination;
     using namespace DB;
 
     ChangelogDirTest snapshots("./snapshots");
-    keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("SnapshotDisk", "./snapshots"));
     ChangelogDirTest logs("./logs");
-    keeper_context->setLogDisk(std::make_shared<DiskLocal>("LogDisk", "./logs"));
+
+    auto get_keeper_context = [&]
+    {
+        auto local_keeper_context = std::make_shared<DB::KeeperContext>(true);
+        local_keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("SnapshotDisk", "./snapshots"));
+        local_keeper_context->setLogDisk(std::make_shared<DiskLocal>("LogDisk", "./logs"));
+        return local_keeper_context;
+    };
 
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
+    auto keeper_context = get_keeper_context();
     auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
     state_machine->init();
     DB::KeeperLogStore changelog(
@@ -1821,6 +1827,7 @@ void testLogAndStateMachine(
     }
 
     SnapshotsQueue snapshots_queue1{1};
+    keeper_context = get_keeper_context();
     auto restore_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue1, settings, keeper_context, nullptr);
     restore_machine->init();
     EXPECT_EQ(restore_machine->last_commit_index(), total_logs - total_logs % settings->snapshot_distance);
@@ -1868,63 +1875,63 @@ TEST_P(CoordinationTest, TestStateMachineAndLogStore)
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 10;
         settings->rotate_log_storage_interval = 10;
-        testLogAndStateMachine(settings, 37, params.enable_compression, keeper_context);
+        testLogAndStateMachine(settings, 37, params.enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 10;
         settings->rotate_log_storage_interval = 10;
-        testLogAndStateMachine(settings, 11, params.enable_compression, keeper_context);
+        testLogAndStateMachine(settings, 11, params.enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 10;
         settings->rotate_log_storage_interval = 10;
-        testLogAndStateMachine(settings, 40, params.enable_compression, keeper_context);
+        testLogAndStateMachine(settings, 40, params.enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 20;
         settings->rotate_log_storage_interval = 30;
-        testLogAndStateMachine(settings, 40, params.enable_compression, keeper_context);
+        testLogAndStateMachine(settings, 40, params.enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 0;
         settings->rotate_log_storage_interval = 10;
-        testLogAndStateMachine(settings, 40, params.enable_compression, keeper_context);
+        testLogAndStateMachine(settings, 40, params.enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 1;
         settings->reserved_log_items = 1;
         settings->rotate_log_storage_interval = 32;
-        testLogAndStateMachine(settings, 32, params.enable_compression, keeper_context);
+        testLogAndStateMachine(settings, 32, params.enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 7;
         settings->rotate_log_storage_interval = 1;
-        testLogAndStateMachine(settings, 33, params.enable_compression, keeper_context);
+        testLogAndStateMachine(settings, 33, params.enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 37;
         settings->reserved_log_items = 1000;
         settings->rotate_log_storage_interval = 5000;
-        testLogAndStateMachine(settings, 33, params.enable_compression, keeper_context);
+        testLogAndStateMachine(settings, 33, params.enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 37;
         settings->reserved_log_items = 1000;
         settings->rotate_log_storage_interval = 5000;
-        testLogAndStateMachine(settings, 45, params.enable_compression, keeper_context);
+        testLogAndStateMachine(settings, 45, params.enable_compression);
     }
 }
 

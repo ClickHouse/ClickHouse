@@ -81,6 +81,13 @@ struct ChangelogFileDescription
 
     /// How many entries should be stored in this log
     uint64_t expectedEntriesCountInLog() const { return to_log_index - from_log_index + 1; }
+
+    template <typename TFunction>
+    void withLock(TFunction && fn)
+    {
+        std::lock_guard lock(file_mutex);
+        fn();
+    }
 };
 
 using ChangelogFileDescriptionPtr = std::shared_ptr<ChangelogFileDescription>;
@@ -168,8 +175,7 @@ struct LogEntryStorage
     LogEntryPtr getEntry(uint64_t index) const;
     void clear();
     LogEntryPtr getLatestConfigChange() const;
-
-    void cacheFirstLog(uint64_t first_index);
+    uint64_t termAt(uint64_t index) const;
 
     using IndexWithLogLocation = std::pair<uint64_t, LogLocation>;
 
@@ -194,6 +200,8 @@ private:
     void startCommitLogsPrefetch(uint64_t last_committed_index) const;
 
     bool shouldMoveLogToCommitCache(uint64_t index, size_t log_entry_size);
+
+    void updateTermInfoWithNewEntry(uint64_t index, uint64_t term);
 
     struct InMemoryCache
     {
@@ -269,6 +277,17 @@ private:
     /// store indices of logs that contain config changes
     std::unordered_set<uint64_t> logs_with_config_changes;
 
+    struct LogTermInfo
+    {
+        uint64_t term = 0;
+        uint64_t first_index = 0;
+    };
+
+    /// store first index of each term
+    /// so we don't have to fetch log to return that information
+    /// terms are monotonically increasing so first index is enough
+    std::deque<LogTermInfo> log_term_infos;
+
     bool is_shutdown = false;
     KeeperContextPtr keeper_context;
     LoggerPtr log;
@@ -324,6 +343,7 @@ public:
     void applyEntriesFromBuffer(uint64_t index, nuraft::buffer & buffer);
 
     bool isConfigLog(uint64_t index) const;
+    uint64_t termAt(uint64_t index) const;
 
     /// Fsync latest log to disk and flush buffer
     bool flush();
@@ -383,8 +403,6 @@ private:
     std::unique_ptr<ChangelogWriter> current_writer;
 
     LogEntryStorage entry_storage;
-
-    std::unordered_set<uint64_t> conf_logs_indices;
 
     uint64_t max_log_id = 0;
     /// For compaction, queue of delete not used logs
