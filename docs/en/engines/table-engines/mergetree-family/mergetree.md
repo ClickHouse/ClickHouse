@@ -1106,6 +1106,8 @@ Configuration markup:
 </storage_configuration>
 ```
 
+Also see [configuring external storage options](/docs/en/operations/storing-data.md/#configuring-external-storage).
+
 :::note cache configuration
 ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [using local cache](/docs/en/operations/storing-data.md/#using-local-cache) if you are using one of those versions.
 :::

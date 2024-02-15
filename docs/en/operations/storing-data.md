@@ -11,45 +11,163 @@ To work with data stored on `Amazon S3` disks use [S3](/docs/en/engines/table-en
 
 To load data from a web server with static files use a disk with type [web](#storing-data-on-webserver).
 
-## Configuring HDFS {#configuring-hdfs}
+## Configuring external storage {#configuring-external-storage}
 
-[MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) and [Log](/docs/en/engines/table-engines/log-family/log.md) family table engines can store data to HDFS using a disk with type `HDFS`.
+[MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) and [Log](/docs/en/engines/table-engines/log-family/log.md) family table engines can store data to `S3`, `AzureBlobStorage`, `HDFS` using a disk with types `s3`, `azure_blob_storage`, `hdfs` accordingly.
 
 Configuration markup:
+
+Let's take a loop at different storage configuration options on the example of `S3` storage.
+Firstly, define configuration in server configuration file. In order to configure `S3` storage the following configuration can be used:
 
 ``` xml
 <clickhouse>
     <storage_configuration>
         <disks>
-            <hdfs>
-                <type>hdfs</type>
-                <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
-            </hdfs>
+            <s3>
+                <type>s3</type>
+                <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+                <use_invironment_credentials>1</use_invironment_credentials>
+            </s3>
         </disks>
         <policies>
-            <hdfs>
+            <s3>
                 <volumes>
                     <main>
-                        <disk>hdfs</disk>
+                        <disk>s3</disk>
                     </main>
                 </volumes>
-            </hdfs>
+            </s3>
         </policies>
     </storage_configuration>
+</clickhouse>
+```
 
+Starting with 24.1 clickhouse version, a different type of configuration is supported in addition to the older one:
+
+``` xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>local</metadata_type>
+                <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+                <use_invironment_credentials>1</use_invironment_credentials>
+            </s3>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+In order to make a specific kind of storage a default option for all `MergeTree` tables add the following section to configuration file:
+
+``` xml
+<clickhouse>
     <merge_tree>
-        <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
+        <storage_policy>s3</storage_policy>
     </merge_tree>
 </clickhouse>
 ```
 
-Required parameters:
+If you want to configure a specific storage policy only to specific table, you can define it in settings while creating the table:
 
-- `endpoint` — HDFS endpoint URL in `path` format. Endpoint URL should contain a root path to store data.
+``` sql
+CREATE TABLE test (a Int32, b String)
+ENGINE = MergeTree() ORDER BY a
+SETTINGS storage_policy = 's3';
+```
 
-Optional parameters:
+You can also use `disk` instead of `storage_policy`. In this case it is not requires to have `storage_policy` section in configuration file, only `disk` section would be enough.
 
-- `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1 Mb`.
+``` sql
+CREATE TABLE test (a Int32, b String)
+ENGINE = MergeTree() ORDER BY a
+SETTINGS disk = 's3';
+```
+
+There is also a possibility to specify storage configuration without a preconfigured disk in configuration file:
+
+``` sql
+CREATE TABLE test (a Int32, b String)
+ENGINE = MergeTree() ORDER BY a
+SETTINGS disk = disk(name = 's3_disk', type = 's3', endpoint = 'https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/', use_environment_credentials = 1);
+```
+
+Adding cache is also possible:
+
+``` sql
+CREATE TABLE test (a Int32, b String)
+ENGINE = MergeTree() ORDER BY a
+SETTINGS disk = disk(name = 'cached_s3_disk', type = 'cache', max_size = '10Gi', path = '/s3_cache', disk = disk(name = 's3_disk', type = 's3', endpoint = 'https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/', use_environment_credentials = 1));
+```
+
+A combination of config file disk configuration and sql-defined configuration is also possible:
+
+``` sql
+CREATE TABLE test (a Int32, b String)
+ENGINE = MergeTree() ORDER BY a
+SETTINGS disk = disk(name = 'cached_s3_disk', type = 'cache', max_size = '10Gi', path = '/s3_cache', disk = 's3');
+```
+
+Here `s3` is a disk name from server configuration file, while `cache` disk is defined via sql.
+
+Let's take a closer look at configuration parameters.
+
+All disk configuration require `type` section, equal to one of `s3`, `azure_blob_storage`, `hdfs`, `local`, `cache`, `web`. Then goes configuration of a specific storage type.
+Starting from 24.1 clickhouse version, you can you a new configuration option. For it you are required to specify `type` as `object_storage`, `object_storage_type` as one of `s3`, `azure_blob_storage`, `hdfs`, `local`, `cache`, `web`, and optionally you can specify `metadata_type`, which is `local` by default, but it can also be set to `plain`, `web`.
+
+E.g. first configuration option:
+``` xml
+<s3>
+    <type>s3</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_invironment_credentials>1</use_invironment_credentials>
+</s3>
+```
+
+and second (from `24.1`):
+``` xml
+<s3>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>local</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_invironment_credentials>1</use_invironment_credentials>
+</s3>
+```
+
+Configuration like
+``` xml
+<s3_plain>
+    <type>s3_plain</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_invironment_credentials>1</use_invironment_credentials>
+</s3_plain>
+```
+
+is equal to
+``` xml
+<s3_plain>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>plain</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_invironment_credentials>1</use_invironment_credentials>
+</s3_plain>
+```
+
+For details configuration options of each storage see [MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md).
 
 ## Using Virtual File System for Data Encryption {#encrypted-virtual-file-system}
 
