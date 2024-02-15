@@ -3,6 +3,7 @@
 #include <Functions/FunctionsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/MemorySanitizer.h>
 #include <Common/UTF8Helpers.h>
 
 #include <Core/Defines.h>
@@ -108,10 +109,8 @@ struct NgramDistanceImpl
 
         if constexpr (case_insensitive)
         {
-#if defined(MEMORY_SANITIZER)
             /// Due to PODArray padding accessing more elements should be OK
             __msan_unpoison(code_points + (N - 1), padding_offset * sizeof(CodePoint));
-#endif
             /// We really need template lambdas with C++20 to do it inline
             unrollLowering<N - 1>(code_points, std::make_index_sequence<padding_offset>());
         }

@@ -19,6 +19,6 @@ public:
         return "SystemAggregateFunctionCombinators";
     }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 };
 }

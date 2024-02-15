@@ -5,10 +5,11 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemWarnings::getNamesAndTypes()
+ColumnsDescription StorageSystemWarnings::getColumnsDescription()
 {
-    return {
-        {"message", std::make_shared<DataTypeString>()},
+    return ColumnsDescription
+    {
+        {"message", std::make_shared<DataTypeString>(), "A warning message issued by ClickHouse server."},
     };
 }
 

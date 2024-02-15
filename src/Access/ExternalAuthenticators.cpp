@@ -242,7 +242,10 @@ HTTPAuthClientParams parseHTTPAuthParams(const Poco::Util::AbstractConfiguration
     size_t connection_timeout_ms = config.getInt(prefix + ".connection_timeout_ms", 1000);
     size_t receive_timeout_ms = config.getInt(prefix + ".receive_timeout_ms", 1000);
     size_t send_timeout_ms = config.getInt(prefix + ".send_timeout_ms", 1000);
-    http_auth_params.timeouts = ConnectionTimeouts{connection_timeout_ms, receive_timeout_ms, send_timeout_ms};
+    http_auth_params.timeouts = ConnectionTimeouts()
+        .withConnectionTimeout(Poco::Timespan(connection_timeout_ms * 1000))
+        .withReceiveTimeout(Poco::Timespan(receive_timeout_ms * 1000))
+        .withSendTimeout(Poco::Timespan(send_timeout_ms * 1000));
 
     http_auth_params.max_tries = config.getInt(prefix + ".max_tries", 3);
     http_auth_params.retry_initial_backoff_ms = config.getInt(prefix + ".retry_initial_backoff_ms", 50);
@@ -276,7 +279,7 @@ void ExternalAuthenticators::reset()
     resetImpl();
 }
 
-void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
+void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, LoggerPtr log)
 {
     std::lock_guard lock(mutex);
     resetImpl();

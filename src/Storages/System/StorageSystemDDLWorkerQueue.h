@@ -21,6 +21,6 @@ protected:
 public:
     std::string getName() const override { return "SystemDDLWorkerQueue"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 };
 }

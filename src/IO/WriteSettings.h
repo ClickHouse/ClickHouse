@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/Throttler_fwd.h>
-#include <IO/ResourceLink.h>
+#include <Common/Scheduler/ResourceLink.h>
 
 namespace DB
 {

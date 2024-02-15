@@ -39,9 +39,12 @@ SELECT accurateCastOrNull(number + 127, 'Int8') AS x FROM numbers (2) ORDER BY x
 SELECT accurateCastOrNull(-1, 'DateTime');
 SELECT accurateCastOrNull(5000000000, 'DateTime');
 SELECT accurateCastOrNull('1xxx', 'DateTime');
-select toString(accurateCastOrNull('2023-05-30 14:38:20', 'DateTime'), timezone());
+SELECT toString(accurateCastOrNull('2023-05-30 14:38:20', 'DateTime'), timezone());
 SELECT toString(accurateCastOrNull(19, 'DateTime'), 'UTC');
 SELECT toString(accurateCastOrNull(70000, 'DateTime'), 'UTC');
+-- need fixed timezone in these two lines
+SELECT toString(accurateCastOrNull('1965-05-30 14:38:20', 'DateTime'), timezone()) SETTINGS session_timezone = 'UTC';
+SELECT toString(accurateCastOrNull('2223-05-30 14:38:20', 'DateTime'), timezone()) SETTINGS session_timezone = 'UTC';
 
 SELECT accurateCastOrNull(-1, 'Date');
 SELECT accurateCastOrNull(5000000000, 'Date');

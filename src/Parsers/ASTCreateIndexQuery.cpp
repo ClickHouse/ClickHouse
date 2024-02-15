@@ -64,10 +64,12 @@ void ASTCreateIndexQuery::formatQueryImpl(const FormatSettings & settings, Forma
 ASTPtr ASTCreateIndexQuery::convertToASTAlterCommand() const
 {
     auto command = std::make_shared<ASTAlterCommand>();
+
     command->type = ASTAlterCommand::ADD_INDEX;
-    command->index = index_name->clone();
-    command->index_decl = index_decl->clone();
     command->if_not_exists = if_not_exists;
+
+    command->index = command->children.emplace_back(index_name).get();
+    command->index_decl = command->children.emplace_back(index_decl).get();
 
     return command;
 }

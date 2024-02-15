@@ -140,8 +140,7 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
 
     auto info = std::make_shared<SettingsProfilesInfo>(access_control);
 
-    info->profiles = merged_settings.toProfileIDs();
-    substituteProfiles(merged_settings, info->profiles_with_implicit, info->names_of_profiles);
+    substituteProfiles(merged_settings, info->profiles, info->profiles_with_implicit, info->names_of_profiles);
 
     info->settings = merged_settings.toSettingsChanges();
     info->constraints = merged_settings.toSettingsConstraints(access_control);
@@ -152,9 +151,12 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
 
 void SettingsProfilesCache::substituteProfiles(
     SettingsProfileElements & elements,
+    std::vector<UUID> & profiles,
     std::vector<UUID> & substituted_profiles,
     std::unordered_map<UUID, String> & names_of_substituted_profiles) const
 {
+    profiles = elements.toProfileIDs();
+
     /// We should substitute profiles in reversive order because the same profile can occur
     /// in `elements` multiple times (with some other settings in between) and in this case
     /// the last occurrence should override all the previous ones.
@@ -184,6 +186,11 @@ void SettingsProfilesCache::substituteProfiles(
         names_of_substituted_profiles.emplace(profile_id, profile->getName());
     }
     std::reverse(substituted_profiles.begin(), substituted_profiles.end());
+
+    std::erase_if(profiles, [&substituted_profiles_set](const UUID & profile_id)
+    {
+        return !substituted_profiles_set.contains(profile_id);
+    });
 }
 
 std::shared_ptr<const EnabledSettings> SettingsProfilesCache::getEnabledSettings(
@@ -225,13 +232,13 @@ std::shared_ptr<const SettingsProfilesInfo> SettingsProfilesCache::getSettingsPr
     if (auto pos = this->profile_infos_cache.get(profile_id))
         return *pos;
 
-    SettingsProfileElements elements = all_profiles[profile_id]->elements;
+    SettingsProfileElements elements;
+    auto & element = elements.emplace_back();
+    element.parent_profile = profile_id;
 
     auto info = std::make_shared<SettingsProfilesInfo>(access_control);
 
-    info->profiles.push_back(profile_id);
-    info->profiles_with_implicit.push_back(profile_id);
-    substituteProfiles(elements, info->profiles_with_implicit, info->names_of_profiles);
+    substituteProfiles(elements, info->profiles, info->profiles_with_implicit, info->names_of_profiles);
     info->settings = elements.toSettingsChanges();
     info->constraints.merge(elements.toSettingsConstraints(access_control));
 

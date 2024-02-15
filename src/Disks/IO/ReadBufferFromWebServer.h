@@ -41,7 +41,7 @@ public:
 private:
     std::unique_ptr<ReadBuffer> initialize();
 
-    Poco::Logger * log;
+    LoggerPtr log;
     ContextPtr context;
 
     const String url;

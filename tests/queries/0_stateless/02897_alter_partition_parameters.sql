@@ -10,6 +10,24 @@ PARTITION BY toMonday(EventDate);
 
 INSERT INTO test VALUES(toDate('2023-10-09'));
 
+ALTER TABLE test DROP PARTITION ('2023-10-09');
+
+SELECT count() FROM test;
+
+INSERT INTO test VALUES(toDate('2023-10-09'));
+
+ALTER TABLE test DROP PARTITION (('2023-10-09'));
+
+SELECT count() FROM test;
+
+INSERT INTO test VALUES(toDate('2023-10-09'));
+
+ALTER TABLE test DROP PARTITION '2023-10-09';
+
+SELECT count() FROM test;
+
+INSERT INTO test VALUES(toDate('2023-10-09'));
+
 SET param_partition='2023-10-09';
 
 ALTER TABLE test DROP PARTITION {partition:String};
@@ -51,6 +69,17 @@ ENGINE = MergeTree
 ORDER BY tuple()
 PARTITION BY (a * b, b * b);
 
+INSERT INTO test2 VALUES(1, 2);
+
+ALTER TABLE test2 DROP PARTITION tuple(2, 4);
+
+SELECT count() FROM test2;
+
+INSERT INTO test2 VALUES(1, 2);
+
+ALTER TABLE test2 DROP PARTITION (2, 4);
+
+SELECT count() FROM test2;
 
 INSERT INTO test2 VALUES(1, 2);
 

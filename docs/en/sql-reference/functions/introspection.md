@@ -16,7 +16,7 @@ For proper operation of introspection functions:
 
 - Install the `clickhouse-common-static-dbg` package.
 
-- Set the [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) setting to 1.
+- Set the [allow_introspection_functions](../../operations/settings/settings.md#allow_introspection_functions) setting to 1.
 
         For security reasons introspection functions are disabled by default.
 

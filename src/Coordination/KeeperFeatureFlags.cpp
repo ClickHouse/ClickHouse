@@ -80,7 +80,7 @@ const std::string & KeeperFeatureFlags::getFeatureFlags() const
     return feature_flags;
 }
 
-void KeeperFeatureFlags::logFlags(Poco::Logger * log) const
+void KeeperFeatureFlags::logFlags(LoggerPtr log) const
 {
     for (const auto & [feature_flag, feature_flag_name] : magic_enum::enum_entries<KeeperFeatureFlag>())
     {

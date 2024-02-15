@@ -10,16 +10,17 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemErrors::getNamesAndTypes()
+ColumnsDescription StorageSystemErrors::getColumnsDescription()
 {
-    return {
-        { "name",                    std::make_shared<DataTypeString>() },
-        { "code",                    std::make_shared<DataTypeInt32>() },
-        { "value",                   std::make_shared<DataTypeUInt64>() },
-        { "last_error_time",         std::make_shared<DataTypeDateTime>() },
-        { "last_error_message",      std::make_shared<DataTypeString>() },
-        { "last_error_trace",        std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) },
-        { "remote",                  std::make_shared<DataTypeUInt8>() },
+    return ColumnsDescription
+    {
+        { "name",                    std::make_shared<DataTypeString>(), "Name of the error (errorCodeToName)."},
+        { "code",                    std::make_shared<DataTypeInt32>(), "Code number of the error."},
+        { "value",                   std::make_shared<DataTypeUInt64>(), "The number of times this error happened."},
+        { "last_error_time",         std::make_shared<DataTypeDateTime>(), "The time when the last error happened."},
+        { "last_error_message",      std::make_shared<DataTypeString>(), "Message for the last error."},
+        { "last_error_trace",        std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "A stack trace that represents a list of physical addresses where the called methods are stored."},
+        { "remote",                  std::make_shared<DataTypeUInt8>(), "Remote exception (i.e. received during one of the distributed queries)."},
     };
 }
 

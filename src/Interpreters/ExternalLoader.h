@@ -8,6 +8,7 @@
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <base/scope_guard.h>
 #include <Common/ExternalLoaderStatus.h>
+#include <Common/Logger.h>
 #include <Core/Types.h>
 
 namespace Poco { class Logger; }
@@ -84,7 +85,7 @@ public:
     template <typename T>
     static constexpr bool is_vector_load_result_type = std::is_same_v<T, LoadResults> || std::is_same_v<T, Loadables>;
 
-    ExternalLoader(const String & type_name_, Poco::Logger * log);
+    ExternalLoader(const String & type_name_, LoggerPtr log);
     virtual ~ExternalLoader();
 
     /// Adds a repository which will be used to read configurations from.
@@ -230,7 +231,7 @@ private:
     std::unique_ptr<PeriodicUpdater> periodic_updater;
 
     const String type_name;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

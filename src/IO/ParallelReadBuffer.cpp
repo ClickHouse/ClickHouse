@@ -50,7 +50,7 @@ ParallelReadBuffer::ParallelReadBuffer(
     , file_size(file_size_)
     , range_step(std::max(1ul, range_step_))
 {
-    LOG_TRACE(&Poco::Logger::get("ParallelReadBuffer"), "Parallel reading is used");
+    LOG_TRACE(getLogger("ParallelReadBuffer"), "Parallel reading is used");
 
     try
     {

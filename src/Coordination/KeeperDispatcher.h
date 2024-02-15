@@ -70,7 +70,7 @@ private:
 
     KeeperConfigurationAndSettingsPtr configuration_and_settings;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
@@ -175,6 +175,11 @@ public:
     bool isObserver() const
     {
         return server->isObserver();
+    }
+
+    bool isExceedingMemorySoftLimit() const
+    {
+        return server->isExceedingMemorySoftLimit();
     }
 
     uint64_t getLogDirSize() const;

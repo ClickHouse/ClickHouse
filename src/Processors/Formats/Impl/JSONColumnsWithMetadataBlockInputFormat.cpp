@@ -60,7 +60,7 @@ void registerInputFormatJSONColumnsWithMetadata(FormatFactory & factory)
     factory.registerInputFormat(
         "JSONColumnsWithMetadata",
         [](ReadBuffer & buf,
-           const Block &sample,
+           const Block & sample,
            const RowInputFormatParams &,
            const FormatSettings & settings)
         {

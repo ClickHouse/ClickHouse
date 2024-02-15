@@ -9,7 +9,7 @@ namespace DB
 {
 
 BackupCoordinationLocal::BackupCoordinationLocal(bool plain_backup_)
-    : log(&Poco::Logger::get("BackupCoordinationLocal")), file_infos(plain_backup_)
+    : log(getLogger("BackupCoordinationLocal")), file_infos(plain_backup_)
 {
 }
 

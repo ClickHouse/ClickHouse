@@ -1,0 +1,10 @@
+None
+UInt64
+String
+Array(UInt64)
+Enum8(\'None\' = -1, \'Array(UInt64)\' = 0, \'String\' = 1, \'UInt64\' = 2)
+None
+UInt64
+String
+Array(UInt64)
+Enum8(\'None\' = -1, \'Array(UInt64)\' = 0, \'Date\' = 1, \'String\' = 2, \'UInt64\' = 3)

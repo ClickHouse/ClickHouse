@@ -100,7 +100,7 @@ public:
         merged_rows = 0;
         sum_blocks_granularity = 0;
         ++total_chunks;
-        total_allocated_bytes += chunk.allocatedBytes();
+        total_allocated_bytes += chunk.bytes();
         need_flush = false;
 
         return chunk;
@@ -122,7 +122,7 @@ public:
         {
             size_t merged_bytes = 0;
             for (const auto & column : columns)
-                merged_bytes += column->allocatedBytes();
+                merged_bytes += column->byteSize();
             if (merged_bytes >= max_block_size_bytes)
                 return true;
         }

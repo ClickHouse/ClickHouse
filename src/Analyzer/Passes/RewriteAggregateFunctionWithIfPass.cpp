@@ -109,7 +109,7 @@ private:
 }
 
 
-void RewriteAggregateFunctionWithIfPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void RewriteAggregateFunctionWithIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     RewriteAggregateFunctionWithIfVisitor visitor(context);
     visitor.visit(query_tree_node);

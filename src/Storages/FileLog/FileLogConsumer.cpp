@@ -22,7 +22,7 @@ FileLogConsumer::FileLogConsumer(
     ContextPtr context_,
     size_t stream_number_,
     size_t max_streams_number_)
-    : log(&Poco::Logger::get("FileLogConsumer " + toString(stream_number_)))
+    : log(getLogger("FileLogConsumer " + toString(stream_number_)))
     , storage(storage_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)

@@ -1,5 +1,6 @@
 #include "QueryThreadLog.h"
 #include <array>
+#include <base/getFQDNOrHostName.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -21,12 +22,13 @@
 namespace DB
 {
 
-NamesAndTypesList QueryThreadLogElement::getNamesAndTypes()
+ColumnsDescription QueryThreadLogElement::getColumnsDescription()
 {
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
-    return
+    return ColumnsDescription
     {
+        {"hostname", low_cardinality_string},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
@@ -94,6 +96,7 @@ void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
+    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);

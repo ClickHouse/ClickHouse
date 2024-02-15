@@ -132,7 +132,7 @@ private:
 
 }
 
-void ConvertOrLikeChainPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void ConvertOrLikeChainPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     auto or_function_resolver = FunctionFactory::instance().get("or", context);
     auto match_function_resolver = FunctionFactory::instance().get("multiMatchAny", context);

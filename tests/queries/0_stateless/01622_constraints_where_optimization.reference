@@ -8,7 +8,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    TABLE id: 3, table_name: default.t_constraints_where
+    TABLE id: 3, alias: __table1, table_name: default.t_constraints_where
   WHERE
     CONSTANT id: 4, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
@@ -22,7 +22,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    TABLE id: 3, table_name: default.t_constraints_where
+    TABLE id: 3, alias: __table1, table_name: default.t_constraints_where
   WHERE
     CONSTANT id: 4, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
@@ -36,7 +36,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    TABLE id: 3, table_name: default.t_constraints_where
+    TABLE id: 3, alias: __table1, table_name: default.t_constraints_where
   WHERE
     CONSTANT id: 4, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
@@ -50,7 +50,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    TABLE id: 3, table_name: default.t_constraints_where
+    TABLE id: 3, alias: __table1, table_name: default.t_constraints_where
   WHERE
     FUNCTION id: 4, function_name: less, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -68,7 +68,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    TABLE id: 3, table_name: default.t_constraints_where
+    TABLE id: 3, alias: __table1, table_name: default.t_constraints_where
   PREWHERE
     FUNCTION id: 4, function_name: less, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -85,5 +85,5 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    TABLE id: 3, table_name: default.t_constraints_where
+    TABLE id: 3, alias: __table1, table_name: default.t_constraints_where
   SETTINGS allow_experimental_analyzer=1

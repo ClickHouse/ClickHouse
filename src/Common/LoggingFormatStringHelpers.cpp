@@ -80,8 +80,8 @@ void LogFrequencyLimiterIml::cleanup(time_t too_old_threshold_s)
 std::mutex LogSeriesLimiter::mutex;
 time_t LogSeriesLimiter::last_cleanup = 0;
 
-LogSeriesLimiter::LogSeriesLimiter(Poco::Logger * logger_, size_t allowed_count_, time_t interval_s_)
-    : logger(logger_)
+LogSeriesLimiter::LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, time_t interval_s_)
+    : logger(std::move(logger_))
 {
     if (allowed_count_ == 0)
     {

@@ -7,6 +7,7 @@
 #include <base/sort.h>
 
 #include <Common/ArenaAllocator.h>
+#include <Common/iota.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -30,7 +31,7 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
     const size_t size = values.size();
     /// Save initial positions, than sort indices according to the values.
     std::vector<size_t> indexes(size);
-    std::iota(indexes.begin(), indexes.end(), 0);
+    iota(indexes.data(), indexes.size(), size_t(0));
     std::sort(indexes.begin(), indexes.end(),
         [&] (size_t lhs, size_t rhs) { return values[lhs] < values[rhs]; });
 

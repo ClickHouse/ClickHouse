@@ -11,10 +11,10 @@ Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a
 **Syntax**
 
 ``` sql
-postgresql('host:port', 'database', 'table', 'user', 'password'[, `schema`])
+postgresql({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
 ```
 
-**Arguments**
+**Parameters**
 
 - `host:port` — PostgreSQL server address.
 - `database` — Remote database name.
@@ -22,6 +22,9 @@ postgresql('host:port', 'database', 'table', 'user', 'password'[, `schema`])
 - `user` — PostgreSQL user.
 - `password` — User password.
 - `schema` — Non-default table schema. Optional.
+- `on_conflict` — Conflict resolution strategy. Example: `ON CONFLICT DO NOTHING`. Optional.
+
+Arguments also can be passed using [named collections](/docs/en/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
 **Returned Value**
 
@@ -86,10 +89,22 @@ postgresql> SELECT * FROM test;
 (1 row)
 ```
 
-Selecting data from ClickHouse:
+Selecting data from ClickHouse using plain arguments:
 
 ```sql
 SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test');
+```
+
+Or using [named collections](/docs/en/operations/named-collections.md):
+
+```sql
+CREATE NAMED COLLECTION mypg AS
+        host = 'localhost',
+        port = 5432,
+        database = 'test',
+        user = 'postgresql_user',
+        password = 'password';
+SELECT * FROM postgresql(mypg, table='test') WHERE str IN ('test');
 ```
 
 ``` text

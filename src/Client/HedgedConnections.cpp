@@ -28,16 +28,18 @@ HedgedConnections::HedgedConnections(
     const ThrottlerPtr & throttler_,
     PoolMode pool_mode,
     std::shared_ptr<QualifiedTableName> table_to_check_,
-    AsyncCallback async_callback)
+    AsyncCallback async_callback,
+    GetPriorityForLoadBalancing::Func priority_func)
     : hedged_connections_factory(
-          pool_,
-          context_->getSettingsRef(),
-          timeouts_,
-          context_->getSettingsRef().connections_with_failover_max_tries.value,
-          context_->getSettingsRef().fallback_to_stale_replicas_for_distributed_queries.value,
-          context_->getSettingsRef().max_parallel_replicas.value,
-          context_->getSettingsRef().skip_unavailable_shards.value,
-          table_to_check_)
+        pool_,
+        context_->getSettingsRef(),
+        timeouts_,
+        context_->getSettingsRef().connections_with_failover_max_tries.value,
+        context_->getSettingsRef().fallback_to_stale_replicas_for_distributed_queries.value,
+        context_->getSettingsRef().max_parallel_replicas.value,
+        context_->getSettingsRef().skip_unavailable_shards.value,
+        table_to_check_,
+        priority_func)
     , context(std::move(context_))
     , settings(context->getSettingsRef())
     , throttler(throttler_)

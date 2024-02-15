@@ -1,12 +1,15 @@
 #pragma once
 
-#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Cache/FileCache_fwd.h>
+#include <Interpreters/Cache/QueryLimit.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/Cache/UserInfo.h>
 
 
 namespace CurrentMetrics
@@ -24,8 +27,9 @@ public:
 
     CachedOnDiskReadBufferFromFile(
         const String & source_file_path_,
-        const FileCache::Key & cache_key_,
+        const FileCacheKey & cache_key_,
         FileCachePtr cache_,
+        const FileCacheUserInfo & user_,
         ImplementationBufferCreator implementation_buffer_creator_,
         const ReadSettings & settings_,
         const String & query_id_,
@@ -101,8 +105,8 @@ private:
 
     bool nextFileSegmentsBatch();
 
-    Poco::Logger * log;
-    FileCache::Key cache_key;
+    LoggerPtr log;
+    FileCacheKey cache_key;
     String source_file_path;
 
     FileCachePtr cache;
@@ -145,13 +149,14 @@ private:
 
     String query_id;
     String current_buffer_id;
+    FileCacheUserInfo user;
 
     bool allow_seeks_after_first_read;
     [[maybe_unused]]bool use_external_buffer;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheReadBuffers};
     ProfileEvents::Counters current_file_segment_counters;
 
-    FileCache::QueryContextHolderPtr query_context_holder;
+    FileCacheQueryLimit::QueryContextHolderPtr query_context_holder;
 
     std::shared_ptr<FilesystemCacheLog> cache_log;
 };

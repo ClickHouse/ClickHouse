@@ -1,0 +1,330 @@
+Memory
+initial insert
+alter add column 1
+0	0	\N	\N	\N
+1	1	\N	\N	\N
+2	2	\N	\N	\N
+insert after alter add column 1
+0	0	\N	\N	\N
+1	1	\N	\N	\N
+2	2	\N	\N	\N
+3	3	3	\N	3
+4	4	4	\N	4
+5	5	5	\N	5
+6	6	str_6	str_6	\N
+7	7	str_7	str_7	\N
+8	8	str_8	str_8	\N
+9	9	\N	\N	\N
+10	10	\N	\N	\N
+11	11	\N	\N	\N
+12	12	12	\N	12
+13	13	str_13	str_13	\N
+14	14	\N	\N	\N
+alter modify column 1
+0	0	\N	\N	\N	\N
+1	1	\N	\N	\N	\N
+2	2	\N	\N	\N	\N
+3	3	3	\N	3	\N
+4	4	4	\N	4	\N
+5	5	5	\N	5	\N
+6	6	str_6	str_6	\N	\N
+7	7	str_7	str_7	\N	\N
+8	8	str_8	str_8	\N	\N
+9	9	\N	\N	\N	\N
+10	10	\N	\N	\N	\N
+11	11	\N	\N	\N	\N
+12	12	12	\N	12	\N
+13	13	str_13	str_13	\N	\N
+14	14	\N	\N	\N	\N
+insert after alter modify column 1
+0	0	\N	\N	\N	\N
+1	1	\N	\N	\N	\N
+2	2	\N	\N	\N	\N
+3	3	3	\N	3	\N
+4	4	4	\N	4	\N
+5	5	5	\N	5	\N
+6	6	str_6	str_6	\N	\N
+7	7	str_7	str_7	\N	\N
+8	8	str_8	str_8	\N	\N
+9	9	\N	\N	\N	\N
+10	10	\N	\N	\N	\N
+11	11	\N	\N	\N	\N
+12	12	12	\N	12	\N
+13	13	str_13	str_13	\N	\N
+14	14	\N	\N	\N	\N
+15	15	1970-01-16	\N	\N	1970-01-16
+16	16	1970-01-17	\N	\N	1970-01-17
+17	17	1970-01-18	\N	\N	1970-01-18
+18	18	1970-01-19	\N	\N	1970-01-19
+19	19	\N	\N	\N	\N
+20	20	20	\N	20	\N
+21	21	str_21	str_21	\N	\N
+alter modify column 2
+0	0	\N	\N	\N	\N	\N	\N
+1	1	\N	\N	\N	\N	\N	\N
+2	2	\N	\N	\N	\N	\N	\N
+3	3	\N	\N	3	\N	3	\N
+4	4	\N	\N	4	\N	4	\N
+5	5	\N	\N	5	\N	5	\N
+6	6	\N	\N	str_6	str_6	\N	\N
+7	7	\N	\N	str_7	str_7	\N	\N
+8	8	\N	\N	str_8	str_8	\N	\N
+9	9	\N	\N	\N	\N	\N	\N
+10	10	\N	\N	\N	\N	\N	\N
+11	11	\N	\N	\N	\N	\N	\N
+12	12	\N	\N	12	\N	12	\N
+13	13	\N	\N	str_13	str_13	\N	\N
+14	14	\N	\N	\N	\N	\N	\N
+15	15	\N	\N	1970-01-16	\N	\N	1970-01-16
+16	16	\N	\N	1970-01-17	\N	\N	1970-01-17
+17	17	\N	\N	1970-01-18	\N	\N	1970-01-18
+18	18	\N	\N	1970-01-19	\N	\N	1970-01-19
+19	19	\N	\N	\N	\N	\N	\N
+20	20	\N	\N	20	\N	20	\N
+21	21	\N	\N	str_21	str_21	\N	\N
+insert after alter modify column 2
+0	0	\N	\N	\N	\N	\N	\N
+1	1	\N	\N	\N	\N	\N	\N
+2	2	\N	\N	\N	\N	\N	\N
+3	3	\N	\N	3	\N	3	\N
+4	4	\N	\N	4	\N	4	\N
+5	5	\N	\N	5	\N	5	\N
+6	6	\N	\N	str_6	str_6	\N	\N
+7	7	\N	\N	str_7	str_7	\N	\N
+8	8	\N	\N	str_8	str_8	\N	\N
+9	9	\N	\N	\N	\N	\N	\N
+10	10	\N	\N	\N	\N	\N	\N
+11	11	\N	\N	\N	\N	\N	\N
+12	12	\N	\N	12	\N	12	\N
+13	13	\N	\N	str_13	str_13	\N	\N
+14	14	\N	\N	\N	\N	\N	\N
+15	15	\N	\N	1970-01-16	\N	\N	1970-01-16
+16	16	\N	\N	1970-01-17	\N	\N	1970-01-17
+17	17	\N	\N	1970-01-18	\N	\N	1970-01-18
+18	18	\N	\N	1970-01-19	\N	\N	1970-01-19
+19	19	\N	\N	\N	\N	\N	\N
+20	20	\N	\N	20	\N	20	\N
+21	21	\N	\N	str_21	str_21	\N	\N
+22	str_22	\N	str_22	\N	\N	\N	\N
+23	\N	\N	\N	\N	\N	\N	\N
+24	24	24	\N	\N	\N	\N	\N
+MergeTree compact
+initial insert
+alter add column 1
+0	0	\N	\N	\N
+1	1	\N	\N	\N
+2	2	\N	\N	\N
+insert after alter add column 1
+0	0	\N	\N	\N
+1	1	\N	\N	\N
+2	2	\N	\N	\N
+3	3	3	\N	3
+4	4	4	\N	4
+5	5	5	\N	5
+6	6	str_6	str_6	\N
+7	7	str_7	str_7	\N
+8	8	str_8	str_8	\N
+9	9	\N	\N	\N
+10	10	\N	\N	\N
+11	11	\N	\N	\N
+12	12	12	\N	12
+13	13	str_13	str_13	\N
+14	14	\N	\N	\N
+alter modify column 1
+0	0	\N	\N	\N	\N
+1	1	\N	\N	\N	\N
+2	2	\N	\N	\N	\N
+3	3	3	\N	3	\N
+4	4	4	\N	4	\N
+5	5	5	\N	5	\N
+6	6	str_6	str_6	\N	\N
+7	7	str_7	str_7	\N	\N
+8	8	str_8	str_8	\N	\N
+9	9	\N	\N	\N	\N
+10	10	\N	\N	\N	\N
+11	11	\N	\N	\N	\N
+12	12	12	\N	12	\N
+13	13	str_13	str_13	\N	\N
+14	14	\N	\N	\N	\N
+insert after alter modify column 1
+0	0	\N	\N	\N	\N
+1	1	\N	\N	\N	\N
+2	2	\N	\N	\N	\N
+3	3	3	\N	3	\N
+4	4	4	\N	4	\N
+5	5	5	\N	5	\N
+6	6	str_6	str_6	\N	\N
+7	7	str_7	str_7	\N	\N
+8	8	str_8	str_8	\N	\N
+9	9	\N	\N	\N	\N
+10	10	\N	\N	\N	\N
+11	11	\N	\N	\N	\N
+12	12	12	\N	12	\N
+13	13	str_13	str_13	\N	\N
+14	14	\N	\N	\N	\N
+15	15	1970-01-16	\N	\N	1970-01-16
+16	16	1970-01-17	\N	\N	1970-01-17
+17	17	1970-01-18	\N	\N	1970-01-18
+18	18	1970-01-19	\N	\N	1970-01-19
+19	19	\N	\N	\N	\N
+20	20	20	\N	20	\N
+21	21	str_21	str_21	\N	\N
+alter modify column 2
+0	0	0	\N	\N	\N	\N	\N
+1	1	1	\N	\N	\N	\N	\N
+2	2	2	\N	\N	\N	\N	\N
+3	3	3	\N	3	\N	3	\N
+4	4	4	\N	4	\N	4	\N
+5	5	5	\N	5	\N	5	\N
+6	6	6	\N	str_6	str_6	\N	\N
+7	7	7	\N	str_7	str_7	\N	\N
+8	8	8	\N	str_8	str_8	\N	\N
+9	9	9	\N	\N	\N	\N	\N
+10	10	10	\N	\N	\N	\N	\N
+11	11	11	\N	\N	\N	\N	\N
+12	12	12	\N	12	\N	12	\N
+13	13	13	\N	str_13	str_13	\N	\N
+14	14	14	\N	\N	\N	\N	\N
+15	15	15	\N	1970-01-16	\N	\N	1970-01-16
+16	16	16	\N	1970-01-17	\N	\N	1970-01-17
+17	17	17	\N	1970-01-18	\N	\N	1970-01-18
+18	18	18	\N	1970-01-19	\N	\N	1970-01-19
+19	19	19	\N	\N	\N	\N	\N
+20	20	20	\N	20	\N	20	\N
+21	21	21	\N	str_21	str_21	\N	\N
+insert after alter modify column 2
+0	0	0	\N	\N	\N	\N	\N
+1	1	1	\N	\N	\N	\N	\N
+2	2	2	\N	\N	\N	\N	\N
+3	3	3	\N	3	\N	3	\N
+4	4	4	\N	4	\N	4	\N
+5	5	5	\N	5	\N	5	\N
+6	6	6	\N	str_6	str_6	\N	\N
+7	7	7	\N	str_7	str_7	\N	\N
+8	8	8	\N	str_8	str_8	\N	\N
+9	9	9	\N	\N	\N	\N	\N
+10	10	10	\N	\N	\N	\N	\N
+11	11	11	\N	\N	\N	\N	\N
+12	12	12	\N	12	\N	12	\N
+13	13	13	\N	str_13	str_13	\N	\N
+14	14	14	\N	\N	\N	\N	\N
+15	15	15	\N	1970-01-16	\N	\N	1970-01-16
+16	16	16	\N	1970-01-17	\N	\N	1970-01-17
+17	17	17	\N	1970-01-18	\N	\N	1970-01-18
+18	18	18	\N	1970-01-19	\N	\N	1970-01-19
+19	19	19	\N	\N	\N	\N	\N
+20	20	20	\N	20	\N	20	\N
+21	21	21	\N	str_21	str_21	\N	\N
+22	str_22	\N	str_22	\N	\N	\N	\N
+23	\N	\N	\N	\N	\N	\N	\N
+24	24	24	\N	\N	\N	\N	\N
+MergeTree wide
+initial insert
+alter add column 1
+0	0	\N	\N	\N
+1	1	\N	\N	\N
+2	2	\N	\N	\N
+insert after alter add column 1
+0	0	\N	\N	\N
+1	1	\N	\N	\N
+2	2	\N	\N	\N
+3	3	3	\N	3
+4	4	4	\N	4
+5	5	5	\N	5
+6	6	str_6	str_6	\N
+7	7	str_7	str_7	\N
+8	8	str_8	str_8	\N
+9	9	\N	\N	\N
+10	10	\N	\N	\N
+11	11	\N	\N	\N
+12	12	12	\N	12
+13	13	str_13	str_13	\N
+14	14	\N	\N	\N
+alter modify column 1
+0	0	\N	\N	\N	\N
+1	1	\N	\N	\N	\N
+2	2	\N	\N	\N	\N
+3	3	3	\N	3	\N
+4	4	4	\N	4	\N
+5	5	5	\N	5	\N
+6	6	str_6	str_6	\N	\N
+7	7	str_7	str_7	\N	\N
+8	8	str_8	str_8	\N	\N
+9	9	\N	\N	\N	\N
+10	10	\N	\N	\N	\N
+11	11	\N	\N	\N	\N
+12	12	12	\N	12	\N
+13	13	str_13	str_13	\N	\N
+14	14	\N	\N	\N	\N
+insert after alter modify column 1
+0	0	\N	\N	\N	\N
+1	1	\N	\N	\N	\N
+2	2	\N	\N	\N	\N
+3	3	3	\N	3	\N
+4	4	4	\N	4	\N
+5	5	5	\N	5	\N
+6	6	str_6	str_6	\N	\N
+7	7	str_7	str_7	\N	\N
+8	8	str_8	str_8	\N	\N
+9	9	\N	\N	\N	\N
+10	10	\N	\N	\N	\N
+11	11	\N	\N	\N	\N
+12	12	12	\N	12	\N
+13	13	str_13	str_13	\N	\N
+14	14	\N	\N	\N	\N
+15	15	1970-01-16	\N	\N	1970-01-16
+16	16	1970-01-17	\N	\N	1970-01-17
+17	17	1970-01-18	\N	\N	1970-01-18
+18	18	1970-01-19	\N	\N	1970-01-19
+19	19	\N	\N	\N	\N
+20	20	20	\N	20	\N
+21	21	str_21	str_21	\N	\N
+alter modify column 2
+0	0	0	\N	\N	\N	\N	\N
+1	1	1	\N	\N	\N	\N	\N
+2	2	2	\N	\N	\N	\N	\N
+3	3	3	\N	3	\N	3	\N
+4	4	4	\N	4	\N	4	\N
+5	5	5	\N	5	\N	5	\N
+6	6	6	\N	str_6	str_6	\N	\N
+7	7	7	\N	str_7	str_7	\N	\N
+8	8	8	\N	str_8	str_8	\N	\N
+9	9	9	\N	\N	\N	\N	\N
+10	10	10	\N	\N	\N	\N	\N
+11	11	11	\N	\N	\N	\N	\N
+12	12	12	\N	12	\N	12	\N
+13	13	13	\N	str_13	str_13	\N	\N
+14	14	14	\N	\N	\N	\N	\N
+15	15	15	\N	1970-01-16	\N	\N	1970-01-16
+16	16	16	\N	1970-01-17	\N	\N	1970-01-17
+17	17	17	\N	1970-01-18	\N	\N	1970-01-18
+18	18	18	\N	1970-01-19	\N	\N	1970-01-19
+19	19	19	\N	\N	\N	\N	\N
+20	20	20	\N	20	\N	20	\N
+21	21	21	\N	str_21	str_21	\N	\N
+insert after alter modify column 2
+0	0	0	\N	\N	\N	\N	\N
+1	1	1	\N	\N	\N	\N	\N
+2	2	2	\N	\N	\N	\N	\N
+3	3	3	\N	3	\N	3	\N
+4	4	4	\N	4	\N	4	\N
+5	5	5	\N	5	\N	5	\N
+6	6	6	\N	str_6	str_6	\N	\N
+7	7	7	\N	str_7	str_7	\N	\N
+8	8	8	\N	str_8	str_8	\N	\N
+9	9	9	\N	\N	\N	\N	\N
+10	10	10	\N	\N	\N	\N	\N
+11	11	11	\N	\N	\N	\N	\N
+12	12	12	\N	12	\N	12	\N
+13	13	13	\N	str_13	str_13	\N	\N
+14	14	14	\N	\N	\N	\N	\N
+15	15	15	\N	1970-01-16	\N	\N	1970-01-16
+16	16	16	\N	1970-01-17	\N	\N	1970-01-17
+17	17	17	\N	1970-01-18	\N	\N	1970-01-18
+18	18	18	\N	1970-01-19	\N	\N	1970-01-19
+19	19	19	\N	\N	\N	\N	\N
+20	20	20	\N	20	\N	20	\N
+21	21	21	\N	str_21	str_21	\N	\N
+22	str_22	\N	str_22	\N	\N	\N	\N
+23	\N	\N	\N	\N	\N	\N	\N
+24	24	24	\N	\N	\N	\N	\N

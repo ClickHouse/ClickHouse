@@ -27,12 +27,18 @@ JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, std::unique_pt
             header_.columns());
 }
 
-void JSONAsRowInputFormat::resetParser()
+
+void JSONAsRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    JSONEachRowRowInputFormat::resetParser();
-    buf->reset();
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    JSONEachRowRowInputFormat::setReadBuffer(*buf);
 }
 
+void JSONAsRowInputFormat::resetReadBuffer()
+{
+    buf.reset();
+    JSONEachRowRowInputFormat::resetReadBuffer();
+}
 
 bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
@@ -68,12 +74,6 @@ bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
     return !buf->eof();
 }
 
-void JSONAsRowInputFormat::setReadBuffer(ReadBuffer & in_)
-{
-    buf->setSubBuffer(in_);
-}
-
-
 JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : JSONAsRowInputFormat(header_, in_, params_, format_settings_)
@@ -91,7 +91,7 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
     bool quotes = false;
 
     if (*buf->position() != '{')
-        throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object must begin with '{'.");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object must begin with '{{'.");
 
     ++buf->position();
     ++balance;

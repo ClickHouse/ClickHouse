@@ -3045,7 +3045,7 @@ namespace
             {
                 *root_serializer_ptr = message_serializer.get();
 #if 0
-                LOG_INFO(&Poco::Logger::get("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
+                LOG_INFO(getLogger("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
 #endif
                 return message_serializer;
             }
@@ -3054,7 +3054,7 @@ namespace
                 auto envelope_serializer = std::make_unique<ProtobufSerializerEnvelope>(std::move(message_serializer), reader_or_writer);
                 *root_serializer_ptr = envelope_serializer.get();
 #if 0
-                LOG_INFO(&Poco::Logger::get("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
+                LOG_INFO(getLogger("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
 #endif
                 return envelope_serializer;
             }

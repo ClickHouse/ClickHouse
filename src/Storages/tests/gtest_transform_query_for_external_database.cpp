@@ -320,6 +320,18 @@ TEST(TransformQueryForExternalDatabase, ForeignColumnInWhere)
           R"(SELECT "column", "apply_id" FROM "test"."table" WHERE ("column" > 2) AND ("apply_id" = 1))");
 }
 
+TEST(TransformQueryForExternalDatabase, TupleSurroundPredicates)
+{
+    const State & state = State::instance();
+
+    check(
+        state,
+        1,
+        {"column", "field", "a"},
+        "SELECT column, field, a FROM table WHERE ((column > 10) AND (length(field) > 0)) AND a > 0",
+        R"(SELECT "column", "field", "a" FROM "test"."table" WHERE ("a" > 0) AND ("column" > 10))");
+}
+
 TEST(TransformQueryForExternalDatabase, NoStrict)
 {
     const State & state = State::instance();

@@ -159,7 +159,7 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr contex
         {},
         ConnectionTimeouts::getHTTPTimeouts(
             context->getSettingsRef(),
-            {context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}),
+            context->getServerSettings().keep_alive_timeout),
         credentials);
 
     std::string columns_info;

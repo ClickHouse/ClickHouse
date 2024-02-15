@@ -78,5 +78,5 @@ is_active:               NULL
 **See Also**
 
 - [Table engine Distributed](../../engines/table-engines/special/distributed.md)
-- [distributed_replica_error_cap setting](../../operations/settings/settings.md#settings-distributed_replica_error_cap)
-- [distributed_replica_error_half_life setting](../../operations/settings/settings.md#settings-distributed_replica_error_half_life)
+- [distributed_replica_error_cap setting](../../operations/settings/settings.md#distributed_replica_error_cap)
+- [distributed_replica_error_half_life setting](../../operations/settings/settings.md#distributed_replica_error_half_life)

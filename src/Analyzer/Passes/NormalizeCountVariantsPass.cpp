@@ -64,7 +64,7 @@ private:
 
 }
 
-void NormalizeCountVariantsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void NormalizeCountVariantsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     NormalizeCountVariantsVisitor visitor(context);
     visitor.visit(query_tree_node);

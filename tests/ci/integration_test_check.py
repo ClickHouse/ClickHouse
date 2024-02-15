@@ -10,48 +10,33 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from github import Github
-
 from build_download_helper import download_all_deb_packages
-from clickhouse_helper import (
-    ClickHouseHelper,
-    prepare_tests_results_for_clickhouse,
-)
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import (
-    RerunHelper,
     get_commit,
     override_status,
     post_commit_status,
     post_commit_status_to_file,
 )
-from docker_pull_helper import get_images_with_versions, DockerImage
+from docker_images_helper import DockerImage, get_docker_image
 from download_release_packages import download_last_release
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
+from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from get_robot_token import get_best_robot_token
+from github_helper import GitHub
+from integration_test_images import IMAGES
 from pr_info import PRInfo
-from report import ERROR, TestResult, TestResults, read_test_results
+from report import (
+    ERROR,
+    SUCCESS,
+    StatusType,
+    TestResult,
+    TestResults,
+    read_test_results,
+)
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from upload_result_helper import upload_results
-
-
-# When update, update
-# tests/integration/ci-runner.py:ClickhouseIntegrationTestsRunner.get_images_names too
-IMAGES = [
-    "clickhouse/dotnet-client",
-    "clickhouse/integration-helper",
-    "clickhouse/integration-test",
-    "clickhouse/integration-tests-runner",
-    "clickhouse/kerberized-hadoop",
-    "clickhouse/kerberos-kdc",
-    "clickhouse/mysql-golang-client",
-    "clickhouse/mysql-java-client",
-    "clickhouse/mysql-js-client",
-    "clickhouse/mysql-php-client",
-    "clickhouse/nginx-dav",
-    "clickhouse/postgresql-java-client",
-]
 
 
 def get_json_params_dict(
@@ -106,7 +91,7 @@ def get_env_for_runner(
 
 def process_results(
     result_directory: Path,
-) -> Tuple[str, str, TestResults, List[Path]]:
+) -> Tuple[StatusType, str, TestResults, List[Path]]:
     test_results = []  # type: TestResults
     additional_files = []
     # Just upload all files from result_directory.
@@ -118,29 +103,29 @@ def process_results(
     status = []
     status_path = result_directory / "check_status.tsv"
     if status_path.exists():
-        logging.info("Found test_results.tsv")
+        logging.info("Found %s", status_path.name)
         with open(status_path, "r", encoding="utf-8") as status_file:
             status = list(csv.reader(status_file, delimiter="\t"))
 
     if len(status) != 1 or len(status[0]) != 2:
         logging.info("Files in result folder %s", os.listdir(result_directory))
-        return "error", "Invalid check_status.tsv", test_results, additional_files
+        return ERROR, "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     try:
         results_path = result_directory / "test_results.tsv"
         test_results = read_test_results(results_path, False)
         if len(test_results) == 0:
-            return "error", "Empty test_results.tsv", test_results, additional_files
+            return ERROR, "Empty test_results.tsv", test_results, additional_files
     except Exception as e:
         return (
-            "error",
+            ERROR,
             f"Cannot parse test_results.tsv ({e})",
             test_results,
             additional_files,
         )
 
-    return state, description, test_results, additional_files
+    return state, description, test_results, additional_files  # type: ignore
 
 
 def parse_args():
@@ -166,14 +151,17 @@ def main():
     stopwatch = Stopwatch()
 
     temp_path = Path(TEMP_PATH)
+    reports_path = Path(REPORT_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
 
     post_commit_path = temp_path / "integration_commit_status.tsv"
     repo_path = Path(REPO_COPY)
-    reports_path = Path(REPORTS_PATH)
 
     args = parse_args()
-    check_name = args.check_name
+    check_name = args.check_name or os.getenv("CHECK_NAME")
+    assert (
+        check_name
+    ), "Check name must be provided in --check-name input option or in CHECK_NAME env"
     validate_bugfix_check = args.validate_bugfix
 
     if "RUN_BY_HASH_NUM" in os.environ:
@@ -201,21 +189,18 @@ def main():
             post_commit_status_to_file(
                 post_commit_path,
                 f"Skipped (no pr-bugfix in {pr_info.labels})",
-                "success",
+                SUCCESS,
                 "null",
             )
         logging.info("Skipping '%s' (no pr-bugfix in '%s')", check_name, pr_info.labels)
         sys.exit(0)
 
-    gh = Github(get_best_robot_token(), per_page=100)
+    # FIXME: switch to JobReport and remove:
+    gh = GitHub(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
 
-    rerun_helper = RerunHelper(commit, check_name_with_group)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
+    images = [get_docker_image(image_) for image_ in IMAGES]
 
-    images = get_images_with_versions(reports_path, IMAGES)
     result_path = temp_path / "output_dir"
     result_path.mkdir(parents=True, exist_ok=True)
 
@@ -310,7 +295,13 @@ def main():
     print(f"::notice:: {check_name} Report url: {report_url}")
     if args.post_commit_status == "commit_status":
         post_commit_status(
-            commit, state, report_url, description, check_name_with_group, pr_info
+            commit,
+            state,
+            report_url,
+            description,
+            check_name_with_group,
+            pr_info,
+            dump_to_file=True,
         )
     elif args.post_commit_status == "file":
         post_commit_status_to_file(post_commit_path, description, state, report_url)
@@ -331,7 +322,7 @@ def main():
 
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
-    if state == "failure":
+    if state != SUCCESS:
         sys.exit(1)
 
 

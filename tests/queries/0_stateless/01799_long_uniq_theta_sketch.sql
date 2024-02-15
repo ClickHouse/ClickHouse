@@ -1,5 +1,8 @@
 -- Tags: long, no-fasttest
 
+-- The result slightly differs but it's ok since `uniqueTheta` is an approximate function.
+set max_bytes_before_external_group_by = 0;
+
 SELECT 'uniqTheta';
 
 SELECT Y, uniqTheta(X) FROM (SELECT number AS X, (3*X*X - 7*X + 11) % 37 AS Y FROM system.numbers LIMIT 15) GROUP BY Y ORDER BY Y;

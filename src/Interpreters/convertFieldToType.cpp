@@ -492,10 +492,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     if (src.getType() == Field::Types::String)
     {
         /// Promote data type to avoid overflows. Note that overflows in the largest data type are still possible.
+        /// But don't promote Float32, since we want to keep the exact same value
         const IDataType * type_to_parse = &type;
         DataTypePtr holder;
 
-        if (type.canBePromoted())
+        if (type.canBePromoted() && !which_type.isFloat32())
         {
             holder = type.promoteNumericType();
             type_to_parse = holder.get();

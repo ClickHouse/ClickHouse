@@ -13,7 +13,8 @@ enum class JoinKind
     Right,
     Full,
     Cross, /// Direct product. Strictness and condition doesn't matter.
-    Comma /// Same as direct product. Intended to be converted to INNER JOIN with conditions from WHERE.
+    Comma, /// Same as direct product. Intended to be converted to INNER JOIN with conditions from WHERE.
+    Paste, /// Used to join parts without `ON` clause.
 };
 
 const char * toString(JoinKind kind);
@@ -27,6 +28,7 @@ inline constexpr bool isRightOrFull(JoinKind kind)  { return kind == JoinKind::R
 inline constexpr bool isLeftOrFull(JoinKind kind)   { return kind == JoinKind::Left  || kind == JoinKind::Full; }
 inline constexpr bool isInnerOrRight(JoinKind kind) { return kind == JoinKind::Inner || kind == JoinKind::Right; }
 inline constexpr bool isInnerOrLeft(JoinKind kind)  { return kind == JoinKind::Inner || kind == JoinKind::Left; }
+inline constexpr bool isPaste(JoinKind kind)        { return kind == JoinKind::Paste; }
 
 /// Allows more optimal JOIN for typical cases.
 enum class JoinStrictness

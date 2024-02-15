@@ -50,7 +50,7 @@ public:
 
 }
 
-void OrderByTupleEliminationPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
+void OrderByTupleEliminationPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr)
 {
     OrderByTupleEliminationVisitor visitor;
     visitor.visit(query_tree_node);

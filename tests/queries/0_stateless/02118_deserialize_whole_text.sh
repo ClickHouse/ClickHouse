@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-USER_FILES_PATH=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
+USER_FILES_PATH=$($CLICKHOUSE_CLIENT_BINARY --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 DATA_FILE=$USER_FILES_PATH/data_02118
 
 echo "[\"[1,2,3]trash\"]" > $DATA_FILE
@@ -63,4 +63,3 @@ echo "[\"ed9fd45d-6287-47c1-ad9f-d45d628767c1trash\"]" > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "SELECT * FROM file('data_02118', 'JSONCompactStringsEachRow', 'x UUID')" 2>&1 | grep -F -q "UNEXPECTED_DATA_AFTER_PARSED_VALUE" && echo 'OK' || echo 'FAIL'
 
 rm $DATA_FILE
-

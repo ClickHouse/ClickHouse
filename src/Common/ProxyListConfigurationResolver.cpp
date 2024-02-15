@@ -26,7 +26,7 @@ ProxyConfiguration ProxyListConfigurationResolver::resolve()
 
     auto & proxy = proxies[index];
 
-    LOG_DEBUG(&Poco::Logger::get("ProxyListConfigurationResolver"), "Use proxy: {}", proxies[index].toString());
+    LOG_DEBUG(getLogger("ProxyListConfigurationResolver"), "Use proxy: {}", proxies[index].toString());
 
     return ProxyConfiguration {
         proxy.getHost(),

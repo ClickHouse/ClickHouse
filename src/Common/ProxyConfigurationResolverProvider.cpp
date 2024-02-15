@@ -36,7 +36,7 @@ namespace
         auto proxy_port = configuration.getUInt(resolver_prefix + ".proxy_port");
         auto cache_ttl = configuration.getUInt(resolver_prefix + ".proxy_cache_time", 10);
 
-        LOG_DEBUG(&Poco::Logger::get("ProxyConfigurationResolverProvider"), "Configured remote proxy resolver: {}, Scheme: {}, Port: {}",
+        LOG_DEBUG(getLogger("ProxyConfigurationResolverProvider"), "Configured remote proxy resolver: {}, Scheme: {}, Port: {}",
                   endpoint.toString(), proxy_scheme, proxy_port);
 
         auto server_configuration = RemoteProxyConfigurationResolver::RemoteServerConfiguration {
@@ -71,7 +71,7 @@ namespace
 
                 uris.push_back(proxy_uri);
 
-                LOG_DEBUG(&Poco::Logger::get("ProxyConfigurationResolverProvider"), "Configured proxy: {}", proxy_uri.toString());
+                LOG_DEBUG(getLogger("ProxyConfigurationResolverProvider"), "Configured proxy: {}", proxy_uri.toString());
             }
         }
 

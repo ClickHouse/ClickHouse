@@ -1,13 +1,16 @@
 ---
-slug: /en/engines/table-engines/special/distributed
+sidebar_label: "Distributed"
 sidebar_position: 10
-sidebar_label: Distributed
+slug: /en/engines/table-engines/special/distributed
 ---
 
 # Distributed Table Engine
 
-Tables with Distributed engine do not store any data of their own, but allow distributed query processing on multiple servers.
-Reading is automatically parallelized. During a read, the table indexes on remote servers are used, if there are any.
+:::warning
+To create a distributed table engine in the cloud, you can use the [remote and remoteSecure](../../../sql-reference/table-functions/remote) table functions. The `Distributed(...)` syntax cannot be used in ClickHouse Cloud.
+:::
+
+Tables with Distributed engine do not store any data of their own, but allow distributed query processing on multiple servers. Reading is automatically parallelized. During a read, the table indexes on remote servers are used, if there are any.
 
 ## Creating a Table {#distributed-creating-a-table}
 
@@ -22,6 +25,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ```
 
 ### From a Table {#distributed-from-a-table}
+
 When the `Distributed` table is pointing to a table on the current server you can adopt that table's schema:
 
 ``` sql
@@ -48,7 +52,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 
 Specifying the `sharding_key` is necessary for the following:
 
-- For `INSERTs` into a distributed table (as the table engine needs the `sharding_key` to determine how to split the data). However, if `insert_distributed_one_random_shard` setting is enabled, then `INSERTs` do not need the sharding key
+- For `INSERTs` into a distributed table (as the table engine needs the `sharding_key` to determine how to split the data). However, if `insert_distributed_one_random_shard` setting is enabled, then `INSERTs` do not need the sharding key.
 - For use with `optimize_skip_unused_shards` as the `sharding_key` is necessary to determine what shards should be queried
 
 #### policy_name
@@ -108,7 +112,7 @@ Specifying the `sharding_key` is necessary for the following:
 For **Insert limit settings** (`..._insert`) see also:
 
 - [distributed_foreground_insert](../../../operations/settings/settings.md#distributed_foreground_insert) setting
-- [prefer_localhost_replica](../../../operations/settings/settings.md#settings-prefer-localhost-replica) setting
+- [prefer_localhost_replica](../../../operations/settings/settings.md#prefer-localhost-replica) setting
 - `bytes_to_throw_insert` handled before `bytes_to_delay_insert`, so you should not set it to the value less then `bytes_to_delay_insert`
 :::
 
@@ -122,9 +126,7 @@ SETTINGS
     fsync_directories=0;
 ```
 
-Data will be read from all servers in the `logs` cluster, from the `default.hits` table located on every server in the cluster.
-Data is not only read but is partially processed on the remote servers (to the extent that this is possible).
-For example, for a query with `GROUP BY`, data will be aggregated on remote servers, and the intermediate states of aggregate functions will be sent to the requestor server. Then data will be further aggregated.
+Data will be read from all servers in the `logs` cluster, from the `default.hits` table located on every server in the cluster. Data is not only read but is partially processed on the remote servers (to the extent that this is possible). For example, for a query with `GROUP BY`, data will be aggregated on remote servers, and the intermediate states of aggregate functions will be sent to the requestor server. Then data will be further aggregated.
 
 Instead of the database name, you can use a constant expression that returns a string. For example: `currentDatabase()`.
 
@@ -183,9 +185,7 @@ Clusters are configured in the [server configuration file](../../../operations/c
 </remote_servers>
 ```
 
-Here a cluster is defined with the name `logs` that consists of two shards, each of which contains two replicas.
-Shards refer to the servers that contain different parts of the data (in order to read all the data, you must access all the shards).
-Replicas are duplicating servers (in order to read all the data, you can access the data on any one of the replicas).
+Here a cluster is defined with the name `logs` that consists of two shards, each of which contains two replicas. Shards refer to the servers that contain different parts of the data (in order to read all the data, you must access all the shards). Replicas are duplicating servers (in order to read all the data, you can access the data on any one of the replicas).
 
 Cluster names must not contain dots.
 
@@ -198,9 +198,7 @@ The parameters `host`, `port`, and optionally `user`, `password`, `secure`, `com
 - `secure` - Whether to use a secure SSL/TLS connection. Usually also requires specifying the port (the default secure port is `9440`). The server should listen on `<tcp_port_secure>9440</tcp_port_secure>` and be configured with correct certificates.
 - `compression` - Use data compression. Default value: `true`.
 
-When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [load_balancing](../../../operations/settings/settings.md#settings-load_balancing) setting.
-If the connection with the server is not established, there will be an attempt to connect with a short timeout. If the connection failed, the next replica will be selected, and so on for all the replicas. If the connection attempt failed for all the replicas, the attempt will be repeated the same way, several times.
-This works in favour of resiliency, but does not provide complete fault tolerance: a remote server might accept the connection, but might not work, or work poorly.
+When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [load_balancing](../../../operations/settings/settings.md#load_balancing) setting. If the connection with the server is not established, there will be an attempt to connect with a short timeout. If the connection failed, the next replica will be selected, and so on for all the replicas. If the connection attempt failed for all the replicas, the attempt will be repeated the same way, several times. This works in favour of resiliency, but does not provide complete fault tolerance: a remote server might accept the connection, but might not work, or work poorly.
 
 You can specify just one of the shards (in this case, query processing should be called remote, rather than distributed) or up to any number of shards. In each shard, you can specify from one to any number of replicas. You can specify a different number of replicas for each shard.
 
@@ -245,7 +243,7 @@ If the server ceased to exist or had a rough restart (for example, due to a hard
 
 When querying a `Distributed` table, `SELECT` queries are sent to all shards and work regardless of how data is distributed across the shards (they can be distributed completely randomly). When you add a new shard, you do not have to transfer old data into it. Instead, you can write new data to it by using a heavier weight – the data will be distributed slightly unevenly, but queries will work correctly and efficiently.
 
-When the `max_parallel_replicas` option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section [max_parallel_replicas](../../../operations/settings/settings.md#settings-max_parallel_replicas).
+When the `max_parallel_replicas` option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section [max_parallel_replicas](../../../operations/settings/settings.md#max_parallel_replicas).
 
 To learn more about how distributed `in` and `global in` queries are processed, refer to [this](../../../sql-reference/operators/in.md#select-distributed-subqueries) documentation.
 

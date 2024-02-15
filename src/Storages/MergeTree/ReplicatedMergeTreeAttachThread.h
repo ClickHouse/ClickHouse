@@ -34,7 +34,7 @@ private:
     BackgroundSchedulePool::TaskHolder task;
 
     std::string log_name;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::atomic<bool> first_try_done{false};
 

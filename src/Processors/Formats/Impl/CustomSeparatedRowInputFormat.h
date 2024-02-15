@@ -18,9 +18,9 @@ public:
         const Params & params_,
         bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_settings_);
 
-    void resetParser() override;
     String getName() const override { return "CustomSeparatedRowInputFormat"; }
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetReadBuffer() override;
 
 private:
     CustomSeparatedRowInputFormat(

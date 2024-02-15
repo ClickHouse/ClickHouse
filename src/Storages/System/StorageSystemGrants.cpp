@@ -18,19 +18,23 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemGrants::getNamesAndTypes()
+ColumnsDescription StorageSystemGrants::getColumnsDescription()
 {
-    NamesAndTypesList names_and_types{
-        {"user_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"role_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"access_type", std::make_shared<DataTypeEnum16>(StorageSystemPrivileges::getAccessTypeEnumValues())},
-        {"database", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"table", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"column", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"is_partial_revoke", std::make_shared<DataTypeUInt8>()},
-        {"grant_option", std::make_shared<DataTypeUInt8>()},
+    return ColumnsDescription
+    {
+        {"user_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "User name."},
+        {"role_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Role assigned to user account."},
+        {"access_type", std::make_shared<DataTypeEnum16>(StorageSystemPrivileges::getAccessTypeEnumValues()), "Access parameters for ClickHouse user account."},
+        {"database", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Name of a database."},
+        {"table", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Name of a table."},
+        {"column", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Name of a column to which access is granted."},
+        {"is_partial_revoke", std::make_shared<DataTypeUInt8>(),
+            "Logical value. It shows whether some privileges have been revoked. Possible values: "
+            "0 — The row describes a partial revoke, "
+            "1 — The row describes a grant."
+        },
+        {"grant_option", std::make_shared<DataTypeUInt8>(), "Permission is granted WITH GRANT OPTION."},
     };
-    return names_and_types;
 }
 
 

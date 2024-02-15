@@ -5,6 +5,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Columns/IColumn.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -16,7 +17,7 @@ class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 /** A column containing a lambda expression.
-  * Behaves like a constant-column. Contains an expression, but not input or output data.
+  * Contains an expression and captured columns, but not input arguments.
   */
 class ColumnFunction final : public COWHelper<IColumn, ColumnFunction>
 {
@@ -207,8 +208,6 @@ private:
     bool is_function_compiled;
 
     void appendArgument(const ColumnWithTypeAndName & column);
-
-    void addOffsetsForReplication(const IColumn::Offsets & offsets);
 };
 
 const ColumnFunction * checkAndGetShortCircuitArgument(const ColumnPtr & column);

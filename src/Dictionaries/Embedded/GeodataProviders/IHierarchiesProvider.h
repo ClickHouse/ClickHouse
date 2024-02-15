@@ -5,6 +5,8 @@
 #include <vector>
 #include "Entries.h"
 
+namespace DB
+{
 
 // Iterates over all regions in data source
 class IRegionsHierarchyReader
@@ -46,3 +48,5 @@ public:
 };
 
 using IRegionsHierarchiesDataProviderPtr = std::shared_ptr<IRegionsHierarchiesDataProvider>;
+
+}

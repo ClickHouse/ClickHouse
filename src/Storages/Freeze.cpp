@@ -76,7 +76,7 @@ bool FreezeMetaData::load(DiskPtr data_disk, const String & path)
     readIntText(version, buffer);
     if (version < 1 || version > 2)
     {
-        LOG_ERROR(&Poco::Logger::get("FreezeMetaData"), "Unknown frozen metadata version: {}", version);
+        LOG_ERROR(getLogger("FreezeMetaData"), "Unknown frozen metadata version: {}", version);
         return false;
     }
     DB::assertChar('\n', buffer);

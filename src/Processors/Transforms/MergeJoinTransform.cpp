@@ -273,7 +273,7 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     size_t max_block_size_)
     : table_join(table_join_)
     , max_block_size(max_block_size_)
-    , log(&Poco::Logger::get("MergeJoinAlgorithm"))
+    , log(getLogger("MergeJoinAlgorithm"))
 {
     if (input_headers.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoinAlgorithm requires exactly two inputs");
@@ -860,7 +860,7 @@ MergeJoinTransform::MergeJoinTransform(
         /* always_read_till_end_= */ false,
         /* empty_chunk_on_finish_= */ true,
         table_join, input_headers, max_block_size)
-    , log(&Poco::Logger::get("MergeJoinTransform"))
+    , log(getLogger("MergeJoinTransform"))
 {
     LOG_TRACE(log, "Use MergeJoinTransform");
 }

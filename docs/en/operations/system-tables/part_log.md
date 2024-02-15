@@ -9,6 +9,7 @@ This table contains information about events that occurred with [data parts](../
 
 The `system.part_log` table contains the following columns:
 
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — Identifier of the `INSERT` query that created this data part.
 - `event_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of the event that occurred with the data part. Can have one of the following values:
     - `NewPart` — Inserting of a new data part.
@@ -56,13 +57,14 @@ SELECT * FROM system.part_log LIMIT 1 FORMAT Vertical;
 ``` text
 Row 1:
 ──────
+hostname:                      clickhouse.eu-central1.internal
 query_id:                      983ad9c7-28d5-4ae1-844e-603116b7de31
 event_type:                    NewPart
 merge_reason:                  NotAMerge
 merge_algorithm:               Undecided
 event_date:                    2021-02-02
 event_time:                    2021-02-02 11:14:28
-event_time_microseconds:                    2021-02-02 11:14:28.861919
+event_time_microseconds:       2021-02-02 11:14:28.861919
 duration_ms:                   35
 database:                      default
 table:                         log_mt_2

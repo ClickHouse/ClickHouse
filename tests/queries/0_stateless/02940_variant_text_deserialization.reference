@@ -1,0 +1,516 @@
+JSON
+String
+{"v":null,"variantElement(v, 'String')":null}
+{"v":"string","variantElement(v, 'String')":"string"}
+{"v":"42","variantElement(v, 'String')":null}
+FixedString
+{"v":null,"variantElement(v, 'FixedString(4)')":null}
+{"v":"string","variantElement(v, 'FixedString(4)')":null}
+{"v":"abcd","variantElement(v, 'FixedString(4)')":"abcd"}
+Bool
+{"v":null,"variantElement(v, 'Bool')":null}
+{"v":"string","variantElement(v, 'Bool')":null}
+{"v":true,"variantElement(v, 'Bool')":true}
+Integers
+{"v":null,"variantElement(v, 'Int8')":null}
+{"v":"string","variantElement(v, 'Int8')":null}
+{"v":-1,"variantElement(v, 'Int8')":-1}
+{"v":0,"variantElement(v, 'Int8')":0}
+{"v":"10000000000","variantElement(v, 'Int8')":null}
+{"v":null,"variantElement(v, 'UInt8')":null}
+{"v":"string","variantElement(v, 'UInt8')":null}
+{"v":"-1","variantElement(v, 'UInt8')":null}
+{"v":0,"variantElement(v, 'UInt8')":0}
+{"v":"10000000000","variantElement(v, 'UInt8')":null}
+{"v":null,"variantElement(v, 'Int16')":null}
+{"v":"string","variantElement(v, 'Int16')":null}
+{"v":-1,"variantElement(v, 'Int16')":-1}
+{"v":0,"variantElement(v, 'Int16')":0}
+{"v":"10000000000","variantElement(v, 'Int16')":null}
+{"v":null,"variantElement(v, 'UInt16')":null}
+{"v":"string","variantElement(v, 'UInt16')":null}
+{"v":"-1","variantElement(v, 'UInt16')":null}
+{"v":0,"variantElement(v, 'UInt16')":0}
+{"v":"10000000000","variantElement(v, 'UInt16')":null}
+{"v":null,"variantElement(v, 'Int32')":null}
+{"v":"string","variantElement(v, 'Int32')":null}
+{"v":-1,"variantElement(v, 'Int32')":-1}
+{"v":0,"variantElement(v, 'Int32')":0}
+{"v":"10000000000","variantElement(v, 'Int32')":null}
+{"v":null,"variantElement(v, 'UInt32')":null}
+{"v":"string","variantElement(v, 'UInt32')":null}
+{"v":"-1","variantElement(v, 'UInt32')":null}
+{"v":0,"variantElement(v, 'UInt32')":0}
+{"v":"10000000000","variantElement(v, 'UInt32')":null}
+{"v":null,"variantElement(v, 'Int64')":null}
+{"v":"string","variantElement(v, 'Int64')":null}
+{"v":"-1","variantElement(v, 'Int64')":"-1"}
+{"v":"0","variantElement(v, 'Int64')":"0"}
+{"v":"10000000000000000000000","variantElement(v, 'Int64')":null}
+{"v":null,"variantElement(v, 'UInt64')":null}
+{"v":"string","variantElement(v, 'UInt64')":null}
+{"v":"-1","variantElement(v, 'UInt64')":null}
+{"v":"0","variantElement(v, 'UInt64')":"0"}
+{"v":"10000000000000000000000","variantElement(v, 'UInt64')":null}
+{"v":null,"variantElement(v, 'Int128')":null}
+{"v":"string","variantElement(v, 'Int128')":null}
+{"v":"-1","variantElement(v, 'Int128')":"-1"}
+{"v":"0","variantElement(v, 'Int128')":"0"}
+{"v":null,"variantElement(v, 'UInt128')":null}
+{"v":"string","variantElement(v, 'UInt128')":null}
+{"v":"-1","variantElement(v, 'UInt128')":null}
+{"v":"0","variantElement(v, 'UInt128')":"0"}
+Floats
+{"v":null,"variantElement(v, 'Float32')":null}
+{"v":"string","variantElement(v, 'Float32')":null}
+{"v":42.42,"variantElement(v, 'Float32')":42.42}
+{"v":null,"variantElement(v, 'Float64')":null}
+{"v":"string","variantElement(v, 'Float64')":null}
+{"v":42.42,"variantElement(v, 'Float64')":42.42}
+Decimals
+{"v":null,"variantElement(v, 'Decimal32(6)')":null}
+{"v":"string","variantElement(v, 'Decimal32(6)')":null}
+{"v":42.42,"variantElement(v, 'Decimal32(6)')":42.42}
+{"v":"4242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242.424242424242424242","variantElement(v, 'Decimal32(6)')":null}
+{"v":null,"variantElement(v, 'Decimal64(6)')":null}
+{"v":"string","variantElement(v, 'Decimal64(6)')":null}
+{"v":42.42,"variantElement(v, 'Decimal64(6)')":42.42}
+{"v":"4242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242.424242424242424242","variantElement(v, 'Decimal64(6)')":null}
+{"v":null,"variantElement(v, 'Decimal128(6)')":null}
+{"v":"string","variantElement(v, 'Decimal128(6)')":null}
+{"v":42.42,"variantElement(v, 'Decimal128(6)')":42.42}
+{"v":"4242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242.424242424242424242","variantElement(v, 'Decimal128(6)')":null}
+{"v":null,"variantElement(v, 'Decimal256(6)')":null}
+{"v":"string","variantElement(v, 'Decimal256(6)')":null}
+{"v":42.42,"variantElement(v, 'Decimal256(6)')":42.42}
+{"v":"4242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242.424242424242424242","variantElement(v, 'Decimal256(6)')":null}
+Dates and DateTimes
+{"v":null,"variantElement(v, 'Date')":null}
+{"v":"string","variantElement(v, 'Date')":null}
+{"v":"2020-01-01","variantElement(v, 'Date')":"2020-01-01"}
+{"v":"2020-01-01 00:00:00.999","variantElement(v, 'Date')":null}
+{"v":null,"variantElement(v, 'Date32')":null}
+{"v":"string","variantElement(v, 'Date32')":null}
+{"v":"1900-01-01","variantElement(v, 'Date32')":"1900-01-01"}
+{"v":"2020-01-01 00:00:00.999","variantElement(v, 'Date32')":null}
+{"v":null,"variantElement(v, 'DateTime')":null}
+{"v":"string","variantElement(v, 'DateTime')":null}
+{"v":"2020-01-01 00:00:00","variantElement(v, 'DateTime')":"2020-01-01 00:00:00"}
+{"v":"2020-01-01 00:00:00.999","variantElement(v, 'DateTime')":null}
+{"v":null,"variantElement(v, 'DateTime64')":null}
+{"v":"string","variantElement(v, 'DateTime64')":null}
+{"v":"2020-01-01 00:00:00.999","variantElement(v, 'DateTime64')":"2020-01-01 00:00:00.999"}
+{"v":"2020-01-01 00:00:00.999999999 ABC","variantElement(v, 'DateTime64')":null}
+UUID
+{"v":null,"variantElement(v, 'UUID')":null}
+{"v":"string","variantElement(v, 'UUID')":null}
+{"v":"c8619cca-0caa-445e-ae76-1d4f6e0b3927","variantElement(v, 'UUID')":"c8619cca-0caa-445e-ae76-1d4f6e0b3927"}
+IPv4
+{"v":null,"variantElement(v, 'IPv4')":null}
+{"v":"string","variantElement(v, 'IPv4')":null}
+{"v":"127.0.0.1","variantElement(v, 'IPv4')":"127.0.0.1"}
+IPv6
+{"v":null,"variantElement(v, 'IPv6')":null}
+{"v":"string","variantElement(v, 'IPv6')":null}
+{"v":"2001:db8:85a3::8a2e:370:7334","variantElement(v, 'IPv6')":"2001:db8:85a3::8a2e:370:7334"}
+Enum
+{"v":null,"variantElement(v, 'Enum(\\'a\\' = 1)')":null}
+{"v":"string","variantElement(v, 'Enum(\\'a\\' = 1)')":null}
+{"v":"a","variantElement(v, 'Enum(\\'a\\' = 1)')":"a"}
+{"v":"a","variantElement(v, 'Enum(\\'a\\' = 1)')":"a"}
+{"v":2,"variantElement(v, 'Enum(\\'a\\' = 1)')":null}
+Map
+{"v":null,"variantElement(v, 'Map(String, UInt64)')":{}}
+{"v":"string","variantElement(v, 'Map(String, UInt64)')":{}}
+{"v":{"a":"42","b":"43","c":"0"},"variantElement(v, 'Map(String, UInt64)')":{"a":"42","b":"43","c":"0"}}
+{"v":"{\"c\" : 44, \"d\" : [1,2,3]}","variantElement(v, 'Map(String, UInt64)')":{}}
+Tuple
+{"v":null,"variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":"0","b":"0"}}
+{"v":"string","variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":"0","b":"0"}}
+{"v":{"a":"42","b":"0"},"variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":"42","b":"0"}}
+{"v":{"a":"44","b":"0"},"variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":"44","b":"0"}}
+\N	(0,0)
+string	(0,0)
+(42,0)	(42,0)
+{"a" : 44, "d" : 32}	(0,0)
+Array
+{"v":null,"variantElement(v, 'Array(UInt64)')":[]}
+{"v":"string","variantElement(v, 'Array(UInt64)')":[]}
+{"v":["1","2","3"],"variantElement(v, 'Array(UInt64)')":["1","2","3"]}
+{"v":["0","0","0"],"variantElement(v, 'Array(UInt64)')":["0","0","0"]}
+{"v":"[1, 2, \"hello\"]","variantElement(v, 'Array(UInt64)')":[]}
+LowCardinality
+{"v":null,"variantElement(v, 'LowCardinality(String)')":null}
+{"v":"string","variantElement(v, 'LowCardinality(String)')":"string"}
+{"v":"42","variantElement(v, 'LowCardinality(String)')":null}
+{"v":null,"variantElement(v, 'Array(LowCardinality(Nullable(String)))')":[]}
+{"v":["string",null],"variantElement(v, 'Array(LowCardinality(Nullable(String)))')":["string",null]}
+{"v":"42","variantElement(v, 'Array(LowCardinality(Nullable(String)))')":[]}
+Nullable
+{"v":null,"variantElement(v, 'Array(Nullable(String))')":[]}
+{"v":"string","variantElement(v, 'Array(Nullable(String))')":[]}
+{"v":["hello",null,"world"],"variantElement(v, 'Array(Nullable(String))')":["hello",null,"world"]}
+{"repeat('-', 80)":"--------------------------------------------------------------------------------"}
+CSV
+String
+\N,\N
+"string","string"
+"string","string"
+42,\N
+FixedString
+\N,\N
+"string",\N
+"string",\N
+"abcd","abcd"
+Bool
+\N,\N
+"Truee",\N
+true,true
+Integers
+\N,\N
+"string",\N
+-1,-1
+0,0
+10000000000,\N
+"42d42",\N
+\N,\N
+"string",\N
+-1,\N
+0,0
+10000000000,\N
+"42d42",\N
+\N,\N
+"string",\N
+-1,-1
+0,0
+10000000000,\N
+"42d42",\N
+\N,\N
+"string",\N
+-1,\N
+0,0
+10000000000,\N
+"42d42",\N
+\N,\N
+"string",\N
+-1,-1
+0,0
+10000000000,\N
+"42d42",\N
+\N,\N
+"string",\N
+-1,\N
+0,0
+10000000000,\N
+"42d42",\N
+\N,\N
+"string",\N
+-1,-1
+0,0
+10000000000000000000000,\N
+"42d42",\N
+\N,\N
+"string",\N
+-1,\N
+0,0
+10000000000000000000000,\N
+"42d42",\N
+\N,\N
+"string",\N
+-1,-1
+0,0
+"42d42",\N
+\N,\N
+"string",\N
+-1,\N
+0,0
+"42d42",\N
+Floats
+\N,\N
+"string",\N
+42.42,42.42
+"42.d42",\N
+\N,\N
+"string",\N
+42.42,42.42
+"42.d42",\N
+Decimals
+\N,\N
+"string",\N
+42.42,42.42
+"42d42",\N
+"4242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242.424242424242424242",\N
+\N,\N
+"string",\N
+42.42,42.42
+"42d42",\N
+"4242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242.424242424242424242",\N
+\N,\N
+"string",\N
+42.42,42.42
+"42d42",\N
+"4242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242.424242424242424242",\N
+\N,\N
+"string",\N
+42.42,42.42
+"42d42",\N
+"4242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242.424242424242424242",\N
+Dates and DateTimes
+\N,\N
+"string",\N
+"2020-01-d1",\N
+"2020-01-01","2020-01-01"
+"2020-01-01 00:00:00.999",\N
+\N,\N
+"string",\N
+"2020-01-d1",\N
+"1900-01-01","1900-01-01"
+"2020-01-01 00:00:00.999",\N
+\N,\N
+"string",\N
+"2020-01-d1",\N
+"2020-01-01 00:00:00","2020-01-01 00:00:00"
+"2020-01-01 00:00:00.999",\N
+\N,\N
+"string",\N
+"2020-01-d1",\N
+"2020-01-01 00:00:00.999","2020-01-01 00:00:00.999"
+"2020-01-01 00:00:00.999999999 ABC",\N
+UUID
+\N,\N
+"string",\N
+"c8619cca-0caa-445e-ae76-1d4f6e0b3927","c8619cca-0caa-445e-ae76-1d4f6e0b3927"
+"c8619cca-0caa-445e-ae76-1d4f6e0b3927AAA",\N
+IPv4
+\N,\N
+"string",\N
+"127.0.0.1","127.0.0.1"
+"127.0.0.1AAA",\N
+IPv6
+\N,\N
+"string",\N
+"2001:db8:85a3::8a2e:370:7334","2001:db8:85a3::8a2e:370:7334"
+"2001:0db8:85a3:0000:0000:8a2e:0370:7334AAA",\N
+Enum
+\N,\N
+"string",\N
+"a","a"
+"a","a"
+2,\N
+"aa",\N
+Map
+\N,"{}"
+"string","{}"
+"{'a':42,'b':43,'c':0}","{'a':42,'b':43,'c':0}"
+"{'c' : 44, 'd' : [1,2,3]}","{}"
+"{'c' : 44","{}"
+Array
+\N,"[]"
+"string","[]"
+"[1,2,3]","[1,2,3]"
+"[0,0,0]","[0,0,0]"
+"[1, 2, 'hello']","[]"
+"[1, 2","[]"
+LowCardinality
+\N,\N
+"string","string"
+42,\N
+\N,"[]"
+"['string',NULL]","['string',NULL]"
+"['string', nul]","[]"
+42,"[]"
+Nullable
+\N,"[]"
+"string","[]"
+"['hello',NULL,'world']","['hello',NULL,'world']"
+"['hello', nul]","[]"
+{"repeat('-', 80)":"--------------------------------------------------------------------------------"}
+TSV
+String
+\N	\N
+string	string
+42	\N
+FixedString
+\N	\N
+string	\N
+abcd	abcd
+Bool
+\N	\N
+Truee	\N
+true	true
+Integers
+\N	\N
+string	\N
+-1	-1
+0	0
+10000000000	\N
+42d42	\N
+\N	\N
+string	\N
+-1	\N
+0	0
+10000000000	\N
+42d42	\N
+\N	\N
+string	\N
+-1	-1
+0	0
+10000000000	\N
+42d42	\N
+\N	\N
+string	\N
+-1	\N
+0	0
+10000000000	\N
+42d42	\N
+\N	\N
+string	\N
+-1	-1
+0	0
+10000000000	\N
+42d42	\N
+\N	\N
+string	\N
+-1	\N
+0	0
+10000000000	\N
+42d42	\N
+\N	\N
+string	\N
+-1	-1
+0	0
+10000000000000000000000	\N
+42d42	\N
+\N	\N
+string	\N
+-1	\N
+0	0
+10000000000000000000000	\N
+42d42	\N
+\N	\N
+string	\N
+-1	-1
+0	0
+42d42	\N
+\N	\N
+string	\N
+-1	\N
+0	0
+42d42	\N
+Floats
+\N	\N
+string	\N
+42.42	42.42
+42.d42	\N
+\N	\N
+string	\N
+42.42	42.42
+42.d42	\N
+Decimals
+\N	\N
+string	\N
+42.42	42.42
+42d42	\N
+4242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242.424242424242424242	\N
+\N	\N
+string	\N
+42.42	42.42
+42d42	\N
+4242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242.424242424242424242	\N
+\N	\N
+string	\N
+42.42	42.42
+42d42	\N
+4242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242.424242424242424242	\N
+\N	\N
+string	\N
+42.42	42.42
+42d42	\N
+4242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242.424242424242424242	\N
+Dates and DateTimes
+\N	\N
+string	\N
+2020-01-d1	\N
+2020-01-01	2020-01-01
+2020-01-01 00:00:00.999	\N
+\N	\N
+string	\N
+2020-01-d1	\N
+1900-01-01	1900-01-01
+2020-01-01 00:00:00.999	\N
+\N	\N
+string	\N
+2020-01-d1	\N
+2020-01-01 00:00:00	2020-01-01 00:00:00
+2020-01-01 00:00:00.999	\N
+\N	\N
+string	\N
+2020-01-d1	\N
+2020-01-01 00:00:00.999	2020-01-01 00:00:00.999
+2020-01-01 00:00:00.999999999 ABC	\N
+UUID
+\N	\N
+string	\N
+c8619cca-0caa-445e-ae76-1d4f6e0b3927	c8619cca-0caa-445e-ae76-1d4f6e0b3927
+c8619cca-0caa-445e-ae76-1d4f6e0b3927AAA	\N
+IPv4
+\N	\N
+string	\N
+127.0.0.1	127.0.0.1
+127.0.0.1AAA	\N
+IPv6
+\N	\N
+string	\N
+2001:db8:85a3::8a2e:370:7334	2001:db8:85a3::8a2e:370:7334
+2001:0db8:85a3:0000:0000:8a2e:0370:7334AAA	\N
+Enum
+\N	\N
+string	\N
+a	a
+a	a
+2	\N
+aa	\N
+Map
+\N	{}
+string	{}
+{'a':42,'b':43,'c':0}	{'a':42,'b':43,'c':0}
+{\'c\' : 44, \'d\' : [1,2,3]}	{}
+{\'c\' : 44	{}
+Array
+\N	[]
+string	[]
+[1,2,3]	[1,2,3]
+[0,0,0]	[0,0,0]
+[1, 2, \'hello\']	[]
+[1, 2	[]
+LowCardinality
+\N	\N
+string	string
+42	\N
+\N	[]
+['string',NULL]	['string',NULL]
+[\'string\', nul]	[]
+42	[]
+Nullable
+\N	[]
+string	[]
+['hello',NULL,'world']	['hello',NULL,'world']
+[\'hello\', nul]	[]
+{"repeat('-', 80)":"--------------------------------------------------------------------------------"}
+Values
+String
+(NULL,NULL),('string','string'),(42,NULL)FixedString
+(NULL,NULL),('string',NULL),('abcd','abcd')Bool
+(NULL,NULL),(true,true)Integers
+(NULL,NULL),('string',NULL),(-1,-1),(0,0),(10000000000,NULL)(NULL,NULL),('string',NULL),(-1,NULL),(0,0),(10000000000,NULL)(NULL,NULL),('string',NULL),(-1,-1),(0,0),(10000000000,NULL)(NULL,NULL),('string',NULL),(-1,NULL),(0,0),(10000000000,NULL)(NULL,NULL),('string',NULL),(-1,-1),(0,0),(10000000000,NULL)(NULL,NULL),('string',NULL),(-1,NULL),(0,0),(10000000000,NULL)(NULL,NULL),('string',NULL),(-1,-1),(0,0),(10000000000000000000000,NULL)(NULL,NULL),('string',NULL),(-1,NULL),(0,0),(10000000000000000000000,NULL)(NULL,NULL),('string',NULL),(-1,-1),(0,0)(NULL,NULL),('string',NULL),(-1,NULL),(0,0)Floats
+(NULL,NULL),('string',NULL),(42.42,42.42)(NULL,NULL),('string',NULL),(42.42,42.42)Decimals
+(NULL,NULL),('string',NULL),(42.42,42.42)(NULL,NULL),('string',NULL),(42.42,42.42)(NULL,NULL),('string',NULL),(42.42,42.42)(NULL,NULL),('string',NULL),(42.42,42.42)Dates and DateTimes
+(NULL,NULL),('string',NULL),('2020-01-d1',NULL),('2020-01-01','2020-01-01'),('2020-01-01 00:00:00.999',NULL)(NULL,NULL),('string',NULL),('2020-01-d1',NULL),('1900-01-01','1900-01-01'),('2020-01-01 00:00:00.999',NULL)(NULL,NULL),('string',NULL),('2020-01-d1',NULL),('2020-01-01 00:00:00','2020-01-01 00:00:00'),('2020-01-01 00:00:00.999',NULL)(NULL,NULL),('string',NULL),('2020-01-d1',NULL),('2020-01-01 00:00:00.999','2020-01-01 00:00:00.999'),('2020-01-01 00:00:00.999999999 ABC',NULL)UUID
+(NULL,NULL),('string',NULL),('c8619cca-0caa-445e-ae76-1d4f6e0b3927','c8619cca-0caa-445e-ae76-1d4f6e0b3927'),('c8619cca-0caa-445e-ae76-1d4f6e0b3927AAA',NULL)IPv4
+(NULL,NULL),('string',NULL),('127.0.0.1','127.0.0.1'),('127.0.0.1AAA',NULL)IPv6
+(NULL,NULL),('string',NULL),('2001:db8:85a3::8a2e:370:7334','2001:db8:85a3::8a2e:370:7334'),('2001:0db8:85a3:0000:0000:8a2e:0370:7334AAA',NULL)Enum
+(NULL,NULL),('string',NULL),('a','a'),(1,NULL),(2,NULL),('aa',NULL)Map
+(NULL,{}),('string',{}),({'a':42,'b':43,'c':0},{'a':42,'b':43,'c':0})Array
+(NULL,[]),('string',[]),([1,2,3],[1,2,3]),([0,0,0],[0,0,0])LowCardinality
+(NULL,NULL),('string','string'),(42,NULL)(NULL,[]),(['string',NULL],['string',NULL]),(42,[])Nullable
+(NULL,[]),('string',[]),(['hello',NULL,'world'],['hello',NULL,'world'])

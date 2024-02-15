@@ -47,8 +47,7 @@ void BaseSettingsHelpers::throwSettingNotFound(std::string_view name)
 
 void BaseSettingsHelpers::warningSettingNotFound(std::string_view name)
 {
-    static auto * log = &Poco::Logger::get("Settings");
-    LOG_WARNING(log, "Unknown setting {}, skipping", name);
+    LOG_WARNING(getLogger("Settings"), "Unknown setting {}, skipping", name);
 }
 
 }

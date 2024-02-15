@@ -33,7 +33,7 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
     for (const auto & header: additional_headers)
         request.add(header.name, header.value);
 
-    LOG_TRACE((&Poco::Logger::get("WriteBufferToHTTP")), "Sending request to {}", uri.toString());
+    LOG_TRACE((getLogger("WriteBufferToHTTP")), "Sending request to {}", uri.toString());
 
     ostr = &session->sendRequest(request);
 }

@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -41,25 +42,25 @@
 
 /// UINT16 and UINT32 are processed separately, see comments in readColumnFromArrowColumn.
 #define FOR_ARROW_NUMERIC_TYPES(M) \
-        M(arrow::Type::UINT8, DB::UInt8) \
-        M(arrow::Type::INT8, DB::Int8) \
-        M(arrow::Type::INT16, DB::Int16) \
-        M(arrow::Type::UINT64, DB::UInt64) \
-        M(arrow::Type::INT64, DB::Int64) \
-        M(arrow::Type::DURATION, DB::Int64) \
-        M(arrow::Type::HALF_FLOAT, DB::Float32) \
-        M(arrow::Type::FLOAT, DB::Float32) \
-        M(arrow::Type::DOUBLE, DB::Float64)
+        M(arrow::Type::UINT8, UInt8) \
+        M(arrow::Type::INT8, Int8) \
+        M(arrow::Type::INT16, Int16) \
+        M(arrow::Type::UINT64, UInt64) \
+        M(arrow::Type::INT64, Int64) \
+        M(arrow::Type::DURATION, Int64) \
+        M(arrow::Type::HALF_FLOAT, Float32) \
+        M(arrow::Type::FLOAT, Float32) \
+        M(arrow::Type::DOUBLE, Float64)
 
 #define FOR_ARROW_INDEXES_TYPES(M) \
-        M(arrow::Type::UINT8, DB::UInt8) \
-        M(arrow::Type::INT8, DB::UInt8) \
-        M(arrow::Type::UINT16, DB::UInt16) \
-        M(arrow::Type::INT16, DB::UInt16) \
-        M(arrow::Type::UINT32, DB::UInt32) \
-        M(arrow::Type::INT32, DB::UInt32) \
-        M(arrow::Type::UINT64, DB::UInt64) \
-        M(arrow::Type::INT64, DB::UInt64)
+        M(arrow::Type::UINT8, UInt8) \
+        M(arrow::Type::INT8, UInt8) \
+        M(arrow::Type::UINT16, UInt16) \
+        M(arrow::Type::INT16, UInt16) \
+        M(arrow::Type::UINT32, UInt32) \
+        M(arrow::Type::INT32, UInt32) \
+        M(arrow::Type::UINT64, UInt64) \
+        M(arrow::Type::INT64, UInt64)
 
 namespace DB
 {
@@ -879,8 +880,19 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
                 return {};
             auto offsets_column = is_large ? readOffsetsFromArrowListColumn<arrow::LargeListArray>(arrow_column) : readOffsetsFromArrowListColumn<arrow::ListArray>(arrow_column);
             auto array_column = ColumnArray::create(nested_column.column, offsets_column);
-            auto array_type = std::make_shared<DataTypeArray>(nested_column.type);
-            return {std::move(array_column), std::move(array_type), column_name};
+            DataTypePtr array_type;
+            /// If type hint is Nested, we should return Nested type,
+            /// because we differentiate Nested and simple Array(Tuple)
+            if (type_hint && isNested(type_hint))
+            {
+                const auto & tuple_type = assert_cast<const DataTypeTuple &>(*nested_column.type);
+                array_type = createNested(tuple_type.getElements(), tuple_type.getElementNames());
+            }
+            else
+            {
+                array_type = std::make_shared<DataTypeArray>(nested_column.type);
+            }
+            return {std::move(array_column), array_type, column_name};
         }
         case arrow::Type::STRUCT:
         {

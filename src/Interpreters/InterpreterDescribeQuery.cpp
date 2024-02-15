@@ -9,6 +9,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Access/Common/AccessFlags.h>
@@ -269,6 +270,15 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
             res_columns[i++]->insert(is_virtual);
 
     }, ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type));
+}
+
+void registerInterpreterDescribeQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterDescribeQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterDescribeQuery", create_fn);
 }
 
 }

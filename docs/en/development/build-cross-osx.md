@@ -28,18 +28,20 @@ sudo apt-get install clang-17
 Let’s remember the path where we install `cctools` as ${CCTOOLS}
 
 ``` bash
+mkdir ~/cctools
 export CCTOOLS=$(cd ~/cctools && pwd)
-mkdir ${CCTOOLS}
 cd ${CCTOOLS}
 
-git clone --depth=1 https://github.com/tpoechtrager/apple-libtapi.git
+git clone https://github.com/tpoechtrager/apple-libtapi.git
 cd apple-libtapi
+git checkout 15dfc2a8c9a2a89d06ff227560a69f5265b692f9
 INSTALLPREFIX=${CCTOOLS} ./build.sh
 ./install.sh
 cd ..
 
-git clone --depth=1 https://github.com/tpoechtrager/cctools-port.git
+git clone https://github.com/tpoechtrager/cctools-port.git
 cd cctools-port/cctools
+git checkout 2a3e1c2a6ff54a30f898b70cfb9ba1692a55fad7
 ./configure --prefix=$(readlink -f ${CCTOOLS}) --with-libtapi=$(readlink -f ${CCTOOLS}) --target=x86_64-apple-darwin
 make install
 ```

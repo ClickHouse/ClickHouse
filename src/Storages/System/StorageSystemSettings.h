@@ -16,7 +16,7 @@ class StorageSystemSettings final : public IStorageSystemOneBlock<StorageSystemS
 public:
     std::string getName() const override { return "SystemSettings"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

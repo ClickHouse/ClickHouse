@@ -11,9 +11,11 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemModels::getNamesAndTypes()
+ColumnsDescription StorageSystemModels::getColumnsDescription()
 {
-    return {
+    /// TODO: Fill in all the comments.
+    return ColumnsDescription
+    {
         { "model_path", std::make_shared<DataTypeString>() },
         { "type", std::make_shared<DataTypeString>() },
         { "loading_start_time", std::make_shared<DataTypeDateTime>() },

@@ -1,4 +1,0 @@
-<clickhouse>
-    <get_client_http_header_forbidden_headers>FORBIDDEN-KEY1,FORBIDDEN-KEY2</get_client_http_header_forbidden_headers>    
-    <allow_get_client_http_header>1</allow_get_client_http_header>
-</clickhouse>

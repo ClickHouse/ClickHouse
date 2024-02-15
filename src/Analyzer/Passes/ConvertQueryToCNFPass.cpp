@@ -8,14 +8,12 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/Passes/CNF.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/HashUtils.h>
 
 #include <Storages/IStorage.h>
 
 #include <Functions/FunctionFactory.h>
-#include "Analyzer/HashUtils.h"
-#include "Analyzer/IQueryTreeNode.h"
-#include "Interpreters/ComparisonGraph.h"
-#include "base/types.h"
+#include <Interpreters/ComparisonGraph.h>
 
 namespace DB
 {
@@ -720,7 +718,7 @@ public:
 
 }
 
-void ConvertLogicalExpressionToCNFPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void ConvertLogicalExpressionToCNFPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
     if (!settings.convert_query_to_cnf)

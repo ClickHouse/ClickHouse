@@ -128,7 +128,10 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
         }
     }
 
-    if (need_to_add_cast_function)
+    // Add cast if constant was created as a result of constant folding.
+    // Constant folding may lead to type transformation and literal on shard
+    // may have a different type.
+    if (need_to_add_cast_function || source_expression != nullptr)
     {
         auto constant_type_name_ast = std::make_shared<ASTLiteral>(constant_value->getType()->getName());
         return makeASTFunction("_CAST", std::move(constant_value_ast), std::move(constant_type_name_ast));

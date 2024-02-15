@@ -60,10 +60,11 @@ bool BackgroundJobsAssignee::scheduleMergeMutateTask(ExecutableTaskPtr merge_tas
 }
 
 
-void BackgroundJobsAssignee::scheduleFetchTask(ExecutableTaskPtr fetch_task)
+bool BackgroundJobsAssignee::scheduleFetchTask(ExecutableTaskPtr fetch_task)
 {
     bool res = getContext()->getFetchesExecutor()->trySchedule(fetch_task);
     res ? trigger() : postpone();
+    return res;
 }
 
 
@@ -75,10 +76,11 @@ bool BackgroundJobsAssignee::scheduleMoveTask(ExecutableTaskPtr move_task)
 }
 
 
-void BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger)
+bool BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger)
 {
-    bool res = getContext()->getCommonExecutor()->trySchedule(common_task) && need_trigger;
-    res ? trigger() : postpone();
+    bool schedule_res = getContext()->getCommonExecutor()->trySchedule(common_task);
+    schedule_res && need_trigger ? trigger() : postpone();
+    return schedule_res;
 }
 
 

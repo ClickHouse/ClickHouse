@@ -12,7 +12,7 @@ class StorageSystemGrants final : public IStorageSystemOneBlock<StorageSystemGra
 {
 public:
     std::string getName() const override { return "SystemGrants"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

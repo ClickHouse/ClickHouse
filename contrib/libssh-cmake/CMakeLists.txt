@@ -1,4 +1,4 @@
-option (ENABLE_SSH "Enable support for SSH keys and protocol" ON)
+option (ENABLE_SSH "Enable support for SSH keys and protocol" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_SSH)
     message(STATUS "Not using SSH")

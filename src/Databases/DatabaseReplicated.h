@@ -68,11 +68,9 @@ public:
 
     void drop(ContextPtr /*context*/) override;
 
-    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
+    void beforeLoadingMetadata(ContextMutablePtr context_, LoadingStrictnessLevel mode) override;
 
-    void beforeLoadingMetadata(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
-
-    void startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode) override;
+    LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
 
     void shutdown() override;
 
@@ -81,7 +79,7 @@ public:
 
     bool shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const override;
 
-    static void dropReplica(DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica);
+    static void dropReplica(DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica, bool throw_if_noop);
 
     std::vector<UInt8> tryGetAreReplicasActive(const ClusterPtr & cluster_) const;
 
@@ -128,6 +126,9 @@ private:
     UInt64 getMetadataHash(const String & table_name) const;
     bool checkDigestValid(const ContextPtr & local_context, bool debug_check = true) const TSA_REQUIRES(metadata_mutex);
 
+    void waitDatabaseStarted() const override;
+    void stopLoading() override;
+
     String zookeeper_path;
     String shard_name;
     String replica_name;
@@ -154,6 +155,8 @@ private:
     UInt64 tables_metadata_digest TSA_GUARDED_BY(metadata_mutex);
 
     mutable ClusterPtr cluster;
+
+    LoadTaskPtr startup_replicated_database_task TSA_GUARDED_BY(mutex);
 };
 
 }

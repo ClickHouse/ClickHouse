@@ -1,18 +1,19 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
-#include <Common/assert_cast.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <IO/Operators.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/SipHash.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/AlignedBuffer.h>
-#include <Common/typeid_cast.h>
 #include <Common/Arena.h>
-#include <Common/WeakHash.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/SipHash.h>
+#include <Common/WeakHash.h>
+#include <Common/assert_cast.h>
+#include <Common/iota.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -336,7 +337,7 @@ ColumnPtr ColumnAggregateFunction::indexImpl(const PaddedPODArray<Type> & indexe
     assert(limit <= indexes.size());
     auto res = createView();
 
-    res->data.resize(limit);
+    res->data.resize_exact(limit);
     for (size_t i = 0; i < limit; ++i)
         res->data[i] = data[indexes[i]];
 
@@ -625,9 +626,8 @@ void ColumnAggregateFunction::getPermutation(PermutationSortDirection /*directio
                                             size_t /*limit*/, int /*nan_direction_hint*/, IColumn::Permutation & res) const
 {
     size_t s = data.size();
-    res.resize(s);
-    for (size_t i = 0; i < s; ++i)
-        res[i] = i;
+    res.resize_exact(s);
+    iota(res.data(), s, IColumn::Permutation::value_type(0));
 }
 
 void ColumnAggregateFunction::updatePermutation(PermutationSortDirection, PermutationSortStability,

@@ -35,8 +35,8 @@ Types are equivalent to types of C:
 
 Aliases:
 
-- `Float32` — `FLOAT`.
-- `Float64` — `DOUBLE`.
+- `Float32` — `FLOAT`, `REAL`, `SINGLE`.
+- `Float64` — `DOUBLE`, `DOUBLE PRECISION`.
 
 When creating tables, numeric parameters for floating point numbers can be set (e.g. `FLOAT(12)`, `FLOAT(15, 22)`, `DOUBLE(12)`, `DOUBLE(4, 18)`), but ClickHouse ignores them.
 

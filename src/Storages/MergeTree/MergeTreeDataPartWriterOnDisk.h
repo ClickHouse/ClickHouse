@@ -190,6 +190,20 @@ private:
     void initStatistics();
 
     virtual void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) = 0;
+
+    struct ExecutionStatistics
+    {
+        ExecutionStatistics(size_t skip_indices_cnt, size_t stats_cnt)
+            : skip_indices_build_us(skip_indices_cnt, 0), statistics_build_us(stats_cnt, 0)
+        {
+        }
+
+        std::vector<size_t> skip_indices_build_us; // [i] corresponds to the i-th index
+        std::vector<size_t> statistics_build_us; // [i] corresponds to the i-th stat
+    };
+    ExecutionStatistics execution_stats;
+
+    LoggerPtr log;
 };
 
 }

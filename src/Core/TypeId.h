@@ -49,6 +49,7 @@ enum class TypeIndex
     IPv4,
     IPv6,
     JSONPaths,
+    Variant,
 };
 
 /**

@@ -320,7 +320,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         }
         case AuthenticationType::SSH_KEY:
         {
-#if USE_SSL
+#if USE_SSH
             for (const auto & key : getSSHKeys())
                 node->children.push_back(std::make_shared<ASTPublicSSHKey>(key.getBase64(), key.getKeyType()));
 
@@ -353,7 +353,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     /// For this type of authentication we have ASTPublicSSHKey as children for ASTAuthenticationData
     if (query.type && query.type == AuthenticationType::SSH_KEY)
     {
-#if USE_SSL
+#if USE_SSH
         AuthenticationData auth_data(*query.type);
         std::vector<ssh::SSHKey> keys;
 

@@ -97,7 +97,7 @@ private:
 
     bool tryWaitProcessWithTimeout(size_t timeout_in_seconds);
 
-    static Poco::Logger * getLogger();
+    static LoggerPtr getLogger();
 
     /// Print command name and the list of arguments to log. NOTE: No escaping of arguments is performed.
     static void logCommand(const char * filename, char * const argv[]);

@@ -52,6 +52,9 @@ public:
             return;
 
         auto & column_node = node->as<ColumnNode &>();
+        if (column_node.getColumnName() == "__grouping_set")
+            return;
+
         auto column_source_node = column_node.getColumnSource();
         auto column_source_node_type = column_source_node->getNodeType();
 
@@ -129,7 +132,7 @@ void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, s
 
 }
 
-void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     std::vector<QueryTreeNodePtr> nodes_to_visit;
     nodes_to_visit.push_back(query_tree_node);

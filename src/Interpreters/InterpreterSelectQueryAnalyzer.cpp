@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -73,60 +74,25 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
 {
-    auto query_to_replace_table_expression = query_tree;
-    QueryTreeNodePtr table_expression_to_replace;
+    auto nodes = extractAllTableReferences(query_tree);
+    IQueryTreeNode::ReplacementMap replacement_map;
 
-    while (!table_expression_to_replace)
+    for (auto & node : nodes)
     {
-        if (auto * union_node = query_to_replace_table_expression->as<UnionNode>())
-            query_to_replace_table_expression = union_node->getQueries().getNodes().at(0);
+        auto & table_node = node->as<TableNode &>();
 
-        auto & query_to_replace_table_expression_typed = query_to_replace_table_expression->as<QueryNode &>();
-        auto left_table_expression = extractLeftTableExpression(query_to_replace_table_expression_typed.getJoinTree());
-        auto left_table_expression_node_type = left_table_expression->getNodeType();
+        /// Don't replace storage if table name differs
+        if (table_node.getStorageID().getFullNameNotQuoted() != storage->getStorageID().getFullNameNotQuoted())
+            continue;
 
-        switch (left_table_expression_node_type)
-        {
-            case QueryTreeNodeType::QUERY:
-            case QueryTreeNodeType::UNION:
-            {
-                query_to_replace_table_expression = std::move(left_table_expression);
-                break;
-            }
-            case QueryTreeNodeType::TABLE:
-            case QueryTreeNodeType::TABLE_FUNCTION:
-            case QueryTreeNodeType::IDENTIFIER:
-            {
-                table_expression_to_replace = std::move(left_table_expression);
-                break;
-            }
-            default:
-            {
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Expected table, table function or identifier node to replace with storage. Actual {}",
-                    left_table_expression->formatASTForErrorMessage());
-            }
-        }
+        auto replacement_table_expression = std::make_shared<TableNode>(storage, context);
+
+        if (auto table_expression_modifiers = table_node.getTableExpressionModifiers())
+            replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
+
+        replacement_map.emplace(node.get(), std::move(replacement_table_expression));
     }
-
-    /// Don't replace storage if table name differs
-    if (auto * table_node = table_expression_to_replace->as<TableNode>(); table_node && table_node->getStorageID().getFullNameNotQuoted() != storage->getStorageID().getFullNameNotQuoted())
-        return;
-
-    auto replacement_table_expression = std::make_shared<TableNode>(storage, context);
-    std::optional<TableExpressionModifiers> table_expression_modifiers;
-
-    if (auto * table_node = table_expression_to_replace->as<TableNode>())
-        table_expression_modifiers = table_node->getTableExpressionModifiers();
-    else if (auto * table_function_node = table_expression_to_replace->as<TableFunctionNode>())
-        table_expression_modifiers = table_function_node->getTableExpressionModifiers();
-    else if (auto * identifier_node = table_expression_to_replace->as<IdentifierNode>())
-        table_expression_modifiers = identifier_node->getTableExpressionModifiers();
-
-    if (table_expression_modifiers)
-        replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
-
-    query_tree = query_tree->cloneAndReplace(table_expression_to_replace, std::move(replacement_table_expression));
+    query_tree = query_tree->cloneAndReplace(replacement_map);
 }
 
 QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
@@ -143,7 +109,7 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     /// because it can lead to a changed header.
     if (select_query_options.ignore_ast_optimizations
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-        query_tree_pass_manager.run(query_tree, 1 /*up_to_pass_index*/);
+        query_tree_pass_manager.runOnlyResolve(query_tree);
     else
         query_tree_pass_manager.run(query_tree);
 
@@ -265,6 +231,15 @@ void InterpreterSelectQueryAnalyzer::extendQueryLogElemImpl(QueryLogElement & el
 {
     for (const auto & used_row_policy : planner.getUsedRowPolicies())
         elem.used_row_policies.emplace(used_row_policy);
+}
+
+void registerInterpreterSelectQueryAnalyzer(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterSelectQueryAnalyzer>(args.query, args.context, args.options);
+    };
+    factory.registerInterpreter("InterpreterSelectQueryAnalyzer", create_fn);
 }
 
 }

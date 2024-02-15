@@ -8,33 +8,33 @@ Constant tuple
 Tuple
 --
 id	UInt64					
-value	Tuple(value_0_level_0 Tuple(value_0_level_1 String, value_1_level_1 String), value_1_level_0 String)					
+value	Tuple(\n    value_0_level_0 Tuple(\n        value_0_level_1 String,\n        value_1_level_1 String),\n    value_1_level_0 String)					
 0	(('value_0_level_1','value_1_level_1'),'value_1_level_0')
 --
 id	UInt64					
-value	Tuple(value_0_level_0 Tuple(value_0_level_1 String, value_1_level_1 String), value_1_level_0 String)					
+value	Tuple(\n    value_0_level_0 Tuple(\n        value_0_level_1 String,\n        value_1_level_1 String),\n    value_1_level_0 String)					
 0	(('value_0_level_1','value_1_level_1'),'value_1_level_0')
 --
-value.value_0_level_0	Tuple(value_0_level_1 String, value_1_level_1 String)					
+value.value_0_level_0	Tuple(\n    value_0_level_1 String,\n    value_1_level_1 String)					
 value.value_1_level_0	String					
 ('value_0_level_1','value_1_level_1')	value_1_level_0
 --
-alias_value	Tuple(value_0_level_0 Tuple(value_0_level_1 String, value_1_level_1 String), value_1_level_0 String)					
-alias_value.value_0_level_0	Tuple(value_0_level_1 String, value_1_level_1 String)					
+alias_value	Tuple(\n    value_0_level_0 Tuple(\n        value_0_level_1 String,\n        value_1_level_1 String),\n    value_1_level_0 String)					
+alias_value.value_0_level_0	Tuple(\n    value_0_level_1 String,\n    value_1_level_1 String)					
 alias_value.value_1_level_0	String					
 (('value_0_level_1','value_1_level_1'),'value_1_level_0')	('value_0_level_1','value_1_level_1')	value_1_level_0
 --
-alias_value	Tuple(value_0_level_0 Tuple(value_0_level_1 String, value_1_level_1 String), value_1_level_0 String)					
-alias_value.value_0_level_0	Tuple(value_0_level_1 String, value_1_level_1 String)					
+alias_value	Tuple(\n    value_0_level_0 Tuple(\n        value_0_level_1 String,\n        value_1_level_1 String),\n    value_1_level_0 String)					
+alias_value.value_0_level_0	Tuple(\n    value_0_level_1 String,\n    value_1_level_1 String)					
 alias_value.value_1_level_0	String					
 (('value_0_level_1','value_1_level_1'),'value_1_level_0')	('value_0_level_1','value_1_level_1')	value_1_level_0
 --
-alias_value	Tuple(value_0_level_0 Tuple(value_0_level_1 String, value_1_level_1 String), value_1_level_0 String)					
+alias_value	Tuple(\n    value_0_level_0 Tuple(\n        value_0_level_1 String,\n        value_1_level_1 String),\n    value_1_level_0 String)					
 toString(alias_value.value_0_level_0)	String					
 toString(alias_value.value_1_level_0)	String					
 (('value_0_level_1','value_1_level_1'),'value_1_level_0')	(\'value_0_level_1\',\'value_1_level_1\')	value_1_level_0
 --
-value.value_0_level_0	Tuple(value_0_level_1 String, value_1_level_1 String)					
+value.value_0_level_0	Tuple(\n    value_0_level_1 String,\n    value_1_level_1 String)					
 value.value_1_level_0	String					
 ('value_0_level_1','value_1_level_1')	value_1_level_0
 --
@@ -46,17 +46,17 @@ value.value_0_level_0.value_0_level_1	String
 value.value_0_level_0.value_1_level_1	String					
 value_0_level_1	value_1_level_1
 --
-alias_value	Tuple(value_0_level_1 String, value_1_level_1 String)					
+alias_value	Tuple(\n    value_0_level_1 String,\n    value_1_level_1 String)					
 alias_value.value_0_level_1	String					
 alias_value.value_1_level_1	String					
 ('value_0_level_1','value_1_level_1')	value_0_level_1	value_1_level_1
 --
-alias_value	Tuple(value_0_level_1 String, value_1_level_1 String)					
+alias_value	Tuple(\n    value_0_level_1 String,\n    value_1_level_1 String)					
 alias_value.value_0_level_1	String					
 alias_value.value_1_level_1	String					
 ('value_0_level_1','value_1_level_1')	value_0_level_1	value_1_level_1
 --
-alias_value	Tuple(value_0_level_1 String, value_1_level_1 String)					
+alias_value	Tuple(\n    value_0_level_1 String,\n    value_1_level_1 String)					
 toString(alias_value.value_0_level_1)	String					
 toString(alias_value.value_1_level_1)	String					
 ('value_0_level_1','value_1_level_1')	value_0_level_1	value_1_level_1

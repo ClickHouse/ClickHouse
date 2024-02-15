@@ -189,7 +189,7 @@ struct Message
             }
             entries @0 : List(Entry);
         }
-        e1 @0 : List(E1);
+        e1 @0 : E1;
         struct E2
         {
             struct Entry
@@ -230,9 +230,9 @@ struct Message
             }
             entries @0 : List(Entry);
         }
-        e2 @1 : List(E2);
+        e2 @1 : E2;
     }
-    c1 @0 : C1;
+    c1 @0 : List(C1);
 }
 Read/write with no schema
 0
@@ -400,49 +400,41 @@ message Message
 {
     message C1
     {
-        message E1
+        message E1Value
         {
             message E1Value
             {
-                message E1Value
-                {
-                    repeated uint32 e1Value = 1;
-                }
-                repeated E1Value e1Value = 1;
+                repeated uint32 e1Value = 1;
             }
-            map<string, E1Value> e1 = 1;
+            repeated E1Value e1Value = 1;
         }
-        repeated E1 e1 = 1;
-        message E2
+        map<string, E1Value> e1 = 1;
+        message E2Value
         {
-            message E2Value
+            message E1
             {
-                message E1
-                {
-                    repeated bytes e1 = 1;
-                }
-                repeated E1 e1 = 1;
+                repeated bytes e1 = 1;
+            }
+            repeated E1 e1 = 1;
+            message E2
+            {
+                uint32 e1 = 1;
                 message E2
                 {
-                    uint32 e1 = 1;
-                    message E2
+                    message E1
                     {
-                        message E1
-                        {
-                            repeated bytes e1 = 1;
-                        }
-                        repeated E1 e1 = 1;
-                        uint32 e2 = 2;
+                        repeated bytes e1 = 1;
                     }
-                    E2 e2 = 2;
+                    repeated E1 e1 = 1;
+                    uint32 e2 = 2;
                 }
-                repeated E2 e2 = 2;
+                E2 e2 = 2;
             }
-            map<string, E2Value> e2 = 1;
+            repeated E2 e2 = 2;
         }
-        repeated E2 e2 = 2;
+        map<string, E2Value> e2 = 2;
     }
-    C1 c1 = 1;
+    repeated C1 c1 = 1;
 }
 Read/write with no schema
 0

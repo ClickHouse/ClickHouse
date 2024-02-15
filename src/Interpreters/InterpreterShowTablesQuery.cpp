@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
@@ -220,5 +221,15 @@ BlockIO InterpreterShowTablesQuery::execute()
 /// (*) Sorting is strictly speaking not necessary but 1. it is convenient for users, 2. SQL currently does not allow to
 ///     sort the output of SHOW <INFO> otherwise (SELECT * FROM (SHOW <INFO> ...) ORDER BY ...) is rejected) and 3. some
 ///     SQL tests can take advantage of this.
+
+
+void registerInterpreterShowTablesQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterShowTablesQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterShowTablesQuery", create_fn);
+}
 
 }

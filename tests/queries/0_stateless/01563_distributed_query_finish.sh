@@ -28,7 +28,7 @@ opts=(
     "--prefer_localhost_replica=0"
 )
 $CLICKHOUSE_CLIENT "${opts[@]}" --format CSV -nm <<EOL
-select count(), * from dist_01247 group by number limit 1;
+select count(), * from dist_01247 group by number order by number limit 1;
 EOL
 
 # expect zero new network errors

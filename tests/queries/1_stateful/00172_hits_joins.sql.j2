@@ -4,6 +4,9 @@
 SET max_rows_in_join = '{% if join_algorithm == 'grace_hash' %}10K{% else %}0{% endif %}';
 SET grace_hash_join_initial_buckets = 4;
 
+-- Test is slow with external sort / group by
+SET max_bytes_before_external_sort = 0, max_bytes_before_external_group_by = 0;
+
 SELECT '--- {{ join_algorithm }} ---';
 
 SET join_algorithm = '{{ join_algorithm }}';

@@ -514,7 +514,7 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
                 throw;
             /// Try to ignore DNS errors: if host cannot be resolved, skip it and try next.
             LOG_WARNING(
-                &Poco::Logger::get("AddressPatterns"),
+                getLogger("AddressPatterns"),
                 "Failed to check if the allowed client hosts contain address {}. {}, code = {}",
                 client_address.toString(), e.displayText(), e.code());
             return false;
@@ -556,7 +556,7 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
                 throw;
             /// Try to ignore DNS errors: if host cannot be resolved, skip it and try next.
             LOG_WARNING(
-                &Poco::Logger::get("AddressPatterns"),
+                getLogger("AddressPatterns"),
                 "Failed to check if the allowed client hosts contain address {}. {}, code = {}",
                 client_address.toString(), e.displayText(), e.code());
             return false;

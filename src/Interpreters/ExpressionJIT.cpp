@@ -38,10 +38,9 @@ static CHJIT & getJITInstance()
     return jit;
 }
 
-static Poco::Logger * getLogger()
+static LoggerPtr getLogger()
 {
-    static Poco::Logger & logger = Poco::Logger::get("ExpressionJIT");
-    return &logger;
+    return ::getLogger("ExpressionJIT");
 }
 
 class CompiledFunctionHolder : public CompiledExpressionCacheEntry

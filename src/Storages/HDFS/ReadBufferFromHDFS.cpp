@@ -2,7 +2,7 @@
 
 #if USE_HDFS
 #include <Storages/HDFS/HDFSCommon.h>
-#include <IO/ResourceGuard.h>
+#include <Common/Scheduler/ResourceGuard.h>
 #include <IO/Progress.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>

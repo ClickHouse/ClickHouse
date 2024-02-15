@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/ZooKeeperRetries.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/Common.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
@@ -52,7 +52,7 @@ public:
     };
 
     RetriesControlHolder createRetriesControlHolder(const String & name);
-    WithRetries(Poco::Logger * log, zkutil::GetZooKeeper get_zookeeper_, const KeeperSettings & settings, RenewerCallback callback);
+    WithRetries(LoggerPtr log, zkutil::GetZooKeeper get_zookeeper_, const KeeperSettings & settings, QueryStatusPtr process_list_element_, RenewerCallback callback);
 
     /// Used to re-establish new connection inside a retry loop.
     void renewZooKeeper(FaultyKeeper my_faulty_zookeeper) const;
@@ -62,9 +62,11 @@ private:
     /// This will provide a special wrapper which is useful for testing
     FaultyKeeper getFaultyZooKeeper() const;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     zkutil::GetZooKeeper get_zookeeper;
     KeeperSettings settings;
+    QueryStatusPtr process_list_element;
+
     /// This callback is called each time when a new [Zoo]Keeper session is created.
     /// In backups it is primarily used to re-create an ephemeral node to signal the coordinator
     /// that the host is alive and able to continue writing the backup.

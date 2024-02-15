@@ -93,7 +93,7 @@ struct PartLogElement
     static MergeReasonType getMergeReasonType(MergeType merge_type);
     static PartMergeAlgorithm getMergeAlgorithm(MergeAlgorithm merge_algorithm_);
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
     static const char * getCustomColumnList() { return nullptr; }

@@ -1,7 +1,8 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDropFunctionQuery.h>
 
 #include <Access/ContextAccess.h>
-#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -32,7 +33,7 @@ BlockIO InterpreterDropFunctionQuery::execute()
 
     if (!drop_function_query.cluster.empty())
     {
-        if (current_context->getUserDefinedSQLObjectsLoader().isReplicated())
+        if (current_context->getUserDefinedSQLObjectsStorage().isReplicated())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not allowed because used-defined functions are replicated automatically");
 
         DDLQueryOnClusterParams params;
@@ -47,6 +48,15 @@ BlockIO InterpreterDropFunctionQuery::execute()
     UserDefinedSQLFunctionFactory::instance().unregisterFunction(current_context, drop_function_query.function_name, throw_if_not_exists);
 
     return {};
+}
+
+void registerInterpreterDropFunctionQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterDropFunctionQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterDropFunctionQuery", create_fn);
 }
 
 }

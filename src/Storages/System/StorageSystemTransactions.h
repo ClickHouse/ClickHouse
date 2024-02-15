@@ -13,9 +13,7 @@ class StorageSystemTransactions final : public IStorageSystemOneBlock<StorageSys
 public:
     String getName() const override { return "SystemTransactions"; }
 
-    static NamesAndTypesList getNamesAndTypes();
-
-    static NamesAndAliases getNamesAndAliases() { return {}; }
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

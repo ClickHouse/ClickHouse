@@ -15,7 +15,7 @@ class StorageSystemKafkaConsumers final : public IStorageSystemOneBlock<StorageS
 {
 public:
     std::string getName() const override { return "SystemKafkaConsumers"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

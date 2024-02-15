@@ -5,6 +5,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsAES.h>
 
+namespace DB
+{
+
 namespace
 {
 
@@ -16,9 +19,6 @@ struct DecryptImpl
 };
 
 }
-
-namespace DB
-{
 
 REGISTER_FUNCTION(Decrypt)
 {

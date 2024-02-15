@@ -19,7 +19,7 @@ public:
         return "SystemTableFunctions";
     }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 };
 
 }

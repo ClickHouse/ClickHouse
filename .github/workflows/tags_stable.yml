@@ -55,7 +55,7 @@ jobs:
         python3 ./utils/security-generator/generate_security.py > SECURITY.md
         git diff HEAD
     - name: Create Pull Request
-      uses: peter-evans/create-pull-request@v3
+      uses: peter-evans/create-pull-request@v6
       with:
         author: "robot-clickhouse <robot-clickhouse@users.noreply.github.com>"
         token: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}

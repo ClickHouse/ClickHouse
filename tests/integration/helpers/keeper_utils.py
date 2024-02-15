@@ -279,6 +279,13 @@ def get_leader(cluster, nodes):
     raise Exception("No leader in Keeper cluster.")
 
 
+def get_any_follower(cluster, nodes):
+    for node in nodes:
+        if is_follower(cluster, node):
+            return node
+    raise Exception("No followers in Keeper cluster.")
+
+
 def get_fake_zk(cluster, node, timeout: float = 30.0) -> KazooClient:
     _fake = KazooClient(
         hosts=cluster.get_instance_ip(node.name) + ":9181", timeout=timeout

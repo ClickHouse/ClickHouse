@@ -1,15 +1,17 @@
 #include <Columns/ColumnTuple.h>
 
-#include <base/sort.h>
-#include <Columns/IColumnImpl.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/IColumnImpl.h>
 #include <Core/Field.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <base/sort.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
+#include <Common/iota.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
@@ -482,8 +484,7 @@ void ColumnTuple::getPermutationImpl(IColumn::PermutationSortDirection direction
 {
     size_t rows = size();
     res.resize(rows);
-    for (size_t i = 0; i < rows; ++i)
-        res[i] = i;
+    iota(res.data(), rows, IColumn::Permutation::value_type(0));
 
     if (columns.empty())
         return;
@@ -549,6 +550,13 @@ void ColumnTuple::reserve(size_t n)
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
         getColumn(i).reserve(n);
+}
+
+void ColumnTuple::shrinkToFit()
+{
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+        getColumn(i).shrinkToFit();
 }
 
 void ColumnTuple::ensureOwnership()

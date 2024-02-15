@@ -638,7 +638,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
                 auto rewritten_command = std::make_shared<ASTAlterCommand>();
                 rewritten_command->type = ASTAlterCommand::ADD_COLUMN;
                 rewritten_command->first = alter_command->first;
-                rewritten_command->col_decl = additional_columns->children[index]->clone();
+                rewritten_command->col_decl = rewritten_command->children.emplace_back(additional_columns->children[index]->clone()).get();
 
                 const auto & column_declare = alter_command->additional_columns->children[index]->as<MySQLParser::ASTDeclareColumn>();
                 if (column_declare && column_declare->column_options)
@@ -667,8 +667,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
 
                 if (!alter_command->column_name.empty())
                 {
-                    rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->column_name);
-                    rewritten_command->children.push_back(rewritten_command->column);
+                    rewritten_command->column = rewritten_command->children.emplace_back(std::make_shared<ASTIdentifier>(alter_command->column_name)).get();
 
                     /// For example(when add_column_1 is last column):
                     /// ALTER TABLE test_database.test_table_2 ADD COLUMN add_column_3 INT AFTER add_column_1, ADD COLUMN add_column_4 INT
@@ -679,12 +678,10 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
                 }
                 else
                 {
-                    rewritten_command->column = std::make_shared<ASTIdentifier>(default_after_column);
-                    rewritten_command->children.push_back(rewritten_command->column);
+                    rewritten_command->column = rewritten_command->children.emplace_back(std::make_shared<ASTIdentifier>(default_after_column)).get();
                     default_after_column = rewritten_command->col_decl->as<ASTColumnDeclaration>()->name;
                 }
 
-                rewritten_command->children.push_back(rewritten_command->col_decl);
                 rewritten_alter_query->command_list->children.push_back(rewritten_command);
             }
         }
@@ -692,7 +689,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
         {
             auto rewritten_command = std::make_shared<ASTAlterCommand>();
             rewritten_command->type = ASTAlterCommand::DROP_COLUMN;
-            rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->column_name);
+            rewritten_command->column = rewritten_command->children.emplace_back(std::make_shared<ASTIdentifier>(alter_command->column_name)).get();
             rewritten_alter_query->command_list->children.push_back(rewritten_command);
         }
         else if (alter_command->type == MySQLParser::ASTAlterCommand::RENAME_COLUMN)
@@ -702,8 +699,8 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
                 /// 'RENAME column_name TO column_name' is not allowed in Clickhouse
                 auto rewritten_command = std::make_shared<ASTAlterCommand>();
                 rewritten_command->type = ASTAlterCommand::RENAME_COLUMN;
-                rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->old_name);
-                rewritten_command->rename_to = std::make_shared<ASTIdentifier>(alter_command->column_name);
+                rewritten_command->column = rewritten_command->children.emplace_back(std::make_shared<ASTIdentifier>(alter_command->old_name)).get();
+                rewritten_command->rename_to = rewritten_command->children.emplace_back(std::make_shared<ASTIdentifier>(alter_command->column_name)).get();
                 rewritten_alter_query->command_list->children.push_back(rewritten_command);
             }
         }
@@ -726,13 +723,10 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
                     modify_columns.front().name = alter_command->old_name;
 
                 const auto & modify_columns_description = createColumnsDescription(modify_columns, alter_command->additional_columns);
-                rewritten_command->col_decl = InterpreterCreateQuery::formatColumns(modify_columns_description)->children[0];
+                rewritten_command->col_decl = rewritten_command->children.emplace_back(InterpreterCreateQuery::formatColumns(modify_columns_description)->children[0]).get();
 
                 if (!alter_command->column_name.empty())
-                {
-                    rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->column_name);
-                    rewritten_command->children.push_back(rewritten_command->column);
-                }
+                    rewritten_command->column = rewritten_command->children.emplace_back(std::make_shared<ASTIdentifier>(alter_command->column_name)).get();
 
                 rewritten_alter_query->command_list->children.push_back(rewritten_command);
             }
@@ -741,8 +735,8 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
             {
                 auto rewritten_command = std::make_shared<ASTAlterCommand>();
                 rewritten_command->type = ASTAlterCommand::RENAME_COLUMN;
-                rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->old_name);
-                rewritten_command->rename_to = std::make_shared<ASTIdentifier>(new_column_name);
+                rewritten_command->column = rewritten_command->children.emplace_back(std::make_shared<ASTIdentifier>(alter_command->old_name)).get();
+                rewritten_command->rename_to = rewritten_command->children.emplace_back(std::make_shared<ASTIdentifier>(new_column_name)).get();
                 rewritten_alter_query->command_list->children.push_back(rewritten_command);
             }
         }

@@ -47,7 +47,7 @@ private:
     const Block non_virtual_header;
     const Block virtual_header;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     RabbitMQConsumerPtr consumer;
 
     uint64_t max_execution_time_ms = 0;

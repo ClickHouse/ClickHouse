@@ -18,6 +18,10 @@ enum class BackupStatus
     RESTORED,
     RESTORE_FAILED,
 
+    /// Statuses used after a BACKUP or RESTORE operation was cancelled.
+    BACKUP_CANCELLED,
+    RESTORE_CANCELLED,
+
     MAX,
 };
 

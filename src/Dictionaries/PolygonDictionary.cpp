@@ -5,6 +5,7 @@
 
 #include <base/sort.h>
 
+#include <Common/iota.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -507,7 +508,7 @@ const IColumn * unrollSimplePolygons(const ColumnPtr & column, Offset & offset)
     if (!ptr_polygons)
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a column containing arrays of points");
     offset.ring_offsets.assign(ptr_polygons->getOffsets());
-    std::iota(offset.polygon_offsets.begin(), offset.polygon_offsets.end(), 1);
+    iota<IColumn::Offsets::value_type>(offset.polygon_offsets.data(), offset.polygon_offsets.size(), IColumn::Offsets::value_type(1));
     offset.multi_polygon_offsets.assign(offset.polygon_offsets);
 
     return ptr_polygons->getDataPtr().get();

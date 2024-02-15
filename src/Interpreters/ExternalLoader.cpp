@@ -95,7 +95,7 @@ namespace
 class ExternalLoader::LoadablesConfigReader : private boost::noncopyable
 {
 public:
-    LoadablesConfigReader(const String & type_name_, Poco::Logger * log_)
+    LoadablesConfigReader(const String & type_name_, LoggerPtr log_)
         : type_name(type_name_), log(log_)
     {
     }
@@ -377,7 +377,7 @@ private:
     }
 
     const String type_name;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::mutex mutex;
     ExternalLoaderConfigSettings settings;
@@ -401,7 +401,7 @@ public:
     LoadingDispatcher(
         const CreateObjectFunction & create_object_function_,
         const String & type_name_,
-        Poco::Logger * log_)
+        LoggerPtr log_)
         : create_object(create_object_function_)
         , type_name(type_name_)
         , log(log_)
@@ -1193,7 +1193,7 @@ private:
 
     const CreateObjectFunction create_object;
     const String type_name;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     mutable std::mutex mutex;
     std::condition_variable event;
@@ -1273,7 +1273,7 @@ private:
 };
 
 
-ExternalLoader::ExternalLoader(const String & type_name_, Poco::Logger * log_)
+ExternalLoader::ExternalLoader(const String & type_name_, LoggerPtr log_)
     : config_files_reader(std::make_unique<LoadablesConfigReader>(type_name_, log_))
     , loading_dispatcher(std::make_unique<LoadingDispatcher>(
           [this](auto && a, auto && b, auto && c) { return createObject(a, b, c); },

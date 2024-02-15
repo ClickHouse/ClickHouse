@@ -150,7 +150,7 @@ SYSTEM RELOAD CONFIG [ON CLUSTER cluster_name]
 
 ## RELOAD USERS
 
-Reloads all access storages, including: users.xml, local disk access storage, replicated (in ZooKeeper) access storage. 
+Reloads all access storages, including: users.xml, local disk access storage, replicated (in ZooKeeper) access storage.
 
 ```sql
 SYSTEM RELOAD USERS [ON CLUSTER cluster_name]
@@ -343,18 +343,19 @@ SYSTEM START PULLING REPLICATION LOG [ON CLUSTER cluster_name] [[db.]replicated_
 Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a cluster, but no more than `receive_timeout` seconds.
 
 ``` sql
-SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name [STRICT | LIGHTWEIGHT | PULL]
+SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name [STRICT | LIGHTWEIGHT [FROM 'srcReplica1'[, 'srcReplica2'[, ...]]] | PULL]
 ```
 
 After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands. The following modifiers are supported:
 
  - If a `STRICT` modifier was specified then the query waits for the replication queue to become empty. The `STRICT` version may never succeed if new entries constantly appear in the replication queue.
- - If a `LIGHTWEIGHT` modifier was specified then the query waits only for `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` and `DROP_PART` entries to be processed.
+ - If a `LIGHTWEIGHT` modifier was specified then the query waits only for `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` and `DROP_PART` entries to be processed.  
+   Additionally, the LIGHTWEIGHT modifier supports an optional FROM 'srcReplicas' clause, where 'srcReplicas' is a comma-separated list of source replica names. This extension allows for more targeted synchronization by focusing only on replication tasks originating from the specified source replicas.
  - If a `PULL` modifier was specified then the query pulls new replication queue entries from ZooKeeper, but does not wait for anything to be processed.
 
 ### SYNC DATABASE REPLICA
 
-Waits until the specified [replicated database](https://clickhouse.com/docs/en/engines/database-engines/replicated) applies all schema changes from the DDL queue of that database. 
+Waits until the specified [replicated database](https://clickhouse.com/docs/en/engines/database-engines/replicated) applies all schema changes from the DDL queue of that database.
 
 **Syntax**
 ```sql
@@ -449,14 +450,14 @@ SYSTEM SYNC FILE CACHE [ON CLUSTER cluster_name]
 ```
 
 
-### SYSTEM STOP LISTEN
+## SYSTEM STOP LISTEN
 
-Closes the socket and gracefully terminates the existing connections to the server on the specified port with the specified protocol. 
+Closes the socket and gracefully terminates the existing connections to the server on the specified port with the specified protocol.
 
 However, if the corresponding protocol settings were not specified in the clickhouse-server configuration, this command will have no effect.
 
 ```sql
-SYSTEM STOP LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP_WITH_PROXY | TCP_SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
+SYSTEM STOP LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
 ```
 
 - If `CUSTOM 'protocol'` modifier is specified, the custom protocol with the specified name defined in the protocols section of the server configuration will be stopped.
@@ -464,12 +465,56 @@ SYSTEM STOP LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QU
 - If `QUERIES DEFAULT [EXCEPT .. [,..]]` modifier is specified, all default protocols are stopped, unless specified with `EXCEPT` clause.
 - If `QUERIES CUSTOM [EXCEPT .. [,..]]` modifier is specified, all custom protocols are stopped, unless specified with `EXCEPT` clause.
 
-### SYSTEM START LISTEN
+## SYSTEM START LISTEN
 
 Allows new connections to be established on the specified protocols.
 
 However, if the server on the specified port and protocol was not stopped using the SYSTEM STOP LISTEN command, this command will have no effect.
 
 ```sql
-SYSTEM START LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP_WITH_PROXY | TCP_SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
+SYSTEM START LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
+```
+
+## Managing Refreshable Materialized Views {#refreshable-materialized-views}
+
+Commands to control background tasks performed by [Refreshable Materialized Views](../../sql-reference/statements/create/view.md#refreshable-materialized-view)
+
+Keep an eye on [`system.view_refreshes`](../../operations/system-tables/view_refreshes.md) while using them.
+
+### SYSTEM REFRESH VIEW
+
+Trigger an immediate out-of-schedule refresh of a given view.
+
+```sql
+SYSTEM REFRESH VIEW [db.]name
+```
+
+### SYSTEM STOP VIEW, SYSTEM STOP VIEWS
+
+Disable periodic refreshing of the given view or all refreshable views. If a refresh is in progress, cancel it too.
+
+```sql
+SYSTEM STOP VIEW [db.]name
+```
+```sql
+SYSTEM STOP VIEWS
+```
+
+### SYSTEM START VIEW, SYSTEM START VIEWS
+
+Enable periodic refreshing for the given view or all refreshable views. No immediate refresh is triggered.
+
+```sql
+SYSTEM START VIEW [db.]name
+```
+```sql
+SYSTEM START VIEWS
+```
+
+### SYSTEM CANCEL VIEW
+
+If there's a refresh in progress for the given view, interrupt and cancel it. Otherwise do nothing.
+
+```sql
+SYSTEM CANCEL VIEW [db.]name
 ```

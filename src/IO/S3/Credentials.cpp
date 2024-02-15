@@ -76,7 +76,7 @@ constexpr int AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS = 3;
 AWSEC2MetadataClient::AWSEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration, const char * endpoint_)
     : Aws::Internal::AWSHttpResourceClient(client_configuration)
     , endpoint(endpoint_)
-    , logger(&Poco::Logger::get("AWSEC2InstanceProfileConfigLoader"))
+    , logger(getLogger("AWSEC2InstanceProfileConfigLoader"))
 {
 }
 
@@ -200,7 +200,7 @@ Aws::String AWSEC2MetadataClient::getCurrentRegion() const
 
 static Aws::String getAWSMetadataEndpoint()
 {
-    auto * logger = &Poco::Logger::get("AWSEC2InstanceProfileConfigLoader");
+    auto logger = getLogger("AWSEC2InstanceProfileConfigLoader");
     Aws::String ec2_metadata_service_endpoint = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT");
     if (ec2_metadata_service_endpoint.empty())
     {
@@ -285,7 +285,7 @@ String getGCPAvailabilityZoneOrException()
 
 String getRunningAvailabilityZone()
 {
-    LOG_INFO(&Poco::Logger::get("Application"), "Trying to detect the availability zone.");
+    LOG_INFO(getLogger("Application"), "Trying to detect the availability zone.");
     try
     {
         return AWSEC2MetadataClient::getAvailabilityZoneOrException();
@@ -310,7 +310,7 @@ String getRunningAvailabilityZone()
 AWSEC2InstanceProfileConfigLoader::AWSEC2InstanceProfileConfigLoader(const std::shared_ptr<AWSEC2MetadataClient> & client_, bool use_secure_pull_)
     : client(client_)
     , use_secure_pull(use_secure_pull_)
-    , logger(&Poco::Logger::get("AWSEC2InstanceProfileConfigLoader"))
+    , logger(getLogger("AWSEC2InstanceProfileConfigLoader"))
 {
 }
 
@@ -352,7 +352,7 @@ bool AWSEC2InstanceProfileConfigLoader::LoadInternal()
 AWSInstanceProfileCredentialsProvider::AWSInstanceProfileCredentialsProvider(const std::shared_ptr<AWSEC2InstanceProfileConfigLoader> & config_loader)
     : ec2_metadata_config_loader(config_loader)
     , load_frequency_ms(Aws::Auth::REFRESH_THRESHOLD)
-    , logger(&Poco::Logger::get("AWSInstanceProfileCredentialsProvider"))
+    , logger(getLogger("AWSInstanceProfileCredentialsProvider"))
 {
     LOG_INFO(logger, "Creating Instance with injected EC2MetadataClient and refresh rate.");
 }
@@ -396,7 +396,7 @@ void AWSInstanceProfileCredentialsProvider::refreshIfExpired()
 
 AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider(
     DB::S3::PocoHTTPClientConfiguration & aws_client_configuration, uint64_t expiration_window_seconds_)
-    : logger(&Poco::Logger::get("AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider"))
+    : logger(getLogger("AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider"))
     , expiration_window_seconds(expiration_window_seconds_)
 {
     // check environment variables
@@ -529,7 +529,7 @@ SSOCredentialsProvider::SSOCredentialsProvider(DB::S3::PocoHTTPClientConfigurati
     : profile_to_use(Aws::Auth::GetConfigProfileName())
     , aws_client_configuration(std::move(aws_client_configuration_))
     , expiration_window_seconds(expiration_window_seconds_)
-    , logger(&Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG))
+    , logger(getLogger(SSO_CREDENTIALS_PROVIDER_LOG_TAG))
 {
     LOG_TRACE(logger, "Setting sso credentials provider to read config from {}", profile_to_use);
 }
@@ -659,7 +659,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         const Aws::Auth::AWSCredentials & credentials,
         CredentialsConfiguration credentials_configuration)
 {
-    auto * logger = &Poco::Logger::get("S3CredentialsProviderChain");
+    auto logger = getLogger("S3CredentialsProviderChain");
 
     /// we don't provide any credentials to avoid signing
     if (credentials_configuration.no_sign_request)

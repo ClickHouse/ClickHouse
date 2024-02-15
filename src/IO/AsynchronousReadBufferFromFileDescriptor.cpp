@@ -97,11 +97,7 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
         /// No pending request. Do synchronous read.
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousReadWaitMicroseconds);
-        if (!use_external_buffer)
-            result = asyncReadInto(memory.data(), memory.size(), DEFAULT_PREFETCH_PRIORITY).get();
-        else
-            /// External buffer will be substituted in place of internal_buffer (see CachedOnDiskReadBufferFromFile)
-            result = asyncReadInto(internal_buffer.begin(), internal_buffer.size(), DEFAULT_PREFETCH_PRIORITY).get();
+        result = asyncReadInto(memory.data(), memory.size(), DEFAULT_PREFETCH_PRIORITY).get();
     }
 
     chassert(result.size >= result.offset);
@@ -114,9 +110,8 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     if (bytes_read)
     {
         /// Adjust the working buffer so that it ignores `offset` bytes.
-        if (!use_external_buffer)
-            internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
-        working_buffer = Buffer(internal_buffer.begin() + result.offset, internal_buffer.begin() + result.size);
+        internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
+        working_buffer = Buffer(memory.data() + result.offset, memory.data() + result.size);
         pos = working_buffer.begin();
     }
 
@@ -142,15 +137,13 @@ AsynchronousReadBufferFromFileDescriptor::AsynchronousReadBufferFromFileDescript
     char * existing_memory,
     size_t alignment,
     std::optional<size_t> file_size_,
-    ThrottlerPtr throttler_,
-    bool use_external_buffer_)
+    ThrottlerPtr throttler_)
     : ReadBufferFromFileBase(buf_size, existing_memory, alignment, file_size_)
     , reader(reader_)
     , base_priority(priority_)
     , required_alignment(alignment)
     , fd(fd_)
     , throttler(throttler_)
-    , use_external_buffer(use_external_buffer_)
 {
     if (required_alignment > buf_size)
         throw Exception(
@@ -228,7 +221,7 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     file_offset_of_buffer_end = seek_pos;
     bytes_to_ignore = new_pos - seek_pos;
 
-    if (bytes_to_ignore >= internal_buffer.size() && !(use_external_buffer && internal_buffer.empty()))
+    if (bytes_to_ignore >= internal_buffer.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Logical error in AsynchronousReadBufferFromFileDescriptor, bytes_to_ignore ({}"
                         ") >= internal_buffer.size() ({})", bytes_to_ignore, internal_buffer.size());

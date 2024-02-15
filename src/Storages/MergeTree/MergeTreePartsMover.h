@@ -48,7 +48,7 @@ public:
 
     explicit MergeTreePartsMover(MergeTreeData * data_)
         : data(data_)
-        , log(&Poco::Logger::get("MergeTreePartsMover"))
+        , log(getLogger("MergeTreePartsMover"))
     {
     }
 
@@ -81,7 +81,7 @@ public:
 private:
 
     MergeTreeData * data;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 

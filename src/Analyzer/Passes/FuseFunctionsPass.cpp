@@ -1,5 +1,6 @@
 #include <Analyzer/Passes/FuseFunctionsPass.h>
 
+#include <Common/iota.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -184,7 +185,7 @@ FunctionNodePtr createFusedQuantilesNode(std::vector<QueryTreeNodePtr *> & nodes
     {
         /// Sort nodes and parameters in ascending order of quantile level
         std::vector<size_t> permutation(nodes.size());
-        std::iota(permutation.begin(), permutation.end(), 0);
+        iota(permutation.data(), permutation.size(), size_t(0));
         std::sort(permutation.begin(), permutation.end(), [&](size_t i, size_t j) { return parameters[i].get<Float64>() < parameters[j].get<Float64>(); });
 
         std::vector<QueryTreeNodePtr *> new_nodes;
@@ -255,7 +256,7 @@ void tryFuseQuantiles(QueryTreeNodePtr query_tree_node, ContextPtr context)
 
 }
 
-void FuseFunctionsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void FuseFunctionsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     tryFuseSumCountAvg(query_tree_node, context);
     tryFuseQuantiles(query_tree_node, context);

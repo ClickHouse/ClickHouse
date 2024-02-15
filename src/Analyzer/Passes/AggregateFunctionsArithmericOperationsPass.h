@@ -17,7 +17,7 @@ public:
 
     String getDescription() override { return "Extract arithmeric operations from aggregate functions."; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 };
 

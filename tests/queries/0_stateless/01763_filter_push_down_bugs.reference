@@ -28,7 +28,7 @@ Expression ((Projection + Before ORDER BY))
 Expression ((Project names + Projection))
   Filter ((WHERE + DROP unused columns after JOIN))
     Join (JOIN FillRightFirst)
-      Expression (Change column names to column identifiers)
+      Expression
         ReadFromMergeTree (default.t1)
         Indexes:
           PrimaryKey

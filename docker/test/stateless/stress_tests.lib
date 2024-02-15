@@ -78,6 +78,8 @@ function configure()
         randomize_config_boolean_value use_compression zookeeper
     fi
 
+    randomize_config_boolean_value allow_experimental_block_number_column block_number
+
     # for clickhouse-server (via service)
     echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
     # for clickhouse-client
@@ -235,6 +237,10 @@ function check_logs_for_critical_errors()
     rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log > /test_output/no_such_key_errors.txt \
         && echo -e "S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)$FAIL$(trim_server_logs no_such_key_errors.txt)" >> /test_output/test_results.tsv \
         || echo -e "No lost s3 keys$OK" >> /test_output/test_results.tsv
+
+    rg -Fa "it is lost forever" /var/log/clickhouse-server/clickhouse-server*.log | grep 'SharedMergeTreePartCheckThread' > /dev/null \
+        && echo -e "Lost forever for SharedMergeTree$FAIL" >> /test_output/test_results.tsv \
+        || echo -e "No SharedMergeTree lost forever in clickhouse-server.log$OK" >> /test_output/test_results.tsv
 
     # Remove file no_such_key_errors.txt if it's empty
     [ -s /test_output/no_such_key_errors.txt ] || rm /test_output/no_such_key_errors.txt

@@ -55,7 +55,7 @@ private:
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
     /// so Service will never access dangling reference to storage
     StorageReplicatedMergeTree & data;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 /** Client for getting the parts from the table *MergeTree.
@@ -137,7 +137,7 @@ private:
        ThrottlerPtr throttler);
 
     StorageReplicatedMergeTree & data;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

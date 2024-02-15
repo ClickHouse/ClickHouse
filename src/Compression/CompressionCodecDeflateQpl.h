@@ -88,7 +88,7 @@ private:
     /// For each submission, push job ID && job object into this map;
     /// For flush, pop out job ID && job object from this map. Use job ID to release job lock and use job object to check job status till complete.
     std::map<UInt32, qpl_job *> decomp_async_job_map;
-    Poco::Logger * log;
+    LoggerPtr log;
     /// Provides a fallback in case of errors.
     SoftwareCodecDeflateQpl & sw_codec;
 };

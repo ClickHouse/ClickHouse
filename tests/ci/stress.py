@@ -21,6 +21,7 @@ def get_options(i: int, upgrade_check: bool) -> str:
         options.append(f'''--db-engine="Replicated('/test/db/test_{i}', 's1', 'r1')"''')
         client_options.append("allow_experimental_database_replicated=1")
         client_options.append("enable_deflate_qpl_codec=1")
+        client_options.append("enable_zstd_qat_codec=1")
 
     # If database name is not specified, new database is created for each functional test.
     # Run some threads with one database for all tests.
@@ -61,6 +62,9 @@ def get_options(i: int, upgrade_check: bool) -> str:
 
     if random.random() < 0.1:
         client_options.append("optimize_trivial_approximate_count_query=1")
+
+    if random.random() < 0.3:
+        client_options.append(f"http_make_head_request={random.randint(0, 1)}")
 
     if client_options:
         options.append(" --client-option " + " ".join(client_options))

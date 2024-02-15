@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/TransactionVersionMetadata.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -39,11 +40,10 @@ struct FilesystemCacheLogElement
 
     static std::string name() { return "FilesystemCacheLog"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class FilesystemCacheLog : public SystemLog<FilesystemCacheLogElement>

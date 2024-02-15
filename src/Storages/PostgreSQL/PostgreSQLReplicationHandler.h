@@ -102,7 +102,7 @@ private:
 
     void assertInitialized() const;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// If it is not attach, i.e. a create query, then if publication already exists - always drop it.
     bool is_attach;

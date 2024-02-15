@@ -24,7 +24,7 @@ public:
     String getName() const override { return "JSONRowInputFormat"; }
 
     void setReadBuffer(ReadBuffer & in_) override;
-    void resetParser() override;
+    void resetReadBuffer() override;
 
 private:
     JSONRowInputFormat(

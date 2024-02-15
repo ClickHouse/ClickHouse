@@ -264,7 +264,7 @@ private:
 
 }
 
-void CrossToInnerJoinPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void CrossToInnerJoinPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     CrossToInnerJoinVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

@@ -31,6 +31,8 @@ private:
     std::atomic_bool is_finished = false;
     std::unordered_map<std::uintptr_t, TaskData> tasks;
 
+    TaskData getTask(std::unique_lock<std::mutex> & lock, int timeout);
+
 public:
     PollingQueue();
     ~PollingQueue();
@@ -44,7 +46,12 @@ public:
     /// Wait for any descriptor. If no descriptors in queue, blocks.
     /// Returns ptr which was inserted into queue or nullptr if finished was called.
     /// Lock is unlocked during waiting.
-    TaskData wait(std::unique_lock<std::mutex> & lock);
+    TaskData wait(std::unique_lock<std::mutex> & lock) { return getTask(lock, -1); }
+
+    /// Get any ready descriptor.
+    /// Returns nullptr if no descriptor is ready or if finished was called.
+    /// Does not block.
+    TaskData tryGetReadyTask(std::unique_lock<std::mutex> & lock) { return getTask(lock, 0); }
 
     /// Interrupt waiting.
     void finish();

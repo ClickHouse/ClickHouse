@@ -24,7 +24,7 @@
 /** Taken from MurmurHash. This is Murmur finalizer.
   * Faster than intHash32 when inserting into the hash table UInt64 -> UInt64, where the key is the visitor ID.
   */
-inline DB::UInt64 intHash64(DB::UInt64 x)
+inline UInt64 intHash64(UInt64 x)
 {
     x ^= x >> 33;
     x *= 0xff51afd7ed558ccdULL;
@@ -60,7 +60,7 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
 /// NOTE: Intel intrinsic can be confusing.
 /// - https://code.google.com/archive/p/sse-intrinsics/wikis/PmovIntrinsicBug.wiki
 /// - https://stackoverflow.com/questions/15752770/mm-crc32-u64-poorly-defined
-inline DB::UInt64 intHashCRC32(DB::UInt64 x)
+inline UInt64 intHashCRC32(UInt64 x)
 {
 #ifdef __SSE4_2__
     return _mm_crc32_u64(-1ULL, x);
@@ -76,7 +76,7 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x)
     return intHash64(x);
 #endif
 }
-inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
+inline UInt64 intHashCRC32(UInt64 x, UInt64 updated_value)
 {
 #ifdef __SSE4_2__
     return _mm_crc32_u64(updated_value, x);
@@ -93,14 +93,14 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
 }
 
 template <typename T>
-requires std::has_unique_object_representations_v<T> && (sizeof(T) % sizeof(DB::UInt64) == 0)
-inline DB::UInt64 intHashCRC32(const T & x, DB::UInt64 updated_value)
+requires std::has_unique_object_representations_v<T> && (sizeof(T) % sizeof(UInt64) == 0)
+inline UInt64 intHashCRC32(const T & x, UInt64 updated_value)
 {
     const auto * begin = reinterpret_cast<const char *>(&x);
     for (size_t i = 0; i < sizeof(T); i += sizeof(UInt64))
     {
-        updated_value = intHashCRC32(unalignedLoad<DB::UInt64>(begin), updated_value);
-        begin += sizeof(DB::UInt64);
+        updated_value = intHashCRC32(unalignedLoad<UInt64>(begin), updated_value);
+        begin += sizeof(UInt64);
     }
 
     return updated_value;
@@ -108,7 +108,7 @@ inline DB::UInt64 intHashCRC32(const T & x, DB::UInt64 updated_value)
 
 template <std::floating_point T>
 requires(sizeof(T) <= sizeof(UInt64))
-inline DB::UInt64 intHashCRC32(T x, DB::UInt64 updated_value)
+inline UInt64 intHashCRC32(T x, UInt64 updated_value)
 {
     static_assert(std::numeric_limits<T>::is_iec559);
 
@@ -126,7 +126,7 @@ inline DB::UInt64 intHashCRC32(T x, DB::UInt64 updated_value)
     return intHashCRC32(repr, updated_value);
 }
 
-inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 updated_value)
+inline UInt32 updateWeakHash32(const UInt8 * pos, size_t size, UInt32 updated_value)
 {
     if (size < 8)
     {
@@ -206,12 +206,12 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
     {
         /// If string size is not divisible by 8.
         /// Lets' assume the string was 'abcdefghXYZ', so it's tail is 'XYZ'.
-        DB::UInt8 tail_size = end - pos;
+        UInt8 tail_size = end - pos;
         /// Load tailing 8 bytes. Word is 'defghXYZ'.
         auto word = unalignedLoadLittleEndian<UInt64>(end - 8);
         /// Prepare mask which will set other 5 bytes to 0. It is 0xFFFFFFFFFFFFFFFF << 5 = 0xFFFFFF0000000000.
         /// word & mask = '\0\0\0\0\0XYZ' (bytes are reversed because of little ending)
-        word &= (~UInt64(0)) << DB::UInt8(8 * (8 - tail_size));
+        word &= (~UInt64(0)) << UInt8(8 * (8 - tail_size));
         /// Use least byte to store tail length.
         word |= tail_size;
         /// Now word is '\3\0\0\0\0XYZ'
@@ -225,11 +225,11 @@ template <typename T>
 requires (sizeof(T) <= sizeof(UInt64))
 inline size_t DefaultHash64(T key)
 {
-    DB::UInt64 out {0};
+    UInt64 out {0};
     if constexpr (std::endian::native == std::endian::little)
         std::memcpy(&out, &key, sizeof(T));
     else
-        std::memcpy(reinterpret_cast<char*>(&out) + sizeof(DB::UInt64) - sizeof(T), &key, sizeof(T));
+        std::memcpy(reinterpret_cast<char*>(&out) + sizeof(UInt64) - sizeof(T), &key, sizeof(T));
     return intHash64(out);
 }
 
@@ -284,9 +284,9 @@ template <typename T> struct HashCRC32;
 
 template <typename T>
 requires (sizeof(T) <= sizeof(UInt64))
-inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
+inline size_t hashCRC32(T key, UInt64 updated_value = -1)
 {
-    DB::UInt64 out {0};
+    UInt64 out {0};
     if constexpr (std::endian::native == std::endian::little)
         std::memcpy(&out, &key, sizeof(T));
     else
@@ -296,7 +296,7 @@ inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
 
 template <typename T>
 requires (sizeof(T) > sizeof(UInt64))
-inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
+inline size_t hashCRC32(T key, UInt64 updated_value = -1)
 {
     return intHashCRC32(key, updated_value);
 }
@@ -310,20 +310,20 @@ template <> struct HashCRC32<T>\
     }\
 };
 
-DEFINE_HASH(DB::UInt8)
-DEFINE_HASH(DB::UInt16)
-DEFINE_HASH(DB::UInt32)
-DEFINE_HASH(DB::UInt64)
-DEFINE_HASH(DB::UInt128)
-DEFINE_HASH(DB::UInt256)
-DEFINE_HASH(DB::Int8)
-DEFINE_HASH(DB::Int16)
-DEFINE_HASH(DB::Int32)
-DEFINE_HASH(DB::Int64)
-DEFINE_HASH(DB::Int128)
-DEFINE_HASH(DB::Int256)
-DEFINE_HASH(DB::Float32)
-DEFINE_HASH(DB::Float64)
+DEFINE_HASH(UInt8)
+DEFINE_HASH(UInt16)
+DEFINE_HASH(UInt32)
+DEFINE_HASH(UInt64)
+DEFINE_HASH(UInt128)
+DEFINE_HASH(UInt256)
+DEFINE_HASH(Int8)
+DEFINE_HASH(Int16)
+DEFINE_HASH(Int32)
+DEFINE_HASH(Int64)
+DEFINE_HASH(Int128)
+DEFINE_HASH(Int256)
+DEFINE_HASH(Float32)
+DEFINE_HASH(Float64)
 DEFINE_HASH(DB::UUID)
 DEFINE_HASH(DB::IPv4)
 DEFINE_HASH(DB::IPv6)
@@ -464,10 +464,10 @@ struct UInt256HashCRC32 : public UInt256Hash {};
 #endif
 
 template <>
-struct DefaultHash<DB::UInt128> : public UInt128Hash {};
+struct DefaultHash<UInt128> : public UInt128Hash {};
 
 template <>
-struct DefaultHash<DB::UInt256> : public UInt256Hash {};
+struct DefaultHash<UInt256> : public UInt256Hash {};
 
 template <>
 struct DefaultHash<DB::UUID> : public UUIDHash {};
@@ -501,8 +501,8 @@ struct TrivialHash
   * NOTE As mentioned, this function is slower than intHash64.
   * But occasionally, it is faster, when written in a loop and loop is vectorized.
   */
-template <DB::UInt64 salt>
-inline DB::UInt32 intHash32(DB::UInt64 key)
+template <UInt64 salt>
+inline UInt32 intHash32(UInt64 key)
 {
     key ^= salt;
 
@@ -518,7 +518,7 @@ inline DB::UInt32 intHash32(DB::UInt64 key)
 
 
 /// For containers.
-template <typename T, DB::UInt64 salt = 0>
+template <typename T, UInt64 salt = 0>
 struct IntHash32
 {
     size_t operator() (const T & key) const
@@ -533,11 +533,11 @@ struct IntHash32
         }
         else if constexpr (sizeof(T) <= sizeof(UInt64))
         {
-            DB::UInt64 out {0};
+            UInt64 out {0};
             if constexpr (std::endian::native == std::endian::little)
                 std::memcpy(&out, &key, sizeof(T));
             else
-                std::memcpy(reinterpret_cast<char*>(&out) + sizeof(DB::UInt64) - sizeof(T), &key, sizeof(T));
+                std::memcpy(reinterpret_cast<char*>(&out) + sizeof(UInt64) - sizeof(T), &key, sizeof(T));
             return intHash32<salt>(out);
         }
 

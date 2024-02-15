@@ -153,7 +153,7 @@ public:
             {
                 int res = mprotect(block.base(), block.blockSize(), protection_flags | PROT_READ);
                 if (res != 0)
-                    throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
+                    throw ErrnoException(ErrorCodes::CANNOT_MPROTECT, "Cannot mprotect memory region");
 
                 llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
                 invalidate_cache = false;
@@ -161,7 +161,7 @@ public:
 #    endif
             int res = mprotect(block.base(), block.blockSize(), protection_flags);
             if (res != 0)
-                throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
+                throw ErrnoException(ErrorCodes::CANNOT_MPROTECT, "Cannot mprotect memory region");
 
             if (invalidate_cache)
                 llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
@@ -232,10 +232,12 @@ private:
         int res = posix_memalign(&buf, page_size, allocate_size);
 
         if (res != 0)
-            throwFromErrno(
-                fmt::format("Cannot allocate memory (posix_memalign) alignment {} size {}.", page_size, ReadableSize(allocate_size)),
+            ErrnoException::throwWithErrno(
                 ErrorCodes::CANNOT_ALLOCATE_MEMORY,
-                res);
+                res,
+                "Cannot allocate memory (posix_memalign) alignment {} size {}",
+                page_size,
+                ReadableSize(allocate_size));
 
         page_blocks.emplace_back(buf, pages_to_allocate_size, page_size);
         page_blocks_allocated_size.emplace_back(0);
@@ -243,6 +245,31 @@ private:
         allocated_size += allocate_size;
     }
 };
+
+#ifdef PRINT_ASSEMBLY
+
+class AssemblyPrinter
+{
+public:
+    explicit AssemblyPrinter(llvm::TargetMachine &target_machine_)
+    : target_machine(target_machine_)
+    {
+    }
+
+    void print(llvm::Module & module)
+    {
+        llvm::legacy::PassManager pass_manager;
+        target_machine.Options.MCOptions.AsmVerbose = true;
+        if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::CGFT_AssemblyFile))
+            throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "MachineCode cannot be printed");
+
+        pass_manager.run(module);
+    }
+private:
+    llvm::TargetMachine & target_machine;
+};
+
+#endif
 
 /** MemoryManager for module.
   * Keep total allocated size during RuntimeDyld linker execution.
@@ -374,6 +401,11 @@ std::unique_ptr<llvm::Module> CHJIT::createModuleForCompilation()
 CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
 {
     runOptimizationPassesOnModule(*module);
+
+#ifdef PRINT_ASSEMBLY
+    AssemblyPrinter assembly_printer(*machine);
+    assembly_printer.print(*module);
+#endif
 
     auto buffer = compiler->compile(*module);
 

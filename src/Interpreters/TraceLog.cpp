@@ -1,3 +1,4 @@
+#include <base/getFQDNOrHostName.h>
 #include <Interpreters/TraceLog.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -24,10 +25,11 @@ const TraceDataType::Values TraceLogElement::trace_values =
     {"ProfileEvent", static_cast<UInt8>(TraceType::ProfileEvent)},
 };
 
-NamesAndTypesList TraceLogElement::getNamesAndTypes()
+ColumnsDescription TraceLogElement::getColumnsDescription()
 {
-    return
+    return ColumnsDescription
     {
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
@@ -48,6 +50,7 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
+    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);

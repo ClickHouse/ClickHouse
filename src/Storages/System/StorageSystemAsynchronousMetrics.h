@@ -18,7 +18,7 @@ public:
 
     std::string getName() const override { return "SystemAsynchronousMetrics"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 private:
     const AsynchronousMetrics & async_metrics;

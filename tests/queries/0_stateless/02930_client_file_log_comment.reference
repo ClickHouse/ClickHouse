@@ -1,4 +1,6 @@
 42
-select 42\n	/dev/stdin
 4242
-select 4242\n	foo
+424242
+select 42	clickhouse.default-1.sql
+select 4242	clickhouse.default-2.sql
+select 424242\n	foo

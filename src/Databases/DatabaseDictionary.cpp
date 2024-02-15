@@ -1,4 +1,5 @@
 #include <Databases/DatabaseDictionary.h>
+#include <Databases/DatabaseFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -50,7 +51,7 @@ namespace
 
 DatabaseDictionary::DatabaseDictionary(const String & name_, ContextPtr context_)
     : IDatabase(name_), WithContext(context_->getGlobalContext())
-    , log(&Poco::Logger::get("DatabaseDictionary(" + database_name + ")"))
+    , log(getLogger("DatabaseDictionary(" + database_name + ")"))
 {
 }
 
@@ -140,4 +141,14 @@ void DatabaseDictionary::shutdown()
 {
 }
 
+void registerDatabaseDictionary(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        return make_shared<DatabaseDictionary>(
+            args.database_name,
+            args.context);
+    };
+    factory.registerDatabase("Dictionary", create_fn);
+}
 }

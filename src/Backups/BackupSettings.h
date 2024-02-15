@@ -62,6 +62,12 @@ struct BackupSettings
     /// Check checksums of the data parts before writing them to a backup.
     bool check_parts = true;
 
+    /// Check checksums of the projection data parts before writing them to a backup.
+    bool check_projection_parts = true;
+
+    /// Allow to create backup with broken projections.
+    bool allow_backup_broken_projections = false;
+
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.
     bool internal = false;

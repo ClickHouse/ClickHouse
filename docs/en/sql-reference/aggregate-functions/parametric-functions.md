@@ -487,24 +487,23 @@ Where:
 
 ## uniqUpTo(N)(x)
 
-Calculates the number of different argument values ​​if it is less than or equal to N. If the number of different argument values is greater than N, it returns N + 1.
+Calculates the number of different values of the argument up to a specified limit, `N`. If the number of different argument values is greater than `N`, this function returns `N` + 1, otherwise it calculates the exact value. 
 
-Recommended for use with small Ns, up to 10. The maximum value of N is 100.
+Recommended for use with small `N`s, up to 10. The maximum value of `N` is 100.
 
-For the state of an aggregate function, it uses the amount of memory equal to 1 + N \* the size of one value of bytes.
-For strings, it stores a non-cryptographic hash of 8 bytes. That is, the calculation is approximated for strings.
+For the state of an aggregate function, this function uses the amount of memory equal to 1 + `N` \* the size of one value of bytes.
+When dealing with strings, this function stores a non-cryptographic hash of 8 bytes; the calculation is approximated for strings.
 
-The function also works for several arguments.
+For example, if you had a table that logs every search query made by users on your website. Each row in the table represents a single search query, with columns for the user ID, the search query, and the timestamp of the query. You can use `uniqUpTo` to generate a report that shows only the keywords that produced at least 5 unique users.
 
-It works as fast as possible, except for cases when a large N value is used and the number of unique values is slightly less than N.
-
-Usage example:
-
-``` text
-Problem: Generate a report that shows only keywords that produced at least 5 unique users.
-Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
+```sql
+SELECT SearchPhrase
+FROM SearchLog
+GROUP BY SearchPhrase
+HAVING uniqUpTo(4)(UserID) >= 5
 ```
 
+`uniqUpTo(4)(UserID)` calculates the number of unique `UserID` values for each `SearchPhrase`, but it only counts up to 4 unique values. If there are more than 4 unique `UserID` values for a `SearchPhrase`, the function returns 5 (4 + 1). The `HAVING` clause then filters out the `SearchPhrase` values for which the number of unique `UserID` values is less than 5. This will give you a list of search keywords that were used by at least 5 unique users.
 
 ## sumMapFiltered(keys_to_keep)(keys, values)
 

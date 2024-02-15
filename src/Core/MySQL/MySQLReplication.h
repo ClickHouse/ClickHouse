@@ -181,6 +181,7 @@ namespace MySQLReplication
         MYSQL_WRITE_ROWS_EVENT = 2,
         MYSQL_UPDATE_ROWS_EVENT = 3,
         MYSQL_DELETE_ROWS_EVENT = 4,
+        MYSQL_UNPARSED_ROWS_EVENT = 100,
     };
 
     class ReplicationError : public DB::Exception
@@ -274,6 +275,8 @@ namespace MySQLReplication
         String status;
         String schema;
         String query;
+        String query_database_name;
+        String query_table_name;
         QueryType typ = QUERY_EVENT_DDL;
         bool transaction_complete = true;
 
@@ -446,7 +449,6 @@ namespace MySQLReplication
         void parseImpl(ReadBuffer & payload) override;
         void parseRow(ReadBuffer & payload, Bitmap & bitmap);
 
-    private:
         std::shared_ptr<TableMapEvent> table_map;
     };
 
@@ -497,17 +499,38 @@ namespace MySQLReplication
         void parseImpl(ReadBuffer & payload) override;
     };
 
+    class UnparsedRowsEvent : public RowsEvent
+    {
+    public:
+        UnparsedRowsEvent(const std::shared_ptr<TableMapEvent> & table_map_, EventHeader && header_, const RowsEventHeader & rows_header)
+            : RowsEvent(table_map_, std::move(header_), rows_header)
+        {
+        }
+
+        void dump(WriteBuffer & out) const override;
+        MySQLEventType type() const override { return MYSQL_UNPARSED_ROWS_EVENT; }
+        std::shared_ptr<RowsEvent> parse();
+
+    protected:
+        void parseImpl(ReadBuffer & payload) override;
+        std::vector<uint8_t> unparsed_data;
+        std::shared_ptr<RowsEvent> parsed_event;
+        mutable std::mutex mutex;
+    };
+
     class Position
     {
     public:
         UInt64 binlog_pos;
         String binlog_name;
         GTIDSets gtid_sets;
+        UInt32 timestamp;
 
-        Position() : binlog_pos(0) { }
+        Position() : binlog_pos(0), timestamp(0) { }
         void update(BinlogEventPtr event);
-        void update(UInt64 binlog_pos_, const String & binlog_name_, const String & gtid_sets_);
+        void update(UInt64 binlog_pos_, const String & binlog_name_, const String & gtid_sets_, UInt32 binlog_time_);
         void dump(WriteBuffer & out) const;
+        void resetPendingGTID() { pending_gtid.reset(); }
 
     private:
         std::optional<GTID> pending_gtid;

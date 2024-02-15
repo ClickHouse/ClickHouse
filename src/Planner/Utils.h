@@ -34,6 +34,9 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode 
 /// Convert query node to ASTSelectQuery
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node);
 
+/// Convert query node to ASTSelectQuery for distributed processing
+ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node);
+
 /// Build context for subquery execution
 ContextPtr buildSubqueryContext(const ContextPtr & context);
 

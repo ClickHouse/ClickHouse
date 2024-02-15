@@ -74,9 +74,9 @@ INSTANTIATE_TEST_SUITE_P(
         // Max value of Date
         {
             "Date",
-            Field(std::numeric_limits<DB::UInt16>::max()),
+            Field(std::numeric_limits<UInt16>::max()),
             "DateTime64(0, 'UTC')",
-            DecimalField(DateTime64(std::numeric_limits<DB::UInt16>::max() * Day), 0)
+            DecimalField(DateTime64(std::numeric_limits<UInt16>::max() * Day), 0)
         },
         // check that scale is respected
         {

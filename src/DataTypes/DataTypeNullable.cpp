@@ -114,5 +114,33 @@ DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type)
     return std::make_shared<DataTypeNullable>(type);
 }
 
+DataTypePtr makeNullableOrLowCardinalityNullableSafe(const DataTypePtr & type)
+{
+    if (isNullableOrLowCardinalityNullable(type))
+        return type;
+
+    if (type->lowCardinality())
+    {
+        const auto & dictionary_type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
+        return std::make_shared<DataTypeLowCardinality>(makeNullable(dictionary_type));
+    }
+
+    return makeNullableSafe(type);
+}
+
+DataTypePtr removeNullableOrLowCardinalityNullable(const DataTypePtr & type)
+{
+    if (type->isNullable())
+        return static_cast<const DataTypeNullable &>(*type).getNestedType();
+
+    if (type->isLowCardinalityNullable())
+    {
+        auto dict_type = removeNullable(static_cast<const DataTypeLowCardinality &>(*type).getDictionaryType());
+        return std::make_shared<DataTypeLowCardinality>(dict_type);
+    }
+
+    return type;
+
+}
 
 }

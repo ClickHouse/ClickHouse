@@ -35,6 +35,9 @@ EXPLAIN SYNTAX SELECT * EXCEPT(i) APPLY(sum) from columns_transformers;
 EXPLAIN SYNTAX SELECT columns_transformers.* EXCEPT(j) APPLY(avg) from columns_transformers;
 EXPLAIN SYNTAX SELECT a.* APPLY(toDate) EXCEPT(i, j) APPLY(any) from columns_transformers a;
 EXPLAIN SYNTAX SELECT * REPLACE(i + 1 AS i) APPLY(sum) from columns_transformers;
+EXPLAIN AST SELECT * REPLACE(i + 1 AS i) APPLY(sum) from columns_transformers;
+EXPLAIN SYNTAX SELECT sum(i + 1 AS m) from columns_transformers;
+EXPLAIN AST SELECT sum(i + 1 AS m) from columns_transformers;
 EXPLAIN SYNTAX SELECT columns_transformers.* REPLACE(j + 2 AS j, i + 1 AS i) APPLY(avg) from columns_transformers;
 EXPLAIN SYNTAX SELECT a.* APPLY(toDate) REPLACE(i + 1 AS i) APPLY(any) from columns_transformers a;
 

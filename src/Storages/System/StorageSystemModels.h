@@ -14,7 +14,7 @@ class StorageSystemModels final : public IStorageSystemOneBlock<StorageSystemMod
 public:
     std::string getName() const override { return "SystemModels"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

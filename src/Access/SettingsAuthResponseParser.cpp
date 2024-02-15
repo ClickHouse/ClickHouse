@@ -37,7 +37,7 @@ SettingsAuthResponseParser::parse(const Poco::Net::HTTPResponse & response, std:
     }
     catch (...)
     {
-        LOG_INFO(&Poco::Logger::get("HTTPAuthentication"), "Failed to parse settings from authentication response. Skip it.");
+        LOG_INFO(getLogger("HTTPAuthentication"), "Failed to parse settings from authentication response. Skip it.");
     }
     return result;
 }

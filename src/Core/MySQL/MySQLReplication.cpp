@@ -967,6 +967,59 @@ namespace MySQLReplication
         out << "[DryRun Event]" << '\n';
     }
 
+    void UnparsedRowsEvent::dump(WriteBuffer & out) const
+    {
+        std::lock_guard lock(mutex);
+        header.dump(out);
+        out << "[UnparsedRowsEvent Event]" << '\n';
+        out << "Unparsed Data Size: " << unparsed_data.size() << '\n';
+    }
+
+    void UnparsedRowsEvent::parseImpl(ReadBuffer & payload_)
+    {
+        char c = 0;
+        if (payload_.position() < payload_.buffer().end())
+            unparsed_data.reserve(payload_.buffer().end() - payload_.position());
+        /// Prevent reading after the end
+        /// payload.available() might have incorrect value
+        while (payload_.position() <= payload_.buffer().end() && payload_.read(c))
+            unparsed_data.push_back(c);
+        if (!payload_.eof())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data. Available {} bytes but not eof", payload_.available());
+    }
+
+    std::shared_ptr<RowsEvent> UnparsedRowsEvent::parse()
+    {
+        std::lock_guard lock(mutex);
+        if (!unparsed_data.empty())
+        {
+            RowsEventHeader rows_header(header.type);
+            rows_header.table_id = table_id;
+            rows_header.flags = flags;
+            switch (header.type)
+            {
+                case WRITE_ROWS_EVENT_V1:
+                case WRITE_ROWS_EVENT_V2:
+                    parsed_event = std::make_shared<WriteRowsEvent>(table_map, EventHeader(header), rows_header);
+                    break;
+                case DELETE_ROWS_EVENT_V1:
+                case DELETE_ROWS_EVENT_V2:
+                    parsed_event = std::make_shared<DeleteRowsEvent>(table_map, EventHeader(header), rows_header);
+                    break;
+                case UPDATE_ROWS_EVENT_V1:
+                case UPDATE_ROWS_EVENT_V2:
+                    parsed_event = std::make_shared<UpdateRowsEvent>(table_map, EventHeader(header), rows_header);
+                    break;
+                default:
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown event type: {}", magic_enum::enum_name(header.type));
+            }
+            ReadBufferFromMemory payload(unparsed_data.data(), unparsed_data.size());
+            parsed_event->parseEvent(payload);
+            unparsed_data.clear();
+        }
+        return parsed_event;
+    }
+
     /// Update binlog name/position/gtid based on the event type.
     void Position::update(BinlogEventPtr event)
     {
@@ -998,7 +1051,8 @@ namespace MySQLReplication
             case ROTATE_EVENT: {
                 auto rotate = std::static_pointer_cast<RotateEvent>(event);
                 binlog_name = rotate->next_binlog;
-                binlog_pos = event->header.log_pos;
+                /// If binlog name has changed, need to use position from next binlog
+                binlog_pos = rotate->position;
                 break;
             }
             case GTID_EVENT: {
@@ -1012,13 +1066,18 @@ namespace MySQLReplication
             default:
                 throw ReplicationError(ErrorCodes::LOGICAL_ERROR, "Position update with unsupported event");
         }
+        if (event->header.timestamp > 0)
+        {
+            timestamp = event->header.timestamp;
+        }
     }
 
-    void Position::update(UInt64 binlog_pos_, const String & binlog_name_, const String & gtid_sets_)
+    void Position::update(UInt64 binlog_pos_, const String & binlog_name_, const String & gtid_sets_, UInt32 binlog_time_)
     {
         binlog_pos = binlog_pos_;
         binlog_name = binlog_name_;
         gtid_sets.parse(gtid_sets_);
+        timestamp = binlog_time_;
     }
 
     void Position::dump(WriteBuffer & out) const

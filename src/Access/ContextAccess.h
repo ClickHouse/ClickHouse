@@ -185,9 +185,10 @@ private:
 
     mutable std::atomic<bool> initialized = false; // can be removed after Bug 5504 is resolved
     mutable std::atomic<bool> user_was_dropped = false;
-    mutable std::atomic<Poco::Logger *> trace_log = nullptr;
 
     mutable std::mutex mutex;
+    /// TODO: Fix race
+    mutable LoggerPtr trace_log;
     mutable UserPtr user TSA_GUARDED_BY(mutex);
     mutable String user_name TSA_GUARDED_BY(mutex);
     mutable scope_guard subscription_for_user_change TSA_GUARDED_BY(mutex);

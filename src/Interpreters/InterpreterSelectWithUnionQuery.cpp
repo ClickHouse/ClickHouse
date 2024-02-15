@@ -3,6 +3,7 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/QueryLog.h>
@@ -408,6 +409,15 @@ void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & e
             }
         }
     }
+}
+
+void registerInterpreterSelectWithUnionQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterSelectWithUnionQuery>(args.query, args.context, args.options);
+    };
+    factory.registerInterpreter("InterpreterSelectWithUnionQuery", create_fn);
 }
 
 }

@@ -13,7 +13,7 @@ class WriteBufferFromFileBase;
 class IArchiveWriter : public std::enable_shared_from_this<IArchiveWriter>, boost::noncopyable
 {
 public:
-    /// Destructors finalizes writing the archive.
+    /// Call finalize() before destructing IArchiveWriter.
     virtual ~IArchiveWriter() = default;
 
     /// Starts writing a file to the archive. The function returns a write buffer,
@@ -25,6 +25,10 @@ public:
     /// Returns true if there is an active instance of WriteBuffer returned by writeFile().
     /// This function should be used mostly for debugging purposes.
     virtual bool isWritingFile() const = 0;
+
+    /// Finalizes writing of the archive. This function must be always called at the end of writing.
+    /// (Unless an error appeared and the archive is in fact no longer needed.)
+    virtual void finalize() = 0;
 
     static constexpr const int kDefaultCompressionLevel = -1;
 

@@ -4,19 +4,19 @@
 2022-09-09 12:00:00	0x
 2022-09-09 12:00:00	1
 2022-09-09 12:00:00	1x
-  Prefix sort description: toStartOfMinute(t_0) ASC
-  Result sort description: toStartOfMinute(t_0) ASC, c1_1 ASC
-  Prefix sort description: toStartOfMinute(t_0) ASC
-  Result sort description: toStartOfMinute(t_0) ASC
-  Prefix sort description: negate(a_0) ASC
-  Result sort description: negate(a_0) ASC
-  Prefix sort description: negate(a_0) ASC, negate(b_1) ASC
-  Result sort description: negate(a_0) ASC, negate(b_1) ASC
-  Prefix sort description: a_0 DESC, negate(b_1) ASC
-  Result sort description: a_0 DESC, negate(b_1) ASC
-  Prefix sort description: negate(a_0) ASC, b_1 DESC
-  Result sort description: negate(a_0) ASC, b_1 DESC
-  Prefix sort description: negate(a_0) ASC
-  Result sort description: negate(a_0) ASC, b_1 ASC
-  Prefix sort description: a_0 ASC
-  Result sort description: a_0 ASC, negate(b_1) ASC
+  Prefix sort description: toStartOfMinute(__table1.t) ASC
+  Result sort description: toStartOfMinute(__table1.t) ASC, __table1.c1 ASC
+  Prefix sort description: toStartOfMinute(__table1.t) ASC
+  Result sort description: toStartOfMinute(__table1.t) ASC
+  Prefix sort description: negate(__table1.a) ASC
+  Result sort description: negate(__table1.a) ASC
+  Prefix sort description: negate(__table1.a) ASC, negate(__table1.b) ASC
+  Result sort description: negate(__table1.a) ASC, negate(__table1.b) ASC
+  Prefix sort description: __table1.a DESC, negate(__table1.b) ASC
+  Result sort description: __table1.a DESC, negate(__table1.b) ASC
+  Prefix sort description: negate(__table1.a) ASC, __table1.b DESC
+  Result sort description: negate(__table1.a) ASC, __table1.b DESC
+  Prefix sort description: negate(__table1.a) ASC
+  Result sort description: negate(__table1.a) ASC, __table1.b ASC
+  Prefix sort description: __table1.a ASC
+  Result sort description: __table1.a ASC, negate(__table1.b) ASC

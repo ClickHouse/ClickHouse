@@ -1,4 +1,5 @@
 #include <Columns/ColumnCompressed.h>
+#include <Common/formatReadable.h>
 
 #pragma clang diagnostic ignored "-Wold-style-cast"
 

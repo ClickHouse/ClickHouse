@@ -34,27 +34,46 @@ namespace
 }
 
 
-NamesAndTypesList StorageSystemUsers::getNamesAndTypes()
+ColumnsDescription StorageSystemUsers::getColumnsDescription()
 {
-    NamesAndTypesList names_and_types{
-        {"name", std::make_shared<DataTypeString>()},
-        {"id", std::make_shared<DataTypeUUID>()},
-        {"storage", std::make_shared<DataTypeString>()},
-        {"auth_type", std::make_shared<DataTypeEnum8>(getAuthenticationTypeEnumValues())},
-        {"auth_params", std::make_shared<DataTypeString>()},
-        {"host_ip", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"host_names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"host_names_regexp", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"host_names_like", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"default_roles_all", std::make_shared<DataTypeUInt8>()},
-        {"default_roles_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"default_roles_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "User name."},
+        {"id", std::make_shared<DataTypeUUID>(), "User ID."},
+        {"storage", std::make_shared<DataTypeString>(), "Path to the storage of users. Configured in the access_control_path parameter."},
+        {"auth_type", std::make_shared<DataTypeEnum8>(getAuthenticationTypeEnumValues()),
+            "Shows the authentication type. "
+            "There are multiple ways of user identification: "
+            "with no password, with plain text password, with SHA256-encoded password, "
+            "with double SHA-1-encoded password or with bcrypt-encoded password."
+        },
+        {"auth_params", std::make_shared<DataTypeString>(), "Authentication parameters in the JSON format depending on the auth_type."},
+        {"host_ip", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "IP addresses of hosts that are allowed to connect to the ClickHouse server."
+        },
+        {"host_names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "Names of hosts that are allowed to connect to the ClickHouse server."
+        },
+        {"host_names_regexp", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "Regular expression for host names that are allowed to connect to the ClickHouse server."
+        },
+        {"host_names_like", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "Names of hosts that are allowed to connect to the ClickHouse server, set using the LIKE predicate."
+        },
+        {"default_roles_all", std::make_shared<DataTypeUInt8>(),
+            "Shows that all granted roles set for user by default."
+        },
+        {"default_roles_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "List of granted roles provided by default."
+        },
+        {"default_roles_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "All the granted roles set as default excepting of the listed ones."
+        },
         {"grantees_any", std::make_shared<DataTypeUInt8>()},
         {"grantees_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"grantees_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"default_database", std::make_shared<DataTypeString>()},
     };
-    return names_and_types;
 }
 
 

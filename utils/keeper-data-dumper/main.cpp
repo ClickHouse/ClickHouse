@@ -25,13 +25,13 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
         keys.pop();
         std::cout << key << "\n";
         auto value = storage.container.getValue(key);
-        std::cout << "\tStat: {version: " << value.stat.version <<
-            ", mtime: " << value.stat.mtime <<
-            ", emphemeralOwner: " << value.stat.ephemeralOwner <<
-            ", czxid: " << value.stat.czxid <<
-            ", mzxid: " << value.stat.mzxid <<
-            ", numChildren: " << value.stat.numChildren <<
-            ", dataLength: " << value.stat.dataLength <<
+        std::cout << "\tStat: {version: " << value.version <<
+            ", mtime: " << value.mtime <<
+            ", emphemeralOwner: " << value.ephemeralOwner() <<
+            ", czxid: " << value.czxid <<
+            ", mzxid: " << value.mzxid <<
+            ", numChildren: " << value.numChildren() <<
+            ", dataLength: " << value.data_size <<
             "}" << std::endl;
         std::cout << "\tData: " << storage.container.getValue(key).getData() << std::endl;
 
@@ -59,7 +59,7 @@ int main(int argc, char *argv[])
         Poco::Logger::root().setChannel(channel);
         Poco::Logger::root().setLevel("trace");
     }
-    auto * logger = &Poco::Logger::get("keeper-dumper");
+    auto logger = getLogger("keeper-dumper");
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();

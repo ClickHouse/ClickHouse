@@ -38,15 +38,28 @@ void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr
 }
 
 template <typename T>
+bool SerializationNumber<T>::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const
+{
+    T x;
+
+    if (!tryReadText(x, istr) || (whole && !istr.eof()))
+        return false;
+
+    assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
+    return true;
+}
+
+template <typename T>
 void SerializationNumber<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     auto x = assert_cast<const ColumnVector<T> &>(column).getData()[row_num];
     writeJSONNumber(x, ostr, settings);
 }
 
-template <typename T>
-void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+template <typename T, typename ReturnType>
+ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings)
 {
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
     bool has_quote = false;
     if (!istr.eof() && *istr.position() == '"')        /// We understand the number both in quotes and without.
     {
@@ -54,13 +67,16 @@ void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & 
         ++istr.position();
     }
 
-    FieldType x;
+    T x;
 
     /// null
     if (!has_quote && !istr.eof() && *istr.position() == 'n')
     {
         ++istr.position();
-        assertString("ull", istr);
+        if constexpr (throw_exception)
+            assertString("ull", istr);
+        else if (!checkString("ull", istr))
+            return ReturnType(false);
 
         x = NaNOrZero<T>();
     }
@@ -73,26 +89,62 @@ void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & 
         {
             // extra conditions to parse true/false strings into 1/0
             if (istr.eof())
-                throwReadAfterEOF();
+            {
+                if constexpr (throw_exception)
+                    throwReadAfterEOF();
+                else
+                    return false;
+            }
+
             if (*istr.position() == 't' || *istr.position() == 'f')
             {
                 bool tmp = false;
-                readBoolTextWord(tmp, istr);
+                if constexpr (throw_exception)
+                    readBoolTextWord(tmp, istr);
+                else if (!readBoolTextWord<bool>(tmp, istr))
+                    return ReturnType(false);
+
                 x = tmp;
             }
             else
-                readText(x, istr);
+            {
+                if constexpr (throw_exception)
+                    readText(x, istr);
+                else if (!tryReadText(x, istr))
+                    return ReturnType(false);
+            }
         }
         else
         {
-            readText(x, istr);
+            if constexpr (throw_exception)
+                readText(x, istr);
+            else if (!tryReadText(x, istr))
+                return ReturnType(false);
         }
 
         if (has_quote)
-            assertChar('"', istr);
+        {
+            if constexpr (throw_exception)
+                assertChar('"', istr);
+            else if (!checkChar('"', istr))
+                return ReturnType(false);
+        }
     }
 
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
+    return ReturnType(true);
+}
+
+template <typename T>
+void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeTextJSONImpl<T, void>(column, istr, settings);
+}
+
+template <typename T>
+bool SerializationNumber<T>::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    return deserializeTextJSONImpl<T, bool>(column, istr, settings);
 }
 
 template <typename T>
@@ -101,6 +153,16 @@ void SerializationNumber<T>::deserializeTextCSV(IColumn & column, ReadBuffer & i
     FieldType x;
     readCSV(x, istr);
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
+}
+
+template <typename T>
+bool SerializationNumber<T>::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & /*settings*/) const
+{
+    FieldType x;
+    if (!tryReadCSV(x, istr))
+        return false;
+    assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
+    return true;
 }
 
 template <typename T>

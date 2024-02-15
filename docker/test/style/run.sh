@@ -23,6 +23,7 @@ echo "Check submodules" | ts
 ./check-submodules            |& tee /test_output/submodules_output.txt
 echo "Check shell scripts with shellcheck" | ts
 ./shellcheck-run.sh           |& tee /test_output/shellcheck_output.txt
+
 /process_style_check_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
 echo "Check help for changelog generator works" | ts
 cd ../changelog || exit 1

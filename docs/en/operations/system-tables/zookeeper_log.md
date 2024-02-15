@@ -9,6 +9,7 @@ For requests, only columns with request parameters are filled in, and the remain
 
 Columns with request parameters:
 
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `type` ([Enum](../../sql-reference/data-types/enum.md)) — Event type in the ZooKeeper client. Can have one of the following values:
     - `Request` — The request has been sent.
     - `Response` — The response was received.
@@ -63,6 +64,7 @@ Result:
 ``` text
 Row 1:
 ──────
+hostname:         clickhouse.eu-central1.internal
 type:             Request
 event_date:       2021-08-09
 event_time:       2021-08-09 21:38:30.291792

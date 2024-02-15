@@ -94,7 +94,7 @@ class Changelog
 {
 public:
     Changelog(
-        Poco::Logger * log_,
+        LoggerPtr log_,
         LogFileSettings log_file_settings,
         FlushSettings flush_settings,
         KeeperContextPtr keeper_context_);
@@ -185,7 +185,7 @@ private:
     const String changelogs_detached_dir;
     const uint64_t rotate_interval;
     const bool compress_logs;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::mutex writer_mutex;
     /// Current writer for changelog file

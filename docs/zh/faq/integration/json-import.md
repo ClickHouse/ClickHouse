@@ -1,35 +1,35 @@
 ---
 slug: /zh/faq/integration/json-import
-title: How to import JSON into ClickHouse?
+title: 如何将 JSON 导入到 ClickHouse？
 toc_hidden: true
 sidebar_position: 11
 ---
 
-# How to Import JSON Into ClickHouse? {#how-to-import-json-into-clickhouse}
+# 如何将 JSON 导入到 ClickHouse？ {#how-to-import-json-into-clickhouse}
 
-ClickHouse supports a wide range of [data formats for input and output](../../interfaces/formats.md). There are multiple JSON variations among them, but the most commonly used for data ingestion is [JSONEachRow](../../interfaces/formats.md#jsoneachrow). It expects one JSON object per row, each object separated by a newline.
+ClickHouse 支持多种[输入和输出的数据格式](../../interfaces/formats.md)。其中包括多种 JSON 变体，但最常用于数据导入的是 [JSONEachRow](../../interfaces/formats.md#jsoneachrow)。它期望每行一个 JSON 对象，每个对象由一个新行分隔。
 
-## Examples {#examples}
+## 示例 {#examples}
 
-Using [HTTP interface](../../interfaces/http.md):
+使用 [HTTP 接口](../../interfaces/http.md)：
 
 ``` bash
 $ echo '{"foo":"bar"}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20test%20FORMAT%20JSONEachRow' --data-binary @-
 ```
 
-Using [CLI interface](../../interfaces/cli.md):
+使用 [CLI接口](../../interfaces/cli.md):
 
 ``` bash
 $ echo '{"foo":"bar"}'  | clickhouse-client --query="INSERT INTO test FORMAT JSONEachRow"
 ```
 
-Instead of inserting data manually, you might consider to use one of [client libraries](../../interfaces/index.md) instead.
+除了手动插入数据外，您可能会考虑使用 [客户端库](../../interfaces/index.md) 之一。
 
-## Useful Settings {#useful-settings}
+## 实用设置 {#useful-settings}
 
--   `input_format_skip_unknown_fields` allows to insert JSON even if there were additional fields not present in table schema (by discarding them).
--   `input_format_import_nested_json` allows to insert nested JSON objects into columns of [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) type.
+-   `input_format_skip_unknown_fields` 允许插入 JSON，即使存在表格架构中未出现的额外字段（通过丢弃它们）。
+-   `input_format_import_nested_json` 允许将嵌套 JSON 对象插入到 [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) 类型的列中。
 
 :::note
-Settings are specified as `GET` parameters for the HTTP interface or as additional command-line arguments prefixed with `--` for the `CLI` interface.
+对于 HTTP 接口，设置作为 `GET` 参数指定；对于 `CLI` 接口，则作为前缀为 -- 的附加命令行参数。
 :::

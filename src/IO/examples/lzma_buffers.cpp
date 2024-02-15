@@ -19,7 +19,7 @@ try
 
     {
         auto buf
-            = std::make_unique<DB::WriteBufferFromFile>("test_lzma_buffers.xz", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC);
+            = std::make_unique<DB::WriteBufferFromFile>("test_lzma_buffers.xz", DB::DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC);
         DB::LZMADeflatingWriteBuffer lzma_buf(std::move(buf), /*compression level*/ 3);
 
         stopwatch.restart();

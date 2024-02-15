@@ -7,9 +7,10 @@ Contains logging entries. The logging level which goes to this table can be limi
 
 Columns:
 
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` (Date) — Date of the entry.
 - `event_time` (DateTime) — Time of the entry.
-- `event_time_microseconds` (DateTime) — Time of the entry with microseconds precision.
+- `event_time_microseconds` (DateTime64) — Time of the entry with microseconds precision.
 - `microseconds` (UInt32) — Microseconds of the entry.
 - `thread_name` (String) — Name of the thread from which the logging was done.
 - `thread_id` (UInt64) — OS thread ID.
@@ -39,6 +40,7 @@ SELECT * FROM system.text_log LIMIT 1 \G
 ``` text
 Row 1:
 ──────
+hostname:                clickhouse.eu-central1.internal
 event_date:              2020-09-10
 event_time:              2020-09-10 11:23:07
 event_time_microseconds: 2020-09-10 11:23:07.871397

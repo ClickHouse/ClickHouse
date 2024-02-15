@@ -3,6 +3,7 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/QueryLog.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -208,6 +209,15 @@ void InterpreterSelectIntersectExceptQuery::extendQueryLogElemImpl(QueryLogEleme
             }
         }
     }
+}
+
+void registerInterpreterSelectIntersectExceptQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterSelectIntersectExceptQuery>(args.query, args.context, args.options);
+    };
+    factory.registerInterpreter("InterpreterSelectIntersectExceptQuery", create_fn);
 }
 
 }

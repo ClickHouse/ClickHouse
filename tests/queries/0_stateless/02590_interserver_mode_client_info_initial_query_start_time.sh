@@ -33,10 +33,10 @@ query_id="$(get_query_id)"
 $CLICKHOUSE_CLIENT --prefer_localhost_replica=0 --query_id "$query_id" -q "select * from dist"
 $CLICKHOUSE_CLIENT -nm --param_query_id "$query_id" -q "
     system flush logs;
-    select count(), countIf(initial_query_start_time_microseconds != query_start_time_microseconds), countIf(event_time - initial_query_start_time > 3) from system.query_log where type = 'QueryFinish' and initial_query_id = {query_id:String};
+    select count(), count(distinct initial_query_start_time_microseconds) from system.query_log where type = 'QueryFinish' and initial_query_id = {query_id:String};
 "
 
-sleep 6
+sleep 1
 
 query_id="$(get_query_id)"
 # this query (and all subsequent) should reuse the previous connection (at least most of the time)
@@ -44,7 +44,7 @@ $CLICKHOUSE_CLIENT --prefer_localhost_replica=0 --query_id "$query_id" -q "selec
 
 $CLICKHOUSE_CLIENT -nm --param_query_id "$query_id" -q "
     system flush logs;
-    select count(), countIf(initial_query_start_time_microseconds != query_start_time_microseconds), countIf(event_time - initial_query_start_time > 3) from system.query_log where type = 'QueryFinish' and initial_query_id = {query_id:String};
+    select count(), count(distinct initial_query_start_time_microseconds) from system.query_log where type = 'QueryFinish' and initial_query_id = {query_id:String};
 "
 
 echo "INSERT"
@@ -54,7 +54,7 @@ $CLICKHOUSE_CLIENT --prefer_localhost_replica=0 --query_id "$query_id" -nm -q "
     select * from data;
 "
 
-sleep 3
+sleep 1
 $CLICKHOUSE_CLIENT -nm --param_query_id "$query_id" -q "system flush distributed dist_dist"
 sleep 1
 $CLICKHOUSE_CLIENT -nm --param_query_id "$query_id" -q "system flush distributed dist"
@@ -63,5 +63,5 @@ echo "CHECK"
 $CLICKHOUSE_CLIENT -nm --param_query_id "$query_id" -q "
     select * from data order by key;
     system flush logs;
-    select count(), countIf(initial_query_start_time_microseconds != query_start_time_microseconds), countIf(event_time - initial_query_start_time > 3) from system.query_log where type = 'QueryFinish' and initial_query_id = {query_id:String};
+    select count(), count(distinct initial_query_start_time_microseconds) from system.query_log where type = 'QueryFinish' and initial_query_id = {query_id:String};
 "

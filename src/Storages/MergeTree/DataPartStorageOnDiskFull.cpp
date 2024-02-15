@@ -184,6 +184,23 @@ void DataPartStorageOnDiskFull::createHardLinkFrom(const IDataPartStorage & sour
     });
 }
 
+void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to)
+{
+    const auto * source_on_disk = typeid_cast<const DataPartStorageOnDiskFull *>(&source);
+    if (!source_on_disk)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot create copy file from different storage. Expected DataPartStorageOnDiskFull, got {}",
+            typeid(source).name());
+
+    /// Copying files between different disks is
+    /// not supported in disk transactions.
+    source_on_disk->getDisk()->copyFile(
+        fs::path(source_on_disk->getRelativePath()) / from,
+        *volume->getDisk(),
+        fs::path(root_path) / part_dir / to);
+}
+
 void DataPartStorageOnDiskFull::createProjection(const std::string & name)
 {
     executeWriteOperation([&](auto & disk) { disk.createDirectory(fs::path(root_path) / part_dir / name); });

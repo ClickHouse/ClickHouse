@@ -53,7 +53,7 @@ The rounded number of the same type as the input number.
 **Example of use with Float**
 
 ``` sql
-SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3
+SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3;
 ```
 
 ``` text
@@ -67,7 +67,22 @@ SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3
 **Example of use with Decimal**
 
 ``` sql
-SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3
+SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;
+```
+
+``` text
+┌───x─┬─round(CAST(divide(number, 2), 'Decimal(10, 4)'))─┐
+│   0 │                                                0 │
+│ 0.5 │                                                1 │
+│   1 │                                                1 │
+└─────┴──────────────────────────────────────────────────┘
+```
+
+If you want to keep the trailing zeros, you need to enable `output_format_decimal_trailing_zeros`
+
+``` sql
+SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3 settings output_format_decimal_trailing_zeros=1;
+
 ```
 
 ``` text

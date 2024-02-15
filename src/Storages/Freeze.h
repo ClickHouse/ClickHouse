@@ -38,7 +38,7 @@ public:
 private:
     ContextPtr local_context;
     zkutil::ZooKeeperPtr zookeeper;
-    Poco::Logger * log = &Poco::Logger::get("Unfreezer");
+    LoggerPtr log = getLogger("Unfreezer");
     static constexpr std::string_view backup_directory_prefix = "shadow";
     static bool removeFreezedPart(DiskPtr disk, const String & path, const String & part_name, ContextPtr local_context, zkutil::ZooKeeperPtr zookeeper);
 };

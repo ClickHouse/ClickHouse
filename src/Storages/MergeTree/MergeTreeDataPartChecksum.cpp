@@ -112,6 +112,14 @@ UInt64 MergeTreeDataPartChecksums::getTotalSizeOnDisk() const
     return res;
 }
 
+UInt64 MergeTreeDataPartChecksums::getTotalSizeUncompressedOnDisk() const
+{
+    UInt64 res = 0;
+    for (const auto & [_, checksum] : files)
+        res += checksum.uncompressed_size;
+    return res;
+}
+
 bool MergeTreeDataPartChecksums::read(ReadBuffer & in, size_t format_version)
 {
     switch (format_version)

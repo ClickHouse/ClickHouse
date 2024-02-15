@@ -23,7 +23,7 @@ struct PostgreSQLArrayInfo
 void insertPostgreSQLValue(
         IColumn & column, std::string_view value,
         const ExternalResultDescription::ValueType type, const DataTypePtr data_type,
-        std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t idx);
+        const std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t idx);
 
 void preparePostgreSQLArrayInfo(
         std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t column_idx, const DataTypePtr data_type);

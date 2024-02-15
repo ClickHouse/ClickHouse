@@ -294,4 +294,3 @@ void registerFormats()
 }
 
 }
-

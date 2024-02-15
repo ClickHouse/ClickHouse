@@ -6,21 +6,12 @@
 
 #if USE_AWS_S3
 
-#    include <Common/quoteString.h>
-
-#    include <IO/WriteBufferFromString.h>
 #    include <IO/HTTPHeaderEntries.h>
-#    include <Storages/StorageS3Settings.h>
-
-#    include <IO/S3/PocoHTTPClientFactory.h>
-#    include <IO/S3/PocoHTTPClient.h>
 #    include <IO/S3/Client.h>
-#    include <IO/S3/URI.h>
 #    include <IO/S3/Requests.h>
-#    include <IO/S3/Credentials.h>
+#    include <Common/quoteString.h>
 #    include <Common/logger_useful.h>
 
-#    include <fstream>
 
 namespace ProfileEvents
 {
@@ -109,6 +100,8 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
 {
     auto access_key_id = config.getString(config_elem + ".access_key_id", "");
     auto secret_access_key = config.getString(config_elem + ".secret_access_key", "");
+    auto session_token = config.getString(config_elem + ".session_token", "");
+
     auto region = config.getString(config_elem + ".region", "");
     auto server_side_encryption_customer_key_base64 = config.getString(config_elem + ".server_side_encryption_customer_key_base64", "");
 
@@ -133,7 +126,7 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
 
     return AuthSettings
     {
-        std::move(access_key_id), std::move(secret_access_key),
+        std::move(access_key_id), std::move(secret_access_key), std::move(session_token),
         std::move(region),
         std::move(server_side_encryption_customer_key_base64),
         std::move(sse_kms_config),
@@ -145,6 +138,12 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
     };
 }
 
+bool AuthSettings::hasUpdates(const AuthSettings & other) const
+{
+    AuthSettings copy = *this;
+    copy.updateFrom(other);
+    return *this != copy;
+}
 
 void AuthSettings::updateFrom(const AuthSettings & from)
 {
@@ -155,6 +154,8 @@ void AuthSettings::updateFrom(const AuthSettings & from)
         access_key_id = from.access_key_id;
     if (!from.secret_access_key.empty())
         secret_access_key = from.secret_access_key;
+    if (!from.session_token.empty())
+        session_token = from.session_token;
 
     headers = from.headers;
     region = from.region;
@@ -171,7 +172,7 @@ void AuthSettings::updateFrom(const AuthSettings & from)
         expiration_window_seconds = from.expiration_window_seconds;
 
     if (from.no_sign_request.has_value())
-        no_sign_request = *from.no_sign_request;
+        no_sign_request = from.no_sign_request;
 }
 
 }

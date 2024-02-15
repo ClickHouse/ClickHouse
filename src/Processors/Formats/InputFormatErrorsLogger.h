@@ -24,6 +24,7 @@ public:
 
     virtual void logError(ErrorEntry entry);
     void logErrorImpl(ErrorEntry entry);
+    void writeErrors();
 
 private:
     Block header;
@@ -34,6 +35,9 @@ private:
 
     String database;
     String table;
+
+    MutableColumns errors_columns;
+    size_t max_block_size;
 };
 
 using InputFormatErrorsLoggerPtr = std::shared_ptr<InputFormatErrorsLogger>;

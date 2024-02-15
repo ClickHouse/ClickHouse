@@ -254,11 +254,20 @@ public:
             if (it != merged_maps.end())
             {
                 for (size_t col = 0; col < values_types.size(); ++col)
+                {
                     if (!elem.second[col].isNull())
-                        applyVisitor(Visitor(elem.second[col]), it->second[col]);
+                    {
+                        if (it->second[col].isNull())
+                            it->second[col] = elem.second[col];
+                        else
+                            applyVisitor(Visitor(elem.second[col]), it->second[col]);
+                    }
+                }
             }
             else
+            {
                 merged_maps[elem.first] = elem.second;
+            }
         }
     }
 

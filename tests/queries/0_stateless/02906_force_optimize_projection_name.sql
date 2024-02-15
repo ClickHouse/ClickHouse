@@ -8,7 +8,8 @@ CREATE TABLE test
    )
 )
 ENGINE = MergeTree()
-ORDER BY id;
+ORDER BY id
+SETTINGS index_granularity_bytes = 10000;
 
 INSERT INTO test SELECT number, 'test' FROM numbers(1, 100);
 

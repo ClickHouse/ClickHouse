@@ -7,4 +7,8 @@ DROP TABLE IF EXISTS arena;
 
 SELECT length(arrayReduce('groupUniqArray', [[1, 2], [1],  emptyArrayUInt8(), [1], [1, 2]]));
 SELECT min(x), max(x) FROM (SELECT length(arrayReduce('groupUniqArray', [hex(number), hex(number+1), hex(number)])) AS x FROM system.numbers LIMIT 100000);
+
+-- Disable external aggregation because the state is reset for each new block of data in 'runningAccumulate' function.
+SET max_bytes_before_external_group_by = 0;
+
 SELECT sum(length(runningAccumulate(x))) FROM (SELECT groupUniqArrayState(toString(number % 10)) AS x, number FROM (SELECT * FROM system.numbers LIMIT 11) GROUP BY number ORDER BY number);

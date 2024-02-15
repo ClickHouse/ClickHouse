@@ -17,7 +17,7 @@ class StorageSystemMoves final : public IStorageSystemOneBlock<StorageSystemMove
 public:
     std::string getName() const override { return "SystemMoves"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

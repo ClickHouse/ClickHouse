@@ -106,7 +106,7 @@ SparseFilterDescription::SparseFilterDescription(const IColumn & column)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Illegal type {} of column for sparse filter. Must be Sparse(UInt8)", column.getName());
 
-    filter_indices = &column_sparse->getOffsetsColumn();
+    filter_indices = &assert_cast<const ColumnUInt64 &>(column_sparse->getOffsetsColumn());
 }
 
 }

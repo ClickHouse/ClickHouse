@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Union
 import boto3  # type: ignore
 from github import Github
 from github.AuthenticatedUser import AuthenticatedUser
+from github.GithubException import BadCredentialsException
 from github.NamedUser import NamedUser
 
 
@@ -68,12 +69,20 @@ def get_best_robot_token(tokens_path: str = "/github-tokens") -> str:
     }
     assert tokens
 
-    for value in tokens.values():
+    for name, value in tokens.items():
         gh = Github(value, per_page=100)
-        # Do not spend additional request to API by accessin user.login unless
-        # the token is chosen by the remaining requests number
-        user = gh.get_user()
-        rest, _ = gh.rate_limiting
+        try:
+            # Do not spend additional request to API by accessin user.login unless
+            # the token is chosen by the remaining requests number
+            user = gh.get_user()
+            rest, _ = gh.rate_limiting
+        except BadCredentialsException:
+            logging.error(
+                "The token %(name)s has expired, please update it\n"
+                "::error::Token %(name)s has expired, it must be updated",
+                {"name": name},
+            )
+            continue
         logging.info("Get token with %s remaining requests", rest)
         if ROBOT_TOKEN is None:
             ROBOT_TOKEN = Token(user, value, rest)

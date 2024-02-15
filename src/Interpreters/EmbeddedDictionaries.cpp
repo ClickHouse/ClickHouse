@@ -125,7 +125,7 @@ EmbeddedDictionaries::EmbeddedDictionaries(
     ContextPtr context_,
     const bool throw_on_error)
     : WithContext(context_)
-    , log(&Poco::Logger::get("EmbeddedDictionaries"))
+    , log(getLogger("EmbeddedDictionaries"))
     , geo_dictionaries_loader(std::move(geo_dictionaries_loader_))
     , reload_period(getContext()->getConfigRef().getInt("builtin_dictionaries_reload_interval", 3600))
 {

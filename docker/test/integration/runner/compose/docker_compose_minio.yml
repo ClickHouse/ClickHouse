@@ -34,7 +34,7 @@ services:
 
   # Empty container to run proxy resolver.
   resolver:
-    image: clickhouse/python-bottle
+    image: clickhouse/python-bottle:${DOCKER_PYTHON_BOTTLE_TAG:-latest}
     expose:
       - "8080"
     tty: true

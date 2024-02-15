@@ -4,6 +4,9 @@
 
 set optimize_distributed_group_by_sharding_key=1;
 
+-- Some queries in this test require sorting after aggregation.
+set max_bytes_before_external_group_by = 0;
+
 drop table if exists dist_01247;
 drop table if exists data_01247;
 

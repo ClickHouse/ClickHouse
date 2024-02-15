@@ -9,7 +9,7 @@ namespace postgres
 
 Connection::Connection(const ConnectionInfo & connection_info_, bool replication_, size_t num_tries_)
     : connection_info(connection_info_), replication(replication_), num_tries(num_tries_)
-    , log(&Poco::Logger::get("PostgreSQLReplicaConnection"))
+    , log(getLogger("PostgreSQLReplicaConnection"))
 {
     if (replication)
         connection_info = {fmt::format("{} replication=database", connection_info.connection_string), connection_info.host_port};
@@ -65,7 +65,7 @@ void Connection::updateConnection()
     if (replication)
         connection->set_variable("default_transaction_isolation", "'repeatable read'");
 
-    LOG_DEBUG(&Poco::Logger::get("PostgreSQLConnection"), "New connection to {}", connection_info.host_port);
+    LOG_DEBUG(getLogger("PostgreSQLConnection"), "New connection to {}", connection_info.host_port);
 }
 
 void Connection::connect()

@@ -16,7 +16,7 @@ class StorageSystemRocksDB final : public IStorageSystemOneBlock<StorageSystemRo
 public:
     std::string getName() const override { return "SystemRocksDB"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

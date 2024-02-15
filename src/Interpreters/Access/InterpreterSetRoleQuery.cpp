@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
 #include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
@@ -88,6 +89,15 @@ void InterpreterSetRoleQuery::updateUserSetDefaultRoles(User & user, const Roles
         }
     }
     user.default_roles = roles_from_query;
+}
+
+void registerInterpreterSetRoleQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterSetRoleQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterSetRoleQuery", create_fn);
 }
 
 }

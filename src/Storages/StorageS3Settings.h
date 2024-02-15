@@ -75,6 +75,7 @@ struct S3Settings
         bool throw_on_zero_files_match = false;
 
         const PartUploadSettings & getUploadSettings() const { return upload_settings; }
+        PartUploadSettings & getUploadSettings() { return upload_settings; }
 
         void setStorageClassName(const String & storage_class_name) { upload_settings.storage_class_name = storage_class_name; }
 

@@ -74,7 +74,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     /// Create "active" node (remove previous one if necessary)
     String active_path = fs::path(database->replica_path) / "active";
     String active_id = toString(ServerUUID::get());
-    zookeeper->handleEphemeralNodeExistence(active_path, active_id);
+    zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
     zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
     active_node_holder.reset();
     active_node_holder_zookeeper = zookeeper;

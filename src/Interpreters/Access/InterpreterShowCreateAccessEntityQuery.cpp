@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
@@ -420,4 +421,14 @@ AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess()
     }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by SHOW CREATE query", toString(show_query.type));
 }
+
+void registerInterpreterShowCreateAccessEntityQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterShowCreateAccessEntityQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterShowCreateAccessEntityQuery", create_fn);
+}
+
 }

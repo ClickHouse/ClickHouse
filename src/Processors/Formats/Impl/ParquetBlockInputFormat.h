@@ -65,7 +65,7 @@ public:
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
 
 private:
-    Chunk generate() override;
+    Chunk read() override;
 
     void onCancel() override
     {
@@ -142,7 +142,7 @@ private:
     // reading its data (using RAM). Row group becomes inactive when we finish reading and
     // delivering all its blocks and free the RAM. Size of the window is max_decoding_threads.
     //
-    // Decoded blocks are placed in `pending_chunks` queue, then picked up by generate().
+    // Decoded blocks are placed in `pending_chunks` queue, then picked up by read().
     // If row group decoding runs too far ahead of delivery (by `max_pending_chunks_per_row_group`
     // chunks), we pause the stream for the row group, to avoid using too much memory when decoded
     // chunks are much bigger than the compressed data.
@@ -150,7 +150,7 @@ private:
     // Also:
     //  * If preserve_order = true, we deliver chunks strictly in order of increasing row group.
     //    Decoding may still proceed in later row groups.
-    //  * If max_decoding_threads <= 1, we run all tasks inline in generate(), without thread pool.
+    //  * If max_decoding_threads <= 1, we run all tasks inline in read(), without thread pool.
 
     // Potential improvements:
     //  * Plan all read ranges ahead of time, for the whole file, and do prefetching for them
@@ -189,7 +189,7 @@ private:
 
         Status status = Status::NotStarted;
 
-        // Window of chunks that were decoded but not returned from generate():
+        // Window of chunks that were decoded but not returned from read():
         //
         // (delivered)            next_chunk_idx
         //   v   v                       v
@@ -215,7 +215,7 @@ private:
         std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
     };
 
-    // Chunk ready to be delivered by generate().
+    // Chunk ready to be delivered by read().
     struct PendingChunk
     {
         Chunk chunk;
@@ -265,7 +265,7 @@ private:
     //    Done                        NotStarted
 
     std::mutex mutex;
-    // Wakes up the generate() call, if any.
+    // Wakes up the read() call, if any.
     std::condition_variable condvar;
 
     std::vector<RowGroupBatchState> row_group_batches;

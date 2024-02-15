@@ -15,7 +15,7 @@ SELECT 'Count', count() FROM lwd_test_02521;
 Count	25000
 ALTER TABLE lwd_test_02521 DELETE WHERE id >= 40000 SETTINGS mutations_sync = 1;
 SELECT 'Rows in parts', SUM(rows) FROM system.parts WHERE database = currentDatabase() AND table = 'lwd_test_02521' AND active;
-Rows in parts	40000
+Rows in parts	15000
 SELECT 'Count', count() FROM lwd_test_02521;
 Count	15000
 OPTIMIZE TABLE lwd_test_02521 FINAL SETTINGS mutations_sync = 1;

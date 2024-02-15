@@ -138,6 +138,9 @@ Block extractMinMax(const Block & block, const Block & keys)
     }
 
     min_max.setColumns(std::move(columns));
+
+    for (auto & column : min_max)
+        column.column = column.column->convertToFullColumnIfLowCardinality();
     return min_max;
 }
 
@@ -224,6 +227,16 @@ public:
     MergeJoinCursor(const Block & block, const SortDescription & desc_)
         : impl(block, desc_)
     {
+        for (auto *& column : impl.sort_columns)
+        {
+            const auto * lowcard_column = typeid_cast<const ColumnLowCardinality *>(column);
+            if (lowcard_column)
+            {
+                auto & new_col = column_holder.emplace_back(lowcard_column->convertToFullColumn());
+                column = new_col.get();
+            }
+        }
+
         /// SortCursorImpl can work with permutation, but MergeJoinCursor can't.
         if (impl.permutation)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: MergeJoinCursor doesn't support permutation");
@@ -287,6 +300,7 @@ public:
 
 private:
     SortCursorImpl impl;
+    Columns column_holder;
     bool has_left_nullable = false;
     bool has_right_nullable = false;
 
@@ -478,7 +492,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
     , max_files_to_merge(table_join->maxFilesToMerge())
-    , log(&Poco::Logger::get("MergeJoin"))
+    , log(getLogger("MergeJoin"))
 {
     switch (table_join->strictness())
     {
@@ -536,9 +550,6 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
         if (required_right_keys.contains(right_key) && right_table_keys.getByName(right_key).type->lowCardinality())
             lowcard_right_keys.push_back(right_key);
     }
-
-    JoinCommon::convertToFullColumnsInplace(right_table_keys);
-    JoinCommon::convertToFullColumnsInplace(right_sample_block, key_names_right);
 
     for (const auto & column : right_table_keys)
         if (required_right_keys.contains(column.name))
@@ -662,9 +673,7 @@ bool MergeJoin::saveRightBlock(Block && block)
 
 Block MergeJoin::modifyRightBlock(const Block & src_block) const
 {
-    Block block = materializeBlock(src_block);
-    JoinCommon::convertToFullColumnsInplace(block, table_join->getOnlyClause().key_names_right);
-    return block;
+    return materializeBlock(src_block);
 }
 
 bool MergeJoin::addBlockToJoin(const Block & src_block, bool)
@@ -705,8 +714,6 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
                 lowcard_keys.push_back(column_name);
         }
 
-        JoinCommon::convertToFullColumnsInplace(block, key_names_left, false);
-
         sortBlock(block, left_sort_description);
     }
 
@@ -739,8 +746,6 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
     if (needConditionJoinColumn())
         block.erase(deriveTempName(mask_column_name_left, JoinTableSide::Left));
-
-    JoinCommon::restoreLowCardinalityInplace(block, lowcard_keys);
 }
 
 template <bool in_memory, bool is_all>
@@ -1119,7 +1124,7 @@ IBlocksStreamPtr MergeJoin::getNonJoinedBlocks(
     if (table_join->strictness() == JoinStrictness::All && (is_right || is_full))
     {
         size_t left_columns_count = left_sample_block.columns();
-        assert(left_columns_count == result_sample_block.columns() - right_columns_to_add.columns());
+        chassert(left_columns_count == result_sample_block.columns() - right_columns_to_add.columns());
         auto non_joined = std::make_unique<NotJoinedMerge>(*this, max_block_size);
         return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
     }

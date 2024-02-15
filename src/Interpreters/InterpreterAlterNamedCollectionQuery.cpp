@@ -1,4 +1,5 @@
 #include <Interpreters/InterpreterAlterNamedCollectionQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
@@ -24,6 +25,15 @@ BlockIO InterpreterAlterNamedCollectionQuery::execute()
 
     NamedCollectionUtils::updateFromSQL(query, current_context);
     return {};
+}
+
+void registerInterpreterAlterNamedCollectionQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterAlterNamedCollectionQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterAlterNamedCollectionQuery", create_fn);
 }
 
 }

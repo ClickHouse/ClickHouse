@@ -179,7 +179,8 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             || type == Type::RELOAD_DICTIONARY
             || type == Type::RELOAD_MODEL
             || type == Type::RELOAD_FUNCTION
-            || type == Type::RESTART_DISK)
+            || type == Type::RESTART_DISK
+            || type == Type::DROP_DISK_METADATA_CACHE)
     {
         if (table)
         {
@@ -206,6 +207,23 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         {
             settings.ostr << ' ';
             print_keyword(magic_enum::enum_name(sync_replica_mode));
+
+            // If the mode is LIGHTWEIGHT and specific source replicas are specified
+            if (sync_replica_mode == SyncReplicaMode::LIGHTWEIGHT && !src_replicas.empty())
+            {
+                settings.ostr << ' ';
+                print_keyword("FROM");
+                settings.ostr << ' ';
+
+                for (auto it = src_replicas.begin(); it != src_replicas.end(); ++it)
+                {
+                    print_identifier(*it);
+
+                    // Add a comma and space after each identifier, except the last one
+                    if (std::next(it) != src_replicas.end())
+                        settings.ostr << ", ";
+                }
+            }
         }
     }
     else if (type == Type::SYNC_DATABASE_REPLICA)

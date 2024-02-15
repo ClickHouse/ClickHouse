@@ -116,7 +116,7 @@ def test_create_and_replace():
     node1.query("CREATE FUNCTION f1 AS (x, y) -> x + y")
     assert node1.query("SELECT f1(12, 3)") == "15\n"
 
-    expected_error = "User-defined function 'f1' already exists"
+    expected_error = "User-defined object 'f1' already exists"
     assert expected_error in node1.query_and_get_error(
         "CREATE FUNCTION f1 AS (x, y) -> x + 2 * y"
     )
@@ -135,7 +135,7 @@ def test_drop_if_exists():
     node1.query("DROP FUNCTION IF EXISTS f1")
     node1.query("DROP FUNCTION IF EXISTS f1")
 
-    expected_error = "User-defined function 'f1' doesn't exist"
+    expected_error = "User-defined object 'f1' doesn't exist"
     assert expected_error in node1.query_and_get_error("DROP FUNCTION f1")
 
 

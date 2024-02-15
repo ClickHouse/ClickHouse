@@ -28,7 +28,7 @@ TEST(ParserColumn, AllNonGeneratedColumnOption)
     EXPECT_EQ(declare_options->changes["auto_increment"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
     EXPECT_EQ(declare_options->changes["unique_key"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
     EXPECT_EQ(declare_options->changes["primary_key"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
-    EXPECT_EQ(declare_options->changes["comment"]->as<ASTLiteral>()->value.safeGet<DB::String>(), "column comment");
+    EXPECT_EQ(declare_options->changes["comment"]->as<ASTLiteral>()->value.safeGet<String>(), "column comment");
     EXPECT_EQ(declare_options->changes["collate"]->as<ASTIdentifier>()->name(), "utf8");
     EXPECT_EQ(declare_options->changes["column_format"]->as<ASTIdentifier>()->name(), "FIXED");
     EXPECT_EQ(declare_options->changes["storage"]->as<ASTIdentifier>()->name(), "MEMORY");
@@ -51,7 +51,7 @@ TEST(ParserColumn, AllGeneratedColumnOption)
     EXPECT_EQ(declare_options->changes["is_null"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
     EXPECT_EQ(declare_options->changes["unique_key"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
     EXPECT_EQ(declare_options->changes["primary_key"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
-    EXPECT_EQ(declare_options->changes["comment"]->as<ASTLiteral>()->value.safeGet<DB::String>(), "column comment");
+    EXPECT_EQ(declare_options->changes["comment"]->as<ASTLiteral>()->value.safeGet<String>(), "column comment");
     EXPECT_EQ(declare_options->changes["collate"]->as<ASTIdentifier>()->name(), "utf8");
     EXPECT_EQ(declare_options->changes["generated"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
     EXPECT_EQ(declare_options->changes["is_stored"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);

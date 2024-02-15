@@ -67,10 +67,8 @@ public:
         char * existing_memory = nullptr,
         size_t alignment = 0,
         std::optional<size_t> file_size_ = std::nullopt,
-        ThrottlerPtr throttler_ = {},
-        bool use_external_buffer_ = false)
-        : AsynchronousReadBufferFromFileDescriptor(
-            reader_, priority_, -1, buf_size, existing_memory, alignment, file_size_, throttler_, use_external_buffer_)
+        ThrottlerPtr throttler_ = {})
+        : AsynchronousReadBufferFromFileDescriptor(reader_, priority_, -1, buf_size, existing_memory, alignment, file_size_, throttler_)
         , file_name(file_name_)
     {
         file = OpenedFileCache::instance().get(file_name, flags);

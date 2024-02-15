@@ -177,7 +177,7 @@ public:
     const Block & getOutputHeader() const;
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Stored query, e.g. SELECT * FROM * GROUP BY tumble(now(), *)
     ASTPtr select_query;

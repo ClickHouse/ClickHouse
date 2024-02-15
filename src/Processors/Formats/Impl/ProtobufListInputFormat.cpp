@@ -61,7 +61,7 @@ bool ProtobufListInputFormat::readRow(MutableColumns & columns, RowReadExtension
 
 size_t ProtobufListInputFormat::countRows(size_t max_block_size)
 {
-    if (getTotalRows() == 0)
+    if (getRowNum() == 0)
         reader->startMessage(true);
 
     if (reader->eof())

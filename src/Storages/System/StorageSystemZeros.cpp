@@ -85,7 +85,7 @@ StorageSystemZeros::StorageSystemZeros(const StorageID & table_id_, bool multith
     : IStorage(table_id_), multithreaded(multithreaded_), limit(limit_)
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription({{"zero", std::make_shared<DataTypeUInt8>()}}));
+    storage_metadata.setColumns(ColumnsDescription({{"zero", std::make_shared<DataTypeUInt8>(), "dummy"}}));
     setInMemoryMetadata(storage_metadata);
 
 }

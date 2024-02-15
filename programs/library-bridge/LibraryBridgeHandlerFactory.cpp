@@ -12,7 +12,7 @@ LibraryBridgeHandlerFactory::LibraryBridgeHandlerFactory(
     size_t keep_alive_timeout_,
     ContextPtr context_)
     : WithContext(context_)
-    , log(&Poco::Logger::get(name_))
+    , log(getLogger(name_))
     , name(name_)
     , keep_alive_timeout(keep_alive_timeout_)
 {

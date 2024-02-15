@@ -7,12 +7,13 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemAsynchronousMetrics::getNamesAndTypes()
+ColumnsDescription StorageSystemAsynchronousMetrics::getColumnsDescription()
 {
-    return {
-        {"metric", std::make_shared<DataTypeString>()},
-        {"value", std::make_shared<DataTypeFloat64>()},
-        {"description", std::make_shared<DataTypeString>()},
+    return ColumnsDescription
+    {
+        {"metric", std::make_shared<DataTypeString>(), "Metric name."},
+        {"value", std::make_shared<DataTypeFloat64>(), "Metric value."},
+        {"description", std::make_shared<DataTypeString>(), "Metric description."},
     };
 }
 

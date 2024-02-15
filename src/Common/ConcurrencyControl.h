@@ -1,10 +1,11 @@
 #pragma once
 
+#include <list>
+#include <memory>
+#include <mutex>
+#include <optional>
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
-#include <mutex>
-#include <memory>
-#include <list>
 
 
 namespace DB

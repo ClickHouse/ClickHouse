@@ -17,7 +17,7 @@ QUERY id: 0, group_by_type: grouping_sets
                 LIST id: 9, nodes: 1
                   COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 11
   JOIN TREE
-    TABLE_FUNCTION id: 11, table_function_name: numbers
+    TABLE_FUNCTION id: 11, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 12, nodes: 1
           CONSTANT id: 13, constant_value: UInt64_10000000, constant_value_type: UInt32
@@ -103,7 +103,7 @@ QUERY id: 0, group_by_type: grouping_sets
                 LIST id: 9, nodes: 1
                   COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 11
   JOIN TREE
-    TABLE_FUNCTION id: 11, table_function_name: numbers
+    TABLE_FUNCTION id: 11, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 12, nodes: 1
           CONSTANT id: 13, constant_value: UInt64_10000000, constant_value_type: UInt32
@@ -180,7 +180,7 @@ QUERY id: 0, group_by_type: grouping_sets
                 LIST id: 9, nodes: 1
                   COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 11
   JOIN TREE
-    TABLE_FUNCTION id: 11, table_function_name: numbers
+    TABLE_FUNCTION id: 11, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 12, nodes: 1
           CONSTANT id: 13, constant_value: UInt64_10000000, constant_value_type: UInt32
@@ -253,7 +253,7 @@ QUERY id: 0, group_by_type: grouping_sets
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    TABLE_FUNCTION id: 3, table_function_name: numbers
+    TABLE_FUNCTION id: 3, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 4, nodes: 1
           CONSTANT id: 5, constant_value: UInt64_1000, constant_value_type: UInt16

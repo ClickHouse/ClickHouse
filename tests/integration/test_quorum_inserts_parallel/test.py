@@ -115,9 +115,8 @@ def test_parallel_quorum_actually_quorum(started_cluster):
             error = node.query_and_get_error(
                 "INSERT INTO q VALUES(3, 'Hi')", settings=settings
             )
-            assert "DB::Exception: Unknown status, client must retry." in error, error
             assert (
-                "DB::Exception: Timeout while waiting for quorum. (TIMEOUT_EXCEEDED)"
+                "DB::Exception: Unknown quorum status. The data was inserted in the local replica but we could not verify quorum. Reason: Timeout while waiting for quorum"
                 in error
             ), error
 

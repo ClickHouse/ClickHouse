@@ -129,6 +129,9 @@ def test_parallel_replicas_over_distributed(
     node = nodes[0]
     expected_result = f"6003\t-1999\t1999\t3\n"
 
+    # sync all replicas to get consistent result
+    node.query(f"SYSTEM SYNC REPLICA ON CLUSTER {cluster} {table_name}")
+
     # parallel replicas
     assert (
         node.query(
@@ -137,17 +140,18 @@ def test_parallel_replicas_over_distributed(
                 "allow_experimental_parallel_reading_from_replicas": 2,
                 "prefer_localhost_replica": prefer_localhost_replica,
                 "max_parallel_replicas": max_parallel_replicas,
-                "use_hedged_requests": 0,
             },
         )
         == expected_result
     )
 
-    # sync all replicas to get consistent result by next distributed query
-    node.query(f"SYSTEM SYNC REPLICA ON CLUSTER {cluster} {table_name}")
-
     # w/o parallel replicas
     assert (
-        node.query(f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d")
+        node.query(
+            f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d",
+            settings={
+                "allow_experimental_parallel_reading_from_replicas": 0,
+            },
+        )
         == expected_result
     )

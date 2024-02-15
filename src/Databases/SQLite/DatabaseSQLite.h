@@ -50,7 +50,7 @@ private:
 
     mutable SQLitePtr sqlite_db;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     bool checkSQLiteTable(const String & table_name) const;
 

@@ -18,8 +18,15 @@ public:
     bool isEnoughSize() const;
     void send();
 
+    /// Write batch to current_batch.txt
     void serialize();
+
+    /// Read batch from current_batch.txt
     void deserialize();
+
+    /// Does all required files exists?
+    /// (The only way variant when it is valid is during restoring batch from disk).
+    bool valid();
 
     size_t total_rows = 0;
     size_t total_bytes = 0;

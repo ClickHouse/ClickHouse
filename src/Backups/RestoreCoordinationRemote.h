@@ -21,7 +21,8 @@ public:
         const String & restore_uuid_,
         const Strings & all_hosts_,
         const String & current_host_,
-        bool is_internal_);
+        bool is_internal_,
+        QueryStatusPtr process_list_element_);
 
     ~RestoreCoordinationRemote() override;
 
@@ -72,7 +73,7 @@ private:
     const String current_host;
     const size_t current_host_index;
     const bool is_internal;
-    Poco::Logger * const log;
+    LoggerPtr const log;
 
     mutable WithRetries with_retries;
     std::optional<BackupCoordinationStageSync> stage_sync;

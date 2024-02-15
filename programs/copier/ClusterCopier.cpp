@@ -1559,7 +1559,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             QueryPipeline input;
             QueryPipeline output;
             {
-                BlockIO io_insert = InterpreterFactory::get(query_insert_ast, context_insert)->execute();
+                BlockIO io_insert = InterpreterFactory::instance().get(query_insert_ast, context_insert)->execute();
 
                 InterpreterSelectWithUnionQuery select(query_select_ast, context_select, SelectQueryOptions{});
                 QueryPlan plan;
@@ -1944,7 +1944,7 @@ bool ClusterCopier::checkShardHasPartition(const ConnectionTimeouts & timeouts,
 
     auto local_context = Context::createCopy(context);
     local_context->setSettings(task_cluster->settings_pull);
-    auto pipeline = InterpreterFactory::get(query_ast, local_context)->execute().pipeline;
+    auto pipeline = InterpreterFactory::instance().get(query_ast, local_context)->execute().pipeline;
     PullingPipelineExecutor executor(pipeline);
     Block block;
     executor.pull(block);
@@ -1989,7 +1989,7 @@ bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTi
 
     auto local_context = Context::createCopy(context);
     local_context->setSettings(task_cluster->settings_pull);
-    auto pipeline = InterpreterFactory::get(query_ast, local_context)->execute().pipeline;
+    auto pipeline = InterpreterFactory::instance().get(query_ast, local_context)->execute().pipeline;
     PullingPipelineExecutor executor(pipeline);
     Block result;
     executor.pull(result);

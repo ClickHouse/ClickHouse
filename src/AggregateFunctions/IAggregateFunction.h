@@ -197,7 +197,7 @@ public:
     virtual void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
         if (isState())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is marked as State but method insertMergeResultInto is not implemented");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is marked as State but method insertMergeResultInto is not implemented", getName());
 
         insertResultInto(place, to, arena);
     }
@@ -549,8 +549,10 @@ public:
         auto to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin() + 1;
 
         size_t num_defaults = (row_end - row_begin) - (to - from);
-        static_cast<const Derived *>(this)->addBatchSinglePlace(from, to, place, &values, arena, -1);
-        static_cast<const Derived *>(this)->addManyDefaults(place, &values, num_defaults, arena);
+        if (from < to)
+            static_cast<const Derived *>(this)->addBatchSinglePlace(from, to, place, &values, arena, -1);
+        if (num_defaults > 0)
+            static_cast<const Derived *>(this)->addManyDefaults(place, &values, num_defaults, arena);
     }
 
     void addBatchSinglePlaceNotNull( /// NOLINT

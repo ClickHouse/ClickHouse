@@ -18,7 +18,7 @@ namespace DB
 
 KafkaProducer::KafkaProducer(
     ProducerPtr producer_, const std::string & topic_, std::chrono::milliseconds poll_timeout, std::atomic<bool> & shutdown_called_, const Block & header)
-    : IMessageProducer(&Poco::Logger::get("KafkaProducer"))
+    : IMessageProducer(getLogger("KafkaProducer"))
     , producer(producer_)
     , topic(topic_)
     , timeout(poll_timeout)

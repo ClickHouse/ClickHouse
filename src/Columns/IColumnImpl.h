@@ -6,10 +6,11 @@
   * implementation.
   */
 
-#include <Columns/IColumn.h>
-#include <Common/PODArray.h>
-#include <base/sort.h>
 #include <algorithm>
+#include <Columns/IColumn.h>
+#include <base/sort.h>
+#include <Common/PODArray.h>
+#include <Common/iota.h>
 
 
 namespace DB
@@ -299,8 +300,7 @@ void IColumn::getPermutationImpl(
     if (limit >= data_size)
         limit = 0;
 
-    for (size_t i = 0; i < data_size; ++i)
-        res[i] = i;
+    iota(res.data(), data_size, Permutation::value_type(0));
 
     if (limit)
     {

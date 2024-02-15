@@ -73,7 +73,7 @@ private:
 
 }
 
-void IfChainToMultiIfPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void IfChainToMultiIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     auto multi_if_function_ptr = FunctionFactory::instance().get("multiIf", context);
     IfChainToMultiIfPassVisitor visitor(std::move(multi_if_function_ptr), std::move(context));

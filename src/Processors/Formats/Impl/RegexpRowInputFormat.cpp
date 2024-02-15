@@ -84,10 +84,16 @@ RegexpRowInputFormat::RegexpRowInputFormat(
 {
 }
 
-void RegexpRowInputFormat::resetParser()
+void RegexpRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    IRowInputFormat::resetParser();
-    buf->reset();
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IRowInputFormat::setReadBuffer(*buf);
+}
+
+void RegexpRowInputFormat::resetReadBuffer()
+{
+    buf.reset();
+    IRowInputFormat::resetReadBuffer();
 }
 
 bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
@@ -126,11 +132,6 @@ bool RegexpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & 
     if (field_extractor.parseRow(*buf))
         readFieldsFromMatch(columns, ext);
     return true;
-}
-
-void RegexpRowInputFormat::setReadBuffer(ReadBuffer & in_)
-{
-    buf->setSubBuffer(in_);
 }
 
 RegexpSchemaReader::RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

@@ -12,7 +12,7 @@ class StorageSystemUserDirectories final : public IStorageSystemOneBlock<Storage
 {
 public:
     std::string getName() const override { return "SystemUserDirectories"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

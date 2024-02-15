@@ -14,6 +14,15 @@ macro(configure_rustc)
         set(RUST_CFLAGS "${RUST_CFLAGS} --sysroot ${CMAKE_SYSROOT}")
     endif()
 
+    if (CMAKE_OSX_DEPLOYMENT_TARGET)
+        set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+        set(RUST_CFLAGS "${RUST_CFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    endif()
+
+    if (USE_MUSL)
+        set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -D_LIBCPP_HAS_MUSL_LIBC=1")
+    endif ()
+
     if(CCACHE_EXECUTABLE MATCHES "/sccache$")
         message(STATUS "Using RUSTC_WRAPPER: ${CCACHE_EXECUTABLE}")
         set(RUSTCWRAPPER "rustc-wrapper = \"${CCACHE_EXECUTABLE}\"")
@@ -21,13 +30,22 @@ macro(configure_rustc)
         set(RUSTCWRAPPER "")
     endif()
 
-    set(RUSTFLAGS "[]")
+    set(RUSTFLAGS)
+    if (CMAKE_OSX_DEPLOYMENT_TARGET)
+        list(APPEND RUSTFLAGS "-C" "link-arg=-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    endif()
+
     set(RUST_CARGO_BUILD_STD "")
     # For more info: https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html#memorysanitizer
     if (SANITIZE STREQUAL "memory")
         set(RUST_CARGO_BUILD_STD "build-std = [\"std\", \"panic_abort\", \"core\", \"alloc\"]")
-        set(RUSTFLAGS "[\"-Zsanitizer=memory\", \"-Zsanitizer-memory-track-origins\"]")
+        list(APPEND RUSTFLAGS "-Zsanitizer=memory" "-Zsanitizer-memory-track-origins")
     endif()
+
+    list(TRANSFORM RUSTFLAGS PREPEND "\"")
+    list(TRANSFORM RUSTFLAGS APPEND "\"")
+    list(JOIN RUSTFLAGS "," RUSTFLAGS)
+    set(RUSTFLAGS "[${RUSTFLAGS}]")
 
     message(STATUS "RUST_CFLAGS: ${RUST_CFLAGS}")
     message(STATUS "RUST_CXXFLAGS: ${RUST_CXXFLAGS}")
@@ -95,6 +113,5 @@ function(add_rust_subdirectory src)
         VERBATIM)
 endfunction()
 
-add_rust_subdirectory (BLAKE3)
 add_rust_subdirectory (skim)
 add_rust_subdirectory (prql)

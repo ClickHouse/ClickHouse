@@ -308,7 +308,7 @@ private:
     ThreadReference send_thread;
     ThreadReference receive_thread;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     void connect(
         const Nodes & node,

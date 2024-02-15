@@ -90,7 +90,8 @@ void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfigura
     for (const auto & setting : settings.all())
     {
         const auto & name = setting.getName();
-        if (config.has(name) && !setting.isObsolete())
+        bool should_skip_check = name == "max_table_size_to_drop" || name == "max_partition_size_to_drop";
+        if (config.has(name) && !setting.isObsolete() && !should_skip_check)
         {
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "A setting '{}' appeared at top level in config {}."
                 " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
@@ -106,9 +107,7 @@ std::vector<String> Settings::getAllRegisteredNames() const
 {
     std::vector<String> all_settings;
     for (const auto & setting_field : all())
-    {
         all_settings.push_back(setting_field.getName());
-    }
     return all_settings;
 }
 

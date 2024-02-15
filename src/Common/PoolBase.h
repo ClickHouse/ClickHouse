@@ -223,9 +223,9 @@ private:
     std::condition_variable available;
 
 protected:
-    Poco::Logger * log;
+    LoggerPtr log;
 
-    PoolBase(unsigned max_items_, Poco::Logger * log_, BehaviourOnLimit behaviour_on_limit_ = BehaviourOnLimit::Wait)
+    PoolBase(unsigned max_items_, LoggerPtr log_, BehaviourOnLimit behaviour_on_limit_ = BehaviourOnLimit::Wait)
         : max_items(max_items_), behaviour_on_limit(behaviour_on_limit_), log(log_)
     {
         items.reserve(max_items);

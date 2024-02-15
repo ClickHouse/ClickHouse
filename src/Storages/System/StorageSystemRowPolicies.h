@@ -14,7 +14,7 @@ class StorageSystemRowPolicies final : public IStorageSystemOneBlock<StorageSyst
 {
 public:
     std::string getName() const override { return "SystemRowPolicies"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;

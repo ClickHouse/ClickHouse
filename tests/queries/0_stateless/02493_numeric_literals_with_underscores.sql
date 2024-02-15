@@ -131,7 +131,7 @@ select _1000; -- { serverError UNKNOWN_IDENTIFIER }
 select _1000 FROM (SELECT 1 AS _1000) FORMAT Null;
 select -_1; -- { serverError UNKNOWN_IDENTIFIER }
 select -_1 FROM (SELECT -1 AS _1) FORMAT Null;
-select +_1; -- { clientError SYNTAX_ERROR }
+select +_1; -- { serverError UNKNOWN_IDENTIFIER }
 select 1__0; -- { serverError UNKNOWN_IDENTIFIER }
 select 1_; -- { serverError UNKNOWN_IDENTIFIER }
 select 1_ ; -- { serverError UNKNOWN_IDENTIFIER }
