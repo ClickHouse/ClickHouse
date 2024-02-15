@@ -1,4 +1,3 @@
-00223_shard_distributed_aggregation_memory_efficient
 00717_merge_and_distributed
 00725_memory_tracking
 01062_pm_all_join_with_block_continuation
