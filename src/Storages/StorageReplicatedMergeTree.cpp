@@ -7919,20 +7919,18 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     const auto src_partition_expression = source_metadata_snapshot->getPartitionKeyAST();
     const auto is_partition_exp_the_same = queryToStringNullable(my_partition_expression) == queryToStringNullable(src_partition_expression);
 
-    if (src_all_parts.empty())
+    if (replace && !is_partition_exp_the_same)
     {
-        if (!replace)
-        {
-            return;
-        }
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot replace partition '{}' because it has different partition expression."
+                        "There is no way to calculate the destination partition id",
+                        source_partition_id);
+    }
 
-        if (!is_partition_exp_the_same)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Cannot replace partition '{}' because it is empty and has different partition expression."
-                            "There is no way to calculate the destination partition id",
-                            source_partition_id);
-        }
+    bool attach_empty_partition = !replace && src_all_parts.empty();
+    if (attach_empty_partition)
+    {
+        return;
     }
 
     auto [destination_partition, destination_partition_id] =
