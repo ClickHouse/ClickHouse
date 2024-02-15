@@ -776,4 +776,21 @@ ColumnPtr FunctionUnaryLogical<Impl, Name>::executeImpl(const ColumnsWithTypeAnd
     return res;
 }
 
+FunctionOverloadResolverPtr createInternalFunctionOrOverloadResolver()
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
+}
+FunctionOverloadResolverPtr createInternalFunctionAndOverloadResolver()
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+}
+FunctionOverloadResolverPtr createInternalFunctionXorOverloadResolver()
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionXor>());
+}
+FunctionOverloadResolverPtr createInternalFunctionNotOverloadResolver()
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionNot>());
+}
+
 }
