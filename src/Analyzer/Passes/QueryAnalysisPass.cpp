@@ -5667,7 +5667,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         /// Do not constant fold get scalar functions
         bool disable_constant_folding = function_name == "__getScalar" || function_name == "shardNum" ||
-            function_name == "shardCount" || function_name == "hostName";
+            function_name == "shardCount" || function_name == "hostName" || function_name == "tcpPort";
 
         /** If function is suitable for constant folding try to convert it to constant.
           * Example: SELECT plus(1, 1);
