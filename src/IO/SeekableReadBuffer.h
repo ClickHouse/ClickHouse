@@ -44,6 +44,12 @@ public:
 
     virtual String getInfoForLog() { return ""; }
 
+    /// NOTE: This method should be thread-safe against seek(), since it can be
+    /// used in CachedOnDiskReadBufferFromFile from multiple threads (because
+    /// it first releases the buffer, and then do logging, and so other thread
+    /// can already call seek() which will lead to data-race).
+    virtual size_t getFileOffsetOfBufferEnd() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFileOffsetOfBufferEnd() not implemented"); }
+
     /// If true, setReadUntilPosition() guarantees that eof will be reported at the given position.
     virtual bool supportsRightBoundedReads() const { return false; }
 

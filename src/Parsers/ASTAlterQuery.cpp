@@ -104,6 +104,16 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " REMOVE " << remove_property;
         }
+        else if (settings_changes)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " MODIFY SETTING " << (settings.hilite ? hilite_none : "");
+            settings_changes->formatImpl(settings, state, frame);
+        }
+        else if (settings_resets)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " RESET SETTING " << (settings.hilite ? hilite_none : "");
+            settings_resets->formatImpl(settings, state, frame);
+        }
         else
         {
             if (first)

@@ -249,7 +249,7 @@ void LocalServer::tryInitPath()
         default_path = parent_folder / fmt::format("clickhouse-local-{}-{}-{}", getpid(), time(nullptr), randomSeed());
 
         if (exists(default_path))
-            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessful attempt to create working directory: {} exist!", default_path.string());
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessful attempt to create working directory: {} already exists.", default_path.string());
 
         create_directory(default_path);
         temporary_directory_to_delete = default_path;
@@ -828,6 +828,7 @@ void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & o
     std::cout << options_description.main_description.value() << "\n";
     std::cout << getHelpFooter() << "\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
+    std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";
 #endif
 }
 

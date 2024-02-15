@@ -221,11 +221,11 @@ void StorageMergeTree::read(
         if (local_context->getSettingsRef().allow_experimental_analyzer)
         {
             QueryTreeNodePtr modified_query_tree = query_info.query_tree->clone();
-            rewriteJoinToGlobalJoin(modified_query_tree);
-            modified_query_tree = buildQueryTreeForShard(query_info, modified_query_tree);
+            rewriteJoinToGlobalJoin(modified_query_tree, local_context);
+            modified_query_tree = buildQueryTreeForShard(query_info.planner_context, modified_query_tree);
             header = InterpreterSelectQueryAnalyzer::getSampleBlock(
                 modified_query_tree, local_context, SelectQueryOptions(processed_stage).analyze());
-            modified_query_ast = queryNodeToSelectQuery(modified_query_tree);
+            modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
         }
         else
         {
@@ -252,7 +252,9 @@ void StorageMergeTree::read(
     }
     else
     {
-        const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower() && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree;
+        const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
+            && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree
+            && (!local_context->getSettingsRef().allow_experimental_analyzer || query_info.analyzer_can_use_parallel_replicas_on_follower);
 
         if (auto plan = reader.read(
                 column_names,
@@ -687,7 +689,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
 
     const auto & mutation_entry = current_mutation_it->second;
 
-    auto txn = tryGetTransactionForMutation(mutation_entry, log);
+    auto txn = tryGetTransactionForMutation(mutation_entry, log.load());
     /// There's no way a transaction may finish before a mutation that was started by the transaction.
     /// But sometimes we need to check status of an unrelated mutation, in this case we don't care about transactions.
     assert(txn || mutation_entry.tid.isPrehistoric() || from_another_mutation);
@@ -835,7 +837,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     if (!to_kill)
         return CancellationCode::NotFound;
 
-    if (auto txn = tryGetTransactionForMutation(*to_kill, log))
+    if (auto txn = tryGetTransactionForMutation(*to_kill, log.load()))
     {
         LOG_TRACE(log, "Cancelling transaction {} which had started mutation {}", to_kill->tid, mutation_id);
         TransactionLog::instance().rollbackTransaction(txn);
@@ -1228,7 +1230,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             if (!part->version.isVisible(first_mutation_tid.start_csn, first_mutation_tid))
                 continue;
 
-            txn = tryGetTransactionForMutation(mutations_begin_it->second, log);
+            txn = tryGetTransactionForMutation(mutations_begin_it->second, log.load());
             if (!txn)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find transaction {} that has started mutation {} "
                                 "that is going to be applied to part {}",
@@ -2296,11 +2298,12 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
     {
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         static constexpr auto checksums_path = "checksums.txt";
+        bool noop;
         if (part->isStoredOnDisk() && !part->getDataPartStorage().exists(checksums_path))
         {
             try
             {
-                auto calculated_checksums = checkDataPart(part, false);
+                auto calculated_checksums = checkDataPart(part, false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */true);
                 calculated_checksums.checkEqual(part->checksums, true);
 
                 auto & part_mutable = const_cast<IMergeTreeDataPart &>(*part);
@@ -2321,7 +2324,7 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
         {
             try
             {
-                checkDataPart(part, true);
+                checkDataPart(part, true, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */true);
                 return CheckResult(part->name, true, "");
             }
             catch (...)

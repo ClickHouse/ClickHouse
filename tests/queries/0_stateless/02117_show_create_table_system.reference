@@ -686,6 +686,9 @@ CREATE TABLE system.projection_parts
     `rows_where_ttl_info.expression` Array(String),
     `rows_where_ttl_info.min` Array(DateTime),
     `rows_where_ttl_info.max` Array(DateTime),
+    `is_broken` UInt8,
+    `exception_code` Int32,
+    `exception` String,
     `bytes` UInt64 ALIAS bytes_on_disk,
     `marks_size` UInt64 ALIAS marks_bytes,
     `part_name` String ALIAS name
@@ -762,7 +765,8 @@ CREATE TABLE system.quota_limits
     `max_read_rows` Nullable(UInt64),
     `max_read_bytes` Nullable(UInt64),
     `max_execution_time` Nullable(Float64),
-    `max_written_bytes` Nullable(UInt64)
+    `max_written_bytes` Nullable(UInt64),
+    `max_failed_sequential_authentications` Nullable(UInt64)
 )
 ENGINE = SystemQuotaLimits
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -792,7 +796,9 @@ CREATE TABLE system.quota_usage
     `execution_time` Nullable(Float64),
     `max_execution_time` Nullable(Float64),
     `written_bytes` Nullable(UInt64),
-    `max_written_bytes` Nullable(UInt64)
+    `max_written_bytes` Nullable(UInt64),
+    `failed_sequential_authentications` Nullable(UInt64),
+    `max_failed_sequential_authentications` Nullable(UInt64)
 )
 ENGINE = SystemQuotaUsage
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -836,7 +842,9 @@ CREATE TABLE system.quotas_usage
     `execution_time` Nullable(Float64),
     `max_execution_time` Nullable(Float64),
     `written_bytes` Nullable(UInt64),
-    `max_written_bytes` Nullable(UInt64)
+    `max_written_bytes` Nullable(UInt64),
+    `failed_sequential_authentications` Nullable(UInt64),
+    `max_failed_sequential_authentications` Nullable(UInt64)
 )
 ENGINE = SystemQuotasUsage
 COMMENT 'SYSTEM TABLE is built on the fly.'

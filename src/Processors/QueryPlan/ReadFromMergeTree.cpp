@@ -89,6 +89,34 @@ size_t countPartitions(const MergeTreeData::DataPartsVector & prepared_parts)
     return countPartitions(prepared_parts, get_partition_id);
 }
 
+bool restoreDAGInputs(ActionsDAG & dag, const NameSet & inputs)
+{
+    std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
+    bool added = false;
+    for (const auto * input : dag.getInputs())
+    {
+        if (inputs.contains(input->result_name) && !outputs.contains(input))
+        {
+            dag.getOutputs().push_back(input);
+            added = true;
+        }
+    }
+
+    return added;
+}
+
+bool restorePrewhereInputs(PrewhereInfo & info, const NameSet & inputs)
+{
+    bool added = false;
+    if (info.row_level_filter)
+        added = added || restoreDAGInputs(*info.row_level_filter, inputs);
+
+    if (info.prewhere_actions)
+        added = added || restoreDAGInputs(*info.prewhere_actions, inputs);
+
+    return added;
+}
+
 }
 
 namespace ProfileEvents
@@ -786,18 +814,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     /// To fix this, we prohibit removing any input in prewhere actions. Instead, projection actions will be added after sorting.
     /// See 02354_read_in_order_prewhere.sql as an example.
     bool have_input_columns_removed_after_prewhere = false;
-    if (prewhere_info && prewhere_info->prewhere_actions)
+    if (prewhere_info)
     {
-        auto & outputs = prewhere_info->prewhere_actions->getOutputs();
-        std::unordered_set<const ActionsDAG::Node *> outputs_set(outputs.begin(), outputs.end());
-        for (const auto * input : prewhere_info->prewhere_actions->getInputs())
-        {
-            if (!outputs_set.contains(input))
-            {
-                outputs.push_back(input);
-                have_input_columns_removed_after_prewhere = true;
-            }
-        }
+        NameSet sorting_columns;
+        for (const auto & column : metadata_for_reading->getSortingKey().expression->getRequiredColumnsWithTypes())
+            sorting_columns.insert(column.name);
+
+        have_input_columns_removed_after_prewhere = restorePrewhereInputs(*prewhere_info, sorting_columns);
     }
 
     /// Let's split ranges to avoid reading much data.
@@ -984,7 +1007,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             /// Thus we need to merge all partition parts into a single sorted stream.
             Pipe pipe = Pipe::unitePipes(std::move(pipes));
             merge_streams(pipe);
-            out_projection = createProjection(pipe_header);
             return pipe;
         }
 
@@ -1133,6 +1155,14 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
     auto sorting_expr = std::make_shared<ExpressionActions>(metadata_for_reading->getSortingKey().expression->getActionsDAG().clone());
 
+    if (prewhere_info)
+    {
+        NameSet sorting_columns;
+        for (const auto & column : metadata_for_reading->getSortingKey().expression->getRequiredColumnsWithTypes())
+            sorting_columns.insert(column.name);
+        restorePrewhereInputs(*prewhere_info, sorting_columns);
+    }
+
     for (size_t range_index = 0; range_index < parts_to_merge_ranges.size() - 1; ++range_index)
     {
         /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
@@ -1175,7 +1205,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
                 /// Parts of non-zero level still may contain duplicate PK values to merge on FINAL if there's is_deleted column,
                 /// so we have to process all ranges. It would be more optimal to remove this flag and add an extra filtering step.
-                bool force_process_all_ranges = !data.merging_params.is_deleted_column.empty();
+                bool split_parts_ranges_into_intersecting_and_non_intersecting_final = settings.split_parts_ranges_into_intersecting_and_non_intersecting_final &&
+                    data.merging_params.is_deleted_column.empty();
 
                 SplitPartsWithRangesByPrimaryKeyResult split_ranges_result = splitPartsWithRangesByPrimaryKey(
                     metadata_for_reading->getPrimaryKey(),
@@ -1184,7 +1215,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     num_streams,
                     context,
                     std::move(in_order_reading_step_getter),
-                    force_process_all_ranges);
+                    split_parts_ranges_into_intersecting_and_non_intersecting_final,
+                    settings.split_intersecting_parts_ranges_into_layers_final);
 
                 for (auto && non_intersecting_parts_range : split_ranges_result.non_intersecting_parts_ranges)
                     non_intersecting_parts_by_primary_key.push_back(std::move(non_intersecting_parts_range));
@@ -1802,13 +1834,20 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
 
     if (!final && result.sampling.use_sampling)
     {
+        NameSet sampling_columns;
+
         /// Add columns needed for `sample_by_ast` to `column_names_to_read`.
         /// Skip this if final was used, because such columns were already added from PK.
         for (const auto & column : result.sampling.filter_expression->getRequiredColumns().getNames())
         {
             if (!names.contains(column))
                 column_names_to_read.push_back(column);
+
+            sampling_columns.insert(column);
         }
+
+        if (prewhere_info)
+            restorePrewhereInputs(*prewhere_info, sampling_columns);
     }
 
     if (final)
@@ -1999,6 +2038,24 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         pipe.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<ExpressionTransform>(header, projection_actions);
+        });
+    }
+
+    /// Some extra columns could be added by sample/final/in-order/etc
+    /// Remove them from header if not needed.
+    if (!blocksHaveEqualStructure(pipe.getHeader(), getOutputStream().header))
+    {
+        auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+            pipe.getHeader().getColumnsWithTypeAndName(),
+            getOutputStream().header.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name,
+            true);
+
+        auto converting_dag_expr = std::make_shared<ExpressionActions>(convert_actions_dag);
+
+        pipe.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<ExpressionTransform>(header, converting_dag_expr);
         });
     }
 
