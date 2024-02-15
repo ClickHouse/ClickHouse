@@ -109,6 +109,9 @@ public:
 
     virtual size_t getQueryCount() const = 0;
 
+    /// The percentage of time a lookup successfully found an entry.
+    /// When there were no lookups, it returns zero (instead of NaN).
+    /// The value is calculated non atomically and can be slightly off in the presence of concurrent lookups.
     virtual double getFoundRate() const = 0;
 
     virtual double getHitRate() const = 0;
