@@ -2236,48 +2236,79 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     ProfileEventsScope profile_events_scope;
 
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
-    String partition_id = getPartitionIDFromQuery(partition, local_context);
+    String source_partition_id = getPartitionIDFromQuery(partition, local_context);
 
-    DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
+    DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, source_partition_id);
+
+    if (src_parts.empty())
+    {
+        return;
+    }
+
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
 
     static const String TMP_PREFIX = "tmp_move_from_";
+
+    const auto dst_partition_expression = dest_metadata_snapshot->getPartitionKeyAST();
+    const auto src_partition_expression = metadata_snapshot->getPartitionKeyAST();
+    const auto is_partition_exp_the_same = queryToStringNullable(src_partition_expression) == queryToStringNullable(dst_partition_expression);
+
+    auto [destination_partition, destination_partition_id] =
+        get_destination_partition_and_partition_id(is_partition_exp_the_same, src_data, *this, src_parts, source_partition_id);
 
     for (const DataPartPtr & src_part : src_parts)
     {
         if (!dest_table_storage->canReplacePartition(src_part))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Cannot move partition '{}' because part '{}' has inconsistent granularity with table",
-                            partition_id, src_part->name);
+                            source_partition_id, src_part->name);
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
-        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
-
+        MergeTreePartInfo dst_part_info(destination_partition_id, temp_index, temp_index, src_part->info.level);
         IDataPartStorage::ClonePartParams clone_params
         {
             .txn = local_context->getCurrentTransaction(),
             .copy_instead_of_hardlink = getSettings()->always_use_copy_instead_of_hardlinks,
         };
 
-        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(
-            src_part,
-            TMP_PREFIX,
-            dst_part_info,
-            dest_metadata_snapshot,
-            clone_params,
-            local_context->getReadSettings(),
-            local_context->getWriteSettings()
-        );
+        if (is_partition_exp_the_same)
+        {
+            auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(
+                src_part,
+                TMP_PREFIX,
+                dst_part_info,
+                dest_metadata_snapshot,
+                clone_params,
+                local_context->getReadSettings(),
+                local_context->getWriteSettings()
+            );
 
-        dst_parts.emplace_back(std::move(dst_part));
-        dst_parts_locks.emplace_back(std::move(part_lock));
+            dst_parts.emplace_back(std::move(dst_part));
+            dst_parts_locks.emplace_back(std::move(part_lock));
+        }
+        else
+        {
+            auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
+            IMergeTreeDataPart::MinMaxIndex destination_min_max_index;
+
+            destination_min_max_index.load(src_data, metadata_manager);
+
+            auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
+                src_part,
+                destination_partition,
+                dst_part_info,
+                destination_min_max_index,
+                TMP_PREFIX,
+                dest_metadata_snapshot,
+                clone_params,
+                local_context);
+
+            dst_parts.emplace_back(std::move(dst_part));
+            dst_parts_locks.emplace_back(std::move(part_lock));
+        }
     }
-
-    /// empty part set
-    if (dst_parts.empty())
-        return;
 
     /// Move new parts to the destination table. NOTE It doesn't look atomic.
     try
