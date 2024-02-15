@@ -1034,7 +1034,15 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 }
             }
 
-            if (!written && name == "lambda"sv)
+            const auto & first_argument = arguments->children[0];
+            const ASTIdentifier * first_argument_identifier = first_argument->as<ASTIdentifier>();
+            const ASTFunction * first_argument_function = first_argument->as<ASTFunction>();
+            bool first_argument_is_tuple = first_argument_function && first_argument_function->name == "tuple";
+
+            /// Only these types of arguments are accepted by the parser of the '->' operator.
+            bool acceptable_first_argument_for_lambda_expression = first_argument_identifier || first_argument_is_tuple;
+
+            if (!written && name == "lambda"sv && acceptable_first_argument_for_lambda_expression)
             {
                 /// Special case: zero elements tuple in lhs of lambda is printed as ().
                 /// Special case: one-element tuple in lhs of lambda is printed as its element.
@@ -1042,19 +1050,17 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 if (frame.need_parens)
                     settings.ostr << '(';
 
-                const auto * first_arg_func = arguments->children[0]->as<ASTFunction>();
-                if (first_arg_func
-                    && first_arg_func->name == "tuple"
-                    && first_arg_func->arguments
-                    && (first_arg_func->arguments->children.size() == 1 || first_arg_func->arguments->children.empty()))
+                if (first_argument_is_tuple
+                    && first_argument_function->arguments
+                    && (first_argument_function->arguments->children.size() == 1 || first_argument_function->arguments->children.empty()))
                 {
-                    if (first_arg_func->arguments->children.size() == 1)
-                        first_arg_func->arguments->children[0]->formatImpl(settings, state, nested_need_parens);
+                    if (first_argument_function->arguments->children.size() == 1)
+                        first_argument_function->arguments->children[0]->formatImpl(settings, state, nested_need_parens);
                     else
                         settings.ostr << "()";
                 }
                 else
-                    arguments->children[0]->formatImpl(settings, state, nested_need_parens);
+                    first_argument->formatImpl(settings, state, nested_need_parens);
 
                 settings.ostr << (settings.hilite ? hilite_operator : "") << " -> " << (settings.hilite ? hilite_none : "");
                 arguments->children[1]->formatImpl(settings, state, nested_need_parens);
