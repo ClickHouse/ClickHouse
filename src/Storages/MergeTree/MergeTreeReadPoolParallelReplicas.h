@@ -31,10 +31,9 @@ private:
     mutable std::mutex mutex;
 
     const ParallelReadingExtension extension;
-    const CoordinationMode coordination_mode;
     RangesInDataPartsDescription buffered_ranges;
     bool no_more_tasks_available{false};
-    LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicas");
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeReadPoolParallelReplicas");
 };
 
 }

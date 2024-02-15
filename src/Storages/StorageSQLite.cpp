@@ -42,7 +42,7 @@ StorageSQLite::StorageSQLite(
     , remote_table_name(remote_table_name_)
     , database_path(database_path_)
     , sqlite_db(sqlite_db_)
-    , log(getLogger("StorageSQLite (" + table_id_.table_name + ")"))
+    , log(&Poco::Logger::get("StorageSQLite (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
 

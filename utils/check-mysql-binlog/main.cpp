@@ -1,98 +1,173 @@
-#include <IO/WriteBufferFromOStream.h>
-#include <Databases/MySQL/MySQLBinlog.h>
-#include <boost/program_options.hpp>
 #include <iostream>
 
-bool quit = false;
-void signal_handler(int)
-{
-    quit = true;
-}
+#include <boost/program_options.hpp>
 
-static void processBinlogFromFile(const std::string & bin_path, bool disable_checksum)
-{
-    DB::MySQLReplication::BinlogFromFile binlog;
-    binlog.open(bin_path);
-    binlog.setChecksum(disable_checksum ? DB::MySQLReplication::IBinlog::NONE : DB::MySQLReplication::IBinlog::CRC32);
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/LimitReadBuffer.h>
+#include <IO/MySQLBinlogEventReadBuffer.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromOStream.h>
+#include <Core/MySQL/MySQLReplication.h>
+#include <Core/MySQL/MySQLCharset.h>
 
+static DB::MySQLCharsetPtr charset = std::make_shared<DB::MySQLCharset>();
+static DB::MySQLReplication::BinlogEventPtr parseSingleEventBody(
+    DB::MySQLReplication::EventHeader & header, DB::ReadBuffer & payload,
+    std::shared_ptr<DB::MySQLReplication::TableMapEvent> & last_table_map_event, bool exist_checksum)
+{
     DB::MySQLReplication::BinlogEventPtr event;
-    while (binlog.tryReadEvent(event, /*timeout*/ 0) && !quit)
+    DB::ReadBufferPtr limit_read_buffer = std::make_shared<DB::LimitReadBuffer>(payload, header.event_size - 19,
+                                                                                /* trow_exception */ false, /* exact_limit */ std::nullopt);
+    DB::ReadBufferPtr event_payload = std::make_shared<DB::MySQLBinlogEventReadBuffer>(*limit_read_buffer, exist_checksum ? 4 : 0);
+
+    switch (header.type)
     {
-        DB::WriteBufferFromOStream cout(std::cout);
-        event->dump(cout);
-        binlog.getPosition().dump(cout);
-        cout.finalize();
-    }
-}
-
-static void processBinlogFromSocket(const std::string & host, int port, const std::string & user, const std::string & password, const std::string & executed_gtid_set, bool disable_checksum)
-{
-    DB::MySQLReplication::BinlogFromSocket binlog;
-    binlog.setChecksum(disable_checksum ? DB::MySQLReplication::IBinlog::NONE : DB::MySQLReplication::IBinlog::CRC32);
-
-    binlog.connect(host, port, user, password);
-    binlog.start(/*unique number*/ 42, executed_gtid_set);
-    DB::MySQLReplication::BinlogEventPtr event;
-
-    while (!quit)
-    {
-        if (binlog.tryReadEvent(event, /*timeout*/ 100))
+        case DB::MySQLReplication::FORMAT_DESCRIPTION_EVENT:
         {
-            if (event->header.type != DB::MySQLReplication::HEARTBEAT_EVENT)
+            event = std::make_shared<DB::MySQLReplication::FormatDescriptionEvent>(std::move(header));
+            event->parseEvent(*event_payload);
+            break;
+        }
+        case DB::MySQLReplication::ROTATE_EVENT:
+        {
+            event = std::make_shared<DB::MySQLReplication::RotateEvent>(std::move(header));
+            event->parseEvent(*event_payload);
+            break;
+        }
+        case DB::MySQLReplication::QUERY_EVENT:
+        {
+            event = std::make_shared<DB::MySQLReplication::QueryEvent>(std::move(header));
+            event->parseEvent(*event_payload);
+
+            auto query = std::static_pointer_cast<DB::MySQLReplication::QueryEvent>(event);
+            switch (query->typ)
             {
-                DB::WriteBufferFromOStream cout(std::cout);
-                event->dump(cout);
-                binlog.getPosition().dump(cout);
-                cout.finalize();
+                case DB::MySQLReplication::QUERY_EVENT_MULTI_TXN_FLAG:
+                case DB::MySQLReplication::QUERY_EVENT_XA:
+                {
+                    event = std::make_shared<DB::MySQLReplication::DryRunEvent>(std::move(query->header));
+                    break;
+                }
+                default:
+                    break;
             }
+            break;
+        }
+        case DB::MySQLReplication::XID_EVENT:
+        {
+            event = std::make_shared<DB::MySQLReplication::XIDEvent>(std::move(header));
+            event->parseEvent(*event_payload);
+            break;
+        }
+        case DB::MySQLReplication::TABLE_MAP_EVENT:
+        {
+            DB::MySQLReplication::TableMapEventHeader map_event_header;
+            map_event_header.parse(*event_payload);
+            event = std::make_shared<DB::MySQLReplication::TableMapEvent>(std::move(header), map_event_header, charset);
+            event->parseEvent(*event_payload);
+            last_table_map_event = std::static_pointer_cast<DB::MySQLReplication::TableMapEvent>(event);
+            break;
+        }
+        case DB::MySQLReplication::WRITE_ROWS_EVENT_V1:
+        case DB::MySQLReplication::WRITE_ROWS_EVENT_V2:
+        {
+            DB::MySQLReplication::RowsEventHeader rows_header(header.type);
+            rows_header.parse(*event_payload);
+            event = std::make_shared<DB::MySQLReplication::WriteRowsEvent>(last_table_map_event, std::move(header), rows_header);
+            event->parseEvent(*event_payload);
+            break;
+        }
+        case DB::MySQLReplication::DELETE_ROWS_EVENT_V1:
+        case DB::MySQLReplication::DELETE_ROWS_EVENT_V2:
+        {
+            DB::MySQLReplication::RowsEventHeader rows_header(header.type);
+            rows_header.parse(*event_payload);
+            event = std::make_shared<DB::MySQLReplication::DeleteRowsEvent>(last_table_map_event, std::move(header), rows_header);
+            event->parseEvent(*event_payload);
+            break;
+        }
+        case DB::MySQLReplication::UPDATE_ROWS_EVENT_V1:
+        case DB::MySQLReplication::UPDATE_ROWS_EVENT_V2:
+        {
+            DB::MySQLReplication::RowsEventHeader rows_header(header.type);
+            rows_header.parse(*event_payload);
+            event = std::make_shared<DB::MySQLReplication::UpdateRowsEvent>(last_table_map_event, std::move(header), rows_header);
+            event->parseEvent(*event_payload);
+            break;
+        }
+        case DB::MySQLReplication::GTID_EVENT:
+        {
+            event = std::make_shared<DB::MySQLReplication::GTIDEvent>(std::move(header));
+            event->parseEvent(*event_payload);
+            break;
+        }
+        default:
+        {
+            event = std::make_shared<DB::MySQLReplication::DryRunEvent>(std::move(header));
+            event->parseEvent(*event_payload);
+            break;
         }
     }
+
+    return event;
 }
 
-int main(int argc, char ** argv)
+static int checkBinLogFile(const std::string & bin_path, bool exist_checksum)
 {
-    (void)signal(SIGINT, signal_handler);
-    boost::program_options::options_description desc("Allowed options");
+    DB::ReadBufferFromFile in(bin_path);
+    DB::assertString("\xfe\x62\x69\x6e", in);   /// magic number
 
-    std::string host = "127.0.0.1";
-    int port = 3306;
-    std::string user = "root";
-    std::string password;
-    std::string gtid;
-
-    desc.add_options()
-        ("help", "Produce help message")
-        ("disable_checksum", "Disable checksums in binlog files.")
-        ("binlog", boost::program_options::value<std::string>(), "Binlog file")
-        ("host", boost::program_options::value<std::string>(&host)->default_value(host), "Host to connect")
-        ("port", boost::program_options::value<int>(&port)->default_value(port), "Port number to connect")
-        ("user", boost::program_options::value<std::string>(&user)->default_value(user), "User")
-        ("password", boost::program_options::value<std::string>(&password), "Password")
-        ("gtid", boost::program_options::value<std::string>(&gtid), "Executed gtid set");
+    DB::MySQLReplication::BinlogEventPtr last_event;
+    std::shared_ptr<DB::MySQLReplication::EventHeader> last_header;
+    std::shared_ptr<DB::MySQLReplication::TableMapEvent> table_map;
 
     try
     {
-        boost::program_options::variables_map options;
-        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
-        boost::program_options::notify(options);
-
-        if (options.count("help") || (!options.count("binlog") && !options.count("gtid")))
+        while (!in.eof())
         {
-            std::cout << "Usage: " << argv[0] << std::endl;
-            std::cout << desc << std::endl;
-            return EXIT_FAILURE;
+            last_header = std::make_shared<DB::MySQLReplication::EventHeader>();
+            last_header->parse(in);
+            last_event = parseSingleEventBody(*last_header, in, table_map, exist_checksum);
         }
-
-        if (options.count("binlog"))
-            processBinlogFromFile(options["binlog"].as<std::string>(), options.count("disable_checksum"));
-        else
-            processBinlogFromSocket(host, port, user, password, gtid, options.count("disable_checksum"));
     }
-    catch (std::exception & ex)
+    catch (...)
     {
-        std::cerr << ex.what() << std::endl;
-        return EXIT_FAILURE;
+        DB::WriteBufferFromOStream cerr(std::cerr);
+        cerr << "Unable to parse MySQL binlog event. Code: " << DB::getCurrentExceptionCode() << ", Exception message: "
+            << DB::getCurrentExceptionMessage(false) << '\n' << ", Previous event: " << '\n';
+        last_event->dump(cerr);
+        cerr << '\n' << ", Event header: " << '\n';
+        last_header->dump(cerr);
+        cerr << '\n';
+        return DB::getCurrentExceptionCode();
     }
 
-    return EXIT_SUCCESS;
+    DB::WriteBufferFromOStream cout(std::cout);
+    cout << "Check passed. " << '\n' << "No exception was thrown." << '\n' << "The last binlog event: " << '\n';
+    last_event->dump(cout);
+    cout << '\n';
+    return 0;
+}
+
+
+int main(int argc, char ** argv)
+{
+    boost::program_options::options_description desc("Allowed options");
+    desc.add_options()("help,h", "Produce help message");
+    desc.add_options()("disable_checksum", "Disable checksums in binlog files.");
+
+    boost::program_options::variables_map options;
+    boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
+
+    if (options.count("help") || argc < 2)
+    {
+        std::cout << "Usage: " << argv[0] << " mysql_binlog_file" << std::endl;
+        std::cout << desc << std::endl;
+        return 1;
+    }
+
+    return checkBinLogFile(argv[argc - 1], !options.count("disable_checksum"));
 }

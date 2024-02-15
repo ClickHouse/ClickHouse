@@ -15,24 +15,24 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemDatabases::getColumnsDescription()
+NamesAndTypesList StorageSystemDatabases::getNamesAndTypes()
 {
-    auto description = ColumnsDescription
-    {
-        {"name", std::make_shared<DataTypeString>(), "Database name."},
-        {"engine", std::make_shared<DataTypeString>(), "Database engine."},
-        {"data_path", std::make_shared<DataTypeString>(), "Data path."},
-        {"metadata_path", std::make_shared<DataTypeString>(), "Metadata path."},
-        {"uuid", std::make_shared<DataTypeUUID>(), "Database UUID."},
-        {"engine_full", std::make_shared<DataTypeString>(), "Parameters of the database engine."},
-        {"comment", std::make_shared<DataTypeString>(), "Database comment."}
+    return {
+        {"name", std::make_shared<DataTypeString>()},
+        {"engine", std::make_shared<DataTypeString>()},
+        {"data_path", std::make_shared<DataTypeString>()},
+        {"metadata_path", std::make_shared<DataTypeString>()},
+        {"uuid", std::make_shared<DataTypeUUID>()},
+        {"engine_full", std::make_shared<DataTypeString>()},
+        {"comment", std::make_shared<DataTypeString>()}
     };
+}
 
-    description.setAliases({
+NamesAndAliases StorageSystemDatabases::getNamesAndAliases()
+{
+    return {
         {"database", std::make_shared<DataTypeString>(), "name"}
-    });
-
-    return description;
+    };
 }
 
 static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database)
@@ -54,7 +54,7 @@ static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database
             return {};
 
         guard.reset();
-        LOG_TRACE(getLogger("StorageSystemDatabases"), "Failed to lock database {} ({}), will retry", name, database->getUUID());
+        LOG_TRACE(&Poco::Logger::get("StorageSystemDatabases"), "Failed to lock database {} ({}), will retry", name, database->getUUID());
     }
 
     ASTPtr ast = database->getCreateDatabaseQuery();

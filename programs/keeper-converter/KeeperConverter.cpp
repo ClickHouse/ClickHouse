@@ -1,4 +1,5 @@
 #include <iostream>
+#include <optional>
 #include <boost/program_options.hpp>
 
 #include <Coordination/KeeperSnapshotManager.h>
@@ -27,7 +28,7 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
     po::store(po::command_line_parser(argc, argv).options(desc).run(), options);
     Poco::AutoPtr<Poco::ConsoleChannel> console_channel(new Poco::ConsoleChannel);
 
-    LoggerPtr logger = getLogger("KeeperConverter");
+    Poco::Logger * logger = &Poco::Logger::get("KeeperConverter");
     logger->setChannel(console_channel);
 
     if (options.count("help"))

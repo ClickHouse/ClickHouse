@@ -21,7 +21,6 @@ class DisksApp : public Poco::Util::Application, public Loggers
 {
 public:
     DisksApp() = default;
-    ~DisksApp() override;
 
     void init(std::vector<String> & common_arguments);
 
@@ -53,9 +52,9 @@ protected:
     std::vector<String> command_arguments;
 
     std::unordered_set<String> supported_commands;
+
     std::unordered_map<String, CommandPtr> command_descriptions;
 
     po::variables_map options;
 };
-
 }

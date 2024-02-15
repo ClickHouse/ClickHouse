@@ -1,14 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Storages/MergeTree/MergeTreeIndexInverted.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/logger_useful.h>
-
-namespace ProfileEvents
-{
-extern const Event MergeTreeDataWriterSkipIndicesCalculationMicroseconds;
-extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
-}
 
 namespace DB
 {
@@ -156,8 +148,6 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     , default_codec(default_codec_)
     , compute_granularity(index_granularity.empty())
     , compress_primary_key(settings.compress_primary_key)
-    , execution_stats(skip_indices.size(), stats.size())
-    , log(getLogger(storage.getLogName() + " (DataPartWriter)"))
 {
     if (settings.blocks_are_granules_size && !index_granularity.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -339,12 +329,9 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeStatistics(const Block & block)
 {
-    for (size_t i = 0; i < stats.size(); ++i)
+    for (const auto & stat_ptr : stats)
     {
-        const auto & stat_ptr = stats[i];
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
         stat_ptr->update(block.getByName(stat_ptr->columnName()).column);
-        execution_stats.statistics_build_us[i] += watch.elapsed();
     }
 }
 
@@ -391,14 +378,10 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
                     writeBinaryLittleEndian(1UL, marks_out);
             }
 
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterSkipIndicesCalculationMicroseconds);
-
             size_t pos = granule.start_row;
             skip_indices_aggregators[i]->update(skip_indexes_block, &pos, granule.rows_to_write);
             if (granule.is_complete)
                 ++skip_index_accumulated_marks[i];
-
-            execution_stats.skip_indices_build_us[i] += watch.elapsed();
         }
     }
 }
@@ -498,9 +481,6 @@ void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(bool sync)
         if (sync)
             stream->sync();
     }
-
-    for (size_t i = 0; i < stats.size(); ++i)
-        LOG_DEBUG(log, "Spent {} ms calculating statistics {} for the part {}", execution_stats.statistics_build_us[i] / 1000, stats[i]->columnName(), data_part->name);
 }
 
 void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataPart::Checksums & checksums)
@@ -524,10 +504,6 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
     }
     for (auto & store: gin_index_stores)
         store.second->finalize();
-
-    for (size_t i = 0; i < skip_indices.size(); ++i)
-        LOG_DEBUG(log, "Spent {} ms calculating index {} for the part {}", execution_stats.skip_indices_build_us[i] / 1000, skip_indices[i]->index.name, data_part->name);
-
     gin_index_stores.clear();
     skip_indices_streams.clear();
     skip_indices_aggregators.clear();

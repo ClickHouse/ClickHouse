@@ -19,7 +19,7 @@ namespace ErrorCodes
 }
 
 WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_)
-    : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(file_segment_->getPath()))
+    : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(file_segment_->getPathInLocalCache()))
     , file_segment(file_segment_)
 {
 }
@@ -27,7 +27,7 @@ WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_)
 WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegmentsHolderPtr segment_holder_)
     : WriteBufferFromFileDecorator(
         segment_holder_->size() == 1
-        ? std::make_unique<WriteBufferFromFile>(segment_holder_->front().getPath())
+        ? std::make_unique<WriteBufferFromFile>(segment_holder_->front().getPathInLocalCache())
         : throw Exception(ErrorCodes::LOGICAL_ERROR, "WriteBufferToFileSegment can be created only from single segment"))
     , file_segment(&segment_holder_->front())
     , segment_holder(std::move(segment_holder_))
@@ -58,9 +58,6 @@ void WriteBufferToFileSegment::nextImpl()
             reserve_stat_msg += fmt::format("{} hold {}, can release {}; ",
                 toString(kind), ReadableSize(stat.non_releasable_size), ReadableSize(stat.releasable_size));
 
-        if (std::filesystem::exists(file_segment->getPath()))
-            std::filesystem::remove(file_segment->getPath());
-
         throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Failed to reserve {} bytes for {}: {}(segment info: {})",
             bytes_to_write,
             file_segment->getKind() == FileSegmentKind::Temporary ? "temporary file" : "the file in cache",
@@ -77,7 +74,7 @@ void WriteBufferToFileSegment::nextImpl()
     }
     catch (...)
     {
-        LOG_WARNING(getLogger("WriteBufferToFileSegment"), "Failed to write to the underlying buffer ({})", file_segment->getInfoForLog());
+        LOG_WARNING(&Poco::Logger::get("WriteBufferToFileSegment"), "Failed to write to the underlying buffer ({})", file_segment->getInfoForLog());
         throw;
     }
 
@@ -87,7 +84,7 @@ void WriteBufferToFileSegment::nextImpl()
 std::unique_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
 {
     finalize();
-    return std::make_unique<ReadBufferFromFile>(file_segment->getPath());
+    return std::make_unique<ReadBufferFromFile>(file_segment->getPathInLocalCache());
 }
 
 WriteBufferToFileSegment::~WriteBufferToFileSegment()

@@ -570,7 +570,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
 
         // We may be able to schedule more work now, but can't call scheduleMoreWorkIfNeeded() right
         // here because we're running on the same thread pool, so it'll deadlock if thread limit is
-        // reached. Wake up read() instead.
+        // reached. Wake up generate() instead.
         condvar.notify_all();
     };
 
@@ -579,7 +579,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
 
     auto batch = row_group_batch.record_batch_reader->Next();
     if (!batch.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", batch.status().ToString());
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", batch.status().ToString());
 
     if (!*batch)
     {
@@ -637,7 +637,7 @@ void ParquetBlockInputFormat::scheduleMoreWorkIfNeeded(std::optional<size_t> row
     }
 }
 
-Chunk ParquetBlockInputFormat::read()
+Chunk ParquetBlockInputFormat::generate()
 {
     initializeIfNeeded();
 

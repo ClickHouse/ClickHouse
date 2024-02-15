@@ -99,14 +99,14 @@ public:
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    size_t getQueryCount() const override { return query_count.load(); }
+    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
     double getFoundRate() const override
     {
-        size_t queries = query_count.load();
+        size_t queries = query_count.load(std::memory_order_relaxed);
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
     }
 
     double getHitRate() const override { return 1.0; }
@@ -251,7 +251,7 @@ private:
 
     void resize(size_t added_rows);
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
@@ -293,7 +293,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::HashedDictionary(
     const HashedDictionaryConfiguration & configuration_,
     BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
-    , log(getLogger("HashedDictionary"))
+    , log(&Poco::Logger::get("HashedDictionary"))
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
     , configuration(configuration_)

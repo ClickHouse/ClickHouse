@@ -82,7 +82,7 @@ private:
     size_t current_buf_idx = 0;
     SeekableReadBufferPtr current_buf;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 size_t chooseBufferSizeForRemoteReading(const DB::ReadSettings & settings, size_t file_size);

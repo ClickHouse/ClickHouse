@@ -4,10 +4,18 @@
 #include <string>
 #include <atomic>
 
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
+
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Common/logger_useful.h>
-#include <Common/re2.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -85,25 +93,20 @@ public:
 
 SensitiveDataMasker::~SensitiveDataMasker() = default;
 
-SensitiveDataMasker::MaskerMultiVersion SensitiveDataMasker::sensitive_data_masker{};
+std::unique_ptr<SensitiveDataMasker> SensitiveDataMasker::sensitive_data_masker = nullptr;
 
-void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker>&& sensitive_data_masker_)
+void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_)
 {
-
     if (!sensitive_data_masker_)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: the 'sensitive_data_masker' is not set");
 
     if (sensitive_data_masker_->rulesCount() > 0)
     {
-        sensitive_data_masker.set(std::move(sensitive_data_masker_));
-    }
-    else
-    {
-        sensitive_data_masker.set(nullptr);
+        sensitive_data_masker = std::move(sensitive_data_masker_);
     }
 }
 
-SensitiveDataMasker::MaskerMultiVersion::Version SensitiveDataMasker::getInstance()
+SensitiveDataMasker * SensitiveDataMasker::getInstance()
 {
     return sensitive_data_masker.get();
 }
@@ -112,7 +115,7 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
-    LoggerPtr logger = getLogger("SensitiveDataMaskerConfigRead");
+    Poco::Logger * logger = &Poco::Logger::get("SensitiveDataMaskerConfigRead");
 
     std::set<std::string> used_names;
 
@@ -202,7 +205,7 @@ std::string wipeSensitiveDataAndCutToLength(const std::string & str, size_t max_
 {
     std::string res = str;
 
-    if (auto masker = SensitiveDataMasker::getInstance())
+    if (auto * masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);
 
     size_t length = res.length();

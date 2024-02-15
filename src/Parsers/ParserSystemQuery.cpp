@@ -284,19 +284,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 if (ParserKeyword{"STRICT"}.ignore(pos, expected))
                     res->sync_replica_mode = SyncReplicaMode::STRICT;
                 else if (ParserKeyword{"LIGHTWEIGHT"}.ignore(pos, expected))
-                {
                     res->sync_replica_mode = SyncReplicaMode::LIGHTWEIGHT;
-                    if (ParserKeyword{"FROM"}.ignore(pos, expected))
-                    {
-                        do
-                        {
-                            ASTPtr replica_ast;
-                            if (!ParserStringLiteral{}.parse(pos, replica_ast, expected))
-                                return false;
-                            res->src_replicas.insert(replica_ast->as<ASTLiteral &>().value.safeGet<String>());
-                        } while (ParserToken{TokenType::Comma}.ignore(pos, expected));
-                    }
-                }
                 else if (ParserKeyword{"PULL"}.ignore(pos, expected))
                     res->sync_replica_mode = SyncReplicaMode::PULL;
             }

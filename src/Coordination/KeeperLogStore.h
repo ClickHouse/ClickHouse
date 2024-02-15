@@ -74,7 +74,7 @@ public:
 
 private:
     mutable std::mutex changelog_lock;
-    LoggerPtr log;
+    Poco::Logger * log;
     Changelog changelog TSA_GUARDED_BY(changelog_lock);
 };
 

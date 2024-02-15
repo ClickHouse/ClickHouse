@@ -314,7 +314,7 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
         return version;
     }
 
-    LoggerPtr log = getLogger("DeltaLakeMetadataParser");
+    Poco::Logger * log = &Poco::Logger::get("DeltaLakeMetadataParser");
 };
 
 

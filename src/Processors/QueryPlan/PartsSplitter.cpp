@@ -228,7 +228,7 @@ struct SplitPartsRangesResult
     RangesInDataParts intersecting_parts_ranges;
 };
 
-SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, const LoggerPtr & logger)
+SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, bool force_process_all_ranges)
 {
     /** Split ranges in data parts into intersecting ranges in data parts and non intersecting ranges in data parts.
       *
@@ -349,7 +349,7 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
             if (previous_part_range.event == PartsRangesIterator::EventType::RangeStart)
             {
                 /// If part level is 0, we must process whole previous part because it can contain duplicate primary keys
-                if (ranges_in_data_parts[previous_part_range.part_index].data_part->info.level == 0)
+                if (force_process_all_ranges || ranges_in_data_parts[previous_part_range.part_index].data_part->info.level == 0)
                     continue;
 
                 /// Case 1 Range Start after Range Start
@@ -384,7 +384,7 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
             MarkRange other_interval_range = other_interval_it->second;
 
             /// If part level is 0, we must process whole other intersecting part because it can contain duplicate primary keys
-            if (ranges_in_data_parts[other_interval_part_index].data_part->info.level == 0)
+            if (force_process_all_ranges || ranges_in_data_parts[other_interval_part_index].data_part->info.level == 0)
                 continue;
 
             /// Case 2 Range Start after Range End
@@ -419,7 +419,7 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
           *
           * If part level is 0, we must process whole part because it can contain duplicate primary keys.
           */
-        if (intersecting_parts != 1 || ranges_in_data_parts[current_part_range.part_index].data_part->info.level == 0)
+        if (intersecting_parts != 1 || force_process_all_ranges || ranges_in_data_parts[current_part_range.part_index].data_part->info.level == 0)
         {
             add_intersecting_range(current_part_range.part_index, part_index_start_to_range[current_part_range.part_index]);
             part_index_start_to_range.erase(current_part_range.part_index);
@@ -483,15 +483,10 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
         intersecting_ranges_in_data_parts.end(),
         [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
 
-    LOG_TEST(logger, "Non intersecting ranges in data parts {}", non_intersecting_ranges_in_data_parts.getDescriptions().describe());
-    LOG_TEST(logger, "Intersecting ranges in data parts {}", intersecting_ranges_in_data_parts.getDescriptions().describe());
-
     return {std::move(non_intersecting_ranges_in_data_parts), std::move(intersecting_ranges_in_data_parts)};
 }
 
-std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersectingPartsRangesIntoLayers(RangesInDataParts intersecting_ranges_in_data_parts,
-    size_t max_layers,
-    const LoggerPtr & logger)
+std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersectingPartsRangesIntoLayers(RangesInDataParts intersecting_ranges_in_data_parts, size_t max_layers)
 {
     // We will advance the iterator pointing to the mark with the smallest PK value until
     // there will be not less than rows_per_layer rows in the current layer (roughly speaking).
@@ -596,18 +591,8 @@ std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersecting
         result_layers.back() = std::move(current_layer_builder.getCurrentRangesInDataParts());
     }
 
-    size_t result_layers_size = result_layers.size();
-    LOG_TEST(logger, "Split intersecting ranges into {} layers", result_layers_size);
-
-    for (size_t i = 0; i < result_layers_size; ++i)
+    for (auto & layer : result_layers)
     {
-        auto & layer = result_layers[i];
-
-        LOG_TEST(logger, "Layer {} {} filter values in ({}, {}])",
-            i,
-            layer.getDescriptions().describe(),
-            i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");
-
         std::stable_sort(
             layer.begin(),
             layer.end(),
@@ -727,32 +712,17 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     size_t max_layers,
     ContextPtr context,
     ReadingInOrderStepGetter && in_order_reading_step_getter,
-    bool split_parts_ranges_into_intersecting_and_non_intersecting_final,
-    bool split_intersecting_parts_ranges_into_layers)
+    bool force_process_all_ranges)
 {
     if (max_layers <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1");
 
-    auto logger = getLogger("PartsSplitter");
-
     SplitPartsWithRangesByPrimaryKeyResult result;
 
-    RangesInDataParts intersecting_parts_ranges = std::move(parts);
+    SplitPartsRangesResult split_result = splitPartsRanges(std::move(parts), force_process_all_ranges);
+    result.non_intersecting_parts_ranges = std::move(split_result.non_intersecting_parts_ranges);
 
-    if (split_parts_ranges_into_intersecting_and_non_intersecting_final)
-    {
-        SplitPartsRangesResult split_result = splitPartsRanges(intersecting_parts_ranges, logger);
-        result.non_intersecting_parts_ranges = std::move(split_result.non_intersecting_parts_ranges);
-        intersecting_parts_ranges = std::move(split_result.intersecting_parts_ranges);
-    }
-
-    if (!split_intersecting_parts_ranges_into_layers)
-    {
-        result.merging_pipes.emplace_back(in_order_reading_step_getter(intersecting_parts_ranges));
-        return result;
-    }
-
-    auto && [layers, borders] = splitIntersectingPartsRangesIntoLayers(intersecting_parts_ranges, max_layers, logger);
+    auto && [layers, borders] = splitIntersectingPartsRangesIntoLayers(std::move(split_result.intersecting_parts_ranges), max_layers);
     auto filters = buildFilters(primary_key, borders);
     result.merging_pipes.resize(layers.size());
 

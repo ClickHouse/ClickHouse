@@ -8,7 +8,6 @@
     M(Query, "Number of queries to be interpreted and potentially executed. Does not include queries that failed to parse or were rejected due to AST size limits, quota limits or limits on the number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.") \
     M(SelectQuery, "Same as Query, but only for SELECT queries.") \
     M(InsertQuery, "Same as Query, but only for INSERT queries.") \
-    M(InitialQuery, "Same as Query, but only counts initial queries (see is_initial_query).")\
     M(QueriesWithSubqueries, "Count queries with all subqueries") \
     M(SelectQueriesWithSubqueries, "Count SELECT queries with all subqueries") \
     M(InsertQueriesWithSubqueries, "Count INSERT queries with all subqueries") \
@@ -198,15 +197,6 @@
     M(MergeTreeDataWriterBlocks, "Number of blocks INSERTed to MergeTree tables. Each block forms a data part of level zero.") \
     M(MergeTreeDataWriterBlocksAlreadySorted, "Number of blocks INSERTed to MergeTree tables that appeared to be already sorted.") \
     \
-    M(MergeTreeDataWriterSkipIndicesCalculationMicroseconds, "Time spent calculating skip indices") \
-    M(MergeTreeDataWriterStatisticsCalculationMicroseconds, "Time spent calculating statistics") \
-    M(MergeTreeDataWriterSortingBlocksMicroseconds, "Time spent sorting blocks") \
-    M(MergeTreeDataWriterMergingBlocksMicroseconds, "Time spent merging input blocks (for special MergeTree engines)") \
-    M(MergeTreeDataWriterProjectionsCalculationMicroseconds, "Time spent calculating projections") \
-    M(MergeTreeDataProjectionWriterSortingBlocksMicroseconds, "Time spent sorting blocks (for projection it might be a key different from table's sorting key)") \
-    M(MergeTreeDataProjectionWriterMergingBlocksMicroseconds, "Time spent merging blocks") \
-    M(MutateTaskProjectionsCalculationMicroseconds, "Time spent calculating projections") \
-    \
     M(InsertedWideParts, "Number of parts inserted in Wide format.") \
     M(InsertedCompactParts, "Number of parts inserted in Compact format.") \
     M(MergedIntoWideParts, "Number of parts merged into Wide format.") \
@@ -298,18 +288,6 @@ The server successfully detected this situation and will download merged part fr
     M(OSReadChars, "Number of bytes read from filesystem, including page cache.") \
     M(OSWriteChars, "Number of bytes written to filesystem, including page cache.") \
     \
-    M(ParallelReplicasHandleRequestMicroseconds, "Time spent processing requests for marks from replicas") \
-    M(ParallelReplicasHandleAnnouncementMicroseconds, "Time spent processing replicas announcements") \
-    \
-    M(ParallelReplicasReadAssignedMarks, "Sum across all replicas of how many of scheduled marks were assigned by consistent hash") \
-    M(ParallelReplicasReadUnassignedMarks, "Sum across all replicas of how many unassigned marks were scheduled") \
-    M(ParallelReplicasReadAssignedForStealingMarks, "Sum across all replicas of how many of scheduled marks were assigned for stealing by consistent hash") \
-    \
-    M(ParallelReplicasStealingByHashMicroseconds, "Time spent collecting segments meant for stealing by hash") \
-    M(ParallelReplicasProcessingPartsMicroseconds, "Time spent processing data parts") \
-    M(ParallelReplicasStealingLeftoversMicroseconds, "Time spent collecting orphaned segments") \
-    M(ParallelReplicasCollectingOwnedSegmentsMicroseconds, "Time spent collecting segments meant by hash") \
-    \
     M(PerfCpuCycles, "Total cycles. Be wary of what happens during CPU frequency scaling.")  \
     M(PerfInstructions, "Retired instructions. Be careful, these can be affected by various issues, most notably hardware interrupt counts.") \
     M(PerfCacheReferences, "Cache accesses. Usually, this indicates Last Level Cache accesses, but this may vary depending on your CPU. This may include prefetches and coherency messages; again this depends on the design of your CPU.") \
@@ -385,10 +363,6 @@ The server successfully detected this situation and will download merged part fr
     M(S3PutObject, "Number of S3 API PutObject calls.") \
     M(S3GetObject, "Number of S3 API GetObject calls.") \
     \
-    M(AzureUploadPart, "Number of Azure blob storage API UploadPart calls") \
-    M(DiskAzureUploadPart, "Number of Disk Azure blob storage API UploadPart calls") \
-    M(AzureCopyObject, "Number of Azure blob storage API CopyObject calls") \
-    M(DiskAzureCopyObject, "Number of Disk Azure blob storage API CopyObject calls") \
     M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
     M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.") \
     \
@@ -404,9 +378,6 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3CompleteMultipartUpload, "Number of DiskS3 API CompleteMultipartUpload calls.") \
     M(DiskS3PutObject, "Number of DiskS3 API PutObject calls.") \
     M(DiskS3GetObject, "Number of DiskS3 API GetObject calls.") \
-    \
-    M(S3Clients, "Number of created S3 clients.") \
-    M(TinyS3Clients, "Number of S3 clients copies which reuse an existing auth provider from another client.") \
     \
     M(EngineFileLikeReadFiles, "Number of files read in table engines working with files (like File/S3/URL/HDFS).") \
     \
@@ -616,22 +587,7 @@ The server successfully detected this situation and will download merged part fr
     M(LogError, "Number of log messages with level Error") \
     M(LogFatal, "Number of log messages with level Fatal") \
     \
-    M(InterfaceHTTPSendBytes, "Number of bytes sent through HTTP interfaces") \
-    M(InterfaceHTTPReceiveBytes, "Number of bytes received through HTTP interfaces") \
-    M(InterfaceNativeSendBytes, "Number of bytes sent through native interfaces") \
-    M(InterfaceNativeReceiveBytes, "Number of bytes received through native interfaces") \
-    M(InterfacePrometheusSendBytes, "Number of bytes sent through Prometheus interfaces") \
-    M(InterfacePrometheusReceiveBytes, "Number of bytes received through Prometheus interfaces") \
-    M(InterfaceInterserverSendBytes, "Number of bytes sent through interserver interfaces") \
-    M(InterfaceInterserverReceiveBytes, "Number of bytes received through interserver interfaces") \
-    M(InterfaceMySQLSendBytes, "Number of bytes sent through MySQL interfaces") \
-    M(InterfaceMySQLReceiveBytes, "Number of bytes received through MySQL interfaces") \
-    M(InterfacePostgreSQLSendBytes, "Number of bytes sent through PostgreSQL interfaces") \
-    M(InterfacePostgreSQLReceiveBytes, "Number of bytes received through PostgreSQL interfaces") \
-    \
     M(ParallelReplicasUsedCount, "Number of replicas used to execute a query with task-based parallel replicas") \
-    M(ParallelReplicasAvailableCount, "Number of replicas available to execute a query with task-based parallel replicas") \
-    M(ParallelReplicasUnavailableCount, "Number of replicas which was chosen, but found to be unavailable during query execution with task-based parallel replicas") \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)

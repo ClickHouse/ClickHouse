@@ -6,15 +6,14 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
 #include <Poco/Logger.h>
-#include <Common/MemorySanitizer.h>
-#include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
+#include <Common/logger_useful.h>
+#include "libaccel_config.h"
+#include <Common/MemorySanitizer.h>
 #include <base/scope_guard.h>
 #include <base/getPageSize.h>
-
-#include "libaccel_config.h"
-
 #include <immintrin.h>
+
 
 namespace DB
 {
@@ -34,7 +33,7 @@ DeflateQplJobHWPool::DeflateQplJobHWPool()
     : max_hw_jobs(0)
     , random_engine(randomSeed())
 {
-    LoggerPtr log = getLogger("DeflateQplJobHWPool");
+    Poco::Logger * log = &Poco::Logger::get("DeflateQplJobHWPool");
     const char * qpl_version = qpl_get_library_version();
 
     // loop all configured workqueue size to get maximum job number.
@@ -142,7 +141,7 @@ void DeflateQplJobHWPool::unLockJob(UInt32 index)
 }
 
 HardwareCodecDeflateQpl::HardwareCodecDeflateQpl(SoftwareCodecDeflateQpl & sw_codec_)
-    : log(getLogger("HardwareCodecDeflateQpl"))
+    : log(&Poco::Logger::get("HardwareCodecDeflateQpl"))
     , sw_codec(sw_codec_)
 {
 }
@@ -417,7 +416,9 @@ UInt32 CompressionCodecDeflateQpl::doCompressData(const char * source, UInt32 so
 {
 /// QPL library is using AVX-512 with some shuffle operations.
 /// Memory sanitizer don't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.
+#if defined(MEMORY_SANITIZER)
     __msan_unpoison(dest, getMaxCompressedDataSize(source_size));
+#endif
     Int32 res = HardwareCodecDeflateQpl::RET_ERROR;
     if (DeflateQplJobHWPool::instance().isJobPoolReady())
         res = hw_codec->doCompressData(source, source_size, dest, getMaxCompressedDataSize(source_size));
@@ -438,7 +439,9 @@ void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 so
 {
 /// QPL library is using AVX-512 with some shuffle operations.
 /// Memory sanitizer don't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.
+#if defined(MEMORY_SANITIZER)
     __msan_unpoison(dest, uncompressed_size);
+#endif
 /// Device IOTLB miss has big perf. impact for IAA accelerators.
 /// To avoid page fault, we need touch buffers related to accelerator in advance.
     touchBufferWithZeroFilling(dest, uncompressed_size);

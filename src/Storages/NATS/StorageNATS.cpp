@@ -59,7 +59,7 @@ StorageNATS::StorageNATS(
     , schema_name(getContext()->getMacros()->expand(nats_settings->nats_schema))
     , num_consumers(nats_settings->nats_num_consumers.value)
     , max_rows_per_message(nats_settings->nats_max_rows_per_message)
-    , log(getLogger("StorageNATS (" + table_id_.table_name + ")"))
+    , log(&Poco::Logger::get("StorageNATS (" + table_id_.table_name + ")"))
     , semaphore(0, static_cast<int>(num_consumers))
     , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
     , is_attach(is_attach_)
@@ -67,7 +67,6 @@ StorageNATS::StorageNATS(
     auto nats_username = getContext()->getMacros()->expand(nats_settings->nats_username);
     auto nats_password = getContext()->getMacros()->expand(nats_settings->nats_password);
     auto nats_token = getContext()->getMacros()->expand(nats_settings->nats_token);
-    auto nats_credential_file = getContext()->getMacros()->expand(nats_settings->nats_credential_file);
 
     configuration =
     {
@@ -76,7 +75,6 @@ StorageNATS::StorageNATS(
         .username = nats_username.empty() ? getContext()->getConfigRef().getString("nats.user", "") : nats_username,
         .password = nats_password.empty() ? getContext()->getConfigRef().getString("nats.password", "") : nats_password,
         .token = nats_token.empty() ? getContext()->getConfigRef().getString("nats.token", "") : nats_token,
-        .credential_file = nats_credential_file.empty() ? getContext()->getConfigRef().getString("nats.credential_file", "") : nats_credential_file,
         .max_reconnect = static_cast<int>(nats_settings->nats_max_reconnect.value),
         .reconnect_wait = static_cast<int>(nats_settings->nats_reconnect_wait.value),
         .secure = nats_settings->nats_secure.value
@@ -349,11 +347,11 @@ void StorageNATS::read(
     if (pipe.empty())
     {
         auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, local_context);
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), local_context, query_info);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), query_info, local_context);
         query_plan.addStep(std::move(read_step));
         query_plan.addInterpreterContext(modified_context);
     }

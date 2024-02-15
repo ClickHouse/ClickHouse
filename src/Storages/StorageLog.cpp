@@ -104,8 +104,6 @@ protected:
     Chunk generate() override;
 
 private:
-    NameAndTypePair getColumnOnDisk(const NameAndTypePair & column) const;
-
     const size_t block_size;
     const NamesAndTypesList columns;
     const StorageLog & storage;
@@ -151,22 +149,6 @@ private:
     bool isFinished();
 };
 
-NameAndTypePair LogSource::getColumnOnDisk(const NameAndTypePair & column) const
-{
-    const auto & storage_columns = storage.columns_with_collected_nested;
-
-    /// A special case when we read subcolumn of shared offsets of Nested.
-    /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
-    auto name_in_storage = column.getNameInStorage();
-    if (column.getSubcolumnName() == "size0" && Nested::isSubcolumnOfNested(name_in_storage, storage_columns))
-    {
-        auto nested_name_in_storage = Nested::splitName(name_in_storage).first;
-        auto new_name = Nested::concatenateName(nested_name_in_storage, column.getSubcolumnName());
-        return storage_columns.getColumnOrSubcolumn(GetColumnsOptions::All, new_name);
-    }
-
-    return column;
-}
 
 Chunk LogSource::generate()
 {
@@ -187,21 +169,19 @@ Chunk LogSource::generate()
     for (const auto & name_type : columns)
     {
         ColumnPtr column;
-        auto name_type_on_disk = getColumnOnDisk(name_type);
-
         try
         {
-            column = name_type_on_disk.type->createColumn();
-            readData(name_type_on_disk, column, max_rows_to_read, caches[name_type_on_disk.getNameInStorage()]);
+            column = name_type.type->createColumn();
+            readData(name_type, column, max_rows_to_read, caches[name_type.getNameInStorage()]);
         }
         catch (Exception & e)
         {
-            e.addMessage("while reading column " + name_type_on_disk.name + " at " + fullPath(storage.disk, storage.table_path));
+            e.addMessage("while reading column " + name_type.name + " at " + fullPath(storage.disk, storage.table_path));
             throw;
         }
 
         if (!column->empty())
-            res.insert(ColumnWithTypeAndName(column, name_type_on_disk.type, name_type_on_disk.name));
+            res.insert(ColumnWithTypeAndName(column, name_type.type, name_type.name));
     }
 
     if (res)
@@ -620,7 +600,6 @@ StorageLog::StorageLog(
         }
     }
 
-    columns_with_collected_nested = ColumnsDescription{Nested::collect(columns_.getAll())};
     total_bytes = file_checker.getTotalSize();
 }
 
@@ -841,6 +820,10 @@ Pipe StorageLog::read(
     if (num_streams > max_streams)
         num_streams = max_streams;
 
+    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+    auto all_columns = storage_snapshot->getColumnsByNames(options, column_names);
+    all_columns = Nested::convertToSubcolumns(all_columns);
+
     std::vector<size_t> offsets;
     offsets.resize(num_data_files, 0);
 
@@ -856,12 +839,6 @@ Pipe StorageLog::read(
 
     ReadSettings read_settings = local_context->getReadSettings();
     Pipes pipes;
-
-    /// Converting to subcolumns of Nested is needed for
-    /// correct reading of parts of Nested with shared offsets.
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
-    auto all_columns = storage_snapshot->getColumnsByNames(options, column_names);
-    all_columns = Nested::convertToSubcolumns(all_columns);
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {

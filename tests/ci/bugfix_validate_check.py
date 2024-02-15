@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
 
+from pathlib import Path
+from typing import List, Tuple
 import argparse
 import csv
 import logging
-from pathlib import Path
-from typing import List, Optional, Tuple
 
-# isort: off
 from github import Github
-
-# isort: on
 
 from commit_status_helper import get_commit, post_commit_status
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import ERROR, SUCCESS, TestResult, TestResults
+from report import TestResults, TestResult
 from s3_helper import S3Helper
 from upload_result_helper import upload_results
 
@@ -35,8 +32,7 @@ def post_commit_status_from_file(file_path: Path) -> List[str]:
     return res[0]
 
 
-# Returns (is_ok, test_results, error_message)
-def process_result(file_path: Path) -> Tuple[bool, TestResults, Optional[str]]:
+def process_result(file_path: Path) -> Tuple[bool, TestResults]:
     test_results = []  # type: TestResults
     state, report_url, description = post_commit_status_from_file(file_path)
     prefix = file_path.parent.name
@@ -50,11 +46,11 @@ def process_result(file_path: Path) -> Tuple[bool, TestResults, Optional[str]]:
             if report_url != "null"
             else "Check failed"
         )
-        return False, [TestResult(f"{prefix}: {description}", status)], "Check failed"
+        return False, [TestResult(f"{prefix}: {description}", status)]
 
-    is_ok = state == SUCCESS
+    is_ok = state == "success"
     if is_ok and report_url == "null":
-        return is_ok, test_results, None
+        return is_ok, test_results
 
     status = (
         f'OK: Bug reproduced (<a href="{report_url}">Report</a>)'
@@ -62,22 +58,19 @@ def process_result(file_path: Path) -> Tuple[bool, TestResults, Optional[str]]:
         else f'Bug is not reproduced (<a href="{report_url}">Report</a>)'
     )
     test_results.append(TestResult(f"{prefix}: {description}", status))
-    return is_ok, test_results, None
+    return is_ok, test_results
 
 
-def process_all_results(
-    file_paths: List[Path],
-) -> Tuple[bool, TestResults, Optional[str]]:
+def process_all_results(file_paths: List[Path]) -> Tuple[bool, TestResults]:
     any_ok = False
     all_results = []
-    error = None
     for status_path in file_paths:
-        is_ok, test_results, error = process_result(status_path)
+        is_ok, test_results = process_result(status_path)
         any_ok = any_ok or is_ok
         if test_results is not None:
             all_results.extend(test_results)
 
-    return any_ok and error is None, all_results, error
+    return any_ok, all_results
 
 
 def main():
@@ -87,13 +80,7 @@ def main():
 
     check_name_with_group = "Bugfix validate check"
 
-    is_ok, test_results, error = process_all_results(status_files)
-
-    description = ""
-    if error:
-        description = error
-    elif not is_ok:
-        description = "Changed tests don't reproduce the bug"
+    is_ok, test_results = process_all_results(status_files)
 
     pr_info = PRInfo()
     if not test_results:
@@ -101,6 +88,7 @@ def main():
         report_url = ""
         logging.info("No results to upload")
     else:
+        description = "" if is_ok else "Changed tests don't reproduce the bug"
         report_url = upload_results(
             S3Helper(),
             pr_info.number,
@@ -114,7 +102,7 @@ def main():
     commit = get_commit(gh, pr_info.sha)
     post_commit_status(
         commit,
-        SUCCESS if is_ok else ERROR,
+        "success" if is_ok else "error",
         report_url,
         description,
         check_name_with_group,

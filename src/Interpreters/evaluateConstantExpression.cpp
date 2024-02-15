@@ -661,7 +661,7 @@ namespace
         const ActionsDAG::NodeRawConstPtrs & target_expr,
         ConjunctionMap && conjunction)
     {
-        auto columns = ActionsDAG::evaluatePartialResult(conjunction, target_expr, /* input_rows_count= */ 1, /* throw_on_error= */ false);
+        auto columns = ActionsDAG::evaluatePartialResult(conjunction, target_expr, false);
         for (const auto & column : columns)
             if (!column.column)
                 return {};

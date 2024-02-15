@@ -88,7 +88,7 @@ private:
 };
 
 
-class MergeTreeIndexAnnoy final : public IMergeTreeIndex
+class MergeTreeIndexAnnoy : public IMergeTreeIndex
 {
 public:
 
@@ -98,9 +98,7 @@ public:
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
-    MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const;
-    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAGPtr &, ContextPtr) const override;
-    bool isVectorSearch() const override { return true; }
+    MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const override;
 
 private:
     const UInt64 trees;

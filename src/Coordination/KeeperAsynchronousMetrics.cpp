@@ -22,13 +22,14 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     size_t key_arena_size = 0;
     size_t latest_snapshot_size = 0;
     size_t open_file_descriptor_count = 0;
-    std::optional<size_t> max_file_descriptor_count = 0;
+    size_t max_file_descriptor_count = 0;
     size_t followers = 0;
     size_t synced_followers = 0;
     size_t zxid = 0;
     size_t session_with_watches = 0;
     size_t paths_watched = 0;
-    size_t is_exceeding_mem_soft_limit = 0;
+    //size_t snapshot_dir_size = 0;
+    //size_t log_dir_size = 0;
 
     if (keeper_dispatcher.isServerActive())
     {
@@ -37,7 +38,6 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
         is_leader = static_cast<size_t>(keeper_info.is_leader);
         is_observer = static_cast<size_t>(keeper_info.is_observer);
         is_follower = static_cast<size_t>(keeper_info.is_follower);
-        is_exceeding_mem_soft_limit = static_cast<size_t>(keeper_info.is_exceeding_mem_soft_limit);
 
         zxid = keeper_info.last_zxid;
         const auto & state_machine = keeper_dispatcher.getStateMachine();
@@ -68,7 +68,6 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     new_values["KeeperIsFollower"] = { is_follower, "1 if ClickHouse Keeper is a follower, 0 otherwise." };
     new_values["KeeperIsObserver"] = { is_observer, "1 if ClickHouse Keeper is an observer, 0 otherwise." };
     new_values["KeeperIsStandalone"] = { is_standalone, "1 if ClickHouse Keeper is in a standalone mode, 0 otherwise." };
-    new_values["KeeperIsExceedingMemorySoftLimitHit"] = { is_exceeding_mem_soft_limit, "1 if ClickHouse Keeper is exceeding the memory soft limit, 0 otherwise." };
 
     new_values["KeeperZnodeCount"] = { znode_count, "The number of nodes (data entries) in ClickHouse Keeper." };
     new_values["KeeperWatchCount"] = { watch_count, "The number of watches in ClickHouse Keeper." };
@@ -79,16 +78,15 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     new_values["KeeperLatestSnapshotSize"] = { latest_snapshot_size, "The uncompressed size in bytes of the latest snapshot created by ClickHouse Keeper." };
 
     new_values["KeeperOpenFileDescriptorCount"] = { open_file_descriptor_count, "The number of open file descriptors in ClickHouse Keeper." };
-    if (max_file_descriptor_count.has_value())
-        new_values["KeeperMaxFileDescriptorCount"] = { *max_file_descriptor_count, "The maximum number of open file descriptors in ClickHouse Keeper." };
-    else
-        new_values["KeeperMaxFileDescriptorCount"] = { -1, "The maximum number of open file descriptors in ClickHouse Keeper." };
+    new_values["KeeperMaxFileDescriptorCount"] = { max_file_descriptor_count, "The maximum number of open file descriptors in ClickHouse Keeper." };
 
     new_values["KeeperFollowers"] = { followers, "The number of followers of ClickHouse Keeper." };
     new_values["KeeperSyncedFollowers"] = { synced_followers, "The number of followers of ClickHouse Keeper who are also in-sync." };
     new_values["KeeperZxid"] = { zxid, "The current transaction id number (zxid) in ClickHouse Keeper." };
     new_values["KeeperSessionWithWatches"] = { session_with_watches, "The number of client sessions of ClickHouse Keeper having watches." };
     new_values["KeeperPathsWatched"] = { paths_watched, "The number of different paths watched by the clients of ClickHouse Keeper." };
+    //new_values["KeeperSnapshotDirSize"] = { snapshot_dir_size, "The size of the snapshots directory of ClickHouse Keeper, in bytes." };
+    //new_values["KeeperLogDirSize"] = { log_dir_size, "The size of the logs directory of ClickHouse Keeper, in bytes." };
 
     auto keeper_log_info = keeper_dispatcher.getKeeperLogInfo();
 
@@ -121,7 +119,7 @@ KeeperAsynchronousMetrics::~KeeperAsynchronousMetrics()
     stop();
 }
 
-void KeeperAsynchronousMetrics::updateImpl(TimePoint /*update_time*/, TimePoint /*current_time*/, bool /*force_update*/, bool /*first_run*/, AsynchronousMetricValues & new_values)
+void KeeperAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values, TimePoint /*update_time*/, TimePoint /*current_time*/)
 {
 #if USE_NURAFT
     {
