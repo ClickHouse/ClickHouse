@@ -263,9 +263,12 @@ SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'ip_trie_source_table_01
 LAYOUT(IP_TRIE())
 LIFETIME(MIN 0 MAX 1000);
 
+-- found_rate = 0, because we didn't make any searches.
 SELECT name, found_rate FROM system.dictionaries WHERE database = currentDatabase() AND name = 'ip_trie_dictionary_01862';
+-- found_rate = 1, because the dictionary covers the 127.0.0.1 address.
 SELECT dictGet('ip_trie_dictionary_01862', 'value', tuple(toIPv4('127.0.0.1'))) FORMAT Null;
 SELECT name, found_rate FROM system.dictionaries WHERE database = currentDatabase() AND name = 'ip_trie_dictionary_01862';
+-- found_rate = 0.5, because the dictionary does not cover 1.1.1.1 and we have two lookups in total as of now.
 SELECT dictGet('ip_trie_dictionary_01862', 'value', tuple(toIPv4('1.1.1.1'))) FORMAT Null;
 SELECT name, found_rate FROM system.dictionaries WHERE database = currentDatabase() AND name = 'ip_trie_dictionary_01862';
 

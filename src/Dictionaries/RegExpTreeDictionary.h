@@ -65,7 +65,7 @@ public:
         const auto queries = query_count.load(std::memory_order_relaxed);
         if (!queries)
             return 0;
-        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+        return std::min(1.0, static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries);
     }
 
     double getHitRate() const override { return 1.0; }
