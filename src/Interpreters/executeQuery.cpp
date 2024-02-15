@@ -704,7 +704,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     {
         if (settings.dialect == Dialect::kusto && !internal)
         {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Kusto dialect is disabled until these two bugs will be fixed: https://github.com/ClickHouse/ClickHouse/issues/59037 and https://github.com/ClickHouse/ClickHouse/issues/59036");
+            ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
+
+            /// TODO: parser should fail early when max_query_size limit is reached.
+            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
         else if (settings.dialect == Dialect::prql && !internal)
         {
@@ -716,6 +719,27 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+
+#ifndef NDEBUG
+            /// Verify that AST formatting is consistent:
+            /// If you format AST, parse it back, and format it again, you get the same string.
+
+            String formatted1 = ast->formatForErrorMessage();
+
+            ASTPtr ast2 = parseQuery(parser,
+                formatted1.data(),
+                formatted1.data() + formatted1.size(),
+                "", max_query_size, settings.max_parser_depth);
+
+            chassert(ast2);
+
+            String formatted2 = ast2->formatForErrorMessage();
+
+            if (formatted1 != formatted2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Inconsistent AST formatting: the query:\n{}\nWas parsed and formatted back as:\n{}",
+                    formatted1, formatted2);
+#endif
         }
 
         const char * query_end = end;
