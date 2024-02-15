@@ -17,6 +17,7 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const Names & virtual_column_names_,
+        const DataTypePtr & partition_value_type_,
         const PoolSettings & settings_,
         const ContextPtr & context_);
 

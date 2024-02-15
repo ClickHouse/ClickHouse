@@ -10,7 +10,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-String MergeTreeReadTask::Columns::dump() const
+String MergeTreeReadTaskColumns::dump() const
 {
     WriteBufferFromOwnString s;
     for (size_t i = 0; i < pre_columns.size(); ++i)
@@ -22,7 +22,7 @@ String MergeTreeReadTask::Columns::dump() const
 }
 
 MergeTreeReadTask::MergeTreeReadTask(
-    InfoPtr info_,
+    MergeTreeReadTaskInfoPtr info_,
     Readers readers_,
     MarkRanges mark_ranges_,
     MergeTreeBlockSizePredictorPtr size_predictor_)
@@ -34,16 +34,23 @@ MergeTreeReadTask::MergeTreeReadTask(
 }
 
 MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
-    const InfoPtr & read_info, const Extras & extras, const MarkRanges & ranges)
+    const MergeTreeReadTaskInfoPtr & read_info, const Extras & extras, const MarkRanges & ranges)
 {
     Readers new_readers;
 
     auto create_reader = [&](const NamesAndTypesList & columns_to_read)
     {
         return read_info->data_part->getReader(
-            columns_to_read, extras.storage_snapshot, ranges,
-            extras.uncompressed_cache, extras.mark_cache,
-            read_info->alter_conversions, extras.reader_settings, extras.value_size_map, extras.profile_callback);
+            columns_to_read,
+            extras.storage_snapshot,
+            ranges,
+            read_info,
+            extras.uncompressed_cache,
+            extras.mark_cache,
+            read_info->alter_conversions,
+            extras.reader_settings,
+            extras.value_size_map,
+            extras.profile_callback);
     };
 
     new_readers.main = create_reader(read_info->task_columns.columns);
@@ -58,10 +65,8 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     return new_readers;
 }
 
-MergeTreeReadTask::RangeReaders MergeTreeReadTask::createRangeReaders(
-    const Readers & task_readers,
-    const PrewhereExprInfo & prewhere_actions,
-    const Names & non_const_virtual_column_names)
+MergeTreeReadTask::RangeReaders
+MergeTreeReadTask::createRangeReaders(const Readers & task_readers, const PrewhereExprInfo & prewhere_actions)
 {
     MergeTreeReadTask::RangeReaders new_range_readers;
     if (prewhere_actions.steps.size() != task_readers.prewhere.size())
@@ -77,10 +82,7 @@ MergeTreeReadTask::RangeReaders MergeTreeReadTask::createRangeReaders(
     {
         last_reader = task_readers.main->getColumns().empty() && (i + 1 == prewhere_actions.steps.size());
 
-        MergeTreeRangeReader current_reader(
-            task_readers.prewhere[i].get(),
-            prev_reader, prewhere_actions.steps[i].get(),
-            last_reader, non_const_virtual_column_names);
+        MergeTreeRangeReader current_reader(task_readers.prewhere[i].get(), prev_reader, prewhere_actions.steps[i].get(), last_reader);
 
         new_range_readers.prewhere.push_back(std::move(current_reader));
         prev_reader = &new_range_readers.prewhere.back();
@@ -88,11 +90,11 @@ MergeTreeReadTask::RangeReaders MergeTreeReadTask::createRangeReaders(
 
     if (!last_reader)
     {
-        new_range_readers.main = MergeTreeRangeReader(task_readers.main.get(), prev_reader, nullptr, true, non_const_virtual_column_names);
+        new_range_readers.main = MergeTreeRangeReader(task_readers.main.get(), prev_reader, nullptr, true);
     }
     else
     {
-        /// If all columns are read by prewhere range readers than move last prewhere range reader to main.
+        /// If all columns are read by prewhere range readers, move last prewhere range reader to main.
         new_range_readers.main = std::move(new_range_readers.prewhere.back());
         new_range_readers.prewhere.pop_back();
     }
@@ -100,14 +102,12 @@ MergeTreeReadTask::RangeReaders MergeTreeReadTask::createRangeReaders(
     return new_range_readers;
 }
 
-void MergeTreeReadTask::initializeRangeReaders(
-    const PrewhereExprInfo & prewhere_actions,
-    const Names & non_const_virtual_column_names)
+void MergeTreeReadTask::initializeRangeReaders(const PrewhereExprInfo & prewhere_actions)
 {
     if (range_readers.main.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Range reader is already initialized");
 
-    range_readers = createRangeReaders(readers, prewhere_actions, non_const_virtual_column_names);
+    range_readers = createRangeReaders(readers, prewhere_actions);
 }
 
 UInt64 MergeTreeReadTask::estimateNumRows(const BlockSizeParams & params) const

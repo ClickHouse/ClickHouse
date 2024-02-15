@@ -31,6 +31,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
     const MarkRanges & mark_ranges,
+    const MergeTreeReadTaskInfoPtr & read_task_info_,
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
     const AlterConversionsPtr & alter_conversions,
@@ -40,10 +41,16 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
 {
     auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
     return std::make_unique<MergeTreeReaderWide>(
-        read_info, columns_to_read,
-        storage_snapshot, uncompressed_cache,
-        mark_cache, mark_ranges, reader_settings,
-        avg_value_size_hints, profile_callback);
+        read_info,
+        columns_to_read,
+        read_task_info_,
+        storage_snapshot,
+        uncompressed_cache,
+        mark_cache,
+        mark_ranges,
+        reader_settings,
+        avg_value_size_hints,
+        profile_callback);
 }
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(

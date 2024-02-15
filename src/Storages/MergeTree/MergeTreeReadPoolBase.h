@@ -29,6 +29,7 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const Names & virtual_column_names_,
+        const DataTypePtr & partition_value_type_,
         const PoolSettings & settings_,
         const ContextPtr & context_);
 
@@ -43,6 +44,7 @@ protected:
     const MergeTreeReaderSettings reader_settings;
     const Names column_names;
     const Names virtual_column_names;
+    const DataTypePtr partition_value_type;
     const PoolSettings pool_settings;
     const MarkCachePtr owned_mark_cache;
     const UncompressedCachePtr owned_uncompressed_cache;
@@ -52,13 +54,13 @@ protected:
     std::vector<size_t> getPerPartSumMarks() const;
 
     MergeTreeReadTaskPtr createTask(
-        MergeTreeReadTask::InfoPtr read_info,
+        MergeTreeReadTaskInfoPtr read_info,
         MarkRanges ranges,
         MergeTreeReadTask * previous_task) const;
 
     MergeTreeReadTask::Extras getExtras() const;
 
-    std::vector<MergeTreeReadTask::InfoPtr> per_part_infos;
+    std::vector<MergeTreeReadTaskInfoPtr> per_part_infos;
     std::vector<bool> is_part_on_remote_disk;
 
     ReadBufferFromFileBase::ProfileCallback profile_callback;

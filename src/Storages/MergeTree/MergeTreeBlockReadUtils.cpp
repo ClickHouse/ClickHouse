@@ -111,11 +111,18 @@ NameSet injectRequiredColumns(
     if (with_subcolumns)
         options.withSubcolumns();
 
+    auto virtuals_options = GetColumnsOptions(GetColumnsOptions::None).withVirtuals();
+
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        /// We are going to fetch only physical columns and system columns
+        /// We are going to fetch physical columns and system columns first
         if (!storage_snapshot->tryGetColumn(options, columns[i]))
-            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no physical column or subcolumn {} in table", columns[i]);
+        {
+            if (storage_snapshot->tryGetColumn(virtuals_options, columns[i]))
+                continue;
+            else
+                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column or subcolumn {} in table", columns[i]);
+        }
 
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
             columns[i], storage_snapshot, alter_conversions,
@@ -258,11 +265,10 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
 }
 
 
-MergeTreeReadTask::Columns getReadTaskColumns(
+MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
-    const Names & system_columns,
     const PrewhereInfoPtr & prewhere_info,
     const ExpressionActionsSettings & actions_settings,
     const MergeTreeReaderSettings & reader_settings,
@@ -270,16 +276,11 @@ MergeTreeReadTask::Columns getReadTaskColumns(
 {
     Names column_to_read_after_prewhere = required_columns;
 
-    /// Read system columns such as lightweight delete mask "_row_exists" if it is persisted in the part
-    for (const auto & name : system_columns)
-        if (data_part_info_for_reader.getColumns().contains(name))
-            column_to_read_after_prewhere.push_back(name);
-
     /// Inject columns required for defaults evaluation
     injectRequiredColumns(
         data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
 
-    MergeTreeReadTask::Columns result;
+    MergeTreeReadTaskColumns result;
     auto options = GetColumnsOptions(GetColumnsOptions::All)
         .withExtendedObjects()
         .withSystemColumns();
@@ -287,6 +288,9 @@ MergeTreeReadTask::Columns getReadTaskColumns(
     if (with_subcolumns)
         options.withSubcolumns();
 
+    options.withVirtuals();
+
+    bool has_part_offset = std::find(required_columns.begin(), required_columns.end(), "_part_offset") != required_columns.end();
     NameSet columns_from_previous_steps;
     auto add_step = [&](const PrewhereExprStep & step)
     {
@@ -301,6 +305,13 @@ MergeTreeReadTask::Columns getReadTaskColumns(
         for (const auto & name : step.actions->getActionsDAG().getRequiredColumnsNames())
             if (!columns_from_previous_steps.contains(name))
                 step_column_names.push_back(name);
+
+        /// Make sure _part_offset is read in STEP 0
+        if (columns_from_previous_steps.empty() && has_part_offset)
+        {
+            if (std::find(step_column_names.begin(), step_column_names.end(), "_part_offset") == step_column_names.end())
+                step_column_names.push_back("_part_offset");
+        }
 
         if (!step_column_names.empty())
             injectRequiredColumns(

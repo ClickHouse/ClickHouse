@@ -18,6 +18,7 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
     const Names & virtual_column_names_,
+    const DataTypePtr & partition_value_type_,
     const PoolSettings & settings_,
     const ContextPtr & context_)
     : MergeTreeReadPoolBase(
@@ -28,6 +29,7 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
         reader_settings_,
         column_names_,
         virtual_column_names_,
+        partition_value_type_,
         settings_,
         context_)
     , has_limit_below_one_block(has_limit_below_one_block_)

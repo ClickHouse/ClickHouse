@@ -482,6 +482,10 @@ NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) con
     NamesAndTypesList res;
     switch (options.kind)
     {
+        case GetColumnsOptions::None:
+        {
+            break;
+        }
         case GetColumnsOptions::All:
         {
             res = getAll();
@@ -572,7 +576,8 @@ static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
         case ColumnDefaultKind::Ephemeral:
             return GetColumnsOptions::Ephemeral;
     }
-    UNREACHABLE();
+
+    return GetColumnsOptions::None;
 }
 
 NamesAndTypesList ColumnsDescription::getByNames(const GetColumnsOptions & options, const Names & names) const

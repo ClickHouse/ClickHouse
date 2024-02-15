@@ -21,6 +21,7 @@ public:
     MergeTreeReaderCompact(
         MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
         NamesAndTypesList columns_,
+        const MergeTreeReadTaskInfoPtr & read_task_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,

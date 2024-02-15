@@ -47,6 +47,8 @@ class MarkCache;
 class UncompressedCache;
 class MergeTreeTransaction;
 
+struct MergeTreeReadTaskInfo;
+using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 
 enum class DataPartRemovalState
 {
@@ -93,6 +95,7 @@ public:
         const NamesAndTypesList & columns_,
         const StorageSnapshotPtr & storage_snapshot,
         const MarkRanges & mark_ranges,
+        const MergeTreeReadTaskInfoPtr & read_task_info_,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
         const AlterConversionsPtr & alter_conversions,
