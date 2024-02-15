@@ -242,9 +242,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (options.count("help"))
         {
+            std::cout << "Install ClickHouse without .deb/.rpm/.tgz packages (having the binary only)\n\n";
             std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " install [options]", getuid() != 0) << '\n';
             std::cout << desc << '\n';
-            return 1;
+            return 0;
         }
 
         /// We need to copy binary to the binary directory.

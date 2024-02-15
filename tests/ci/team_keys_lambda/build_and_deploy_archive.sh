@@ -17,6 +17,18 @@ DOCKER_IMAGE="public.ecr.aws/lambda/python:${PY_VERSION}"
 LAMBDA_NAME=${DIR_NAME//_/-}
 # The name of directory with lambda code
 PACKAGE=lambda-package
+
+# Do not rebuild and deploy the archive if it's newer than sources
+if [ -e "$PACKAGE.zip" ] && [ -z "$FORCE" ]; then
+  REBUILD=""
+  for src in app.py build_and_deploy_archive.sh requirements.txt lambda_shared/*; do
+    if [ "$src" -nt "$PACKAGE.zip" ]; then
+      REBUILD=1
+    fi
+  done
+  [ -n "$REBUILD" ] || exit 0
+fi
+
 rm -rf "$PACKAGE" "$PACKAGE".zip
 mkdir "$PACKAGE"
 cp app.py "$PACKAGE"

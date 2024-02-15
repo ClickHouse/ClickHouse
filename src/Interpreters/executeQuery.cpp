@@ -927,8 +927,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 reason = "asynchronous insert queue is not configured";
             else if (insert_query->select)
                 reason = "insert query has select";
-            else if (settings.deduplicate_blocks_in_dependent_materialized_views)
-                reason = "dependent materialized views block deduplication is enabled";
             else if (insert_query->hasInlinedData())
                 async_insert = true;
 
@@ -1374,8 +1372,11 @@ void executeQuery(
                     /// Force an update of the headers before we start writing
                     result_details.content_type = output_format->getContentType();
                     result_details.format = format_name;
-                    set_result_details(result_details);
-                    set_result_details = nullptr;
+                    if (set_result_details)
+                    {
+                        set_result_details(result_details);
+                        set_result_details = nullptr;
+                    }
                 }
             }
             catch (const DB::Exception & e)

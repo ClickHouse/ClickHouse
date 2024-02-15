@@ -112,7 +112,7 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
     LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE", select.prewhere()->formatForLogging(log_queries_cut_to_length));
 }
 
-std::optional<MergeTreeWhereOptimizer::FilterActionsOptimizeResult> MergeTreeWhereOptimizer::optimize(const ActionsDAGPtr & filter_dag,
+MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::optimize(const ActionsDAGPtr & filter_dag,
     const std::string & filter_column_name,
     const ContextPtr & context,
     bool is_final)
@@ -132,11 +132,11 @@ std::optional<MergeTreeWhereOptimizer::FilterActionsOptimizeResult> MergeTreeWhe
     if (!optimize_result)
         return {};
 
-    auto filter_actions = reconstructDAG(optimize_result->where_conditions);
-    auto prewhere_filter_actions = reconstructDAG(optimize_result->prewhere_conditions);
+    std::unordered_set<const ActionsDAG::Node *> prewhere_conditions;
+    for (const auto & condition : optimize_result->prewhere_conditions)
+        prewhere_conditions.insert(condition.node.getDAGNode());
 
-    FilterActionsOptimizeResult result = { std::move(filter_actions), std::move(prewhere_filter_actions) };
-    return result;
+    return {.prewhere_nodes = std::move(prewhere_conditions), .fully_moved_to_prewhere = optimize_result->where_conditions.empty()};
 }
 
 static void collectColumns(const RPNBuilderTreeNode & node, const NameSet & columns_names, NameSet & result_set, bool & has_invalid_column)
@@ -341,20 +341,6 @@ ASTPtr MergeTreeWhereOptimizer::reconstructAST(const Conditions & conditions)
         function->arguments->children.push_back(elem.node.getASTNode()->clone());
 
     return function;
-}
-
-ActionsDAGPtr MergeTreeWhereOptimizer::reconstructDAG(const Conditions & conditions)
-{
-    if (conditions.empty())
-        return {};
-
-    ActionsDAG::NodeRawConstPtrs filter_nodes;
-    filter_nodes.reserve(conditions.size());
-
-    for (const auto & condition : conditions)
-        filter_nodes.push_back(condition.node.getDAGNode());
-
-    return ActionsDAG::buildFilterActionsDAG(filter_nodes);
 }
 
 std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::optimizeImpl(const RPNBuilderTreeNode & node,

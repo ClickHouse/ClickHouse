@@ -190,6 +190,7 @@ CustomSeparatedWithNamesAndTypes
 DBAs
 DBMSs
 DBeaver
+DD
 DDLWORKER
 DDLWorker
 DDLWorkerThreads
@@ -215,7 +216,6 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
-DD
 Decrypted
 Deduplicate
 Deduplication
@@ -840,6 +840,7 @@ Sematext
 SendExternalTables
 SendScalars
 ShareAlike
+Shortkeys
 SimHash
 Simhash
 SimpleAggregateFunction
@@ -952,8 +953,8 @@ TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
 Transactional
-TwoColumnList
 Tukey
+TwoColumnList
 UBSan
 UDFs
 UInt
@@ -1325,6 +1326,7 @@ cosineDistance
 countDigits
 countEqual
 countMatches
+countMatchesCaseInsensitive
 countSubstrings
 covarPop
 covarSamp
@@ -1688,6 +1690,7 @@ hudi
 hyperscan
 hypot
 hyvor
+iTerm
 icosahedron
 icudata
 idempotency
@@ -2132,6 +2135,7 @@ py
 qryn
 quantile
 quantileBFloat
+quantileDD
 quantileDeterministic
 quantileExact
 quantileExactExclusive
@@ -2146,6 +2150,7 @@ quantileTDigestWeighted
 quantileTiming
 quantileTimingWeighted
 quantilebfloat
+quantileddsketch
 quantiledeterministic
 quantileexact
 quantileexactweighted
@@ -2158,8 +2163,6 @@ quantiletdigest
 quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
-quantileddsketch
-quantileDD
 quartile
 queryID
 queryString
@@ -2292,8 +2295,8 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
-seriesOutliersDetectTukey
 seriesDecomposeSTL
+seriesOutliersDetectTukey
 seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
@@ -2307,6 +2310,7 @@ shardNum
 sharded
 sharding
 shortcircuit
+shortkeys
 shoutout
 simdjson
 simpleLinearRegression
@@ -2730,6 +2734,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-iTerm
-shortkeys
-Shortkeys

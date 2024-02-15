@@ -3,21 +3,18 @@
     MinMax
       Keys: 
         y
-      Condition: (y in [1, +Inf))
       Parts: 4/5
       Granules: 11/12
     Partition
       Keys: 
         y
         bitAnd(z, 3)
-      Condition: and((y in [1, +Inf)), (bitAnd(z, 3) not in [1, 1]))
       Parts: 3/4
       Granules: 10/11
     PrimaryKey
       Keys: 
         x
         y
-      Condition: and((x in [11, +Inf)), (y in [1, +Inf)))
       Parts: 2/3
       Granules: 6/10
     Skip
@@ -37,7 +34,6 @@
             {
               "Type": "MinMax",
               "Keys": ["y"],
-              "Condition": "(y in [1, +Inf))",
               "Initial Parts": 5,
               "Selected Parts": 4,
               "Initial Granules": 12,
@@ -46,7 +42,6 @@
             {
               "Type": "Partition",
               "Keys": ["y", "bitAnd(z, 3)"],
-              "Condition": "and((y in [1, +Inf)), (bitAnd(z, 3) not in [1, 1]))",
               "Initial Parts": 4,
               "Selected Parts": 3,
               "Initial Granules": 11,
@@ -55,7 +50,6 @@
             {
               "Type": "PrimaryKey",
               "Keys": ["x", "y"],
-              "Condition": "and((x in [11, +Inf)), (y in [1, +Inf)))",
               "Initial Parts": 3,
               "Selected Parts": 2,
               "Initial Granules": 10,
@@ -109,21 +103,18 @@
       MinMax
         Keys: 
           y
-        Condition: (y in [1, +Inf))
         Parts: 4/5
         Granules: 11/12
       Partition
         Keys: 
           y
           bitAnd(z, 3)
-        Condition: and((y in [1, +Inf)), (bitAnd(z, 3) not in [1, 1]))
         Parts: 3/4
         Granules: 10/11
       PrimaryKey
         Keys: 
           x
           y
-        Condition: and((x in [11, +Inf)), (y in [1, +Inf)))
         Parts: 2/3
         Granules: 6/10
       Skip
@@ -138,7 +129,6 @@
                 {
                   "Type": "MinMax",
                   "Keys": ["y"],
-                  "Condition": "(y in [1, +Inf))",
                   "Initial Parts": 5,
                   "Selected Parts": 4,
                   "Initial Granules": 12,
@@ -147,7 +137,6 @@
                 {
                   "Type": "Partition",
                   "Keys": ["y", "bitAnd(z, 3)"],
-                  "Condition": "and((y in [1, +Inf)), (bitAnd(z, 3) not in [1, 1]))",
                   "Initial Parts": 4,
                   "Selected Parts": 3,
                   "Initial Granules": 11,
@@ -156,7 +145,6 @@
                 {
                   "Type": "PrimaryKey",
                   "Keys": ["x", "y"],
-                  "Condition": "and((x in [11, +Inf)), (y in [1, +Inf)))",
                   "Initial Parts": 3,
                   "Selected Parts": 2,
                   "Initial Granules": 10,
