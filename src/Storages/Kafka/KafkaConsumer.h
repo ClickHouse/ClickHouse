@@ -109,6 +109,15 @@ public:
     auto currentTimestamp() const { return current[-1].get_timestamp(); }
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
     const cppkafka::Buffer & currentPayload() const { return current[-1].get_payload(); }
+
+    String topic(size_t i) const { return messages[i].get_topic(); }
+    String key(size_t i) const { return messages[i].get_key(); }
+    auto offset(size_t i) const { return messages[i].get_offset(); }
+    auto partition(size_t i) const { return messages[i].get_partition(); }
+    auto timestamp(size_t i) const { return messages[i].get_timestamp(); }
+    const auto & headerList(size_t i) const { return messages[i].get_header_list(); }
+    const cppkafka::Buffer & payload(size_t i) const { return messages[i].get_payload(); }
+
     void setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace = true);
     void setExceptionInfo(const std::string & text, bool with_stacktrace = true);
     void setRDKafkaStat(const std::string & stat_json_string)
