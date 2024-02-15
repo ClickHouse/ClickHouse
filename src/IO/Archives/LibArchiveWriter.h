@@ -48,7 +48,7 @@ public:
 
     /// Sets compression method and level.
     /// Changing them will affect next file in the archive.
-    void setCompression(const String & method, int level) override;
+    void setCompression(const String & compression_method_, int compression_level_) override;
 
     /// Sets password. If the password is not empty it will enable encryption in the archive.
     void setPassword(const String & password) override;
