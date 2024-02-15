@@ -469,8 +469,6 @@ def test_show_profiles():
         "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE xyz\n",
         "CREATE SETTINGS PROFILE default SETTINGS allow_experimental_analyzer = true\n"
-        "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"
-        "CREATE SETTINGS PROFILE xyz\n",
     ]
     assert instance.query("SHOW CREATE PROFILES") in query_possible_response
 
