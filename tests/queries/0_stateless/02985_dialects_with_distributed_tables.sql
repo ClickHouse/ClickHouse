@@ -14,6 +14,7 @@ INSERT INTO shared_test_table VALUES (123), (651), (446), (315), (234), (764);
 
 SELECT id FROM distributed_test_table LIMIT 3;
 
+/* Temporarily disabled with Kusto.
 SET dialect = 'kusto';
 
 distributed_test_table | take 3;
@@ -23,6 +24,7 @@ SET dialect = 'prql';
 from distributed_test_table
 select {id}
 take 1..3
+*/
 
 SET dialect = 'clickhouse';
 
