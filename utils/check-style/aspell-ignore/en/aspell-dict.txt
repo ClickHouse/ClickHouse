@@ -990,6 +990,7 @@ VIEWs
 Vadim
 Valgrind
 Vectorized
+VersionBadge
 VersionInteger
 VersionedCollapsingMergeTree
 VideoContainer
