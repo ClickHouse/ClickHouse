@@ -240,7 +240,7 @@ void LibArchiveWriter::finalize()
     finalized = true;
 }
 
-void LibArchiveWriter::setCompression(const String & compression_method_, int compression_level) 
+void LibArchiveWriter::setCompression(const String & compression_method_, int compression_level)
 {
     // throw an error unless setCompression is passed the default value
     if (compression_method_.empty() && compression_level == -1)
