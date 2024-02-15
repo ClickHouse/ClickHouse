@@ -11,5 +11,4 @@ test_passing_max_partitions_to_read_remotely/test.py::test_default_database_on_c
 test_select_access_rights/test_main.py::test_alias_columns
 test_settings_profile/test.py::test_show_profiles
 test_sql_user_defined_functions_on_cluster/test.py::test_sql_user_defined_functions_on_cluster
-test_storage_rabbitmq/test.py::test_rabbitmq_materialized_view
 test_wrong_db_or_table_name/test.py::test_wrong_table_name
