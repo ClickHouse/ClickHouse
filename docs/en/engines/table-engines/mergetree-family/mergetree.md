@@ -940,53 +940,6 @@ You could change storage policy after table creation with [ALTER TABLE ... MODIF
 
 The number of threads performing background moves of data parts can be changed by [background_move_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_move_pool_size) setting.
 
-### Dynamic Storage
-
-This example query shows how to attach a table stored at a URL and configure the
-remote storage within the query. The web storage is not configured in the ClickHouse
-configuration files; all the settings are in the CREATE/ATTACH query.
-
-:::note
-The example uses `type=web`, but any disk type can be configured as dynamic, even Local disk. Local disks require a path argument to be inside the server config parameter `custom_local_disks_base_directory`, which has no default, so set that also when using local disk.
-:::
-
-#### Example dynamic web storage
-
-:::tip
-A [demo dataset](https://github.com/ClickHouse/web-tables-demo) is hosted in GitHub.  To prepare your own tables for web storage see the tool [clickhouse-static-files-uploader](/docs/en/operations/storing-data.md/#storing-data-on-webserver)
-:::
-
-In this `ATTACH TABLE` query the `UUID` provided matches the directory name of the data, and the endpoint is the URL for the raw GitHub content.
-
-```sql
-# highlight-next-line
-ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
-(
-    price UInt32,
-    date Date,
-    postcode1 LowCardinality(String),
-    postcode2 LowCardinality(String),
-    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
-    is_new UInt8,
-    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
-    addr1 String,
-    addr2 String,
-    street LowCardinality(String),
-    locality LowCardinality(String),
-    town LowCardinality(String),
-    district LowCardinality(String),
-    county LowCardinality(String)
-)
-ENGINE = MergeTree
-ORDER BY (postcode1, postcode2, addr1, addr2)
-  # highlight-start
-  SETTINGS disk = disk(
-      type=web,
-      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
-      );
-  # highlight-end
-```
-
 ### Details {#details}
 
 In the case of `MergeTree` tables, data is getting to disk in different ways:
@@ -1025,7 +978,7 @@ Configuration markup:
 ``` xml
 <storage_configuration>
     ...
-e   <disks>
+    <disks>
         <s3>
             <type>s3</type>
             <support_batch_delete>true</support_batch_delete>

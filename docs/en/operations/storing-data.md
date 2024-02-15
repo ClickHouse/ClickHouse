@@ -213,6 +213,10 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 In the settings highlighted below notice that the disk of `type=web` is nested within
 the disk of `type=cache`.
 
+:::note
+The example uses `type=web`, but any disk type can be configured as dynamic, even Local disk. Local disks require a path argument to be inside the server config parameter `custom_local_disks_base_directory`, which has no default, so set that also when using local disk.
+:::
+
 A combination of config-based configuration and sql-defined configuration is also possible:
 
 ```sql
@@ -301,6 +305,11 @@ Optional parameters:
 :::note
 Google Cloud Storage (GCS) is also supported using the type `s3`. See [GCS backed MergeTree](/docs/en/integrations/gcs).
 :::
+
+### Using Plain Storage {#s3-storage}
+
+There is a disk type `s3_plain`, which provides a write-once storage. Unlike `s3` disk type, it stores data as is, e.g. instead of randomly-generated blob names, it uses normal file names as clickhouse stores files on local disk. So this disk type allows to keeper a static version of the table and can also be used to create backups on it.
+Configuration parameters are the same as for `s3` disk type.
 
 ### Using Azure Blob Storage {#azure-blob-storage}
 
@@ -672,7 +681,40 @@ There is a tool `clickhouse-static-files-uploader`, which prepares a data direct
 
 This is a read-only disk. Its data is only read and never modified. A new table is loaded to this disk via `ATTACH TABLE` query (see example below). Local disk is not actually used, each `SELECT` query will result in a `http` request to fetch required data. All modification of the table data will result in an exception, i.e. the following types of queries are not allowed: [CREATE TABLE](/docs/en/sql-reference/statements/create/table.md), [ALTER TABLE](/docs/en/sql-reference/statements/alter/index.md), [RENAME TABLE](/docs/en/sql-reference/statements/rename.md/#misc_operations-rename_table), [DETACH TABLE](/docs/en/sql-reference/statements/detach.md) and [TRUNCATE TABLE](/docs/en/sql-reference/statements/truncate.md).
 
-Web server storage is supported only for the [MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) and [Log](/docs/en/engines/table-engines/log-family/log.md) engine families. To access the data stored on a `web` disk, use the [storage_policy](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#terms) setting when executing the query. For example, `ATTACH TABLE table_web UUID '{}' (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'web'`.
+:::tip
+A [demo dataset](https://github.com/ClickHouse/web-tables-demo) is hosted in GitHub.  To prepare your own tables for web storage see the tool [clickhouse-static-files-uploader](/docs/en/operations/storing-data.md/#storing-data-on-webserver)
+:::
+
+In this `ATTACH TABLE` query the `UUID` provided matches the directory name of the data, and the endpoint is the URL for the raw GitHub content.
+
+```sql
+# highlight-next-line
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  # highlight-start
+  SETTINGS disk = disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      );
+  # highlight-end
+```
 
 A ready test case. You need to add this configuration to config:
 
