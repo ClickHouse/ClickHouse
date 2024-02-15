@@ -79,14 +79,6 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
-#include <Parsers/FunctionParameterValuesVisitor.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Storages/StorageView.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Parsers/QueryParameterVisitor.h>
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 
 namespace ProfileEvents
 {
