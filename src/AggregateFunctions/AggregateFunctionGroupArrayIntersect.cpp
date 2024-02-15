@@ -1,4 +1,5 @@
 #include <cassert>
+#include <memory>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -87,12 +88,14 @@ public:
         }
         else if (map.size() > 0)
         {
+            HashMap<T, UInt64> new_map;
             for (size_t i = 0; i < arr_size; ++i)
             {
                 typename State::Map::LookupResult value = map.find(static_cast<T>((*data_column)[offset + i].get<T>()));
                 if (value != nullptr && value->getMapped() == version - 1)
-                    ++(value->getMapped());
+                    new_map[static_cast<T>((*data_column)[offset + i].get<T>())] = version;
             }
+            map = std::move(new_map);
         }
     }
 
@@ -113,14 +116,14 @@ public:
             }
             return;
         }
+        HashMap<T, UInt64> new_map;
         for (auto & rhs_elem : rhs_map)
         {
-            if (rhs_elem.getMapped() != rhs_version)
-                continue;
             auto value = map.find(rhs_elem.getKey());
             if (value != nullptr)
-                ++value->getMapped();
+                new_map[rhs_elem.getKey()] = version;
         }
+        map = std::move(new_map);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -150,11 +153,9 @@ public:
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
         const auto & map = this->data(place).value;
-        const auto & version = this->data(place).version;
         size_t size = 0;
         for (auto it = map.begin(); it != map.end(); ++it)
-            if (version == it->getMapped())
-                ++size;
+            ++size;
 
         offsets_to.push_back(offsets_to.back() + size);
 
@@ -164,8 +165,7 @@ public:
 
         size_t i = 0;
         for (auto it = map.begin(); it != map.end(); ++it)
-            if (version == it->getMapped())
-                data_to[old_size + i++] = it->getKey();
+            data_to[old_size + i++] = it->getKey();
     }
 };
 
@@ -173,10 +173,7 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggregateFunctionGroupArrayIntersectGenericData
 {
-    static constexpr size_t INITIAL_SIZE_DEGREE = 4; /// adjustable
-
-    using Map = HashMapWithStackMemory<StringRef, UInt64, StringRefHash,
-        INITIAL_SIZE_DEGREE>;
+    using Map = HashMap<StringRef, UInt64>;
 
     Map value;
     UInt64 version = 0;
@@ -271,11 +268,14 @@ public:
         }
         else
         {
+            HashMap<StringRef, UInt64> new_map;
             for (size_t i = 0; i < arr_size; ++i)
             {
                 if constexpr (is_plain_column)
                 {
                     it = map.find(data_column->getDataAt(offset + i));
+                    if (it != nullptr)
+                        new_map.emplace(ArenaKeyHolder{data_column->getDataAt(offset + i), *arena}, it, inserted);
                 }
                 else
                 {
@@ -283,10 +283,11 @@ public:
                     StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
                     assert(serialized.data != nullptr);
                     it = map.find(serialized);
+                    if (it != nullptr)
+                        new_map.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
                 }
-                if (it != nullptr && it->getMapped() == version - 1)
-                    ++(it->getMapped());
             }
+            map = std::move(new_map);
         }
 
     }
@@ -317,14 +318,14 @@ public:
         }
         else if (map.size() > 0)
         {
+            HashMap<StringRef, UInt64> new_map;
             for (auto & rhs_elem : rhs_map)
             {
-                if (rhs_elem.getMapped() != rhs_version)
-                    continue;
                 auto value = map.find(rhs_elem.getKey());
                 if (value != nullptr)
-                    ++value->getMapped();
+                    new_map[rhs_elem.getKey()] = version;
             }
+            map = std::move(new_map);
         }
     }
 
@@ -335,16 +336,13 @@ public:
         IColumn & data_to = arr_to.getData();
 
         auto & map = this->data(place).value;
-        auto & version = this->data(place).version;
         size_t size = 0;
-        for (auto & elem : map)
-            if (elem.getMapped() == version)
-                size++;
+        for ([[maybe_unused]] auto & elem : map)
+            size++;
         offsets_to.push_back(offsets_to.back() + size);
 
         for (auto & elem : map)
         {
-            if (elem.getMapped() == version)
             {
                 if constexpr (is_plain_column)
                     data_to.insertData(elem.getKey().data, elem.getKey().size);
