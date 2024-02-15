@@ -721,7 +721,7 @@ struct ContextSharedPart : boost::noncopyable
     void addWarningMessage(const String & message) TSA_REQUIRES(mutex)
     {
         /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
-        log->warning(message);
+        LOG_WARNING(log, "{}", message);
         warnings.push_back(message);
     }
 
