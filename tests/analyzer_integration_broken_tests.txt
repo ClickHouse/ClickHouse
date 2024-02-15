@@ -8,4 +8,3 @@ test_merge_table_over_distributed/test.py::test_global_in
 test_merge_table_over_distributed/test.py::test_select_table_name_from_merge_over_distributed
 test_passing_max_partitions_to_read_remotely/test.py::test_default_database_on_cluster
 test_select_access_rights/test_main.py::test_alias_columns
-test_settings_profile/test.py::test_show_profiles
