@@ -460,7 +460,8 @@ std::vector<std::string> LibArchiveReader::getAllFiles(NameFilter filter)
 void LibArchiveReader::setPassword([[maybe_unused]] const String & password_)
 {
     if (password_.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not set password to {} archive", archive_name);
+        return;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set password to {} archive", archive_name);
 }
 
 LibArchiveReader::Handle LibArchiveReader::acquireHandle()

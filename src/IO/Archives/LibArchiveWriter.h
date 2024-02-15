@@ -46,14 +46,12 @@ public:
     /// (Unless an error appeared and the archive is in fact no longer needed.)
     void finalize() override;
 
-    static constexpr const int kDefaultCompressionLevel = -1;
-
     /// Sets compression method and level.
     /// Changing them will affect next file in the archive.
-    void setCompression(const String & /* compression_method */, int /* compression_level */ = kDefaultCompressionLevel) override;
+    void setCompression(const String & method, int level) override;
 
     /// Sets password. If the password is not empty it will enable encryption in the archive.
-    void setPassword(const String & /* password */) override;
+    void setPassword(const String & password) override;
 
 private:
     class WriteBufferFromLibArchive;
