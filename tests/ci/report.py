@@ -23,6 +23,7 @@ from typing import (
 from build_download_helper import get_gh_api
 from ci_config import CI_CONFIG, BuildConfig
 from env_helper import REPORT_PATH, TEMP_PATH
+from ci_utils import normalize_string
 
 logger = logging.getLogger(__name__)
 
@@ -450,6 +451,12 @@ class BuildResult:
         return self.build_config.sanitizer
 
     @property
+    def coverage(self) -> str:
+        if self.build_config is None:
+            return self._wrong_config_message
+        return str(self.build_config.coverage)
+
+    @property
     def grouped_urls(self) -> List[List[str]]:
         "Combine and preserve build_urls by artifact types"
         if self._grouped_urls is not None:
@@ -550,7 +557,7 @@ class BuildResult:
 
     def write_json(self, directory: Union[Path, str] = REPORT_PATH) -> Path:
         path = Path(directory) / self.get_report_name(
-            self.build_name, self.pr_number or self.head_ref
+            self.build_name, self.pr_number or normalize_string(self.head_ref)
         )
         path.write_text(
             json.dumps(
@@ -775,6 +782,7 @@ HTML_BASE_BUILD_TEMPLATE = (
 <th>Build type</th>
 <th>Version</th>
 <th>Sanitizer</th>
+<th>Coverage</th>
 <th>Status</th>
 <th>Build log</th>
 <th>Build time</th>
@@ -815,6 +823,8 @@ def create_build_html_report(
                 row.append(f"<td>{build_result.sanitizer}</td>")
             else:
                 row.append("<td>none</td>")
+
+            row.append(f"<td>{build_result.coverage}</td>")
 
             if build_result.status:
                 style = _get_status_style(build_result.status)
