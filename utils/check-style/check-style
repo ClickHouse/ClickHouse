@@ -274,6 +274,11 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
     xargs grep -F '!!!' | grep -P '.' && echo "Too many exclamation marks (looks dirty, unconfident)."
 
+# Exclamation mark in a message
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -F '!",' | grep -P '.' && echo "No need for an exclamation mark (looks dirty, unconfident)."
+
 # Trailing whitespaces
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |

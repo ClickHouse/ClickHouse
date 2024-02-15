@@ -907,7 +907,7 @@ Strings Context::getWarnings() const
         if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}", shared->max_table_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}", shared->max_table_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}", shared->max_database_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of active parts is more than {}", shared->max_part_num_to_warn));
     }
@@ -4154,12 +4154,12 @@ void Context::setMaxTableSizeToDrop(size_t max_size)
 
 size_t Context::getMaxTableSizeToDrop() const
 {
-    return shared->max_table_size_to_drop.load(std::memory_order_relaxed);
+    return shared->max_table_size_to_drop.load();
 }
 
 void Context::checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size) const
 {
-    size_t max_table_size_to_drop = shared->max_table_size_to_drop.load(std::memory_order_relaxed);
+    size_t max_table_size_to_drop = shared->max_table_size_to_drop.load();
 
     checkCanBeDropped(database, table, table_size, max_table_size_to_drop);
 }
@@ -4177,12 +4177,12 @@ void Context::setMaxPartitionSizeToDrop(size_t max_size)
 
 size_t Context::getMaxPartitionSizeToDrop() const
 {
-    return shared->max_partition_size_to_drop.load(std::memory_order_relaxed);
+    return shared->max_partition_size_to_drop.load();
 }
 
 void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const
 {
-    size_t max_partition_size_to_drop = shared->max_partition_size_to_drop.load(std::memory_order_relaxed);
+    size_t max_partition_size_to_drop = shared->max_partition_size_to_drop.load();
 
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
 }
