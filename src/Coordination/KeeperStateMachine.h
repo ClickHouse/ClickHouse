@@ -70,7 +70,7 @@ public:
         const KeeperStorage::RequestForSession & request_for_session,
         bool allow_missing) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
-    uint64_t last_commit_index() override { return last_committed_idx; }
+    uint64_t last_commit_index() override { return keeper_context->lastCommittedIndex(); }
 
     /// Apply preliminarily saved (save_logical_snp_obj) snapshot to our state.
     bool apply_snapshot(nuraft::snapshot & s) override;
@@ -169,9 +169,6 @@ private:
     /// requests can be modified from anywhere without lock because a single request
     /// can be processed only in 1 thread at any point
     std::mutex request_cache_mutex;
-
-    /// Last committed Raft log number.
-    std::atomic<uint64_t> last_committed_idx;
 
     LoggerPtr log;
 

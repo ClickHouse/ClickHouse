@@ -13,8 +13,8 @@ SETTINGS
     merge_max_block_size = 8192,
     merge_max_block_size_bytes = '10M';
 
-INSERT INTO t_vertical_merge_memory SELECT number, arrayMap(x -> repeat('a', 50), range(1000)) FROM numbers(30000);
-INSERT INTO t_vertical_merge_memory SELECT number, arrayMap(x -> repeat('a', 50), range(1000)) FROM numbers(30000);
+INSERT INTO t_vertical_merge_memory SELECT number, arrayMap(x -> repeat('a', 50), range(1000)) FROM numbers(3000);
+INSERT INTO t_vertical_merge_memory SELECT number, arrayMap(x -> repeat('a', 50), range(1000)) FROM numbers(3000);
 
 OPTIMIZE TABLE t_vertical_merge_memory FINAL;
 

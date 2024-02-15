@@ -577,9 +577,18 @@ LogEntryPtr logEntryFromRecord(const ChangelogRecord & record)
     return nuraft::cs_new<nuraft::log_entry>(record.header.term, record.blob, static_cast<nuraft::log_val_type>(record.header.value_type));
 }
 
-size_t logEntrySize(nuraft::log_entry & log_entry)
+size_t logEntrySize(const LogEntryPtr & log_entry)
 {
-    return log_entry.get_buf().size();
+    return log_entry->get_buf().size();
+}
+
+LogEntryPtr getLogEntry(const CacheEntry & cache_entry)
+{
+    if (const auto * log_entry = std::get_if<LogEntryPtr>(&cache_entry))
+        return *log_entry;
+
+    const auto & prefetched_log_entry = std::get<PrefetchedCacheEntry>(cache_entry);
+    return prefetched_log_entry.getLogEntry();
 }
 
 }
@@ -662,6 +671,25 @@ private:
     std::unique_ptr<ReadBuffer> read_buf;
 };
 
+PrefetchedCacheEntry::PrefetchedCacheEntry()
+    : log_entry(log_entry_resolver.get_future())
+{}
+
+const LogEntryPtr & PrefetchedCacheEntry::getLogEntry() const
+{
+    return log_entry.get();
+}
+
+void PrefetchedCacheEntry::resolve(std::exception_ptr exception)
+{
+    log_entry_resolver.set_exception(exception);
+}
+
+void PrefetchedCacheEntry::resolve(LogEntryPtr log_entry_)
+{
+    log_entry_resolver.set_value(std::move(log_entry_));
+}
+
 LogEntryStorage::LogEntryStorage(const LogFileSettings & log_settings, KeeperContextPtr keeper_context_)
     : latest_logs_cache(log_settings.latest_logs_cache_size_threshold)
     , commit_logs_cache(log_settings.commit_logs_cache_size_threshold)
@@ -709,9 +737,13 @@ void LogEntryStorage::prefetchCommitLogs()
                     auto record = readChangelogRecord(*file, changelog_description->path);
                     auto entry = logEntryFromRecord(record);
                     if (current_index != record.header.index)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid index prefetched, expected {}, actual {}", current_index, record.header.index);
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Invalid index prefetched, expected {}, actual {}",
+                            current_index,
+                            record.header.index);
 
-                    commit_logs_cache.setPrefetchedEntry(record.header.index, std::move(entry), nullptr);
+                    commit_logs_cache.getPrefetchedCacheEntry(record.header.index).resolve(std::move(entry));
                     ++current_index;
                 }
 
@@ -725,7 +757,7 @@ void LogEntryStorage::prefetchCommitLogs()
             auto exception = std::current_exception();
 
             for (; current_index <= prefetch_info->commit_prefetch_index_range.second; ++current_index)
-                commit_logs_cache.setPrefetchedEntry(current_index, nullptr, exception);
+                commit_logs_cache.getPrefetchedCacheEntry(current_index).resolve(exception);
         }
 
         prefetch_info->done = true;
@@ -750,6 +782,8 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
 
     auto new_prefetch_info = std::make_shared<PrefetchInfo>();
     auto & [prefetch_from, prefetch_to] = new_prefetch_info->commit_prefetch_index_range;
+    /// if there are no entries in commit cache we will start from the next log that will be committed
+    /// otherwise we continue appending the commit cache from the latest entry stored in it
     size_t current_index = commit_logs_cache.cache.empty() ? last_committed_index + 1 : commit_logs_cache.max_index_in_cache + 1;
     prefetch_from = current_index;
     size_t total_size = 0;
@@ -768,7 +802,7 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
             current_file_info = &file_infos.emplace_back(changelog_description, position, /* count */ 1);
 
         total_size += size;
-        commit_logs_cache.addPrefetchedEntry(current_index, size);
+        commit_logs_cache.addEntry(current_index, size, PrefetchedCacheEntry());
     }
 
     if (!file_infos.empty())
@@ -781,13 +815,6 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
         auto inserted = prefetch_queue.push(current_prefetch_info);
         chassert(inserted);
     }
-}
-
-CacheEntry::CacheEntry(LogEntryPtr entry_)
-    : entry(std::move(entry_))
-{
-    if (entry == nullptr)
-        is_prefetched = true;
 }
 
 LogEntryStorage::InMemoryCache::InMemoryCache(size_t size_threshold_)
@@ -805,25 +832,25 @@ void LogEntryStorage::InMemoryCache::updateStatsWithNewEntry(uint64_t index, siz
     }
     else
     {
+        chassert(index > max_index_in_cache);
         max_index_in_cache = index;
     }
 }
 
-void LogEntryStorage::InMemoryCache::addEntry(uint64_t index, LogEntryPtr log_entry)
+void LogEntryStorage::InMemoryCache::addEntry(uint64_t index, size_t size, CacheEntry log_entry)
 {
-    auto entry_size = logEntrySize(*log_entry);
     auto [_, inserted] = cache.emplace(index, std::move(log_entry));
     if (!inserted)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert log with index {} which is already present in cache", index);
     }
-    updateStatsWithNewEntry(index, entry_size);
+    updateStatsWithNewEntry(index, size);
 }
 
 void LogEntryStorage::InMemoryCache::addEntry(IndexToCacheEntryNode && node)
 {
     auto index = node.key();
-    auto entry_size = logEntrySize(*node.mapped().entry);
+    auto entry_size = logEntrySize(getLogEntry(node.mapped()));
 
     auto result = cache.insert(std::move(node));
     if (!result.inserted)
@@ -832,38 +859,13 @@ void LogEntryStorage::InMemoryCache::addEntry(IndexToCacheEntryNode && node)
     updateStatsWithNewEntry(index, entry_size);
 }
 
-void LogEntryStorage::InMemoryCache::addPrefetchedEntry(uint64_t index, size_t size)
-{
-    auto [_, inserted] = cache.emplace(index, nullptr);
-    if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to set prefetched entry with index {} which is already present in cache", index);
-    updateStatsWithNewEntry(index, size);
-}
-
-void LogEntryStorage::InMemoryCache::setPrefetchedEntry(uint64_t index, LogEntryPtr log_entry, std::exception_ptr exception)
-{
-    auto it = cache.find(index);
-    if (it == cache.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing expected index {} in cache", index);
-
-    {
-        std::lock_guard lock(it->second.entry_mutex);
-        if (exception)
-            it->second.exception = exception;
-        else
-            it->second.entry = std::move(log_entry);
-    }
-    it->second.is_prefetched = false;
-    it->second.entry_prefetched_cv.notify_all();
-}
-
 IndexToCacheEntryNode LogEntryStorage::InMemoryCache::popOldestEntry()
 {
     auto node = cache.extract(min_index_in_cache);
     if (node.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Couldn't find the oldest entry of index {} in logs cache", min_index_in_cache);
     ++min_index_in_cache;
-    cache_size -= logEntrySize(*node.mapped().entry);
+    cache_size -= logEntrySize(getLogEntry(node.mapped()));
     return node;
 }
 
@@ -872,7 +874,7 @@ bool LogEntryStorage::InMemoryCache::containsEntry(uint64_t index) const
     return !cache.empty() && index >= min_index_in_cache && index <= max_index_in_cache;
 }
 
-LogEntryPtr LogEntryStorage::InMemoryCache::getEntry(uint64_t index) const
+CacheEntry * LogEntryStorage::InMemoryCache::getCacheEntry(uint64_t index)
 {
     if (!containsEntry(index))
         return nullptr;
@@ -881,17 +883,31 @@ LogEntryPtr LogEntryStorage::InMemoryCache::getEntry(uint64_t index) const
     if (it == cache.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} missing from cache while it should be present", index);
 
-    const auto & cache_entry = it->second;
-    if (cache_entry.is_prefetched)
-    {
-        std::unique_lock lock(cache_entry.entry_mutex);
-        cache_entry.entry_prefetched_cv.wait(lock, [&]{ return cache_entry.entry != nullptr; });
-    }
+    return &it->second;
+}
 
-    if (cache_entry.exception)
-        std::rethrow_exception(cache_entry.exception);
+const CacheEntry * LogEntryStorage::InMemoryCache::getCacheEntry(uint64_t index) const
+{
+    return const_cast<InMemoryCache &>(*this).getCacheEntry(index);
+}
 
-    return cache_entry.entry;
+PrefetchedCacheEntry & LogEntryStorage::InMemoryCache::getPrefetchedCacheEntry(uint64_t index)
+{
+    auto * cache_entry = getCacheEntry(index);
+    if (cache_entry == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing expected index {} in cache", index);
+
+    return std::get<PrefetchedCacheEntry>(*cache_entry);
+}
+
+
+LogEntryPtr LogEntryStorage::InMemoryCache::getEntry(uint64_t index) const
+{
+    const auto * cache_entry = getCacheEntry(index);
+    if (cache_entry == nullptr)
+        return nullptr;
+
+    return getLogEntry(*cache_entry);
 }
 
 void LogEntryStorage::InMemoryCache::cleanUpTo(uint64_t index)
@@ -912,7 +928,7 @@ void LogEntryStorage::InMemoryCache::cleanUpTo(uint64_t index)
         if (it == cache.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Log entry with index {} unexpectedly missing from cache", i);
 
-        cache_size -= logEntrySize(*it->second.entry);
+        cache_size -= logEntrySize(getLogEntry(it->second));
         cache.erase(it);
     }
     min_index_in_cache = index;
@@ -936,7 +952,7 @@ void LogEntryStorage::InMemoryCache::cleanAfter(uint64_t index)
         if (it == cache.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Log entry with index {} unexpectedly missing from cache", i);
 
-        cache_size -= logEntrySize(*it->second.entry);
+        cache_size -= logEntrySize(getLogEntry(it->second));
         cache.erase(it);
     }
 
@@ -967,13 +983,13 @@ bool LogEntryStorage::InMemoryCache::hasSpaceAvailable(size_t log_entry_size) co
 void LogEntryStorage::addEntry(uint64_t index, const LogEntryPtr & log_entry)
 {
     /// we update the cache for added entries on refreshCache call
-    latest_logs_cache.addEntry(index, log_entry);
+    latest_logs_cache.addEntry(index, logEntrySize(log_entry), log_entry);
 
     if (log_entry->get_val_type() == nuraft::conf)
     {
         latest_config = log_entry;
         latest_config_index = index;
-        conf_logs_indices.insert(index);
+        logs_with_config_changes.insert(index);
     }
 }
 
@@ -988,15 +1004,15 @@ bool LogEntryStorage::shouldMoveLogToCommitCache(uint64_t index, size_t log_entr
 
 void LogEntryStorage::addEntryWithLocation(uint64_t index, const LogEntryPtr & log_entry, LogLocation log_location)
 {
-    auto entry_size = logEntrySize(*log_entry);
+    auto entry_size = logEntrySize(log_entry);
     while (!latest_logs_cache.hasSpaceAvailable(entry_size))
     {
         auto entry_handle = latest_logs_cache.popOldestEntry();
-        size_t removed_entry_size = logEntrySize(*entry_handle.mapped().entry);
+        size_t removed_entry_size = logEntrySize(getLogEntry(entry_handle.mapped()));
         if (shouldMoveLogToCommitCache(entry_handle.key(), removed_entry_size))
             commit_logs_cache.addEntry(std::move(entry_handle));
     }
-    latest_logs_cache.addEntry(index, log_entry);
+    latest_logs_cache.addEntry(index, entry_size, CacheEntry(log_entry));
 
     logs_location.emplace(index, std::move(log_location));
 
@@ -1008,7 +1024,7 @@ void LogEntryStorage::addEntryWithLocation(uint64_t index, const LogEntryPtr & l
     {
         latest_config = log_entry;
         latest_config_index = index;
-        conf_logs_indices.insert(index);
+        logs_with_config_changes.insert(index);
     }
 }
 
@@ -1040,8 +1056,8 @@ void LogEntryStorage::cleanUpTo(uint64_t index)
         }
     }
 
-    std::erase_if(conf_logs_indices, [&](const auto conf_index) { return conf_index < index; });
-    if (auto it = std::max_element(conf_logs_indices.begin(), conf_logs_indices.end()); it != conf_logs_indices.end())
+    std::erase_if(logs_with_config_changes, [&](const auto conf_index) { return conf_index < index; });
+    if (auto it = std::max_element(logs_with_config_changes.begin(), logs_with_config_changes.end()); it != logs_with_config_changes.end())
     {
         latest_config_index = *it;
         latest_config = getEntry(latest_config_index);
@@ -1102,8 +1118,8 @@ void LogEntryStorage::cleanAfter(uint64_t index)
         /// if we don't store any logs, reset first log cache
         first_log_entry = nullptr;
 
-    std::erase_if(conf_logs_indices, [&](const auto conf_index) { return conf_index > index; });
-    if (auto it = std::max_element(conf_logs_indices.begin(), conf_logs_indices.end()); it != conf_logs_indices.end())
+    std::erase_if(logs_with_config_changes, [&](const auto conf_index) { return conf_index > index; });
+    if (auto it = std::max_element(logs_with_config_changes.begin(), logs_with_config_changes.end()); it != logs_with_config_changes.end())
     {
         latest_config_index = *it;
         latest_config = getEntry(latest_config_index);
@@ -1157,6 +1173,7 @@ LogEntryPtr LogEntryStorage::getEntry(uint64_t index) const
         auto record = readChangelogRecord(*file, changelog_description->path);
         entry = logEntryFromRecord(record);
 
+        /// if we fetched the first log entry, we will cache it because it's often accessed
         if (first_log_entry == nullptr && index == getFirstIndex())
         {
             first_log_index = index;
@@ -1186,7 +1203,7 @@ void LogEntryStorage::cacheFirstLog(uint64_t first_index)
     first_log_index = first_index;
 }
 
-void LogEntryStorage::addLogLocations(std::vector<std::pair<uint64_t, LogLocation>> indices_with_log_locations)
+void LogEntryStorage::addLogLocations(std::vector<std::pair<uint64_t, LogLocation>> && indices_with_log_locations)
 {
     std::lock_guard lock(logs_location_mutex);
     unapplied_indices_with_log_locations.insert(
@@ -1198,9 +1215,6 @@ void LogEntryStorage::addLogLocations(std::vector<std::pair<uint64_t, LogLocatio
 void LogEntryStorage::refreshCache()
 {
     if (latest_logs_cache.cache_size <= latest_logs_cache.size_threshold)
-        return;
-
-    if (logs_location.empty())
         return;
 
     std::vector<IndexWithLogLocation> new_unapplied_indices_with_log_locations;
@@ -1218,11 +1232,15 @@ void LogEntryStorage::refreshCache()
         max_index_with_location = index;
     }
 
+    if (logs_location.empty())
+        return;
+
     while (latest_logs_cache.numberOfEntries() > 1 && latest_logs_cache.min_index_in_cache <= max_index_with_location
            && latest_logs_cache.cache_size > latest_logs_cache.size_threshold)
     {
         auto node = latest_logs_cache.popOldestEntry();
-        if (shouldMoveLogToCommitCache(node.key(), logEntrySize(*node.mapped().entry)))
+        auto log_entry_size = logEntrySize(getLogEntry(node.mapped()));
+        if (shouldMoveLogToCommitCache(node.key(), log_entry_size))
             commit_logs_cache.addEntry(std::move(node));
     }
 }
@@ -1305,9 +1323,9 @@ void LogEntryStorage::getKeeperLogInfo(KeeperLogInfo & log_info) const
     log_info.commit_logs_cache_size = commit_logs_cache.cache_size;
 }
 
-bool LogEntryStorage::isConfLog(uint64_t index) const
+bool LogEntryStorage::isConfigLog(uint64_t index) const
 {
-    return conf_logs_indices.contains(index);
+    return logs_with_config_changes.contains(index);
 }
 
 size_t LogEntryStorage::empty() const
@@ -1684,7 +1702,6 @@ try
 catch (...)
 {
     tryLogCurrentException(__PRETTY_FUNCTION__);
-
 }
 
 
@@ -2148,9 +2165,9 @@ void Changelog::applyEntriesFromBuffer(uint64_t index, nuraft::buffer & buffer)
     }
 }
 
-bool Changelog::isConfLog(uint64_t index) const
+bool Changelog::isConfigLog(uint64_t index) const
 {
-    return entry_storage.isConfLog(index);
+    return entry_storage.isConfigLog(index);
 
 }
 

@@ -6,6 +6,7 @@
 
 #include <map>
 #include <unordered_set>
+#include <future>
 
 namespace nuraft
 {
@@ -109,17 +110,19 @@ struct LogLocation
     size_t size;
 };
 
-struct CacheEntry
+struct PrefetchedCacheEntry
 {
-    explicit CacheEntry(LogEntryPtr entry_);
+    explicit PrefetchedCacheEntry();
 
-    LogEntryPtr entry = nullptr;
-    std::atomic<bool> is_prefetched = false;
-    mutable std::mutex entry_mutex;
-    mutable std::condition_variable entry_prefetched_cv;
-    std::exception_ptr exception;
+    const LogEntryPtr & getLogEntry() const;
+    void resolve(std::exception_ptr exception);
+    void resolve(LogEntryPtr log_entry_);
+private:
+    std::promise<LogEntryPtr> log_entry_resolver;
+    mutable std::shared_future<LogEntryPtr> log_entry;
 };
 
+using CacheEntry = std::variant<LogEntryPtr, PrefetchedCacheEntry>;
 using IndexToCacheEntry = std::unordered_map<uint64_t, CacheEntry>;
 using IndexToCacheEntryNode = typename IndexToCacheEntry::node_type;
 
@@ -153,7 +156,7 @@ using IndexToCacheEntryNode = typename IndexToCacheEntry::node_type;
   */
 struct LogEntryStorage
 {
-    explicit LogEntryStorage(const LogFileSettings & log_settings, KeeperContextPtr keeper_context_);
+    LogEntryStorage(const LogFileSettings & log_settings, KeeperContextPtr keeper_context_);
 
     ~LogEntryStorage();
 
@@ -170,7 +173,7 @@ struct LogEntryStorage
 
     using IndexWithLogLocation = std::pair<uint64_t, LogLocation>;
 
-    void addLogLocations(std::vector<IndexWithLogLocation> indices_with_log_locations);
+    void addLogLocations(std::vector<IndexWithLogLocation> && indices_with_log_locations);
 
     void refreshCache();
 
@@ -178,7 +181,7 @@ struct LogEntryStorage
 
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
 
-    bool isConfLog(uint64_t index) const;
+    bool isConfigLog(uint64_t index) const;
 
     size_t empty() const;
     size_t size() const;
@@ -196,23 +199,31 @@ private:
     {
         explicit InMemoryCache(size_t size_threshold_);
 
-        void addEntry(uint64_t index, LogEntryPtr log_entry);
+        void addEntry(uint64_t index, size_t size, CacheEntry log_entry);
         void addEntry(IndexToCacheEntryNode && node);
-        void addPrefetchedEntry(uint64_t index, size_t size);
-        void setPrefetchedEntry(uint64_t index, LogEntryPtr log_entry, std::exception_ptr exception);
+
         void updateStatsWithNewEntry(uint64_t index, size_t size);
+
         IndexToCacheEntryNode popOldestEntry();
+
         bool containsEntry(uint64_t index) const;
+
         LogEntryPtr getEntry(uint64_t index) const;
+
+        CacheEntry * getCacheEntry(uint64_t index);
+        const CacheEntry * getCacheEntry(uint64_t index) const;
+        PrefetchedCacheEntry & getPrefetchedCacheEntry(uint64_t index);
+
         void cleanUpTo(uint64_t index);
         void cleanAfter(uint64_t index);
+
         bool empty() const;
         size_t numberOfEntries() const;
         bool hasSpaceAvailable(size_t log_entry_size) const;
         void clear();
 
         /// Mapping log_id -> log_entry
-        IndexToCacheEntry cache;
+        mutable IndexToCacheEntry cache;
         size_t cache_size = 0;
         size_t min_index_in_cache = 0;
         size_t max_index_in_cache = 0;
@@ -255,7 +266,8 @@ private:
     size_t max_index_with_location = 0;
     size_t min_index_with_location = 0;
 
-    std::unordered_set<uint64_t> conf_logs_indices;
+    /// store indices of logs that contain config changes
+    std::unordered_set<uint64_t> logs_with_config_changes;
 
     bool is_shutdown = false;
     KeeperContextPtr keeper_context;
@@ -311,7 +323,7 @@ public:
     /// Apply entries from buffer overriding existing entries
     void applyEntriesFromBuffer(uint64_t index, nuraft::buffer & buffer);
 
-    bool isConfLog(uint64_t index) const;
+    bool isConfigLog(uint64_t index) const;
 
     /// Fsync latest log to disk and flush buffer
     bool flush();

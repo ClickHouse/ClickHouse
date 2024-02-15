@@ -11,7 +11,7 @@
 #include <base/errnoToString.h>
 #include <base/move_extend.h>
 #include <sys/mman.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
@@ -59,7 +59,6 @@ KeeperStateMachine::KeeperStateMachine(
     , responses_queue(responses_queue_)
     , snapshots_queue(snapshots_queue_)
     , min_request_size_to_cache(coordination_settings_->min_request_size_for_cache)
-    , last_committed_idx(0)
     , log(getLogger("KeeperStateMachine"))
     , superdigest(superdigest_)
     , keeper_context(keeper_context_)
@@ -101,7 +100,7 @@ void KeeperStateMachine::init()
             storage = std::move(snapshot_deserialization_result.storage);
             latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
             cluster_config = snapshot_deserialization_result.cluster_config;
-            last_committed_idx = latest_snapshot_meta->get_last_log_idx();
+            keeper_context->setLastCommitIndex(latest_snapshot_meta->get_last_log_idx());
             loaded = true;
             break;
         }
@@ -116,6 +115,7 @@ void KeeperStateMachine::init()
         }
     }
 
+    auto last_committed_idx = keeper_context->lastCommittedIndex();
     if (has_snapshots)
     {
         if (loaded)
@@ -451,7 +451,6 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
         }
 
         ProfileEvents::increment(ProfileEvents::KeeperCommits);
-        last_committed_idx = log_idx;
         keeper_context->setLastCommitIndex(log_idx);
 
         if (commit_callback)
@@ -509,7 +508,6 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
     }
 
     ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplys);
-    last_committed_idx = s.get_last_log_idx();
     keeper_context->setLastCommitIndex(s.get_last_log_idx());
     return true;
 }
@@ -520,7 +518,6 @@ void KeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraf
     std::lock_guard lock(cluster_config_lock);
     auto tmp = new_conf->serialize();
     cluster_config = ClusterConfig::deserialize(*tmp);
-    last_committed_idx = log_idx;
     keeper_context->setLastCommitIndex(log_idx);
 }
 

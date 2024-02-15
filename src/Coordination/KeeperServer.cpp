@@ -1,12 +1,12 @@
 #include <Coordination/Defines.h>
 #include <Coordination/KeeperServer.h>
 
-#include "Coordination/KeeperLogStore.h"
 #include "config.h"
 
 #include <chrono>
 #include <mutex>
 #include <string>
+#include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>

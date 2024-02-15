@@ -69,7 +69,7 @@ nuraft::ptr<nuraft::log_entry> KeeperLogStore::entry_at(uint64_t index)
 bool KeeperLogStore::is_conf(uint64_t index)
 {
     std::lock_guard lock(changelog_lock);
-    return changelog.isConfLog(index);
+    return changelog.isConfigLog(index);
 }
 
 uint64_t KeeperLogStore::term_at(uint64_t index)

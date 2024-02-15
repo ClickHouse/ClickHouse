@@ -65,6 +65,9 @@ void DisksApp::addOptions(
     positional_options_description.add("command_name", 1);
 
     supported_commands = {"list-disks", "list", "move", "remove", "link", "copy", "write", "read", "mkdir"};
+#ifdef CLICKHOUSE_CLOUD
+    supported_commands.insert("packed-io");
+#endif
 
     command_descriptions.emplace("list-disks", makeCommandListDisks());
     command_descriptions.emplace("list", makeCommandList());
@@ -75,6 +78,9 @@ void DisksApp::addOptions(
     command_descriptions.emplace("write", makeCommandWrite());
     command_descriptions.emplace("read", makeCommandRead());
     command_descriptions.emplace("mkdir", makeCommandMkDir());
+#ifdef CLICKHOUSE_CLOUD
+    command_descriptions.emplace("packed-io", makeCommandPackedIO());
+#endif
 }
 
 void DisksApp::processOptions()
@@ -87,6 +93,11 @@ void DisksApp::processOptions()
         config().setBool("save-logs", true);
     if (options.count("log-level"))
         config().setString("log-level", options["log-level"].as<String>());
+}
+
+DisksApp::~DisksApp()
+{
+    global_context->shutdown();
 }
 
 void DisksApp::init(std::vector<String> & common_arguments)
@@ -134,6 +145,7 @@ void DisksApp::parseAndCheckOptions(
         .options(options_description_)
         .positional(positional_options_description)
         .allow_unregistered();
+
     po::parsed_options parsed = parser.run();
     po::store(parsed, options);
 
@@ -199,8 +211,8 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         po::parsed_options parsed = parser.run();
         po::store(parsed, options);
         po::notify(options);
-        args = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
 
+        args = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
         command->processOptions(config(), options);
     }
     else

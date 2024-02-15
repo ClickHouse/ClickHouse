@@ -501,6 +501,8 @@ void KeeperDispatcher::shutdown()
 
             LOG_DEBUG(log, "Shutting down storage dispatcher");
 
+            /// some threads can be waiting for certain commits, so we set value
+            /// of the last commit index to something that will always unblock
             keeper_context->setLastCommitIndex(std::numeric_limits<uint64_t>::max());
 
             if (session_cleaner_thread.joinable())
