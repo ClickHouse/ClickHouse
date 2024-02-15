@@ -24,11 +24,13 @@ def started_cluster():
 
 
 def test_sql_user_defined_functions_on_cluster():
-    def check_function_does_not_exist(node : ClickHouseInstance):
-        error_message = node.query_and_get_error(
-            "SELECT test_function(1);"
+    def check_function_does_not_exist(node: ClickHouseInstance):
+        error_message = node.query_and_get_error("SELECT test_function(1);")
+        assert (
+            "Unknown function test_function" in error_message
+            or "Function with name 'test_function' does not exists. In scope SELECT test_function(1)"
+            in error_message
         )
-        assert "Unknown function test_function" in error_message or "Function with name 'test_function' does not exists. In scope SELECT test_function(1)" in error_message
 
     check_function_does_not_exist(ch1)
     check_function_does_not_exist(ch2)
