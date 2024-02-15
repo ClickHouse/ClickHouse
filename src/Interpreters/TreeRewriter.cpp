@@ -787,23 +787,6 @@ void expandOrderByAll(ASTSelectQuery * select_query)
 
     for (const auto & expr : select_query->select()->children)
     {
-        if (auto * identifier = expr->as<ASTIdentifier>(); identifier != nullptr)
-        {
-            if (identifier->alias.empty())
-            {
-                if (Poco::toUpper(identifier->name()) == "ALL")
-                    throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Cannot use ORDER BY ALL to sort a column with name 'all'");
-            }
-            else
-            {
-                if (Poco::toUpper(identifier->alias) == "ALL")
-                    throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Cannot use ORDER BY ALL to sort a column alias with name 'all'");
-            }
-        }
-        if (auto * function = expr->as<ASTFunction>(); function != nullptr)
-            if (Poco::toUpper(function->alias) == "ALL")
-                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Cannot use ORDER BY ALL to sort an expression with name 'all'");
-
         auto elem = std::make_shared<ASTOrderByElement>();
         elem->direction = all_elem->direction;
         elem->nulls_direction = all_elem->nulls_direction;
@@ -1330,7 +1313,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (select_query->group_by_all)
         expandGroupByAll(select_query);
 
-    // expand ORDER BY ALL
+    // expand ORDER BY *
     if (select_query->order_by_all)
         expandOrderByAll(select_query);
 

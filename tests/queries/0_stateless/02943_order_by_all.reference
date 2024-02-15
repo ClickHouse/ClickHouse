@@ -49,39 +49,9 @@ A	2
 2	A
 3	B
 \N	C
--- "ALL" in ORDER BY is case-insensitive
+-- Special case: all columns in SELECT clause, ORDER BY *
 A	2
 B	3
 C	\N
 D	1
-A	2
-B	3
-C	\N
-D	1
-A	2
-B	3
-C	\N
-D	1
-A	2
-B	3
-C	\N
-D	1
--- If "all" (case-insensitive) appears in the SELECT clause, throw an error because of ambiguity
--- If ORDER BY contains "ALL" plus other columns, then "ALL" loses its special meaning
-B	3	10
-D	1	20
-A	2	30
-C	\N	40
-B	3	10
-D	1	20
-A	2	30
-C	\N	40
--- test SELECT * ORDER BY ALL (only works if the SELECT column contains no "all" column)
-A	2	30
-B	3	10
-C	\N	40
-D	1	20
-A	2	30
-B	3	10
-C	\N	40
-D	1	20
+-- "*" must appear stand-alone in ORDER BY
