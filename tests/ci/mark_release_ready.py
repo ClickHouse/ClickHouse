@@ -55,7 +55,6 @@ def main():
         description,
         RELEASE_READY_STATUS,
         pr_info,
-        dump_to_file=True,
     )
 
 
