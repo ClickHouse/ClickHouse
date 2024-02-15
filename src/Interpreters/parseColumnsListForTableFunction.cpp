@@ -7,11 +7,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeMap.h>
-
 
 namespace DB
 {
@@ -24,84 +19,64 @@ namespace ErrorCodes
 
 }
 
-void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings & settings)
+void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidationSettings & settings)
 {
-    if (!settings.allow_suspicious_low_cardinality_types)
+    auto validate_callback = [&](const IDataType & data_type)
     {
-        if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        if (!settings.allow_suspicious_low_cardinality_types)
         {
-            if (!isStringOrFixedString(*removeNullable(lc_type->getDictionaryType())))
-                throw Exception(
-                    ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY,
-                    "Creating columns of type {} is prohibited by default due to expected negative impact on performance. "
-                    "It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting.",
-                    lc_type->getName());
+            if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(&data_type))
+            {
+                if (!isStringOrFixedString(*removeNullable(lc_type->getDictionaryType())))
+                    throw Exception(
+                        ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY,
+                        "Creating columns of type {} is prohibited by default due to expected negative impact on performance. "
+                        "It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting.",
+                        lc_type->getName());
+            }
         }
-    }
 
-    if (!settings.allow_experimental_object_type)
-    {
-        if (type->hasDynamicSubcolumns())
+        if (!settings.allow_experimental_object_type)
         {
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Cannot create column with type '{}' because experimental Object type is not allowed. "
-                "Set setting allow_experimental_object_type = 1 in order to allow it", type->getName());
-        }
-    }
-
-    if (!settings.allow_suspicious_fixed_string_types)
-    {
-        if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(type.get()))
-        {
-            if (fixed_string->getN() > MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS)
+            if (data_type.hasDynamicSubcolumns())
+            {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create column with type '{}' because fixed string with size > {} is suspicious. "
-                    "Set setting allow_suspicious_fixed_string_types = 1 in order to allow it",
-                    type->getName(),
-                    MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
+                    "Cannot create column with type '{}' because experimental Object type is not allowed. "
+                    "Set setting allow_experimental_object_type = 1 in order to allow it",
+                    data_type.getName());
+            }
         }
-    }
 
-    if (!settings.allow_experimental_variant_type)
-    {
-        if (isVariant(type))
+        if (!settings.allow_suspicious_fixed_string_types)
         {
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Cannot create column with type '{}' because experimental Variant type is not allowed. "
-                "Set setting allow_experimental_variant_type = 1 in order to allow it", type->getName());
+            if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(&data_type))
+            {
+                if (fixed_string->getN() > MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Cannot create column with type '{}' because fixed string with size > {} is suspicious. "
+                        "Set setting allow_suspicious_fixed_string_types = 1 in order to allow it",
+                        data_type.getName(),
+                        MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
+            }
         }
-    }
 
-    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
-    {
-        validateDataType(nullable_type->getNestedType(), settings);
-    }
-    else if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-    {
-        validateDataType(lc_type->getDictionaryType(), settings);
-    }
-    else if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
-    {
-        validateDataType(array_type->getNestedType(), settings);
-    }
-    else if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
-    {
-        for (const auto & element : tuple_type->getElements())
-            validateDataType(element, settings);
-    }
-    else if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
-    {
-        validateDataType(map_type->getKeyType(), settings);
-        validateDataType(map_type->getValueType(), settings);
-    }
-    else if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
-    {
-        for (const auto & variant : variant_type->getVariants())
-            validateDataType(variant, settings);
-    }
+        if (!settings.allow_experimental_variant_type)
+        {
+            if (isVariant(data_type))
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because experimental Variant type is not allowed. "
+                    "Set setting allow_experimental_variant_type = 1 in order to allow it",
+                    data_type.getName());
+            }
+        }
+    };
+
+    validate_callback(*type_to_check);
+    type_to_check->forEachChild(validate_callback);
 }
 
 ColumnsDescription parseColumnsListFromString(const std::string & structure, const ContextPtr & context)
