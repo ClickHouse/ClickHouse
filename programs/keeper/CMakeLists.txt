@@ -39,6 +39,7 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperContext.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperStateManager.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperStorage.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperConstants.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperAsynchronousMetrics.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/pathUtils.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/SessionExpiryQueue.cpp
