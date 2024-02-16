@@ -6,10 +6,8 @@
 #include "ProcfsMetricsProvider.h"
 #include "hasLinuxCapability.h"
 
-#include <filesystem>
 #include <fstream>
 #include <optional>
-#include <unordered_set>
 
 #include <fcntl.h>
 #include <unistd.h>

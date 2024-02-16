@@ -85,7 +85,7 @@
     M(OSReadChars) \
     M(OSWriteChars) \
 \
-    M(PerfCpuCycles) \
+    M(PerfCPUCycles) \
     M(PerfInstructions) \
     M(PerfCacheReferences) \
     M(PerfCacheMisses) \
@@ -94,12 +94,12 @@
     M(PerfBusCycles) \
     M(PerfStalledCyclesFrontend) \
     M(PerfStalledCyclesBackend) \
-    M(PerfRefCpuCycles) \
+    M(PerfRefCPUCycles) \
 \
-    M(PerfCpuClock) \
+    M(PerfCPUClock) \
     M(PerfTaskClock) \
     M(PerfContextSwitches) \
-    M(PerfCpuMigrations) \
+    M(PerfCPUMigrations) \
     M(PerfAlignmentFaults) \
     M(PerfEmulationFaults) \
     M(PerfMinEnabledTime) \
