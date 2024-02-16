@@ -251,15 +251,19 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
         {
-            const int scale_diff = static_cast<const DataTypeDateTime64 &>(type).getScale() - src.get<Decimal64>().getScale();
-            /// in case if we need to make DateTime64(a) from DateTime64(b), we need to convert datetime value to the right scale
-            if (scale_diff != 0)
+            const auto & from_type = src.get<Decimal64>();
+            const auto & to_type = static_cast<const DataTypeDateTime64 &>(type);
+
+            const auto scale_from = from_type.getScale();
+            const auto scale_to = to_type.getScale();
+            const auto scale_diff = scale_from > scale_to ? from_type.getScaleMultiplier() / to_type.getScaleMultiplier() : to_type.getScaleMultiplier() / from_type.getScaleMultiplier();
+            /// in case if we need to make DateTime64(a) from DateTime64(b), a != b, we need to convert datetime value to the right scale
+            if (scale_diff != 1)
             {
-                const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
-                const UInt64 value = scale_diff > 0 ? src.get<Decimal64>().getValue().value * UInt64(pow(10, scale_diff)) : src.get<Decimal64>().getValue().value / UInt64(pow(10, -scale_diff));
+                const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_diff : from_type.getValue().value * scale_diff;
                 return DecimalField(
                     DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1),
-                    date_time64_type.getScale());
+                    scale_to);
             }
             /// Already in needed type.
             return src;
