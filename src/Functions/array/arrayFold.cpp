@@ -32,6 +32,12 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Avoid the default adaptors since they modify the inputs and that makes knowing the lambda argument types
+    /// (getLambdaArgumentTypes) more complex, as it requires knowing what the adaptors will do
+    /// It's much simpler to avoid the adapters
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
         if (arguments.size() < 3)
