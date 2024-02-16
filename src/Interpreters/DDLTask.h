@@ -89,6 +89,7 @@ struct DDLLogEntry
     OpenTelemetry::TracingContext tracing_context;
     String initial_query_id;
     bool is_backup_restore = false;
+    size_t max_query_size = DBMS_DEFAULT_MAX_QUERY_SIZE;
 
     void setSettingsIfRequired(ContextPtr context);
     String toString() const;
