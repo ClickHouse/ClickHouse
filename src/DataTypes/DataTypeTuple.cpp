@@ -385,7 +385,6 @@ void DataTypeTuple::forEachChild(const ChildCallback & callback) const
     }
 }
 
-
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())
