@@ -725,7 +725,7 @@ try
     CPU_ID_ENUMERATE(COLLECT_FLAG)
 #undef COLLECT_FLAG
 
-    LOG_INFO(log, "Available CPU instructions: {}", cpu_info);
+    LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info);
 
     sanityChecks(*this);
 
