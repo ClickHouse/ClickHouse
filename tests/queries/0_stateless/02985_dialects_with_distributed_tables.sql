@@ -18,13 +18,13 @@ SELECT id FROM distributed_test_table LIMIT 3;
 SET dialect = 'kusto';
 
 distributed_test_table | take 3;
+*/
 
 SET dialect = 'prql';
 
 from distributed_test_table
 select {id}
 take 1..3
-*/
 
 SET dialect = 'clickhouse';
 
