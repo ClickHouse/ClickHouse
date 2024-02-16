@@ -323,6 +323,9 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         if (!temp_part.part)
             continue;
 
+        if (!support_parallel_write && temp_part.part->getDataPartStorage().supportParallelWrite())
+            support_parallel_write = true;
+
         BlockIDsType block_id;
 
         if constexpr (async_insert)
