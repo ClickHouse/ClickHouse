@@ -2331,7 +2331,11 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     {
         Block default_header;
         for (const auto * input : actions->getInputs())
-            default_header.insert({input->result_type->createColumnConstWithDefaultValue(1), input->result_type, input->result_name});
+        {
+            ColumnPtr col = input->result_type->createColumnConstWithDefaultValue(1);
+            default_header.insert({col, input->result_type, input->result_name});
+        }
+
         default_header = actions->updateHeader(std::move(default_header));
         if (default_header.getByPosition(0).column->getBool(0))
             return nullptr;

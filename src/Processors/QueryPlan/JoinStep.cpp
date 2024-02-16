@@ -59,11 +59,19 @@ JoinStep::JoinStep(
     updateInputStreams(DataStreams{left_stream_, right_stream_});
 }
 
-static ActionsDAGPtr buildFilterDefaultDAG(const Block & in_header, const Block & out_header)
+static ActionsDAGPtr buildFilterDefaultDAG(const Block & in_header, const Block & out_header, const TableJoin & table_join, JoinTableSide side)
 {
     auto dag = std::make_shared<ActionsDAG>();
     ActionsDAG::NodeRawConstPtrs atoms;
     atoms.reserve(in_header.columns());
+
+    NameSet prohibited_keys;
+    if (table_join.hasUsing())
+    {
+        /// Do not apply filter to USING column, cause it's a combination from left and right table.
+        auto keys = table_join.getAllNames(side);
+        prohibited_keys.insert(keys.begin(), keys.end());
+    }
 
     FunctionOverloadResolverPtr func_builder_equals
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(false));
@@ -76,6 +84,9 @@ static ActionsDAGPtr buildFilterDefaultDAG(const Block & in_header, const Block 
 
     for (const auto & in_col : in_header)
     {
+        if (prohibited_keys.contains(in_col.name))
+            continue;
+
         const auto * out_col = out_header.findByName(in_col.name);
 
         if (!out_col)
@@ -123,51 +134,67 @@ static ActionsDAGPtr buildFilterDefaultDAG(const Block & in_header, const Block 
     return dag;
 }
 
+
+ActionsDAGPtr JoinStep::buildDefaultsDAG(size_t idx) const
+{
+    const auto & in_header = getInputStreams()[idx].header;
+    const auto & out_header = getOutputStream().header;
+    // std::cerr << in_header.dumpStructure() << std::endl;
+    // std::cerr << out_header.dumpStructure() << std::endl;
+
+    return buildFilterDefaultDAG(in_header, out_header, join->getTableJoin(), idx == 0 ? JoinTableSide::Left : JoinTableSide::Right);
+}
+
 QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStep expect two input steps");
 
+    QueryPipelineBuilderPtr joined_pipeline;
+
     if (join->pipelineType() == JoinPipelineType::YShaped)
     {
-        auto joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
+        joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
             std::move(pipelines[0]), std::move(pipelines[1]), join, output_stream->header, max_block_size, &processors);
         joined_pipeline->resize(max_streams);
-        return joined_pipeline;
     }
-
-    auto res = QueryPipelineBuilder::joinPipelinesRightLeft(
-        std::move(pipelines[0]),
-        std::move(pipelines[1]),
-        join,
-        output_stream->header,
-        max_block_size,
-        max_streams,
-        keep_left_read_in_order,
-        &processors);
-
-    if (filter_defaults_idx)
+    else
     {
-        const auto & in_header = getInputStreams()[*filter_defaults_idx].header;
-        const auto & out_header = getOutputStream().header;
-        // std::cerr << in_header.dumpStructure() << std::endl;
-        // std::cerr << out_header.dumpStructure() << std::endl;
-
-        if (auto filter_defaults = buildFilterDefaultDAG(in_header, out_header))
-        {
-            auto filter_defaults_expr = std::make_shared<ExpressionActions>(filter_defaults, settings.getActionsSettings());
-            // std::cerr << "===================== filter_defaults\n";
-            // std::cerr << res->getHeader().dumpStructure() << std::endl;
-            // std::cerr << filter_defaults_expr->dumpActions() << std::endl;
-            res->addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
-            {
-                bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-                return std::make_shared<FilterTransform>(header, filter_defaults_expr, filter_defaults->getOutputs().at(0)->result_name, true, on_totals);
-            });
-        }
+        joined_pipeline = QueryPipelineBuilder::joinPipelinesRightLeft(
+            std::move(pipelines[0]),
+            std::move(pipelines[1]),
+            join,
+            output_stream->header,
+            max_block_size,
+            max_streams,
+            keep_left_read_in_order,
+            &processors);
     }
 
-    return res;
+    ActionsDAGPtr filter_defaults_left_dag;
+    ActionsDAGPtr filter_defaults_right_dag;
+    if (filter_defaults_left)
+        filter_defaults_left_dag = buildDefaultsDAG(0);
+    if (filter_defaults_right)
+        filter_defaults_right_dag = buildDefaultsDAG(1);
+
+    for (auto dag : {filter_defaults_left_dag, filter_defaults_right_dag})
+    {
+        if (!dag)
+            continue;
+
+        auto filter_defaults_expr = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());
+        // std::cerr << "===================== filter_defaults\n";
+        // std::cerr << res->getHeader().dumpStructure() << std::endl;
+        // std::cerr << filter_defaults_expr->dumpActions() << std::endl;
+        joined_pipeline->addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
+        {
+            bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
+            return std::make_shared<FilterTransform>(header, filter_defaults_expr, dag->getOutputs().at(0)->result_name, true, on_totals);
+        });
+    }
+
+    return joined_pipeline;
 }
 
 bool JoinStep::allowPushDownToRight() const
@@ -182,16 +209,52 @@ void JoinStep::describePipeline(FormatSettings & settings) const
 
 void JoinStep::describeActions(FormatSettings & settings) const
 {
+    ActionsDAGPtr filter_defaults_left_dag;
+    ActionsDAGPtr filter_defaults_right_dag;
+    if (filter_defaults_left)
+        filter_defaults_left_dag = buildDefaultsDAG(0);
+    if (filter_defaults_right)
+        filter_defaults_right_dag = buildDefaultsDAG(1);
+
     String prefix(settings.offset, ' ');
 
     for (const auto & [name, value] : describeJoinActions(join))
         settings.out << prefix << name << ": " << value << '\n';
+
+    if (filter_defaults_left_dag)
+    {
+        auto expression = std::make_shared<ExpressionActions>(filter_defaults_left_dag);
+        expression->describeActions(settings.out, prefix);
+    }
+    if (filter_defaults_right_dag)
+    {
+        auto expression = std::make_shared<ExpressionActions>(filter_defaults_right_dag);
+        expression->describeActions(settings.out, prefix);
+    }
 }
 
 void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
 {
+    ActionsDAGPtr filter_defaults_left_dag;
+    ActionsDAGPtr filter_defaults_right_dag;
+    if (filter_defaults_left)
+        filter_defaults_left_dag = buildDefaultsDAG(0);
+    if (filter_defaults_right)
+        filter_defaults_right_dag = buildDefaultsDAG(1);
+
     for (const auto & [name, value] : describeJoinActions(join))
         map.add(name, value);
+
+    if (filter_defaults_left_dag)
+    {
+        auto expression = std::make_shared<ExpressionActions>(filter_defaults_left_dag);
+        map.add("Left Expression", expression->toTree());
+    }
+    if (filter_defaults_right_dag)
+    {
+        auto expression = std::make_shared<ExpressionActions>(filter_defaults_right_dag);
+        map.add("Right Expression", expression->toTree());
+    }
 }
 
 void JoinStep::updateOutputStream()

@@ -226,10 +226,9 @@ static size_t joinPushDown(
     Names allowed_keys;
 
     NameSet prohibited_keys;
-    if (table_join.kind() == JoinKind::Full && table_join.hasUsing())
+    if (!split_result_can_be_true_on_default && table_join.hasUsing())
     {
-        /// We cannot push down filter for USING column of FULL JOIN easily.
-        /// We can do push the condition into both sides at the same time, but it is tricky to check. Skip it for now.
+        /// We cannot push down filter for USING column.
         auto keys = table_join.getAllNames(child_idx == 0 ? JoinTableSide::Left : JoinTableSide::Right);
         prohibited_keys.insert(keys.begin(), keys.end());
     }

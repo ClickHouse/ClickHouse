@@ -40,16 +40,25 @@ public:
 
     bool canUpdateInputStream() const override { return true; }
 
-    void addFilterDefault(size_t idx) { filter_defaults_idx = idx; }
+    void addFilterDefault(size_t idx)
+    {
+        if (idx == 0)
+            filter_defaults_left = true;
+        else
+            filter_defaults_right = true;
+    }
 
 private:
     void updateOutputStream() override;
+
+    ActionsDAGPtr buildDefaultsDAG(size_t idx) const;
 
     JoinPtr join;
     size_t max_block_size;
     size_t max_streams;
     bool keep_left_read_in_order;
-    std::optional<size_t> filter_defaults_idx;
+    bool filter_defaults_left = false;
+    bool filter_defaults_right = false;
 };
 
 /// Special step for the case when Join is already filled.
