@@ -36,7 +36,7 @@ namespace ProfileEvents
     extern const Event OSReadBytes;
     extern const Event OSWriteBytes;
 
-    extern const Event PerfCpuCycles;
+    extern const Event PerfCPUCycles;
     extern const Event PerfInstructions;
     extern const Event PerfCacheReferences;
     extern const Event PerfCacheMisses;
@@ -45,12 +45,12 @@ namespace ProfileEvents
     extern const Event PerfBusCycles;
     extern const Event PerfStalledCyclesFrontend;
     extern const Event PerfStalledCyclesBackend;
-    extern const Event PerfRefCpuCycles;
+    extern const Event PerfRefCPUCycles;
 
-    extern const Event PerfCpuClock;
+    extern const Event PerfCPUClock;
     extern const Event PerfTaskClock;
     extern const Event PerfContextSwitches;
-    extern const Event PerfCpuMigrations;
+    extern const Event PerfCPUMigrations;
     extern const Event PerfAlignmentFaults;
     extern const Event PerfEmulationFaults;
     extern const Event PerfMinEnabledTime;
@@ -218,7 +218,7 @@ thread_local PerfEventsCounters current_thread_counters;
 
 // descriptions' source: http://man7.org/linux/man-pages/man2/perf_event_open.2.html
 static const PerfEventInfo raw_events_info[] = {
-    HARDWARE_EVENT(PERF_COUNT_HW_CPU_CYCLES, PerfCpuCycles),
+    HARDWARE_EVENT(PERF_COUNT_HW_CPU_CYCLES, PerfCPUCycles),
     HARDWARE_EVENT(PERF_COUNT_HW_INSTRUCTIONS, PerfInstructions),
     HARDWARE_EVENT(PERF_COUNT_HW_CACHE_REFERENCES, PerfCacheReferences),
     HARDWARE_EVENT(PERF_COUNT_HW_CACHE_MISSES, PerfCacheMisses),
@@ -227,13 +227,13 @@ static const PerfEventInfo raw_events_info[] = {
     HARDWARE_EVENT(PERF_COUNT_HW_BUS_CYCLES, PerfBusCycles),
     HARDWARE_EVENT(PERF_COUNT_HW_STALLED_CYCLES_FRONTEND, PerfStalledCyclesFrontend),
     HARDWARE_EVENT(PERF_COUNT_HW_STALLED_CYCLES_BACKEND, PerfStalledCyclesBackend),
-    HARDWARE_EVENT(PERF_COUNT_HW_REF_CPU_CYCLES, PerfRefCpuCycles),
+    HARDWARE_EVENT(PERF_COUNT_HW_REF_CPU_CYCLES, PerfRefCPUCycles),
 
     // `cpu-clock` is a bit broken according to this: https://stackoverflow.com/a/56967896
-    SOFTWARE_EVENT(PERF_COUNT_SW_CPU_CLOCK, PerfCpuClock),
+    SOFTWARE_EVENT(PERF_COUNT_SW_CPU_CLOCK, PerfCPUClock),
     SOFTWARE_EVENT(PERF_COUNT_SW_TASK_CLOCK, PerfTaskClock),
     SOFTWARE_EVENT(PERF_COUNT_SW_CONTEXT_SWITCHES, PerfContextSwitches),
-    SOFTWARE_EVENT(PERF_COUNT_SW_CPU_MIGRATIONS, PerfCpuMigrations),
+    SOFTWARE_EVENT(PERF_COUNT_SW_CPU_MIGRATIONS, PerfCPUMigrations),
     SOFTWARE_EVENT(PERF_COUNT_SW_ALIGNMENT_FAULTS, PerfAlignmentFaults),
     SOFTWARE_EVENT(PERF_COUNT_SW_EMULATION_FAULTS, PerfEmulationFaults),
 

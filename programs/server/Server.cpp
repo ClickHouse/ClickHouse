@@ -44,6 +44,7 @@
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
 #include <Common/FailPoint.h>
+#include <Common/CPUID.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Core/ServerUUID.h>
@@ -711,6 +712,20 @@ try
         formatReadableSizeWithBinarySuffix(physical_server_memory),
         getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
         std::thread::hardware_concurrency());
+
+    String cpu_info;
+#define COLLECT_FLAG(X) \
+    if (CPU::have##X()) \
+    {                   \
+        if (!cpu_info.empty()) \
+            cpu_info += ", ";  \
+        cpu_info += #X; \
+    }
+
+    CPU_ID_ENUMERATE(COLLECT_FLAG)
+#undef COLLECT_FLAG
+
+    LOG_INFO(log, "Available CPU instructions: {}", cpu_info);
 
     sanityChecks(*this);
 

@@ -310,7 +310,7 @@ The server successfully detected this situation and will download merged part fr
     M(ParallelReplicasStealingLeftoversMicroseconds, "Time spent collecting orphaned segments") \
     M(ParallelReplicasCollectingOwnedSegmentsMicroseconds, "Time spent collecting segments meant by hash") \
     \
-    M(PerfCpuCycles, "Total cycles. Be wary of what happens during CPU frequency scaling.")  \
+    M(PerfCPUCycles, "Total cycles. Be wary of what happens during CPU frequency scaling.")  \
     M(PerfInstructions, "Retired instructions. Be careful, these can be affected by various issues, most notably hardware interrupt counts.") \
     M(PerfCacheReferences, "Cache accesses. Usually, this indicates Last Level Cache accesses, but this may vary depending on your CPU. This may include prefetches and coherency messages; again this depends on the design of your CPU.") \
     M(PerfCacheMisses, "Cache misses. Usually this indicates Last Level Cache misses; this is intended to be used in conjunction with the PERFCOUNTHWCACHEREFERENCES event to calculate cache miss rates.") \
@@ -319,12 +319,12 @@ The server successfully detected this situation and will download merged part fr
     M(PerfBusCycles, "Bus cycles, which can be different from total cycles.") \
     M(PerfStalledCyclesFrontend, "Stalled cycles during issue.") \
     M(PerfStalledCyclesBackend, "Stalled cycles during retirement.") \
-    M(PerfRefCpuCycles, "Total cycles; not affected by CPU frequency scaling.") \
+    M(PerfRefCPUCycles, "Total cycles; not affected by CPU frequency scaling.") \
     \
-    M(PerfCpuClock, "The CPU clock, a high-resolution per-CPU timer") \
+    M(PerfCPUClock, "The CPU clock, a high-resolution per-CPU timer") \
     M(PerfTaskClock, "A clock count specific to the task that is running") \
     M(PerfContextSwitches, "Number of context switches") \
-    M(PerfCpuMigrations, "Number of times the process has migrated to a new CPU") \
+    M(PerfCPUMigrations, "Number of times the process has migrated to a new CPU") \
     M(PerfAlignmentFaults, "Number of alignment faults. These happen when unaligned memory accesses happen; the kernel can handle these but it reduces performance. This happens only on some architectures (never on x86).") \
     M(PerfEmulationFaults, "Number of emulation faults. The kernel sometimes traps on unimplemented instructions and emulates them for user space. This can negatively impact performance.") \
     M(PerfMinEnabledTime, "For all events, minimum time that an event was enabled. Used to track event multiplexing influence") \
