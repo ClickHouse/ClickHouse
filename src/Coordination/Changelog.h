@@ -260,7 +260,7 @@ private:
     struct PrefetchInfo
     {
         std::vector<FileReadInfo> file_infos;
-        std::pair<size_t, size_t> commit_prefetch_index_range;
+        std::pair<uint64_t, uint64_t> commit_prefetch_index_range;
         std::atomic<bool> cancel;
         std::atomic<bool> done = false;
     };

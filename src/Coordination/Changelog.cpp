@@ -719,10 +719,10 @@ void LogEntryStorage::prefetchCommitLogs()
         {
             for (const auto & prefetch_file_info : prefetch_info->file_infos)
             {
-                const auto & [changelog_description, position, count] = prefetch_file_info;
-                changelog_description->withLock(
+                prefetch_file_info.file_description->withLock(
                     [&]
                     {
+                        const auto & [changelog_description, position, count] = prefetch_file_info;
                         auto file = changelog_description->disk->readFile(changelog_description->path, ReadSettings());
                         file->seek(position, SEEK_SET);
                         LOG_TRACE(
@@ -1020,7 +1020,6 @@ void LogEntryStorage::updateTermInfoWithNewEntry(uint64_t index, uint64_t term)
     if (!log_term_infos.empty() && log_term_infos.back().term == term)
         return;
 
-    chassert(log_term_infos.empty() || log_term_infos.back().term == term - 1);
     log_term_infos.push_back(LogTermInfo{.term = term, .first_index = index});
 }
 
@@ -1224,10 +1223,10 @@ LogEntryPtr LogEntryStorage::getEntry(uint64_t index) const
     }
     else if (auto it = logs_location.find(index); it != logs_location.end())
     {
-        const auto & [changelog_description, position, size] = it->second;
-        changelog_description->withLock(
+        it->second.file_description->withLock(
             [&]
             {
+                const auto & [changelog_description, position, size] = it->second;
                 auto file = changelog_description->disk->readFile(changelog_description->path, ReadSettings());
                 file->seek(position, SEEK_SET);
                 LOG_TRACE(
@@ -1282,6 +1281,10 @@ uint64_t LogEntryStorage::termAt(uint64_t index) const
 
 void LogEntryStorage::addLogLocations(std::vector<std::pair<uint64_t, LogLocation>> && indices_with_log_locations)
 {
+    /// if we have unlimited space in latest logs cache we don't need log location
+    if (latest_logs_cache.size_threshold == 0)
+        return;
+
     std::lock_guard lock(logs_location_mutex);
     unapplied_indices_with_log_locations.insert(
         unapplied_indices_with_log_locations.end(),
@@ -1291,7 +1294,8 @@ void LogEntryStorage::addLogLocations(std::vector<std::pair<uint64_t, LogLocatio
 
 void LogEntryStorage::refreshCache()
 {
-    if (latest_logs_cache.cache_size <= latest_logs_cache.size_threshold)
+    /// if we have unlimited space in latest logs cache we don't need log location
+    if (latest_logs_cache.size_threshold == 0)
         return;
 
     std::vector<IndexWithLogLocation> new_unapplied_indices_with_log_locations;
@@ -1343,11 +1347,11 @@ LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end
         if (!read_info)
             return;
 
-        const auto & [file_description, start_position, count] = *read_info;
-        LOG_TRACE(log, "Reading from path {} {} entries", file_description->path, count);
-        file_description->withLock(
+        LOG_TRACE(log, "Reading from path {} {} entries", read_info->file_description->path, read_info->count);
+        read_info->file_description->withLock(
             [&]
             {
+                const auto & [file_description, start_position, count] = *read_info;
                 auto file = file_description->disk->readFile(file_description->path);
                 file->seek(start_position, SEEK_SET);
 

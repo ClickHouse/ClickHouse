@@ -1819,11 +1819,9 @@ void testLogAndStateMachine(
 
             snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
         }
+
         if (snapshot_created && changelog.size() > settings->reserved_log_items)
-        {
-            keeper_context->setLastCommitIndex(i - settings->reserved_log_items);
             changelog.compact(i - settings->reserved_log_items);
-        }
     }
 
     SnapshotsQueue snapshots_queue1{1};
