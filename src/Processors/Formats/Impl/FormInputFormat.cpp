@@ -2,6 +2,8 @@
 #include<Processors/Formats/Impl/FormInputFormat.h>
 #include <IO/ReadHelpers.h>
 #include "Core/NamesAndTypes.h"
+#include "Core/QueryProcessingStage.h"
+#include "DataTypes/IDataType.h"
 #include "Formats/EscapingRuleUtils.h"
 #include "Formats/FormatSettings.h"
 #include "Processors/Formats/IRowInputFormat.h"
@@ -11,15 +13,26 @@
 namespace DB
 {  
 
+enum
+{
+    INVALID_INDEX = size_t(-1),
+};
+
 FormInputFormat::FormInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_) 
     : IRowInputFormat(std::move(header_), in_, params_), format_settings(format_settings_)
 {
-
+    const auto & header = getPort().getHeader();
+    name_map = header.getNamesToIndexesMap();
 }
 
 void FormInputFormat::readPrefix()
 {
     skipBOMIfExists(*in);
+}
+
+const String & FormInputFormat::columnName(size_t i) const
+{
+    return getPort().getHeader().getByPosition(i).name;
 }
 
 /** Read the field name in the `Form` format.
@@ -57,6 +70,24 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
     throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while reading key name from Form format");
 }
 
+void FormInputFormat::readField(size_t index, MutableColumns & columns)
+{
+    if (seen_columns[index])
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing Form format: {}", columnName(index));
+
+    seen_columns[index] = true;
+    const auto & serialization = serializations[index];
+    String str;
+    readStringUntilAmpersand(str,*in);
+
+    if (!in->eof())
+        ++in->position(); /// skip & 
+
+    ReadBufferFromString buf(str); 
+    serialization->deserializeTextRaw(*columns[index], buf, format_settings);
+    read_columns[index] = true;
+}
+
 bool FormInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
 
@@ -64,11 +95,35 @@ bool FormInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
         return false;
 
     size_t num_columns = columns.size();
-
     read_columns.assign(num_columns, false);
     seen_columns.assign(num_columns, false);
+
+    for (size_t i = 0; i < num_columns; i++)
+    {
+        if(in->eof())
+            break;
+        
+        StringRef name_ref;
+        bool has_value = readName(*in, name_ref, name_buf);
+        const auto it = name_map.find(String(name_ref));
+
+        if (has_value)
+        {
+            size_t column_index;
+            if (it != name_map.end())
+                column_index = it->second;
+            else
+                column_index = INVALID_INDEX;
+
+            if (column_index == INVALID_INDEX)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: illegal value of column_index");
+
+            readField(column_index, columns);
+        }
+      
+    }
     
-    return false;
+    return true;
 }
 
 FormSchemaReader::FormSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

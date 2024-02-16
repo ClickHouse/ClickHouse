@@ -18,11 +18,16 @@ public:
 private:
     void readPrefix() override;
     bool readRow(MutableColumns & columns, RowReadExtension & extra) override;
+    void readField(size_t index, MutableColumns & columns);
+    const String & columnName(size_t i) const;
 
     const FormatSettings format_settings;
     String name_buf;
     std::vector<UInt8> read_columns;
     std::vector<UInt8> seen_columns;
+
+    /// Hash table matches field name to position in the block
+    Block::NameMap name_map;
 };
 
 class FormSchemaReader : public IRowWithNamesSchemaReader
