@@ -674,7 +674,9 @@ Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests
                 impl->finalize(fmt::format("Session was killed: {}", requests.back()->getPath()));
             }
             responses.pop_back();
-            chassert(code == Coordination::Error::ZOK || responses.back()->error != Coordination::Error::ZOK);
+            /// For some reason, for hardware errors we set ZOK codes for all responses.
+            /// In other cases, if the multi-request status is not ZOK, then the last response status must indicate an error too
+            chassert(code == Coordination::Error::ZOK || Coordination::isHardwareError(code) || responses.back()->error != Coordination::Error::ZOK);
         }
 
         return code;
