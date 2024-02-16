@@ -1775,6 +1775,10 @@ Default value: 0 (no restriction).
 
 ## insert_quorum {#insert_quorum}
 
+:::note
+`insert_quorum` does not apply when using the [`SharedMergeTree` table engine](/en/cloud/reference/shared-merge-tree) in ClickHouse Cloud as all inserts are quorum inserted.
+:::
+
 Enables the quorum writes.
 
 - If `insert_quorum < 2`, the quorum writes are disabled.
@@ -1813,6 +1817,10 @@ See also:
 - [select_sequential_consistency](#select_sequential_consistency)
 
 ## insert_quorum_parallel {#insert_quorum_parallel}
+
+:::note
+`insert_quorum_parallel` does not apply when using the [`SharedMergeTree` table engine](/en/cloud/reference/shared-merge-tree) in ClickHouse Cloud as all inserts are quorum inserted.
+:::
 
 Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
 
