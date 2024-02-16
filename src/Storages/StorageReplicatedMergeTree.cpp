@@ -2359,31 +2359,6 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     cleanup_thread.wakeup();
 }
 
-auto get_destination_partition_and_partition_id =
-    [](bool is_partition_exp_the_same,
-       const MergeTreeData & source_data,
-       const MergeTreeData & dst_data,
-       const std::vector<DataPartPtr> & src_parts,
-       const String & source_partition_id)
-{
-    /*
-     * If the partition expression is the same, there is no need to create a new partition
-     * and the source partition id can be used as the destination partition id.
-     * */
-    if (is_partition_exp_the_same)
-    {
-        return std::make_pair(MergeTreePartition(), source_partition_id);
-    }
-
-    auto dst_partition = MergeTreePartitionCompatibilityVerifier::verifyCompatibilityAndCreatePartition(
-        source_data,
-        dst_data,
-        src_parts);
-
-    return std::make_pair(dst_partition, dst_partition.getID(dst_data));
-};
-
-
 bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 {
     Stopwatch watch;
@@ -7933,8 +7908,12 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         return;
     }
 
-    auto [destination_partition, destination_partition_id] =
-        get_destination_partition_and_partition_id(is_partition_exp_the_same, src_data, *this, src_all_parts, source_partition_id);
+    auto [destination_partition, destination_partition_id] = MergeTreePartitionCompatibilityVerifier::getDestinationPartitionAndPartitionId(
+        is_partition_exp_the_same,
+        src_data,
+        *this,
+        src_all_parts,
+        source_partition_id);
 
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
@@ -8212,7 +8191,18 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
     auto src_data_id = src_data.getStorageID();
-    String partition_id = getPartitionIDFromQuery(partition, query_context);
+    String source_partition_id = getPartitionIDFromQuery(partition, query_context);
+
+    const auto dst_partition_expression = dest_metadata_snapshot->getPartitionKeyAST();
+    const auto src_partition_expression = metadata_snapshot->getPartitionKeyAST();
+    const auto is_partition_exp_the_same = queryToStringNullable(src_partition_expression) == queryToStringNullable(dst_partition_expression);
+
+    // TODO fix below
+    auto [destination_partition, destination_partition_id] = MergeTreePartitionCompatibilityVerifier::getDestinationPartitionAndPartitionId(
+        is_partition_exp_the_same,
+        src_data,
+        *dest_table_storage, {},
+        source_partition_id);
 
     /// A range for log entry to remove parts from the source table (myself).
     auto zookeeper = getZooKeeper();
@@ -8225,7 +8215,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
         MergeTreePartInfo drop_range;
         std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
-        getFakePartCoveringAllPartsInPartition(partition_id, drop_range, delimiting_block_lock, true);
+        getFakePartCoveringAllPartsInPartition(destination_partition_id, drop_range, delimiting_block_lock, true);
         String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
 
         DataPartPtr covering_part;
@@ -8271,12 +8261,12 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             if (!dest_table_storage->canReplacePartition(src_part))
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Cannot move partition '{}' because part '{}"
-                                "' has inconsistent granularity with table", partition_id, src_part->name);
+                                "' has inconsistent granularity with table", source_partition_id, src_part->name);
 
             String hash_hex = src_part->checksums.getTotalChecksumHex();
             String block_id_path;
 
-            auto lock = dest_table_storage->allocateBlockNumber(partition_id, zookeeper, block_id_path);
+            auto lock = dest_table_storage->allocateBlockNumber(destination_partition_id, zookeeper, block_id_path);
             if (!lock)
             {
                 LOG_INFO(log, "Part {} (hash {}) has been already attached", src_part->name, hash_hex);
@@ -8284,7 +8274,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             }
 
             UInt64 index = lock->getNumber();
-            MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
+            MergeTreePartInfo dst_part_info(destination_partition_id, index, index, src_part->info.level);
 
             /// Don't do hardlinks in case of zero-copy at any side (defensive programming)
             bool zero_copy_enabled = storage_settings_ptr->allow_remote_fs_zero_copy_replication
@@ -8323,7 +8313,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
         ReplicatedMergeTreeLogEntryData entry;
         {
-            MergeTreePartInfo drop_range_dest = makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(partition_id);
+            MergeTreePartInfo drop_range_dest = makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(destination_partition_id);
 
             entry.type = ReplicatedMergeTreeLogEntryData::REPLACE_RANGE;
             entry.source_replica = dest_table_storage->replica_name;

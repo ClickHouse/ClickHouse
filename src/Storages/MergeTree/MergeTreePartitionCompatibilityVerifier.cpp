@@ -61,8 +61,10 @@ bool isExpressionDirectSubsetOf(const ASTPtr source, const ASTPtr destination)
 }
 }
 
-MergeTreePartition MergeTreePartitionCompatibilityVerifier::verifyCompatibilityAndCreatePartition(
-    const MergeTreeData & source_storage, const MergeTreeData & destination_storage, const DataPartsVector & source_parts)
+MergeTreePartition verifyCompatibilityAndCreatePartition(
+    const MergeTreeData & source_storage,
+    const MergeTreeData & destination_storage,
+    const MergeTreePartitionCompatibilityVerifier::DataPartsVector & source_parts)
 {
     const auto source_metadata = source_storage.getInMemoryMetadataPtr();
     const auto destination_metadata = destination_storage.getInMemoryMetadataPtr();
@@ -102,6 +104,30 @@ MergeTreePartition MergeTreePartitionCompatibilityVerifier::verifyCompatibilityA
         destination_storage.getContext());
 
     return partition;
+}
+
+std::pair<MergeTreePartition, std::string> MergeTreePartitionCompatibilityVerifier::getDestinationPartitionAndPartitionId(
+    bool is_partition_exp_the_same,
+    const MergeTreeData & source_data,
+    const MergeTreeData & dst_data,
+    const DataPartsVector & src_parts,
+    const String & source_partition_id)
+{
+    /*
+     * If the partition expression is the same, there is no need to create a new partition
+     * and the source partition id can be used as the destination partition id.
+     * */
+    if (is_partition_exp_the_same)
+    {
+        return std::make_pair(MergeTreePartition(), source_partition_id);
+    }
+
+    auto dst_partition = verifyCompatibilityAndCreatePartition(
+        source_data,
+        dst_data,
+        src_parts);
+
+    return std::make_pair(dst_partition, dst_partition.getID(dst_data));
 }
 
 }

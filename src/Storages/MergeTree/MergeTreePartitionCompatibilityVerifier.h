@@ -23,11 +23,12 @@ public:
     using DataPartPtr = std::shared_ptr<const DataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
 
-    static MergeTreePartition
-    verifyCompatibilityAndCreatePartition(
-        const MergeTreeData & source_storage,
-        const MergeTreeData & destination_storage,
-        const DataPartsVector & source_parts);
+    static std::pair<MergeTreePartition, std::string> getDestinationPartitionAndPartitionId(
+        bool is_partition_exp_the_same,
+        const MergeTreeData & source_data,
+        const MergeTreeData & dst_data,
+        const DataPartsVector & src_parts,
+        const String & source_partition_id);
 };
 
 }
