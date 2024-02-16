@@ -18,6 +18,7 @@ from contextlib import contextmanager
 from typing import Any, Final, Iterator, List, Optional, Tuple
 
 from git_helper import Git, commit, release_branch
+from report import SUCCESS
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     GENERATED_CONTRIBUTORS,
@@ -122,7 +123,7 @@ class Release:
         self.version = get_version_from_repo(git=self._git)
 
     def get_stable_release_type(self) -> str:
-        if self.version.minor % 5 == 3:  # our 3 and 8 are LTS
+        if self.version.is_lts:
             return VersionType.LTS
         return VersionType.STABLE
 
@@ -142,7 +143,7 @@ class Release:
 
             for status in statuses:
                 if status["context"] == RELEASE_READY_STATUS:
-                    if not status["state"] == "success":
+                    if not status["state"] == SUCCESS:
                         raise Exception(
                             f"the status {RELEASE_READY_STATUS} is {status['state']}"
                             ", not success"

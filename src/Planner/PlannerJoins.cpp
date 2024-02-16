@@ -388,8 +388,8 @@ JoinClausesAndActions buildJoinClausesAndActions(//const ColumnsWithTypeAndName 
     ActionsDAGPtr left_join_actions = std::make_shared<ActionsDAG>(left_table_expression_columns);
     ActionsDAGPtr right_join_actions = std::make_shared<ActionsDAG>(right_table_expression_columns);
 
-    // LOG_TRACE(&Poco::Logger::get("Planner"), "buildJoinClausesAndActions cols {} ", left_join_actions->dumpDAG());
-    // LOG_TRACE(&Poco::Logger::get("Planner"), "buildJoinClausesAndActions cols {} ", right_join_actions->dumpDAG());
+    // LOG_TRACE(getLogger("Planner"), "buildJoinClausesAndActions cols {} ", left_join_actions->dumpDAG());
+    // LOG_TRACE(getLogger("Planner"), "buildJoinClausesAndActions cols {} ", right_join_actions->dumpDAG());
 
     /** In ActionsDAG if input node has constant representation additional constant column is added.
       * That way we cannot simply check that node has INPUT type during resolution of expression join table side.
@@ -411,8 +411,8 @@ JoinClausesAndActions buildJoinClausesAndActions(//const ColumnsWithTypeAndName 
       * ON (t1.id = t2.id) AND 1 != 1 AND (t1.value >= t1.value);
       */
     auto join_expression = join_node.getJoinExpression();
-    // LOG_TRACE(&Poco::Logger::get("Planner"), "buildJoinClausesAndActions expr {} ", join_expression->formatConvertedASTForErrorMessage());
-    // LOG_TRACE(&Poco::Logger::get("Planner"), "buildJoinClausesAndActions expr {} ", join_expression->dumpTree());
+    // LOG_TRACE(getLogger("Planner"), "buildJoinClausesAndActions expr {} ", join_expression->formatConvertedASTForErrorMessage());
+    // LOG_TRACE(getLogger("Planner"), "buildJoinClausesAndActions expr {} ", join_expression->dumpTree());
 
     auto * constant_join_expression = join_expression->as<ConstantNode>();
 

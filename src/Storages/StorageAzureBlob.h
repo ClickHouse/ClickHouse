@@ -4,6 +4,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
+#include <Common/re2.h>
 #include <Storages/IStorage.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Storages/Cache/SchemaCache.h>
@@ -13,15 +14,6 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/SelectQueryInfo.h>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace DB
 {
@@ -327,7 +319,7 @@ private:
 
     ReaderHolder reader;
 
-    Poco::Logger * log = &Poco::Logger::get("StorageAzureBlobSource");
+    LoggerPtr log = getLogger("StorageAzureBlobSource");
 
     ThreadPool create_reader_pool;
     ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;

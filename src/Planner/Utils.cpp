@@ -37,6 +37,8 @@
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/CollectSets.h>
 
+#include <stack>
+
 namespace DB
 {
 
@@ -130,6 +132,34 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
     return result_ast;
 }
 
+static void removeCTEs(ASTPtr & ast)
+{
+    std::stack<IAST *> stack;
+    stack.push(ast.get());
+    while (!stack.empty())
+    {
+        auto * node = stack.top();
+        stack.pop();
+
+        if (auto * subquery = typeid_cast<ASTSubquery *>(node))
+            subquery->cte_name = {};
+
+        for (const auto & child : node->children)
+            stack.push(child.get());
+    }
+}
+
+ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
+{
+    auto ast = queryNodeToSelectQuery(query_node);
+    /// Remove CTEs information from distributed queries.
+    /// Now, if cte_name is set for subquery node, AST -> String serialization will only print cte name.
+    /// But CTE is defined only for top-level query part, so may not be sent.
+    /// Removing cte_name forces subquery to be always printed.
+    removeCTEs(ast);
+    return ast;
+}
+
 /** There are no limits on the maximum size of the result for the subquery.
   * Since the result of the query is not the result of the entire query.
   */
@@ -179,6 +209,7 @@ StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQue
     limits.speed_limits.max_execution_rps = settings.max_execution_speed;
     limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
     limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+    limits.speed_limits.max_estimated_execution_time = settings.max_estimated_execution_time;
 
     return limits;
 }
@@ -398,7 +429,7 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr &
                     storage_dummy_columns.emplace_back(projection_column);
             }
 
-            storage_dummy = std::make_shared<StorageDummy>(StorageID{"dummy", "subquery_" + std::to_string(subquery_index)}, ColumnsDescription(storage_dummy_columns));
+            storage_dummy = std::make_shared<StorageDummy>(StorageID{"dummy", "subquery_" + std::to_string(subquery_index)}, ColumnsDescription::fromNamesAndTypes(storage_dummy_columns));
             ++subquery_index;
         }
 
@@ -455,8 +486,7 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
 SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
 {
     SelectQueryInfo select_query_info;
-    select_query_info.original_query = queryNodeToSelectQuery(query_tree);
-    select_query_info.query = select_query_info.original_query;
+    select_query_info.query = queryNodeToSelectQuery(query_tree);
     select_query_info.query_tree = query_tree;
     select_query_info.planner_context = planner_context;
     return select_query_info;

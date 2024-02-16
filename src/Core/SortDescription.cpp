@@ -108,10 +108,9 @@ static std::string getSortDescriptionDump(const SortDescription & description, c
     return buffer.str();
 }
 
-static Poco::Logger * getLogger()
+static LoggerPtr getLogger()
 {
-    static Poco::Logger & logger = Poco::Logger::get("SortDescription");
-    return &logger;
+    return ::getLogger("SortDescription");
 }
 
 void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attempts)

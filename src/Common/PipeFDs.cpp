@@ -97,7 +97,7 @@ void LazyPipeFDs::setNonBlockingReadWrite()
 void LazyPipeFDs::tryIncreaseSize(int desired_size)
 {
 #if defined(OS_LINUX)
-    Poco::Logger * log = &Poco::Logger::get("Pipe");
+    LoggerPtr log = getLogger("Pipe");
 
     /** Increase pipe size to avoid slowdown during fine-grained trace collection.
       */

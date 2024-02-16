@@ -624,7 +624,7 @@ catch (...)
 
 void Keeper::logRevision() const
 {
-    LOG_INFO(&Poco::Logger::get("Application"),
+    LOG_INFO(getLogger("Application"),
         "Starting ClickHouse Keeper {} (revision: {}, git hash: {}, build id: {}), PID {}",
         VERSION_STRING,
         ClickHouseRevision::getVersionRevision(),

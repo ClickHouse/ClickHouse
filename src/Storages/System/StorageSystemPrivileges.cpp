@@ -64,15 +64,16 @@ const std::vector<std::pair<String, Int16>> & StorageSystemPrivileges::getAccess
 }
 
 
-NamesAndTypesList StorageSystemPrivileges::getNamesAndTypes()
+ColumnsDescription StorageSystemPrivileges::getColumnsDescription()
 {
-    NamesAndTypesList names_and_types{
+    /// TODO: Fill in all the comments.
+    return ColumnsDescription
+    {
         {"privilege", std::make_shared<DataTypeEnum16>(getAccessTypeEnumValues())},
         {"aliases", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"level", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getLevelEnumValues()))},
         {"parent_group", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum16>(getAccessTypeEnumValues()))},
     };
-    return names_and_types;
 }
 
 

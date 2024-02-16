@@ -19,7 +19,6 @@
 
 #include <Storages/StorageS3Settings.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
-#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/DiskLocal.h>
 #include <Common/Macros.h>
 

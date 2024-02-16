@@ -34,7 +34,6 @@ public:
         ContextPtr context,
         UInt64 max_block_size,
         size_t num_streams,
-        QueryProcessingStage::Enum processed_stage,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
         bool enable_parallel_reading = false) const;
 
@@ -49,17 +48,16 @@ public:
         UInt64 max_block_size,
         size_t num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
-        MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr = nullptr,
+        ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr = nullptr,
         bool enable_parallel_reading = false) const;
 
     /// Get an estimation for the number of marks we are going to read.
     /// Reads nothing. Secondary indexes are not used.
     /// This method is used to select best projection for table.
-    MergeTreeDataSelectAnalysisResultPtr estimateNumMarksToRead(
+    ReadFromMergeTree::AnalysisResultPtr estimateNumMarksToRead(
         MergeTreeData::DataPartsVector parts,
         const PrewhereInfoPtr & prewhere_info,
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const ActionDAGNodes & added_filter_nodes,
@@ -73,11 +71,11 @@ public:
         const KeyCondition & key_condition,
         const std::optional<KeyCondition> & part_offset_condition,
         const Settings & settings,
-        Poco::Logger * log);
+        LoggerPtr log);
 
 private:
     const MergeTreeData & data;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     static size_t getApproximateTotalRowsToRead(
@@ -85,7 +83,7 @@ private:
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
         const Settings & settings,
-        Poco::Logger * log);
+        LoggerPtr log);
 
     static MarkRanges filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
@@ -96,7 +94,7 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
-        Poco::Logger * log);
+        LoggerPtr log);
 
     static MarkRanges filterMarksUsingMergedIndex(
         MergeTreeIndices indices,
@@ -107,7 +105,7 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
-        Poco::Logger * log);
+        LoggerPtr log);
 
     struct PartFilterCounters
     {
@@ -143,7 +141,7 @@ private:
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context,
         PartFilterCounters & counters,
-        Poco::Logger * log);
+        LoggerPtr log);
 
 public:
     /// For given number rows and bytes, get the number of marks to read.
@@ -186,7 +184,7 @@ public:
         const MergeTreeData & data,
         const ContextPtr & context,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
-        Poco::Logger * log,
+        LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats);
 
     /// Filter parts using primary key and secondary indexes.
@@ -201,7 +199,7 @@ public:
         const std::optional<KeyCondition> & part_offset_condition,
         const UsefulSkipIndexes & skip_indexes,
         const MergeTreeReaderSettings & reader_settings,
-        Poco::Logger * log,
+        LoggerPtr log,
         size_t num_streams,
         ReadFromMergeTree::IndexStats & index_stats,
         bool use_skip_indexes);
@@ -218,7 +216,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         bool sample_factor_column_queried,
-        Poco::Logger * log);
+        LoggerPtr log);
 
     /// Check query limits: max_partitions_to_read, max_concurrent_queries.
     /// Also, return QueryIdHolder. If not null, we should keep it until query finishes.

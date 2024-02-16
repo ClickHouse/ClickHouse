@@ -16,9 +16,7 @@ class StorageSystemUserProcesses final : public IStorageSystemOneBlock<StorageSy
 public:
     std::string getName() const override { return "SystemUserProcesses"; }
 
-    static NamesAndTypesList getNamesAndTypes();
-
-    static NamesAndAliases getNamesAndAliases();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

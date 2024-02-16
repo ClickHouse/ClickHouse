@@ -73,7 +73,7 @@ private:
     const Configuration config;
 
     mutable Tables loaded_tables TSA_GUARDED_BY(mutex);
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

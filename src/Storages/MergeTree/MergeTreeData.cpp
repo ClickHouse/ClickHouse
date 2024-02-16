@@ -35,7 +35,6 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
-#include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
@@ -61,7 +60,6 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -75,7 +73,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
-#include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/Statistics/Estimator.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -93,9 +90,7 @@
 
 #include <algorithm>
 #include <atomic>
-#include <cmath>
 #include <chrono>
-#include <iomanip>
 #include <limits>
 #include <optional>
 #include <ranges>
@@ -300,7 +295,11 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             if (disk->isBroken())
                continue;
 
-            if (!disk->isReadOnly())
+            /// Write once disk is almost the same as read-only for MergeTree,
+            /// since it does not support move, that is required for any
+            /// operation over MergeTree, so avoid writing format_version.txt
+            /// into it as well, to avoid leaving it after DROP.
+            if (!disk->isReadOnly() && !disk->isWriteOnce())
             {
                 auto buf = disk->writeFile(format_version_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, getContext()->getWriteSettings());
                 writeIntText(format_version.toUnderType(), *buf);
@@ -354,8 +353,7 @@ MergeTreeData::MergeTreeData(
     , merging_params(merging_params_)
     , require_part_metadata(require_part_metadata_)
     , broken_part_callback(broken_part_callback_)
-    , log_name(std::make_shared<String>(table_id_.getNameForLogs()))
-    , log(&Poco::Logger::get(*log_name))
+    , log(table_id_.getNameForLogs())
     , storage_settings(std::move(storage_settings_))
     , pinned_part_uuids(std::make_shared<PinnedPartUUIDs>())
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
@@ -1222,7 +1220,7 @@ MergeTreeData::PartLoadingTree::build(PartLoadingInfos nodes)
 }
 
 static std::optional<size_t> calculatePartSizeSafe(
-    const MergeTreeData::DataPartPtr & part, Poco::Logger * log)
+    const MergeTreeData::DataPartPtr & part, const LoggerPtr & log)
 {
     try
     {
@@ -1296,7 +1294,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         res.is_broken = true;
         tryLogCurrentException(log, fmt::format("while loading part {} on path {}", part_name, part_path));
 
-        res.size_of_part = calculatePartSizeSafe(res.part, log);
+        res.size_of_part = calculatePartSizeSafe(res.part, log.load());
         auto part_size_str = res.size_of_part ? formatReadableSizeWithBinarySuffix(*res.size_of_part) : "failed to calculate size";
 
         LOG_ERROR(log,
@@ -1327,7 +1325,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     if (part_disk_ptr->exists(marker_path))
     {
         /// NOTE: getBytesOnDisk() cannot be used here, since it may be zero if checksums.txt does not exist.
-        res.size_of_part = calculatePartSizeSafe(res.part, log);
+        res.size_of_part = calculatePartSizeSafe(res.part, log.load());
         res.is_broken = true;
 
         auto part_size_str = res.size_of_part ? formatReadableSizeWithBinarySuffix(*res.size_of_part) : "failed to calculate size";
@@ -2114,7 +2112,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
                     {
                         /// Actually we don't rely on temporary_directories_lifetime when removing old temporaries directories,
                         /// it's just an extra level of protection just in case we have a bug.
-                        LOG_INFO(LogFrequencyLimiter(log, 10), "{} is in use (by merge/mutation/INSERT) (consider increasing temporary_directories_lifetime setting)", full_path);
+                        LOG_INFO(LogFrequencyLimiter(log.load(), 10), "{} is in use (by merge/mutation/INSERT) (consider increasing temporary_directories_lifetime setting)", full_path);
                         continue;
                     }
                     else if (!disk->exists(it->path()))
@@ -2734,12 +2732,20 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
 void MergeTreeData::renameInMemory(const StorageID & new_table_id)
 {
     IStorage::renameInMemory(new_table_id);
-    std::atomic_store(&log_name, std::make_shared<String>(new_table_id.getNameForLogs()));
-    log = &Poco::Logger::get(*log_name);
+    log.store(new_table_id.getNameForLogs());
 }
 
 void MergeTreeData::dropAllData()
 {
+    /// In case there is read-only/write-once disk we cannot allow to call dropAllData(), but dropping tables is allowed.
+    ///
+    /// Note, that one may think that drop on write-once disk should be
+    /// supported, since it is pretty trivial to implement
+    /// MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(),
+    /// however removing part requires moveDirectory() as well.
+    if (isStaticStorage())
+        return;
+
     LOG_TRACE(log, "dropAllData: waiting for locks.");
     auto settings_ptr = getSettings();
 
@@ -5286,7 +5292,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
         if (hold_table_lock && !table_lock)
             table_lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
-        if (backup_settings.check_parts)
+        if (backup_settings.check_projection_parts)
             part->checkConsistencyWithProjections(/* require_part_metadata= */ true);
 
         BackupEntries backup_entries_from_part;
@@ -5298,7 +5304,8 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
             read_settings,
             make_temporary_hard_links,
             backup_entries_from_part,
-            &temp_dirs);
+            &temp_dirs,
+            false, false);
 
         auto projection_parts = part->getProjectionParts();
         for (const auto & [projection_name, projection_part] : projection_parts)
@@ -5311,7 +5318,9 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
                 read_settings,
                 make_temporary_hard_links,
                 backup_entries_from_part,
-                &temp_dirs);
+                &temp_dirs,
+                projection_part->is_broken,
+                backup_settings.allow_backup_broken_projections);
         }
 
         if (hold_storage_and_part_ptrs)
@@ -6249,13 +6258,13 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
                     log,
                     "Would like to reserve space on volume '{}' by TTL rule of table '{}' but volume was not found",
                     move_ttl_entry->destination_name,
-                    *std::atomic_load(&log_name));
+                    log.loadName());
             else if (move_ttl_entry->destination_type == DataDestinationType::DISK && !move_ttl_entry->if_exists)
                 LOG_WARNING(
                     log,
                     "Would like to reserve space on disk '{}' by TTL rule of table '{}' but disk was not found",
                     move_ttl_entry->destination_name,
-                    *std::atomic_load(&log_name));
+                    log.loadName());
         }
         else if (is_insert && !perform_ttl_move_on_insert)
         {
@@ -6264,7 +6273,7 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
                 "TTL move on insert to {} {} for table {} is disabled",
                 (move_ttl_entry->destination_type == DataDestinationType::VOLUME ? "volume" : "disk"),
                 move_ttl_entry->destination_name,
-                *std::atomic_load(&log_name));
+                log.loadName());
         }
         else
         {
@@ -6280,13 +6289,13 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
                         log,
                         "Would like to reserve space on volume '{}' by TTL rule of table '{}' but there is not enough space",
                         move_ttl_entry->destination_name,
-                        *std::atomic_load(&log_name));
+                        log.loadName());
                 else if (move_ttl_entry->destination_type == DataDestinationType::DISK)
                     LOG_WARNING(
                         log,
                         "Would like to reserve space on disk '{}' by TTL rule of table '{}' but there is not enough space",
                         move_ttl_entry->destination_name,
-                        *std::atomic_load(&log_name));
+                        log.loadName());
             }
         }
     }
@@ -6299,7 +6308,7 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
             "Trying to reserve {} on the selected disk: {} (with type {})",
             ReadableSize(expected_size),
             selected_disk->getName(),
-            toString(selected_disk->getDataSourceDescription().type));
+            selected_disk->getDataSourceDescription().toString());
         reservation = selected_disk->reserve(expected_size);
     }
 
@@ -6888,7 +6897,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     ContextPtr query_context,
     QueryProcessingStage::Enum to_stage,
     const StorageSnapshotPtr &,
-    SelectQueryInfo & query_info) const
+    SelectQueryInfo &) const
 {
     if (query_context->getClientInfo().collaborate_with_initiator)
         return QueryProcessingStage::Enum::FetchColumns;
@@ -6903,11 +6912,6 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
         /// For non-replicated MergeTree we allow them only if parallel_replicas_for_non_replicated_merge_tree is enabled
         if (query_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
             return QueryProcessingStage::Enum::WithMergeableState;
-    }
-
-    if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
-    {
-        query_info.projection = std::nullopt;
     }
 
     return QueryProcessingStage::Enum::FetchColumns;
@@ -6929,13 +6933,12 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
         query_info.prewhere_info,
         storage_snapshot->getMetadataForQuery()->getColumns().getAll().getNames(),
         storage_snapshot->metadata,
-        storage_snapshot->metadata,
         query_info,
         added_filter_nodes,
         query_context,
         query_context->getSettingsRef().max_threads);
 
-    UInt64 total_rows = result_ptr->rows();
+    UInt64 total_rows = result_ptr->selected_rows;
     if (query_info.limit > 0 && query_info.limit < total_rows)
         total_rows = query_info.limit;
     return total_rows;
@@ -7077,6 +7080,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     const ReadSettings & read_settings,
     const WriteSettings & write_settings)
 {
+    chassert(!isStaticStorage());
+
     /// Check that the storage policy contains the disk where the src_part is located.
     bool does_storage_policy_allow_same_disk = false;
     for (const DiskPtr & disk : getStoragePolicy()->getDisks())
@@ -7809,21 +7814,39 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
 
 bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, String & out_reason)
 {
-    if (left->getProjectionParts().size() != right->getProjectionParts().size())
+    auto remove_broken_parts_from_consideration = [](auto & parts)
+    {
+        std::set<String> broken_projection_parts;
+        for (const auto & [name, part] : parts)
+        {
+            if (part->is_broken)
+                broken_projection_parts.emplace(name);
+        }
+        for (const auto & name : broken_projection_parts)
+            parts.erase(name);
+    };
+
+    auto left_projection_parts = left->getProjectionParts();
+    auto right_projection_parts = right->getProjectionParts();
+
+    remove_broken_parts_from_consideration(left_projection_parts);
+    remove_broken_parts_from_consideration(right_projection_parts);
+
+    if (left_projection_parts.size() != right_projection_parts.size())
     {
         out_reason = fmt::format(
             "Parts have different number of projections: {} in part '{}' and {} in part '{}'",
-            left->getProjectionParts().size(),
+            left_projection_parts.size(),
             left->name,
-            right->getProjectionParts().size(),
+            right_projection_parts.size(),
             right->name
         );
         return false;
     }
 
-    for (const auto & [name, _] : left->getProjectionParts())
+    for (const auto & [name, _] : left_projection_parts)
     {
-        if (!right->hasProjection(name))
+        if (!right_projection_parts.contains(name))
         {
             out_reason = fmt::format(
                 "The part '{}' doesn't have projection '{}' while part '{}' does", right->name, name, left->name
@@ -7995,7 +8018,7 @@ bool MergeTreeData::insertQueryIdOrThrowNoLock(const String & query_id, size_t m
         throw Exception(
             ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
             "Too many simultaneous queries for table {}. Maximum is: {}",
-            *std::atomic_load(&log_name),
+            log.loadName(),
             max_queries);
     query_id_set.insert(query_id);
     return true;
@@ -8187,7 +8210,7 @@ ReservationPtr MergeTreeData::balancedReservation(
                     }
 
                     // Record submerging big parts in the tagger to clean them up.
-                    tagger_ptr->emplace(*this, part_name, std::move(covered_parts), log);
+                    tagger_ptr->emplace(*this, part_name, std::move(covered_parts), log.load());
                 }
             }
         }

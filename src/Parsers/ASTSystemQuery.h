@@ -46,6 +46,12 @@ public:
         WAIT_LOADING_PARTS,
         DROP_REPLICA,
         DROP_DATABASE_REPLICA,
+#if USE_JEMALLOC
+        JEMALLOC_PURGE,
+        JEMALLOC_ENABLE_PROFILE,
+        JEMALLOC_DISABLE_PROFILE,
+        JEMALLOC_FLUSH_PROFILE,
+#endif
         SYNC_REPLICA,
         SYNC_DATABASE_REPLICA,
         SYNC_TRANSACTION_LOG,
@@ -61,6 +67,7 @@ public:
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
         RELOAD_USERS,
+        RELOAD_ASYNCHRONOUS_METRICS,
         RESTART_DISK,
         STOP_MERGES,
         START_MERGES,
@@ -137,6 +144,8 @@ public:
     String fail_point_name;
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
+
+    std::unordered_set<String> src_replicas;
 
     ServerType server_type;
 

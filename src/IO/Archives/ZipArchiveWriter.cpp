@@ -246,7 +246,7 @@ ZipArchiveWriter::~ZipArchiveWriter()
         /// However it is suspicious to destroy instance without finalization at the green path.
         if (!std::uncaught_exceptions() && std::current_exception() == nullptr)
         {
-            Poco::Logger * log = &Poco::Logger::get("ZipArchiveWriter");
+            LoggerPtr log = getLogger("ZipArchiveWriter");
             LOG_ERROR(log,
                        "ZipArchiveWriter is not finalized when destructor is called. "
                        "The zip archive might not be written at all or might be truncated. "

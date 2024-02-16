@@ -16,9 +16,9 @@ class StorageSystemQuotaUsage final : public IStorageSystemOneBlock<StorageSyste
 {
 public:
     std::string getName() const override { return "SystemQuotaUsage"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
-    static NamesAndTypesList getNamesAndTypesImpl(bool add_column_is_current);
+    static ColumnsDescription getColumnsDescriptionImpl(bool add_column_is_current);
     static void fillDataImpl(MutableColumns & res_columns, ContextPtr context, bool add_column_is_current, const std::vector<QuotaUsage> & quotas_usage);
 
 protected:

@@ -7,14 +7,15 @@
 #include <type_traits>
 #include <functional>
 
-#include <Common/Exception.h>
-#include <Common/AllocatorWithMemoryTracking.h>
-#include <Core/Types.h>
-#include <Core/Defines.h>
+#include <Core/CompareHelper.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/Defines.h>
+#include <Core/Types.h>
 #include <Core/UUID.h>
-#include <base/IPv4andIPv6.h>
 #include <base/DayNum.h>
+#include <base/IPv4andIPv6.h>
+#include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -215,9 +216,8 @@ using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
 template <> struct NearestFieldTypeImpl<char> { using Type = std::conditional_t<is_signed_v<char>, Int64, UInt64>; };
 template <> struct NearestFieldTypeImpl<signed char> { using Type = Int64; };
 template <> struct NearestFieldTypeImpl<unsigned char> { using Type = UInt64; };
-#ifdef __cpp_char8_t
 template <> struct NearestFieldTypeImpl<char8_t> { using Type = UInt64; };
-#endif
+template <> struct NearestFieldTypeImpl<Int8> { using Type = Int64; };
 
 template <> struct NearestFieldTypeImpl<UInt16> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<UInt32> { using Type = UInt64; };
@@ -508,7 +508,9 @@ public:
             case Types::UUID:    return get<UUID>()    < rhs.get<UUID>();
             case Types::IPv4:    return get<IPv4>()    < rhs.get<IPv4>();
             case Types::IPv6:    return get<IPv6>()    < rhs.get<IPv6>();
-            case Types::Float64: return get<Float64>() < rhs.get<Float64>();
+            case Types::Float64:
+                static constexpr int nan_direction_hint = 1; /// Put NaN at the end
+                return FloatCompareHelper<Float64>::less(get<Float64>(), rhs.get<Float64>(), nan_direction_hint);
             case Types::String:  return get<String>()  < rhs.get<String>();
             case Types::Array:   return get<Array>()   < rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   < rhs.get<Tuple>();
@@ -550,7 +552,14 @@ public:
             case Types::UUID:    return get<UUID>().toUnderType() <= rhs.get<UUID>().toUnderType();
             case Types::IPv4:    return get<IPv4>()    <= rhs.get<IPv4>();
             case Types::IPv6:    return get<IPv6>()    <= rhs.get<IPv6>();
-            case Types::Float64: return get<Float64>() <= rhs.get<Float64>();
+            case Types::Float64:
+            {
+                static constexpr int nan_direction_hint = 1; /// Put NaN at the end
+                Float64 f1 = get<Float64>();
+                Float64 f2 = get<Float64>();
+                return FloatCompareHelper<Float64>::less(f1, f2, nan_direction_hint)
+                    || FloatCompareHelper<Float64>::equals(f1, f2, nan_direction_hint);
+            }
             case Types::String:  return get<String>()  <= rhs.get<String>();
             case Types::Array:   return get<Array>()   <= rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   <= rhs.get<Tuple>();
@@ -586,10 +595,8 @@ public:
             case Types::UInt64: return get<UInt64>() == rhs.get<UInt64>();
             case Types::Int64:   return get<Int64>() == rhs.get<Int64>();
             case Types::Float64:
-            {
-                // Compare as UInt64 so that NaNs compare as equal.
-                return std::bit_cast<UInt64>(get<Float64>()) == std::bit_cast<UInt64>(rhs.get<Float64>());
-            }
+                static constexpr int nan_direction_hint = 1; /// Put NaN at the end
+                return FloatCompareHelper<Float64>::equals(get<Float64>(), rhs.get<Float64>(), nan_direction_hint);
             case Types::UUID:    return get<UUID>()    == rhs.get<UUID>();
             case Types::IPv4:    return get<IPv4>()    == rhs.get<IPv4>();
             case Types::IPv6:    return get<IPv6>()    == rhs.get<IPv6>();
