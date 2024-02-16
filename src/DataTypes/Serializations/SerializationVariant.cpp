@@ -320,7 +320,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     else
     {
         auto & offsets = col.getOffsets();
-        offsets.reserve(offsets.size() + limit);
+        offsets.reserve_exact(offsets.size() + limit);
         std::vector<size_t> variant_offsets;
         variant_offsets.reserve(variants.size());
         for (size_t i = 0; i != variants.size(); ++i)

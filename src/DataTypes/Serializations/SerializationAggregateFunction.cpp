@@ -79,7 +79,7 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
 
     Arena & arena = real_column.createOrGetArena();
     real_column.set(function, version);
-    vec.reserve(vec.size() + limit);
+    vec.reserve_exact(vec.size() + limit);
 
     size_t size_of_state = function->sizeOfData();
     size_t align_of_state = function->alignOfData();

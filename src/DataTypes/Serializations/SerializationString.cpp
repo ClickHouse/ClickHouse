@@ -235,7 +235,7 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
     {
         try
         {
-            data.reserve(size_to_reserve);
+            data.reserve_exact(size_to_reserve);
         }
         catch (Exception & e)
         {
@@ -247,7 +247,7 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
         }
     }
 
-    offsets.reserve(offsets.size() + limit);
+    offsets.reserve_exact(offsets.size() + limit);
 
     if (avg_chars_size >= 64)
         deserializeBinarySSE2<4>(data, offsets, istr, limit);
