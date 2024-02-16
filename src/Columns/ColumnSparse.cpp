@@ -191,7 +191,7 @@ void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t len
 
         if (offset_start != offset_end)
         {
-            offsets_data.reserve(offsets_data.size() + offset_end - offset_start);
+            offsets_data.reserve_exact(offsets_data.size() + offset_end - offset_start);
             insertManyDefaults(src_offsets[offset_start] - start);
             offsets_data.push_back(_size);
             ++_size;
@@ -302,7 +302,7 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
     auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
 
     Filter values_filter;
-    values_filter.reserve(values->size());
+    values_filter.reserve_exact(values->size());
     values_filter.push_back(1);
     size_t values_result_size_hint = 1;
 
@@ -632,7 +632,7 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
         if (!offset_it.isDefault())
         {
             size_t replicate_size = replicate_offsets[i] - replicate_offsets[i - 1];
-            res_offsets_data.reserve(res_offsets_data.size() + replicate_size);
+            res_offsets_data.reserve_exact(res_offsets_data.size() + replicate_size);
             for (size_t row = replicate_offsets[i - 1]; row < replicate_offsets[i]; ++row)
             {
                 res_offsets_data.push_back(row);

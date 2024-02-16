@@ -493,7 +493,7 @@ void ColumnVariant::insertRangeFrom(const IColumn & src_, size_t start, size_t l
         variants[local_discr]->insertRangeFrom(*src.variants[*non_empty_src_local_discr], start, length);
         getLocalDiscriminators().resize_fill(local_discriminators->size() + length, local_discr);
         auto & offsets_data = getOffsets();
-        offsets_data.reserve(offsets_data.size() + length);
+        offsets_data.reserve_exact(offsets_data.size() + length);
         for (size_t i = 0; i != length; ++i)
             offsets_data.push_back(offset++);
         return;
@@ -505,9 +505,9 @@ void ColumnVariant::insertRangeFrom(const IColumn & src_, size_t start, size_t l
     /// nested_ranges[i].second - length in src.variants[i]
     std::vector<std::pair<size_t, size_t>> nested_ranges(num_variants, {0, 0});
     auto & offsets_data = getOffsets();
-    offsets_data.reserve(offsets_data.size() + length);
+    offsets_data.reserve_exact(offsets_data.size() + length);
     auto & local_discriminators_data = getLocalDiscriminators();
-    local_discriminators_data.reserve(local_discriminators_data.size() + length);
+    local_discriminators_data.reserve_exact(local_discriminators_data.size() + length);
     const auto & src_offsets_data = src.getOffsets();
     const auto & src_local_discriminators_data = src.getLocalDiscriminators();
     for (size_t i = start; i != start + length; ++i)
@@ -561,7 +561,7 @@ void ColumnVariant::insertManyFrom(const DB::IColumn & src_, size_t position, si
     else
     {
         size_t prev_offset = variants[local_discr]->size();
-        offsets_data.reserve(offsets_data.size() + length);
+        offsets_data.reserve_exact(offsets_data.size() + length);
         for (size_t i = 0; i != length; ++i)
             offsets_data.push_back(prev_offset + i);
 
@@ -761,7 +761,7 @@ ColumnPtr ColumnVariant::filter(const Filter & filt, ssize_t result_size_hint) c
     const size_t num_variants = variants.size();
     std::vector<Filter> nested_filters(num_variants);
     for (size_t i = 0; i != num_variants; ++i)
-        nested_filters[i].reserve(variants[i]->size());
+        nested_filters[i].reserve_exact(variants[i]->size());
 
     /// As we will iterate through local_discriminators anyway, we can count
     /// result size for each variant.
@@ -877,7 +877,7 @@ ColumnPtr ColumnVariant::indexImpl(const PaddedPODArray<Type> & indexes, size_t 
     if (limit == 0)
     {
         for (size_t i = 0; i != num_variants; ++i)
-            nested_perms[i].reserve(variants[i]->size());
+            nested_perms[i].reserve_exact(variants[i]->size());
     }
 
     for (size_t i = 0; i != new_local_discriminators_data.size(); ++i)
@@ -940,7 +940,7 @@ ColumnPtr ColumnVariant::replicate(const Offsets & replicate_offsets) const
         size_t old_size = offsets->size();
         if (new_size > old_size)
         {
-            new_offsets_data.reserve(new_size);
+            new_offsets_data.reserve_exact(new_size);
             for (size_t i = old_size; i < new_size; ++i)
                 new_offsets_data.push_back(i);
         }
@@ -956,7 +956,7 @@ ColumnPtr ColumnVariant::replicate(const Offsets & replicate_offsets) const
     /// local_discriminators column.
     std::vector<Offsets> nested_replicated_offsets(num_variants);
     for (size_t i = 0; i != num_variants; ++i)
-        nested_replicated_offsets[i].reserve(variants[i]->size());
+        nested_replicated_offsets[i].reserve_exact(variants[i]->size());
 
     const auto & local_discriminators_data = getLocalDiscriminators();
     for (size_t i = 0; i != local_discriminators_data.size(); ++i)
@@ -1030,7 +1030,7 @@ MutableColumns ColumnVariant::scatter(ColumnIndex num_columns, const Selector & 
     /// Create selector for each variant according to local_discriminators.
     std::vector<Selector> nested_selectors(num_variants);
     for (size_t i = 0; i != num_variants; ++i)
-        nested_selectors[i].reserve(variants[i]->size());
+        nested_selectors[i].reserve_exact(variants[i]->size());
 
     const auto & local_discriminators_data = getLocalDiscriminators();
     for (size_t i = 0; i != local_discriminators_data.size(); ++i)
@@ -1288,7 +1288,7 @@ void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null
         else
         {
             ColumnVector<UInt8>::Container filter;
-            filter.reserve(null_map.size());
+            filter.reserve_exact(null_map.size());
             for (size_t i = 0; i != local_discriminators_data.size(); ++i)
             {
                if (null_map[i])

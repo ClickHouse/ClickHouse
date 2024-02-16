@@ -122,7 +122,7 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
     size_t nested_length = src_concrete.offsets[start + length - 1] - nested_offset;
 
     /// Reserve offsets before to make it more exception safe (in case of MEMORY_LIMIT_EXCEEDED)
-    offsets.reserve(offsets.size() + length);
+    offsets.reserve_exact(offsets.size() + length);
 
     size_t old_chars_size = chars.size();
     chars.resize(old_chars_size + nested_length);
@@ -453,8 +453,8 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 
     Chars & res_chars = res->chars;
     Offsets & res_offsets = res->offsets;
-    res_chars.reserve(chars.size() / col_size * replicate_offsets.back());
-    res_offsets.reserve(replicate_offsets.back());
+    res_chars.reserve_exact(chars.size() / col_size * replicate_offsets.back());
+    res_offsets.reserve_exact(replicate_offsets.back());
 
     Offset prev_replicate_offset = 0;
     Offset prev_string_offset = 0;
@@ -491,7 +491,7 @@ void ColumnString::gather(ColumnGathererStream & gatherer)
 
 void ColumnString::reserve(size_t n)
 {
-    offsets.reserve(n);
+    offsets.reserve_exact(n);
 }
 
 void ColumnString::shrinkToFit()
