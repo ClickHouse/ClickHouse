@@ -1318,12 +1318,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 }
 
 static ActionsDAGPtr buildFilterDAG(
-    const ContextPtr & context,
+    const ContextPtr & /* context */,
     const PrewhereInfoPtr & prewhere_info,
     const ActionDAGNodes & added_filter_nodes,
-    const SelectQueryInfo & query_info)
+    const SelectQueryInfo & /* query_info */)
 {
-    const auto & settings = context->getSettingsRef();
     ActionsDAG::NodeRawConstPtrs nodes;
 
     if (prewhere_info)
@@ -1343,19 +1342,7 @@ static ActionsDAGPtr buildFilterDAG(
     for (const auto & node : added_filter_nodes.nodes)
         nodes.push_back(node);
 
-    std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
-
-    if (settings.allow_experimental_analyzer && query_info.planner_context)
-    {
-        const auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(query_info.table_expression);
-        for (const auto & [column_identifier, column_name] : table_expression_data.getColumnIdentifierToColumnName())
-        {
-            const auto & column = table_expression_data.getColumnOrThrow(column_name);
-            node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(column.type, column_name));
-        }
-    }
-
-    return ActionsDAG::buildFilterActionsDAG(nodes, node_name_to_input_node_column);
+    return ActionsDAG::buildFilterActionsDAG(nodes);
 }
 
 static void buildIndexes(

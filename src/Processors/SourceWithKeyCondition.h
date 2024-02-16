@@ -18,11 +18,7 @@ protected:
 
     void setKeyConditionImpl(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context, const Block & keys)
     {
-        std::unordered_map<std::string, DB::ColumnWithTypeAndName> node_name_to_input_column;
-        for (const auto & column : keys.getColumnsWithTypeAndName())
-            node_name_to_input_column.insert({column.name, column});
-
-        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes, node_name_to_input_column);
+        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes);
         key_condition = std::make_shared<const KeyCondition>(
             filter_actions_dag,
             context,
