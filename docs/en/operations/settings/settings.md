@@ -1775,6 +1775,10 @@ Default value: 0 (no restriction).
 
 ## insert_quorum {#insert_quorum}
 
+:::note
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](docs/en/cloud/reference/shared-merge-tree/#consistency) for more information. 
+:::
+
 Enables the quorum writes.
 
 - If `insert_quorum < 2`, the quorum writes are disabled.
@@ -1814,6 +1818,10 @@ See also:
 
 ## insert_quorum_parallel {#insert_quorum_parallel}
 
+:::note
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](docs/en/cloud/reference/shared-merge-tree/#consistency) for more information. 
+:::
+
 Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
 
 Possible values:
@@ -1830,6 +1838,10 @@ See also:
 - [select_sequential_consistency](#select_sequential_consistency)
 
 ## select_sequential_consistency {#select_sequential_consistency}
+
+:::note
+This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](docs/en/cloud/reference/shared-merge-tree/#consistency) for more information. 
+:::
 
 Enables or disables sequential consistency for `SELECT` queries. Requires `insert_quorum_parallel` to be disabled (enabled by default).
 
