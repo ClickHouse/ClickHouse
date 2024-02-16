@@ -4,6 +4,8 @@ sidebar_position: 170
 sidebar_label: Strings
 ---
 
+import VersionBadge from '@theme/badges/VersionBadge';
+
 # Functions for Working with Strings
 
 Functions for [searching](string-search-functions.md) in strings and for [replacing](string-replace-functions.md) in strings are described separately.
@@ -782,6 +784,8 @@ SELECT startsWith('Spider-Man', 'Spi');
 ```
 
 ## startsWithUTF8
+
+<VersionBadge minVersion='23.8' />
 
 Returns whether string `str` starts with `prefix`, the difference between `startsWithUTF8` and `startsWith` is that `startsWithUTF8` match `str` and `suffix` by UTF-8 characters.
 

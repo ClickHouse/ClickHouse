@@ -76,6 +76,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::getProfileEvents
     ProfileEvents::ThreadIdToCountersSnapshot
     ProfileEvents::LOCAL_NAME
+    ProfileEvents::keeper_profile_events
     ProfileEvents::CountersIncrement
 
     CurrentMetrics::add
@@ -87,6 +88,7 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::Metric
     CurrentMetrics::values
     CurrentMetrics::Value
+    CurrentMetrics::keeper_metrics
 
     ErrorCodes::ErrorCode
     ErrorCodes::getName
@@ -106,7 +108,7 @@ for extern_type in ${!EXTERN_TYPES[@]}; do
     find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
         # NOTE: the check is pretty dumb and distinguish only by the type_of_extern,
         # and this matches with zkutil::CreateMode
-        grep -v 'src/Common/ZooKeeper/Types.h'
+        grep -v -e 'src/Common/ZooKeeper/Types.h' -e 'src/Coordination/KeeperConstants.cpp'
     } | {
         grep -vP $EXCLUDE_DIRS | xargs grep -l -P "extern const $type_of_extern $allowed_chars"
     } | while read file; do
@@ -273,6 +275,11 @@ find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -nam
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
     xargs grep -F '!!!' | grep -P '.' && echo "Too many exclamation marks (looks dirty, unconfident)."
+
+# Exclamation mark in a message
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -F '!",' | grep -P '.' && echo "No need for an exclamation mark (looks dirty, unconfident)."
 
 # Trailing whitespaces
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |

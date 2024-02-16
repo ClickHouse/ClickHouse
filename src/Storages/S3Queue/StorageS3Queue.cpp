@@ -146,6 +146,8 @@ StorageS3Queue::StorageS3Queue(
     }
     else
     {
+        if (configuration.format == "auto")
+            configuration.format = StorageS3::getTableStructureAndFormatFromData(configuration, format_settings, context_).second;
         storage_metadata.setColumns(columns_);
     }
 

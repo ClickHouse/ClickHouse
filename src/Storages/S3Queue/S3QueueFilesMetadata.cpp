@@ -214,7 +214,7 @@ size_t S3QueueFilesMetadata::registerNewShard()
     }
 
     const auto zk_client = getZooKeeper();
-    zk_client->createAncestors(zookeeper_shards_path / "");
+    zk_client->createIfNotExists(zookeeper_shards_path, "");
 
     std::string shard_node_path;
     size_t shard_id = 0;
@@ -287,7 +287,10 @@ void S3QueueFilesMetadata::unregisterShard(size_t shard_id)
 
     const auto zk_client = getZooKeeper();
     const auto node_path = getZooKeeperPathForShard(shard_id);
-    zk_client->remove(node_path);
+    auto error_code = zk_client->tryRemove(node_path);
+    if (error_code != Coordination::Error::ZOK
+        && error_code != Coordination::Error::ZNONODE)
+        throw zkutil::KeeperException::fromPath(error_code, node_path);
 }
 
 size_t S3QueueFilesMetadata::getProcessingIdsNum() const
