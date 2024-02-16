@@ -772,6 +772,7 @@ ReferenceKeyed
 Refreshable
 RegexpTree
 RemoteRead
+SharedMergeTree
 ReplacingMergeTree
 ReplicasMaxAbsoluteDelay
 ReplicasMaxInsertsInQueue
