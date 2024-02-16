@@ -1,10 +1,46 @@
+DROP TABLE IF EXISTS test_empty;
+CREATE TABLE test_empty (a Array(Int64)) engine=MergeTree ORDER BY a;
+INSERT INTO test_empty VALUES ([]);
+SELECT groupArrayIntersect(*) FROM test_empty;
+INSERT INTO test_empty VALUES ([1]);
+SELECT groupArrayIntersect(*) FROM test_empty;
+DROP TABLE test_empty;
+
+DROP TABLE IF EXISTS test_null;
+CREATE TABLE test_null (a Array(Nullable(Int64))) engine=MergeTree ORDER BY a SETTINGS allow_nullable_key=1;
+INSERT INTO test_null VALUES ([NULL, NULL]);
+SELECT groupArrayIntersect(*) FROM test_null;
+INSERT INTO test_null VALUES ([NULL]);
+SELECT groupArrayIntersect(*) FROM test_null;
+INSERT INTO test_null VALUES ([1,2]);
+SELECT groupArrayIntersect(*) FROM test_null;
+DROP TABLE test_null;
+
 DROP TABLE IF EXISTS test_numbers;
 CREATE TABLE test_numbers (a Array(Int64)) engine=MergeTree ORDER BY a;
 INSERT INTO test_numbers VALUES ([1,2,3,4,5,6]);
 INSERT INTO test_numbers VALUES ([1,2,4,5]);
 INSERT INTO test_numbers VALUES ([1,4,3,0,5,5,5]);
 SELECT groupArrayIntersect(*) FROM test_numbers;
+INSERT INTO test_numbers VALUES ([9]);
+SELECT groupArrayIntersect(*) FROM test_numbers;
 DROP TABLE test_numbers;
+
+DROP TABLE IF EXISTS test_big_numbers_sep;
+CREATE TABLE test_big_numbers_sep (a Array(Int64)) engine=MergeTree ORDER BY a;
+INSERT INTO test_big_numbers_sep SELECT array(number) FROM numbers_mt(1000000);
+SELECT groupArrayIntersect(*) FROM test_big_numbers_sep;
+DROP TABLE test_big_numbers_sep;
+
+DROP TABLE IF EXISTS test_big_numbers;
+CREATE TABLE test_big_numbers (a Array(Int64)) engine=MergeTree ORDER BY a;
+INSERT INTO test_big_numbers SELECT range(1000000);
+SELECT length(groupArrayIntersect(*)) FROM test_big_numbers;
+INSERT INTO test_big_numbers SELECT range(999999);
+SELECT length(groupArrayIntersect(*)) FROM test_big_numbers;
+INSERT INTO test_big_numbers VALUES ([9]);
+SELECT groupArrayIntersect(*) FROM test_big_numbers;
+DROP TABLE test_big_numbers;
 
 DROP TABLE IF EXISTS test_string;
 CREATE TABLE test_string (a Array(String)) engine=MergeTree ORDER BY a;
@@ -13,6 +49,18 @@ INSERT INTO test_string VALUES (['a', 'aa', 'b', 'bb', 'c', 'cc', 'd', 'dd', 'f'
 INSERT INTO test_string VALUES (['ae', 'ab', 'a', 'bb', 'c']);
 SELECT groupArrayIntersect(*) FROM test_string;
 DROP TABLE test_string;
+
+DROP TABLE IF EXISTS test_big_string;
+CREATE TABLE test_big_string (a Array(String)) engine=MergeTree ORDER BY a;
+INSERT INTO test_big_string SELECT groupArray(toString(number)) FROM numbers_mt(1000000);
+SELECT length(groupArrayIntersect(*)) FROM test_big_string;
+INSERT INTO test_big_string SELECT groupArray(toString(number)) FROM numbers_mt(999999);
+SELECT length(groupArrayIntersect(*)) FROM test_big_string;
+INSERT INTO test_big_string VALUES (['1']);
+SELECT groupArrayIntersect(*) FROM test_big_string;
+INSERT INTO test_big_string VALUES (['a']);
+SELECT groupArrayIntersect(*) FROM test_big_string;
+DROP TABLE test_big_string;
 
 DROP TABLE IF EXISTS test_datetime;
 CREATE TABLE test_datetime (a Array(DateTime)) engine=MergeTree ORDER BY a;

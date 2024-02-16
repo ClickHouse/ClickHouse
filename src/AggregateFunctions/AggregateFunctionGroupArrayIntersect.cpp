@@ -14,8 +14,6 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/assert_cast.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeDate32.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
@@ -26,7 +24,9 @@
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 
 namespace DB
@@ -76,10 +76,12 @@ public:
     {
         auto & version = this->data(place).version;
         auto & map = this->data(place).value;
+
         const auto data_column = assert_cast<const ColumnArray &>(*columns[0]).getDataPtr();
         const auto & offsets = assert_cast<const ColumnArray &>(*columns[0]).getOffsets();
         const size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
         const auto arr_size = offsets[row_num] - offset;
+
         ++version;
         if (version == 1)
         {
@@ -88,7 +90,7 @@ public:
         }
         else if (map.size() > 0)
         {
-            HashMap<T, UInt64> new_map;
+            typename State::Map new_map;
             for (size_t i = 0; i < arr_size; ++i)
             {
                 typename State::Map::LookupResult value = map.find(static_cast<T>((*data_column)[offset + i].get<T>()));
@@ -103,27 +105,41 @@ public:
     {
         auto & map = this->data(place).value;
         const auto & rhs_map = this->data(rhs).value;
-        UInt64 rhs_version = this->data(rhs).version;
-        if (rhs_version == 0)
+
+        if (this->data(rhs).version == 0)
             return;
+
         UInt64 version = this->data(place).version++;
         if (version == 0)
         {
             for (auto & rhs_elem : rhs_map)
-            {
-                if (rhs_elem.getMapped() == rhs_version)
-                    map[rhs_elem.getKey()] = 1;
-            }
+                map[rhs_elem.getKey()] = 1;
             return;
         }
-        HashMap<T, UInt64> new_map;
-        for (auto & rhs_elem : rhs_map)
+
+        if (map.size() > 0)
         {
-            auto value = map.find(rhs_elem.getKey());
-            if (value != nullptr)
-                new_map[rhs_elem.getKey()] = version;
+            typename State::Map new_map;
+            if (rhs_map.size() < map.size())
+            {
+                for (auto & rhs_elem : rhs_map)
+                {
+                    auto value = map.find(rhs_elem.getKey());
+                    if (value != nullptr)
+                        new_map[rhs_elem.getKey()] = version;
+                }
+            }
+            else
+            {
+                for (auto & elem : map)
+                {
+                    auto value = rhs_map.find(elem.getKey());
+                    if (value != nullptr)
+                        new_map[elem.getKey()] = version;
+                }
+            }
+            map = std::move(new_map);
         }
-        map = std::move(new_map);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -153,15 +169,12 @@ public:
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
         const auto & map = this->data(place).value;
-        size_t size = 0;
-        for (auto it = map.begin(); it != map.end(); ++it)
-            ++size;
 
-        offsets_to.push_back(offsets_to.back() + size);
+        offsets_to.push_back(offsets_to.back() + map.size());
 
         typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
         size_t old_size = data_to.size();
-        data_to.resize(old_size + size);
+        data_to.resize(old_size + map.size());
 
         size_t i = 0;
         for (auto it = map.begin(); it != map.end(); ++it)
@@ -204,6 +217,109 @@ public:
 
     bool allocatesMemoryInArena() const override { return true; }
 
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    {
+        auto & map = this->data(place).value;
+        auto & version = this->data(place).version;
+        bool inserted;
+        State::Map::LookupResult it;
+
+        const auto data_column = assert_cast<const ColumnArray &>(*columns[0]).getDataPtr();
+        const auto & offsets = assert_cast<const ColumnArray &>(*columns[0]).getOffsets();
+        const size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
+        const auto arr_size = offsets[row_num] - offset;
+
+        ++version;
+        if (version == 1)
+        {
+            for (size_t i = 0; i < arr_size; ++i)
+            {
+                if constexpr (is_plain_column)
+                    map.emplace(ArenaKeyHolder{data_column->getDataAt(offset + i), *arena}, it, inserted);
+                else
+                {
+                    const char * begin = nullptr;
+                    StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
+                    assert(serialized.data != nullptr);
+                    map.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
+                }
+
+                if (inserted)
+                    new (&it->getMapped()) UInt64(version);
+            }
+        }
+        else if (map.size() > 0)
+        {
+            typename State::Map new_map;
+            for (size_t i = 0; i < arr_size; ++i)
+            {
+                if constexpr (is_plain_column)
+                {
+                    it = map.find(data_column->getDataAt(offset + i));
+                    if (it != nullptr)
+                        new_map.emplace(ArenaKeyHolder{data_column->getDataAt(offset + i), *arena}, it, inserted);
+                }
+                else
+                {
+                    const char * begin = nullptr;
+                    StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
+                    assert(serialized.data != nullptr);
+                    it = map.find(serialized);
+
+                    if (it != nullptr)
+                        new_map.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
+                }
+            }
+            map = std::move(new_map);
+        }
+    }
+
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    {
+        auto & map = this->data(place).value;
+        const auto & rhs_map = this->data(rhs).value;
+        
+        if (this->data(rhs).version == 0)
+            return;
+
+        UInt64 version = this->data(place).version++;
+        if (version == 0)
+        {
+            bool inserted;
+            State::Map::LookupResult it;
+            for (auto & rhs_elem : rhs_map)
+            {
+                map[rhs_elem.getKey()] = 1;
+                map.emplace(ArenaKeyHolder{rhs_elem.getKey(), *arena}, it, inserted);
+                if (inserted)
+                    new (&it->getMapped()) UInt64(version);
+            }
+        }
+        else if (map.size() > 0)
+        {
+            typename State::Map new_map;
+            if (rhs_map.size() < map.size())
+            {
+                for (auto & rhs_elem : rhs_map)
+                {
+                    auto value = map.find(rhs_elem.getKey());
+                    if (value != nullptr)
+                        new_map[rhs_elem.getKey()] = version;
+                }
+            }
+            else
+            {
+                for (auto & elem : map)
+                {
+                    auto value = rhs_map.find(elem.getKey());
+                    if (value != nullptr)
+                        new_map[elem.getKey()] = version;
+                }
+            }
+            map = std::move(new_map);
+        }
+    }
+
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         auto & map = this->data(place).value;
@@ -236,99 +352,6 @@ public:
         }
     }
 
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
-    {
-        auto & map = this->data(place).value;
-        auto & version = this->data(place).version;
-        bool inserted;
-        State::Map::LookupResult it;
-        ++version;
-        const auto data_column = assert_cast<const ColumnArray &>(*columns[0]).getDataPtr();
-        const auto & offsets = assert_cast<const ColumnArray &>(*columns[0]).getOffsets();
-        const size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
-        const auto arr_size = offsets[row_num] - offset;
-        if (version == 1)
-        {
-            for (size_t i = 0; i < arr_size; ++i)
-            {
-                if constexpr (is_plain_column)
-                {
-                    map.emplace(ArenaKeyHolder{data_column->getDataAt(offset + i), *arena}, it, inserted);
-                }
-                else
-                {
-                    const char * begin = nullptr;
-                    StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
-                    assert(serialized.data != nullptr);
-                    map.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
-                }
-                if (inserted)
-                    new (&it->getMapped()) UInt64(version);
-            }
-        }
-        else
-        {
-            HashMap<StringRef, UInt64> new_map;
-            for (size_t i = 0; i < arr_size; ++i)
-            {
-                if constexpr (is_plain_column)
-                {
-                    it = map.find(data_column->getDataAt(offset + i));
-                    if (it != nullptr)
-                        new_map.emplace(ArenaKeyHolder{data_column->getDataAt(offset + i), *arena}, it, inserted);
-                }
-                else
-                {
-                    const char * begin = nullptr;
-                    StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
-                    assert(serialized.data != nullptr);
-                    it = map.find(serialized);
-                    if (it != nullptr)
-                        new_map.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
-                }
-            }
-            map = std::move(new_map);
-        }
-
-    }
-
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
-    {
-        auto & map = this->data(place).value;
-        const auto & rhs_map = this->data(rhs).value;
-        UInt64 rhs_version = this->data(rhs).version;
-        UInt64 version = ++this->data(place).version;
-        if (rhs_version == 0)
-            return;
-
-        if (version == 0)
-        {
-            bool inserted;
-            State::Map::LookupResult it;
-            for (auto & rhs_elem : rhs_map)
-            {
-                if (rhs_elem.getMapped() == rhs_version)
-                {
-                    map[rhs_elem.getKey()] = 1;
-                    map.emplace(ArenaKeyHolder{rhs_elem.getKey(), *arena}, it, inserted);
-                    if (inserted)
-                        new (&it->getMapped()) UInt64(version);
-                }
-            }
-        }
-        else if (map.size() > 0)
-        {
-            HashMap<StringRef, UInt64> new_map;
-            for (auto & rhs_elem : rhs_map)
-            {
-                auto value = map.find(rhs_elem.getKey());
-                if (value != nullptr)
-                    new_map[rhs_elem.getKey()] = version;
-            }
-            map = std::move(new_map);
-        }
-    }
-
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
@@ -336,19 +359,15 @@ public:
         IColumn & data_to = arr_to.getData();
 
         auto & map = this->data(place).value;
-        size_t size = 0;
-        for ([[maybe_unused]] auto & elem : map)
-            size++;
-        offsets_to.push_back(offsets_to.back() + size);
+
+        offsets_to.push_back(offsets_to.back() + map.size());
 
         for (auto & elem : map)
         {
-            {
-                if constexpr (is_plain_column)
-                    data_to.insertData(elem.getKey().data, elem.getKey().size);
-                else
-                    std::ignore = data_to.deserializeAndInsertFromArena(elem.getKey().data);
-            }
+            if constexpr (is_plain_column)
+                data_to.insertData(elem.getKey().data, elem.getKey().size);
+            else
+                std::ignore = data_to.deserializeAndInsertFromArena(elem.getKey().data);
         }
     }
 };
