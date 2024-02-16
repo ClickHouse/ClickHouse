@@ -136,6 +136,7 @@ void registerOutputFormatNative(FormatFactory & factory)
     {
         return std::make_shared<NativeOutputFormat>(buf, sample, settings.client_protocol_version);
     });
+    factory.markOutputFormatAsBinary("Native");
 }
 
 

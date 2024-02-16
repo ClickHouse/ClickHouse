@@ -131,6 +131,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, false, format_settings);
         });
     factory.markFormatHasNoAppendSupport("Arrow");
+    factory.markOutputFormatAsBinary("Arrow");
 
     factory.registerOutputFormat(
         "ArrowStream",
@@ -142,6 +143,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
         });
     factory.markFormatHasNoAppendSupport("ArrowStream");
     factory.markOutputFormatPrefersLargeBlocks("ArrowStream");
+    factory.markOutputFormatAsBinary("ArrowStream");
 }
 
 }

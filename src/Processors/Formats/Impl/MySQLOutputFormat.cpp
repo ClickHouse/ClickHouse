@@ -141,6 +141,7 @@ void registerOutputFormatMySQLWire(FormatFactory & factory)
         [](WriteBuffer & buf,
            const Block & sample,
            const FormatSettings & settings) { return std::make_shared<MySQLOutputFormat>(buf, sample, settings); });
+    factory.markOutputFormatAsBinary("MySQLWire");
 }
 
 }

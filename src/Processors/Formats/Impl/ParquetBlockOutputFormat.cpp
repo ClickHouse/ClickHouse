@@ -577,6 +577,7 @@ void registerOutputFormatParquet(FormatFactory & factory)
             return std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);
         });
     factory.markFormatHasNoAppendSupport("Parquet");
+    factory.markOutputFormatAsBinary("Parquet");
 }
 
 }
