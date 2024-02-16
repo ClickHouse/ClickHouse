@@ -24,6 +24,13 @@ SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
+-- Validate parts are valid and can be merged
+INSERT INTO TABLE destination VALUES ('2010-03-10 02:01:01'), ('2010-03-10 02:01:03');
+SELECT _part FROM destination GROUP BY _part;
+
+OPTIMIZE TABLE destination FINAL;
+SELECT _part FROM destination GROUP BY _part;
+
 -- Should be allowed since destination partition expr is monotonically increasing and compatible. Note that even though
 -- the destination partition expression is more granular, the data would still fall in the same partition. Thus, it is valid
 DROP TABLE IF EXISTS source;
