@@ -72,9 +72,9 @@ static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr contex
     auto * storage = create_query->storage;
 
     /// Get replicated engine
-    const auto & config = context->getConfigRef();
-    String replica_path = StorageReplicatedMergeTree::getDefaultZooKeeperPath(config);
-    String replica_name = StorageReplicatedMergeTree::getDefaultReplicaName(config);
+    const auto & server_settings = args.getContext()->getServerSettings();
+    String replica_path = server_settings.default_replica_path;
+    String replica_name = server_settings.default_replica_name;
 
     auto args = std::make_shared<ASTExpressionList>();
     args->children.push_back(std::make_shared<ASTLiteral>(replica_path));
