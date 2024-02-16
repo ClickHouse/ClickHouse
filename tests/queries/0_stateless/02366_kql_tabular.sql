@@ -86,3 +86,6 @@ hits | where CounterID == 62 and EventDate >= '2013-07-14' and EventDate <= '201
 
 print '-- Missing column in front of startsWith --';
 StormEvents | where startswith "W" | summarize Count=count() by State; -- { clientError SYNTAX_ERROR }
+
+SET max_query_size = 55;
+Customers | where Education contains 'degree' | order by LastName; -- { serverError 62 }
