@@ -11,15 +11,15 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemEnabledRoles::getNamesAndTypes()
+ColumnsDescription StorageSystemEnabledRoles::getColumnsDescription()
 {
-    NamesAndTypesList names_and_types{
-        {"role_name", std::make_shared<DataTypeString>()},
-        {"with_admin_option", std::make_shared<DataTypeUInt8>()},
-        {"is_current", std::make_shared<DataTypeUInt8>()},
-        {"is_default", std::make_shared<DataTypeUInt8>()},
+    return ColumnsDescription
+    {
+        {"role_name", std::make_shared<DataTypeString>(), "Role name."},
+        {"with_admin_option", std::make_shared<DataTypeUInt8>(), "1 if the role has ADMIN OPTION privilege."},
+        {"is_current", std::make_shared<DataTypeUInt8>(), "Flag that shows whether `enabled_role` is a current role of a current user."},
+        {"is_default", std::make_shared<DataTypeUInt8>(), "Flag that shows whether `enabled_role` is a default role."},
     };
-    return names_and_types;
 }
 
 

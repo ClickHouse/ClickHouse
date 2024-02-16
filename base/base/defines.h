@@ -119,17 +119,16 @@
         #include <base/types.h>
         namespace DB
         {
-            void abortOnFailedAssertion(const String & description);
+            [[noreturn]] void abortOnFailedAssertion(const String & description);
         }
-        #define chassert(x) static_cast<bool>(x) ? void(0) : ::DB::abortOnFailedAssertion(#x)
+        #define chassert(x) do { static_cast<bool>(x) ? void(0) : ::DB::abortOnFailedAssertion(#x); } while (0)
         #define UNREACHABLE() abort()
         // clang-format off
     #else
         /// Here sizeof() trick is used to suppress unused warning for result,
         /// since simple "(void)x" will evaluate the expression, while
         /// "sizeof(!(x))" will not.
-        #define NIL_EXPRESSION(x) (void)sizeof(!(x))
-        #define chassert(x) NIL_EXPRESSION(x)
+        #define chassert(x) (void)sizeof(!(x))
         #define UNREACHABLE() __builtin_unreachable()
     #endif
 #endif

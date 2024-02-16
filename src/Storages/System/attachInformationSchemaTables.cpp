@@ -373,6 +373,86 @@ static constexpr std::string_view referential_constraints = R"(
     WHERE false; -- make sure this view is always empty
 )";
 
+static constexpr std::string_view statistics = R"(
+    ATTACH VIEW statistics
+        (
+        `table_catalog` String,
+        `table_schema` String,
+        `table_name` String,
+        `non_unique` Int32,
+        `index_schema` String,
+        `index_name` Nullable(String),
+        `seq_in_index` UInt32,
+        `column_name` Nullable(String),
+        `collation` Nullable(String),
+        `cardinality` Nullable(Int64),
+        `sub_part` Nullable(Int64),
+        `packed` Nullable(String),
+        `nullable` String,
+        `index_type` String,
+        `comment` String,
+        `index_comment` String,
+        `is_visible` String,
+        `expression` Nullable(String),
+        `TABLE_CATALOG` String,
+        `TABLE_SCHEMA` String,
+        `TABLE_NAME` String,
+        `NON_UNIQUE` Int32,
+        `INDEX_SCHEMA` String,
+        `INDEX_NAME` Nullable(String),
+        `SEQ_IN_INDEX` UInt32,
+        `COLUMN_NAME` Nullable(String),
+        `COLLATION` Nullable(String),
+        `CARDINALITY` Nullable(Int64),
+        `SUB_PART` Nullable(Int64),
+        `PACKED` Nullable(String),
+        `NULLABLE` String,
+        `INDEX_TYPE` String,
+        `COMMENT` String,
+        `INDEX_COMMENT` String,
+        `IS_VISIBLE` String,
+        `EXPRESSION` Nullable(String)
+    ) AS
+    SELECT
+        ''            AS table_catalog,
+        ''            AS table_schema,
+        ''            AS table_name,
+        0             AS non_unique,
+        ''            AS index_schema,
+        NULL          AS index_name,
+        0             AS seq_in_index,
+        NULL          AS column_name,
+        NULL          AS collation,
+        NULL          AS cardinality,
+        NULL          AS sub_part,
+        NULL          AS packed,
+        ''            AS nullable,
+        ''            AS index_type,
+        ''            AS comment,
+        ''            AS index_comment,
+        ''            AS is_visible,
+        NULL          AS expression,
+        table_catalog AS TABLE_CATALOG,
+        table_schema  AS TABLE_SCHEMA,
+        table_name    AS TABLE_NAME,
+        non_unique    AS NON_UNIQUE,
+        index_schema  AS INDEX_SCHEMA,
+        index_name    AS INDEX_NAME,
+        seq_in_index  AS SEQ_IN_INDEX,
+        column_name   AS COLUMN_NAME,
+        collation     AS COLLATION,
+        cardinality   AS CARDINALITY,
+        sub_part      AS SUB_PART,
+        packed        AS PACKED,
+        nullable      AS NULLABLE,
+        index_type    AS INDEX_TYPE,
+        comment       AS COMMENT,
+        index_comment AS INDEX_COMMENT,
+        is_visible    AS IS_VISIBLE,
+        expression    AS EXPRESSION
+    WHERE false; -- make sure this view is always empty
+)";
+
 /// View structures are taken from http://www.contrib.andrew.cmu.edu/~shadow/sql/sql1992.txt
 
 static void createInformationSchemaView(ContextMutablePtr context, IDatabase & database, const String & view_name, std::string_view query)
@@ -424,6 +504,7 @@ void attachInformationSchema(ContextMutablePtr context, IDatabase & information_
     createInformationSchemaView(context, information_schema_database, "columns", columns);
     createInformationSchemaView(context, information_schema_database, "key_column_usage", key_column_usage);
     createInformationSchemaView(context, information_schema_database, "referential_constraints", referential_constraints);
+    createInformationSchemaView(context, information_schema_database, "statistics", statistics);
 }
 
 }

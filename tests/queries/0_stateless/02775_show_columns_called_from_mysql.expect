@@ -6,7 +6,7 @@
 # Tests the output of SHOW COLUMNS when called through the MySQL protocol.
 
 # -----------------------------------------------------------------------------------
-# Please keep this test in-sync with 02775_show_columns_called_through_clickhouse.sql
+# Please keep this test in-sync with 02775_show_columns_called_from_clickhouse.sql
 # -----------------------------------------------------------------------------------
 
 set basedir [file dirname $argv0]

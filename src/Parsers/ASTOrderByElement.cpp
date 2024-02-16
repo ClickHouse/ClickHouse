@@ -7,13 +7,13 @@
 namespace DB
 {
 
-void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state) const
+void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(direction);
     hash_state.update(nulls_direction);
     hash_state.update(nulls_direction_was_explicitly_specified);
     hash_state.update(with_fill);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTOrderByElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

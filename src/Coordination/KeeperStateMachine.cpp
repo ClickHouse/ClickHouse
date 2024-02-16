@@ -1,5 +1,4 @@
 #include <cerrno>
-#include <future>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperDispatcher.h>
@@ -60,7 +59,7 @@ KeeperStateMachine::KeeperStateMachine(
     , snapshots_queue(snapshots_queue_)
     , min_request_size_to_cache(coordination_settings_->min_request_size_for_cache)
     , last_committed_idx(0)
-    , log(&Poco::Logger::get("KeeperStateMachine"))
+    , log(getLogger("KeeperStateMachine"))
     , superdigest(superdigest_)
     , keeper_context(keeper_context_)
     , snapshot_manager_s3(snapshot_manager_s3_)
@@ -137,22 +136,22 @@ namespace
 {
 
 void assertDigest(
-    const KeeperStorage::Digest & first,
-    const KeeperStorage::Digest & second,
+    const KeeperStorage::Digest & expected,
+    const KeeperStorage::Digest & actual,
     const Coordination::ZooKeeperRequest & request,
     bool committing)
 {
-    if (!KeeperStorage::checkDigest(first, second))
+    if (!KeeperStorage::checkDigest(expected, actual))
     {
         LOG_FATAL(
-            &Poco::Logger::get("KeeperStateMachine"),
+            getLogger("KeeperStateMachine"),
             "Digest for nodes is not matching after {} request of type '{}'.\nExpected digest - {}, actual digest - {} (digest "
             "{}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
             committing ? "committing" : "preprocessing",
             request.getOpNum(),
-            first.value,
-            second.value,
-            first.version,
+            expected.value,
+            actual.value,
+            expected.version,
             request.toString());
         std::terminate();
     }
@@ -162,6 +161,15 @@ void assertDigest(
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
+    auto result = nuraft::buffer::alloc(sizeof(log_idx));
+    nuraft::buffer_serializer ss(result);
+    ss.put_u64(log_idx);
+
+    /// Don't preprocess anything until the first commit when we will manually pre_commit and commit
+    /// all needed logs
+    if (!keeper_context->localLogsPreprocessed())
+        return result;
+
     auto request_for_session = parseRequest(data, /*final=*/false);
     if (!request_for_session->zxid)
         request_for_session->zxid = log_idx;
@@ -169,9 +177,6 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nur
     request_for_session->log_idx = log_idx;
 
     preprocess(*request_for_session);
-    auto result = nuraft::buffer::alloc(sizeof(log_idx));
-    nuraft::buffer_serializer ss(result);
-    ss.put_u64(log_idx);
     return result;
 }
 
@@ -389,8 +394,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
 
     request_for_session->log_idx = log_idx;
 
-    if (!keeper_context->local_logs_preprocessed)
-        preprocess(*request_for_session);
+    if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session))
+        return nullptr;
 
     auto try_push = [this](const KeeperStorage::ResponseForSession& response)
     {
@@ -506,6 +511,10 @@ void KeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraf
 
 void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
 {
+    /// Don't rollback anything until the first commit because nothing was preprocessed
+    if (!keeper_context->localLogsPreprocessed())
+        return;
+
     auto request_for_session = parseRequest(data, true);
     // If we received a log from an older node, use the log_idx as the zxid
     // log_idx will always be larger or equal to the zxid so we can safely do this
@@ -670,7 +679,7 @@ void KeeperStateMachine::save_logical_snp_obj(
     }
 }
 
-static int bufferFromFile(Poco::Logger * log, const std::string & path, nuraft::ptr<nuraft::buffer> & data_out)
+static int bufferFromFile(LoggerPtr log, const std::string & path, nuraft::ptr<nuraft::buffer> & data_out)
 {
     if (path.empty() || !std::filesystem::exists(path))
     {

@@ -11,7 +11,6 @@
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Field.h>
-#include <Common/Arena.h>
 
 
 class Collator;
@@ -19,6 +18,8 @@ class Collator;
 
 namespace DB
 {
+
+class Arena;
 
 /** Column for String values.
   */
@@ -258,6 +259,7 @@ public:
     ColumnPtr compress() const override;
 
     void reserve(size_t n) override;
+    void shrinkToFit() override;
 
     void getExtremes(Field & min, Field & max) const override;
 

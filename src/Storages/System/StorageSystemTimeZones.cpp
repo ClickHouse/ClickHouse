@@ -8,10 +8,11 @@ extern const char * auto_time_zones[];
 
 namespace DB
 {
-NamesAndTypesList StorageSystemTimeZones::getNamesAndTypes()
+ColumnsDescription StorageSystemTimeZones::getColumnsDescription()
 {
-    return {
-        {"time_zone", std::make_shared<DataTypeString>()},
+    return ColumnsDescription
+    {
+        {"time_zone", std::make_shared<DataTypeString>(), "List of supported time zones."},
     };
 }
 

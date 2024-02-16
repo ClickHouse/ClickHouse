@@ -1,12 +1,13 @@
--- Tags: no-random-merge-tree-settings, no-tsan, no-debug
+-- Tags: no-random-merge-tree-settings, no-tsan, no-debug, no-s3-storage
 -- no-tsan: too slow
+-- no-s3-storage: for remote tables we use thread pool even when reading with one stream, so memory consumption is higher
 
 SET use_uncompressed_cache = 0;
 SET allow_prefetched_read_pool_for_remote_filesystem=0;
 
 DROP TABLE IF EXISTS adaptive_table;
 
--- If granularity of consequent blocks differs a lot, then adaptive
+-- If the granularity of consequent blocks differs a lot, then adaptive
 -- granularity will adjust the amount of marks correctly.
 -- Data for test was empirically derived, it's quite hard to get good parameters.
 

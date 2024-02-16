@@ -21,8 +21,11 @@ include (cmake/clang_tidy.cmake)
 include (cmake/git.cmake)
 include (cmake/utils.cmake)
 
+# This is needed to set up the CMAKE_INSTALL_BINDIR variable.
+include (GNUInstallDirs)
+
 # Ignore export() since we don't use it,
-# but it gets broken with a global targets via link_libraries()
+# but it gets broken with global targets via link_libraries()
 macro (export)
 endmacro ()
 
@@ -164,7 +167,7 @@ if (OS_LINUX)
     #   and whatever is poisoning it by LD_PRELOAD should not link to our symbols.
     # - The clickhouse-odbc-bridge and clickhouse-library-bridge binaries
     #   should not expose their symbols to ODBC drivers and libraries.
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic -Wl,--gc-sections")
 endif ()
 
 if (OS_DARWIN)
@@ -187,9 +190,10 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     endif ()
 endif()
 
-if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
-    OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
-    OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
+if (NOT (SANITIZE_COVERAGE OR WITH_COVERAGE)
+    AND (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
+        OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
+        OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL"))
     set (OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT ON)
 else()
     set (OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT OFF)
@@ -250,10 +254,17 @@ endif()
 
 include(cmake/cpu_features.cmake)
 
-# Asynchronous unwind tables are needed for Query Profiler.
-# They are already by default on some platforms but possibly not on all platforms.
-# Enable it explicitly.
-set (COMPILER_FLAGS "${COMPILER_FLAGS} -fasynchronous-unwind-tables")
+
+# Query Profiler doesn't work on MacOS for several reasons
+# - PHDR cache is not available
+# - We use native functionality to get stacktraces which is not async signal safe
+# and thus we don't need to generate asynchronous unwind tables
+if (NOT OS_DARWIN)
+    # Asynchronous unwind tables are needed for Query Profiler.
+    # They are already by default on some platforms but possibly not on all platforms.
+    # Enable it explicitly.
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fasynchronous-unwind-tables")
+endif()
 
 # Reproducible builds.
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
@@ -273,6 +284,11 @@ option (ENABLE_BUILD_PROFILING "Enable profiling of build time" OFF)
 if (ENABLE_BUILD_PROFILING)
      if (COMPILER_CLANG)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -ftime-trace")
+
+        if (LINKER_NAME MATCHES "lld")
+            set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace")
+            set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace")
+        endif ()
      else ()
         message (${RECONFIGURE_MESSAGE_LEVEL} "Build profiling is only available with CLang")
      endif ()
@@ -285,9 +301,6 @@ set (CMAKE_CXX_STANDARD_REQUIRED ON)
 set (CMAKE_C_STANDARD 11)
 set (CMAKE_C_EXTENSIONS ON) # required by most contribs written in C
 set (CMAKE_C_STANDARD_REQUIRED ON)
-
-# Compiler-specific coverage flags e.g. -fcoverage-mapping
-option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
 
 if (COMPILER_CLANG)
     # Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
@@ -304,18 +317,12 @@ if (COMPILER_CLANG)
         set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
         set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
     endif()
-
-    if (WITH_COVERAGE)
-        set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
-        # If we want to disable coverage for specific translation units
-        set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
-    endif()
 endif ()
 
 set (COMPILER_FLAGS "${COMPILER_FLAGS}")
 
 # Our built-in unwinder only supports DWARF version up to 4.
-set (DEBUG_INFO_FLAGS "-g -gdwarf-4")
+set (DEBUG_INFO_FLAGS "-g")
 
 # Disable omit frame pointer compiler optimization using -fno-omit-frame-pointer
 option(DISABLE_OMIT_FRAME_POINTER "Disable omit frame pointer compiler optimization" OFF)
@@ -348,7 +355,7 @@ if (COMPILER_CLANG)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
-    if (NOT ENABLE_TESTS AND NOT SANITIZE AND OS_LINUX)
+    if (NOT ENABLE_TESTS AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND OS_LINUX)
         # https://clang.llvm.org/docs/ThinLTO.html
         # Applies to clang and linux only.
         # Disabled when building with tests or sanitizers.
@@ -463,14 +470,6 @@ endif ()
 
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE}")
 
-include (GNUInstallDirs)
-
-# When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
-
-if (TARGET global-group)
-    install (EXPORT global DESTINATION cmake)
-endif ()
-
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
 if (NOT ENABLE_JEMALLOC)
@@ -554,10 +553,16 @@ if (ENABLE_RUST)
     endif()
 endif()
 
+if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64))
+    set(CHECK_LARGE_OBJECT_SIZES_DEFAULT ON)
+else ()
+    set(CHECK_LARGE_OBJECT_SIZES_DEFAULT OFF)
+endif ()
+option(CHECK_LARGE_OBJECT_SIZES "Check that there are no large object files after build." ${CHECK_LARGE_OBJECT_SIZES_DEFAULT})
+
 add_subdirectory (base)
 add_subdirectory (src)
 add_subdirectory (programs)
-add_subdirectory (tests)
 add_subdirectory (utils)
 
 if (FUZZER)

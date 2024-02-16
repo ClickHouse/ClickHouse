@@ -6,7 +6,7 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
-#include <Storages/MergeTree/ZooKeeperRetries.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <filesystem>
 #include <queue>
 
@@ -22,6 +22,9 @@ class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 struct StorageID;
 enum class AccessEntityType;
+class QueryStatus;
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+
 
 /// Collects backup entries for all databases and tables which should be put to a backup.
 class BackupEntriesCollector : private boost::noncopyable
@@ -31,7 +34,8 @@ public:
                            const BackupSettings & backup_settings_,
                            std::shared_ptr<IBackupCoordination> backup_coordination_,
                            const ReadSettings & read_settings_,
-                           const ContextPtr & context_);
+                           const ContextPtr & context_,
+                           ThreadPool & threadpool_);
     ~BackupEntriesCollector();
 
     /// Collects backup entries and returns the result.
@@ -90,15 +94,21 @@ private:
     void makeBackupEntriesForTablesData();
     void makeBackupEntriesForTableData(const QualifiedTableName & table_name);
 
+    void addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry);
+
     void runPostTasks();
 
     Strings setStage(const String & new_stage, const String & message = "");
+
+    /// Throws an exception if the BACKUP query was cancelled.
+    void checkIsQueryCancelled() const;
 
     const ASTBackupQuery::Elements backup_query_elements;
     const BackupSettings backup_settings;
     std::shared_ptr<IBackupCoordination> backup_coordination;
     const ReadSettings read_settings;
     ContextPtr context;
+    QueryStatusPtr process_list_element;
 
     /// The time a BACKUP ON CLUSTER or RESTORE ON CLUSTER command will wait until all the nodes receive the BACKUP (or RESTORE) query and start working.
     /// This setting is similar to `distributed_ddl_task_timeout`.
@@ -119,7 +129,7 @@ private:
     /// Whether we should collect the metadata after a successful attempt one more time and check that nothing has changed.
     const bool compare_collected_metadata;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     /// Unfortunately we can use ZooKeeper for collecting information for backup
     /// and we need to retry...
     ZooKeeperRetriesInfo global_zookeeper_retries_info;
@@ -170,6 +180,9 @@ private:
     BackupEntries backup_entries;
     std::queue<std::function<void()>> post_tasks;
     std::vector<size_t> access_counters;
+
+    ThreadPool & threadpool;
+    std::mutex mutex;
 };
 
 }

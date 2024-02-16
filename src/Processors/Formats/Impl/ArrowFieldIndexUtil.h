@@ -1,22 +1,33 @@
 #pragma once
+
 #include "config.h"
+
 #if USE_PARQUET || USE_ORC
+
 #include <unordered_map>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <arrow/type.h>
 #include <arrow/type_fwd.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Common/Exception.h>
+
+
 namespace arrow
 {
-class Schema;
-class DataType;
-class Field;
+    class Schema;
+    class DataType;
+    class Field;
 }
+
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int THERE_IS_NO_COLUMN;
@@ -211,5 +222,7 @@ private:
         }
     }
 };
+
 }
+
 #endif

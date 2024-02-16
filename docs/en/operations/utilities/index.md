@@ -16,3 +16,4 @@ pagination_next: 'en/operations/utilities/clickhouse-copier'
 - [clickhouse-disks](../../operations/utilities/clickhouse-disks.md) -- Provides filesystem-like operations
  on files among different ClickHouse disks.
 - [clickhouse-odbc-bridge](../../operations/utilities/odbc-bridge.md) — A proxy server for ODBC driver.
+- [clickhouse_backupview](../../operations/utilities/backupview.md) — A python module to analyze ClickHouse backups.

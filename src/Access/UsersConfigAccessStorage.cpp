@@ -12,7 +12,7 @@
 #include <Common/Config/ConfigReloader.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
-#include <Common/TransformEndianness.hpp>
+#include <Common/transformEndianness.h>
 #include <Core/Settings.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
@@ -209,7 +209,7 @@ namespace
         }
         else if (has_ssh_keys)
         {
-#if USE_SSL
+#if USE_SSH
             user->auth_data = AuthenticationData{AuthenticationType::SSH_KEY};
 
             Poco::Util::AbstractConfiguration::Keys entries;

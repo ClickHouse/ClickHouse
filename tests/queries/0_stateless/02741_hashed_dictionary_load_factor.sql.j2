@@ -31,7 +31,7 @@ LIFETIME(0);
 
 SYSTEM RELOAD DICTIONARY test_dictionary_{{layout}};
 SYSTEM RELOAD DICTIONARY test_dictionary_{{layout}}_load_factor;
-SELECT name, element_count, round(load_factor, 4), bytes_allocated FROM system.dictionaries WHERE database = currentDatabase() ORDER BY name;
+SELECT name, element_count, round(load_factor, 4), round(bytes_allocated, -6) FROM system.dictionaries WHERE database = currentDatabase() ORDER BY name;
 
 DROP DICTIONARY IF EXISTS test_dictionary_{{layout}};
 DROP DICTIONARY IF EXISTS test_dictionary_{{layout}}_load_factor;

@@ -1840,9 +1840,9 @@ Converts an `Int64` to a `DateTime64` value with fixed sub-second precision and 
 **Syntax**
 
 ``` sql
-fromUnixTimestamp64Milli(value [, timezone])
-fromUnixTimestamp64Micro(value [, timezone])
-fromUnixTimestamp64Nano(value [, timezone])
+fromUnixTimestamp64Milli(value[, timezone])
+fromUnixTimestamp64Micro(value[, timezone])
+fromUnixTimestamp64Nano(value[, timezone])
 ```
 
 **Arguments**

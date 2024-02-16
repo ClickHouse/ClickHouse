@@ -27,15 +27,27 @@ class IConnectionPool : private boost::noncopyable
 public:
     using Entry = PoolBase<Connection>::Entry;
 
+    IConnectionPool() = default;
+    IConnectionPool(String host_, UInt16 port_) : host(host_), port(port_), address(host + ":" + toString(port_)) {}
+
     virtual ~IConnectionPool() = default;
 
     /// Selects the connection to work.
+    virtual Entry get(const ConnectionTimeouts & timeouts) = 0;
     /// If force_connected is false, the client must manually ensure that returned connection is good.
     virtual Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
-                      const Settings * settings = nullptr,
+                      const Settings & settings,
                       bool force_connected = true) = 0;
 
+    const std::string & getHost() const { return host; }
+    UInt16 getPort() const { return port; }
+    const String & getAddress() const { return address; }
     virtual Priority getPriority() const { return Priority{1}; }
+
+protected:
+    const String host;
+    const UInt16 port = 0;
+    const String address;
 };
 
 using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
@@ -62,10 +74,9 @@ public:
             Protocol::Compression compression_,
             Protocol::Secure secure_,
             Priority priority_ = Priority{1})
-       : Base(max_connections_,
-        &Poco::Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
-        host(host_),
-        port(port_),
+       : IConnectionPool(host_, port_),
+        Base(max_connections_,
+        getLogger("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
         default_database(default_database_),
         user(user_),
         password(password_),
@@ -79,15 +90,18 @@ public:
     {
     }
 
+    Entry get(const ConnectionTimeouts & timeouts) override
+    {
+        Entry entry = Base::get(-1);
+        entry->forceConnected(timeouts);
+        return entry;
+    }
+
     Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
-              const Settings * settings = nullptr,
+              const Settings & settings,
               bool force_connected = true) override
     {
-        Entry entry;
-        if (settings)
-            entry = Base::get(settings->connection_pool_max_wait_ms.totalMilliseconds());
-        else
-            entry = Base::get(-1);
+        Entry entry = Base::get(settings.connection_pool_max_wait_ms.totalMilliseconds());
 
         if (force_connected)
             entry->forceConnected(timeouts);
@@ -95,10 +109,6 @@ public:
         return entry;
     }
 
-    const std::string & getHost() const
-    {
-        return host;
-    }
     std::string getDescription() const
     {
         return host + ":" + toString(port);
@@ -121,8 +131,6 @@ protected:
     }
 
 private:
-    String host;
-    UInt16 port;
     String default_database;
     String user;
     String password;

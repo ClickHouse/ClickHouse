@@ -1,3 +1,4 @@
+#include <memory>
 #include <Server/HTTPHandlerFactory.h>
 
 #include <Server/HTTP/HTTPRequestHandler.h>
@@ -7,7 +8,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include "HTTPHandler.h"
-#include "NotFoundHandler.h"
+#include "Server/PrometheusMetricsWriter.h"
 #include "StaticRequestHandler.h"
 #include "ReplicasStatusHandler.h"
 #include "InterserverIOHTTPHandler.h"
@@ -114,7 +115,10 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::
     else if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
         return createInterserverHTTPHandlerFactory(server, name);
     else if (name == "PrometheusHandler-factory")
-        return createPrometheusMainHandlerFactory(server, config, async_metrics, name);
+    {
+        auto metrics_writer = std::make_shared<PrometheusMetricsWriter>(config, "prometheus", async_metrics);
+        return createPrometheusMainHandlerFactory(server, config, metrics_writer, name);
+    }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: Unknown HTTP handler factory name.");
 }
@@ -161,6 +165,12 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     factory.addPathToHints("/dashboard");
     factory.addHandler(dashboard_handler);
 
+    auto binary_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
+    binary_handler->attachNonStrictPath("/binary");
+    binary_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/binary");
+    factory.addHandler(binary_handler);
+
     auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
     js_handler->attachNonStrictPath("/js/");
     js_handler->allowGetAndHeadRequest();
@@ -203,7 +213,7 @@ void addDefaultHandlersFactory(
     /// Otherwise it will be created separately, see createHandlerFactory(...).
     if (config.has("prometheus") && config.getInt("prometheus.port", 0) == 0)
     {
-        PrometheusMetricsWriter writer(config, "prometheus", async_metrics);
+        auto writer = std::make_shared<PrometheusMetricsWriter>(config, "prometheus", async_metrics);
         auto creator = [&server, writer] () -> std::unique_ptr<PrometheusRequestHandler>
         {
             return std::make_unique<PrometheusRequestHandler>(server, writer);

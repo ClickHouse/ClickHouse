@@ -47,9 +47,10 @@ public:
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -133,6 +134,8 @@ public:
     const auto & getFileLogSettings() const { return filelog_settings; }
 
 private:
+    friend class ReadFromStorageFileLog;
+
     std::unique_ptr<FileLogSettings> filelog_settings;
 
     const String path;
@@ -146,7 +149,7 @@ private:
     FileInfos file_infos;
 
     const String format_name;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     DiskPtr disk;
 

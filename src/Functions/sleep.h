@@ -10,12 +10,14 @@
 #include <base/sleep.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 
 namespace ProfileEvents
 {
 extern const Event SleepFunctionCalls;
 extern const Event SleepFunctionMicroseconds;
+extern const Event SleepFunctionElapsedMicroseconds;
 }
 
 namespace DB
@@ -43,14 +45,20 @@ class FunctionSleep : public IFunction
 {
 private:
     UInt64 max_microseconds;
+    QueryStatusPtr query_status;
+
 public:
     static constexpr auto name = variant == FunctionSleepVariant::PerBlock ? "sleep" : "sleepEachRow";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionSleep<variant>>(context->getSettingsRef().function_sleep_max_microseconds_per_block);
+        return std::make_shared<FunctionSleep<variant>>(
+            context->getSettingsRef().function_sleep_max_microseconds_per_block,
+            context->getProcessListElementSafe());
     }
 
-    FunctionSleep(UInt64 max_microseconds_) : max_microseconds(max_microseconds_)
+    FunctionSleep(UInt64 max_microseconds_, QueryStatusPtr query_status_)
+        : max_microseconds(std::min(max_microseconds_, static_cast<UInt64>(std::numeric_limits<UInt32>::max())))
+        , query_status(query_status_)
     {
     }
 
@@ -103,8 +111,8 @@ public:
 
         Float64 seconds = applyVisitor(FieldVisitorConvertToNumber<Float64>(), assert_cast<const ColumnConst &>(*col).getField());
 
-        if (seconds < 0 || !std::isfinite(seconds))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot sleep infinite or negative amount of time (not implemented)");
+        if (seconds < 0 || !std::isfinite(seconds) || seconds > static_cast<Float64>(std::numeric_limits<UInt32>::max()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot sleep infinite, very large or negative amount of time (not implemented)");
 
         size_t size = col->size();
 
@@ -112,22 +120,38 @@ public:
         if (size > 0)
         {
             /// When sleeping, the query cannot be cancelled. For ability to cancel query, we limit sleep time.
-            if (max_microseconds && seconds * 1e6 > max_microseconds)
-                throw Exception(ErrorCodes::TOO_SLOW, "The maximum sleep time is {} microseconds. Requested: {}", max_microseconds, seconds);
+            UInt64 microseconds = static_cast<UInt64>(seconds * 1e6);
+            if (max_microseconds && microseconds > max_microseconds)
+                throw Exception(ErrorCodes::TOO_SLOW, "The maximum sleep time is {} microseconds. Requested: {} microseconds",
+                    max_microseconds, microseconds);
 
             if (!dry_run)
             {
                 UInt64 count = (variant == FunctionSleepVariant::PerBlock ? 1 : size);
-                UInt64 microseconds = static_cast<UInt64>(seconds * count * 1e6);
+                microseconds *= count;
 
                 if (max_microseconds && microseconds > max_microseconds)
                     throw Exception(ErrorCodes::TOO_SLOW,
                         "The maximum sleep time is {} microseconds. Requested: {} microseconds per block (of size {})",
                         max_microseconds, microseconds, size);
 
-                sleepForMicroseconds(microseconds);
+                UInt64 elapsed = 0;
+                while (elapsed < microseconds)
+                {
+                    UInt64 sleep_time = microseconds - elapsed;
+                    if (query_status)
+                        sleep_time = std::min(sleep_time, /* 1 second */ static_cast<UInt64>(1000000));
+
+                    sleepForMicroseconds(sleep_time);
+                    elapsed += sleep_time;
+
+                    if (query_status && !query_status->checkTimeLimit())
+                        break;
+                }
+
                 ProfileEvents::increment(ProfileEvents::SleepFunctionCalls, count);
                 ProfileEvents::increment(ProfileEvents::SleepFunctionMicroseconds, microseconds);
+                ProfileEvents::increment(ProfileEvents::SleepFunctionElapsedMicroseconds, elapsed);
             }
         }
 

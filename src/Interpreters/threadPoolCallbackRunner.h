@@ -24,9 +24,10 @@ ThreadPoolCallbackRunner<Result, Callback> threadPoolCallbackRunner(ThreadPool &
             if (thread_group)
                 CurrentThread::attachToGroup(thread_group);
 
-            SCOPE_EXIT_SAFE({
+            SCOPE_EXIT_SAFE(
+            {
                 {
-                    /// Release all captutred resources before detaching thread group
+                    /// Release all captured resources before detaching thread group
                     /// Releasing has to use proper memory tracker which has been set here before callback
 
                     [[maybe_unused]] auto tmp = std::move(my_callback);
@@ -34,7 +35,6 @@ ThreadPoolCallbackRunner<Result, Callback> threadPoolCallbackRunner(ThreadPool &
 
                 if (thread_group)
                     CurrentThread::detachFromGroupIfNotDetached();
-
             });
 
             setThreadName(thread_name.data());

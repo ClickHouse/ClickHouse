@@ -1,35 +1,38 @@
 #!/usr/bin/env python3
 
-import os
-import logging
-import sys
 import json
-import subprocess
-import traceback
+import logging
+import os
 import re
+import subprocess
+import sys
+import traceback
 from pathlib import Path
-from typing import Dict
 
+# isort: off
 from github import Github
 
-from commit_status_helper import RerunHelper, get_commit, post_commit_status
+# isort: on
+
+from build_download_helper import download_builds_filter
 from ci_config import CI_CONFIG
-from docker_pull_helper import get_image_with_version
+from clickhouse_helper import get_instance_id, get_instance_type
+from commit_status_helper import get_commit
+from docker_images_helper import get_docker_image, pull_image
 from env_helper import (
     GITHUB_EVENT_PATH,
     GITHUB_RUN_URL,
     REPO_COPY,
-    REPORTS_PATH,
+    REPORT_PATH,
     S3_BUILDS_BUCKET,
     S3_DOWNLOAD,
     TEMP_PATH,
 )
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
-from s3_helper import S3Helper
-from tee_popen import TeePopen
-from clickhouse_helper import get_instance_type, get_instance_id
+from report import FAILURE, SUCCESS, JobReport
 from stopwatch import Stopwatch
+from tee_popen import TeePopen
 
 IMAGE_NAME = "clickhouse/performance-comparison"
 
@@ -63,6 +66,7 @@ def get_run_command(
         f"docker run --privileged --volume={workspace}:/workspace "
         f"--volume={result_path}:/output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
+        f"--volume={TEMP_PATH}:/artifacts "
         f"--cap-add syslog --cap-add sys_admin --cap-add sys_rawio "
         f"{env_str} {additional_env} "
         f"{image}"
@@ -77,9 +81,11 @@ def main():
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
     repo_tests_path = Path(REPO_COPY, "tests")
-    reports_path = Path(REPORTS_PATH)
 
-    check_name = sys.argv[1]
+    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
+    assert (
+        check_name
+    ), "Check name must be provided as an input arg or in CHECK_NAME env"
     required_build = CI_CONFIG.test_configs[check_name].required_build
 
     with open(GITHUB_EVENT_PATH, "r", encoding="utf-8") as event_file:
@@ -119,17 +125,7 @@ def main():
 
     is_aarch64 = "aarch64" in os.getenv("CHECK_NAME", "Performance Comparison").lower()
     if pr_info.number != 0 and is_aarch64 and "pr-performance" not in pr_info.labels:
-        status = "success"
-        message = "Skipped, not labeled with 'pr-performance'"
-        report_url = GITHUB_RUN_URL
-        post_commit_status(
-            commit, status, report_url, message, check_name_with_group, pr_info
-        )
-        sys.exit(0)
-
-    rerun_helper = RerunHelper(commit, check_name_with_group)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
+        print("Skipped, not labeled with 'pr-performance'")
         sys.exit(0)
 
     check_name_prefix = (
@@ -141,7 +137,7 @@ def main():
         .replace("/", "_")
     )
 
-    docker_image = get_image_with_version(reports_path, IMAGE_NAME)
+    docker_image = pull_image(get_docker_image(IMAGE_NAME))
 
     result_path = temp_path / "result"
     result_path.mkdir(parents=True, exist_ok=True)
@@ -157,6 +153,11 @@ def main():
         "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME": check_name_with_group,
         "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX": check_name_prefix,
     }
+
+    download_builds_filter(
+        check_name, REPORT_PATH, TEMP_PATH, lambda url: "performance.tar.zst" in url
+    )
+    assert os.path.exists(f"{TEMP_PATH}/performance.tar.zst"), "Perf artifact not found"
 
     docker_env += "".join([f" -e {name}" for name in env_extra])
 
@@ -187,6 +188,13 @@ def main():
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
+    def too_many_slow(msg):
+        match = re.search(r"(|.* )(\d+) slower.*", msg)
+        # This threshold should be synchronized with the value in
+        # https://github.com/ClickHouse/ClickHouse/blob/master/docker/test/performance-comparison/report.py#L629
+        threshold = 5
+        return int(match.group(2).strip()) > threshold if match else False
+
     paths = {
         "compare.log": compare_log_path,
         "output.7z": result_path / "output.7z",
@@ -197,32 +205,12 @@ def main():
         "run.log": run_log_path,
     }
 
-    s3_prefix = f"{pr_info.number}/{pr_info.sha}/{check_name_prefix}/"
-    s3_helper = S3Helper()
-    uploaded = {}  # type: Dict[str, str]
-    for name, path in paths.items():
-        try:
-            uploaded[name] = s3_helper.upload_test_report_to_s3(
-                Path(path), s3_prefix + name
-            )
-        except Exception:
-            uploaded[name] = ""
-            traceback.print_exc()
-
-    # Upload all images and flamegraphs to S3
-    try:
-        s3_helper.upload_test_directory_to_s3(
-            Path(result_path) / "images", s3_prefix + "images"
-        )
-    except Exception:
-        traceback.print_exc()
-
-    def too_many_slow(msg):
-        match = re.search(r"(|.* )(\d+) slower.*", msg)
-        # This threshold should be synchronized with the value in
-        # https://github.com/ClickHouse/ClickHouse/blob/master/docker/test/performance-comparison/report.py#L629
-        threshold = 5
-        return int(match.group(2).strip()) > threshold if match else False
+    # FIXME: where images come from? dir does not exist atm.
+    image_files = (
+        list((Path(result_path) / "images").iterdir())
+        if (Path(result_path) / "images").exists()
+        else []
+    )
 
     # Try to fetch status from the report.
     status = ""
@@ -238,36 +226,33 @@ def main():
             message = message_match.group(1).strip()
 
         # TODO: Remove me, always green mode for the first time, unless errors
-        status = "success"
+        status = SUCCESS
         if "errors" in message.lower() or too_many_slow(message.lower()):
-            status = "failure"
+            status = FAILURE
         # TODO: Remove until here
     except Exception:
         traceback.print_exc()
-        status = "failure"
+        status = FAILURE
         message = "Failed to parse the report."
 
     if not status:
-        status = "failure"
+        status = FAILURE
         message = "No status in report."
     elif not message:
-        status = "failure"
+        status = FAILURE
         message = "No message in report."
 
-    report_url = GITHUB_RUN_URL
+    JobReport(
+        description=message,
+        test_results=[],
+        status=status,
+        start_time=stopwatch.start_time_str,
+        duration=stopwatch.duration_seconds,
+        additional_files=[v for _, v in paths.items()] + image_files,
+        check_name=check_name_with_group,
+    ).dump()
 
-    report_url = (
-        uploaded["report.html"]
-        or uploaded["output.7z"]
-        or uploaded["compare.log"]
-        or uploaded["run.log"]
-    )
-
-    post_commit_status(
-        commit, status, report_url, message, check_name_with_group, pr_info
-    )
-
-    if status == "error":
+    if status != SUCCESS:
         sys.exit(1)
 
 

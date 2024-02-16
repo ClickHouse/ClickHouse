@@ -129,12 +129,14 @@ String queryStringFromAST(ASTPtr ast)
 QueryCache::Key::Key(
     ASTPtr ast_,
     Block header_,
-    const String & user_name_, bool is_shared_,
+    std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+    bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_)
     : ast(removeQueryCacheSettings(ast_))
     , header(header_)
-    , user_name(user_name_)
+    , user_id(user_id_)
+    , current_user_roles(current_user_roles_)
     , is_shared(is_shared_)
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
@@ -142,22 +144,23 @@ QueryCache::Key::Key(
 {
 }
 
-QueryCache::Key::Key(ASTPtr ast_, const String & user_name_)
-    : QueryCache::Key(ast_, {}, user_name_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST or user name
+QueryCache::Key::Key(ASTPtr ast_, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_)
+    : QueryCache::Key(ast_, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST or user name
 {
 }
 
+/// Hashing of ASTs must consider aliases (issue #56258)
+static constexpr bool ignore_aliases = false;
+
 bool QueryCache::Key::operator==(const Key & other) const
 {
-    return ast->getTreeHash() == other.ast->getTreeHash();
+    return ast->getTreeHash(ignore_aliases) == other.ast->getTreeHash(ignore_aliases);
 }
 
 size_t QueryCache::KeyHasher::operator()(const Key & key) const
 {
-    SipHash hash;
-    hash.update(key.ast->getTreeHash());
-    auto res = hash.get64();
-    return res;
+    IAST::Hash hash = key.ast->getTreeHash(ignore_aliases);
+    return hash.low64;
 }
 
 size_t QueryCache::QueryCacheEntryWeight::operator()(const Entry & entry) const
@@ -400,7 +403,9 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
     const auto & entry_key = entry->key;
     const auto & entry_mapped = entry->mapped;
 
-    if (!entry_key.is_shared && entry_key.user_name != key.user_name)
+    const bool is_same_user_id = ((!entry_key.user_id.has_value() && !key.user_id.has_value()) || (entry_key.user_id.has_value() && key.user_id.has_value() && *entry_key.user_id == *key.user_id));
+    const bool is_same_current_user_roles = (entry_key.current_user_roles == key.current_user_roles);
+    if (!entry_key.is_shared && (!is_same_user_id || !is_same_current_user_roles))
     {
         LOG_TRACE(logger, "Inaccessible query result found for query {}", doubleQuoteString(key.query_string));
         return;
@@ -502,7 +507,9 @@ QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::millis
     /// Update the per-user cache quotas with the values stored in the query context. This happens per query which writes into the query
     /// cache. Obviously, this is overkill but I could find the good place to hook into which is called when the settings profiles in
     /// users.xml change.
-    cache.setQuotaForUser(key.user_name, max_query_cache_size_in_bytes_quota, max_query_cache_entries_quota);
+    /// user_id == std::nullopt is the internal user for which no quota can be configured
+    if (key.user_id.has_value())
+        cache.setQuotaForUser(*key.user_id, max_query_cache_size_in_bytes_quota, max_query_cache_entries_quota);
 
     std::lock_guard lock(mutex);
     return Writer(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);

@@ -29,8 +29,7 @@ $CLICKHOUSE_CLIENT \
   --query_id "${query_id}" \
   --max_parallel_replicas 3 \
   --prefer_localhost_replica 1 \
-  --use_hedged_requests 0 \
-  --cluster_for_parallel_replicas "parallel_replicas" \
+  --cluster_for_parallel_replicas "test_cluster_one_shard_three_replicas_localhost" \
   --allow_experimental_parallel_reading_from_replicas 1 \
   --parallel_replicas_for_non_replicated_merge_tree 1 \
   --parallel_replicas_min_number_of_rows_per_replica 0 \
@@ -40,6 +39,11 @@ $CLICKHOUSE_CLIENT \
   ORDER BY max((SELECT 1 WHERE 0));
 ";
 were_parallel_replicas_used $query_id
+
+# It was a bug in analyzer distributed header.
+echo "Distributed query with analyzer"
+$CLICKHOUSE_CLIENT --query "SELECT 1 FROM remote('127.0.0.{2,3}', currentDatabase(), nested) GROUP BY 1 WITH ROLLUP ORDER BY max((SELECT 1 WHERE 0))"
+
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS nested"
 
 
@@ -63,8 +67,7 @@ $CLICKHOUSE_CLIENT \
   --query_id "${query_id}" \
   --max_parallel_replicas 3 \
   --prefer_localhost_replica 1 \
-  --use_hedged_requests 0 \
-  --cluster_for_parallel_replicas "parallel_replicas" \
+  --cluster_for_parallel_replicas "test_cluster_one_shard_three_replicas_localhost" \
   --allow_experimental_parallel_reading_from_replicas 1 \
   --parallel_replicas_for_non_replicated_merge_tree 1 \
   --parallel_replicas_min_number_of_rows_per_replica 0 \

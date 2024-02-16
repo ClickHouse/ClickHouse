@@ -17,6 +17,7 @@ enum class NumpyDataTypeIndex
     UInt16,
     UInt32,
     UInt64,
+    Float16,
     Float32,
     Float64,
     String,
@@ -79,6 +80,7 @@ public:
     {
         switch (size)
         {
+            case 2: type_index = NumpyDataTypeIndex::Float16; break;
             case 4: type_index = NumpyDataTypeIndex::Float32; break;
             case 8: type_index = NumpyDataTypeIndex::Float64; break;
             default:

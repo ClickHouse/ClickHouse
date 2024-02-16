@@ -96,6 +96,10 @@ NamesAndTypesList collectNested(const NamesAndTypesList & names_and_types, bool 
             nested[field_name].emplace_back(nested_name, type);
     }
 
+    /// Collect nested recursively.
+    for (auto & [field_name, elements] : nested)
+        elements = collectNested(elements, allow_split_by_underscore, format_name);
+
     for (const auto & [field_name, elements]: nested)
         result.emplace_back(field_name, std::make_shared<DataTypeTuple>(elements.getTypes(), elements.getNames()));
 

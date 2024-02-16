@@ -12,7 +12,11 @@ RUN apt-get update \
         ripgrep \
         zstd \
         locales \
-        --yes --no-install-recommends
+        sudo \
+        --yes --no-install-recommends \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
 
 # Sanitizer options for services (clickhouse-server)
 # Set resident memory limit for TSAN to 45GiB (46080MiB) to avoid OOMs in Stress tests

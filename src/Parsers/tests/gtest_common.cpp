@@ -6,9 +6,11 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 
+#include <Common/re2.h>
+
 #include <gmock/gmock.h>
 
-#include <regex>
+
 
 namespace
 {
@@ -62,14 +64,14 @@ TEST_P(ParserKQLTest, parseKQLQuery)
                 if (input_text.starts_with("ATTACH"))
                 {
                     auto salt = (dynamic_cast<const ASTCreateUserQuery *>(ast.get())->auth_data)->getSalt().value_or("");
-                    EXPECT_TRUE(std::regex_match(salt, std::regex(expected_ast)));
+                    EXPECT_TRUE(re2::RE2::FullMatch(salt, expected_ast));
                 }
                 else
                 {
                     DB::WriteBufferFromOwnString buf;
                     formatAST(*ast->clone(), buf, false, false);
                     String formatted_ast = buf.str();
-                    EXPECT_TRUE(std::regex_match(formatted_ast, std::regex(expected_ast)));
+                    EXPECT_TRUE(re2::RE2::FullMatch(formatted_ast, expected_ast));
                 }
             }
         }

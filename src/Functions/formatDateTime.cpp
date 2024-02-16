@@ -9,11 +9,13 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsConversion.h>
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/numLiteralChars.h>
+
+#include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -320,6 +322,18 @@ private:
             return writeNumber2(dest, ToMonthImpl::execute(source, timezone));
         }
 
+        size_t mysqlMonthWithoutLeadingZero(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            auto month = ToMonthImpl::execute(source, timezone);
+            if (month < 10)
+            {
+                dest[0] = '0' + month;
+                return 1;
+            }
+            else
+                return writeNumber2(dest, month);
+        }
+
         static size_t monthOfYearText(char * dest, Time source, bool abbreviate, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             auto month = ToMonthImpl::execute(source, timezone);
@@ -402,10 +416,36 @@ private:
             return writeNumber2(dest, ToHourImpl::execute(source, timezone));
         }
 
+        size_t mysqlHour24WithoutLeadingZero(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            auto hour = ToHourImpl::execute(source, timezone);
+            if (hour < 10)
+            {
+                dest[0] = '0' + hour;
+                return 1;
+            }
+            else
+                return writeNumber2(dest, hour);
+        }
+
         size_t mysqlHour12(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            auto x = ToHourImpl::execute(source, timezone);
-            return writeNumber2(dest, x == 0 ? 12 : (x > 12 ? x - 12 : x));
+            auto hour = ToHourImpl::execute(source, timezone);
+            hour = (hour == 0) ? 12 : (hour > 12 ? hour - 12 : hour);
+            return writeNumber2(dest, hour);
+        }
+
+        size_t mysqlHour12WithoutLeadingZero(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            auto hour = ToHourImpl::execute(source, timezone);
+            hour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+            if (hour < 10)
+            {
+                dest[0] = '0' + hour;
+                return 1;
+            }
+            else
+                return writeNumber2(dest, hour);
         }
 
         size_t mysqlMinute(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -687,10 +727,11 @@ private:
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'%' must not be the last character in the format string, use '%%' instead");
     }
 
-    static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name)
+    static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name, bool mysql_format_ckl_without_leading_zeros)
     {
         static constexpr std::array variable_width_formatter = {'W'};
         static constexpr std::array variable_width_formatter_M_is_month_name = {'W', 'M'};
+        static constexpr std::array variable_width_formatter_leading_zeros = {'c', 'l', 'k'};
 
         for (size_t i = 0; i < format.size(); ++i)
         {
@@ -703,6 +744,13 @@ private:
                     {
                         if (std::any_of(
                                 variable_width_formatter_M_is_month_name.begin(), variable_width_formatter_M_is_month_name.end(),
+                                [&](char c){ return c == format[i + 1]; }))
+                            return false;
+                    }
+                    if (mysql_format_ckl_without_leading_zeros)
+                    {
+                        if (std::any_of(
+                                variable_width_formatter_leading_zeros.begin(), variable_width_formatter_leading_zeros.end(),
                                 [&](char c){ return c == format[i + 1]; }))
                             return false;
                     }
@@ -725,6 +773,7 @@ private:
 
     const bool mysql_M_is_month_name;
     const bool mysql_f_prints_single_zero;
+    const bool mysql_format_ckl_without_leading_zeros;
 
 public:
     static constexpr auto name = Name::name;
@@ -734,6 +783,7 @@ public:
     explicit FunctionFormatDateTimeImpl(ContextPtr context)
         : mysql_M_is_month_name(context->getSettings().formatdatetime_parsedatetime_m_is_month_name)
         , mysql_f_prints_single_zero(context->getSettings().formatdatetime_f_prints_single_zero)
+        , mysql_format_ckl_without_leading_zeros(context->getSettings().formatdatetime_format_without_leading_zeros)
     {
     }
 
@@ -803,18 +853,7 @@ public:
         {
             if (arguments.size() == 1)
             {
-                if (!castType(arguments[0].type.get(), [&](const auto & type)
-                    {
-                        using FromDataType = std::decay_t<decltype(type)>;
-                        res = ConvertImpl<FromDataType, DataTypeDateTime, Name>::execute(arguments, result_type, input_rows_count);
-                        return true;
-                    }))
-                {
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                                    "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime "
-                                    "or DateTime64 when arguments size is 1.",
-                                    arguments[0].column->getName(), getName());
-                }
+                return castColumn(arguments[0], result_type);
             }
             else
             {
@@ -894,7 +933,7 @@ public:
         ///   column rows are NOT populated with the template and left uninitialized. We run the normal instructions for formatters AND
         ///   instructions that copy literal characters before/between/after formatters. As a result, each byte of each result row is
         ///   written which is obviously slow.
-        bool mysql_with_only_fixed_length_formatters = (format_syntax == FormatSyntax::MySQL) ? containsOnlyFixedWidthMySQLFormatters(format, mysql_M_is_month_name) : false;
+        bool mysql_with_only_fixed_length_formatters = (format_syntax == FormatSyntax::MySQL) ? containsOnlyFixedWidthMySQLFormatters(format, mysql_M_is_month_name, mysql_format_ckl_without_leading_zeros) : false;
 
         using T = typename InstructionValueTypeMap<DataType>::InstructionValueType;
         std::vector<Instruction<T>> instructions;
@@ -1086,12 +1125,22 @@ public:
                         break;
                     }
 
-                    // Month as a integer number (01-12)
+                    // Month as a integer number:
+                    // - if formatdatetime_format_without_leading_zeros = true: prints without leading zero, i.e. 1-12
+                    // - otherwise: print with leading zeros: i.e. 01-12
                     case 'c':
                     {
                         Instruction<T> instruction;
-                        instruction.setMysqlFunc(&Instruction<T>::mysqlMonth);
-                        instructions.push_back(std::move(instruction));
+                        if (mysql_format_ckl_without_leading_zeros)
+                        {
+                            instruction.setMysqlFunc(&Instruction<T>::mysqlMonthWithoutLeadingZero);
+                            instructions.push_back(std::move(instruction));
+                        }
+                        else
+                        {
+                            instruction.setMysqlFunc(&Instruction<T>::mysqlMonth);
+                            instructions.push_back(std::move(instruction));
+                        }
                         out_template += "00";
                         break;
                     }
@@ -1400,20 +1449,30 @@ public:
                         break;
                     }
 
-                    // Hour in 24h format (00-23)
+                    // Hour in 24h format:
+                    // - if formatdatetime_format_without_leading_zeros = true: prints without leading zero, i.e. 0-23
+                    // - otherwise: print with leading zeros: i.e. 00-23
                     case 'k':
                     {
                         static constexpr std::string_view val = "00";
-                        add_time_instruction(&Instruction<T>::mysqlHour24, val);
+                        if (mysql_format_ckl_without_leading_zeros)
+                            add_time_instruction(&Instruction<T>::mysqlHour24WithoutLeadingZero, val);
+                        else
+                            add_time_instruction(&Instruction<T>::mysqlHour24, val);
                         out_template += val;
                         break;
                     }
 
-                    // Hour in 12h format (01-12)
+                    // Hour in 12h format:
+                    // - if formatdatetime_format_without_leading_zeros = true: prints without leading zero, i.e. 0-12
+                    // - otherwise: print with leading zeros: i.e. 00-12
                     case 'l':
                     {
                         static constexpr std::string_view val = "12";
-                        add_time_instruction(&Instruction<T>::mysqlHour12, val);
+                        if (mysql_format_ckl_without_leading_zeros)
+                            add_time_instruction(&Instruction<T>::mysqlHour12WithoutLeadingZero, val);
+                        else
+                            add_time_instruction(&Instruction<T>::mysqlHour12, val);
                         out_template += val;
                         break;
                     }

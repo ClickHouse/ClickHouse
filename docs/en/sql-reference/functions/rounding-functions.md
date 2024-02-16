@@ -53,7 +53,7 @@ The rounded number of the same type as the input number.
 **Example of use with Float**
 
 ``` sql
-SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3
+SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3;
 ```
 
 ``` text
@@ -67,7 +67,22 @@ SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3
 **Example of use with Decimal**
 
 ``` sql
-SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3
+SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;
+```
+
+``` text
+┌───x─┬─round(CAST(divide(number, 2), 'Decimal(10, 4)'))─┐
+│   0 │                                                0 │
+│ 0.5 │                                                1 │
+│   1 │                                                1 │
+└─────┴──────────────────────────────────────────────────┘
+```
+
+If you want to keep the trailing zeros, you need to enable `output_format_decimal_trailing_zeros`
+
+``` sql
+SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3 settings output_format_decimal_trailing_zeros=1;
+
 ```
 
 ``` text
@@ -107,11 +122,7 @@ round(3.65, 1) = 3.6
 
 Rounds a number to a specified decimal position.
 
-- If the rounding number is halfway between two numbers, the function uses banker’s rounding.
-
-        Banker's rounding is a method of rounding fractional numbers. When the rounding number is halfway between two numbers, it's rounded to the nearest even digit at the specified decimal position. For example: 3.5 rounds up to 4, 2.5 rounds down to 2.
-
-        It's the default rounding method for floating point numbers defined in [IEEE 754](https://en.wikipedia.org/wiki/IEEE_754#Roundings_to_nearest). The [round](#rounding_functions-round) function performs the same rounding for floating point numbers. The `roundBankers` function also rounds integers the same way, for example, `roundBankers(45, -1) = 40`.
+- If the rounding number is halfway between two numbers, the function uses banker’s rounding. Banker's rounding is a method of rounding fractional numbers. When the rounding number is halfway between two numbers, it's rounded to the nearest even digit at the specified decimal position. For example: 3.5 rounds up to 4, 2.5 rounds down to 2. It's the default rounding method for floating point numbers defined in [IEEE 754](https://en.wikipedia.org/wiki/IEEE_754#Roundings_to_nearest). The [round](#rounding_functions-round) function performs the same rounding for floating point numbers. The `roundBankers` function also rounds integers the same way, for example, `roundBankers(45, -1) = 40`.
 
 - In other cases, the function rounds numbers to the nearest integer.
 

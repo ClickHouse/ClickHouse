@@ -76,7 +76,7 @@ namespace
         static std::once_flag once_flag;
         std::call_once(once_flag, [&config]
         {
-            static Poco::Logger * logger = &Poco::Logger::get("grpc");
+            static LoggerRawPtr logger = getRawLogger("grpc");
             gpr_set_log_function([](gpr_log_func_args* args)
             {
                 if (args->severity == GPR_LOG_SEVERITY_DEBUG)
@@ -161,7 +161,7 @@ namespace
                     case GRPCObsoleteTransportCompression::NO_COMPRESSION: res.algorithm = GRPC_COMPRESS_NONE; break;
                     case GRPCObsoleteTransportCompression::DEFLATE: res.algorithm = GRPC_COMPRESS_DEFLATE; break;
                     case GRPCObsoleteTransportCompression::GZIP: res.algorithm = GRPC_COMPRESS_GZIP; break;
-                    case GRPCObsoleteTransportCompression::STREAM_GZIP: res.algorithm = GRPC_COMPRESS_STREAM_GZIP; break;
+                    case GRPCObsoleteTransportCompression::STREAM_GZIP: throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "STREAM_GZIP is no longer supported"); /// was flagged experimental in gRPC, removed as per v1.44
                     default: throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "Unknown compression algorithm: {}", GRPCObsoleteTransportCompression::CompressionAlgorithm_Name(query_info.obsolete_result_compression().algorithm()));
                 }
 
@@ -206,7 +206,7 @@ namespace
             else if (str == "gzip")
                 algorithm = GRPC_COMPRESS_GZIP;
             else if (str == "stream_gzip")
-                algorithm = GRPC_COMPRESS_STREAM_GZIP;
+                throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "STREAM_GZIP is no longer supported"); /// was flagged experimental in gRPC, removed as per v1.44
             else
                 throw Exception(error_code, "Unknown compression algorithm: '{}'", str);
         }
@@ -419,7 +419,11 @@ namespace
         void read(GRPCQueryInfo & query_info_, const CompletionCallback & callback) override
         {
             if (!query_info.has_value())
+            {
                 callback(false);
+                return;
+            }
+
             query_info_ = std::move(query_info).value();
             query_info.reset();
             callback(true);
@@ -486,7 +490,11 @@ namespace
         void read(GRPCQueryInfo & query_info_, const CompletionCallback & callback) override
         {
             if (!query_info.has_value())
+            {
                 callback(false);
+                return;
+            }
+
             query_info_ = std::move(query_info).value();
             query_info.reset();
             callback(true);
@@ -614,7 +622,7 @@ namespace
     class Call
     {
     public:
-        Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, Poco::Logger * log_);
+        Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_);
         ~Call();
 
         void start(const std::function<void(void)> & on_finish_call_callback);
@@ -656,7 +664,7 @@ namespace
         const CallType call_type;
         std::unique_ptr<BaseResponder> responder;
         IServer & iserver;
-        Poco::Logger * log = nullptr;
+        LoggerRawPtr log = nullptr;
 
         std::optional<Session> session;
         ContextMutablePtr query_context;
@@ -718,7 +726,7 @@ namespace
     };
 // NOLINTEND(clang-analyzer-optin.performance.Padding)
 
-    Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, Poco::Logger * log_)
+    Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_)
         : call_type(call_type_), responder(std::move(responder_)), iserver(iserver_), log(log_)
     {
     }
@@ -1843,7 +1851,7 @@ private:
 GRPCServer::GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & address_to_listen_)
     : iserver(iserver_)
     , address_to_listen(address_to_listen_)
-    , log(&Poco::Logger::get("GRPCServer"))
+    , log(getRawLogger("GRPCServer"))
     , runner(std::make_unique<Runner>(*this))
 {}
 

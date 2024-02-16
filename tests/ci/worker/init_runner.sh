@@ -1,4 +1,46 @@
 #!/usr/bin/env bash
+
+cat > /dev/null << 'EOF'
+The following content is embedded into the s3 object via the script
+deploy-runner-init.sh {staging,production}
+with additional helping information
+
+In the `user data` you should define as the following text
+between `### COPY BELOW` and `### COPY ABOVE`
+
+### COPY BELOW
+Content-Type: multipart/mixed; boundary="//"
+MIME-Version: 1.0
+
+--//
+Content-Type: text/cloud-config; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="cloud-config.txt"
+
+#cloud-config
+cloud_final_modules:
+- [scripts-user, always]
+
+--//
+Content-Type: text/x-shellscript; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="userdata.txt"
+
+#!/bin/bash
+INSTANCE_ID=$(ec2metadata --instance-id)
+INIT_ENVIRONMENT=$(/usr/local/bin/aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE_ID" --query "Tags[?Key=='github:init-environment'].Value" --output text)
+echo "Downloading and using $INIT_ENVIRONMENT cloud-init.sh"
+aws s3 cp "s3://github-runners-data/cloud-init/${INIT_ENVIRONMENT:-production}.sh" /tmp/cloud-init.sh
+chmod 0700 /tmp/cloud-init.sh
+exec bash /tmp/cloud-init.sh
+--//
+### COPY ABOVE
+EOF
+
+# THE SCRIPT START
+
 set -uo pipefail
 
 ####################################
@@ -88,6 +130,23 @@ terminate_and_exit() {
 
 declare -f terminate_and_exit >> /tmp/actions-hooks/common.sh
 
+check_spot_instance_is_old() {
+    # This function should be executed ONLY BETWEEN runnings.
+    # It's unsafe to execute while the runner is working!
+    local LIFE_CYCLE
+    LIFE_CYCLE=$(curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle)
+    if [ "$LIFE_CYCLE" == "spot" ]; then
+        local UPTIME
+        UPTIME=$(< /proc/uptime)
+        UPTIME=${UPTIME%%.*}
+        if (( 3600 < UPTIME )); then
+            echo "The spot instance has uptime $UPTIME, it's time to shut it down"
+            return 0
+        fi
+    fi
+    return 1
+}
+
 check_proceed_spot_termination() {
     # The function checks and proceeds spot instance termination if exists
     # The event for spot instance termination
@@ -104,7 +163,7 @@ check_proceed_spot_termination() {
             if [ -n "$runner_pid" ]; then
                 # Kill the runner to not allow it cancelling the job
                 # shellcheck disable=SC2046
-                kill -9 $(list_children "$runner_pid")
+                kill -9 "$runner_pid" $(list_children "$runner_pid")
             fi
             sudo -u ubuntu ./config.sh remove --token "$(get_runner_token)"
             terminate_and_exit
@@ -119,6 +178,7 @@ no_terminating_metadata() {
     # The event for rebalance recommendation. Not strict, so we have some room to make a decision here
     if curl -s --fail http://169.254.169.254/latest/meta-data/events/recommendations/rebalance; then
         echo 'Received recommendation to rebalance, checking the uptime'
+        local UPTIME
         UPTIME=$(< /proc/uptime)
         UPTIME=${UPTIME%%.*}
         # We don't shutdown the instances younger than 30m
@@ -260,14 +320,17 @@ while true; do
         # If runner is not active, check that it needs to terminate itself
         echo "Checking if the instance suppose to terminate"
         no_terminating_metadata || terminate_on_event
+        check_spot_instance_is_old && terminate_and_exit
         check_proceed_spot_termination
 
         echo "Going to configure runner"
-        sudo -u ubuntu ./config.sh --url $RUNNER_URL --token "$(get_runner_token)" --ephemeral \
+        sudo -u ubuntu ./config.sh --url $RUNNER_URL --token "$(get_runner_token)" \
+          --ephemeral --disableupdate --unattended \
           --runnergroup Default --labels "$LABELS" --work _work --name "$INSTANCE_ID"
 
         echo "Another one check to avoid race between runner and infrastructure"
         no_terminating_metadata || terminate_on_event
+        check_spot_instance_is_old && terminate_and_exit
         check_proceed_spot_termination
 
         echo "Run"
@@ -275,7 +338,7 @@ while true; do
           ACTIONS_RUNNER_HOOK_JOB_STARTED=/tmp/actions-hooks/pre-run.sh \
           ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/tmp/actions-hooks/post-run.sh \
           ./run.sh &
-        sleep 15
+        sleep 10
     else
         echo "Runner is working with pid $runner_pid, checking the metadata in background"
         check_proceed_spot_termination
@@ -291,8 +354,8 @@ while true; do
                 terminate_and_exit
             fi
         fi
-        sleep 5
     fi
+    sleep 5
 done
 
 # vim:ts=4:sw=4

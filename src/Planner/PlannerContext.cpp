@@ -20,12 +20,15 @@ const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const Quer
     return createColumnIdentifier(column_node_typed.getColumn(), column_source_node);
 }
 
-const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & /*column_source_node*/)
+const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node)
 {
     std::string column_identifier;
 
-    column_identifier += column.name;
-    column_identifier += '_' + std::to_string(column_identifiers.size());
+    const auto & source_alias = column_source_node->getAlias();
+    if (!source_alias.empty())
+        column_identifier = source_alias + "." + column.name;
+    else
+        column_identifier = column.name;
 
     auto [it, inserted] = column_identifiers.emplace(column_identifier);
     assert(inserted);

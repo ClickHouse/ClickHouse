@@ -13,7 +13,7 @@ serde_json = "1.0"
 crate-type = ["staticlib"]
 
 [profile.release]
-debug = true
+debug = false
 
 [profile.release-thinlto]
 inherits = "release"

@@ -43,7 +43,7 @@ public:
     /// Returns UUID of the backup.
     virtual UUID getUUID() const = 0;
 
-    /// Returns the base backup (can be null).
+    /// Returns the base backup or null if there is no base backup.
     virtual std::shared_ptr<const IBackup> getBaseBackup() const = 0;
 
     /// Returns the number of files stored in the backup. Compare with getNumEntries().

@@ -15,11 +15,12 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemNamedCollections::getNamesAndTypes()
+ColumnsDescription StorageSystemNamedCollections::getColumnsDescription()
 {
-    return {
-        {"name", std::make_shared<DataTypeString>()},
-        {"collection", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "Name of the collection."},
+        {"collection", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "Collection internals."},
     };
 }
 

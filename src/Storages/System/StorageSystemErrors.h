@@ -18,7 +18,7 @@ class StorageSystemErrors final : public IStorageSystemOneBlock<StorageSystemErr
 public:
     std::string getName() const override { return "SystemErrors"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

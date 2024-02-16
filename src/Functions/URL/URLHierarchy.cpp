@@ -1,8 +1,14 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsStringArray.h>
+#include <Functions/FunctionTokens.h>
+
 
 namespace DB
 {
+
+namespace
+{
+
+using Pos = const char *;
 
 class URLPathHierarchyImpl
 {
@@ -14,7 +20,6 @@ private:
 
 public:
     static constexpr auto name = "URLPathHierarchy";
-    static String getName() { return name; }
 
     static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 1; }
@@ -95,8 +100,9 @@ public:
 };
 
 
-struct NameURLPathHierarchy { static constexpr auto name = "URLPathHierarchy"; };
 using FunctionURLPathHierarchy = FunctionTokens<URLPathHierarchyImpl>;
+
+}
 
 REGISTER_FUNCTION(URLPathHierarchy)
 {
