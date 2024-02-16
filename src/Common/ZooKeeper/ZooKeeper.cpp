@@ -669,11 +669,12 @@ Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests
 
         if (check_session_valid)
         {
-            if (code != Coordination::Error::ZOK && getFailedOpIndex(code, responses) == requests.size())
+            if (code != Coordination::Error::ZOK && !Coordination::isHardwareError(code) && getFailedOpIndex(code, responses) == requests.size())
             {
                 impl->finalize(fmt::format("Session was killed: {}", requests.back()->getPath()));
             }
             responses.pop_back();
+            chassert(code == Coordination::Error::ZOK || responses.back()->error != Coordination::Error::ZOK);
         }
 
         return code;
@@ -954,17 +955,6 @@ Coordination::ReconfigResponse ZooKeeper::reconfig(
     }
 
     return future_result.get();
-}
-
-
-ZooKeeperPtr ZooKeeper::createWithoutKillingPreviousSessions(const ZooKeeperArgs & args_)
-{
-    return std::shared_ptr<ZooKeeper>(new ZooKeeper(args_));
-}
-
-ZooKeeperPtr ZooKeeper::createWithoutKillingPreviousSessions(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
-{
-    return std::shared_ptr<ZooKeeper>(new ZooKeeper(config, config_name, /* zk_log */ nullptr));
 }
 
 ZooKeeperPtr ZooKeeper::create(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_)

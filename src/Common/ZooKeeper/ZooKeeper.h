@@ -222,7 +222,7 @@ class ZooKeeper
             <identity>user:password</identity>
         </zookeeper>
     */
-    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
     /// See addCheckSessionOp
     void initSession();
@@ -237,10 +237,11 @@ public:
                       const std::string & config_name,
                       std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
-    static Ptr createWithoutKillingPreviousSessions(const Poco::Util::AbstractConfiguration & config,
-                                                    const std::string & config_name);
-
-    static Ptr createWithoutKillingPreviousSessions(const ZooKeeperArgs & args_);
+    template <typename... Args>
+    static Ptr createWithoutKillingPreviousSessions(Args &&... args)
+    {
+        return std::shared_ptr<ZooKeeper>(new ZooKeeper(std::forward<Args>(args)...));
+    }
 
     /// Creates a new session with the same parameters. This method can be used for reconnecting
     /// after the session has expired.
