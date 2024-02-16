@@ -41,7 +41,7 @@ const RowPolicyFilterTypeInfo & RowPolicyFilterTypeInfo::get(RowPolicyFilterType
         String init_command = init_name.substr(0, underscore_pos);
         boost::to_upper(init_command);
         bool init_is_check = (std::string_view{init_name}.substr(underscore_pos + 1) == "check");
-        return RowPolicyFilterTypeInfo{raw_name_, std::move(init_name), std::move(init_command), std::move(comment_), init_is_check};
+        return RowPolicyFilterTypeInfo{raw_name_, std::move(init_name), std::move(init_command), comment_, init_is_check};
     };
 
     switch (type_)
