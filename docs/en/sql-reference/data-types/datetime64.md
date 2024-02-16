@@ -9,7 +9,7 @@ sidebar_label: DateTime64
 Allows to store an instant in time, that can be expressed as a calendar date and a time of a day, with defined sub-second precision
 
 Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
-Typically are used - 3 (milliseconds), 6 (microseconds), 9 (nanoseconds).
+Typically, are used - 3 (milliseconds), 6 (microseconds), 9 (nanoseconds).
 
 **Syntax:**
 

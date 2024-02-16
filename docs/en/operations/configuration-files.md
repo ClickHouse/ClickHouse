@@ -6,7 +6,7 @@ sidebar_label: Configuration Files
 
 # Configuration Files
 
-The ClickHouse server can be configured with configuration files in XML or YAML syntax. In most installation types, the ClickHouse server runs with `/etc/clickhouse-server/config.xml` as default configuration file but it is also possible to specify the location of the configuration file manually at server startup using command line option `--config-file=` or `-C`. Additional configuration files may be placed into directory `config.d/` relative to the main configuration file, for example into directory `/etc/clickhouse-server/config.d/`. Files in this directory and the main configuration are merged in a preprocessing step before the configuration is applied in ClickHouse server. Configuration files are merged in alphabetical order. To simplify updates and improve modularization, it is best practice to keep the default `config.xml` file unmodified and place additional customization into `config.d/`.
+The ClickHouse server can be configured with configuration files in XML or YAML syntax. In most installation types, the ClickHouse server runs with `/etc/clickhouse-server/config.xml` as default configuration file, but it is also possible to specify the location of the configuration file manually at server startup using command line option `--config-file=` or `-C`. Additional configuration files may be placed into directory `config.d/` relative to the main configuration file, for example into directory `/etc/clickhouse-server/config.d/`. Files in this directory and the main configuration are merged in a preprocessing step before the configuration is applied in ClickHouse server. Configuration files are merged in alphabetical order. To simplify updates and improve modularization, it is best practice to keep the default `config.xml` file unmodified and place additional customization into `config.d/`.
 
 It is possible to mix XML and YAML configuration files, for example you could have a main configuration file `config.xml` and additional configuration files `config.d/network.xml`, `config.d/timezone.yaml` and `config.d/keeper.yaml`. Mixing XML and YAML within a single configuration file is not supported. XML configuration files should use `<clickhouse>...</clickhouse>` as top-level tag. In YAML configuration files, `clickhouse:` is optional, the parser inserts it implicitly if absent.
 
@@ -36,7 +36,7 @@ which is equal to
 <clickhouse>
     <profiles>
         <default>
-            <max_query_size/>150000</max_query_size>
+            <max_query_size>150000</max_query_size>
         </default>
     </profiles>
 </clickhouse>
@@ -63,7 +63,7 @@ XML substitution example:
 </clickhouse>
 ```
 
-Substitutions can also be performed from ZooKeeper. To do this, specify the attribute `from_zk = "/path/to/node"`. The element value is replaced with the contents of the node at `/path/to/node` in ZooKeeper. You can also put an entire XML subtree on the ZooKeeper node and it will be fully inserted into the source element.
+Substitutions can also be performed from ZooKeeper. To do this, specify the attribute `from_zk = "/path/to/node"`. The element value is replaced with the contents of the node at `/path/to/node` in ZooKeeper. You can also put an entire XML subtree on the ZooKeeper node, and it will be fully inserted into the source element.
 
 ## Encrypting and Hiding Configuration {#encryption}
 

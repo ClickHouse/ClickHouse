@@ -97,6 +97,7 @@
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperReadinessHandler.h>
 #include <Server/HTTP/HTTPServer.h>
+#include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Core/ServerSettings.h>
 #include <filesystem>
@@ -1958,6 +1959,11 @@ try
                                                                      "distributed_ddl", "DDLWorker",
                                                                      &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID),
                                          load_metadata_tasks);
+        }
+
+        if (config().has(DB::PlacementInfo::PLACEMENT_CONFIG_PREFIX))
+        {
+            PlacementInfo::PlacementInfo::instance().initialize(config());
         }
 
         /// Do not keep tasks in server, they should be kept inside databases. Used here to make dependent tasks only.

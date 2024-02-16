@@ -716,6 +716,27 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+
+#ifndef NDEBUG
+            /// Verify that AST formatting is consistent:
+            /// If you format AST, parse it back, and format it again, you get the same string.
+
+            String formatted1 = ast->formatForErrorMessage();
+
+            ASTPtr ast2 = parseQuery(parser,
+                formatted1.data(),
+                formatted1.data() + formatted1.size(),
+                "", max_query_size, settings.max_parser_depth);
+
+            chassert(ast2);
+
+            String formatted2 = ast2->formatForErrorMessage();
+
+            if (formatted1 != formatted2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Inconsistent AST formatting: the query:\n{}\nWas parsed and formatted back as:\n{}",
+                    formatted1, formatted2);
+#endif
         }
 
         const char * query_end = end;
@@ -927,8 +948,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 reason = "asynchronous insert queue is not configured";
             else if (insert_query->select)
                 reason = "insert query has select";
-            else if (settings.deduplicate_blocks_in_dependent_materialized_views)
-                reason = "dependent materialized views block deduplication is enabled";
             else if (insert_query->hasInlinedData())
                 async_insert = true;
 
