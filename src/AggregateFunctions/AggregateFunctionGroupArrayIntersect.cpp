@@ -278,7 +278,7 @@ public:
     {
         auto & map = this->data(place).value;
         const auto & rhs_map = this->data(rhs).value;
-        
+
         if (this->data(rhs).version == 0)
             return;
 
