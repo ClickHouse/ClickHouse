@@ -109,9 +109,14 @@ void MergeTreeSink::consume(Chunk chunk)
             }
         }
 
-        size_t max_insert_delayed_streams_for_parallel_write = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
-        if (!support_parallel_write || settings.max_insert_delayed_streams_for_parallel_write.changed)
+        size_t max_insert_delayed_streams_for_parallel_write;
+
+        if (settings.max_insert_delayed_streams_for_parallel_write.changed)
             max_insert_delayed_streams_for_parallel_write = settings.max_insert_delayed_streams_for_parallel_write;
+        else if (support_parallel_write)
+            max_insert_delayed_streams_for_parallel_write = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
+        else
+            max_insert_delayed_streams_for_parallel_write = 0;
 
         /// In case of too much columns/parts in block, flush explicitly.
         streams += temp_part.streams.size();
