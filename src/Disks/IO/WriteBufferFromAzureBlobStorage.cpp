@@ -98,7 +98,7 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
     auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
     execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, max_unexpected_write_error_retries);
 
-    LOG_DEBUG(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
+    LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
 }
 
 void WriteBufferFromAzureBlobStorage::nextImpl()
