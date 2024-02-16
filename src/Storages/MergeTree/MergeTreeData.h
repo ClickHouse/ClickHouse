@@ -1356,14 +1356,12 @@ protected:
     /// mechanisms for parts locking
     virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
 
-    /// Return most recent mutations RENAME_COLUMN commands for part which
-    /// weren't applied Used to receive AlterConversions for part and apply
-    /// them on fly. This method has different implementations for replicated
-    /// and non replicated MergeTree because they store mutations in different
-    /// way.
+    /// Return pending mutations that weren't applied to `part` yet and should be applied on the fly
+    /// (i.e. when reading from the part). Mutations not supported by AlterConversions
+    /// (supportsMutationCommandType()) can be omitted.
     ///
-    /// @return list of mutations (not sorted)
-    virtual std::vector<MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
+    /// @return list of mutations, in *reverse* order (newest to oldest)
+    virtual MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
 
     struct PartBackupEntries
     {

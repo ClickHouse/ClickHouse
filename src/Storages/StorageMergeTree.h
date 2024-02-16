@@ -308,7 +308,7 @@ private:
     };
 
 protected:
-    std::vector<MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+    MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 };
 
 }
