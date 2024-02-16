@@ -203,7 +203,12 @@ public:
         return std::make_pair(it, false);
     }
 
-    void insertOrReplace(const std::string & key, const V & value)
+    void reserve(size_t node_num)
+    {
+        map.reserve(node_num);
+    }
+
+    void insertOrReplace(StringRef key, V value)
     {
         size_t hash_value = map.hash(key);
         auto it = map.find(key, hash_value);
@@ -211,7 +216,7 @@ public:
 
         if (it == map.end())
         {
-            ListElem elem{copyStringInArena(arena, key), value};
+            ListElem elem{key, std::move(value)};
             elem.setVersion(current_version);
             auto itr = list.insert(list.end(), std::move(elem));
             bool inserted;
@@ -225,7 +230,7 @@ public:
             auto list_itr = it->getMapped();
             if (snapshot_mode)
             {
-                ListElem elem{list_itr->key, value};
+                ListElem elem{list_itr->key, std::move(value)};
                 elem.setVersion(current_version);
                 list_itr->setInactiveInMap();
                 auto new_list_itr = list.insert(list.end(), std::move(elem));
@@ -234,10 +239,10 @@ public:
             }
             else
             {
-                list_itr->value = value;
+                list_itr->value = std::move(value);
             }
         }
-        updateDataSize(INSERT_OR_REPLACE, key.size(), value.sizeInBytes(), old_value_size, !snapshot_mode);
+        updateDataSize(INSERT_OR_REPLACE, key.size, value.sizeInBytes(), old_value_size, !snapshot_mode);
     }
 
     bool erase(const std::string & key)

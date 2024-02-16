@@ -234,6 +234,37 @@ KeeperStorage::Node::Node(const Node & other)
     *this = other;
 }
 
+KeeperStorage::Node & KeeperStorage::Node::operator=(Node && other) noexcept
+{
+    if (this == &other)
+        return *this;
+
+    czxid = other.czxid;
+    mzxid = other.mzxid;
+    pzxid = other.pzxid;
+    acl_id = other.acl_id;
+    mtime = other.mtime;
+    is_ephemeral_and_ctime = other.is_ephemeral_and_ctime;
+    ephemeral_or_children_data = other.ephemeral_or_children_data;
+    version = other.version;
+    cversion = other.cversion;
+    aversion = other.aversion;
+
+    data_size = other.data_size;
+    data = std::move(other.data);
+
+    other.data_size = 0;
+
+    children = std::move(other.children);
+
+    return *this;
+}
+
+KeeperStorage::Node::Node(Node && other) noexcept
+{
+    *this = std::move(other);
+}
+
 bool KeeperStorage::Node::empty() const
 {
     return data_size == 0 && mzxid == 0;
