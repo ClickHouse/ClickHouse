@@ -262,3 +262,72 @@ def test_partition_parallel_reading_with_cluster(cluster):
     )
 
     assert azure_cluster == "3\n"
+
+
+def test_format_detection(cluster):
+    node = cluster.instances["node_0"]
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    account_name = "devstoreaccount1"
+    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection0', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'x UInt32, y String') select number as x, 'str_' || toString(number) from numbers(10)",
+    )
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection1', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'x UInt32, y String') select number as x, 'str_' || toString(number) from numbers(10, 10)",
+    )
+
+    expected_desc_result = azure_query(
+        node,
+        f"desc azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection*', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'auto')",
+    )
+
+    desc_result = azure_query(
+        node,
+        f"desc azureBlobStorageCluster('simple_cluster', '{storage_account_url}', 'cont', 'test_format_detection*', '{account_name}', '{account_key}')",
+    )
+
+    assert expected_desc_result == desc_result
+
+    expected_result = azure_query(
+        node,
+        f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection*', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'x UInt32, y String') order by x",
+    )
+
+    result = azure_query(
+        node,
+        f"select * from azureBlobStorageCluster('simple_cluster', '{storage_account_url}', 'cont', 'test_format_detection*', '{account_name}', '{account_key}') order by x",
+    )
+
+    assert result == expected_result
+
+    result = azure_query(
+        node,
+        f"select * from azureBlobStorageCluster('simple_cluster', '{storage_account_url}', 'cont', 'test_format_detection*', '{account_name}', '{account_key}', auto) order by x",
+    )
+
+    assert result == expected_result
+
+    result = azure_query(
+        node,
+        f"select * from azureBlobStorageCluster('simple_cluster', '{storage_account_url}', 'cont', 'test_format_detection*', '{account_name}', '{account_key}', auto, auto) order by x",
+    )
+
+    assert result == expected_result
+
+    result = azure_query(
+        node,
+        f"select * from azureBlobStorageCluster('simple_cluster', '{storage_account_url}', 'cont', 'test_format_detection*', '{account_name}', '{account_key}', 'x UInt32, y String') order by x",
+    )
+
+    assert result == expected_result
+
+    result = azure_query(
+        node,
+        f"select * from azureBlobStorageCluster('simple_cluster', '{storage_account_url}', 'cont', 'test_format_detection*', '{account_name}', '{account_key}', auto, auto, 'x UInt32, y String') order by x",
+    )
+
+    assert result == expected_result

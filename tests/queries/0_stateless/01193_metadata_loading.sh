@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-parallel, no-fasttest, no-s3-storage
+# Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-parallel, no-fasttest, no-s3-storage, no-sanitize-coverage
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,15 +8,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Check that attaching a database with a large number of tables is not too slow.
 # it is the worst way of making performance test, nevertheless it can detect significant slowdown and some other issues, that usually found by stress test
 
-db="test_01193_$RANDOM"
+db="test_01193_$RANDOM_$RANDOM_$RANDOM_$RANDOM"
 tables=1000
 threads=10
 count_multiplier=1
 max_time_ms=1500
-
-debug_or_sanitizer_build=$($CLICKHOUSE_CLIENT -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%' OR hasThreadFuzzer()")
-
-if [[ debug_or_sanitizer_build -eq 1 ]]; then tables=100; count_multiplier=10; max_time_ms=1500; fi
 
 create_tables() {
   $CLICKHOUSE_CLIENT -q "WITH

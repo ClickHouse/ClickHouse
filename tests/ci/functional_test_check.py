@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import argparse
-import atexit
 import csv
 import logging
 import os
@@ -11,34 +10,16 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
-# isort: off
-from github import Github
-
-# isort: on
-
 from build_download_helper import download_all_deb_packages
-from clickhouse_helper import (
-    CiLogsCredentials,
-    ClickHouseHelper,
-    prepare_tests_results_for_clickhouse,
-)
-from commit_status_helper import (
-    get_commit,
-    override_status,
-    post_commit_status,
-    post_commit_status_to_file,
-    update_mergeable_check,
-)
-from docker_images_helper import DockerImage, get_docker_image, pull_image
+from clickhouse_helper import CiLogsCredentials
+
+from docker_images_helper import DockerImage, pull_image, get_docker_image
 from download_release_packages import download_last_release
-from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
-from get_robot_token import get_best_robot_token
-from pr_info import FORCE_TESTS_LABEL, PRInfo
-from report import ERROR, SUCCESS, StatusType, TestResults, read_test_results
-from s3_helper import S3Helper
+from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
+from pr_info import PRInfo
+from report import ERROR, SUCCESS, JobReport, StatusType, TestResults, read_test_results
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from upload_result_helper import upload_results
 
 NO_CHANGES_MSG = "Nothing to run"
 
@@ -130,7 +111,7 @@ def get_run_command(
     )
 
 
-def get_tests_to_run(pr_info: PRInfo) -> List[str]:
+def _get_statless_tests_to_run(pr_info: PRInfo) -> List[str]:
     result = set()
 
     if pr_info.changed_files is None:
@@ -213,10 +194,10 @@ def parse_args():
         help="Check that added tests failed on latest stable",
     )
     parser.add_argument(
-        "--post-commit-status",
-        default="commit_status",
-        choices=["commit_status", "file"],
-        help="Where to public post commit status",
+        "--report-to-file",
+        type=str,
+        default="",
+        help="Path to write script report to (for --validate-bugfix)",
     )
     return parser.parse_args()
 
@@ -232,7 +213,6 @@ def main():
     reports_path.mkdir(parents=True, exist_ok=True)
 
     repo_path = Path(REPO_COPY)
-    post_commit_path = temp_path / "functional_commit_status.tsv"
 
     args = parse_args()
     check_name = args.check_name or os.getenv("CHECK_NAME")
@@ -249,62 +229,20 @@ def main():
     flaky_check = "flaky" in check_name.lower()
 
     run_changed_tests = flaky_check or validate_bugfix_check
-
-    # For validate_bugfix_check we need up to date information about labels, so pr_event_from_api is used
-    pr_info = PRInfo(
-        need_changed_files=run_changed_tests, pr_event_from_api=validate_bugfix_check
-    )
-
-    # FIXME: move to job report and remove
-    gh = Github(get_best_robot_token(), per_page=100)
-    commit = get_commit(gh, pr_info.sha)
-    atexit.register(update_mergeable_check, commit, pr_info, check_name)
-
-    if validate_bugfix_check and "pr-bugfix" not in pr_info.labels:
-        if args.post_commit_status == "file":
-            post_commit_status_to_file(
-                post_commit_path,
-                f"Skipped (no pr-bugfix in {pr_info.labels})",
-                SUCCESS,
-                "null",
-            )
-        logging.info("Skipping '%s' (no pr-bugfix in %s)", check_name, pr_info.labels)
-        sys.exit(0)
+    pr_info = PRInfo(need_changed_files=run_changed_tests)
+    tests_to_run = []
+    if run_changed_tests:
+        assert (
+            args.report_to_file
+        ), "JobReport file path must be provided with --validate-bugfix"
+        tests_to_run = _get_statless_tests_to_run(pr_info)
 
     if "RUN_BY_HASH_NUM" in os.environ:
         run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
         run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
-        check_name_with_group = (
-            check_name + f" [{run_by_hash_num + 1}/{run_by_hash_total}]"
-        )
     else:
         run_by_hash_num = 0
         run_by_hash_total = 0
-        check_name_with_group = check_name
-
-    tests_to_run = []
-    if run_changed_tests:
-        tests_to_run = get_tests_to_run(pr_info)
-        if not tests_to_run:
-            state = override_status(SUCCESS, check_name, validate_bugfix_check)
-            if args.post_commit_status == "commit_status":
-                post_commit_status(
-                    commit,
-                    state,
-                    "",
-                    NO_CHANGES_MSG,
-                    check_name_with_group,
-                    pr_info,
-                    dump_to_file=True,
-                )
-            elif args.post_commit_status == "file":
-                post_commit_status_to_file(
-                    post_commit_path,
-                    description=NO_CHANGES_MSG,
-                    state=state,
-                    report_url="null",
-                )
-            sys.exit(0)
 
     image_name = get_image_name(check_name)
 
@@ -338,91 +276,65 @@ def main():
         pr_info, stopwatch.start_time_str, check_name
     )
 
-    run_command = get_run_command(
-        check_name,
-        packages_path,
-        repo_path,
-        result_path,
-        server_log_path,
-        kill_timeout,
-        additional_envs,
-        ci_logs_args,
-        docker_image,
-        flaky_check,
-        tests_to_run,
-    )
-    logging.info("Going to run func tests: %s", run_command)
-
-    with TeePopen(run_command, run_log_path) as process:
-        retcode = process.wait()
-        if retcode == 0:
-            logging.info("Run successfully")
-        else:
-            logging.info("Run failed")
-
-    try:
-        subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
-    except subprocess.CalledProcessError:
-        logging.warning("Failed to change files owner in %s, ignoring it", temp_path)
-
-    ci_logs_credentials.clean_ci_logs_from_credentials(run_log_path)
-    s3_helper = S3Helper()
-
-    state, description, test_results, additional_logs = process_results(
-        result_path, server_log_path
-    )
-    state = override_status(state, check_name, invert=validate_bugfix_check)
-
-    ch_helper = ClickHouseHelper()
-
-    report_url = upload_results(
-        s3_helper,
-        pr_info.number,
-        pr_info.sha,
-        test_results,
-        [run_log_path] + additional_logs,
-        check_name_with_group,
-    )
-
-    print(f"::notice:: {check_name} Report url: {report_url}")
-    if args.post_commit_status == "commit_status":
-        post_commit_status(
-            commit,
-            state,
-            report_url,
-            description,
-            check_name_with_group,
-            pr_info,
-            dump_to_file=True,
+    if (not validate_bugfix_check and not flaky_check) or tests_to_run:
+        run_command = get_run_command(
+            check_name,
+            packages_path,
+            repo_path,
+            result_path,
+            server_log_path,
+            kill_timeout,
+            additional_envs,
+            ci_logs_args,
+            docker_image,
+            flaky_check,
+            tests_to_run,
         )
-    elif args.post_commit_status == "file":
-        post_commit_status_to_file(
-            post_commit_path,
-            description,
-            state,
-            report_url,
+        logging.info("Going to run func tests: %s", run_command)
+
+        with TeePopen(run_command, run_log_path) as process:
+            retcode = process.wait()
+            if retcode == 0:
+                logging.info("Run successfully")
+            else:
+                logging.info("Run failed")
+
+        try:
+            subprocess.check_call(
+                f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True
+            )
+        except subprocess.CalledProcessError:
+            logging.warning(
+                "Failed to change files owner in %s, ignoring it", temp_path
+            )
+
+        ci_logs_credentials.clean_ci_logs_from_credentials(run_log_path)
+
+        state, description, test_results, additional_logs = process_results(
+            result_path, server_log_path
         )
     else:
-        raise Exception(
-            f'Unknown post_commit_status option "{args.post_commit_status}"'
+        print(
+            "This is validate bugfix or flaky check run, but no changes test to run - skip with success"
+        )
+        state, description, test_results, additional_logs = (
+            SUCCESS,
+            "No tests to run",
+            [],
+            [],
         )
 
-    prepared_events = prepare_tests_results_for_clickhouse(
-        pr_info,
-        test_results,
-        state,
-        stopwatch.duration_seconds,
-        stopwatch.start_time_str,
-        report_url,
-        check_name_with_group,
-    )
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+    JobReport(
+        description=description,
+        test_results=test_results,
+        status=state,
+        start_time=stopwatch.start_time_str,
+        duration=stopwatch.duration_seconds,
+        additional_files=additional_logs,
+    ).dump(to_file=args.report_to_file if args.report_to_file else None)
 
     if state != SUCCESS:
-        if FORCE_TESTS_LABEL in pr_info.labels:
-            print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
-        else:
-            sys.exit(1)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

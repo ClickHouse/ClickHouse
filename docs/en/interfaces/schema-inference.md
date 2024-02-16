@@ -13,7 +13,7 @@ can control it.
 
 Schema inference is used when ClickHouse needs to read the data in a specific data format and the structure is unknown.
 
-## Table functions [file](../sql-reference/table-functions/file.md), [s3](../sql-reference/table-functions/s3.md), [url](../sql-reference/table-functions/url.md), [hdfs](../sql-reference/table-functions/hdfs.md).
+## Table functions [file](../sql-reference/table-functions/file.md), [s3](../sql-reference/table-functions/s3.md), [url](../sql-reference/table-functions/url.md), [hdfs](../sql-reference/table-functions/hdfs.md), [azureBlobStorage](../sql-reference/table-functions/azureBlobStorage.md).
 
 These table functions have the optional argument `structure` with the structure of input data. If this argument is not specified or set to `auto`, the structure will be inferred from the data.
 
@@ -55,7 +55,7 @@ DESCRIBE file('hobbies.jsonl')
 └─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-## Table engines [File](../engines/table-engines/special/file.md), [S3](../engines/table-engines/integrations/s3.md), [URL](../engines/table-engines/special/url.md), [HDFS](../engines/table-engines/integrations/hdfs.md)
+## Table engines [File](../engines/table-engines/special/file.md), [S3](../engines/table-engines/integrations/s3.md), [URL](../engines/table-engines/special/url.md), [HDFS](../engines/table-engines/integrations/hdfs.md), [azureBlobStorage](../engines/table-engines/integrations/azureBlobStorage.md)
 
 If the list of columns is not specified in `CREATE TABLE` query, the structure of the table will be inferred automatically from the data.
 
@@ -1061,7 +1061,7 @@ $$)
 └──────────────┴───────────────┘
 ```
 
-## Values {#values}
+### Values {#values}
 
 In Values format ClickHouse extracts column value from the row and then parses it using
 the recursive parser similar to how literals are parsed.
@@ -1986,3 +1986,46 @@ Note:
 - As some of the files may not contain some columns from the resulting schema, union mode is supported only for formats that support reading subset of columns (like JSONEachRow, Parquet, TSVWithNames, etc) and won't work for other formats (like CSV, TSV, JSONCompactEachRow, etc).
 - If ClickHouse cannot infer the schema from one of the files, the exception will be thrown.
 - If you have a lot of files, reading schema from all of them can take a lot of time.
+
+
+## Automatic format detection {#automatic-format-detection}
+
+If data format is not specified and cannot be determined by the file extension, ClickHouse will try to detect the file format by its content.
+
+**Examples:**
+
+Let's say we have `data` with the following content:
+```
+"a","b"
+1,"Data1"
+2,"Data2"
+3,"Data3"
+```
+
+We can inspect and query this file without specifying format or structure:
+```sql
+:) desc file(data);
+```
+
+```text
+┌─name─┬─type─────────────┐
+│ a    │ Nullable(Int64)  │
+│ b    │ Nullable(String) │
+└──────┴──────────────────┘
+```
+
+```sql
+:) select * from file(data);
+```
+
+```text
+┌─a─┬─b─────┐
+│ 1 │ Data1 │
+│ 2 │ Data2 │
+│ 3 │ Data3 │
+└───┴───────┘
+```
+
+:::note
+ClickHouse can detect only some subset of formats and this detection takes some time, it's always better to specify the format explicitly.
+:::

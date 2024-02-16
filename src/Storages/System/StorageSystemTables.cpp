@@ -43,6 +43,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"data_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Paths to the table data in the file systems."},
         {"metadata_path", std::make_shared<DataTypeString>(), "Path to the table metadata in the file system."},
         {"metadata_modification_time", std::make_shared<DataTypeDateTime>(), "Time of latest modification of the table metadata."},
+        {"metadata_version", std::make_shared<DataTypeInt32>(), "Metadata version for ReplicatedMergeTree table, 0 for non ReplicatedMergeTree table."},
         {"dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Database dependencies."},
         {"dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Table dependencies (materialized views the current table)."},
         {"create_table_query", std::make_shared<DataTypeString>(), "The query that was used to create the table."},
@@ -287,6 +288,11 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // metadata_version
+                        // Temporary tables does not support replication
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
                         // dependencies_database
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
@@ -311,7 +317,7 @@ protected:
                         while (src_index < columns_mask.size())
                         {
                             // total_rows
-                            if (src_index == 18 && columns_mask[src_index])
+                            if (src_index == 19 && columns_mask[src_index])
                             {
                                 if (auto total_rows = table.second->totalRows(settings))
                                     res_columns[res_index++]->insert(*total_rows);
@@ -319,7 +325,7 @@ protected:
                                     res_columns[res_index++]->insertDefault();
                             }
                             // total_bytes
-                            else if (src_index == 19 && columns_mask[src_index])
+                            else if (src_index == 20 && columns_mask[src_index])
                             {
                                 if (auto total_bytes = table.second->totalBytes(settings))
                                     res_columns[res_index++]->insert(*total_bytes);
@@ -418,6 +424,18 @@ protected:
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(static_cast<UInt64>(database->getObjectMetadataModificationTime(table_name)));
 
+                StorageMetadataPtr metadata_snapshot;
+                if (table)
+                    metadata_snapshot = table->getInMemoryMetadataPtr();
+
+                if (columns_mask[src_index++])
+                {
+                    if (metadata_snapshot && table->supportsReplication())
+                        res_columns[res_index++]->insert(metadata_snapshot->metadata_version);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
                 {
                     Array views_table_name_array;
                     Array views_database_name_array;
@@ -481,10 +499,6 @@ protected:
                 }
                 else
                     src_index += 3;
-
-                StorageMetadataPtr metadata_snapshot;
-                if (table)
-                    metadata_snapshot = table->getInMemoryMetadataPtr();
 
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])

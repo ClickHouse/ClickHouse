@@ -33,7 +33,7 @@ clusterAllReplicas('cluster_name', db, table[, sharding_key])
 
 **Использование макросов**
 
-`cluster_name` может содержать макрос — подстановку в фигурных скобках. Эта подстановка заменяется на соответствующее значение из секции [macros](../../operations/server-configuration-parameters/settings.md#macros) конфигурационного файла .
+`cluster_name` может содержать макрос — подстановку в фигурных скобках. Эта подстановка заменяется на соответствующее значение из секции [macros](../../operations/server-configuration-parameters/settings.md#macros) конфигурационного файла.
 
 Пример:
 

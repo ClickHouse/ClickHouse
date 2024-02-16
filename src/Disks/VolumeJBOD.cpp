@@ -85,7 +85,7 @@ VolumeJBOD::VolumeJBOD(const VolumeJBOD & volume_jbod,
         DiskSelectorPtr disk_selector)
     : VolumeJBOD(volume_jbod.name, config, config_prefix, disk_selector)
 {
-    are_merges_avoided_user_override = volume_jbod.are_merges_avoided_user_override.load(std::memory_order_relaxed);
+    are_merges_avoided_user_override = volume_jbod.are_merges_avoided_user_override.load();
     last_used = volume_jbod.last_used.load(std::memory_order_relaxed);
 }
 

@@ -8,23 +8,11 @@ endif()
 set(LIB_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libssh")
 set(LIB_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/libssh")
 
-project(libssh VERSION 0.9.7 LANGUAGES C)
+# Set CMake variables which are used in libssh_version.h.cmake
+project(libssh VERSION 0.9.8 LANGUAGES C)
 
-# global needed variable
-set(APPLICATION_NAME ${PROJECT_NAME})
-
-# SOVERSION scheme: CURRENT.AGE.REVISION
-#   If there was an incompatible interface change:
-#     Increment CURRENT. Set AGE and REVISION to 0
-#   If there was a compatible interface change:
-#     Increment AGE. Set REVISION to 0
-#   If the source code was changed, but there were no interface changes:
-#     Increment REVISION.
-set(LIBRARY_VERSION "4.8.7")
+set(LIBRARY_VERSION "4.8.8")
 set(LIBRARY_SOVERSION "4")
-
-# Copy library files to a lib sub-directory
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${LIB_BINARY_DIR}/lib")
 
 set(CMAKE_THREAD_PREFER_PTHREADS ON)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
@@ -33,7 +21,87 @@ set(WITH_ZLIB OFF)
 set(WITH_SYMBOL_VERSIONING OFF)
 set(WITH_SERVER ON)
 
-include(IncludeSources.cmake)
+set(libssh_SRCS
+    ${LIB_SOURCE_DIR}/src/agent.c
+    ${LIB_SOURCE_DIR}/src/auth.c
+    ${LIB_SOURCE_DIR}/src/base64.c
+    ${LIB_SOURCE_DIR}/src/bignum.c
+    ${LIB_SOURCE_DIR}/src/buffer.c
+    ${LIB_SOURCE_DIR}/src/callbacks.c
+    ${LIB_SOURCE_DIR}/src/channels.c
+    ${LIB_SOURCE_DIR}/src/client.c
+    ${LIB_SOURCE_DIR}/src/config.c
+    ${LIB_SOURCE_DIR}/src/connect.c
+    ${LIB_SOURCE_DIR}/src/connector.c
+    ${LIB_SOURCE_DIR}/src/curve25519.c
+    ${LIB_SOURCE_DIR}/src/dh.c
+    ${LIB_SOURCE_DIR}/src/ecdh.c
+    ${LIB_SOURCE_DIR}/src/error.c
+    ${LIB_SOURCE_DIR}/src/getpass.c
+    ${LIB_SOURCE_DIR}/src/init.c
+    ${LIB_SOURCE_DIR}/src/kdf.c
+    ${LIB_SOURCE_DIR}/src/kex.c
+    ${LIB_SOURCE_DIR}/src/known_hosts.c
+    ${LIB_SOURCE_DIR}/src/knownhosts.c
+    ${LIB_SOURCE_DIR}/src/legacy.c
+    ${LIB_SOURCE_DIR}/src/log.c
+    ${LIB_SOURCE_DIR}/src/match.c
+    ${LIB_SOURCE_DIR}/src/messages.c
+    ${LIB_SOURCE_DIR}/src/misc.c
+    ${LIB_SOURCE_DIR}/src/options.c
+    ${LIB_SOURCE_DIR}/src/packet.c
+    ${LIB_SOURCE_DIR}/src/packet_cb.c
+    ${LIB_SOURCE_DIR}/src/packet_crypt.c
+    ${LIB_SOURCE_DIR}/src/pcap.c
+    ${LIB_SOURCE_DIR}/src/pki.c
+    ${LIB_SOURCE_DIR}/src/pki_container_openssh.c
+    ${LIB_SOURCE_DIR}/src/poll.c
+    ${LIB_SOURCE_DIR}/src/session.c
+    ${LIB_SOURCE_DIR}/src/scp.c
+    ${LIB_SOURCE_DIR}/src/socket.c
+    ${LIB_SOURCE_DIR}/src/string.c
+    ${LIB_SOURCE_DIR}/src/threads.c
+    ${LIB_SOURCE_DIR}/src/wrapper.c
+    ${LIB_SOURCE_DIR}/src/external/bcrypt_pbkdf.c
+    ${LIB_SOURCE_DIR}/src/external/blowfish.c
+    ${LIB_SOURCE_DIR}/src/external/chacha.c
+    ${LIB_SOURCE_DIR}/src/external/poly1305.c
+    ${LIB_SOURCE_DIR}/src/chachapoly.c
+    ${LIB_SOURCE_DIR}/src/config_parser.c
+    ${LIB_SOURCE_DIR}/src/token.c
+    ${LIB_SOURCE_DIR}/src/pki_ed25519_common.c
+
+    ${LIB_SOURCE_DIR}/src/threads/noop.c
+    ${LIB_SOURCE_DIR}/src/threads/pthread.c
+
+    # LIBCRYPT specific
+    ${libssh_SRCS}
+    ${LIB_SOURCE_DIR}/src/threads/libcrypto.c
+    ${LIB_SOURCE_DIR}/src/pki_crypto.c
+    ${LIB_SOURCE_DIR}/src/ecdh_crypto.c
+    ${LIB_SOURCE_DIR}/src/libcrypto.c
+    ${LIB_SOURCE_DIR}/src/dh_crypto.c
+
+    ${LIB_SOURCE_DIR}/src/options.c
+    ${LIB_SOURCE_DIR}/src/server.c
+    ${LIB_SOURCE_DIR}/src/bind.c
+    ${LIB_SOURCE_DIR}/src/bind_config.c
+)
+
+if (NOT (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC))
+    add_compile_definitions(USE_BORINGSSL=1)
+endif()
+
+configure_file(${LIB_SOURCE_DIR}/include/libssh/libssh_version.h.cmake ${LIB_BINARY_DIR}/include/libssh/libssh_version.h @ONLY)
+
+add_library(_ssh STATIC ${libssh_SRCS})
+add_library(ch_contrib::ssh ALIAS _ssh)
+
+target_link_libraries(_ssh PRIVATE OpenSSL::Crypto)
+
+target_include_directories(_ssh PUBLIC "${LIB_SOURCE_DIR}/include" "${LIB_BINARY_DIR}/include")
+
+# These headers need to be generated using the native build system on each platform.
 if (OS_LINUX)
     if (ARCH_AMD64)
         if (USE_MUSL)
@@ -63,7 +131,3 @@ elseif (OS_FREEBSD)
 else ()
     message(FATAL_ERROR "Platform is not supported")
 endif()
-
-configure_file(${LIB_SOURCE_DIR}/include/libssh/libssh_version.h.cmake
-               ${LIB_BINARY_DIR}/include/libssh/libssh_version.h
-               @ONLY)

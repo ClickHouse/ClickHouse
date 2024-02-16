@@ -32,12 +32,10 @@ namespace DB
 IStorageCluster::IStorageCluster(
     const String & cluster_name_,
     const StorageID & table_id_,
-    LoggerPtr log_,
-    bool structure_argument_was_provided_)
+    LoggerPtr log_)
     : IStorage(table_id_)
     , log(log_)
     , cluster_name(cluster_name_)
-    , structure_argument_was_provided(structure_argument_was_provided_)
 {
 }
 
@@ -130,8 +128,7 @@ void IStorageCluster::read(
         query_to_send = interpreter.getQueryInfo().query->clone();
     }
 
-    if (!structure_argument_was_provided)
-        addColumnsStructureToQuery(query_to_send, storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(), context);
+    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context);
 
     RestoreQualifiedNamesVisitor::Data data;
     data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));

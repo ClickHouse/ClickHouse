@@ -35,7 +35,6 @@
 #include <Server/TCPServer.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
-#include <Storages/StorageS3Cluster.h>
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
 #include <Access/AccessControl.h>
@@ -933,7 +932,7 @@ void TCPHandler::processInsertQuery()
         if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query.table_id, query_context))
             async_insert_enabled |= table->areAsynchronousInsertsEnabled();
 
-    if (insert_queue && async_insert_enabled && !insert_query.select && !settings.deduplicate_blocks_in_dependent_materialized_views)
+    if (insert_queue && async_insert_enabled && !insert_query.select)
     {
         auto result = processAsyncInsertQuery(*insert_queue);
         if (result.status == AsynchronousInsertQueue::PushResult::OK)

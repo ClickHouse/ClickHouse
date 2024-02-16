@@ -10,7 +10,7 @@ from typing import Tuple
 
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
-from pr_info import FORCE_TESTS_LABEL, PRInfo
+from pr_info import PRInfo
 from report import (
     ERROR,
     FAILURE,
@@ -190,13 +190,7 @@ def main():
 
     # Refuse other checks to run if fast test failed
     if state != SUCCESS:
-        if state == ERROR:
-            print("The status is 'error', report failure disregard the labels")
-            sys.exit(1)
-        elif FORCE_TESTS_LABEL in pr_info.labels:
-            print(f"'{FORCE_TESTS_LABEL}' enabled, reporting success")
-        else:
-            sys.exit(1)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

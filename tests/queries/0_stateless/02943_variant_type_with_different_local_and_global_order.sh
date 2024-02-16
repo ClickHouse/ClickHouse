@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-debug
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # reset --log_comment
@@ -74,11 +74,11 @@ run 0
 $CH_CLIENT -q "drop table test;"
 
 echo "MergeTree compact"
-$CH_CLIENT -q "create table test (id UInt64, v Variant(UInt64, String, Array(UInt64))) engine=MergeTree order by id settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000;"
+$CH_CLIENT -q "create table test (id UInt64, v Variant(UInt64, String, Array(UInt64))) engine=MergeTree order by id settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000, index_granularity = 8192, index_granularity_bytes = '10Mi';"
 run 1
 $CH_CLIENT -q "drop table test;"
 
 echo "MergeTree wide"
-$CH_CLIENT -q "create table test (id UInt64, v Variant(UInt64, String, Array(UInt64))) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1;"
+$CH_CLIENT -q "create table test (id UInt64, v Variant(UInt64, String, Array(UInt64))) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, index_granularity = 8192, index_granularity_bytes = '10Mi';"
 run 1
 $CH_CLIENT -q "drop table test;"

@@ -46,7 +46,7 @@ DROP DATABASE IF EXISTS test3;
 CREATE DATABASE test3 ENGINE = S3;
 USE test3;
 SELECT * FROM \"http://localhost:11111/test/a.myext\"
-""" 2>&1 | tr '\n' ' ' | grep -oF -e "UNKNOWN_TABLE" -e "BAD_ARGUMENTS" > /dev/null && echo "OK" || echo 'FAIL' ||:
+""" 2>&1 | tr '\n' ' ' | grep -oF -e "UNKNOWN_TABLE" -e "S3_ERROR" > /dev/null && echo "OK" || echo 'FAIL' ||:
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 USE test3;

@@ -62,7 +62,7 @@ void SerializationTuple::serializeBinary(const IColumn & column, size_t row_num,
 }
 
 
-template <typename ReturnType = void, typename F>
+template <typename ReturnType, typename F>
 static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
@@ -85,22 +85,14 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
 
     try
     {
-        if constexpr (throw_exception)
+        if (impl())
         {
-            impl();
             typeid_cast<ColumnTuple &>(column).addSize(1);
         }
         else
         {
-            if (impl())
-            {
-                typeid_cast<ColumnTuple &>(column).addSize(1);
-            }
-            else
-            {
-                restore_elements();
-                return ReturnType(false);
-            }
+            restore_elements();
+            return ReturnType(false);
         }
 
         // Check that all columns now have the same size.
@@ -133,10 +125,11 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
 
 void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    addElementSafe(elems.size(), column, [&]
+    addElementSafe<void>(elems.size(), column, [&]
     {
         for (size_t i = 0; i < elems.size(); ++i)
             elems[i]->deserializeBinary(extractElementColumn(column, i), istr, settings);
+        return true;
     });
 }
 
@@ -173,7 +166,7 @@ ReturnType SerializationTuple::deserializeTextImpl(IColumn & column, ReadBuffer 
                 if constexpr (throw_exception)
                     assertChar(',', istr);
                 else if (!checkChar(',', istr))
-                    return ReturnType(false);
+                    return false;
 
                 skipWhitespaceIfAny(istr);
             }
@@ -211,16 +204,16 @@ ReturnType SerializationTuple::deserializeTextImpl(IColumn & column, ReadBuffer 
         if constexpr (throw_exception)
             assertChar(')', istr);
         else if (!checkChar(')', istr))
-            return ReturnType(false);
+            return false;
 
         if (whole && !istr.eof())
         {
             if constexpr (throw_exception)
                 throwUnexpectedDataAfterParsedValue(column, istr, settings, "Tuple");
-            return ReturnType(false);
+            return false;
         }
 
-        return ReturnType(true);
+        return true;
     };
 
     return addElementSafe<ReturnType>(elems.size(), column, impl);
@@ -331,6 +324,7 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
                 SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(element_column, istr, settings, elems[element_pos]);
             else
                 elems[element_pos]->deserializeTextJSON(element_column, istr, settings);
+            return true;
         }
         else
         {
@@ -361,7 +355,7 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
                 {
                     if constexpr (throw_exception)
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected number of elements in named tuple. Expected no more than {} (consider enabling input_format_json_ignore_unknown_keys_in_named_tuple setting)", elems.size());
-                    return ReturnType(false);
+                    return false;
                 }
 
                 if (processed + skipped > 0)
@@ -369,7 +363,7 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
                     if constexpr (throw_exception)
                         assertChar(',', istr);
                     else if (!checkChar(',', istr))
-                        return ReturnType(false);
+                        return false;
                     skipWhitespaceIfAny(istr);
                 }
 
@@ -377,13 +371,13 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
                 if constexpr (throw_exception)
                     readDoubleQuotedString(name, istr);
                 else if (!tryReadDoubleQuotedString(name, istr))
-                    return ReturnType(false);
+                    return false;
 
                 skipWhitespaceIfAny(istr);
                 if constexpr (throw_exception)
                     assertChar(':', istr);
                 else if (!checkChar(':', istr))
-                    return ReturnType(false);
+                    return false;
                 skipWhitespaceIfAny(istr);
 
                 const size_t element_pos = getPositionByName(name);
@@ -394,7 +388,7 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
                         if constexpr (throw_exception)
                             skipJSONField(istr, name);
                         else if (!trySkipJSONField(istr, name))
-                            return ReturnType(false);
+                            return false;
 
                         skipWhitespaceIfAny(istr);
                         ++skipped;
@@ -404,7 +398,7 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
                     {
                         if constexpr (throw_exception)
                             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}', enable setting input_format_json_ignore_unknown_keys_in_named_tuple", name);
-                        return ReturnType(false);
+                        return false;
                     }
                 }
 
@@ -426,7 +420,7 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
                 else
                 {
                     if (!deserialize_element(element_column, element_pos))
-                        return ReturnType(false);
+                        return false;
                 }
 
                 skipWhitespaceIfAny(istr);
@@ -436,7 +430,7 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
             if constexpr (throw_exception)
                 assertChar('}', istr);
             else if (!checkChar('}', istr))
-                return ReturnType(false);
+                return false;
 
             /// Check if we have missing elements.
             if (processed != elems.size())
@@ -454,7 +448,7 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
                                 "JSON object doesn't contain tuple element {}. If you want to insert defaults in case of missing elements, "
                                 "enable setting input_format_json_defaults_for_missing_elements_in_named_tuple",
                                 elems[element_pos]->getElementName());
-                        return ReturnType(false);
+                        return false;
                     }
 
                     auto & element_column = extractElementColumn(column, element_pos);
@@ -462,7 +456,7 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
                 }
             }
 
-            return ReturnType(true);
+            return true;
         };
 
         return addElementSafe<ReturnType>(elems.size(), column, impl);
@@ -473,7 +467,7 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
         if constexpr (throw_exception)
             assertChar('[', istr);
         else if (!checkChar('[', istr))
-            return ReturnType(false);
+            return false;
         skipWhitespaceIfAny(istr);
 
         auto impl = [&]()
@@ -486,7 +480,7 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
                     if constexpr (throw_exception)
                         assertChar(',', istr);
                     else if (!checkChar(',', istr))
-                        return ReturnType(false);
+                        return false;
                     skipWhitespaceIfAny(istr);
                 }
 
@@ -495,16 +489,16 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
                 if constexpr (throw_exception)
                     deserialize_element(element_column, i);
                 else if (!deserialize_element(element_column, i))
-                    return ReturnType(false);
+                    return false;
             }
 
             skipWhitespaceIfAny(istr);
             if constexpr (throw_exception)
                 assertChar(']', istr);
             else if (!checkChar(']', istr))
-                return ReturnType(false);
+                return false;
 
-            return ReturnType(true);
+            return true;
         };
 
         return addElementSafe<ReturnType>(elems.size(), column, impl);
@@ -546,7 +540,7 @@ void SerializationTuple::serializeTextCSV(const IColumn & column, size_t row_num
 
 void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    addElementSafe(elems.size(), column, [&]
+    addElementSafe<void>(elems.size(), column, [&]
     {
         const size_t size = elems.size();
         for (size_t i = 0; i < size; ++i)
@@ -564,6 +558,7 @@ void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
             else
                 elems[i]->deserializeTextCSV(element_column, istr, settings);
         }
+        return true;
     });
 }
 

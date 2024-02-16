@@ -297,11 +297,11 @@ Total number of databases on the server.
 
 ### NumberOfDetachedByUserParts
 
-The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts and they can be removed.
+The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts, and they can be removed.
 
 ### NumberOfDetachedParts
 
-The total number of parts detached from MergeTree tables. A part can be detached by a user with the `ALTER TABLE DETACH` query or by the server itself it the part is broken, unexpected or unneeded. The server does not care about detached parts and they can be removed.
+The total number of parts detached from MergeTree tables. A part can be detached by a user with the `ALTER TABLE DETACH` query or by the server itself it the part is broken, unexpected or unneeded. The server does not care about detached parts, and they can be removed.
 
 ### NumberOfTables
 
@@ -393,7 +393,7 @@ The amount of free memory plus OS page cache memory on the host system, in bytes
 
 ### OSMemoryFreeWithoutCached
 
-The amount of free memory on the host system, in bytes. This does not include the memory used by the OS page cache memory, in bytes. The page cache memory is also available for usage by programs, so the value of this metric can be confusing. See the `OSMemoryAvailable` metric instead. For convenience we also provide the `OSMemoryFreePlusCached` metric, that should be somewhat similar to OSMemoryAvailable. See also https://www.linuxatemyram.com/. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server.
+The amount of free memory on the host system, in bytes. This does not include the memory used by the OS page cache memory, in bytes. The page cache memory is also available for usage by programs, so the value of this metric can be confusing. See the `OSMemoryAvailable` metric instead. For convenience, we also provide the `OSMemoryFreePlusCached` metric, that should be somewhat similar to OSMemoryAvailable. See also https://www.linuxatemyram.com/. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server.
 
 ### OSMemoryTotal
 
@@ -493,7 +493,7 @@ Number of threads in the server of the PostgreSQL compatibility protocol.
 
 ### QueryCacheBytes
 
-Total size of the query cache cache in bytes.
+Total size of the query cache in bytes.
 
 ### QueryCacheEntries
 
@@ -549,7 +549,7 @@ Total amount of bytes (compressed, including data and indices) stored in all tab
 
 ### TotalPartsOfMergeTreeTables
 
-Total amount of data parts in all tables of MergeTree family. Numbers larger than 10 000 will negatively affect the server startup time and it may indicate unreasonable choice of the partition key.
+Total amount of data parts in all tables of MergeTree family. Numbers larger than 10 000 will negatively affect the server startup time, and it may indicate unreasonable choice of the partition key.
 
 ### TotalPrimaryKeyBytesInMemory
 

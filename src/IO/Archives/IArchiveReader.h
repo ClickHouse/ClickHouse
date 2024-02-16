@@ -56,6 +56,7 @@ public:
     /// It's possible to convert a file enumerator to a read buffer and vice versa.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(std::unique_ptr<FileEnumerator> enumerator) = 0;
     virtual std::unique_ptr<FileEnumerator> nextFile(std::unique_ptr<ReadBuffer> read_buffer) = 0;
+    virtual std::unique_ptr<FileEnumerator> currentFile(std::unique_ptr<ReadBuffer> read_buffer) = 0;
 
     virtual std::vector<std::string> getAllFiles() = 0;
     virtual std::vector<std::string> getAllFiles(NameFilter filter) = 0;

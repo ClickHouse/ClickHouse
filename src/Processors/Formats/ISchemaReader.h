@@ -34,7 +34,7 @@ public:
     virtual bool hasStrictOrderOfColumns() const { return true; }
 
     virtual bool needContext() const { return false; }
-    virtual void setContext(ContextPtr &) {}
+    virtual void setContext(const ContextPtr &) {}
 
     virtual void setMaxRowsAndBytesToRead(size_t, size_t) {}
     virtual size_t getNumRowsRead() const { return 0; }
@@ -56,7 +56,7 @@ public:
     IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_ = nullptr);
 
     bool needContext() const override { return !hints_str.empty(); }
-    void setContext(ContextPtr & context) override;
+    void setContext(const ContextPtr & context) override;
 
 protected:
     void setMaxRowsAndBytesToRead(size_t max_rows, size_t max_bytes) override

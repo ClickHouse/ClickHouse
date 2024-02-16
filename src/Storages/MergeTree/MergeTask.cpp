@@ -436,7 +436,7 @@ MergeTask::StageRuntimeContextPtr MergeTask::VerticalMergeStage::getContextForNe
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
 {
     assert(subtasks_iterator != subtasks.end());
-    if ((*subtasks_iterator)())
+    if ((this->**subtasks_iterator)())
         return true;
 
     /// Move to the next subtask in an array of subtasks
@@ -827,7 +827,7 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
 bool MergeTask::VerticalMergeStage::execute()
 {
     assert(subtasks_iterator != subtasks.end());
-    if ((*subtasks_iterator)())
+    if ((this->**subtasks_iterator)())
         return true;
 
     /// Move to the next subtask in an array of subtasks
@@ -838,7 +838,7 @@ bool MergeTask::VerticalMergeStage::execute()
 bool MergeTask::MergeProjectionsStage::execute()
 {
     assert(subtasks_iterator != subtasks.end());
-    if ((*subtasks_iterator)())
+    if ((this->**subtasks_iterator)())
         return true;
 
     /// Move to the next subtask in an array of subtasks

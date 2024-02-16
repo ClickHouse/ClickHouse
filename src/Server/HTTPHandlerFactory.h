@@ -6,6 +6,7 @@
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/HTTPRequestHandlerFactoryMain.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Server/PrometheusMetricsWriter.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -130,10 +131,10 @@ createPrometheusHandlerFactory(IServer & server,
     AsynchronousMetrics & async_metrics,
     const std::string & config_prefix);
 
-HTTPRequestHandlerFactoryPtr
-createPrometheusMainHandlerFactory(IServer & server,
+HTTPRequestHandlerFactoryPtr createPrometheusMainHandlerFactory(
+    IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    AsynchronousMetrics & async_metrics,
+    PrometheusMetricsWriterPtr metrics_writer,
     const std::string & name);
 
 /// @param server - used in handlers to check IServer::isCancelled()

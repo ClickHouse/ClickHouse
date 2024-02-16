@@ -590,6 +590,10 @@ Result:
 └───────────────────────────────┘
 ```
 
+## countMatchesCaseInsensitive
+
+Like `countMatches(haystack, pattern)` but matching ignores the case.
+
 ## regexpExtract
 
 Extracts the first string in haystack that matches the regexp pattern and corresponds to the regex group index.

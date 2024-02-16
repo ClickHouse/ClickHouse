@@ -454,22 +454,41 @@ def test_show_profiles():
     assert instance.query("SHOW PROFILES") == "default\nreadonly\nxyz\n"
 
     assert instance.query("SHOW CREATE PROFILE xyz") == "CREATE SETTINGS PROFILE xyz\n"
+
+    query_possible_response = [
+        "CREATE SETTINGS PROFILE default\n",
+        "CREATE SETTINGS PROFILE default SETTINGS allow_experimental_analyzer = true\n",
+    ]
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE default")
-        == "CREATE SETTINGS PROFILE default\n"
+        in query_possible_response
     )
-    assert (
-        instance.query("SHOW CREATE PROFILES") == "CREATE SETTINGS PROFILE default\n"
+
+    query_possible_response = [
+        "CREATE SETTINGS PROFILE default\n"
         "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"
-        "CREATE SETTINGS PROFILE xyz\n"
-    )
+        "CREATE SETTINGS PROFILE xyz\n",
+        "CREATE SETTINGS PROFILE default SETTINGS allow_experimental_analyzer = true\n"
+        "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"
+        "CREATE SETTINGS PROFILE xyz\n",
+    ]
+    assert instance.query("SHOW CREATE PROFILES") in query_possible_response
 
     expected_access = (
         "CREATE SETTINGS PROFILE default\n"
         "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE xyz\n"
     )
-    assert expected_access in instance.query("SHOW ACCESS")
+    expected_access_analyzer = (
+        "CREATE SETTINGS PROFILE default SETTINGS allow_experimental_analyzer = true\n"
+        "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"
+        "CREATE SETTINGS PROFILE xyz\n"
+    )
+
+    query_response = instance.query("SHOW ACCESS")
+    assert (
+        expected_access in query_response or expected_access_analyzer in query_response
+    )
 
 
 def test_set_profile():

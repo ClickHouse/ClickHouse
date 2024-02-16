@@ -1083,6 +1083,7 @@ CREATE TABLE system.tables
     `data_paths` Array(String),
     `metadata_path` String,
     `metadata_modification_time` DateTime,
+    `metadata_version` Int32,
     `dependencies_database` Array(String),
     `dependencies_table` Array(String),
     `create_table_query` String,
