@@ -77,11 +77,10 @@ const std::unordered_set<String> possibly_injective_function_names
   */
 void appendUnusedGroupByColumn(ASTSelectQuery * select_query)
 {
-    /// You must insert a constant that is not the name of the column in the table. Such a case is rare, but it happens.
-    /// Also start unused_column integer must not intersect with ([1, source_columns.size()])
-    /// might be in positional GROUP BY.
+    /// Since ASTLiteral is different from ASTIdentifier, so we can use a special constant String Literal for this,
+    /// and do not need to worry about it conflict with the name of the column in the table.
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
-    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(static_cast<Int64>(-1)));
+    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>("__unused_group_by_column"));
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.

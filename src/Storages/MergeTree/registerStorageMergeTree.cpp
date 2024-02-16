@@ -194,7 +194,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     auto add_optional_param = [&](const char * desc)
     {
         ++max_num_params;
-        needed_params += needed_params.empty() ? "\n" : ",\n[";
+        needed_params += needed_params.empty() ? "\n[" : ",\n[";
         needed_params += desc;
         needed_params += "]";
     };
@@ -404,10 +404,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             /// Try use default values if arguments are not specified.
             /// Note: {uuid} macro works for ON CLUSTER queries when database engine is Atomic.
-            const auto & config = args.getContext()->getConfigRef();
-            zookeeper_path = StorageReplicatedMergeTree::getDefaultZooKeeperPath(config);
+            const auto & server_settings = args.getContext()->getServerSettings();
+            zookeeper_path = server_settings.default_replica_path;
             /// TODO maybe use hostname if {replica} is not defined?
-            replica_name = StorageReplicatedMergeTree::getDefaultReplicaName(config);
+            replica_name = server_settings.default_replica_name;
 
             /// Modify query, so default values will be written to metadata
             assert(arg_num == 0);
