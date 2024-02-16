@@ -20,7 +20,11 @@ class DNSResolver : private boost::noncopyable
 {
 public:
     using IPAddresses = std::vector<Poco::Net::IPAddress>;
-    using IPAddressesPtr = std::shared_ptr<IPAddresses>;
+    using CacheEntry = struct
+    {
+        IPAddresses addresses;
+        std::chrono::system_clock::time_point cached_at;
+    };
 
     static DNSResolver & instance();
 
@@ -57,6 +61,9 @@ public:
     /// Updates all known hosts in cache.
     /// Returns true if IP of any host has been changed or an element was dropped (too many failures)
     bool updateCache(UInt32 max_consecutive_failures);
+
+    /// Returns a copy of cache entries
+    std::vector<std::pair<std::string, CacheEntry>> cacheEntries() const;
 
     ~DNSResolver();
 
