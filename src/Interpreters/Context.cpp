@@ -1534,7 +1534,7 @@ void Context::addExternalTable(const String & table_name, TemporaryTableHolder &
 
     std::lock_guard lock(mutex);
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} already exists.", backQuoteIfNeed(table_name));
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} already exists", backQuoteIfNeed(table_name));
     external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
 }
 
@@ -4513,7 +4513,7 @@ void Context::setClientConnectionId(uint32_t connection_id_)
     client_info.connection_id = connection_id_;
 }
 
-void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
+void Context::setHTTPClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
 {
     client_info.http_method = http_method;
     client_info.http_user_agent = http_user_agent;
