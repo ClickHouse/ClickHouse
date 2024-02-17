@@ -713,6 +713,7 @@ try
         getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
         std::thread::hardware_concurrency());
 
+#if defined(__x86_64__)
     String cpu_info;
 #define COLLECT_FLAG(X) \
     if (CPU::have##X()) \
@@ -726,6 +727,7 @@ try
 #undef COLLECT_FLAG
 
     LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info);
+#endif
 
     sanityChecks(*this);
 

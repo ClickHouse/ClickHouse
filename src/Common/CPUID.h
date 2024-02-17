@@ -2,7 +2,7 @@
 
 #include <base/types.h>
 
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__)
 #include <cpuid.h>
 #endif
 
@@ -14,7 +14,7 @@ namespace DB
 namespace CPU
 {
 
-#if (defined(__x86_64__) || defined(__i386__))
+#if (defined(__x86_64__))
 /// Our version is independent of -mxsave option, because we do dynamic dispatch.
 inline UInt64 our_xgetbv(UInt32 xcr) noexcept
 {
@@ -30,7 +30,7 @@ inline UInt64 our_xgetbv(UInt32 xcr) noexcept
 
 inline bool cpuid(UInt32 op, UInt32 sub_op, UInt32 * res) noexcept /// NOLINT
 {
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__)
     __cpuid_count(op, sub_op, res[0], res[1], res[2], res[3]);
     return true;
 #else
@@ -45,7 +45,7 @@ inline bool cpuid(UInt32 op, UInt32 sub_op, UInt32 * res) noexcept /// NOLINT
 
 inline bool cpuid(UInt32 op, UInt32 * res) noexcept /// NOLINT
 {
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__)
     __cpuid(op, res[0], res[1], res[2], res[3]);
     return true;
 #else
@@ -186,7 +186,7 @@ bool haveOSXSAVE() noexcept
 
 bool haveAVX() noexcept
 {
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__)
     // http://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-optimization-manual.pdf
     // https://bugs.chromium.org/p/chromium/issues/detail?id=375968
     return haveOSXSAVE()                           // implies haveXSAVE()
@@ -219,7 +219,7 @@ bool haveBMI2() noexcept
 
 bool haveAVX512F() noexcept
 {
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__)
     // https://software.intel.com/en-us/articles/how-to-detect-knl-instruction-support
     return haveOSXSAVE()                           // implies haveXSAVE()
            && (our_xgetbv(0) & 6u) == 6u              // XMM state and YMM state are enabled by OS
@@ -318,7 +318,7 @@ bool haveRDRAND() noexcept
 
 inline bool haveAMX() noexcept
 {
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__)
     // http://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-optimization-manual.pdf
     return haveOSXSAVE()                           // implies haveXSAVE()
            && ((our_xgetbv(0) >> 17) & 0x3) == 0x3;        // AMX state are enabled by OS
