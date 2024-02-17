@@ -67,6 +67,13 @@ namespace
                 throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
             return result;
         }
+        else if (f.getType() == Field::Types::Bool)
+        {
+            if constexpr (std::is_same_v<T, bool>)
+                return f.get<bool>();
+            else
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion of a bool value {} to {} looks suspicious", f, demangle(typeid(T).name()));
+        }
         else if (f.getType() == Field::Types::Float64)
         {
             Float64 x = f.get<Float64>();
