@@ -1511,7 +1511,7 @@ void StorageURL::processNamedCollectionResult(Configuration & configuration, con
         && configuration.http_method != Poco::Net::HTTPRequest::HTTP_PUT)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Http method can be POST or PUT (current: {}). For insert default is POST, for select GET",
+            "HTTP method can be POST or PUT (current: {}). For insert default is POST, for select GET",
             configuration.http_method);
 
     configuration.format = collection.getOrDefault<String>("format", "auto");
