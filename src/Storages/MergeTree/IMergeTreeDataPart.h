@@ -75,6 +75,7 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
+    using Index = Columns;
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
@@ -212,10 +213,6 @@ public:
 
     const MergeTreeData & storage;
 
-private:
-    String mutable_name;
-    mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
-
 public:
     const String & name;    // const ref to private mutable_name
     MergeTreePartInfo info;
@@ -309,12 +306,6 @@ public:
     /// Throws an exception if state of the part is not in affordable_states
     void assertState(const std::initializer_list<MergeTreeDataPartState> & affordable_states) const;
 
-    /// Primary key (correspond to primary.idx file).
-    /// Always loaded in RAM. Contains each index_granularity-th value of primary key tuple.
-    /// Note that marks (also correspond to primary key) is not always in RAM, but cached. See MarkCache.h.
-    using Index = Columns;
-    Index index;
-
     MergeTreePartition partition;
 
     /// Amount of rows between marks
@@ -368,6 +359,9 @@ public:
 
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
     int32_t metadata_version;
+
+    const Index & getIndex() const { return index; }
+    void setIndex(Columns index_) { index = std::move(index_); }
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
@@ -567,6 +561,10 @@ public:
     mutable std::atomic<time_t> last_removal_attempt_time = 0;
 
 protected:
+    /// Primary key (correspond to primary.idx file).
+    /// Always loaded in RAM. Contains each index_granularity-th value of primary key tuple.
+    /// Note that marks (also correspond to primary key) is not always in RAM, but cached. See MarkCache.h.
+    Index index;
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;
@@ -623,6 +621,9 @@ protected:
     void initializeIndexGranularityInfo();
 
 private:
+    String mutable_name;
+    mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
+
     /// In compact parts order of columns is necessary
     NameToNumber column_name_to_position;
 

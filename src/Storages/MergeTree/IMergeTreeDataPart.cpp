@@ -313,13 +313,13 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     const IMergeTreeDataPart * parent_part_)
     : DataPartStorageHolder(data_part_storage_)
     , storage(storage_)
-    , mutable_name(name_)
     , name(mutable_name)
     , info(info_)
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
     , parent_part(parent_part_)
     , parent_part_name(parent_part ? parent_part->name : "")
+    , mutable_name(name_)
 {
     if (parent_part)
     {
