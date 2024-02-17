@@ -69,10 +69,7 @@ namespace
         }
         else if (f.getType() == Field::Types::Bool)
         {
-            if constexpr (std::is_same_v<T, bool>)
-                return f.get<bool>();
-            else
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion of a bool value {} to {} looks suspicious", f, demangle(typeid(T).name()));
+            return T(f.get<bool>());
         }
         else if (f.getType() == Field::Types::Float64)
         {
