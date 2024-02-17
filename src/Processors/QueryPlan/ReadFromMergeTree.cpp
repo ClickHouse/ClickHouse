@@ -40,18 +40,13 @@
 #include <Common/JSONBuilder.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
-#include "Processors/QueryPlan/IQueryPlanStep.h"
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 
 #include <algorithm>
-#include <functional>
 #include <iterator>
-#include <limits>
 #include <memory>
-#include <numeric>
-#include <queue>
-#include <stdexcept>
 #include <unordered_map>
 
 using namespace DB;
@@ -1303,8 +1298,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     return selectRangesToRead(
         std::move(parts),
         std::move(alter_conversions),
-        prewhere_info,
-        filter_nodes,
         metadata_for_reading,
         query_info,
         context,
@@ -1315,34 +1308,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         sample_factor_column_queried,
         log,
         indexes);
-}
-
-static ActionsDAGPtr buildFilterDAG(
-    const ContextPtr & /* context */,
-    const PrewhereInfoPtr & prewhere_info,
-    const ActionDAGNodes & added_filter_nodes,
-    const SelectQueryInfo & /* query_info */)
-{
-    ActionsDAG::NodeRawConstPtrs nodes;
-
-    if (prewhere_info)
-    {
-        {
-            const auto & node = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
-            nodes.push_back(&node);
-        }
-
-        if (prewhere_info->row_level_filter)
-        {
-            const auto & node = prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name);
-            nodes.push_back(&node);
-        }
-    }
-
-    for (const auto & node : added_filter_nodes.nodes)
-        nodes.push_back(node);
-
-    return ActionsDAG::buildFilterActionsDAG(nodes);
 }
 
 static void buildIndexes(
@@ -1391,19 +1356,6 @@ static void buildIndexes(
     if (!indexes->use_skip_indexes)
         return;
 
-    std::optional<SelectQueryInfo> info_copy;
-    auto get_query_info = [&]() -> const SelectQueryInfo &
-    {
-        if (settings.allow_experimental_analyzer)
-        {
-            info_copy.emplace(query_info);
-            info_copy->filter_actions_dag = filter_actions_dag;
-            return *info_copy;
-        }
-
-        return query_info;
-    };
-
     std::unordered_set<std::string> ignored_index_names;
 
     if (settings.ignore_data_skipping_indices.changed)
@@ -1443,7 +1395,7 @@ static void buildIndexes(
                 if (inserted)
                 {
                     skip_indexes.merged_indices.emplace_back();
-                    skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(get_query_info(), metadata_snapshot);
+                    skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(query_info, metadata_snapshot);
                 }
 
                 skip_indexes.merged_indices[it->second].addIndex(index_helper);
@@ -1455,11 +1407,11 @@ static void buildIndexes(
                 {
 #ifdef ENABLE_ANNOY
                     if (const auto * annoy = typeid_cast<const MergeTreeIndexAnnoy *>(index_helper.get()))
-                        condition = annoy->createIndexCondition(get_query_info(), context);
+                        condition = annoy->createIndexCondition(query_info, context);
 #endif
 #ifdef ENABLE_USEARCH
                     if (const auto * usearch = typeid_cast<const MergeTreeIndexUSearch *>(index_helper.get()))
-                        condition = usearch->createIndexCondition(get_query_info(), context);
+                        condition = usearch->createIndexCondition(query_info, context);
 #endif
                     if (!condition)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
@@ -1478,15 +1430,13 @@ static void buildIndexes(
 
 void ReadFromMergeTree::applyFilters()
 {
-    auto filter_actions_dag = buildFilterDAG(context, prewhere_info, filter_nodes, query_info);
-    buildIndexes(indexes, filter_actions_dag, data, prepared_parts, context, query_info, metadata_for_reading);
+    buildIndexes(
+        indexes, ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes), data, prepared_parts, context, query_info, metadata_for_reading);
 }
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     MergeTreeData::DataPartsVector parts,
     std::vector<AlterConversionsPtr> alter_conversions,
-    const PrewhereInfoPtr & prewhere_info,
-    const ActionDAGNodes & added_filter_nodes,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     ContextPtr context,
@@ -1498,14 +1448,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     LoggerPtr log,
     std::optional<Indexes> & indexes)
 {
-    auto updated_query_info_with_filter_dag = query_info;
-    updated_query_info_with_filter_dag.filter_actions_dag = buildFilterDAG(context, prewhere_info, added_filter_nodes, query_info);
-
     return selectRangesToReadImpl(
         std::move(parts),
         std::move(alter_conversions),
         metadata_snapshot,
-        updated_query_info_with_filter_dag,
+        query_info,
         context,
         num_streams,
         max_block_numbers_to_read,

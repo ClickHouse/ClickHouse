@@ -736,11 +736,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (storage_merge_tree && query_context->canUseParallelReplicasOnInitiator()
                     && settings.parallel_replicas_min_number_of_rows_per_replica > 0)
                 {
-                    ActionDAGNodes filter_nodes;
-                    if (table_expression_query_info.filter_actions_dag)
-                        filter_nodes.nodes = table_expression_query_info.filter_actions_dag->getOutputs();
-                    UInt64 rows_to_read = storage_merge_tree->estimateNumberOfRowsToRead(
-                        query_context, storage_snapshot, table_expression_query_info, filter_nodes);
+                    UInt64 rows_to_read
+                        = storage_merge_tree->estimateNumberOfRowsToRead(query_context, storage_snapshot, table_expression_query_info);
 
                     if (max_block_size_limited && (max_block_size_limited < rows_to_read))
                         rows_to_read = max_block_size_limited;

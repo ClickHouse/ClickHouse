@@ -1566,31 +1566,8 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
     [[maybe_unused]] const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
-
-    ActionsDAG::NodeRawConstPtrs nodes;
-
-    const auto & prewhere_info = query_info.prewhere_info;
-    if (prewhere_info)
-    {
-        {
-            const auto & node = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
-            nodes.push_back(&node);
-        }
-
-        if (prewhere_info->row_level_filter)
-        {
-            const auto & node = prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name);
-            nodes.push_back(&node);
-        }
-    }
-
-    if (query_info.filter_actions_dag)
-        nodes.push_back(query_info.filter_actions_dag->getOutputs().at(0));
-
-    if (nodes.empty())
+    if (!query_info.filter_actions_dag)
         return nullptr;
-
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes);
 
     size_t limit = local_context->getSettingsRef().optimize_skip_unused_shards_limit;
     if (!limit || limit > SSIZE_MAX)
@@ -1605,7 +1582,7 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
             ErrorCodes::LOGICAL_ERROR, "Cannot find sharding key column {} in expression {}",
             sharding_key_column_name, sharding_key_dag.dumpDAG());
 
-    const auto * predicate = filter_actions_dag->getOutputs().at(0);
+    const auto * predicate = query_info.filter_actions_dag->getOutputs().at(0);
     const auto variants = evaluateExpressionOverConstantCondition(predicate, {expr_node}, local_context, limit);
 
     // Can't get a definite answer if we can skip any shards

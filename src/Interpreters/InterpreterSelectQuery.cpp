@@ -901,7 +901,24 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     }
 
     ActionDAGNodes added_filter_nodes = MergeTreeData::getFiltersForPrimaryKeyAnalysis(*this);
-    UInt64 rows_to_read = storage_merge_tree->estimateNumberOfRowsToRead(context, storage_snapshot, query_info_copy, added_filter_nodes);
+    if (query_info_copy.prewhere_info)
+    {
+        {
+            const auto & node
+                = query_info_copy.prewhere_info->prewhere_actions->findInOutputs(query_info_copy.prewhere_info->prewhere_column_name);
+            added_filter_nodes.nodes.push_back(&node);
+        }
+
+        if (query_info_copy.prewhere_info->row_level_filter)
+        {
+            const auto & node
+                = query_info_copy.prewhere_info->row_level_filter->findInOutputs(query_info_copy.prewhere_info->row_level_column_name);
+            added_filter_nodes.nodes.push_back(&node);
+        }
+    }
+
+    query_info_copy.filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    UInt64 rows_to_read = storage_merge_tree->estimateNumberOfRowsToRead(context, storage_snapshot, query_info_copy);
     /// Note that we treat an estimation of 0 rows as a real estimation
     size_t number_of_replicas_to_use = rows_to_read / settings.parallel_replicas_min_number_of_rows_per_replica;
     LOG_TRACE(log, "Estimated {} rows to read. It is enough work for {} parallel replicas", rows_to_read, number_of_replicas_to_use);

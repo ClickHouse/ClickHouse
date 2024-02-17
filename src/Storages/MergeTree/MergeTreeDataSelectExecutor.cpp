@@ -933,11 +933,9 @@ static void selectColumnNames(
 
 ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     MergeTreeData::DataPartsVector parts,
-    const PrewhereInfoPtr & prewhere_info,
     const Names & column_names_to_return,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
-    const ActionDAGNodes & added_filter_nodes,
     ContextPtr context,
     size_t num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read) const
@@ -960,8 +958,6 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
         /*alter_conversions=*/ {},
-        prewhere_info,
-        added_filter_nodes,
         metadata_snapshot,
         query_info,
         context,

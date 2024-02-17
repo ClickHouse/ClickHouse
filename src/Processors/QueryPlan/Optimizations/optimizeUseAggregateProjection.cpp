@@ -605,9 +605,6 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         for (auto & candidate : candidates.real)
         {
             auto required_column_names = candidate.dag->getRequiredColumnsNames();
-            ActionDAGNodes added_filter_nodes;
-            if (candidates.has_filter)
-                added_filter_nodes.nodes.push_back(candidate.dag->getOutputs().front());
 
             bool analyzed = analyzeProjectionCandidate(
                 candidate,
@@ -618,7 +615,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
                 query_info,
                 context,
                 max_added_blocks,
-                added_filter_nodes);
+                candidate.dag);
 
             if (!analyzed)
                 continue;
