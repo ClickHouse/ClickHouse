@@ -58,7 +58,7 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
             continue;
         }
 
-        // names occur before = 
+        /// Column names (keys) occur before '=' 
         if (*next_pos == '=')
         {
             ref = StringRef(buf.position(), next_pos - buf.position());
@@ -75,15 +75,17 @@ void FormInputFormat::readField(size_t index, MutableColumns & columns)
     if (seen_columns[index])
         throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing Form format: {}", columnName(index));
 
-    seen_columns[index] = true;
+    seen_columns[index] = read_columns[index] = true;
     const auto & serialization = serializations[index];
-    String str;
-    readStringUntilAmpersand(str,*in);
+    String encoded_str, decoded_str;
+    readStringUntilAmpersand(encoded_str,*in);
+    Poco::URI::decode(encoded_str, decoded_str);
 
+    /// skip '&' before next key value pair
     if (!in->eof())
-        ++in->position(); /// skip & 
+        ++in->position(); 
 
-    ReadBufferFromString buf(str); 
+    ReadBufferFromString buf(decoded_str); 
     serialization->deserializeTextRaw(*columns[index], buf, format_settings);
     read_columns[index] = true;
 }
@@ -102,7 +104,7 @@ bool FormInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
     {
         if(in->eof())
             break;
-        
+
         StringRef name_ref;
         bool has_value = readName(*in, name_ref, name_buf);
         const auto it = name_map.find(String(name_ref));
@@ -120,9 +122,13 @@ bool FormInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 
             readField(column_index, columns);
         }
+        else 
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Found field without value while parsing TSKV format: {}", name_ref.toString());
+        }
       
     }
-    
+
     return true;
 }
 
