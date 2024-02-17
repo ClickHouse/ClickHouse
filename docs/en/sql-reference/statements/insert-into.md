@@ -210,7 +210,7 @@ By default, services on ClickHouse Cloud provide multiple replicas for high avai
 
 After an `INSERT` succeeds, data is written to the underlying storage. However, it may take some time for replicas to receive these updates. Therefore, if you use a different connection that executes a `SELECT` query on one of these other replicas, the updated data may not yet be reflected.
 
-It is possible to use the `select_sequential_consistency` to force replicas to receive the latest updates. Here is an example of a SELECT query using this setting:
+It is possible to use the `select_sequential_consistency` to force the replica to receive the latest updates. Here is an example of a SELECT query using this setting:
 
 ```sql
 SELECT .... SETTINGS select_sequential_consistency = 1;
