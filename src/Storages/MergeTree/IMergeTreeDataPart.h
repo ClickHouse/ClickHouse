@@ -563,7 +563,7 @@ public:
 protected:
     /// Primary key (correspond to primary.idx file).
     /// Always loaded in RAM. Contains each index_granularity-th value of primary key tuple.
-    /// Note that marks (also correspond to primary key) is not always in RAM, but cached. See MarkCache.h.
+    /// Note that marks (also correspond to primary key) are not always in RAM, but cached. See MarkCache.h.
     Index index;
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
