@@ -660,7 +660,7 @@ private:
 
     virtual void appendFilesOfIndexGranularity(Strings & files) const;
 
-    /// Loads index file.
+    /// Loads the index file.
     void loadIndex();
 
     void appendFilesOfIndex(Strings & files) const;
