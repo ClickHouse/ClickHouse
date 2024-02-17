@@ -21,6 +21,9 @@ FROM numbers(100000);
 INSERT INTO test
 SELECT round(pow(sipHash64(1, number), 1/5)), round(pow(sipHash64(2, number), 1/7)), round(pow(sipHash64(3, number), 1/10))
 FROM numbers(100000);
+
+DETACH TABLE test;
+ATTACH TABLE test;
 "
 
 for i in {1..1000}
