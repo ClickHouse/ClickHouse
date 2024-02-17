@@ -663,7 +663,7 @@ private:
 
     virtual void appendFilesOfIndexGranularity(Strings & files) const;
 
-    /// Loads index file.
+    /// Loads the index file.
     void loadIndex(std::scoped_lock<std::mutex> &) const;
 
     void appendFilesOfIndex(Strings & files) const;
