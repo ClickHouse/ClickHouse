@@ -96,6 +96,7 @@ public:
     bool is_populate{false};
     bool is_create_empty{false};    /// CREATE TABLE ... EMPTY AS SELECT ...
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
+    bool has_uuid{false}; // CREATE TABLE x UUID '...'
 
     ASTColumns * columns_list = nullptr;
 
