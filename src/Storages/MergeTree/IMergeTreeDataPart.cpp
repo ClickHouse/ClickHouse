@@ -342,6 +342,19 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
     decrementTypeMetric(part_type);
 }
 
+
+const IMergeTreeDataPart::Index & IMergeTreeDataPart::getIndex() const
+{
+    return index;
+}
+
+
+void IMergeTreeDataPart::setIndex(Columns index_)
+{
+    index = std::move(index_);
+}
+
+
 void IMergeTreeDataPart::setName(const String & new_name)
 {
     mutable_name = new_name;

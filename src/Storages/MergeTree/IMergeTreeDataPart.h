@@ -360,8 +360,8 @@ public:
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
     int32_t metadata_version;
 
-    const Index & getIndex() const { return index; }
-    void setIndex(Columns index_) { index = std::move(index_); }
+    const Index & getIndex() const;
+    void setIndex(Columns index_);
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
