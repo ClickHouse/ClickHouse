@@ -690,6 +690,10 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         loadColumns(require_columns_checksums);
         loadChecksums(require_columns_checksums);
         loadIndexGranularity();
+
+        if (!storage.getSettings()->primary_key_lazy_load)
+            getIndex();
+
         calculateColumnsAndSecondaryIndicesSizesOnDisk();
         loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
         loadPartitionAndMinMaxIndex();
