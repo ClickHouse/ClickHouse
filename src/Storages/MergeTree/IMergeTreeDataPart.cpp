@@ -864,6 +864,40 @@ void IMergeTreeDataPart::loadIndex(std::scoped_lock<std::mutex> &) const
             for (size_t j = 0; j < key_size; ++j)
                 key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, {});
 
+        /// Drop redundant values to optimize space in memory.
+        if (key_size > 1 && storage.getSettings()->primary_key_compact_in_memory)
+        {
+            MutableColumns filtered_columns(key_size - 1);
+            IColumn::Filter filter(marks_count, 0);
+            for (size_t j = 0; j < key_size - 1; ++j)
+            {
+                filtered_columns[j] = loaded_index[j + 1]->cloneEmpty();
+                filtered_columns[j]->reserve(marks_count);
+                filtered_columns[j]->insertFrom(*loaded_index[j + 1], 0);
+
+                for (size_t i = 1; i < marks_count; ++i)
+                {
+                    /// If at least one column in the prefix has changed.
+                    bool previous_changed = (j > 0 && filter[i]);
+                    bool changed = previous_changed || loaded_index[j]->compareAt(i - 1, i, *loaded_index[j], 1);
+
+                    if (changed)
+                    {
+                        filter[i] = 1;
+                        filtered_columns[j]->insertDefault();
+                    }
+                    else
+                    {
+                        filtered_columns[j]->insertFrom(*loaded_index[j + 1], 0);
+                    }
+                }
+            }
+
+            for (size_t j = 1; j < key_size; ++j)
+                if (filtered_columns[j - 1]->byteSize() < loaded_index[j]->byteSize())
+                    loaded_index[j] = std::move(filtered_columns[j - 1]);
+        }
+
         for (size_t i = 0; i < key_size; ++i)
         {
             loaded_index[i]->protect();

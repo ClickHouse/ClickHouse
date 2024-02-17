@@ -202,6 +202,7 @@ struct Settings;
     M(UInt64, marks_compress_block_size, 65536, "Mark compress block size, the actual size of the block to compress.", 0) \
     M(UInt64, primary_key_compress_block_size, 65536, "Primary compress block size, the actual size of the block to compress.", 0) \
     M(Bool, primary_key_lazy_load, true, "Load primary key in memory on first use instead of on table initialization. This can save memory in the presence of a large number of tables.", 0) \
+    M(Bool, primary_key_compact_in_memory, true, "Drop almost redundant values of the primary key in memory in a slight expense of filtering granules efficiency.", 0) \
     \
     /** Projection settings. */ \
     M(UInt64, max_projections, 25, "The maximum number of merge tree projections.", 0) \
