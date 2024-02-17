@@ -122,7 +122,7 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
     size_t nested_length = src_concrete.offsets[start + length - 1] - nested_offset;
 
     /// Reserve offsets before to make it more exception safe (in case of MEMORY_LIMIT_EXCEEDED)
-    offsets.reserve_exact(offsets.size() + length);
+    offsets.reserve(offsets.size() + length);
 
     size_t old_chars_size = chars.size();
     chars.resize(old_chars_size + nested_length);

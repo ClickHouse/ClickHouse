@@ -493,7 +493,7 @@ void ColumnVariant::insertRangeFrom(const IColumn & src_, size_t start, size_t l
         variants[local_discr]->insertRangeFrom(*src.variants[*non_empty_src_local_discr], start, length);
         getLocalDiscriminators().resize_fill(local_discriminators->size() + length, local_discr);
         auto & offsets_data = getOffsets();
-        offsets_data.reserve_exact(offsets_data.size() + length);
+        offsets_data.reserve(offsets_data.size() + length);
         for (size_t i = 0; i != length; ++i)
             offsets_data.push_back(offset++);
         return;
@@ -505,9 +505,9 @@ void ColumnVariant::insertRangeFrom(const IColumn & src_, size_t start, size_t l
     /// nested_ranges[i].second - length in src.variants[i]
     std::vector<std::pair<size_t, size_t>> nested_ranges(num_variants, {0, 0});
     auto & offsets_data = getOffsets();
-    offsets_data.reserve_exact(offsets_data.size() + length);
+    offsets_data.reserve(offsets_data.size() + length);
     auto & local_discriminators_data = getLocalDiscriminators();
-    local_discriminators_data.reserve_exact(local_discriminators_data.size() + length);
+    local_discriminators_data.reserve(local_discriminators_data.size() + length);
     const auto & src_offsets_data = src.getOffsets();
     const auto & src_local_discriminators_data = src.getLocalDiscriminators();
     for (size_t i = start; i != start + length; ++i)
@@ -561,7 +561,7 @@ void ColumnVariant::insertManyFrom(const DB::IColumn & src_, size_t position, si
     else
     {
         size_t prev_offset = variants[local_discr]->size();
-        offsets_data.reserve_exact(offsets_data.size() + length);
+        offsets_data.reserve(offsets_data.size() + length);
         for (size_t i = 0; i != length; ++i)
             offsets_data.push_back(prev_offset + i);
 

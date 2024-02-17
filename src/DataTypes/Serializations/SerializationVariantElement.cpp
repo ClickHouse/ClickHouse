@@ -129,7 +129,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
         /// Otherwise we should iterate through discriminators to fill null map.
         else
         {
-            null_map.reserve_exact(null_map.size() + limit);
+            null_map.reserve(null_map.size() + limit);
             for (size_t i = discriminators_offset; i != discriminators_data.size(); ++i)
                 null_map.push_back(discriminators_data[i] != variant_discriminator);
         }
@@ -241,7 +241,7 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB:
 
     /// In general case we should iterate through discriminators and create null-map for our variant.
     NullMap null_map;
-    null_map.reserve_exact(local_discriminators->size());
+    null_map.reserve(local_discriminators->size());
     const auto & local_discriminators_data = assert_cast<const ColumnVariant::ColumnDiscriminators &>(*local_discriminators).getData();
     for (auto local_discr : local_discriminators_data)
         null_map.push_back(local_discr != local_variant_discriminator);

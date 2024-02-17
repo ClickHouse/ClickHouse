@@ -191,7 +191,7 @@ void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t len
 
         if (offset_start != offset_end)
         {
-            offsets_data.reserve_exact(offsets_data.size() + offset_end - offset_start);
+            offsets_data.reserve(offsets_data.size() + offset_end - offset_start);
             insertManyDefaults(src_offsets[offset_start] - start);
             offsets_data.push_back(_size);
             ++_size;
