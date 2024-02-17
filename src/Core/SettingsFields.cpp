@@ -2,10 +2,11 @@
 
 #include <Core/Field.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/FieldVisitorConvertToNumber.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -50,7 +51,7 @@ namespace
         if (f.getType() == Field::Types::String)
             return stringToNumber<T>(f.get<const String &>());
         else
-            return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
+            return static_cast<T>(convertFieldToTypeOrThrow(f, DataTypeNumber<NearestFieldType<T>>()).template get<T>());
     }
 
     Map stringToMap(const String & str)
@@ -174,7 +175,7 @@ namespace
         if (f.getType() == Field::Types::String)
             return stringToMaxThreads(f.get<const String &>());
         else
-            return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), f);
+            return convertFieldToTypeOrThrow(f, DataTypeUInt64()).template get<UInt64>();
     }
 }
 
