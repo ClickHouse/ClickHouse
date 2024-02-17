@@ -31,12 +31,13 @@ do
     echo "
 WITH ${i} AS try
 SELECT try, count(), min(a), max(a), uniqExact(a), min(b), max(b), uniqExact(b), min(c), max(c), uniqExact(c) FROM test
-WHERE a >= round(pow(sipHash64(1, try), 1 / (3 + sipHash64(2, try) % 8)))::String
-  AND a <= round(pow(sipHash64(3, try), 1 / (3 + sipHash64(4, try) % 8)))::String
-  AND b >= round(pow(sipHash64(5, try), 1 / (3 + sipHash64(6, try) % 8)))::String
-  AND b <= round(pow(sipHash64(7, try), 1 / (3 + sipHash64(8, try) % 8)))::String
-  AND c >= round(pow(sipHash64(9, try), 1 / (3 + sipHash64(10, try) % 8)))::String
-  AND c <= round(pow(sipHash64(11, try), 1 / (3 + sipHash64(12, try) % 8)))::String;
+WHERE a >= (round(pow(sipHash64(1, try), 1 / (3 + sipHash64(2, try) % 8))) AS a1)::String
+  AND a <= (a1 + round(pow(sipHash64(3, try), 1 / (3 + sipHash64(4, try) % 8))))::String
+  AND b >= (round(pow(sipHash64(5, try), 1 / (3 + sipHash64(6, try) % 8))) AS b1)::String
+  AND b <= (b1 + round(pow(sipHash64(7, try), 1 / (3 + sipHash64(8, try) % 8))))::String
+  AND c >= (round(pow(sipHash64(9, try), 1 / (3 + sipHash64(10, try) % 8))) AS c1)::String
+  AND c <= (c1 + round(pow(sipHash64(11, try), 1 / (3 + sipHash64(12, try) % 8))))::String
+HAVING count() > 0;
 "
 done | ${CLICKHOUSE_CLIENT} --multiquery
 
