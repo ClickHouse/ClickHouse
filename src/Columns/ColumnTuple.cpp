@@ -14,7 +14,6 @@
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnsCommon.h>
-#include <DataTypes/Serializations/SerializationInfoTuple.h>
 
 
 namespace DB
