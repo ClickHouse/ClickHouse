@@ -2,7 +2,6 @@
 #include <Core/Field.h>
 #include <Core/AccurateComparison.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/FieldVisitors.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
