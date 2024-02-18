@@ -277,7 +277,7 @@ ReadFromMergeTree::ReadFromMergeTree(
         storage_snapshot_->getSampleBlockForColumns(real_column_names_),
         query_info_.prewhere_info,
         data_.getPartitionValueType(),
-        virt_column_names_)})
+        virt_column_names_)}, query_info_.prewhere_info)
     , reader_settings(getMergeTreeReaderSettings(context_, query_info_))
     , prepared_parts(std::move(parts_))
     , alter_conversions_for_parts(std::move(alter_conversions_))
@@ -285,7 +285,6 @@ ReadFromMergeTree::ReadFromMergeTree(
     , virt_column_names(std::move(virt_column_names_))
     , data(data_)
     , query_info(query_info_)
-    , prewhere_info(query_info_.prewhere_info)
     , actions_settings(ExpressionActionsSettings::fromContext(context_))
     , storage_snapshot(std::move(storage_snapshot_))
     , metadata_for_reading(storage_snapshot->getMetadataForQuery())
@@ -1427,15 +1426,17 @@ static void buildIndexes(
     indexes->skip_indexes = std::move(skip_indexes);
 }
 
-void ReadFromMergeTree::copyFiltersIntoQueryInfo()
-{
-    query_info.filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
-}
-
 void ReadFromMergeTree::applyFilters()
 {
     if (!indexes)
     {
+        /// NOTE: Currently we store two DAGs for analysis:
+        /// (1) SourceStepWithFilter::filter_nodes, (2) query_info.filter_actions_dag. Make sure there are consistent.
+        /// TODO: Get rid of filter_actions_dag in query_info after we move analysis of
+        /// parallel replicas and unused shards into optimization, similar to projection analysis.
+        query_info.filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
+        LOG_DEBUG(&::Poco::Logger::get("amosbird"), "filter_nodes.nodes.size() = {}", filter_nodes.nodes.size());
+
         buildIndexes(
             indexes,
             query_info.filter_actions_dag,

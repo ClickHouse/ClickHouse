@@ -15,11 +15,7 @@ void optimizePrimaryKeyCondition(const Stack & stack)
     if (!source_step_with_filter)
         return;
 
-    PrewhereInfoPtr storage_prewhere_info;
-    auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
-    if (read_from_merge_tree)
-        storage_prewhere_info = read_from_merge_tree->getPrewhereInfo();
-
+    const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
     if (storage_prewhere_info)
     {
         source_step_with_filter->addFilter(storage_prewhere_info->prewhere_actions, storage_prewhere_info->prewhere_column_name);
@@ -40,11 +36,6 @@ void optimizePrimaryKeyCondition(const Stack & stack)
         else
             break;
     }
-
-    /// TODO: Get rid of filter_actions_dag in query_info after we move analysis of
-    /// parallel replicas and unused shards into optimization, similar to projection analysis.
-    if (read_from_merge_tree)
-        read_from_merge_tree->copyFiltersIntoQueryInfo();
 }
 
 }

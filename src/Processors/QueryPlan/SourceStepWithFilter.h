@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -15,6 +16,11 @@ public:
     using Base = ISourceStep;
     using Base::Base;
 
+    explicit SourceStepWithFilter(DataStream output_stream_, PrewhereInfoPtr prewhere_info_ = nullptr)
+        : ISourceStep(std::move(output_stream_)), prewhere_info(std::move(prewhere_info_))
+    {
+    }
+
     const std::vector<ActionsDAGPtr> & getFilters() const
     {
         return filter_dags;
@@ -23,6 +29,11 @@ public:
     const ActionDAGNodes & getFilterNodes() const
     {
         return filter_nodes;
+    }
+
+    const PrewhereInfoPtr & getPrewhereInfo() const
+    {
+        return prewhere_info;
     }
 
     void addFilter(ActionsDAGPtr filter_dag, std::string column_name)
@@ -43,6 +54,7 @@ public:
 protected:
     std::vector<ActionsDAGPtr> filter_dags;
     ActionDAGNodes filter_nodes;
+    PrewhereInfoPtr prewhere_info;
 };
 
 }
