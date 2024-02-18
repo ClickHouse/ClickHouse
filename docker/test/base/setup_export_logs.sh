@@ -190,7 +190,7 @@ function setup_logs_replication
         echo -e "Creating remote destination table ${table}_${hash} with statement:\n${statement}" >&2
 
         echo "$statement" | clickhouse-client --database_replicated_initial_query_timeout_sec=10 \
-            --distributed_ddl_task_timeout=30 \
+            --distributed_ddl_task_timeout=30 --distributed_ddl_output_mode=throw_only_active \
             "${CONNECTION_ARGS[@]}" || continue
 
         echo "Creating table system.${table}_sender" >&2

@@ -721,7 +721,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Verify that AST formatting is consistent:
             /// If you format AST, parse it back, and format it again, you get the same string.
 
-            String formatted1 = ast->formatForErrorMessage();
+            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true);
 
             ASTPtr ast2 = parseQuery(parser,
                 formatted1.data(),
@@ -730,7 +730,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             chassert(ast2);
 
-            String formatted2 = ast2->formatForErrorMessage();
+            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true);
 
             if (formatted1 != formatted2)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
