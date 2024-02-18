@@ -830,6 +830,9 @@ void IMergeTreeDataPart::appendFilesOfIndexGranularity(Strings & /* files */) co
 
 void IMergeTreeDataPart::loadIndex(std::scoped_lock<std::mutex> &) const
 {
+    /// Memory for index must not be accounted as memory usage for query, because it belongs to a table.
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+
     /// It can be empty in case of mutations
     if (!index_granularity.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index granularity is not loaded before index loading");
