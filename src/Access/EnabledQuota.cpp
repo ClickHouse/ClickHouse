@@ -105,6 +105,16 @@ struct EnabledQuota::Impl
         std::uniform_int_distribution<Int64> distribution{0, count - 1};
         return std::chrono::system_clock::duration(distribution(thread_local_rng));
     }
+
+    static void resetQuotaValue(const Intervals & intervals, QuotaType quota_type, QuotaValue value, std::chrono::system_clock::time_point current_time)
+    {
+        const auto quota_type_i = static_cast<size_t>(quota_type);
+        for (const auto & interval : intervals.intervals)
+        {
+            interval.used[quota_type_i] = value;
+            interval.getEndOfInterval(current_time);
+        }
+    }
 };
 
 
@@ -284,6 +294,12 @@ void EnabledQuota::checkExceeded(QuotaType quota_type) const
     Impl::checkExceeded(getUserName(), *loaded, quota_type, std::chrono::system_clock::now());
 }
 
+
+void EnabledQuota::reset(QuotaType quota_type) const
+{
+    const auto loaded = intervals.load();
+    Impl::resetQuotaValue(*loaded, quota_type, 0, std::chrono::system_clock::now());
+}
 
 std::optional<QuotaUsage> EnabledQuota::getUsage() const
 {
