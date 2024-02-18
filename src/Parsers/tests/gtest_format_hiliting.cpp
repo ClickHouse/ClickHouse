@@ -62,7 +62,7 @@ const std::vector<std::pair<std::string, std::string>> expected_and_query_pairs 
     // Simple select
     {
         keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table"),
-        "select * from table"
+        "select * from `table`"
     },
 
     // ASTWithElement
@@ -70,7 +70,7 @@ const std::vector<std::pair<std::string, std::string>> expected_and_query_pairs 
         keyword("WITH ") + alias("alias ") + keyword("AS ")
             + "(" + keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table") + ") "
             + keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table"),
-        "with alias as (select * from table) select * from table"
+        "with alias as (select * from `table`) select * from `table`"
     },
 
     // ASTWithAlias
@@ -83,7 +83,7 @@ const std::vector<std::pair<std::string, std::string>> expected_and_query_pairs 
     {
         keyword("SELECT ") + "* " + keyword("FROM ")
             + function("view(") + keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table") + function(")"),
-        "select * from view(select * from table)"
+        "select * from view(select * from `table`)"
     },
 
     // ASTDictionaryAttributeDeclaration
