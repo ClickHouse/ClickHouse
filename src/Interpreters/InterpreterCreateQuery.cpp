@@ -1005,37 +1005,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.is_materialized_view && create.to_table_id)
         return;
 
-    if (create.temporary)
-    {
-        /// Some part of storage definition is specified, but ENGINE is not: just set the one from default_temporary_table_engine setting.
-
-        if (!create.cluster.empty())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with ON CLUSTER clause");
-
-        if (!create.storage)
-        {
-            auto storage_ast = std::make_shared<ASTStorage>();
-            create.set(create.storage, storage_ast);
-        }
-
-        if (!create.storage->engine)
-        {
-            setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_temporary_table_engine.value);
-        }
-
-        checkTemporaryTableEngineName(create.storage->engine->name);
-        return;
-    }
-
-    if (create.storage)
-    {
-        /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
-        if (!create.storage->engine)
-            setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
-        return;
-    }
-
-    if (!create.as_table.empty())
+    auto replace_storage = [&]()
     {
         /// NOTE Getting the structure from the table specified in the AS is done not atomically with the creation of the table.
 
@@ -1065,7 +1035,46 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             create.set(create.as_table_function, as_create.as_table_function->ptr());
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
+    };
 
+    if (create.temporary)
+    {
+        /// Some part of storage definition is specified, but ENGINE is not: just set the one from default_temporary_table_engine setting.
+
+        if (!create.cluster.empty())
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with ON CLUSTER clause");
+
+        if (create.as_table.empty())
+        {
+            if (!create.storage)
+            {
+                auto storage_ast = std::make_shared<ASTStorage>();
+                create.set(create.storage, storage_ast);
+            }
+
+            if (!create.storage->engine)
+            {
+                setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_temporary_table_engine.value);
+            }
+        }
+        else 
+            replace_storage();
+
+        checkTemporaryTableEngineName(create.storage->engine->name);
+        return;
+    }
+
+    if (create.storage)
+    {
+        /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
+        if (!create.storage->engine)
+            setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
+        return;
+    }
+
+    if (!create.as_table.empty())
+    {
+        replace_storage();
         return;
     }
 
