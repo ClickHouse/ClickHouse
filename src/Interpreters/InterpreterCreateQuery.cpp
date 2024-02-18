@@ -1039,8 +1039,6 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
     if (create.temporary)
     {
-        /// Some part of storage definition is specified, but ENGINE is not: just set the one from default_temporary_table_engine setting.
-
         if (!create.cluster.empty())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with ON CLUSTER clause");
 
@@ -1052,6 +1050,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 create.set(create.storage, storage_ast);
             }
 
+            /// Some part of storage definition is specified, but ENGINE is not: just set the one from default_temporary_table_engine setting.
             if (!create.storage->engine)
             {
                 setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_temporary_table_engine.value);
