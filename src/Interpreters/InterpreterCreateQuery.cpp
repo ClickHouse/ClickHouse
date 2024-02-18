@@ -1057,7 +1057,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_temporary_table_engine.value);
             }
         }
-        else 
+        else
             replace_storage();
 
         checkTemporaryTableEngineName(create.storage->engine->name);
