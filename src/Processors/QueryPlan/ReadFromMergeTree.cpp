@@ -1343,7 +1343,6 @@ static void buildIndexes(
         indexes->partition_pruner.emplace(metadata_snapshot, filter_actions_dag, context, false /* strict */);
     }
 
-    /// TODO Support row_policy_filter and additional_filters
     indexes->part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(data, parts, filter_actions_dag, context);
     MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(indexes->part_offset_condition, filter_actions_dag, context);
 
@@ -1428,10 +1427,24 @@ static void buildIndexes(
     indexes->skip_indexes = std::move(skip_indexes);
 }
 
+void ReadFromMergeTree::copyFiltersIntoQueryInfo()
+{
+    query_info.filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
+}
+
 void ReadFromMergeTree::applyFilters()
 {
-    buildIndexes(
-        indexes, ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes), data, prepared_parts, context, query_info, metadata_for_reading);
+    if (!indexes)
+    {
+        buildIndexes(
+            indexes,
+            query_info.filter_actions_dag,
+            data,
+            prepared_parts,
+            context,
+            query_info,
+            metadata_for_reading);
+    }
 }
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(

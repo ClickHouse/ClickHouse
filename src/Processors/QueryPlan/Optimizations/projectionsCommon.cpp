@@ -238,6 +238,7 @@ bool analyzeProjectionCandidate(
         return false;
 
     auto projection_query_info = query_info;
+    projection_query_info.prewhere_info = nullptr;
     projection_query_info.filter_actions_dag = dag;
 
     auto projection_result_ptr = reader.estimateNumMarksToRead(

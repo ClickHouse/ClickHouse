@@ -201,6 +201,10 @@ public:
     size_t getNumStreams() const { return requested_num_streams; }
     bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
 
+    /// NOTE: Currently we store two DAGs for analysis:
+    /// (1) SourceStepWithFilter::filter_nodes, (2) query_info.filter_actions_dag. Make sure there are consistent.
+    void copyFiltersIntoQueryInfo();
+
     void applyFilters() override;
 
 private:

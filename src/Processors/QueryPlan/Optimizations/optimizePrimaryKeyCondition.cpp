@@ -40,6 +40,11 @@ void optimizePrimaryKeyCondition(const Stack & stack)
         else
             break;
     }
+
+    /// TODO: Get rid of filter_actions_dag in query_info after we move analysis of
+    /// parallel replicas and unused shards into optimization, similar to projection analysis.
+    if (read_from_merge_tree)
+        read_from_merge_tree->copyFiltersIntoQueryInfo();
 }
 
 }
