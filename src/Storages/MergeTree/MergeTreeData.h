@@ -866,6 +866,15 @@ public:
         ContextPtr local_context,
         Int64 min_block,
         Int64 max_block);
+    
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPartOnOtherDisk(
+        const MergeTreeData::DataPartPtr & src_part,
+        const String & tmp_part_prefix,
+        const MergeTreePartInfo & dst_part_info,
+        const StorageMetadataPtr & metadata_snapshot,
+        const IDataPartStorage::ClonePartParams & params,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings);
 
     static std::pair<MergeTreePartition, IMergeTreeDataPart::MinMaxIndex> createPartitionAndMinMaxIndexFromSourcePart(
         const MergeTreeData::DataPartPtr & src_part,

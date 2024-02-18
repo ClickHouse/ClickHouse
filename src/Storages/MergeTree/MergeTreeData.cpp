@@ -7085,6 +7085,19 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         this, src_part, metadata_snapshot, dst_part_info, tmp_part_prefix, require_part_metadata, params, read_settings, write_settings);
 }
 
+std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadDataPartOnOtherDisk(
+    const MergeTreeData::DataPartPtr & src_part,
+    const String & tmp_part_prefix,
+    const MergeTreePartInfo & dst_part_info,
+    const StorageMetadataPtr & metadata_snapshot,
+    const IDataPartStorage::ClonePartParams & params,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings)
+{
+    return MergeTreeDataPartCloner::clone(
+        this, src_part, metadata_snapshot, dst_part_info, tmp_part_prefix, require_part_metadata, params, read_settings, write_settings);
+}
+
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
     const MergeTreeData::DataPartPtr & src_part,
     const MergeTreePartition & new_partition,

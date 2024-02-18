@@ -2118,17 +2118,40 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         else
         {
             MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
-
-            auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
-                src_part,
-                TMP_PREFIX,
-                dst_part_info,
-                my_metadata_snapshot,
-                clone_params,
-                local_context->getReadSettings(),
-                local_context->getWriteSettings());
-            dst_parts.emplace_back(std::move(dst_part));
-            dst_parts_locks.emplace_back(std::move(part_lock));
+            LOG_TRACE(log, "Partition exps are the same:part id: {}; number of disks:{}",dst_part_info.partition_id, this->getStoragePolicy()->getDisks().size());
+            bool on_same_disk = false;
+            for (const DiskPtr & disk : this->getStoragePolicy()->getDisks())
+            {
+                if (disk->getName() == src_part->getDataPartStorage().getDiskName())
+                    on_same_disk = true;
+            }
+            if (on_same_disk)
+            {
+                auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
+                    src_part,
+                    TMP_PREFIX,
+                    dst_part_info,
+                    my_metadata_snapshot,
+                    clone_params,
+                    local_context->getReadSettings(),
+                    local_context->getWriteSettings());
+                dst_parts.emplace_back(std::move(dst_part));
+                dst_parts_locks.emplace_back(std::move(part_lock));
+            }
+            else
+            {
+                clone_params.copy_instead_of_hardlink = true;
+                auto [dst_part, part_lock] = cloneAndLoadDataPartOnOtherDisk(
+                    src_part,
+                    TMP_PREFIX,
+                    dst_part_info,
+                    my_metadata_snapshot,
+                    clone_params,
+                    local_context->getReadSettings(),
+                    local_context->getWriteSettings());
+                dst_parts.emplace_back(std::move(dst_part));
+                dst_parts_locks.emplace_back(std::move(part_lock));
+            }
         }
     }
 

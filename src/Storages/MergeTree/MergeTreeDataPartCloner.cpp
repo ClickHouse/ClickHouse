@@ -142,6 +142,30 @@ std::shared_ptr<IDataPartStorage> hardlinkAllFiles(
         params);
 }
 
+std::shared_ptr<IDataPartStorage> cloneAllFiles(
+    MergeTreeData * merge_tree_data,
+    const DB::ReadSettings & read_settings,
+    const DB::WriteSettings & write_settings,
+    const DataPartStoragePtr & storage,
+    const String & path)
+{
+    for (const DiskPtr & disk : merge_tree_data->getStoragePolicy()->getDisks())
+    {
+        try{
+            return storage->clonePart(
+            merge_tree_data->getRelativeDataPath(),
+            path,
+            disk,
+            read_settings,
+            write_settings,{},{});
+        }catch(...) {
+            LOG_TRACE(&Poco::Logger::get("MergeTreeDataPartCloner"), "Clone part on disk {} fail", disk->getName());
+        }
+    }
+    LOG_FATAL(&Poco::Logger::get("MergeTreeDataPartCloner"), "Clone part on disks all fail");
+    throw;
+}
+
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneSourcePart(
     MergeTreeData * merge_tree_data,
     const MergeTreeData::DataPartPtr & src_part,
@@ -165,8 +189,18 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneSourcePart(
 
     auto src_part_storage = flushPartStorageToDiskIfInMemory(
         merge_tree_data, src_part, metadata_snapshot, tmp_part_prefix, tmp_dst_part_name, src_flushed_tmp_dir_lock, src_flushed_tmp_part);
-
-    auto dst_part_storage = hardlinkAllFiles(merge_tree_data, read_settings, write_settings, src_part_storage, tmp_dst_part_name, params);
+    std::shared_ptr<IDataPartStorage> dst_part_storage {};
+    if (params.copy_instead_of_hardlink) {
+        dst_part_storage = cloneAllFiles(merge_tree_data, read_settings, write_settings, src_part_storage, tmp_dst_part_name);
+    } else {
+        try{
+            dst_part_storage = hardlinkAllFiles(merge_tree_data, read_settings, write_settings, src_part_storage, tmp_dst_part_name, params);
+        } catch(...){
+            // Hard link fail. Try copy.
+            LOG_WARNING(&Poco::Logger::get("MergeTreeDataPartCloner"), "Hard link fail, try tp copy directly. to:{}, path:{}", merge_tree_data->getRelativeDataPath(),tmp_dst_part_name);
+            dst_part_storage = cloneAllFiles(merge_tree_data, read_settings, write_settings, src_part_storage, tmp_dst_part_name);
+        }
+    }
 
     if (params.metadata_version_to_write.has_value())
     {
@@ -275,6 +309,25 @@ std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> cloneAndHand
 
     return std::make_pair(destination_part, std::move(temporary_directory_lock));
 }
+
+std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> cloneInsteadOfHardlinksAndProjections(
+    MergeTreeData * merge_tree_data,
+    const DataPartPtr & src_part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreePartInfo & dst_part_info,
+    const String & tmp_part_prefix,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    const IDataPartStorage::ClonePartParams & params)
+{
+    chassert(!merge_tree_data->isStaticStorage());
+
+    auto [destination_part, temporary_directory_lock] = cloneSourcePart(
+        merge_tree_data, src_part, metadata_snapshot, dst_part_info, tmp_part_prefix, read_settings, write_settings, params);
+
+    return std::make_pair(destination_part, std::move(temporary_directory_lock));
+}
+
 }
 
 std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> MergeTreeDataPartCloner::clone(
@@ -288,10 +341,19 @@ std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> MergeTreeDat
     const ReadSettings & read_settings,
     const WriteSettings & write_settings)
 {
-    auto [destination_part, temporary_directory_lock] = cloneAndHandleHardlinksAndProjections(
+    if (params.copy_instead_of_hardlink) 
+    {
+        auto [destination_part, temporary_directory_lock] = cloneInsteadOfHardlinksAndProjections(
         merge_tree_data, src_part, metadata_snapshot, dst_part_info, tmp_part_prefix, read_settings, write_settings, params);
+        return std::make_pair(finalizePart(destination_part, params, require_part_metadata), std::move(temporary_directory_lock));
+    } 
+    else 
+    {
+        auto [destination_part, temporary_directory_lock] = cloneAndHandleHardlinksAndProjections(
+        merge_tree_data, src_part, metadata_snapshot, dst_part_info, tmp_part_prefix, read_settings, write_settings, params);
+        return std::make_pair(finalizePart(destination_part, params, require_part_metadata), std::move(temporary_directory_lock));
 
-    return std::make_pair(finalizePart(destination_part, params, require_part_metadata), std::move(temporary_directory_lock));
+    }
 }
 
 std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> MergeTreeDataPartCloner::cloneWithDistinctPartitionExpression(
