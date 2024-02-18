@@ -1,9 +1,4 @@
-import logging
-import random
-import threading
 import time
-from collections import Counter
-
 import pytest
 from helpers.cluster import ClickHouseCluster
 
@@ -83,7 +78,6 @@ def test_exponential_backoff_with_merge_tree(started_cluster, node, found_in_log
     assert node.contains_in_log(POSPONE_MUTATION_LOG) == found_in_log
     node.rotate_logs()
 
-    time.sleep(5)
     node.query("KILL MUTATION WHERE table='test_mutations'")
     # Check that after kill new parts mutations are postponing.
     node.query(
@@ -117,12 +111,18 @@ def test_exponential_backoff_create_dependent_table(started_cluster, node):
     node.query(
         "ALTER TABLE test_mutations DELETE WHERE x IN (SELECT x  FROM dep_table) SETTINGS allow_nondeterministic_mutations=1"
     )
-    time.sleep(5)
+
     # Creating dependent table for mutation.
     node.query("CREATE TABLE dep_table(x UInt32) ENGINE MergeTree() ORDER BY x")
 
-    time.sleep(5)
-    assert node.query("SELECT count() FROM system.mutations WHERE is_done=0") == "0\n"
+    retry_count = 100
+    no_unfinished_mutation = False
+    for _ in range(0,retry_count):
+        if node.query("SELECT count() FROM system.mutations WHERE is_done=0") == "0\n":
+            no_unfinished_mutation = True
+            break
+
+    assert no_unfinished_mutation
     node.query("DROP TABLE IF EXISTS dep_table SYNC")
 
 
@@ -131,7 +131,7 @@ def test_exponential_backoff_setting_override(started_cluster):
     node.rotate_logs()
     node.query("DROP TABLE IF EXISTS test_mutations SYNC")
     node.query(
-        "CREATE TABLE test_mutations(x UInt32) ENGINE=MergeTree() ORDER BY x SETTINGS max_postpone_time_for_failed_mutations=0"
+        "CREATE TABLE test_mutations(x UInt32) ENGINE=MergeTree() ORDER BY x SETTINGS max_postpone_time_for_failed_mutations_ms=0"
     )
     node.query("INSERT INTO test_mutations SELECT * FROM system.numbers LIMIT 10")
 
@@ -167,3 +167,34 @@ def test_backoff_clickhouse_restart(started_cluster, replicated_table):
     assert node.wait_for_log_line(
         REPLICATED_POSPONE_MUTATION_LOG if replicated_table else POSPONE_MUTATION_LOG
     )
+
+
+@pytest.mark.parametrize(
+    ("replicated_table"),
+    [
+        (False),
+        (True),
+    ],
+)
+def test_no_backoff_after_killing_mutation(started_cluster, replicated_table):
+    prepare_cluster(replicated_table)
+    node = node_with_backoff
+
+    # Executing incorrect mutation.
+    node.query(
+        "ALTER TABLE test_mutations DELETE WHERE x IN (SELECT x  FROM dep_table) SETTINGS allow_nondeterministic_mutations=1"
+    )
+    # Executing correct mutation.
+    node.query(
+        "ALTER TABLE test_mutations DELETE  WHERE x=1"
+    )
+    assert node.wait_for_log_line(
+        REPLICATED_POSPONE_MUTATION_LOG if replicated_table else POSPONE_MUTATION_LOG
+    )
+    mutation_ids = node.query('select mutation_id from system.mutations').split()
+
+    node.query(
+        f"KILL MUTATION WHERE table = 'test_mutations' AND mutation_id = '{mutation_ids[0]}'"
+    )
+    node.rotate_logs()
+    assert not node.contains_in_log(REPLICATED_POSPONE_MUTATION_LOG if replicated_table else POSPONE_MUTATION_LOG)

@@ -573,7 +573,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
 
                 if (static_cast<UInt64>(result_part->part_info.mutation) == it->first)
                 {
-                    mutation_backoff_policy.addPartMutationFailure(failed_part->name, it->first, getSettings()->max_postpone_time_for_failed_mutations);
+                    mutation_backoff_policy.addPartMutationFailure(failed_part->name, getSettings()->max_postpone_time_for_failed_mutations_ms);
                 }
             }
         }
@@ -845,7 +845,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
         }
     }
 
-    mutation_backoff_policy.removeFromFailedByVersion(mutation_version);
+    mutation_backoff_policy.resetMutationFailures();
 
     if (!to_kill)
         return CancellationCode::NotFound;
@@ -1207,7 +1207,6 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
     CurrentlyMergingPartsTaggerPtr tagger;
 
-    bool exist_postponed_failed_part = false;
     auto mutations_end_it = current_mutations_by_version.end();
     for (const auto & part : getDataPartsVectorForInternalUsage())
     {
@@ -1234,7 +1233,6 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
         if (!mutation_backoff_policy.partCanBeMutated(part->name))
         {
-            exist_postponed_failed_part = true;
             LOG_DEBUG(log, "According to exponential backoff policy, do not perform mutations for the part {} yet. Put it aside.", part->name);
             continue;
         }
@@ -1345,11 +1343,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands, txn);
         }
     }
-    if (exist_postponed_failed_part)
-    {
-        std::lock_guard lock(mutation_wait_mutex);
-        mutation_wait_event.notify_all();
-    }
+
     return {};
 }
 

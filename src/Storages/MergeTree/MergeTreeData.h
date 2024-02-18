@@ -1364,30 +1364,29 @@ protected:
         const MergeListEntry * merge_entry,
         std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters);
 
-    class PartMutationBackoffPolicy : public WithContext
+    class PartMutationBackoffPolicy
     {
         struct PartMutationInfo
         {
             size_t retry_count;
-            Poco::Timestamp latest_fail_time;
-            UInt64 mutation_failure_version;
+            size_t latest_fail_time_us;
             size_t max_postpone_time_ms;
             size_t max_postpone_power;
 
-            PartMutationInfo(UInt64 mutation_failure_version_, size_t max_postpone_time_ms_)
+            PartMutationInfo(size_t max_postpone_time_ms_)
                             : retry_count(0ull)
-                            , latest_fail_time(std::move(Poco::Timestamp()))
-                            , mutation_failure_version(mutation_failure_version_)
+                            , latest_fail_time_us(static_cast<size_t>(Poco::Timestamp().epochMicroseconds()))
                             , max_postpone_time_ms(max_postpone_time_ms_)
                             , max_postpone_power((max_postpone_time_ms_) ? (static_cast<size_t>(std::log2(max_postpone_time_ms_))) : (0ull))
             {}
 
 
-            Poco::Timestamp getNextMinExecutionTime() const
+            size_t getNextMinExecutionTimeUsResolution() const
             {
                 if (max_postpone_time_ms == 0)
-                    return Poco::Timestamp();
-                return  latest_fail_time +  (1 << retry_count) * 1000ul;
+                    return static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
+                size_t current_backoff_interval_us = (1 << retry_count) * 1000ul;
+                return latest_fail_time_us + current_backoff_interval_us;
             }
 
             void addPartFailure()
@@ -1395,7 +1394,7 @@ protected:
                 if (max_postpone_time_ms == 0)
                     return;
                 retry_count = std::min(max_postpone_power, retry_count + 1);
-                latest_fail_time = Poco::Timestamp();
+                latest_fail_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
             }
 
             bool partCanBeMutated()
@@ -1403,8 +1402,8 @@ protected:
                 if (max_postpone_time_ms == 0)
                     return true;
 
-                auto current_time = Poco::Timestamp();
-                return  current_time >= getNextMinExecutionTime();
+                auto current_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
+                return current_time_us >= getNextMinExecutionTimeUsResolution();
             }
         };
 
@@ -1414,31 +1413,25 @@ protected:
 
     public:
 
-        void removeFromFailedByVersion(UInt64 mutation_version)
+        void resetMutationFailures()
         {
             std::unique_lock _lock(parts_info_lock);
-            for (auto failed_part_it = failed_mutation_parts.begin(); failed_part_it != failed_mutation_parts.end();)
-            {
-                if (failed_part_it->second.mutation_failure_version == mutation_version)
-                    failed_part_it = failed_mutation_parts.erase(failed_part_it);
-                else
-                    ++failed_part_it;
-            }
+            failed_mutation_parts.clear();
         }
 
-        void removePartFromFailed(const String& part_name)
+        void removePartFromFailed(const String & part_name)
         {
             std::unique_lock _lock(parts_info_lock);
             failed_mutation_parts.erase(part_name);
         }
 
-        void addPartMutationFailure (const String& part_name, UInt64 mutation_failure_version_, size_t max_postpone_time_ms_)
+        void addPartMutationFailure (const String& part_name, size_t max_postpone_time_ms_)
         {
             std::unique_lock _lock(parts_info_lock);
             auto part_info_it = failed_mutation_parts.find(part_name);
             if (part_info_it == failed_mutation_parts.end())
             {
-                auto [it, success] = failed_mutation_parts.emplace(part_name, PartMutationInfo(mutation_failure_version_, max_postpone_time_ms_));
+                auto [it, success] = failed_mutation_parts.emplace(part_name, PartMutationInfo(max_postpone_time_ms_));
                 std::swap(it, part_info_it);
             }
             auto& part_info = part_info_it->second;
