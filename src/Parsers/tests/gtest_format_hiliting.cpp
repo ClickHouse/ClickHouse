@@ -5,8 +5,10 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/HiliteComparator/HiliteComparator.h>
 #include <gtest/gtest.h>
-#include <Common/StackTrace.h>
+#include <Common/quoteString.h>
 
+
+using namespace DB;
 
 String hilite(const String & s, const char * hilite_type)
 {
@@ -20,12 +22,12 @@ String keyword(const String & s)
 
 String identifier(const String & s)
 {
-    return hilite(s, DB::IAST::hilite_identifier);
+    return hilite(backQuoteIfNeed(s), DB::IAST::hilite_identifier);
 }
 
 String alias(const String & s)
 {
-    return hilite(s, DB::IAST::hilite_alias);
+    return hilite(backQuoteIfNeed(s), DB::IAST::hilite_alias);
 }
 
 String op(const String & s)
