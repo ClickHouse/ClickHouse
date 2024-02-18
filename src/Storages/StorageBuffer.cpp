@@ -56,6 +56,9 @@ namespace CurrentMetrics
 {
     extern const Metric StorageBufferRows;
     extern const Metric StorageBufferBytes;
+    extern const Metric StorageBufferFlushThreads;
+    extern const Metric StorageBufferFlushThreadsActive;
+    extern const Metric StorageBufferFlushThreadsScheduled;
 }
 
 
@@ -131,6 +134,7 @@ StorageBuffer::StorageBuffer(
     : IStorage(table_id_)
     , WithContext(context_->getBufferContext())
     , num_shards(num_shards_)
+    , flush_pool(CurrentMetrics::StorageBufferFlushThreads, CurrentMetrics::StorageBufferFlushThreadsActive, CurrentMetrics::StorageBufferFlushThreadsScheduled, num_shards, 0, num_shards_)
     , buffers(num_shards_)
     , min_thresholds(min_thresholds_)
     , max_thresholds(max_thresholds_)
@@ -802,7 +806,13 @@ bool StorageBuffer::checkThresholdsImpl(bool direct, size_t rows, size_t bytes, 
 void StorageBuffer::flushAllBuffers(bool check_thresholds)
 {
     for (auto & buf : buffers)
-        flushBuffer(buf, check_thresholds, false);
+    {
+        flush_pool.scheduleOrThrowOnError([&] ()
+        {
+            flushBuffer(buf, check_thresholds, false);
+        });
+    }
+    flush_pool.wait();
 }
 
 
