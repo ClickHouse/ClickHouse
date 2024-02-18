@@ -88,4 +88,5 @@ print '-- Missing column in front of startsWith --';
 StormEvents | where startswith "W" | summarize Count=count() by State; -- { clientError SYNTAX_ERROR }
 
 SET max_query_size = 55;
+SET dialect='kusto';
 Customers | where Education contains 'degree' | order by LastName; -- { serverError 62 }
