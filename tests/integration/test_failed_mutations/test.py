@@ -117,7 +117,7 @@ def test_exponential_backoff_create_dependent_table(started_cluster, node):
 
     retry_count = 100
     no_unfinished_mutation = False
-    for _ in range(0,retry_count):
+    for _ in range(0, retry_count):
         if node.query("SELECT count() FROM system.mutations WHERE is_done=0") == "0\n":
             no_unfinished_mutation = True
             break
@@ -185,16 +185,16 @@ def test_no_backoff_after_killing_mutation(started_cluster, replicated_table):
         "ALTER TABLE test_mutations DELETE WHERE x IN (SELECT x  FROM dep_table) SETTINGS allow_nondeterministic_mutations=1"
     )
     # Executing correct mutation.
-    node.query(
-        "ALTER TABLE test_mutations DELETE  WHERE x=1"
-    )
+    node.query("ALTER TABLE test_mutations DELETE  WHERE x=1")
     assert node.wait_for_log_line(
         REPLICATED_POSPONE_MUTATION_LOG if replicated_table else POSPONE_MUTATION_LOG
     )
-    mutation_ids = node.query('select mutation_id from system.mutations').split()
+    mutation_ids = node.query("select mutation_id from system.mutations").split()
 
     node.query(
         f"KILL MUTATION WHERE table = 'test_mutations' AND mutation_id = '{mutation_ids[0]}'"
     )
     node.rotate_logs()
-    assert not node.contains_in_log(REPLICATED_POSPONE_MUTATION_LOG if replicated_table else POSPONE_MUTATION_LOG)
+    assert not node.contains_in_log(
+        REPLICATED_POSPONE_MUTATION_LOG if replicated_table else POSPONE_MUTATION_LOG
+    )
