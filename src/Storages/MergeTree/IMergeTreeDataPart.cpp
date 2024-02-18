@@ -313,13 +313,13 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     const IMergeTreeDataPart * parent_part_)
     : DataPartStorageHolder(data_part_storage_)
     , storage(storage_)
-    , mutable_name(name_)
     , name(mutable_name)
     , info(info_)
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
     , parent_part(parent_part_)
     , parent_part_name(parent_part ? parent_part->name : "")
+    , mutable_name(name_)
 {
     if (parent_part)
     {
@@ -341,6 +341,19 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
     decrementStateMetric(state);
     decrementTypeMetric(part_type);
 }
+
+
+const IMergeTreeDataPart::Index & IMergeTreeDataPart::getIndex() const
+{
+    return index;
+}
+
+
+void IMergeTreeDataPart::setIndex(Columns index_)
+{
+    index = std::move(index_);
+}
+
 
 void IMergeTreeDataPart::setName(const String & new_name)
 {
@@ -842,6 +855,7 @@ void IMergeTreeDataPart::loadIndex()
 
         for (size_t i = 0; i < key_size; ++i)
         {
+            loaded_index[i]->shrinkToFit();
             loaded_index[i]->protect();
             if (loaded_index[i]->size() != marks_count)
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data from index file {}(expected size: "
