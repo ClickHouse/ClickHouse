@@ -134,7 +134,6 @@ StorageBuffer::StorageBuffer(
     : IStorage(table_id_)
     , WithContext(context_->getBufferContext())
     , num_shards(num_shards_)
-    , flush_pool(CurrentMetrics::StorageBufferFlushThreads, CurrentMetrics::StorageBufferFlushThreadsActive, CurrentMetrics::StorageBufferFlushThreadsScheduled, num_shards, 0, num_shards_)
     , buffers(num_shards_)
     , min_thresholds(min_thresholds_)
     , max_thresholds(max_thresholds_)
@@ -157,6 +156,12 @@ StorageBuffer::StorageBuffer(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
+    if (num_shards > 1)
+    {
+        flush_pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::StorageBufferFlushThreads, CurrentMetrics::StorageBufferFlushThreadsActive, CurrentMetrics::StorageBufferFlushThreadsScheduled,
+            num_shards, 0, num_shards);
+    }
     flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
 }
 
@@ -807,12 +812,21 @@ void StorageBuffer::flushAllBuffers(bool check_thresholds)
 {
     for (auto & buf : buffers)
     {
-        flush_pool.scheduleOrThrowOnError([&] ()
+        if (flush_pool)
+        {
+            flush_pool->scheduleOrThrowOnError([&] ()
+            {
+                flushBuffer(buf, check_thresholds, false);
+            });
+        }
+        else
         {
             flushBuffer(buf, check_thresholds, false);
-        });
+        }
     }
-    flush_pool.wait();
+
+    if (flush_pool)
+        flush_pool->wait();
 }
 
 
