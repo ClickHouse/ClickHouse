@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <Formats/FormatSettings.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <IO/SharedThreadPools.h>
