@@ -36,7 +36,7 @@ which is equal to
 <clickhouse>
     <profiles>
         <default>
-            <max_query_size/>150000</max_query_size>
+            <max_query_size>150000</max_query_size>
         </default>
     </profiles>
 </clickhouse>
