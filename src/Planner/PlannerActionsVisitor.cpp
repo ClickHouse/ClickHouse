@@ -44,6 +44,22 @@ namespace ErrorCodes
 namespace
 {
 
+String calculateActionNodeNameForConstant(const ConstantNode & constant_node)
+{
+    WriteBufferFromOwnString buffer;
+    if (constant_node.requiresCastCall())
+        buffer << "_CAST(";
+
+    buffer << calculateConstantActionNodeName(constant_node.getValue(), constant_node.getResultType());
+
+    if (constant_node.requiresCastCall())
+    {
+        buffer << ", '" << constant_node.getResultType()->getName() << "'_String)";
+    }
+
+    return buffer.str();
+}
+
 class ActionNodeNameHelper
 {
 public:
@@ -88,10 +104,17 @@ public:
             case QueryTreeNodeType::CONSTANT:
             {
                 const auto & constant_node = node->as<ConstantNode &>();
-                if (constant_node.hasSourceExpression())
-                    result = calculateActionNodeName(constant_node.getSourceExpression());
+                if (planner_context.isASTLevelOptimizationAllowed())
+                {
+                    result = calculateActionNodeNameForConstant(constant_node);
+                }
                 else
-                    result = calculateConstantActionNodeName(constant_node.getValue(), constant_node.getResultType());
+                {
+                    if (constant_node.hasSourceExpression())
+                        result = calculateActionNodeName(constant_node.getSourceExpression());
+                    else
+                        result = calculateConstantActionNodeName(constant_node.getValue(), constant_node.getResultType());
+                }
                 break;
             }
             case QueryTreeNodeType::FUNCTION:
@@ -530,9 +553,20 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     const auto & constant_literal = constant_node.getValue();
     const auto & constant_type = constant_node.getResultType();
 
-    auto constant_node_name = constant_node.hasSourceExpression()
-                                    ? action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression())
-                                    : calculateConstantActionNodeName(constant_literal, constant_type);
+    auto constant_node_name = [&]()
+    {
+        if (planner_context->isASTLevelOptimizationAllowed())
+        {
+            return calculateActionNodeNameForConstant(constant_node);
+        }
+        else
+        {
+            if (constant_node.hasSourceExpression())
+                return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
+            else
+                return calculateConstantActionNodeName(constant_literal, constant_type);
+        }
+    }();
 
     ColumnWithTypeAndName column;
     column.name = constant_node_name;

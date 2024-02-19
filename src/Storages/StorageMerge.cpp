@@ -1001,37 +1001,34 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
         Block pipe_header = builder->getHeader();
 
-        if (!allow_experimental_analyzer)
+        if (has_database_virtual_column && !pipe_header.has("_database"))
         {
-            if (has_database_virtual_column && !pipe_header.has("_database"))
-            {
-                ColumnWithTypeAndName column;
-                column.name = "_database";
-                column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-                column.column = column.type->createColumnConst(0, Field(database_name));
+            ColumnWithTypeAndName column;
+            column.name = "_database";
+            column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+            column.column = column.type->createColumnConst(0, Field(database_name));
 
-                auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
-                auto adding_column_actions = std::make_shared<ExpressionActions>(
-                    std::move(adding_column_dag), ExpressionActionsSettings::fromContext(modified_context, CompileExpressions::yes));
+            auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+            auto adding_column_actions = std::make_shared<ExpressionActions>(
+                std::move(adding_column_dag), ExpressionActionsSettings::fromContext(modified_context, CompileExpressions::yes));
 
-                builder->addSimpleTransform([&](const Block & stream_header)
-                                            { return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); });
-            }
+            builder->addSimpleTransform([&](const Block & stream_header)
+                                        { return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); });
+        }
 
-            if (has_table_virtual_column && !pipe_header.has("_table"))
-            {
-                ColumnWithTypeAndName column;
-                column.name = "_table";
-                column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-                column.column = column.type->createColumnConst(0, Field(table_name));
+        if (has_table_virtual_column && !pipe_header.has("_table"))
+        {
+            ColumnWithTypeAndName column;
+            column.name = "_table";
+            column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+            column.column = column.type->createColumnConst(0, Field(table_name));
 
-                auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
-                auto adding_column_actions = std::make_shared<ExpressionActions>(
-                    std::move(adding_column_dag), ExpressionActionsSettings::fromContext(modified_context, CompileExpressions::yes));
+            auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+            auto adding_column_actions = std::make_shared<ExpressionActions>(
+                std::move(adding_column_dag), ExpressionActionsSettings::fromContext(modified_context, CompileExpressions::yes));
 
-                builder->addSimpleTransform([&](const Block & stream_header)
-                                            { return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); });
-            }
+            builder->addSimpleTransform([&](const Block & stream_header)
+                                        { return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); });
         }
 
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
@@ -1393,7 +1390,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextMutablePtr local_context,
     QueryPipelineBuilder & builder,
-    QueryProcessingStage::Enum processed_stage)
+    QueryProcessingStage::Enum processed_stage [[maybe_unused]])
 {
     Block before_block_header = builder.getHeader();
 
@@ -1452,9 +1449,9 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     ActionsDAG::MatchColumnsMode convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
 
-    if (local_context->getSettingsRef().allow_experimental_analyzer
-        && (processed_stage != QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr))
-        convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
+    // if (local_context->getSettingsRef().allow_experimental_analyzer
+    //     && (processed_stage != QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr))
+    //     convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
 
     if (row_policy_data_opt)
     {
