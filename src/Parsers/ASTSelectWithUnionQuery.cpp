@@ -63,8 +63,10 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
 
         if (auto * node = (*it)->as<ASTSelectWithUnionQuery>())
         {
-            settings.ostr << settings.nl_or_ws << indent_str;
+            if (it != list_of_selects->children.begin())
+                settings.ostr << settings.nl_or_ws;
 
+            settings.ostr << indent_str;
             auto sub_query = std::make_shared<ASTSubquery>(*it);
             sub_query->formatImpl(settings, state, frame);
         }
