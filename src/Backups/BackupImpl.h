@@ -108,8 +108,6 @@ private:
     bool checkLockFile(bool throw_if_failed) const;
     void removeLockFile();
 
-    void removeAllFilesAfterFailure();
-
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
 
