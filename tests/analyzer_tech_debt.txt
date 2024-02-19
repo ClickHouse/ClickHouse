@@ -16,7 +16,6 @@
 02354_annoy
 02493_inconsistent_hex_and_binary_number
 02725_agg_projection_resprect_PK
-02763_row_policy_storage_merge_alias
 # Check after constants refactoring
 02901_parallel_replicas_rollup
 # Flaky. Please don't delete them without fixing them:
