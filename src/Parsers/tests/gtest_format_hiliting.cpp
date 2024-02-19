@@ -69,10 +69,10 @@ const std::vector<std::pair<std::string, std::string>> expected_and_query_pairs 
 
     // ASTWithElement
     {
-        keyword("WITH ") + alias("alias ") + keyword("AS ")
-            + "(" + keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table") + ") "
-            + keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table"),
-        "with alias as (select * from `table`) select * from `table`"
+        keyword("WITH ") + alias("alias ") + " " + keyword("AS")
+            + " (" + keyword("SELECT") + " * " + keyword("FROM") + " " + identifier("table") + ") "
+            + keyword("SELECT") + " * " + keyword("FROM") + " " + identifier("table"),
+        "with `alias ` as (select * from `table`) select * from `table`"
     },
 
     // ASTWithAlias
