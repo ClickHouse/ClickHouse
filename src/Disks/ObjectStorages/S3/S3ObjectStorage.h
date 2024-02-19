@@ -21,11 +21,13 @@ struct S3ObjectStorageSettings
 
     S3ObjectStorageSettings(
         const S3Settings::RequestSettings & request_settings_,
+        const S3::AuthSettings & auth_settings_,
         uint64_t min_bytes_for_seek_,
         int32_t list_object_keys_size_,
         int32_t objects_chunk_size_to_delete_,
         bool read_only_)
         : request_settings(request_settings_)
+        , auth_settings(auth_settings_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , list_object_keys_size(list_object_keys_size_)
         , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
@@ -33,6 +35,7 @@ struct S3ObjectStorageSettings
     {}
 
     S3Settings::RequestSettings request_settings;
+    S3::AuthSettings auth_settings;
 
     uint64_t min_bytes_for_seek;
     int32_t list_object_keys_size;
@@ -52,7 +55,9 @@ private:
         S3::URI uri_,
         const S3Capabilities & s3_capabilities_,
         ObjectStorageKeysGeneratorPtr key_generator_,
-        const String & disk_name_)
+        const String & disk_name_,
+        bool for_disk_s3_ = true,
+        const HTTPHeaderEntries & static_headers_ = {})
         : uri(uri_)
         , key_generator(std::move(key_generator_))
         , disk_name(disk_name_)
@@ -60,6 +65,8 @@ private:
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
         , log(getLogger(logger_name))
+        , for_disk_s3(for_disk_s3_)
+        , static_headers(static_headers_)
     {
     }
 
@@ -180,6 +187,9 @@ private:
     S3Capabilities s3_capabilities;
 
     LoggerPtr log;
+
+    const bool for_disk_s3;
+    const HTTPHeaderEntries static_headers;
 };
 
 /// Do not encode keys, store as-is, and do not require separate disk for metadata.

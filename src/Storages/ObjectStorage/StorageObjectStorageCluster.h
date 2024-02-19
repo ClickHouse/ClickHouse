@@ -21,6 +21,7 @@ class StorageObjectStorageCluster : public IStorageCluster
 {
 public:
     using Storage = StorageObjectStorage<StorageSettings>;
+    using TableFunction = TableFunctionObjectStorageCluster<Definition, StorageSettings, Configuration>;
 
     StorageObjectStorageCluster(
         const String & cluster_name_,
@@ -30,8 +31,7 @@ public:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        ContextPtr context_,
-        bool structure_argument_was_provided_);
+        ContextPtr context_);
 
     std::string getName() const override { return engine_name; }
 
@@ -49,9 +49,9 @@ public:
 private:
     void updateBeforeRead(const ContextPtr & /* context */) override {}
 
-    void addColumnsStructureToQuery(
+    void updateQueryToSendIfNeeded(
         ASTPtr & query,
-        const String & structure,
+        const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context) override;
 
     const String & engine_name;

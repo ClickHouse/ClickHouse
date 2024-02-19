@@ -39,8 +39,9 @@ public:
     std::string getPathWithoutGlob() const;
 
     virtual void check(ContextPtr context) const = 0;
-    virtual ObjectStoragePtr createOrUpdateObjectStorage(ContextPtr context, bool is_readonly = true) = 0; /// NOLINT
+    virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) = 0; /// NOLINT
     virtual StorageObjectStorageConfigurationPtr clone() = 0;
+    virtual bool isStaticConfiguration() const { return true; }
 
     String format = "auto";
     String compression_method = "auto";

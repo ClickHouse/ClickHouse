@@ -31,7 +31,7 @@ public:
     String getNamespace() const override { return container; }
 
     void check(ContextPtr context) const override;
-    ObjectStoragePtr createOrUpdateObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
     StorageObjectStorageConfigurationPtr clone() override { return std::make_shared<StorageAzureBlobConfiguration>(*this); }
 
     void fromNamedCollection(const NamedCollection & collection) override;

@@ -1,5 +1,6 @@
 #include <Storages/Cache/SchemaCache.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 #include <ctime>
 
 namespace ProfileEvents
@@ -109,6 +110,7 @@ std::optional<SchemaCache::SchemaInfo> SchemaCache::tryGetImpl(const Key & key, 
     }
 
     ProfileEvents::increment(ProfileEvents::SchemaInferenceCacheHits);
+    LOG_TEST(&Poco::Logger::get("kssenii"), "KSSENII: {}", StackTrace().toString());
 
     auto & schema_info = it->second.schema_info;
     auto & queue_iterator = it->second.iterator;

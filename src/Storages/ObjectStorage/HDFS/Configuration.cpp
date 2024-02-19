@@ -27,7 +27,7 @@ void StorageHDFSConfiguration::check(ContextPtr context) const
     checkHDFSURL(url);
 }
 
-ObjectStoragePtr StorageHDFSConfiguration::createOrUpdateObjectStorage(ContextPtr context, bool is_readonly) /// NOLINT
+ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage(ContextPtr context, bool is_readonly) /// NOLINT
 {
     UNUSED(is_readonly);
     auto settings = std::make_unique<HDFSObjectStorageSettings>();
@@ -42,16 +42,13 @@ void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr, bool /* with_str
     if (args.size() > 1)
         format_name = checkAndGetLiteralArgument<String>(args[1], "format_name");
 
-    if (format_name == "auto")
-        format_name = FormatFactory::instance().getFormatFromFileName(url, true);
-
     String compression_method;
     if (args.size() == 3)
         compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
     else
         compression_method = "auto";
-
 }
+
 }
 
 #endif

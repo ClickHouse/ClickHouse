@@ -7,6 +7,7 @@
 #include <Formats/FormatFactory.h>
 #include <boost/algorithm/string.hpp>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/ObjectStorages/S3/diskSettings.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -58,106 +59,47 @@ void StorageS3Configuration::check(ContextPtr context) const
 StorageS3Configuration::StorageS3Configuration(const StorageS3Configuration & other)
 {
     url = other.url;
-    auth_settings = other.auth_settings;
-    request_settings = other.request_settings;
     static_configuration = other.static_configuration;
     headers_from_ast = other.headers_from_ast;
     keys = other.keys;
-    initialized = other.initialized;
 
     format = other.format;
     compression_method = other.compression_method;
     structure = other.structure;
 }
 
-ObjectStoragePtr StorageS3Configuration::createOrUpdateObjectStorage(ContextPtr context, bool /* is_readonly */) /// NOLINT
+ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context, bool /* is_readonly */) /// NOLINT
 {
-    auto s3_settings = context->getStorageS3Settings().getSettings(url.uri.toString());
-    request_settings = s3_settings.request_settings;
-    request_settings.updateFromSettings(context->getSettings());
+    const auto & config = context->getConfigRef();
+    const std::string config_prefix = "s3.";
 
-    if (!initialized || (!static_configuration && auth_settings.hasUpdates(s3_settings.auth_settings)))
+    auto s3_settings = getSettings(config, config_prefix, context);
+
+    auth_settings.updateFrom(s3_settings->auth_settings);
+    s3_settings->auth_settings = auth_settings;
+    s3_settings->request_settings = request_settings;
+
+    if (!headers_from_ast.empty())
     {
-        auth_settings.updateFrom(s3_settings.auth_settings);
-        keys[0] = url.key;
-        initialized = true;
+        s3_settings->auth_settings.headers.insert(
+            s3_settings->auth_settings.headers.end(),
+            headers_from_ast.begin(), headers_from_ast.end());
     }
 
-    const auto & config = context->getConfigRef();
+    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString()))
+        s3_settings->auth_settings.updateFrom(endpoint_settings->auth_settings);
+
+    auto client = getClient(config, config_prefix, context, *s3_settings, false, &url);
+    auto key_generator = createObjectStorageKeysGeneratorAsIsWithPrefix(url.key);
     auto s3_capabilities = S3Capabilities
     {
         .support_batch_delete = config.getBool("s3.support_batch_delete", true),
         .support_proxy = config.getBool("s3.support_proxy", config.has("s3.proxy")),
     };
 
-    auto s3_storage_settings = std::make_unique<S3ObjectStorageSettings>(
-        request_settings,
-        config.getUInt64("s3.min_bytes_for_seek", 1024 * 1024),
-        config.getInt("s3.list_object_keys_size", 1000),
-        config.getInt("s3.objects_chunk_size_to_delete", 1000),
-        config.getBool("s3.readonly", false));
-
-    auto key_generator = createObjectStorageKeysGeneratorAsIsWithPrefix(url.key);
-    auto client = createClient(context);
-    std::string disk_name = "StorageS3";
-
     return std::make_shared<S3ObjectStorage>(
-        std::move(client), std::move(s3_storage_settings), url, s3_capabilities, key_generator, /*disk_name*/disk_name);
-}
-
-std::unique_ptr<S3::Client> StorageS3Configuration::createClient(ContextPtr context)
-{
-    const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
-    const Settings & local_settings = context->getSettingsRef();
-
-    auto client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-        auth_settings.region,
-        context->getRemoteHostFilter(),
-        static_cast<unsigned>(global_settings.s3_max_redirects),
-        static_cast<unsigned>(global_settings.s3_retry_attempts),
-        global_settings.enable_s3_requests_logging,
-        /* for_disk_s3 = */ false,
-        request_settings.get_request_throttler,
-        request_settings.put_request_throttler,
-        url.uri.getScheme());
-
-    client_configuration.endpointOverride = url.endpoint;
-    client_configuration.maxConnections = static_cast<unsigned>(request_settings.max_connections);
-    client_configuration.http_connection_pool_size = global_settings.s3_http_connection_pool_size;
-
-    auto headers = auth_settings.headers;
-    if (!headers_from_ast.empty())
-        headers.insert(headers.end(), headers_from_ast.begin(), headers_from_ast.end());
-
-    client_configuration.requestTimeoutMs = request_settings.request_timeout_ms;
-
-    S3::ClientSettings client_settings{
-        .use_virtual_addressing = url.is_virtual_hosted_style,
-        .disable_checksum = local_settings.s3_disable_checksum,
-        .gcs_issue_compose_request = context->getConfigRef().getBool("s3.gcs_issue_compose_request", false),
-    };
-
-    auto credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id,
-                                                 auth_settings.secret_access_key,
-                                                 auth_settings.session_token);
-
-    auto credentials_configuration = S3::CredentialsConfiguration
-    {
-        auth_settings.use_environment_credentials.value_or(context->getConfigRef().getBool("s3.use_environment_credentials", true)),
-        auth_settings.use_insecure_imds_request.value_or(context->getConfigRef().getBool("s3.use_insecure_imds_request", false)),
-        auth_settings.expiration_window_seconds.value_or(context->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
-        auth_settings.no_sign_request.value_or(context->getConfigRef().getBool("s3.no_sign_request", false)),
-    };
-
-    return S3::ClientFactory::instance().create(
-        client_configuration,
-        client_settings,
-        credentials.GetAWSAccessKeyId(),
-        credentials.GetAWSSecretKey(),
-        auth_settings.server_side_encryption_customer_key_base64,
-        auth_settings.server_side_encryption_kms_config,
-        std::move(headers),
-        credentials_configuration);
+        std::move(client), std::move(s3_settings), url, s3_capabilities,
+        key_generator, "StorageS3", false, headers_from_ast);
 }
 
 void StorageS3Configuration::fromNamedCollection(const NamedCollection & collection)
@@ -185,10 +127,6 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     static_configuration = !auth_settings.access_key_id.empty() || auth_settings.no_sign_request.has_value();
 
     keys = {url.key};
-
-    //if (format == "auto" && get_format_from_file)
-    if (format == "auto")
-        format = FormatFactory::instance().getFormatFromFileName(url.key, true);
 }
 
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
@@ -386,10 +324,6 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     auth_settings.no_sign_request = no_sign_request;
 
     keys = {url.key};
-
-    // if (format == "auto" && get_format_from_file)
-    if (format == "auto")
-        format = FormatFactory::instance().getFormatFromFileName(url.key, true);
 }
 
 void StorageS3Configuration::addStructureToArgs(ASTs & args, const String & structure_, ContextPtr context)

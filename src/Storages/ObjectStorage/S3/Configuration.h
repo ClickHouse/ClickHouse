@@ -27,27 +27,25 @@ public:
     String getDataSourceDescription() override;
 
     void check(ContextPtr context) const override;
-    ObjectStoragePtr createOrUpdateObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
     StorageObjectStorageConfigurationPtr clone() override { return std::make_shared<StorageS3Configuration>(*this); }
+    bool isStaticConfiguration() const override { return static_configuration; }
 
-    void fromNamedCollection(const NamedCollection & collection) override;
-    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
     static void addStructureToArgs(ASTs & args, const String & structure, ContextPtr context);
 
 private:
+    void fromNamedCollection(const NamedCollection & collection) override;
+    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
+
     S3::URI url;
+    std::vector<String> keys;
+
     S3::AuthSettings auth_settings;
     S3Settings::RequestSettings request_settings;
+    HTTPHeaderEntries headers_from_ast; /// Headers from ast is a part of static configuration.
     /// If s3 configuration was passed from ast, then it is static.
     /// If from config - it can be changed with config reload.
     bool static_configuration = true;
-    /// Headers from ast is a part of static configuration.
-    HTTPHeaderEntries headers_from_ast;
-    std::vector<String> keys;
-
-    std::unique_ptr<S3::Client> createClient(ContextPtr context);
-
-    bool initialized = false;
 };
 
 }

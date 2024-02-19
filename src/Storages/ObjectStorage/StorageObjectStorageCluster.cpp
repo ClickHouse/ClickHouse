@@ -33,12 +33,10 @@ StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::Storage
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    ContextPtr context_,
-    bool structure_argument_was_provided_)
+    ContextPtr context_)
     : IStorageCluster(cluster_name_,
                       table_id_,
-                      getLogger(fmt::format("{}({})", engine_name_, table_id_.table_name)),
-                      structure_argument_was_provided_)
+                      getLogger(fmt::format("{}({})", engine_name_, table_id_.table_name)))
     , engine_name(engine_name_)
     , configuration{configuration_}
     , object_storage(object_storage_)
@@ -48,13 +46,16 @@ StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::Storage
 
     if (columns_.empty())
     {
-        /// `format_settings` is set to std::nullopt, because StorageObjectStorageCluster is used only as table function
-        auto columns = StorageObjectStorage<StorageSettings>::getTableStructureFromData(
-            object_storage, configuration, /*format_settings=*/std::nullopt, context_);
+        ColumnsDescription columns = Storage::getTableStructureFromData(object_storage, configuration, /*format_settings=*/std::nullopt, context_);
         storage_metadata.setColumns(columns);
     }
     else
+    {
+        if (configuration->format == "auto")
+            StorageS3::setFormatFromData(object_storage, configuration, /*format_settings=*/std::nullopt, context_);
+
         storage_metadata.setColumns(columns_);
+    }
 
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
@@ -64,9 +65,9 @@ StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::Storage
 }
 
 template <typename Definition, typename StorageSettings, typename Configuration>
-void StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::addColumnsStructureToQuery(
+void StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::updateQueryToSendIfNeeded(
     ASTPtr & query,
-    const String & structure,
+    const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context)
 {
     ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
@@ -76,13 +77,18 @@ void StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::ad
                         "Expected SELECT query from table function {}, got '{}'",
                         engine_name, queryToString(query));
     }
-    using TableFunction = TableFunctionObjectStorageCluster<Definition, StorageSettings, Configuration>;
-    TableFunction::addColumnsStructureToArguments(expression_list->children, structure, context);
+
+    TableFunction::updateStructureAndFormatArgumentsIfNeeded(
+        expression_list->children,
+        storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
+        configuration->format,
+        context);
 }
 
 template <typename Definition, typename StorageSettings, typename Configuration>
 RemoteQueryExecutor::Extension
-StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & local_context) const
+StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::getTaskIteratorExtension(
+    const ActionsDAG::Node * predicate, const ContextPtr & local_context) const
 {
     const auto settings = StorageSettings::create(local_context->getSettingsRef());
     auto iterator = std::make_shared<StorageObjectStorageSource::GlobIterator>(

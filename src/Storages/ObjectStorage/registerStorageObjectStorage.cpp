@@ -56,7 +56,7 @@ static std::shared_ptr<StorageObjectStorage<StorageSettings>> createStorageObjec
 
     return std::make_shared<StorageObjectStorage<StorageSettings>>(
         configuration,
-        configuration->createOrUpdateObjectStorage(context),
+        configuration->createObjectStorage(context),
         engine_name,
         args.getContext(),
         args.table_id,

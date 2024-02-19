@@ -39,7 +39,7 @@ public:
         std::optional<FormatSettings> format_settings_,
         bool attach)
     {
-        auto object_storage = base_configuration->createOrUpdateObjectStorage(context);
+        auto object_storage = base_configuration->createObjectStorage(context);
         DataLakeMetadataPtr metadata;
         NamesAndTypesList schema_from_metadata;
         ConfigurationPtr configuration = base_configuration->clone();
@@ -75,28 +75,22 @@ public:
         return ColumnsDescription(metadata->getTableSchema());
     }
 
-    std::pair<ConfigurationPtr, ObjectStoragePtr> updateConfigurationAndGetCopy(ContextPtr local_context) override
+    void updateConfiguration(ContextPtr local_context) override
     {
         std::lock_guard lock(Storage::configuration_update_mutex);
 
-        auto new_object_storage = base_configuration->createOrUpdateObjectStorage(local_context);
-        bool updated = new_object_storage != nullptr;
-        if (updated)
-            Storage::object_storage = new_object_storage;
+        Storage::updateConfiguration(local_context);
 
         auto new_metadata = DataLakeMetadata::create(Storage::object_storage, base_configuration, local_context);
 
-        if (!current_metadata || !(*current_metadata == *new_metadata))
-            current_metadata = std::move(new_metadata);
-        else if (!updated)
-            return {Storage::configuration, Storage::object_storage};
+        if (current_metadata && *current_metadata == *new_metadata)
+            return;
 
+        current_metadata = std::move(new_metadata);
         auto updated_configuration = base_configuration->clone();
         /// If metadata wasn't changed, we won't list data files again.
         updated_configuration->getPaths() = current_metadata->getDataFiles();
         Storage::configuration = updated_configuration;
-
-        return {Storage::configuration, Storage::object_storage};
     }
 
     template <typename... Args>

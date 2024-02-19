@@ -2,6 +2,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/StorageObjectStorage_fwd_internal.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/StorageObjectStorageQuerySettings.h>
 #include <Formats/ReadSchemaUtils.h>
 
 
@@ -23,7 +24,7 @@ public:
         ObjectInfos & read_keys_,
         const ContextPtr & context_);
 
-    std::pair<std::unique_ptr<ReadBuffer>, std::optional<ColumnsDescription>> next() override;
+    Data next() override;
 
     void setNumRowsToLastFile(size_t num_rows) override;
 
@@ -33,8 +34,14 @@ public:
 
     String getLastFileName() const override;
 
+    void setFormatName(const String & format_name) override;
+
+    bool supportsLastReadBufferRecreation() const override { return true; }
+
+    std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override;
+
 private:
-    SchemaCache::Key getKeyForSchemaCache(const String & path) const;
+    SchemaCache::Key getKeyForSchemaCache(const String & path, const String & format_name) const;
     SchemaCache::Keys getPathsForSchemaCache() const;
     std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const ObjectInfos::iterator & begin, const ObjectInfos::iterator & end);
@@ -46,6 +53,7 @@ private:
     const StorageObjectStorageSettings query_settings;
     SchemaCache & schema_cache;
     ObjectInfos & read_keys;
+    std::optional<String> format;
 
     size_t prev_read_keys_size;
     ObjectInfoPtr current_object_info;

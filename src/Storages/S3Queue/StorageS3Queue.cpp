@@ -134,7 +134,7 @@ StorageS3Queue::StorageS3Queue(
 
     checkAndAdjustSettings(*s3queue_settings, context_->getSettingsRef());
 
-    object_storage = configuration->createOrUpdateObjectStorage(context_);
+    object_storage = configuration->createObjectStorage(context_);
     FormatFactory::instance().checkFormatName(configuration->format);
     configuration->check(context_);
 
@@ -146,8 +146,10 @@ StorageS3Queue::StorageS3Queue(
     }
     else
     {
-        if (configuration.format == "auto")
-            configuration.format = StorageS3::getTableStructureAndFormatFromData(configuration, format_settings, context_).second;
+        if (configuration->format == "auto")
+        {
+            StorageObjectStorage<S3StorageSettings>::setFormatFromData(object_storage, configuration, format_settings, context_);
+        }
         storage_metadata.setColumns(columns_);
     }
 

@@ -5,10 +5,14 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageQuerySettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorage_fwd_internal.h>
+#include <Processors/Formats/IInputFormat.h>
 
 
 namespace DB
 {
+
+class SchemaCache;
+
 class StorageObjectStorageSource : public SourceWithKeyCondition, WithContext
 {
     friend class StorageS3QueueSource;

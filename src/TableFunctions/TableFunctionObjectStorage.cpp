@@ -31,7 +31,7 @@ ObjectStoragePtr TableFunctionObjectStorage<
     Definition, StorageSettings, Configuration>::getObjectStorage(const ContextPtr & context, bool create_readonly) const
 {
     if (!object_storage)
-        object_storage = configuration->createOrUpdateObjectStorage(context, create_readonly);
+        object_storage = configuration->createObjectStorage(context, create_readonly);
     return object_storage;
 }
 
@@ -63,8 +63,8 @@ std::vector<size_t> TableFunctionObjectStorage<
 }
 
 template <typename Definition, typename StorageSettings, typename Configuration>
-void TableFunctionObjectStorage<
-    Definition, StorageSettings, Configuration>::addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr & context)
+void TableFunctionObjectStorage<Definition, StorageSettings, Configuration>::updateStructureAndFormatArgumentsIfNeeded(
+        ASTs & args, const String & structure, const String & /* format */, const ContextPtr & context)
 {
     Configuration::addStructureToArgs(args, structure, context);
 }

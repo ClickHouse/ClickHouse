@@ -126,7 +126,7 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto settings = getSettings(config, config_prefix, context);
-        auto client = getClient(config, config_prefix, context, *settings);
+        auto client = getClient(config, config_prefix, context, *settings, true);
         auto key_generator = getKeyGenerator(disk_type, uri, config, config_prefix);
 
         auto object_storage = std::make_shared<S3ObjectStorage>(
@@ -162,7 +162,7 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto settings = getSettings(config, config_prefix, context);
-        auto client = getClient(config, config_prefix, context, *settings);
+        auto client = getClient(config, config_prefix, context, *settings, true);
         auto key_generator = getKeyGenerator(disk_type, uri, config, config_prefix);
 
         auto object_storage = std::make_shared<S3PlainObjectStorage>(

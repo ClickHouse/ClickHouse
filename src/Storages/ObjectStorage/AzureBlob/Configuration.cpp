@@ -102,7 +102,7 @@ AzureObjectStorage::SettingsPtr StorageAzureBlobConfiguration::createSettings(Co
     return settings_ptr;
 }
 
-ObjectStoragePtr StorageAzureBlobConfiguration::createOrUpdateObjectStorage(ContextPtr context, bool is_readonly) /// NOLINT
+ObjectStoragePtr StorageAzureBlobConfiguration::createObjectStorage(ContextPtr context, bool is_readonly) /// NOLINT
 {
     auto client = createClient(is_readonly);
     auto settings = createSettings(context);
@@ -245,8 +245,6 @@ void StorageAzureBlobConfiguration::fromNamedCollection(const NamedCollection & 
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
 
     blobs_paths = {blob_path};
-    if (format == "auto")
-        format = FormatFactory::instance().getFormatFromFileName(blob_path, true);
 }
 
 void StorageAzureBlobConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
@@ -367,9 +365,6 @@ void StorageAzureBlobConfiguration::fromAST(ASTs & engine_args, ContextPtr conte
     }
 
     blobs_paths = {blob_path};
-
-    if (format == "auto")
-        format = FormatFactory::instance().getFormatFromFileName(blob_path, true);
 }
 
 void StorageAzureBlobConfiguration::addStructureToArgs(ASTs & args, const String & structure_, ContextPtr context)

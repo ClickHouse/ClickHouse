@@ -242,7 +242,12 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
 
-    auto settings_ptr = s3_settings.get();
+    S3Settings::RequestSettings request_settings = s3_settings.get()->request_settings;
+    if (auto query_context = CurrentThread::getQueryContext())
+    {
+        request_settings.updateFromSettingsIfChanged(query_context->getSettingsRef());
+    }
+
     ThreadPoolCallbackRunner<void> scheduler;
     if (write_settings.s3_allow_parallel_part_upload)
         scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "VFSWrite");
@@ -256,7 +261,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         uri.bucket,
         object.remote_path,
         buf_size,
-        settings_ptr->request_settings,
+        request_settings,
         std::move(blob_storage_log),
         attributes,
         std::move(scheduler),
@@ -534,19 +539,57 @@ void S3ObjectStorage::startup()
     const_cast<S3::Client &>(*client.get()).EnableRequestProcessing();
 }
 
-void S3ObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
+void S3ObjectStorage::applyNewSettings(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    ContextPtr context)
 {
     auto new_s3_settings = getSettings(config, config_prefix, context);
-    auto new_client = getClient(config, config_prefix, context, *new_s3_settings);
+    if (!static_headers.empty())
+    {
+        new_s3_settings->auth_settings.headers.insert(
+            new_s3_settings->auth_settings.headers.end(),
+            static_headers.begin(), static_headers.end());
+    }
+
+    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString()))
+        new_s3_settings->auth_settings.updateFrom(endpoint_settings->auth_settings);
+
+    auto current_s3_settings = s3_settings.get();
+    if (current_s3_settings->auth_settings.hasUpdates(new_s3_settings->auth_settings) || for_disk_s3)
+    {
+        auto new_client = getClient(config, config_prefix, context, *new_s3_settings, for_disk_s3, &uri);
+        client.set(std::move(new_client));
+    }
+
     s3_settings.set(std::move(new_s3_settings));
-    client.set(std::move(new_client));
 }
 
+// void S3ObjectStorage::applyNewSettings(ContextPtr context)
+// {
+//     auto settings = s3_settings.get();
+//     if (!endpoint_settings || !settings->auth_settings.hasUpdates(endpoint_settings->auth_settings))
+//         return;
+//
+//     const auto & config = context->getConfigRef();
+//     auto new_s3_settings = getSettings(uri, config, "s3.", context);
+//
+//     new_s3_settings->auth_settings.updateFrom(endpoint_settings->auth_settings);
+//
+//     auto new_client = getClient(config, "s3.", context, *new_s3_settings, false);
+//
+//     s3_settings.set(std::move(new_s3_settings));
+//     client.set(std::move(new_client));
+// }
+
 std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
-    const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
+    const std::string & new_namespace,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    ContextPtr context)
 {
     auto new_s3_settings = getSettings(config, config_prefix, context);
-    auto new_client = getClient(config, config_prefix, context, *new_s3_settings);
+    auto new_client = getClient(config, config_prefix, context, *new_s3_settings, true);
     String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
 
     auto new_uri{uri};

@@ -39,7 +39,7 @@ struct S3Settings
             size_t max_single_operation_copy_size = 5ULL * 1024 * 1024 * 1024;
             String storage_class_name;
 
-            void updateFromSettings(const Settings & settings) { updateFromSettingsImpl(settings, true); }
+            void updateFromSettings(const Settings & settings, bool if_changed);
             void validate();
 
         private:
@@ -51,8 +51,6 @@ struct S3Settings
                 const String & config_prefix,
                 const Settings & settings,
                 String setting_name_prefix = {});
-
-            void updateFromSettingsImpl(const Settings & settings, bool if_changed);
 
             friend struct RequestSettings;
         };
@@ -96,7 +94,7 @@ struct S3Settings
             const Settings & settings,
             String setting_name_prefix = {});
 
-        void updateFromSettings(const Settings & settings);
+        void updateFromSettingsIfChanged(const Settings & settings);
 
     private:
         void updateFromSettingsImpl(const Settings & settings, bool if_changed);
@@ -112,7 +110,7 @@ class StorageS3Settings
 public:
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config, const Settings & settings);
 
-    S3Settings getSettings(const String & endpoint) const;
+    std::optional<S3Settings> getSettings(const String & endpoint) const;
 
 private:
     mutable std::mutex mutex;

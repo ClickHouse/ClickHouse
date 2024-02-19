@@ -193,8 +193,7 @@ public:
     virtual void applyNewSettings(
         const Poco::Util::AbstractConfiguration &,
         const std::string & /*config_prefix*/,
-        ContextPtr)
-    {}
+        ContextPtr) {}
 
     /// Sometimes object storages have something similar to chroot or namespace, for example
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.

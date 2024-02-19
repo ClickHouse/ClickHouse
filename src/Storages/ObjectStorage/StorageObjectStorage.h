@@ -21,6 +21,7 @@ using ReadTaskCallback = std::function<String()>;
 class IOutputFormat;
 class IInputFormat;
 class SchemaCache;
+class ReadBufferIterator;
 
 
 template <typename StorageSettings>
@@ -89,13 +90,26 @@ public:
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
     static ColumnsDescription getTableStructureFromData(
-        ObjectStoragePtr object_storage,
+        const ObjectStoragePtr & object_storage,
         const ConfigurationPtr & configuration,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr context);
+        const ContextPtr & context);
+
+    static void setFormatFromData(
+        const ObjectStoragePtr & object_storage,
+        const ConfigurationPtr & configuration,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & context);
 
 protected:
-    virtual std::pair<ConfigurationPtr, ObjectStoragePtr> updateConfigurationAndGetCopy(ContextPtr local_context);
+    virtual void updateConfiguration(ContextPtr local_context);
+
+    static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
+        const ObjectStoragePtr & object_storage,
+        const ConfigurationPtr & configuration,
+        const std::optional<FormatSettings> & format_settings,
+        ObjectInfos & read_keys,
+        const ContextPtr & context);
 
     const std::string engine_name;
     const NamesAndTypesList virtual_columns;

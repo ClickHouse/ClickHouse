@@ -26,7 +26,7 @@ public:
     String getDataSourceDescription() override { return url; }
 
     void check(ContextPtr context) const override;
-    ObjectStoragePtr createOrUpdateObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
     StorageObjectStorageConfigurationPtr clone() override { return std::make_shared<StorageHDFSConfiguration>(*this); }
 
     void fromNamedCollection(const NamedCollection &) override {}
