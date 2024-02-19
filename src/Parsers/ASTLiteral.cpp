@@ -65,21 +65,31 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
         return;
     }
 
-    /// 100 - just arbitrary value.
+    /// 100 - just an arbitrary value.
     constexpr auto min_elements_for_hashing = 100;
 
-    /// Special case for very large arrays and tuples. Instead of listing all elements, will use hash of them.
-    /// (Otherwise column name will be too long, that will lead to significant slowdown of expression analysis.)
+    /// Special case for very large arrays and tuples. Instead of listing all elements, we will use a hash of them.
+    /// (Otherwise, the column name will be too long, which will lead to a significant slowdown of expression analysis.)
+    /// Also, for aggregate functions, we should include the type name to distinguish the states of different types.
     auto type = value.getType();
     if ((type == Field::Types::Array && value.get<const Array &>().size() > min_elements_for_hashing)
-        || (type == Field::Types::Tuple && value.get<const Tuple &>().size() > min_elements_for_hashing))
+        || (type == Field::Types::Tuple && value.get<const Tuple &>().size() > min_elements_for_hashing)
+        || (type == Field::Types::AggregateFunctionState))
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
         UInt64 low, high;
         hash.get128(low, high);
 
-        writeCString(type == Field::Types::Array ? "__array_" : "__tuple_", ostr);
+        const char * prefix = "";
+        if (type == Field::Types::Array)
+            prefix = "__array_";
+        else if (type == Field::Types::Tuple)
+            prefix = "__tuple_";
+        else if (type == Field::Types::AggregateFunctionState)
+            prefix = "__aggregate_function_";
+        
+        writeCString(prefix, ostr);
         writeText(low, ostr);
         ostr.write('_');
         writeText(high, ostr);
@@ -87,22 +97,14 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     else
     {
         /// Shortcut for huge AST. The `FieldVisitorToString` becomes expensive
-        /// for tons of literals as it creates temporary String.
+        /// for tons of literals as it creates a temporary String.
         if (value.getType() == Field::Types::String)
         {
             writeQuoted(value.get<String>(), ostr);
         }
         else
         {
-            String column_name;
-            if (value.getType() == Field::Types::AggregateFunctionState)
-            {
-                column_name = value.template get<AggregateFunctionStateData>().name + applyVisitor(FieldVisitorToString(), value);
-            }
-            else
-            {
-                column_name = applyVisitor(FieldVisitorToString(), value);
-            }
+            String column_name = applyVisitor(FieldVisitorToString(), value);
             writeString(column_name, ostr);
         }
     }
@@ -110,11 +112,11 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
 
 void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
 {
-    /// 100 - just arbitrary value.
+    /// 100 - just an arbitrary value.
     constexpr auto min_elements_for_hashing = 100;
 
-    /// Special case for very large arrays. Instead of listing all elements, will use hash of them.
-    /// (Otherwise column name will be too long, that will lead to significant slowdown of expression analysis.)
+    /// Special case for very large arrays. Instead of listing all elements, we will use a hash of them.
+    /// (Otherwise, the column name will be too long, which will lead to a significant slowdown of expression analysis.)
     auto type = value.getType();
     if ((type == Field::Types::Array && value.get<const Array &>().size() > min_elements_for_hashing))
     {
