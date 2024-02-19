@@ -835,34 +835,37 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
                 const auto * literal = arguments->children[0]->as<ASTLiteral>();
                 const auto * function = arguments->children[0]->as<ASTFunction>();
-                bool negate = name == "negate";
                 bool is_tuple = literal && literal->value.getType() == Field::Types::Tuple;
                 // do not add parentheses for tuple literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`
                 bool literal_need_parens = literal && !is_tuple;
+
                 // negate always requires parentheses, otherwise -(-1) will be printed as --1
-                bool negate_need_parens = negate && (literal_need_parens || (function && function->name == "negate"));
-                // We don't need parentheses around a single literal.
-                bool need_parens = !literal && frame.need_parens && !negate_need_parens;
+                bool inside_parens = name == "negate" && (literal_need_parens || (function && function->name == "negate"));
+
+                /// We DO need parentheses around a single literal
+                /// For example, SELECT (NOT 0) + (NOT 0) cannot be transformed into SELECT NOT 0 + NOT 0, since
+                /// this is equal to SELECT NOT (0 + NOT 0)
+                bool outside_parens = frame.need_parens && !inside_parens;
 
                 // do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
-                if (negate_need_parens)
+                if (inside_parens)
                     nested_need_parens.need_parens = false;
 
-                if (need_parens)
+                if (outside_parens)
                     settings.ostr << '(';
 
                 settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
 
-                if (negate_need_parens)
+                if (inside_parens)
                     settings.ostr << '(';
 
                 arguments->formatImpl(settings, state, nested_need_parens);
                 written = true;
 
-                if (negate_need_parens)
+                if (inside_parens)
                     settings.ostr << ')';
 
-                if (need_parens)
+                if (outside_parens)
                     settings.ostr << ')';
 
                 break;
