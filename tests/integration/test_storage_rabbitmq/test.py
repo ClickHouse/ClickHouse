@@ -47,6 +47,7 @@ instance3 = cluster.add_instance(
         "configs/mergetree.xml",
     ],
     with_rabbitmq=True,
+    stay_alive=True,
 )
 
 # Helpers
@@ -3567,6 +3568,20 @@ def test_attach_broken_table(rabbitmq_cluster):
 def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
     table_name = "nack_failed_insert"
     exchange = f"{table_name}_exchange"
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    channel.exchange_declare(exchange='deadl')
+
+    result = channel.queue_declare(queue='deadq')
+    queue_name = result.method.queue
+    channel.queue_bind(exchange='deadl', routing_key='', queue=queue_name)
+
     instance3.query(
         f"""
         CREATE TABLE test.{table_name} (key UInt64, value UInt64)
@@ -3574,7 +3589,8 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_exchange_name = '{exchange}',
-                     rabbitmq_format = 'JSONEachRow';
+                     rabbitmq_format = 'JSONEachRow',
+                    rabbitmq_queue_settings_list='x-dead-letter-exchange=deadl';
 
         DROP TABLE IF EXISTS test.view;
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -3587,19 +3603,10 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
         """
     )
 
-    credentials = pika.PlainCredentials("root", "clickhouse")
-    parameters = pika.ConnectionParameters(
-        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
-    )
-    connection = pika.BlockingConnection(parameters)
-    channel = connection.channel()
-
     num_rows = 25
     for i in range(num_rows):
         message = json.dumps({"key": i, "value": i}) + "\n"
         channel.basic_publish(exchange=exchange, routing_key="", body=message)
-
-    connection.close()
 
     instance3.wait_for_log_line(
         "Failed to push to views. Error: Code: 252. DB::Exception: Too many parts"
@@ -3607,9 +3614,21 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
 
     instance3.replace_in_config(
         "/etc/clickhouse-server/config.d/mergetree.xml",
-        "parts_to_throw_insert>1",
+        "parts_to_throw_insert>0",
         "parts_to_throw_insert>10",
     )
+    instance3.restart_clickhouse()
+
+    count = [0]
+    def on_consume(channel, method, properties, body):
+        channel.basic_publish(exchange=exchange, routing_key="", body=body)
+        count[0] += 1
+        if count[0] == num_rows:
+            channel.stop_consuming()
+
+    channel.basic_consume(queue_name, on_consume)
+    channel.start_consuming()
+
     attempt = 0
     count = 0
     while attempt < 100:
@@ -3627,3 +3646,4 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
         DROP TABLE test.{table_name};
     """
     )
+    connection.close()
