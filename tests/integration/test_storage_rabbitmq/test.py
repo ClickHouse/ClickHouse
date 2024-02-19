@@ -3576,11 +3576,11 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
-    channel.exchange_declare(exchange='deadl')
+    channel.exchange_declare(exchange="deadl")
 
-    result = channel.queue_declare(queue='deadq')
+    result = channel.queue_declare(queue="deadq")
     queue_name = result.method.queue
-    channel.queue_bind(exchange='deadl', routing_key='', queue=queue_name)
+    channel.queue_bind(exchange="deadl", routing_key="", queue=queue_name)
 
     instance3.query(
         f"""
@@ -3620,6 +3620,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
     instance3.restart_clickhouse()
 
     count = [0]
+
     def on_consume(channel, method, properties, body):
         channel.basic_publish(exchange=exchange, routing_key="", body=body)
         count[0] += 1
