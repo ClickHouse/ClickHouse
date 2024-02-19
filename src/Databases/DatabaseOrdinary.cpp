@@ -72,7 +72,7 @@ static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr contex
     auto * storage = create_query->storage;
 
     /// Get replicated engine
-    const auto & server_settings = args.getContext()->getServerSettings();
+    const auto & server_settings = context->getServerSettings();
     String replica_path = server_settings.default_replica_path;
     String replica_name = server_settings.default_replica_name;
 
