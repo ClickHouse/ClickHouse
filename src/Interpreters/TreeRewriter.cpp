@@ -869,7 +869,7 @@ ASTs getWindowFunctions(ASTPtr & query, const ASTSelectQuery & select_query)
     return data.window_functions;
 }
 
-class MarkTupleLiteralsAsLegacyData
+class MarkLiteralsAsLegacyData
 {
 public:
     struct Data
@@ -878,8 +878,9 @@ public:
 
     static void visitLiteral(ASTLiteral & literal, ASTPtr &)
     {
-        if (literal.value.getType() == Field::Types::Tuple)
-            literal.use_legacy_column_name_of_tuple = true;
+        if (literal.value.getType() == Field::Types::Tuple
+            || literal.value.getType() == Field::Types::AggregateFunctionStateData)
+            literal.use_legacy_column_name = true;
     }
     static void visitFunction(ASTFunction & func, ASTPtr &ast)
     {
@@ -908,12 +909,12 @@ public:
     }
 };
 
-using MarkTupleLiteralsAsLegacyVisitor = InDepthNodeVisitor<MarkTupleLiteralsAsLegacyData, true>;
+using MarkLiteralsAsLegacyVisitor = InDepthNodeVisitor<MarkLiteralsAsLegacyData, true>;
 
-void markTupleLiteralsAsLegacy(ASTPtr & query)
+void markLiteralsAsLegacy(ASTPtr & query)
 {
-    MarkTupleLiteralsAsLegacyVisitor::Data data;
-    MarkTupleLiteralsAsLegacyVisitor(data).visit(query);
+    MarkLiteralsAsLegacyVisitor::Data data;
+    MarkLiteralsAsLegacyVisitor(data).visit(query);
 }
 
 /// Rewrite _shard_num -> shardNum() AS _shard_num
@@ -1352,8 +1353,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             getContext()->getQueryContext()->addScalar(it.first, it.second);
     }
 
-    if (settings.legacy_column_name_of_tuple_literal)
-        markTupleLiteralsAsLegacy(query);
+    if (settings.legacy_column_name_of_literal)
+        markLiteralsAsLegacy(query);
 
     /// Push the predicate expression down to subqueries. The optimization should be applied to both initial and secondary queries.
     result.rewrite_subqueries = PredicateExpressionsOptimizer(getContext(), tables_with_columns, settings).optimize(*select_query);
@@ -1478,8 +1479,8 @@ TreeRewriterResultPtr TreeRewriter::analyze(
             getContext()->getQueryContext()->addScalar(it.first, it.second);
     }
 
-    if (settings.legacy_column_name_of_tuple_literal)
-        markTupleLiteralsAsLegacy(query);
+    if (settings.legacy_column_name_of_literal)
+        markLiteralsAsLegacy(query);
 
     TreeOptimizer::optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif, false);
 
