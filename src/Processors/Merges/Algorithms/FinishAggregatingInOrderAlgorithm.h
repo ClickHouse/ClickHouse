@@ -4,7 +4,6 @@
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Core/SortDescription.h>
 #include <Core/Block.h>
-#include <Common/ThreadPool.h>
 
 namespace DB
 {

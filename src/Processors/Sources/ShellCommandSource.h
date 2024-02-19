@@ -6,7 +6,6 @@
 
 #include <Common/ShellCommandSettings.h>
 #include <Common/ShellCommand.h>
-#include <Common/ThreadPool.h>
 
 #include <IO/ReadHelpers.h>
 #include <Processors/ISimpleTransform.h>

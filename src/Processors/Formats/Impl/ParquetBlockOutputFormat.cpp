@@ -7,6 +7,7 @@
 #include <parquet/arrow/writer.h>
 #include "ArrowBufferedStreams.h"
 #include "CHColumnToArrowColumn.h"
+#include <Common/ThreadPool.h>
 
 
 namespace CurrentMetrics

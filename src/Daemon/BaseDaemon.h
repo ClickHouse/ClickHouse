@@ -10,7 +10,6 @@
 #include <atomic>
 #include <chrono>
 #include <Poco/Process.h>
-#include <Poco/ThreadPool.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/ServerApplication.h>
 #include <Poco/Net/SocketAddress.h>

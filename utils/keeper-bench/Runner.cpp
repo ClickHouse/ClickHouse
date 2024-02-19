@@ -8,6 +8,7 @@
 #include "IO/ReadBufferFromString.h"
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/ThreadPool.h>
 #include <IO/copyData.h>
 
 

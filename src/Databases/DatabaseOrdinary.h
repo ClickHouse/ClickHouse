@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Databases/DatabaseOnDisk.h>
-#include <Common/ThreadPool.h>
-
 
 namespace DB
 {
