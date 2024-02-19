@@ -251,10 +251,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
         {
-            if (scale_multiplier_diff == 1) /// Already in needed type.
-                return src;
-
-            /// in case if we need to make DateTime64(a) from DateTime64(b), a != b, we need to convert datetime value to the right scale
             const auto & from_type = src.get<Decimal64>();
             const auto & to_type = static_cast<const DataTypeDateTime64 &>(type);
 
@@ -262,6 +258,10 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const auto scale_to = to_type.getScale();
             const auto scale_multiplier_diff = scale_from > scale_to ? from_type.getScaleMultiplier() / to_type.getScaleMultiplier() : to_type.getScaleMultiplier() / from_type.getScaleMultiplier();
 
+            if (scale_multiplier_diff == 1) /// Already in needed type.
+                return src;
+
+            /// in case if we need to make DateTime64(a) from DateTime64(b), a != b, we need to convert datetime value to the right scale
             const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_multiplier_diff : from_type.getValue().value * scale_multiplier_diff;
             return DecimalField(
                 DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1),
