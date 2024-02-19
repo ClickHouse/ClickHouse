@@ -879,7 +879,7 @@ public:
     static void visitLiteral(ASTLiteral & literal, ASTPtr &)
     {
         if (literal.value.getType() == Field::Types::Tuple
-            || literal.value.getType() == Field::Types::AggregateFunctionStateData)
+            || literal.value.getType() == Field::Types::AggregateFunctionState)
             literal.use_legacy_column_name = true;
     }
     static void visitFunction(ASTFunction & func, ASTPtr &ast)
