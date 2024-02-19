@@ -2,27 +2,57 @@
 #include<Processors/Formats/Impl/FormInputFormat.h>
 #include <IO/ReadHelpers.h>
 #include "Core/NamesAndTypes.h"
-#include "Core/QueryProcessingStage.h"
 #include "DataTypes/IDataType.h"
 #include "Formats/EscapingRuleUtils.h"
 #include "Formats/FormatSettings.h"
+#include "Formats/SchemaInferenceUtils.h"
+#include "IO/ReadBufferFromString.h"
 #include "Processors/Formats/IRowInputFormat.h"
 #include "base/find_symbols.h"
 #include <Formats/FormatFactory.h>
+#include <DataTypes/NestedUtils.h>
 
 namespace DB
 {  
 
 enum
 {
-    INVALID_INDEX = size_t(-1),
+    UNKNOWN_FIELD = size_t(-1),
+    NESTED_FIELD = size_t(-2)
 };
+
+/**
+  * Recursively check if column_name contains '.' in name
+  * and split into separate columns if it does
+  */
+void FormInputFormat::checkAndSplitIfNested(const StringRef column_name)
+{
+    while(true)
+    {
+        const auto split = Nested::splitName(column_name.toView());
+        if (!split.second.empty())
+        {
+            const StringRef table_name(column_name.data, split.first.size());
+            name_map[table_name] = NESTED_FIELD;
+            const StringRef next_table_name(String(split.second).c_str(), split.second.size());
+            checkAndSplitIfNested(next_table_name);
+        }
+        break;
+    }
+}
 
 FormInputFormat::FormInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_) 
     : IRowInputFormat(std::move(header_), in_, params_), format_settings(format_settings_)
 {
     const auto & header = getPort().getHeader();
     name_map = header.getNamesToIndexesMap();
+    
+    /// not sure if this needs to be on a setting or not? 
+    for (size_t i=0; i != header.columns(); ++i)
+    {
+        const StringRef column_name = header.getByPosition(i).name;
+        checkAndSplitIfNested(column_name);
+    }
 }
 
 void FormInputFormat::readPrefix()
@@ -41,7 +71,7 @@ const String & FormInputFormat::columnName(size_t i) const
   * The reference to the field name is written to `ref`.
   * Temporary buffer `tmp` is used to copy the field name to it.
   */
-static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
+StringRef readName(ReadBuffer & buf, StringRef & ref, String & tmp)
 {
     tmp.clear();
 
@@ -49,7 +79,6 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
     {
         const char * next_pos = find_first_symbols<'=','&'>(buf.position(), buf.buffer().end());
         
-        bool have_value = *next_pos == '=';
         if (next_pos == buf.buffer().end())
         {
             tmp.append(buf.position(), next_pos - buf.position());
@@ -62,10 +91,10 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
         if (*next_pos == '=')
         {
             ref = StringRef(buf.position(), next_pos - buf.position());
-            buf.position() += next_pos + have_value - buf.position();
+            buf.position() += next_pos + 1 - buf.position();
         }
 
-        return have_value;
+        return ref;
     }
     throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while reading key name from Form format");
 }
@@ -90,43 +119,36 @@ void FormInputFormat::readField(size_t index, MutableColumns & columns)
     read_columns[index] = true;
 }
 
+
+String readFieldName(ReadBuffer & in)
+{
+    String field;
+    readStringUntilEquals(field, in);
+    assertChar('=', in);
+    return field;
+}
+
+inline size_t FormInputFormat::columnIndex(StringRef name)
+{
+    const auto it = name_map.find(name);
+    if (it != name_map.end())
+    {
+        return it->second;
+    }
+    else 
+        return UNKNOWN_FIELD;
+}
+
 bool FormInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
-
-    if (in->eof())
-        return false;
-
     size_t num_columns = columns.size();
+
     read_columns.assign(num_columns, false);
     seen_columns.assign(num_columns, false);
 
-    for (size_t i = 0; i < num_columns; i++)
+    for (size_t index = 0; index < num_columns; ++index)
     {
-        if(in->eof())
-            break;
-
-        StringRef name_ref;
-        bool has_value = readName(*in, name_ref, name_buf);
-        const auto it = name_map.find(String(name_ref));
-
-        if (has_value)
-        {
-            size_t column_index;
-            if (it != name_map.end())
-                column_index = it->second;
-            else
-                column_index = INVALID_INDEX;
-
-            if (column_index == INVALID_INDEX)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: illegal value of column_index");
-
-            readField(column_index, columns);
-        }
-        else 
-        {
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Found field without value while parsing TSKV format: {}", name_ref.toString());
-        }
-      
+        readField(1, columns);
     }
 
     return true;
@@ -137,6 +159,21 @@ FormSchemaReader::FormSchemaReader(ReadBuffer & in_, const FormatSettings & form
 {
 }
 
+NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & in, const FormatSettings & settings)
+{
+    NamesAndTypesList names_and_types;
+    String field, value;
+    do
+    {
+        auto name = readFieldName(in);
+        readStringUntilAmpersand(value,in);
+        auto type = tryInferDataTypeByEscapingRule(value, settings, FormatSettings::EscapingRule::Escaped);
+        names_and_types.emplace_back(name, type);
+    }
+    while(checkChar('&',in));
+    return names_and_types;
+}
+
 NamesAndTypesList FormSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
 {
     if(in.eof())
@@ -145,25 +182,7 @@ NamesAndTypesList FormSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
         return {};
     }
 
-    NamesAndTypesList names_and_types;
-    StringRef name_ref;
-    String name_buf;
-    String value;
-    do {
-        bool has_value = readName(in, name_ref, name_buf);
-        String name = String(name_ref);
-        if (has_value)
-        {
-            readStringUntilAmpersand(value,in);
-            names_and_types.emplace_back(std::move(name), tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped));
-        }
-        else
-        {
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Found field without value while parsing Form format: {}", name_ref.toString());
-        }
-    }
-    while (checkChar('&',in));
-    return names_and_types;
+    return readRowAndGetNamesAndDataTypesForFormRow(in, format_settings);
 }
 
 void registerInputFormatForm(FormatFactory & factory)

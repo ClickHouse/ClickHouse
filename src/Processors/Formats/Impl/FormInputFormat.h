@@ -19,7 +19,12 @@ private:
     void readPrefix() override;
     bool readRow(MutableColumns & columns, RowReadExtension & extra) override;
     void readField(size_t index, MutableColumns & columns);
+    String readFieldName(ReadBuffer & in);
     const String & columnName(size_t i) const;
+    size_t columnIndex(StringRef name);
+
+    /// recursively split names separated by '.' into own columns
+    void checkAndSplitIfNested(StringRef column_name);
     
     const FormatSettings format_settings;
     String name_buf;
@@ -36,6 +41,7 @@ public:
     FormSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
+    NamesAndTypesList readRowAndGetNamesAndDataTypesForForm(ReadBuffer & in, const FormatSettings & settings);
 };
 
 }
