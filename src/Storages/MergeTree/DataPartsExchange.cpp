@@ -99,7 +99,7 @@ struct ReplicatedFetchReadCallback
 
 Service::Service(StorageReplicatedMergeTree & data_)
     : data(data_)
-    , log(&Poco::Logger::get(data.getStorageID().getNameForLogs() + " (Replicated PartsService)"))
+    , log(getLogger(data.getStorageID().getNameForLogs() + " (Replicated PartsService)"))
 {}
 
 std::string Service::getId(const std::string & node_id) const
@@ -415,7 +415,7 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
 
 Fetcher::Fetcher(StorageReplicatedMergeTree & data_)
     : data(data_)
-    , log(&Poco::Logger::get(data.getStorageID().getNameForLogs() + " (Fetcher)"))
+    , log(getLogger(data.getStorageID().getNameForLogs() + " (Fetcher)"))
 {}
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelectedPart(
@@ -903,7 +903,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         || part_name.empty()
         || std::string::npos != tmp_prefix.find_first_of("/.")
         || std::string::npos != part_name.find_first_of("/."))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: tmp_prefix and part_name cannot be empty or contain '.' or '/' characters.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "`tmp_prefix` and `part_name` cannot be empty or contain '.' or '/' characters.");
 
     auto part_dir = tmp_prefix + part_name;
     auto part_relative_path = data.getRelativeDataPath() + String(to_detached ? "detached/" : "");

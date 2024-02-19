@@ -43,6 +43,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
@@ -93,6 +94,7 @@
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -197,7 +199,7 @@ namespace ErrorCodes
   */
 struct ContextSharedPart : boost::noncopyable
 {
-    Poco::Logger * log = &Poco::Logger::get("Context");
+    LoggerPtr log = getLogger("Context");
 
     /// For access of most of shared objects.
     mutable ContextSharedMutex mutex;
@@ -906,7 +908,7 @@ Strings Context::getWarnings() const
         if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}", shared->max_table_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}", shared->max_table_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}", shared->max_database_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of active parts is more than {}", shared->max_part_num_to_warn));
     }
@@ -1010,7 +1012,7 @@ void Context::setFilesystemCacheUser(const String & user)
     shared->filesystem_cache_user = user;
 }
 
-static void setupTmpPath(Poco::Logger * log, const std::string & path)
+static void setupTmpPath(LoggerPtr log, const std::string & path)
 try
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
@@ -1532,7 +1534,7 @@ void Context::addExternalTable(const String & table_name, TemporaryTableHolder &
 
     std::lock_guard lock(mutex);
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} already exists.", backQuoteIfNeed(table_name));
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} already exists", backQuoteIfNeed(table_name));
     external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
 }
 
@@ -1926,6 +1928,35 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
     }
 
+    return res;
+}
+
+
+StoragePtr Context::buildParametrizedViewStorage(const ASTPtr & table_expression, const String & database_name, const String & table_name)
+{
+    if (table_name.empty())
+        return nullptr;
+
+    StoragePtr original_view = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
+    if (!original_view || !original_view->isView())
+        return nullptr;
+    auto * storage_view = original_view->as<StorageView>();
+    if (!storage_view || !storage_view->isParameterizedView())
+        return nullptr;
+
+    auto query = original_view->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
+    NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression);
+    StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
+
+    ASTCreateQuery create;
+    create.select = query->as<ASTSelectWithUnionQuery>();
+    auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, shared_from_this());
+    auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
+                                                create,
+                                                ColumnsDescription(sample_block.getNamesAndTypesList()),
+            /* comment */ "",
+            /* is_parameterized_view */ true);
+    res->startup();
     return res;
 }
 
@@ -4153,12 +4184,12 @@ void Context::setMaxTableSizeToDrop(size_t max_size)
 
 size_t Context::getMaxTableSizeToDrop() const
 {
-    return shared->max_table_size_to_drop.load(std::memory_order_relaxed);
+    return shared->max_table_size_to_drop.load();
 }
 
 void Context::checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size) const
 {
-    size_t max_table_size_to_drop = shared->max_table_size_to_drop.load(std::memory_order_relaxed);
+    size_t max_table_size_to_drop = shared->max_table_size_to_drop.load();
 
     checkCanBeDropped(database, table, table_size, max_table_size_to_drop);
 }
@@ -4176,12 +4207,12 @@ void Context::setMaxPartitionSizeToDrop(size_t max_size)
 
 size_t Context::getMaxPartitionSizeToDrop() const
 {
-    return shared->max_partition_size_to_drop.load(std::memory_order_relaxed);
+    return shared->max_partition_size_to_drop.load();
 }
 
 void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const
 {
-    size_t max_partition_size_to_drop = shared->max_partition_size_to_drop.load(std::memory_order_relaxed);
+    size_t max_partition_size_to_drop = shared->max_partition_size_to_drop.load();
 
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
 }
@@ -4276,11 +4307,11 @@ void Context::setApplicationType(ApplicationType type)
     /// Lock isn't required, you should set it at start
     shared->application_type = type;
 
-    if (type == ApplicationType::SERVER)
-    {
+    if (type == ApplicationType::LOCAL || type == ApplicationType::SERVER)
         shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
+
+    if (type == ApplicationType::SERVER)
         shared->configureServerWideThrottling();
-    }
 }
 
 void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)
@@ -4291,7 +4322,7 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
     setCurrentProfile(shared->system_profile_name);
 
-    applySettingsQuirks(settings, &Poco::Logger::get("SettingsQuirks"));
+    applySettingsQuirks(settings, getLogger("SettingsQuirks"));
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
     buffer_context = Context::createCopy(shared_from_this());
@@ -4482,7 +4513,7 @@ void Context::setClientConnectionId(uint32_t connection_id_)
     client_info.connection_id = connection_id_;
 }
 
-void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
+void Context::setHTTPClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
 {
     client_info.http_method = http_method;
     client_info.http_user_agent = http_user_agent;
@@ -4861,10 +4892,10 @@ AsynchronousInsertQueue * Context::getAsynchronousInsertQueue() const
 
 void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr)
 {
-    using namespace std::chrono;
+    AsynchronousInsertQueue::validateSettings(settings, getLogger("Context"));
 
-    if (std::chrono::milliseconds(settings.async_insert_busy_timeout_ms) == 0ms)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting async_insert_busy_timeout_ms can't be zero");
+    if (std::chrono::milliseconds(settings.async_insert_poll_timeout_ms) == std::chrono::milliseconds::zero())
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting async_insert_poll_timeout_ms can't be zero");
 
     shared->async_insert_queue = ptr;
 }

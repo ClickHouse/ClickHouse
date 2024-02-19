@@ -58,6 +58,9 @@ void WriteBufferToFileSegment::nextImpl()
             reserve_stat_msg += fmt::format("{} hold {}, can release {}; ",
                 toString(kind), ReadableSize(stat.non_releasable_size), ReadableSize(stat.releasable_size));
 
+        if (std::filesystem::exists(file_segment->getPath()))
+            std::filesystem::remove(file_segment->getPath());
+
         throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Failed to reserve {} bytes for {}: {}(segment info: {})",
             bytes_to_write,
             file_segment->getKind() == FileSegmentKind::Temporary ? "temporary file" : "the file in cache",
@@ -74,7 +77,7 @@ void WriteBufferToFileSegment::nextImpl()
     }
     catch (...)
     {
-        LOG_WARNING(&Poco::Logger::get("WriteBufferToFileSegment"), "Failed to write to the underlying buffer ({})", file_segment->getInfoForLog());
+        LOG_WARNING(getLogger("WriteBufferToFileSegment"), "Failed to write to the underlying buffer ({})", file_segment->getInfoForLog());
         throw;
     }
 

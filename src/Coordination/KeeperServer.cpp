@@ -92,7 +92,7 @@ std::string checkAndGetSuperdigest(const String & user_and_digest)
     return user_and_digest;
 }
 
-int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name, Poco::Logger * log)
+int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name, LoggerPtr log)
 {
     if (value > std::numeric_limits<int32_t>::max())
     {
@@ -120,7 +120,7 @@ KeeperServer::KeeperServer(
     KeeperStateMachine::CommitCallback commit_callback)
     : server_id(configuration_and_settings_->server_id)
     , coordination_settings(configuration_and_settings_->coordination_settings)
-    , log(&Poco::Logger::get("KeeperServer"))
+    , log(getLogger("KeeperServer"))
     , is_recovering(config.getBool("keeper_server.force_recovery", false))
     , keeper_context{std::move(keeper_context_)}
     , create_snapshot_on_exit(config.getBool("keeper_server.create_snapshot_on_exit", true))

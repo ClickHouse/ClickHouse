@@ -127,7 +127,7 @@ private:
     const bool allow_concurrent_restores;
     const bool test_inject_sleep;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     struct ExtendedOperationInfo
     {

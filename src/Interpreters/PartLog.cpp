@@ -271,7 +271,7 @@ bool PartLog::addNewParts(
     }
     catch (...)
     {
-        tryLogCurrentException(part_log ? part_log->log : &Poco::Logger::get("PartLog"), __PRETTY_FUNCTION__);
+        tryLogCurrentException(part_log ? part_log->log : getLogger("PartLog"), __PRETTY_FUNCTION__);
         return false;
     }
 

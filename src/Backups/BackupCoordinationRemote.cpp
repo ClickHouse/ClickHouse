@@ -173,7 +173,7 @@ BackupCoordinationRemote::BackupCoordinationRemote(
     , current_host_index(findCurrentHostIndex(all_hosts, current_host))
     , plain_backup(plain_backup_)
     , is_internal(is_internal_)
-    , log(&Poco::Logger::get("BackupCoordinationRemote"))
+    , log(getLogger("BackupCoordinationRemote"))
     , with_retries(
         log,
         get_zookeeper_,

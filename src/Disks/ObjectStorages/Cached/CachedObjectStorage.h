@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
+#include "config.h"
 
 namespace Poco
 {
@@ -120,8 +121,15 @@ public:
 
     static bool canUseReadThroughCache(const ReadSettings & settings);
 
+#if USE_AZURE_BLOB_STORAGE
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() override
+    {
+        return object_storage->getAzureBlobStorageClient();
+    }
+#endif
+
 private:
-    FileCache::Key getCacheKey(const std::string & path) const;
+    FileCacheKey getCacheKey(const std::string & path) const;
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 
@@ -129,7 +137,7 @@ private:
     FileCachePtr cache;
     FileCacheSettings cache_settings;
     std::string cache_config_name;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

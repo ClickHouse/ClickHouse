@@ -39,7 +39,7 @@ private:
     std::optional<Aws::S3::Model::GetObjectResult> read_result;
     std::unique_ptr<ReadBuffer> impl;
 
-    Poco::Logger * log = &Poco::Logger::get("ReadBufferFromS3");
+    LoggerPtr log = getLogger("ReadBufferFromS3");
 
 public:
     ReadBufferFromS3(

@@ -4,6 +4,8 @@ sidebar_position: 170
 sidebar_label: Strings
 ---
 
+import VersionBadge from '@theme/badges/VersionBadge';
+
 # Functions for Working with Strings
 
 Functions for [searching](string-search-functions.md) in strings and for [replacing](string-replace-functions.md) in strings are described separately.
@@ -515,7 +517,7 @@ Alias: `concat_ws`
 **Arguments**
 
 - sep — separator. Const [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- exprN — expression to be concatenated. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- exprN — expression to be concatenated. Arguments which are not of types [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 
 **Returned values**
 
@@ -782,6 +784,8 @@ SELECT startsWith('Spider-Man', 'Spi');
 ```
 
 ## startsWithUTF8
+
+<VersionBadge minVersion='23.8' />
 
 Returns whether string `str` starts with `prefix`, the difference between `startsWithUTF8` and `startsWith` is that `startsWithUTF8` match `str` and `suffix` by UTF-8 characters.
 

@@ -210,7 +210,7 @@ public:
     static constexpr int SanitizerTrap = -3;
 
     explicit SignalListener(BaseDaemon & daemon_)
-        : log(&Poco::Logger::get("BaseDaemon"))
+        : log(getLogger("BaseDaemon"))
         , daemon(daemon_)
     {
     }
@@ -295,7 +295,7 @@ public:
     }
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
     BaseDaemon & daemon;
 
     void onTerminate(std::string_view message, UInt32 thread_num) const

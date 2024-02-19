@@ -114,7 +114,7 @@ std::string getOrCreateDiskFromDiskAST(const ASTPtr & disk_function, ContextPtr 
     FlattenDiskConfigurationVisitor{data}.visit(ast);
 
     auto disk_name = assert_cast<const ASTLiteral &>(*ast).value.get<String>();
-    LOG_TRACE(&Poco::Logger::get("getOrCreateDiskFromDiskAST"), "Result disk name: {}", disk_name);
+    LOG_TRACE(getLogger("getOrCreateDiskFromDiskAST"), "Result disk name: {}", disk_name);
     return disk_name;
 }
 
