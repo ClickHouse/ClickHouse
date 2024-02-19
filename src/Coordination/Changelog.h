@@ -169,7 +169,9 @@ struct LogEntryStorage
 
     void addEntry(uint64_t index, const LogEntryPtr & log_entry);
     void addEntryWithLocation(uint64_t index, const LogEntryPtr & log_entry, LogLocation log_location);
+    /// clean all logs up to (but not including) index
     void cleanUpTo(uint64_t index);
+    /// clean all logs after (but not including) index
     void cleanAfter(uint64_t index);
     bool contains(uint64_t index) const;
     LogEntryPtr getEntry(uint64_t index) const;

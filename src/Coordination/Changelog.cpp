@@ -1,8 +1,7 @@
-#include <algorithm>
 #include <exception>
 #include <filesystem>
-#include <iterator>
 #include <mutex>
+#include <ranges>
 #include <Coordination/Changelog.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperContext.h>
@@ -1039,6 +1038,7 @@ void LogEntryStorage::addEntryWithLocation(uint64_t index, const LogEntryPtr & l
 
     if (logs_location.size() == 1)
         min_index_with_location = index;
+
     max_index_with_location = index;
 
     if (log_entry->get_val_type() == nuraft::conf)
@@ -1073,22 +1073,37 @@ void LogEntryStorage::cleanUpTo(uint64_t index)
             }
 
             min_index_with_location = index;
+
         }
     }
 
+    {
+        std::lock_guard lock(logs_location_mutex);
+        if (!unapplied_indices_with_log_locations.empty())
+        {
+            auto last = std::ranges::lower_bound(
+                unapplied_indices_with_log_locations,
+                index,
+                std::ranges::less{},
+                [](const auto & index_with_location) { return index_with_location.first; });
+
+            unapplied_indices_with_log_locations.erase(unapplied_indices_with_log_locations.begin(), last);
+        }
+    }
 
     /// uncommitted logs should be compacted only if we received snapshot from leader
     if (current_prefetch_info && !current_prefetch_info->done)
     {
         auto [prefetch_from, prefetch_to] = current_prefetch_info->commit_prefetch_index_range;
         /// if we will clean some logs that are currently prefetched, stop prefetching
-        /// and clean all logs that were being prefetched
+        /// and clean all logs from it
         if (index > prefetch_from)
         {
             current_prefetch_info->cancel = true;
             current_prefetch_info->done.wait(false);
-            commit_logs_cache.cleanUpTo(std::max(prefetch_to + 1, index));
+            commit_logs_cache.clear();
         }
+
         /// start prefetching logs for committing at the current index
         /// the last log index in the snapshot should be the
         /// last log we cleaned up
@@ -1148,6 +1163,20 @@ void LogEntryStorage::cleanAfter(uint64_t index)
         }
     }
 
+    {
+        std::lock_guard lock(logs_location_mutex);
+        if (!unapplied_indices_with_log_locations.empty())
+        {
+            auto first = std::ranges::upper_bound(
+                unapplied_indices_with_log_locations,
+                index,
+                std::ranges::less{},
+                [](const auto & index_with_location) { return index_with_location.first; });
+
+            unapplied_indices_with_log_locations.erase(first, unapplied_indices_with_log_locations.end());
+        }
+    }
+
     /// if we cleared all latest logs, there is a possibility we would need to clear commit logs
     if (latest_logs_cache.empty())
     {
@@ -1204,24 +1233,24 @@ LogEntryPtr LogEntryStorage::getEntry(uint64_t index) const
     LogEntryPtr entry = nullptr;
 
     if (latest_config != nullptr && index == latest_config_index)
+        return latest_config;
+
+    if (first_log_entry != nullptr && index == first_log_index)
+        return first_log_entry;
+
+    if (auto entry_from_latest_cache = latest_logs_cache.getEntry(index))
     {
-        entry = latest_config;
-    }
-    else if (first_log_entry != nullptr && index == first_log_index)
-    {
-        entry = first_log_entry;
-    }
-    else if (auto entry_from_latest_cache = latest_logs_cache.getEntry(index))
-    {
-        entry = std::move(entry_from_latest_cache);
         ProfileEvents::increment(ProfileEvents::KeeperLogsEntryReadFromLatestCache);
+        return entry_from_latest_cache;
     }
-    else if (auto entry_from_commit_cache = commit_logs_cache.getEntry(index))
+
+    if (auto entry_from_commit_cache = commit_logs_cache.getEntry(index))
     {
-        entry = std::move(entry_from_commit_cache);
         ProfileEvents::increment(ProfileEvents::KeeperLogsEntryReadFromCommitCache);
+        return entry_from_commit_cache;
     }
-    else if (auto it = logs_location.find(index); it != logs_location.end())
+
+    if (auto it = logs_location.find(index); it != logs_location.end())
     {
         it->second.file_description->withLock(
             [&]
@@ -1250,6 +1279,7 @@ LogEntryPtr LogEntryStorage::getEntry(uint64_t index) const
 
         ProfileEvents::increment(ProfileEvents::KeeperLogsEntryReadFromFile);
     }
+
     return entry;
 }
 
@@ -2378,14 +2408,10 @@ void Changelog::getKeeperLogInfo(KeeperLogInfo & log_info) const
     if (!entry_storage.empty())
     {
         log_info.first_log_idx = getStartIndex();
-        auto first_entry = entryAt(log_info.first_log_idx);
-        chassert(first_entry != nullptr);
-        log_info.first_log_term = first_entry->get_term();
+        log_info.first_log_term = termAt(log_info.first_log_idx);
 
         log_info.last_log_idx = max_log_id;
-        auto last_entry = entryAt(log_info.last_log_idx);
-        chassert(last_entry != nullptr);
-        log_info.last_log_term = last_entry->get_term();
+        log_info.last_log_term = termAt(log_info.last_log_idx);
     }
 
     entry_storage.getKeeperLogInfo(log_info);

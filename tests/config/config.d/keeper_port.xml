@@ -25,8 +25,8 @@
 
             <async_replication>1</async_replication>
 
-            <latest_logs_cache_size_threshold>31557632</latest_logs_cache_size_threshold>
-            <commit_logs_cache_size_threshold>20623360</commit_logs_cache_size_threshold>
+            <latest_logs_cache_size_threshold>1073741824</latest_logs_cache_size_threshold>
+            <commit_logs_cache_size_threshold>524288000</commit_logs_cache_size_threshold>
         </coordination_settings>
 
         <raft_configuration>
