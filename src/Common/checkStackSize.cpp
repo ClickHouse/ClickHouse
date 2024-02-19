@@ -1,5 +1,6 @@
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
+#include <Common/Fiber.h>
 #include <pthread.h>
 
 #if defined(OS_FREEBSD)
@@ -107,6 +108,10 @@ static size_t getStackSize(void ** out_address)
 __attribute__((__weak__)) void checkStackSize()
 {
     using namespace DB;
+
+    /// Not implemented for coroutines.
+    if (Fiber::getCurrentFiber())
+        return;
 
     if (!stack_address)
         max_stack_size = getStackSize(&stack_address);
