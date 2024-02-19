@@ -361,6 +361,7 @@ struct FormatSettings
         bool deduce_templates_of_expressions = true;
         bool accurate_types_of_literals = true;
         bool allow_data_after_semicolon = false;
+        bool escape_quote_with_quote = false;
     } values;
 
     enum class ORCCompression

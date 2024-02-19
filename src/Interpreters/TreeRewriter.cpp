@@ -261,8 +261,7 @@ struct ExistsExpressionData
         select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
         select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
 
-        auto new_subquery = std::make_shared<ASTSubquery>();
-        new_subquery->children.push_back(select_with_union_query);
+        auto new_subquery = std::make_shared<ASTSubquery>(std::move(select_with_union_query));
 
         auto function = makeASTFunction("in", std::make_shared<ASTLiteral>(1u), new_subquery);
         func = *function;
