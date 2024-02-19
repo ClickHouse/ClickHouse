@@ -663,15 +663,17 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     if (query_span && query_span->trace_id != UUID{})
         LOG_TRACE(getLogger("executeQuery"), "Query span trace_id for opentelemetry log: {}", query_span->trace_id);
 
+    /// Used for logging query start time in system.query_log
     auto query_start_time = std::chrono::system_clock::now();
 
-    /// Used to set the watch in QueryStatus and the output formats. It is not based on query_start_time as that might be based on
-    /// the value passed by the client
+    /// Used for:
+    /// * Setting the watch in QueryStatus (controls timeouts and progress) and the output formats
+    /// * Logging query duration (system.query_log)
     Stopwatch start_watch{CLOCK_MONOTONIC};
 
     const auto & client_info = context->getClientInfo();
 
-    if (!internal)
+    if (!internal && client_info.initial_query_start_time == 0)
     {
         // If it's not an internal query and we don't see an initial_query_start_time yet, initialize it
         // to current time. Internal queries are those executed without an independent client context,
@@ -679,15 +681,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         // possible to have unset initial_query_start_time for non-internal and non-initial queries. For
         // example, the query is from an initiator that is running an old version of clickhouse.
         // On the other hand, if it's initialized then take it as the start of the query
-        if (client_info.initial_query_start_time == 0)
-        {
-            context->setInitialQueryStartTime(query_start_time);
-        }
-        else
-        {
-            query_start_time = std::chrono::time_point<std::chrono::system_clock>(
-                std::chrono::microseconds{client_info.initial_query_start_time_microseconds});
-        }
+        context->setInitialQueryStartTime(query_start_time);
     }
 
     assert(internal || CurrentThread::get().getQueryContext());
@@ -722,6 +716,27 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+
+#ifndef NDEBUG
+            /// Verify that AST formatting is consistent:
+            /// If you format AST, parse it back, and format it again, you get the same string.
+
+            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true);
+
+            ASTPtr ast2 = parseQuery(parser,
+                formatted1.data(),
+                formatted1.data() + formatted1.size(),
+                "", max_query_size, settings.max_parser_depth);
+
+            chassert(ast2);
+
+            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true);
+
+            if (formatted1 != formatted2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Inconsistent AST formatting: the query:\n{}\nWas parsed and formatted back as:\n{}",
+                    formatted1, formatted2);
+#endif
         }
 
         const char * query_end = end;
@@ -1378,8 +1393,11 @@ void executeQuery(
                     /// Force an update of the headers before we start writing
                     result_details.content_type = output_format->getContentType();
                     result_details.format = format_name;
-                    set_result_details(result_details);
-                    set_result_details = nullptr;
+                    if (set_result_details)
+                    {
+                        set_result_details(result_details);
+                        set_result_details = nullptr;
+                    }
                 }
             }
             catch (const DB::Exception & e)
