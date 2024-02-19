@@ -56,6 +56,7 @@ public:
     enum ParameterType
     {
         NONE,
+        TABLE_ENGINE,
         NAMED_COLLECTION,
     };
     ParameterType getParameterType() const;
@@ -99,6 +100,9 @@ public:
 
     /// Returns all the flags related to a dictionary.
     static AccessFlags allDictionaryFlags();
+
+    /// Returns all the flags related to a table engine.
+    static AccessFlags allTableEngineFlags();
 
     /// Returns all the flags related to a named collection.
     static AccessFlags allNamedCollectionFlags();
