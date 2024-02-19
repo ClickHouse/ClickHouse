@@ -1,7 +1,12 @@
+#include <base/getThreadId.h>
+#include <base/defines.h> /// THREAD_SANITIZER
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
 #include <Common/Fiber.h>
+#include <sys/resource.h>
 #include <pthread.h>
+#include <unistd.h>
+#include <cstdint>
 
 #if defined(OS_FREEBSD)
 #   include <pthread_np.h>
