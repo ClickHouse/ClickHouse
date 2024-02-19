@@ -621,10 +621,11 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
     {
         if (database)
         {
-            settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
-            settings.ostr << ".";
+            database->formatImpl(settings, state, frame);
+            settings.ostr << '.';
         }
-        settings.ostr << indent_str << backQuoteIfNeed(getTable());
+
+        table->formatImpl(settings, state, frame);
     }
     else if (alter_object == AlterObjectType::DATABASE && database)
     {
