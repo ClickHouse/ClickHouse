@@ -1813,13 +1813,15 @@ MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const
         if (seen_all_data_mutations && seen_all_metadata_mutations)
             break;
 
+        auto & entry = mutation_status->entry;
+
         auto add_to_result = [&] {
-            for (const auto & command : mutation_status->entry->commands | std::views::reverse)
+            for (const auto & command : entry->commands | std::views::reverse)
                 if (AlterConversions::supportsMutationCommandType(command.type))
                     result.emplace_back(command);
         };
 
-        auto alter_version = mutation_status->entry->alter_version;
+        auto alter_version = entry->alter_version;
         if (alter_version != -1)
         {
             if (alter_version > storage.getInMemoryMetadataPtr()->getMetadataVersion())
