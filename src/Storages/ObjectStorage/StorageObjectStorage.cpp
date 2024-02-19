@@ -223,12 +223,10 @@ SinkToStoragePtr StorageObjectStorage<StorageSettings>::write(
 
     const auto storage_settings = StorageSettings::create(local_context->getSettingsRef());
 
-    LOG_TEST(&Poco::Logger::get("KSSENII"), "KSSENII: {}", object_storage->exists(StoredObject(configuration->getPath())));
     auto configuration_copy = configuration->clone();
     if (!storage_settings.truncate_on_insert
         && object_storage->exists(StoredObject(configuration->getPath())))
     {
-        LOG_TEST(&Poco::Logger::get("KSSENII"), "KSSENII 2: {}", storage_settings.create_new_file_on_insert);
         if (storage_settings.create_new_file_on_insert)
         {
             auto & paths = configuration_copy->getPaths();
@@ -260,7 +258,6 @@ SinkToStoragePtr StorageObjectStorage<StorageSettings>::write(
                 configuration_copy->getNamespace(), configuration_copy->getPaths().back());
         }
     }
-    LOG_TEST(&Poco::Logger::get("KSSENII"), "KSSENII 3: {}", configuration_copy->getPaths().size());
 
     return std::make_shared<StorageObjectStorageSink>(
         object_storage, configuration_copy, format_settings, sample_block, local_context);

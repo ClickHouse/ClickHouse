@@ -43,7 +43,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, StorageSettings, Config
             ConstraintsDescription{},
             /* comment */String{},
             /* format_settings */std::nullopt, /// No format_settings
-            /* distributed_processing */ true,
+            /* distributed_processing */true,
             /*partition_by_=*/nullptr);
     }
     else

@@ -362,9 +362,9 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     }
     else
     {
-        const auto key_with_globs = configuration_->getPath();
-        auto object_metadata = object_storage->getObjectMetadata(key_with_globs);
-        auto object_info = std::make_shared<ObjectInfo>(key_with_globs, object_metadata);
+        const auto object_key = configuration_->getPath();
+        auto object_metadata = object_storage->getObjectMetadata(object_key);
+        auto object_info = std::make_shared<ObjectInfo>(object_key, object_metadata);
 
         object_infos.emplace_back(object_info);
         if (read_keys)
@@ -381,12 +381,11 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::next(size_t /* processor
 {
     std::lock_guard lock(next_mutex);
 
-    if (is_finished)
+    bool current_batch_processed = object_infos.empty() || index >= object_infos.size();
+    if (is_finished && current_batch_processed)
         return {};
 
-    bool need_new_batch = object_infos.empty() || index >= object_infos.size();
-
-    if (need_new_batch)
+    if (current_batch_processed)
     {
         ObjectInfos new_batch;
         while (new_batch.empty())
@@ -439,11 +438,10 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::next(size_t /* processor
         }
     }
 
-    size_t current_index = index++;
-    if (current_index >= object_infos.size())
+    if (index >= object_infos.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index out of bound for blob metadata");
 
-    return object_infos[current_index];
+    return object_infos[index++];
 }
 
 StorageObjectStorageSource::KeysIterator::KeysIterator(
@@ -532,7 +530,11 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     pool.wait();
     buffer.reserve(max_threads_count);
     for (auto & key_future : keys)
-        buffer.emplace_back(std::make_shared<ObjectInfo>(key_future.get(), std::nullopt));
+    {
+        auto key = key_future.get();
+        if (!key.empty())
+            buffer.emplace_back(std::make_shared<ObjectInfo>(key, std::nullopt));
+    }
 }
 
 ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)

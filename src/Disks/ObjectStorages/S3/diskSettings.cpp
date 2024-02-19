@@ -27,12 +27,8 @@ std::unique_ptr<S3ObjectStorageSettings> getSettings(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     const Settings & settings = context->getSettingsRef();
-    S3Settings::RequestSettings request_settings(config, config_prefix, settings, "s3_");
-    /// TODO: add request settings prefix, becausse for StorageS3 it should be "s3."
-
-    S3::AuthSettings auth_settings;
-    auth_settings.loadFromConfig(config_prefix, config);
-
+    auto request_settings = S3Settings::RequestSettings(config, config_prefix, settings, "s3_");
+    auto auth_settings = S3::AuthSettings::loadFromConfig(config_prefix, config);
     return std::make_unique<S3ObjectStorageSettings>(
         request_settings,
         auth_settings,
@@ -60,9 +56,9 @@ std::unique_ptr<S3::Client> getClient(
     if (for_disk_s3)
     {
         String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
-        S3::URI uri(endpoint);
-        if (!uri.key.ends_with('/'))
-            uri.key.push_back('/');
+        url = S3::URI(endpoint);
+        if (!url.key.ends_with('/'))
+            url.key.push_back('/');
     }
     else
     {
@@ -122,6 +118,8 @@ std::unique_ptr<S3::Client> getClient(
         auth_settings.expiration_window_seconds.value_or(context->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
         auth_settings.no_sign_request.value_or(context->getConfigRef().getBool("s3.no_sign_request", false)),
     };
+
+    LOG_TEST(&Poco::Logger::get("kssenii"), "KSSENII: {} - {}", auth_settings.access_key_id, auth_settings.secret_access_key);
 
     return S3::ClientFactory::instance().create(
         client_configuration,

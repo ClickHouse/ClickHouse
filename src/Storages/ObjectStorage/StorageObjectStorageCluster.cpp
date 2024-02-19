@@ -92,7 +92,8 @@ StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::getTask
 {
     const auto settings = StorageSettings::create(local_context->getSettingsRef());
     auto iterator = std::make_shared<StorageObjectStorageSource::GlobIterator>(
-        object_storage, configuration, predicate, virtual_columns, local_context, nullptr, settings.list_object_keys_size);
+        object_storage, configuration, predicate, virtual_columns, local_context,
+        nullptr, settings.list_object_keys_size, local_context->getFileProgressCallback());
 
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String
     {
