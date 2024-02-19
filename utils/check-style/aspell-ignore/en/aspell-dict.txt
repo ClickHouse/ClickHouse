@@ -991,6 +991,7 @@ VIEWs
 Vadim
 Valgrind
 Vectorized
+VersionBadge
 VersionInteger
 VersionedCollapsingMergeTree
 VideoContainer
@@ -1328,6 +1329,7 @@ cosineDistance
 countDigits
 countEqual
 countMatches
+countMatchesCaseInsensitive
 countSubstrings
 covarPop
 covarSamp
