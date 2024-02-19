@@ -85,6 +85,7 @@ namespace SettingsChangesHistory
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
     {"24.2", {
+              {"input_format_try_infer_exponent_floats", true, false, "Don't infer floats in exponential notation by default"},
               {"async_insert_max_data_size", 1000000, 10485760, "The previous value appeared to be too small."},
               {"async_insert_poll_timeout_ms", 10, 10, "Timeout in milliseconds for polling data from asynchronous insert queue"},
               {"async_insert_use_adaptive_busy_timeout", true, true, "Use adaptive asynchronous insert timeout"},
