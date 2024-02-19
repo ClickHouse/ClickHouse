@@ -12,46 +12,61 @@
 namespace DB
 {
 
-class FunctionHilbertEncode2DWIthLookupTableImpl {
+class FunctionHilbertEncode2DWIthLookupTableImpl
+{
 public:
-    static UInt64 encode(UInt64 x, UInt64 y) {
+    static UInt64 encode(UInt64 x, UInt64 y)
+    {
         const auto leading_zeros_count = getLeadingZeroBits(x | y);
         const auto used_bits = std::numeric_limits<UInt64>::digits - leading_zeros_count;
 
-        UInt8 remaind_shift = BIT_STEP - used_bits % BIT_STEP;
-        if (remaind_shift == BIT_STEP)
-            remaind_shift = 0;
-        x <<= remaind_shift;
-        y <<= remaind_shift;
+        const auto shift_for_align = getShiftForStepsAlign(used_bits);
+        x <<= shift_for_align;
+        y <<= shift_for_align;
 
         UInt8 current_state = 0;
         UInt64 hilbert_code = 0;
-        Int8 current_shift = used_bits + remaind_shift - BIT_STEP;
+        Int8 current_shift = used_bits + shift_for_align - BIT_STEP;
 
         while (current_shift > 0)
         {
             const UInt8 x_bits = (x >> current_shift) & STEP_MASK;
             const UInt8 y_bits = (y >> current_shift) & STEP_MASK;
             const auto hilbert_bits = getCodeAndUpdateState(x_bits, y_bits, current_state);
-            const UInt8 hilbert_code_shift = static_cast<UInt8>(current_shift) << 1;
-            hilbert_code |= (hilbert_bits << hilbert_code_shift);
+            hilbert_code |= (hilbert_bits << getHilbertShift(current_shift));
 
             current_shift -= BIT_STEP;
         }
 
-        hilbert_code >>= (remaind_shift << 1);
+        hilbert_code >>= getHilbertShift(shift_for_align);
         return hilbert_code;
     }
 
 private:
 
-    // LOOKUP_TABLE[SSXXXYYY] = SSHHHHHH]
+    // LOOKUP_TABLE[SSXXXYYY] = SSHHHHHH
     // where SS - 2 bits for state, XXX - 3 bits of x, YYY - 3 bits of y
-    static UInt8 getCodeAndUpdateState(UInt8 x_bits, UInt8 y_bits, UInt8& state) {
+    static UInt8 getCodeAndUpdateState(UInt8 x_bits, UInt8 y_bits, UInt8& state)
+    {
         const UInt8 table_index = state | (x_bits << BIT_STEP) | y_bits;
         const auto table_code = LOOKUP_TABLE[table_index];
         state = table_code & STATE_MASK;
         return table_code & HILBERT_MASK;
+    }
+
+    // hilbert code is double size of input values
+    static UInt8 getHilbertShift(UInt8 shift)
+    {
+        return shift << 1;
+    }
+
+    static UInt8 getShiftForStepsAlign(UInt8 used_bits)
+    {
+        UInt8 shift_for_align = BIT_STEP - used_bits % BIT_STEP;
+        if (shift_for_align == BIT_STEP)
+            shift_for_align = 0;
+
+        return shift_for_align;
     }
 
     constexpr static UInt8 BIT_STEP = 3;
@@ -113,8 +128,8 @@ public:
                 auto ratio = mask->getColumn(i).getUInt(0);
                 if (ratio > 8 || ratio < 1)
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                                    "Illegal argument {} of function {}, should be a number in range 1-8",
-                                    arguments[0].column->getName(), getName());
+                        "Illegal argument {} of function {}, should be a number in range 1-8",
+                        arguments[0].column->getName(), getName());
             }
         }
 
@@ -127,7 +142,8 @@ public:
         vec_res.resize(input_rows_count);
 
         const ColumnPtr & col0 = non_const_arguments[0 + vector_start_index].column;
-        if (num_dimensions == 1) {
+        if (num_dimensions == 1)
+        {
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 vec_res[i] = col0->getUInt(i);
