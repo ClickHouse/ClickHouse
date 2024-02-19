@@ -5,12 +5,14 @@
 #include <Common/SipHash.h>
 #include <Core/Block.h>
 #include <Core/TypeId.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnNothing.h>
+#include <Columns/MaskOperations.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Native.h>
@@ -176,7 +178,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
 
     NullPresence null_presence = getNullPresense(args);
 
-    if (null_presence.has_null_constant)
+    if (null_presence.has_null_constant || null_presence.has_nullable)
     {
         // Default implementation for nulls returns null result for null arguments,
         // so the result type must be nullable.
@@ -187,17 +189,61 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
                 "is expected to return Nullable result, got {}",
                 getName(),
                 result_type->getName());
+    }
 
+    if (null_presence.has_null_constant)
+    {
         return result_type->createColumnConstWithDefaultValue(input_rows_count);
     }
 
     if (null_presence.has_nullable)
     {
-        ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
-        auto temporary_result_type = removeNullable(result_type);
+        IColumn::Filter mask(input_rows_count, 1);
+        MaskInfo mask_info = {.has_ones = true, .has_zeros = false};
+        for (const auto & arg : args)
+        {
+            if (arg.type->isNullable())
+            {
+                const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
+                mask_info = extractInvertedMask(mask, null_map);
+            }
+        }
 
-        auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
-        return wrapInNullable(res, args, result_type, input_rows_count);
+        if (!mask_info.has_ones)
+        {
+            /// Do not execute function if every row contains at least one null value.
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+        }
+        else if (!mask_info.has_zeros)
+        {
+            /// Every row should be evaluated.
+            ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
+            auto temporary_result_type = removeNullable(result_type);
+
+            auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
+            return makeNullable(res);
+        }
+        else
+        {
+            ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
+            auto temporary_result_type = removeNullable(result_type);
+
+            /// Filter every column by mask
+            size_t size_hint = countBytesInFilter(mask.data(), 0, mask.size());
+            for (auto & col : temporary_columns)
+                col.column = col.column->filter(mask, size_hint);
+
+            auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
+            auto mutable_res = IColumn::mutate(std::move(res));
+            mutable_res->expand(mask, false);
+
+            /// Invert mask as null map
+            inverseMask(mask, mask_info);
+            auto null_map = ColumnUInt8::create();
+            null_map->getData() = std::move(mask);
+
+            return wrapInNullable(std::move(mutable_res), std::move(null_map));
+        }
     }
 
     return nullptr;
