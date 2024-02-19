@@ -102,6 +102,7 @@ namespace
         const Flags & getTableFlags() const { return all_flags_for_target[TABLE]; }
         const Flags & getColumnFlags() const { return all_flags_for_target[COLUMN]; }
         const Flags & getDictionaryFlags() const { return all_flags_for_target[DICTIONARY]; }
+        const Flags & getTableEngineFlags() const { return all_flags_for_target[TABLE_ENGINE]; }
         const Flags & getNamedCollectionFlags() const { return all_flags_for_target[NAMED_COLLECTION]; }
         const Flags & getAllFlagsGrantableOnGlobalLevel() const { return getAllFlags(); }
         const Flags & getAllFlagsGrantableOnGlobalWithParameterLevel() const { return getGlobalWithParameterFlags(); }
@@ -120,6 +121,7 @@ namespace
             VIEW = TABLE,
             COLUMN,
             DICTIONARY,
+            TABLE_ENGINE,
             NAMED_COLLECTION,
         };
 
@@ -300,7 +302,7 @@ namespace
                 collectAllFlags(child.get());
 
             all_flags_grantable_on_table_level = all_flags_for_target[TABLE] | all_flags_for_target[DICTIONARY] | all_flags_for_target[COLUMN];
-            all_flags_grantable_on_global_with_parameter_level = all_flags_for_target[NAMED_COLLECTION];
+            all_flags_grantable_on_global_with_parameter_level = all_flags_for_target[TABLE_ENGINE] | all_flags_for_target[NAMED_COLLECTION];
             all_flags_grantable_on_database_level = all_flags_for_target[DATABASE] | all_flags_grantable_on_table_level;
         }
 
@@ -383,6 +385,10 @@ AccessFlags::ParameterType AccessFlags::getParameterType() const
     if (isEmpty() || !AccessFlags::allGlobalWithParameterFlags().contains(*this))
         return AccessFlags::NONE;
 
+    /// All flags refer to TABLE ENGINE access type.
+    if (AccessFlags::allTableEngineFlags().contains(*this))
+        return AccessFlags::TABLE_ENGINE;
+
     /// All flags refer to NAMED COLLECTION access type.
     if (AccessFlags::allNamedCollectionFlags().contains(*this))
         return AccessFlags::NAMED_COLLECTION;
@@ -404,6 +410,7 @@ AccessFlags AccessFlags::allDatabaseFlags() { return Helper::instance().getDatab
 AccessFlags AccessFlags::allTableFlags() { return Helper::instance().getTableFlags(); }
 AccessFlags AccessFlags::allColumnFlags() { return Helper::instance().getColumnFlags(); }
 AccessFlags AccessFlags::allDictionaryFlags() { return Helper::instance().getDictionaryFlags(); }
+AccessFlags AccessFlags::allTableEngineFlags() { return Helper::instance().getTableEngineFlags(); }
 AccessFlags AccessFlags::allNamedCollectionFlags() { return Helper::instance().getNamedCollectionFlags(); }
 AccessFlags AccessFlags::allFlagsGrantableOnGlobalLevel() { return Helper::instance().getAllFlagsGrantableOnGlobalLevel(); }
 AccessFlags AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel() { return Helper::instance().getAllFlagsGrantableOnGlobalWithParameterLevel(); }
