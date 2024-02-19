@@ -241,8 +241,9 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         settings.ostr << (settings.hilite ? hilite_keyword : "")
             << (attach ? "ATTACH DATABASE " : "CREATE DATABASE ")
             << (if_not_exists ? "IF NOT EXISTS " : "")
-            << (settings.hilite ? hilite_none : "")
-            << backQuoteIfNeed(getDatabase());
+            << (settings.hilite ? hilite_none : "");
+
+        database->formatImpl(settings, state, frame);
 
         if (uuid != UUIDHelpers::Nil)
         {

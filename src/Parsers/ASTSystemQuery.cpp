@@ -85,7 +85,7 @@ void ASTSystemQuery::setTable(const String & name)
     }
 }
 
-void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     auto print_identifier = [&](const String & identifier) -> WriteBuffer &
     {
@@ -104,9 +104,11 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     {
         if (database)
         {
-            print_identifier(getDatabase()) << ".";
+            database->formatImpl(settings, state, frame);
+            settings.ostr << '.';
         }
-        print_identifier(getTable());
+
+        table->formatImpl(settings, state, frame);
         return settings.ostr;
     };
 

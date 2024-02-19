@@ -619,6 +619,7 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
 
     if (table)
     {
+        settings.ostr << indent_str;
         if (database)
         {
             database->formatImpl(settings, state, frame);
@@ -629,7 +630,8 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
     }
     else if (alter_object == AlterObjectType::DATABASE && database)
     {
-        settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
+        settings.ostr << indent_str;
+        database->formatImpl(settings, state, frame);
     }
 
     formatOnCluster(settings);
