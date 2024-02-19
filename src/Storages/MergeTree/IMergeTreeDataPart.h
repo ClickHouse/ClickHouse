@@ -562,9 +562,11 @@ public:
 
 protected:
     /// Primary key (correspond to primary.idx file).
-    /// Always loaded in RAM. Contains each index_granularity-th value of primary key tuple.
+    /// Lazily loaded in RAM. Contains each index_granularity-th value of primary key tuple.
     /// Note that marks (also correspond to primary key) are not always in RAM, but cached. See MarkCache.h.
-    Index index;
+    mutable std::mutex index_mutex;
+    mutable Index index;
+    mutable bool index_loaded = false;
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;
@@ -662,7 +664,7 @@ private:
     virtual void appendFilesOfIndexGranularity(Strings & files) const;
 
     /// Loads the index file.
-    void loadIndex();
+    void loadIndex(std::scoped_lock<std::mutex> &) const;
 
     void appendFilesOfIndex(Strings & files) const;
 

@@ -345,13 +345,21 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
 
 const IMergeTreeDataPart::Index & IMergeTreeDataPart::getIndex() const
 {
+    std::scoped_lock lock(index_mutex);
+    if (!index_loaded)
+        loadIndex(lock);
+    index_loaded = true;
     return index;
 }
 
 
 void IMergeTreeDataPart::setIndex(Columns index_)
 {
+    std::scoped_lock lock(index_mutex);
+    if (!index.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
     index = std::move(index_);
+    index_loaded = true;
 }
 
 
@@ -682,8 +690,11 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         loadColumns(require_columns_checksums);
         loadChecksums(require_columns_checksums);
         loadIndexGranularity();
+
+        if (!storage.getSettings()->primary_key_lazy_load)
+            getIndex();
+
         calculateColumnsAndSecondaryIndicesSizesOnDisk();
-        loadIndex(); /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
         loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
         loadPartitionAndMinMaxIndex();
         bool has_broken_projections = false;
@@ -817,8 +828,11 @@ void IMergeTreeDataPart::appendFilesOfIndexGranularity(Strings & /* files */) co
 {
 }
 
-void IMergeTreeDataPart::loadIndex()
+void IMergeTreeDataPart::loadIndex(std::scoped_lock<std::mutex> &) const
 {
+    /// Memory for index must not be accounted as memory usage for query, because it belongs to a table.
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+
     /// It can be empty in case of mutations
     if (!index_granularity.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index granularity is not loaded before index loading");
