@@ -347,7 +347,7 @@ const IMergeTreeDataPart::Index & IMergeTreeDataPart::getIndex() const
 {
     std::scoped_lock lock(index_mutex);
     if (!index_loaded)
-        loadIndex(lock);
+        loadIndex();
     index_loaded = true;
     return index;
 }
@@ -569,6 +569,7 @@ void IMergeTreeDataPart::removeIfNeeded()
 
 UInt64 IMergeTreeDataPart::getIndexSizeInBytes() const
 {
+    std::scoped_lock lock(index_mutex);
     UInt64 res = 0;
     for (const ColumnPtr & column : index)
         res += column->byteSize();
@@ -577,6 +578,7 @@ UInt64 IMergeTreeDataPart::getIndexSizeInBytes() const
 
 UInt64 IMergeTreeDataPart::getIndexSizeInAllocatedBytes() const
 {
+    std::scoped_lock lock(index_mutex);
     UInt64 res = 0;
     for (const ColumnPtr & column : index)
         res += column->allocatedBytes();
@@ -828,7 +830,7 @@ void IMergeTreeDataPart::appendFilesOfIndexGranularity(Strings & /* files */) co
 {
 }
 
-void IMergeTreeDataPart::loadIndex(std::scoped_lock<std::mutex> &) const
+void IMergeTreeDataPart::loadIndex() const
 {
     /// Memory for index must not be accounted as memory usage for query, because it belongs to a table.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
