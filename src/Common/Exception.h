@@ -9,10 +9,11 @@
 
 #include <base/defines.h>
 #include <base/errnoToString.h>
+#include <base/int8_to_string.h>
 #include <base/scope_guard.h>
-#include <Common/LoggingFormatStringHelpers.h>
-#include <Common/Logger.h>
 #include <Common/AtomicLogger.h>
+#include <Common/Logger.h>
+#include <Common/LoggingFormatStringHelpers.h>
 #include <Common/StackTrace.h>
 
 #include <fmt/format.h>

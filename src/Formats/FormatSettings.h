@@ -46,6 +46,7 @@ struct FormatSettings
     bool try_infer_integers = false;
     bool try_infer_dates = false;
     bool try_infer_datetimes = false;
+    bool try_infer_exponent_floats = false;
 
     enum class DateTimeInputFormat
     {
@@ -338,6 +339,8 @@ struct FormatSettings
         String resultset_format;
         String row_format;
         String row_between_delimiter;
+        String row_format_template;
+        String resultset_format_template;
     } template_settings;
 
     struct
@@ -359,6 +362,7 @@ struct FormatSettings
         bool deduce_templates_of_expressions = true;
         bool accurate_types_of_literals = true;
         bool allow_data_after_semicolon = false;
+        bool escape_quote_with_quote = false;
     } values;
 
     enum class ORCCompression

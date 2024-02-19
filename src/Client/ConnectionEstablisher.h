@@ -3,7 +3,6 @@
 #include <Common/AsyncTaskExecutor.h>
 #include <Common/Epoll.h>
 #include <Common/Fiber.h>
-#include <Common/FiberStack.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/PoolWithFailoverBase.h>
 #include <Client/ConnectionPool.h>
@@ -30,8 +29,6 @@ public:
     /// Set async callback that will be called when reading from socket blocks.
     void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }
 
-    bool isFinished() const { return is_finished; }
-
 private:
     ConnectionPoolPtr pool;
     const ConnectionTimeouts * timeouts;
@@ -39,7 +36,6 @@ private:
     LoggerPtr log;
     const QualifiedTableName * table_to_check;
 
-    bool is_finished;
     AsyncCallback async_callback = {};
 };
 

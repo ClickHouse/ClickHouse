@@ -652,7 +652,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             const::std::string app_name = std::string_view(argv[0]).contains("clickhouse-benchmark") ? "clickhouse-benchmark" : "clickhouse benchmark";
             std::cout << getHelpHeader(app_name);
             std::cout << desc << "\n";
-            return 1;
+            std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-benchmark/\n";
+            return 0;
         }
 
         print_stacktrace = options.count("stacktrace");

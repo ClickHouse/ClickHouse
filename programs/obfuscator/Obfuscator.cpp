@@ -1310,7 +1310,7 @@ try
             throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Input must be seekable file (it will be read twice)");
 
         SingleReadBufferIterator read_buffer_iterator(std::move(file));
-        schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, false, context_const);
+        schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, context_const);
     }
     else
     {

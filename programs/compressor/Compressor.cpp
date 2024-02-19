@@ -103,6 +103,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
                 "Alternative usage: {app} [options] INPUT OUTPUT\n", fmt::arg("app", app_name));
 
             std::cout << desc << std::endl;
+            std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-compressor/\n";
             return 0;
         }
 

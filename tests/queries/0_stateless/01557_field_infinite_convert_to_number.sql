@@ -1,1 +1,1 @@
-SET max_threads = nan; -- { serverError 70 }
+SET max_threads = nan; -- { serverError CANNOT_CONVERT_TYPE }
