@@ -325,12 +325,18 @@ void FilterTransform::doTransform(Chunk & chunk)
       *  or calculate number of set bytes in the filter.
       */
     size_t first_non_constant_column = num_columns;
+    size_t min_size_in_memory = std::numeric_limits<size_t>::max();
     for (size_t i = 0; i < num_columns; ++i)
     {
-        if (i != filter_column_position && !isColumnConst(*columns[i])
-            && removeNullableOrLowCardinalityNullable(types[i])->isValueRepresentedByNumber())
+        DataTypePtr type_not_null = removeNullableOrLowCardinalityNullable(types[i]);
+        if (i != filter_column_position && !isColumnConst(*columns[i]) && type_not_null->isValueRepresentedByNumber())
         {
-            first_non_constant_column = i;
+            size_t size_in_memory = type_not_null->getSizeOfValueInMemory() + (isNullableOrLowCardinalityNullable(types[i]) ? 1 : 0);
+            if (size_in_memory < min_size_in_memory)
+            {
+                min_size_in_memory = size_in_memory;
+                first_non_constant_column = i;
+            }
             break;
         }
     }
