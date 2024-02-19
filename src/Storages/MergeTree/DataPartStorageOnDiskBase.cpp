@@ -430,9 +430,21 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
         disk->removeRecursive(path_to_clone);
     }
 
-    disk->createDirectories(to);
-    volume->getDisk()->copy(getRelativePath(), disk, to);
-    volume->getDisk()->removeFileIfExists(fs::path(path_to_clone) / "delete-on-destroy.txt");
+    try
+    {
+        disk->createDirectories(to);
+        volume->getDisk()->copy(getRelativePath(), disk, to);
+        volume->getDisk()->removeFileIfExists(fs::path(path_to_clone) / "delete-on-destroy.txt");
+    }
+    catch (...)
+    {
+        if (disk->exists(path_to_clone))
+        {
+            LOG_WARNING(log, "Removing directory {} after failed attempt to move a data part", path_to_clone);
+            disk->removeRecursive(path_to_clone);
+        }
+        throw;
+    }
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
     return create(single_disk_volume, to, dir_path, /*initialize=*/ true);
