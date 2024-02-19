@@ -160,7 +160,7 @@ void RefreshTask::cancel()
 void RefreshTask::wait()
 {
     std::unique_lock lock(mutex);
-    refresh_cv.wait(lock, [&] { return info.state != RefreshState::Running; });
+    refresh_cv.wait(lock, [&] { return info.state != RefreshState::Running && !refresh_immediately; });
     if (info.last_refresh_result == LastRefreshResult::Error)
         throw Exception(ErrorCodes::REFRESH_FAILED, "Refresh failed: {}", info.exception_message);
 }
