@@ -5,6 +5,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/getColumnFromBlock.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
@@ -56,6 +57,9 @@ namespace CurrentMetrics
 {
     extern const Metric StorageBufferRows;
     extern const Metric StorageBufferBytes;
+    extern const Metric StorageBufferFlushThreads;
+    extern const Metric StorageBufferFlushThreadsActive;
+    extern const Metric StorageBufferFlushThreadsScheduled;
 }
 
 
@@ -153,6 +157,12 @@ StorageBuffer::StorageBuffer(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
+    if (num_shards > 1)
+    {
+        flush_pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::StorageBufferFlushThreads, CurrentMetrics::StorageBufferFlushThreadsActive, CurrentMetrics::StorageBufferFlushThreadsScheduled,
+            num_shards, 0, num_shards);
+    }
     flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
 }
 
@@ -802,7 +812,22 @@ bool StorageBuffer::checkThresholdsImpl(bool direct, size_t rows, size_t bytes, 
 void StorageBuffer::flushAllBuffers(bool check_thresholds)
 {
     for (auto & buf : buffers)
-        flushBuffer(buf, check_thresholds, false);
+    {
+        if (flush_pool)
+        {
+            scheduleFromThreadPool<void>([&] ()
+            {
+                flushBuffer(buf, check_thresholds, false);
+            }, *flush_pool, "BufferFlush");
+        }
+        else
+        {
+            flushBuffer(buf, check_thresholds, false);
+        }
+    }
+
+    if (flush_pool)
+        flush_pool->wait();
 }
 
 
