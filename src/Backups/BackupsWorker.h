@@ -45,6 +45,8 @@ public:
     void shutdown();
 
     /// Starts executing a BACKUP or RESTORE query. Returns ID of the operation.
+    /// For asynchronous operations the function throws no exceptions on failure usually,
+    /// call getInfo() on a returned operation id to check for errors.
     BackupOperationID start(const ASTPtr & backup_or_restore_query, ContextMutablePtr context);
 
     /// Waits until the specified backup or restore operation finishes or stops.
@@ -68,6 +70,7 @@ private:
     BackupOperationID startMakingBackup(const ASTPtr & query, const ContextPtr & context);
 
     void doBackup(
+        BackupMutablePtr & backup,
         const std::shared_ptr<ASTBackupQuery> & backup_query,
         const BackupOperationID & backup_id,
         const String & backup_name_for_logging,
@@ -75,9 +78,7 @@ private:
         BackupSettings backup_settings,
         std::shared_ptr<IBackupCoordination> backup_coordination,
         const ContextPtr & context,
-        ContextMutablePtr mutable_context,
-        ThreadGroupPtr thread_group,
-        bool called_async);
+        ContextMutablePtr mutable_context);
 
     /// Builds file infos for specified backup entries.
     void buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, QueryStatusPtr process_list_element);
@@ -94,9 +95,7 @@ private:
         const BackupInfo & backup_info,
         RestoreSettings restore_settings,
         std::shared_ptr<IRestoreCoordination> restore_coordination,
-        ContextMutablePtr context,
-        ThreadGroupPtr thread_group,
-        bool called_async);
+        ContextMutablePtr context);
 
     /// Run data restoring tasks which insert data to tables.
     void restoreTablesData(const BackupOperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool, QueryStatusPtr process_list_element);
