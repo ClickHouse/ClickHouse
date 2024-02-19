@@ -94,6 +94,7 @@
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -907,7 +908,7 @@ Strings Context::getWarnings() const
         if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}", shared->max_table_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}", shared->max_table_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}", shared->max_database_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of active parts is more than {}", shared->max_part_num_to_warn));
     }
@@ -1533,7 +1534,7 @@ void Context::addExternalTable(const String & table_name, TemporaryTableHolder &
 
     std::lock_guard lock(mutex);
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} already exists.", backQuoteIfNeed(table_name));
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} already exists", backQuoteIfNeed(table_name));
     external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
 }
 
@@ -1927,6 +1928,35 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
     }
 
+    return res;
+}
+
+
+StoragePtr Context::buildParametrizedViewStorage(const ASTPtr & table_expression, const String & database_name, const String & table_name)
+{
+    if (table_name.empty())
+        return nullptr;
+
+    StoragePtr original_view = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
+    if (!original_view || !original_view->isView())
+        return nullptr;
+    auto * storage_view = original_view->as<StorageView>();
+    if (!storage_view || !storage_view->isParameterizedView())
+        return nullptr;
+
+    auto query = original_view->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
+    NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression);
+    StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
+
+    ASTCreateQuery create;
+    create.select = query->as<ASTSelectWithUnionQuery>();
+    auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, shared_from_this());
+    auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
+                                                create,
+                                                ColumnsDescription(sample_block.getNamesAndTypesList()),
+            /* comment */ "",
+            /* is_parameterized_view */ true);
+    res->startup();
     return res;
 }
 
@@ -4154,12 +4184,12 @@ void Context::setMaxTableSizeToDrop(size_t max_size)
 
 size_t Context::getMaxTableSizeToDrop() const
 {
-    return shared->max_table_size_to_drop.load(std::memory_order_relaxed);
+    return shared->max_table_size_to_drop.load();
 }
 
 void Context::checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size) const
 {
-    size_t max_table_size_to_drop = shared->max_table_size_to_drop.load(std::memory_order_relaxed);
+    size_t max_table_size_to_drop = shared->max_table_size_to_drop.load();
 
     checkCanBeDropped(database, table, table_size, max_table_size_to_drop);
 }
@@ -4177,12 +4207,12 @@ void Context::setMaxPartitionSizeToDrop(size_t max_size)
 
 size_t Context::getMaxPartitionSizeToDrop() const
 {
-    return shared->max_partition_size_to_drop.load(std::memory_order_relaxed);
+    return shared->max_partition_size_to_drop.load();
 }
 
 void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const
 {
-    size_t max_partition_size_to_drop = shared->max_partition_size_to_drop.load(std::memory_order_relaxed);
+    size_t max_partition_size_to_drop = shared->max_partition_size_to_drop.load();
 
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
 }
@@ -4483,7 +4513,7 @@ void Context::setClientConnectionId(uint32_t connection_id_)
     client_info.connection_id = connection_id_;
 }
 
-void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
+void Context::setHTTPClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
 {
     client_info.http_method = http_method;
     client_info.http_user_agent = http_user_agent;

@@ -5,6 +5,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -412,6 +413,23 @@ Chain buildPushingToViewsChain(
 
             InterpreterInsertQuery interpreter(nullptr, view_insert_context, false, false, false);
             out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms);
+
+            if (interpreter.shouldAddSquashingFroStorage(inner_table))
+            {
+                bool table_prefers_large_blocks = inner_table->prefersLargeBlocks();
+                const auto & settings = view_insert_context->getSettingsRef();
+
+                out.addSource(std::make_shared<SquashingChunksTransform>(
+                    out.getInputHeader(),
+                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
+                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
+            }
+
+            auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), current_thread, view_insert_context->getQuota());
+            counting->setProcessListElement(view_insert_context->getProcessListElement());
+            counting->setProgressCallback(view_insert_context->getProgressCallback());
+            out.addSource(std::move(counting));
+
             out.addStorageHolder(view);
             out.addStorageHolder(inner_table);
         }
