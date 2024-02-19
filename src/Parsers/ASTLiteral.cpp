@@ -88,7 +88,7 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
             prefix = "__tuple_";
         else if (type == Field::Types::AggregateFunctionState)
             prefix = "__aggregate_function_";
-        
+
         writeCString(prefix, ostr);
         writeText(low, ostr);
         ostr.write('_');
