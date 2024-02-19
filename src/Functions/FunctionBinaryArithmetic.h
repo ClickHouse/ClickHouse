@@ -2101,7 +2101,6 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                         type_res = std::make_shared<LeftDataType>(left.getPrecision(), left.getScale());
                     else
                         type_res = std::make_shared<RightDataType>(right.getPrecision(), right.getScale());
-                    // Create result decimal type somehow, maybe similar to how we do it in getReturnTypeImplStatic
 
                     auto res = executeNumericWithDecimal<LeftDataType, RightDataType, DecimalResultType>(
                             left, right,
