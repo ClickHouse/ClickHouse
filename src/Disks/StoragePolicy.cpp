@@ -68,14 +68,11 @@ StoragePolicy::StoragePolicy(
         volumes.emplace_back(createVolumeFromConfig(attr_name, config, volumes_prefix + "." + attr_name, disks));
 
         UInt64 last_priority = volumes.back()->volume_priority;
-        if (last_priority != std::numeric_limits<UInt64>::max())
+        if (last_priority != std::numeric_limits<UInt64>::max() && !volume_priorities.insert(last_priority).second)
         {
-            if (volume_priorities.find(last_priority) == volume_priorities.end())
-                volume_priorities.insert(last_priority);
-            else
-                throw Exception(
-                    ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "volume_priority values must be unique across the policy");
+            throw Exception(
+                ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "volume_priority values must be unique across the policy");
         }
     }
 
