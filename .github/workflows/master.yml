@@ -55,7 +55,6 @@ jobs:
     uses: ./.github/workflows/reusable_docker.yml
     with:
       data: ${{ needs.RunConfig.outputs.data }}
-      set_latest: true
   StyleCheck:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -360,14 +359,6 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateless tests (release)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestReleaseDatabaseOrdinary:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (release, DatabaseOrdinary)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestReleaseDatabaseReplicated:
@@ -733,7 +724,6 @@ jobs:
       - MarkReleaseReady
       - FunctionalStatelessTestDebug
       - FunctionalStatelessTestRelease
-      - FunctionalStatelessTestReleaseDatabaseOrdinary
       - FunctionalStatelessTestReleaseDatabaseReplicated
       - FunctionalStatelessTestReleaseAnalyzer
       - FunctionalStatelessTestReleaseS3

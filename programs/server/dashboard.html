@@ -1380,11 +1380,13 @@ document.getElementById('params').onsubmit = function(event) {
     event.preventDefault();
 }
 
+const decodeState = (x) => JSON.parse(LZString.decompressFromEncodedURIComponent(x) || atob(x));
+const encodeState = (x) => LZString.compressToEncodedURIComponent(JSON.stringify(x));
 
 function saveState() {
     const state = { host, user, queries, params, search_query, customized };
     history.pushState(state, '',
-        window.location.pathname + (window.location.search || '') + '#' + LZString.compressToEncodedURIComponent(JSON.stringify(state)));
+        window.location.pathname + (window.location.search || '') + '#' + encodeState(state));
 }
 
 async function searchQueries() {
@@ -1450,12 +1452,7 @@ window.onpopstate = function(event) {
 if (window.location.hash) {
     try {
         let search_query_, customized_;
-        try {
-            ({host, user, queries, params, search_query_, customized_} = JSON.parse(LZString.decompressFromEncodedURIComponent(window.location.hash.substring(1))));
-        } catch {
-            // For compatibility with uncompressed state
-            ({host, user, queries, params, search_query_, customized_} = JSON.parse(atob(window.location.hash.substring(1))));
-        }
+        ({host, user, queries, params, search_query_, customized_} = decodeState(window.location.hash.substring(1)));
 
         // For compatibility with old URLs' hashes
         search_query = search_query_ !== undefined ? search_query_ : search_query;

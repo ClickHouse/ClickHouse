@@ -178,6 +178,9 @@
     M(MergeTreePartsCleanerThreads, "Number of threads in the MergeTree parts cleaner thread pool.") \
     M(MergeTreePartsCleanerThreadsActive, "Number of threads in the MergeTree parts cleaner thread pool running a task.") \
     M(MergeTreePartsCleanerThreadsScheduled, "Number of queued or active jobs in the MergeTree parts cleaner thread pool.") \
+    M(DatabaseReplicatedCreateTablesThreads, "Number of threads in the threadpool for table creation in DatabaseReplicated.") \
+    M(DatabaseReplicatedCreateTablesThreadsActive, "Number of active threads in the threadpool for table creation in DatabaseReplicated.") \
+    M(DatabaseReplicatedCreateTablesThreadsScheduled, "Number of queued or active jobs in the threadpool for table creation in DatabaseReplicated.") \
     M(IDiskCopierThreads, "Number of threads for copying data between disks of different types.") \
     M(IDiskCopierThreadsActive, "Number of threads for copying data between disks of different types running a task.") \
     M(IDiskCopierThreadsScheduled, "Number of queued or active jobs for copying data between disks of different types.") \
