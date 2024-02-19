@@ -96,12 +96,11 @@ StorageMergeTree::StorageMergeTree(
     const StorageID & table_id_,
     const String & relative_data_path_,
     const StorageInMemoryMetadata & metadata_,
-    bool attach,
+    LoadingStrictnessLevel mode,
     ContextMutablePtr context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
-    std::unique_ptr<MergeTreeSettings> storage_settings_,
-    bool has_force_restore_data_flag)
+    std::unique_ptr<MergeTreeSettings> storage_settings_)
     : MergeTreeData(
         table_id_,
         metadata_,
@@ -110,17 +109,17 @@ StorageMergeTree::StorageMergeTree(
         merging_params_,
         std::move(storage_settings_),
         false,      /// require_part_metadata
-        attach)
+        mode)
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this)
 {
-    initializeDirectoriesAndFormatVersion(relative_data_path_, attach, date_column_name);
+    initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
 
-    loadDataParts(has_force_restore_data_flag, std::nullopt);
+    loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
 
-    if (!attach && !getDataPartsForInternalUsage().empty() && !isStaticStorage())
+    if (mode < LoadingStrictnessLevel::ATTACH && !getDataPartsForInternalUsage().empty() && !isStaticStorage())
         throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Data directory for table already containing data parts - probably "
                         "it was unclean DROP table or manual intervention. "

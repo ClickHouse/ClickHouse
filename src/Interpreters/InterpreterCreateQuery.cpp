@@ -276,7 +276,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
     bool need_lock_uuid = internal || need_write_metadata;
-    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag);
+    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ false);
 
     /// Lock uuid, so we will known it's already in use.
     /// We do it when attaching databases on server startup (internal) and on CREATE query (!create.attach);
@@ -1380,6 +1380,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
                                            DDLGuardPtr & ddl_guard)
 {
+    bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
+    auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query);
+
     if (create.temporary)
     {
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
@@ -1396,7 +1399,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 getContext()->getGlobalContext(),
                 properties.columns,
                 properties.constraints,
-                false);
+                mode);
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
 
@@ -1544,7 +1547,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             getContext()->getGlobalContext(),
             properties.columns,
             properties.constraints,
-            false);
+            mode);
 
         /// If schema wes inferred while storage creation, add columns description to create query.
         addColumnsDescriptionToCreateQueryIfNecessary(query_ptr->as<ASTCreateQuery &>(), res);
