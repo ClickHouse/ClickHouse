@@ -254,8 +254,6 @@ public:
         return dict;
     }
 
-    void registerAllFormatNames() const;
-
     bool isInputFormat(const String & name) const;
     bool isOutputFormat(const String & name) const;
 
@@ -264,7 +262,7 @@ public:
 
 private:
     FormatsDictionary dict;
-    FileExtensionFormats file_extension_formats;
+    FileExtensionFormats file_extension_formats;    // Also used as a case-insensitive format_name mapping.
 
     const Creators & getCreators(const String & name) const;
 
@@ -277,6 +275,9 @@ private:
         const Settings & settings,
         bool is_remote_fs,
         size_t max_download_threads) const;
+
+    // Mapping case-insensitive format_name to a key in FormatsDictionary if exists.
+    String getOriginalFormatNameIfExists(const String & name) const;
 };
 
 }

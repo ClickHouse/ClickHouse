@@ -1,6 +1,5 @@
 #include <cerrno>
 #include <cstdlib>
-#include <cctype>
 #include <Poco/String.h>
 
 #include <IO/ReadBufferFromMemory.h>
@@ -9,6 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/BinStringDecodeHelper.h>
+#include <Common/KnownObjectNames.h>
 
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAsterisk.h>
@@ -242,26 +242,6 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return false;
 }
 
-std::unordered_map<String, String> ParserFormatIdentifier::format_names;
-
-void ParserFormatIdentifier::registerFormatName(const String & name)
-{
-    String uppercase = name;
-    std::transform(uppercase.begin(), uppercase.end(), uppercase.begin(), [](unsigned char c) { return std::toupper(c); });
-    format_names[uppercase] = name;
-}
-
-
-String ParserFormatIdentifier::getFormatName(const String & name) const
-{
-    String uppercase = name;
-    std::transform(uppercase.begin(), uppercase.end(), uppercase.begin(), [](unsigned char c) { return std::toupper(c); });
-    auto it = format_names.find(uppercase);
-    if (format_names.end() != it)
-        return it->second;
-    return name;
-}
-
 
 bool ParserFormatIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -279,15 +259,15 @@ bool ParserFormatIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (s.empty())    /// Identifiers "empty string" are not allowed.
             return false;
 
-        auto name = getFormatName(s);
-        node = std::make_shared<ASTIdentifier>(name);
+        auto format_name = KnownFormatNames::instance().getOriginalFormatNameIfExists(s);
+        node = std::make_shared<ASTIdentifier>(format_name);
         ++pos;
         return true;
     }
     else if (pos->type == TokenType::BareWord)
     {
-        auto name = getFormatName(String(pos->begin, pos->end));
-        node = std::make_shared<ASTIdentifier>(name);
+        auto format_name = KnownFormatNames::instance().getOriginalFormatNameIfExists(String(pos->begin, pos->end));
+        node = std::make_shared<ASTIdentifier>(format_name);
         ++pos;
         return true;
     }
