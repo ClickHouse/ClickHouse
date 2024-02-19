@@ -22,16 +22,10 @@ public:
     using Configuration = typename Storage::Configuration;
 
     template <class ...Args>
-    explicit IStorageDataLake(const Configuration & configuration_, ContextPtr context_, bool attach, Args && ...args)
-        : Storage(getConfigurationForDataRead(configuration_, context_, {}, attach), context_, std::forward<Args>(args)...)
+    explicit IStorageDataLake(const Configuration & configuration_, ContextPtr context_, Args && ...args)
+        : Storage(getConfigurationForDataRead(configuration_, context_), context_, std::forward<Args>(args)...)
         , base_configuration(configuration_)
-        , log(getLogger(getName())) {} // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
-
-    template <class ...Args>
-    static StoragePtr create(const Configuration & configuration_, ContextPtr context_, bool attach, Args && ...args)
-    {
-        return std::make_shared<IStorageDataLake<Storage, Name, MetadataParser>>(configuration_, context_, attach, std::forward<Args>(args)...);
-    }
+        , log(&Poco::Logger::get(getName())) {}
 
     String getName() const override { return name; }
 
@@ -64,34 +58,24 @@ public:
 
 private:
     static Configuration getConfigurationForDataRead(
-        const Configuration & base_configuration, ContextPtr local_context, const Strings & keys = {}, bool attach = false)
+        const Configuration & base_configuration, ContextPtr local_context, const Strings & keys = {})
     {
         auto configuration{base_configuration};
         configuration.update(local_context);
         configuration.static_configuration = true;
 
-        try
-        {
-            if (keys.empty())
-                configuration.keys = getDataFiles(configuration, local_context);
-            else
-                configuration.keys = keys;
+        if (keys.empty())
+            configuration.keys = getDataFiles(configuration, local_context);
+        else
+            configuration.keys = keys;
 
-            LOG_TRACE(
-                getLogger("DataLake"),
-                "New configuration path: {}, keys: {}",
-                configuration.getPath(), fmt::join(configuration.keys, ", "));
+        LOG_TRACE(
+            &Poco::Logger::get("DataLake"),
+            "New configuration path: {}, keys: {}",
+            configuration.getPath(), fmt::join(configuration.keys, ", "));
 
-            configuration.connect(local_context);
-            return configuration;
-        }
-        catch (...)
-        {
-            if (!attach)
-                throw;
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            return configuration;
-        }
+        configuration.connect(local_context);
+        return configuration;
     }
 
     static Strings getDataFiles(const Configuration & configuration, ContextPtr local_context)
@@ -112,7 +96,7 @@ private:
 
     Configuration base_configuration;
     std::mutex configuration_update_mutex;
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 
@@ -125,7 +109,8 @@ static StoragePtr createDataLakeStorage(const StorageFactory::Arguments & args)
     if (configuration.format == "auto")
         configuration.format = "Parquet";
 
-    return DataLake::create(configuration, args.getContext(), args.attach, args.table_id, args.columns, args.constraints,
+    return std::make_shared<DataLake>(
+        configuration, args.getContext(), args.table_id, args.columns, args.constraints,
         args.comment, getFormatSettings(args.getContext()));
 }
 

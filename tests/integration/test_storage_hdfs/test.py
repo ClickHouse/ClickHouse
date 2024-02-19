@@ -569,13 +569,11 @@ def test_schema_inference_with_globs(started_cluster):
         f"insert into table function hdfs('hdfs://hdfs1:9000/data2.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select 0"
     )
 
-    result = node1.query(
-        f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings input_format_json_infer_incomplete_types_as_strings=0"
-    )
+    result = node1.query(f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow')")
     assert result.strip() == "c1\tNullable(Int64)"
 
     result = node1.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings input_format_json_infer_incomplete_types_as_strings=0"
+        f"select * from hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow')"
     )
     assert sorted(result.split()) == ["0", "\\N"]
 
@@ -586,7 +584,7 @@ def test_schema_inference_with_globs(started_cluster):
     filename = "data{1,3}.jsoncompacteachrow"
 
     result = node1.query_and_get_error(
-        f"desc hdfs('hdfs://hdfs1:9000/{filename}') settings schema_inference_use_cache_for_hdfs=0, input_format_json_infer_incomplete_types_as_strings=0"
+        f"desc hdfs('hdfs://hdfs1:9000/{filename}') settings schema_inference_use_cache_for_hdfs=0"
     )
 
     assert "All attempts to extract table structure from files failed" in result
@@ -596,7 +594,7 @@ def test_schema_inference_with_globs(started_cluster):
     )
 
     result = node1.query_and_get_error(
-        f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings schema_inference_use_cache_for_hdfs=0, input_format_json_infer_incomplete_types_as_strings=0"
+        f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings schema_inference_use_cache_for_hdfs=0"
     )
 
     assert (
@@ -996,55 +994,6 @@ def test_read_subcolumns(started_cluster):
         res
         == "42\thdfs://hdfs1:9000/test_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t42\n"
     )
-
-
-def test_union_schema_inference_mode(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    node.query(
-        "insert into function hdfs('hdfs://hdfs1:9000/test_union_schema_inference1.jsonl') select 1 as a"
-    )
-
-    node.query(
-        "insert into function hdfs('hdfs://hdfs1:9000/test_union_schema_inference2.jsonl') select 2 as b"
-    )
-
-    node.query("system drop schema cache for hdfs")
-
-    result = node.query(
-        "desc hdfs('hdfs://hdfs1:9000/test_union_schema_inference*.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
-    )
-    assert result == "a\tNullable(Int64)\nb\tNullable(Int64)\n"
-
-    result = node.query(
-        "select schema_inference_mode, splitByChar('/', source)[-1] as file, schema from system.schema_inference_cache where source like '%test_union_schema_inference%' order by file format TSV"
-    )
-    assert (
-        result == "UNION\ttest_union_schema_inference1.jsonl\ta Nullable(Int64)\n"
-        "UNION\ttest_union_schema_inference2.jsonl\tb Nullable(Int64)\n"
-    )
-    result = node.query(
-        "select * from hdfs('hdfs://hdfs1:9000/test_union_schema_inference*.jsonl') order by tuple(*) settings schema_inference_mode='union', describe_compact_output=1 format TSV"
-    )
-    assert result == "1\t\\N\n" "\\N\t2\n"
-    node.query(f"system drop schema cache for hdfs")
-    result = node.query(
-        "desc hdfs('hdfs://hdfs1:9000/test_union_schema_inference2.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
-    )
-    assert result == "b\tNullable(Int64)\n"
-
-    result = node.query(
-        "desc hdfs('hdfs://hdfs1:9000/test_union_schema_inference*.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
-    )
-    assert result == "a\tNullable(Int64)\n" "b\tNullable(Int64)\n"
-    node.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_union_schema_inference3.jsonl', TSV) select 'Error'"
-    )
-
-    error = node.query_and_get_error(
-        "desc hdfs('hdfs://hdfs1:9000/test_union_schema_inference*.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
-    )
-    assert "Cannot extract table structure" in error
 
 
 if __name__ == "__main__":

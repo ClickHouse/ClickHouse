@@ -39,9 +39,6 @@ public:
     virtual void setMaxRowsAndBytesToRead(size_t, size_t) {}
     virtual size_t getNumRowsRead() const { return 0; }
 
-    virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
-    virtual void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) { transformTypesIfNeeded(type, new_type); }
-
     virtual ~ISchemaReader() = default;
 
 protected:
@@ -57,6 +54,8 @@ public:
 
     bool needContext() const override { return !hints_str.empty(); }
     void setContext(ContextPtr & context) override;
+
+    virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
 
 protected:
     void setMaxRowsAndBytesToRead(size_t max_rows, size_t max_bytes) override

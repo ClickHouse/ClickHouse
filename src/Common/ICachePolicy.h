@@ -2,11 +2,10 @@
 
 #include <Common/Exception.h>
 #include <Common/ICachePolicyUserQuota.h>
-#include <base/UUID.h>
 
 #include <functional>
 #include <memory>
-#include <optional>
+#include <mutex>
 
 namespace DB
 {
@@ -44,7 +43,7 @@ public:
 
     virtual void setMaxCount(size_t /*max_count*/) = 0;
     virtual void setMaxSizeInBytes(size_t /*max_size_in_bytes*/) = 0;
-    virtual void setQuotaForUser(const UUID & user_id, size_t max_size_in_bytes, size_t max_entries) { user_quotas->setQuotaForUser(user_id, max_size_in_bytes, max_entries); }
+    virtual void setQuotaForUser(const String & user_name, size_t max_size_in_bytes, size_t max_entries) { user_quotas->setQuotaForUser(user_name, max_size_in_bytes, max_entries); }
 
     /// HashFunction usually hashes the entire key and the found key will be equal the provided key. In such cases, use get(). It is also
     /// possible to store other, non-hashed data in the key. In that case, the found key is potentially different from the provided key.

@@ -95,17 +95,19 @@ void OptimizeShardingKeyRewriteInMatcher::visit(ASTFunction & function, Data & d
     if (!identifier)
         return;
 
-    auto name = identifier->shortName();
-    if (!data.sharding_key_expr->getRequiredColumnsWithTypes().contains(name))
+    if (!data.sharding_key_expr->getRequiredColumnsWithTypes().contains(identifier->name()))
         return;
 
+    /// NOTE: that we should not take care about empty tuple,
+    /// since after optimize_skip_unused_shards,
+    /// at least one element should match each shard.
     if (auto * tuple_func = right->as<ASTFunction>(); tuple_func && tuple_func->name == "tuple")
     {
         auto * tuple_elements = tuple_func->children.front()->as<ASTExpressionList>();
         std::erase_if(tuple_elements->children, [&](auto & child)
         {
             auto * literal = child->template as<ASTLiteral>();
-            return tuple_elements->children.size() > 1 && literal && !shardContains(literal->value, name, data);
+            return literal && !shardContains(literal->value, identifier->name(), data);
         });
     }
     else if (auto * tuple_literal = right->as<ASTLiteral>();
@@ -114,7 +116,7 @@ void OptimizeShardingKeyRewriteInMatcher::visit(ASTFunction & function, Data & d
         auto & tuple = tuple_literal->value.get<Tuple &>();
         std::erase_if(tuple, [&](auto & child)
         {
-            return tuple.size() > 1 && !shardContains(child, name, data);
+            return !shardContains(child, identifier->name(), data);
         });
     }
 }

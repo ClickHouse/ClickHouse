@@ -209,7 +209,7 @@ StorageLiveView::StorageLiveView(
     live_view_context = Context::createCopy(getContext());
     live_view_context->makeQueryContext();
 
-    log = getLogger("StorageLiveView (" + table_id_.database_name + "." + table_id_.table_name + ")");
+    log = &Poco::Logger::get("StorageLiveView (" + table_id_.database_name + "." + table_id_.table_name + ")");
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -253,7 +253,7 @@ StorageLiveView::StorageLiveView(
 
 StorageLiveView::~StorageLiveView()
 {
-    shutdown(false);
+    shutdown();
 }
 
 NamesAndTypesList StorageLiveView::getVirtuals() const
@@ -289,7 +289,7 @@ void StorageLiveView::startup()
         periodic_refresh_task->activate();
 }
 
-void StorageLiveView::shutdown(bool)
+void StorageLiveView::shutdown()
 {
     shutdown_called = true;
 

@@ -58,7 +58,7 @@ private:
 
     using ConstantExpressionTemplates = std::vector<std::optional<ConstantExpressionTemplate>>;
 
-    Chunk read() override;
+    Chunk generate() override;
 
     void readRow(MutableColumns & columns, size_t row_num);
     void readUntilTheEndOfRowAndReTokenize(size_t current_column_idx);
@@ -112,7 +112,6 @@ public:
 
 private:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
-    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     PeekableReadBuffer buf;
     ParserExpression parser;

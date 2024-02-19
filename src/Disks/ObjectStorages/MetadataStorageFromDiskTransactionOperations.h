@@ -216,12 +216,14 @@ struct AddBlobOperation final : public IMetadataOperation
 {
     AddBlobOperation(
         const std::string & path_,
-        ObjectStorageKey object_key_,
+        const std::string & blob_name_,
+        const std::string & root_path_,
         uint64_t size_in_bytes_,
         IDisk & disk_,
         const MetadataStorageFromDisk & metadata_storage_)
         : path(path_)
-        , object_key(std::move(object_key_))
+        , blob_name(blob_name_)
+        , root_path(root_path_)
         , size_in_bytes(size_in_bytes_)
         , disk(disk_)
         , metadata_storage(metadata_storage_)
@@ -233,7 +235,8 @@ struct AddBlobOperation final : public IMetadataOperation
 
 private:
     std::string path;
-    ObjectStorageKey object_key;
+    std::string blob_name;
+    std::string root_path;
     uint64_t size_in_bytes;
     IDisk & disk;
     const MetadataStorageFromDisk & metadata_storage;

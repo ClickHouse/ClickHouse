@@ -40,7 +40,7 @@ StorageS3Cluster::StorageS3Cluster(
     const ConstraintsDescription & constraints_,
     ContextPtr context_,
     bool structure_argument_was_provided_)
-    : IStorageCluster(cluster_name_, table_id_, getLogger("StorageS3Cluster (" + table_id_.table_name + ")"), structure_argument_was_provided_)
+    : IStorageCluster(cluster_name_, table_id_, &Poco::Logger::get("StorageS3Cluster (" + table_id_.table_name + ")"), structure_argument_was_provided_)
     , s3_configuration{configuration_}
 {
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(configuration_.url.uri);
@@ -61,7 +61,7 @@ StorageS3Cluster::StorageS3Cluster(
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
 
-    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 void StorageS3Cluster::addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context)
@@ -78,17 +78,11 @@ void StorageS3Cluster::updateConfigurationIfChanged(ContextPtr local_context)
     s3_configuration.update(local_context);
 }
 
-RemoteQueryExecutor::Extension StorageS3Cluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const
+RemoteQueryExecutor::Extension StorageS3Cluster::getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const
 {
     auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
-        *s3_configuration.client, s3_configuration.url, predicate, virtual_columns, context, nullptr, s3_configuration.request_settings, context->getFileProgressCallback());
-
-    auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String
-    {
-        if (auto next = iterator->next())
-            return next->key;
-        return "";
-    });
+        *s3_configuration.client, s3_configuration.url, query, virtual_columns, context, nullptr, s3_configuration.request_settings, context->getFileProgressCallback());
+    auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String { return iterator->next().key; });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
 

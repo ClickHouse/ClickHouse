@@ -25,27 +25,6 @@ RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation
     for (auto & type : sample.getDataTypes())
         if (typeid_cast<const DataTypeAggregateFunction *>(type.get()))
             add_aggregation_info = true;
-
-    /// Progress method will be called on Progress packet.
-    query_executor->setProgressCallback([this](const Progress & value)
-    {
-        if (value.total_rows_to_read)
-            addTotalRowsApprox(value.total_rows_to_read);
-        if (value.total_bytes_to_read)
-            addTotalBytes(value.total_bytes_to_read);
-        progress(value.read_rows, value.read_bytes);
-    });
-
-    query_executor->setProfileInfoCallback([this](const ProfileInfo & info)
-    {
-        if (rows_before_limit)
-        {
-            if (info.hasAppliedLimit())
-                rows_before_limit->add(info.getRowsBeforeLimit());
-            else
-                manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
-        }
-    });
 }
 
 RemoteSource::~RemoteSource() = default;
@@ -63,7 +42,7 @@ void RemoteSource::setStorageLimits(const std::shared_ptr<const StorageLimitsLis
 ISource::Status RemoteSource::prepare()
 {
     /// Check if query was cancelled before returning Async status. Otherwise it may lead to infinite loop.
-    if (isCancelled())
+    if (was_query_canceled)
     {
         getPort().finish();
         return Status::Finished;
@@ -88,11 +67,33 @@ ISource::Status RemoteSource::prepare()
 std::optional<Chunk> RemoteSource::tryGenerate()
 {
     /// onCancel() will do the cancel if the query was sent.
-    if (isCancelled())
+    if (was_query_canceled)
         return {};
 
     if (!was_query_sent)
     {
+        /// Progress method will be called on Progress packet.
+        query_executor->setProgressCallback([this](const Progress & value)
+        {
+            if (value.total_rows_to_read)
+                addTotalRowsApprox(value.total_rows_to_read);
+            if (value.total_bytes_to_read)
+                addTotalBytes(value.total_bytes_to_read);
+            progress(value.read_rows, value.read_bytes);
+        });
+
+        /// Get rows_before_limit result for remote query from ProfileInfo packet.
+        query_executor->setProfileInfoCallback([this](const ProfileInfo & info)
+        {
+            if (rows_before_limit)
+            {
+                if (info.hasAppliedLimit())
+                    rows_before_limit->add(info.getRowsBeforeLimit());
+                else
+                    manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
+            }
+        });
+
         if (async_query_sending)
         {
             int fd_ = query_executor->sendQueryAsync();
@@ -168,6 +169,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 
 void RemoteSource::onCancel()
 {
+    was_query_canceled = true;
     query_executor->cancel();
 }
 
@@ -175,6 +177,7 @@ void RemoteSource::onUpdatePorts()
 {
     if (getPort().isFinished())
     {
+        was_query_canceled = true;
         query_executor->finish();
     }
 }

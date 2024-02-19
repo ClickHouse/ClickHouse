@@ -19,7 +19,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
-    const Statistics & statistics,
     CompressionCodecPtr default_codec_,
     const MergeTreeTransactionPtr & txn,
     bool reset_columns_,
@@ -49,7 +48,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     data_part->version.setCreationTID(tid, nullptr);
     data_part->storeVersionMetadata();
 
-    writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, statistics, default_codec, writer_settings, computed_index_granularity);
+    writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, writer_settings, computed_index_granularity);
 }
 
 /// If data is pre-sorted.
@@ -144,18 +143,14 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 {
     /// Finish write and get checksums.
     MergeTreeData::DataPart::Checksums checksums;
-    NameSet checksums_to_remove;
 
     if (additional_column_checksums)
         checksums = std::move(*additional_column_checksums);
 
     /// Finish columns serialization.
-    writer->fillChecksums(checksums, checksums_to_remove);
+    writer->fillChecksums(checksums);
 
-    for (const auto & name : checksums_to_remove)
-        checksums.files.erase(name);
-
-    LOG_TRACE(getLogger("MergedBlockOutputStream"), "filled checksums {}", new_part->getNameWithState());
+    LOG_TRACE(&Poco::Logger::get("MergedBlockOutputStream"), "filled checksums {}", new_part->getNameWithState());
 
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
         checksums.addFile(
@@ -184,7 +179,6 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->index = writer->releaseIndexColumns();
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
-    new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
     new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 

@@ -1,5 +1,3 @@
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/Utils.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -10,7 +8,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Planner/Utils.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 namespace DB
@@ -19,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 bool hasJoin(const ASTSelectQuery & select)
@@ -126,27 +124,13 @@ Block getHeaderForProcessingStage(
             ASTPtr query = query_info.query;
             if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && hasJoin(*select))
             {
+                /// TODO: Analyzer syntax analyzer result
                 if (!query_info.syntax_analyzer_result)
-                {
-                    if (!query_info.planner_context)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query is not analyzed: no planner context");
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getHeaderForProcessingStage is unsupported");
 
-                    const auto & query_node = query_info.query_tree->as<QueryNode &>();
-                    const auto & join_tree = query_node.getJoinTree();
-                    auto left_table_expression = extractLeftTableExpression(join_tree);
-
-                    auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(left_table_expression);
-                    const auto & query_context = query_info.planner_context->getQueryContext();
-                    auto columns = table_expression_data.getColumns();
-                    auto new_query_node = buildSubqueryToReadColumnsFromTableExpression(columns, left_table_expression, query_context);
-                    query = new_query_node->toAST();
-                }
-                else
-                {
-                    query = query_info.query->clone();
-                    TreeRewriterResult new_rewriter_result = *query_info.syntax_analyzer_result;
-                    removeJoin(*query->as<ASTSelectQuery>(), new_rewriter_result, context);
-                }
+                query = query_info.query->clone();
+                TreeRewriterResult new_rewriter_result = *query_info.syntax_analyzer_result;
+                removeJoin(*query->as<ASTSelectQuery>(), new_rewriter_result, context);
             }
 
             Block result;

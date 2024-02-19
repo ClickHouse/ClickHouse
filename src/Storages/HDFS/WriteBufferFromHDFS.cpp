@@ -4,7 +4,7 @@
 
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/HDFS/HDFSCommon.h>
-#include <Common/Scheduler/ResourceGuard.h>
+#include <IO/ResourceGuard.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
 #include <hdfs/hdfs.h>
@@ -95,7 +95,8 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     {
         int result = hdfsSync(fs.get(), fout);
         if (result < 0)
-            throw ErrnoException(ErrorCodes::CANNOT_FSYNC, "Cannot HDFS sync {} {}", hdfs_uri, std::string(hdfsGetLastError()));
+            throwFromErrno("Cannot HDFS sync" + hdfs_uri + " " + std::string(hdfsGetLastError()),
+                ErrorCodes::CANNOT_FSYNC);
     }
 };
 

@@ -6,7 +6,6 @@
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/Exception.h>
 #include <Common/Throttler.h>
-#include <Common/formatReadable.h>
 #include <Interpreters/Context.h>
 #include <boost/algorithm/string/predicate.hpp>
 

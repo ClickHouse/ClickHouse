@@ -1,19 +1,18 @@
 #include "MemoryTracker.h"
 
 #include <IO/WriteHelpers.h>
-#include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/VariableContext.h>
+#include <Common/TraceSender.h>
+#include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/OvercommitTracker.h>
-#include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
-#include <Common/ThreadStatus.h>
-#include <Common/TraceSender.h>
-#include <Common/VariableContext.h>
 #include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
+#include <Common/OvercommitTracker.h>
+#include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 
 #include "config.h"
 
@@ -84,7 +83,7 @@ inline std::string_view toDescription(OvercommitResult result)
     }
 }
 
-bool shouldTrackAllocation(Float64 probability, void * ptr)
+bool shouldTrackAllocation(DB::Float64 probability, void * ptr)
 {
     return intHash64(uintptr_t(ptr)) < std::numeric_limits<uint64_t>::max() * probability;
 }
@@ -141,7 +140,7 @@ MemoryTracker::~MemoryTracker()
         {
             logPeakMemoryUsage();
         }
-        catch (...) // NOLINT(bugprone-empty-catch)
+        catch (...)
         {
             /// Exception in Logger, intentionally swallow.
         }
@@ -155,14 +154,14 @@ void MemoryTracker::logPeakMemoryUsage()
     auto peak_bytes = peak.load(std::memory_order::relaxed);
     if (peak_bytes < 128 * 1024)
         return;
-    LOG_DEBUG(getLogger("MemoryTracker"),
+    LOG_DEBUG(&Poco::Logger::get("MemoryTracker"),
         "Peak memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(peak_bytes));
 }
 
 void MemoryTracker::logMemoryUsage(Int64 current) const
 {
     const auto * description = description_ptr.load(std::memory_order_relaxed);
-    LOG_DEBUG(getLogger("MemoryTracker"),
+    LOG_DEBUG(&Poco::Logger::get("MemoryTracker"),
         "Current memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(current));
 }
 
@@ -170,7 +169,7 @@ void MemoryTracker::injectFault() const
 {
     if (!memoryTrackerCanThrow(level, true))
     {
-        LOG_WARNING(getLogger("MemoryTracker"),
+        LOG_WARNING(&Poco::Logger::get("MemoryTracker"),
                     "Cannot inject fault at specific point. Uncaught exceptions: {}, stack trace:\n{}",
                     std::uncaught_exceptions(), StackTrace().toString());
         return;
@@ -201,7 +200,7 @@ void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]
         return;
 
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);
-    LOG_TEST(getLogger("MemoryTracker"), "Too big allocation ({} bytes) without checking memory limits, "
+    LOG_TEST(&Poco::Logger::get("MemoryTracker"), "Too big allocation ({} bytes) without checking memory limits, "
                                                    "it may lead to OOM. Stack trace: {}", size, StackTrace().toString());
 #else
     return;     /// Avoid trash logging in release builds
@@ -588,16 +587,6 @@ bool MemoryTracker::isSizeOkForSampling(UInt64 size) const
 {
     /// We can avoid comparison min_allocation_size_bytes with zero, because we cannot have 0 bytes allocation/deallocation
     return ((max_allocation_size_bytes == 0 || size <= max_allocation_size_bytes) && size >= min_allocation_size_bytes);
-}
-
-void MemoryTracker::setParent(MemoryTracker * elem)
-{
-    /// Untracked memory shouldn't be accounted to a query or a user if it was allocated before the thread was attached
-    /// to a query thread group or a user group, because this memory will be (🤞) freed outside of these scopes.
-    if (level == VariableContext::Thread && DB::current_thread)
-        DB::current_thread->flushUntrackedMemory();
-
-    parent.store(elem, std::memory_order_relaxed);
 }
 
 bool canEnqueueBackgroundTask()
