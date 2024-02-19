@@ -90,3 +90,4 @@ StormEvents | where startswith "W" | summarize Count=count() by State; -- { clie
 SET max_query_size = 55;
 SET dialect='kusto';
 Customers | where Education contains 'degree' | order by LastName; -- { serverError 62 }
+SET max_query_size=262144;
