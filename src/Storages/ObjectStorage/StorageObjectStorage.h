@@ -2,7 +2,7 @@
 
 #include <Common/re2.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Storages/IStorage.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Processors/Formats/IInputFormat.h>

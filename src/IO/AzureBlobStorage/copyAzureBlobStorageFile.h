@@ -4,8 +4,8 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Interpreters/threadPoolCallbackRunner.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <base/types.h>
 #include <functional>
 #include <memory>
