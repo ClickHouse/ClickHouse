@@ -24,7 +24,7 @@ SET dialect = 'prql';
 
 from distributed_test_table
 select {id}
-take 1..3
+take 1..3;
 
 SET dialect = 'clickhouse';
 
