@@ -22,6 +22,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 std::unique_ptr<S3ObjectStorageSettings> getSettings(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
