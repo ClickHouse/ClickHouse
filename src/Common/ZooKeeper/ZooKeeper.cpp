@@ -672,6 +672,7 @@ Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests
             if (code != Coordination::Error::ZOK && !Coordination::isHardwareError(code) && getFailedOpIndex(code, responses) == requests.size())
             {
                 impl->finalize(fmt::format("Session was killed: {}", requests.back()->getPath()));
+                code = Coordination::Error::ZSESSIONMOVED;
             }
             responses.pop_back();
             /// For some reason, for hardware errors we set ZOK codes for all responses.
