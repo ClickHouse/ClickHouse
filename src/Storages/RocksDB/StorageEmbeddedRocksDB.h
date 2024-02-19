@@ -34,7 +34,7 @@ public:
         const StorageInMemoryMetadata & metadata,
         bool attach,
         ContextPtr context_,
-        const String & primary_key_,
+        Names primary_key_,
         Int32 ttl_ = 0,
         String rocksdb_dir_ = "",
         bool read_only_ = false);
@@ -75,7 +75,7 @@ public:
 
     std::shared_ptr<rocksdb::Statistics> getRocksDBStatistics() const;
     std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const;
-    Names getPrimaryKey() const override { return {primary_key}; }
+    Names getPrimaryKey() const override { return primary_key; }
 
     Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const override;
 
@@ -97,8 +97,23 @@ public:
 
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
+    /// Returns the column indices of primary key.
+    const std::vector<size_t> getPrimaryKeyPos() const { return primary_key_pos; }
+
+    /// Returns the column indices of non primary key columns.
+    const std::vector<size_t> getValueColumnPos() const { return value_column_pos; }
+
+    /// Returns types of primary key columns.
+    const DataTypes & getPrimaryKeyTypes() const
+    {
+        return primary_key_types;
+    }
+
 private:
-    const String primary_key;
+    const Names primary_key;
+    std::vector<size_t> primary_key_pos;
+    std::vector<size_t> value_column_pos;
+    DataTypes primary_key_types;
     using RocksDBPtr = std::unique_ptr<rocksdb::DB>;
     RocksDBPtr rocksdb_ptr;
     mutable SharedMutex rocksdb_ptr_mx;
