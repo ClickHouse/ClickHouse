@@ -122,7 +122,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int SYNTAX_ERROR;
-    extern const int UNEXPECTED_EXPRESSION;
     extern const int INVALID_IDENTIFIER;
 }
 

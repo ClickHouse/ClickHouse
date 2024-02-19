@@ -73,7 +73,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_IDENTIFIER;
-    extern const int UNEXPECTED_EXPRESSION;
 }
 
 namespace
