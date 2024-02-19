@@ -251,22 +251,21 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
         {
+            if (scale_multiplier_diff == 1) /// Already in needed type.
+                return src;
+
+            /// in case if we need to make DateTime64(a) from DateTime64(b), a != b, we need to convert datetime value to the right scale
             const auto & from_type = src.get<Decimal64>();
             const auto & to_type = static_cast<const DataTypeDateTime64 &>(type);
 
             const auto scale_from = from_type.getScale();
             const auto scale_to = to_type.getScale();
-            const auto scale_diff = scale_from > scale_to ? from_type.getScaleMultiplier() / to_type.getScaleMultiplier() : to_type.getScaleMultiplier() / from_type.getScaleMultiplier();
-            /// in case if we need to make DateTime64(a) from DateTime64(b), a != b, we need to convert datetime value to the right scale
-            if (scale_diff != 1)
-            {
-                const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_diff : from_type.getValue().value * scale_diff;
-                return DecimalField(
-                    DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1),
-                    scale_to);
-            }
-            /// Already in needed type.
-            return src;
+            const auto scale_multiplier_diff = scale_from > scale_to ? from_type.getScaleMultiplier() / to_type.getScaleMultiplier() : to_type.getScaleMultiplier() / from_type.getScaleMultiplier();
+            
+            const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_multiplier_diff : from_type.getValue().value * scale_multiplier_diff;
+            return DecimalField(
+                DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1),
+                scale_to);
         }
 
         /// For toDate('xxx') in 1::Int64, we CAST `src` to UInt64, which may
