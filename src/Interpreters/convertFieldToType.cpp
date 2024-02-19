@@ -261,7 +261,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const auto scale_from = from_type.getScale();
             const auto scale_to = to_type.getScale();
             const auto scale_multiplier_diff = scale_from > scale_to ? from_type.getScaleMultiplier() / to_type.getScaleMultiplier() : to_type.getScaleMultiplier() / from_type.getScaleMultiplier();
-            
+
             const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_multiplier_diff : from_type.getValue().value * scale_multiplier_diff;
             return DecimalField(
                 DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1),
