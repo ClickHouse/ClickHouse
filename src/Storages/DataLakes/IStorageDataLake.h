@@ -38,25 +38,25 @@ public:
     static ColumnsDescription getTableStructureFromData(
         Configuration & base_configuration,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr local_context)
+        const ContextPtr & local_context)
     {
         auto configuration = getConfigurationForDataRead(base_configuration, local_context);
         return Storage::getTableStructureFromData(configuration, format_settings, local_context);
     }
 
-    static Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context)
+    static Configuration getConfiguration(ASTs & engine_args, const ContextPtr & local_context)
     {
         return Storage::getConfiguration(engine_args, local_context, /* get_format_from_file */false);
     }
 
-    Configuration updateConfigurationAndGetCopy(ContextPtr local_context) override
+    Configuration updateConfigurationAndGetCopy(const ContextPtr & local_context) override
     {
         std::lock_guard lock(configuration_update_mutex);
         updateConfigurationImpl(local_context);
         return Storage::getConfiguration();
     }
 
-    void updateConfiguration(ContextPtr local_context) override
+    void updateConfiguration(const ContextPtr & local_context) override
     {
         std::lock_guard lock(configuration_update_mutex);
         updateConfigurationImpl(local_context);
@@ -64,7 +64,7 @@ public:
 
 private:
     static Configuration getConfigurationForDataRead(
-        const Configuration & base_configuration, ContextPtr local_context, const Strings & keys = {}, bool attach = false)
+        const Configuration & base_configuration, const ContextPtr & local_context, const Strings & keys = {}, bool attach = false)
     {
         auto configuration{base_configuration};
         configuration.update(local_context);
@@ -94,12 +94,12 @@ private:
         }
     }
 
-    static Strings getDataFiles(const Configuration & configuration, ContextPtr local_context)
+    static Strings getDataFiles(const Configuration & configuration, const ContextPtr & local_context)
     {
         return MetadataParser().getFiles(configuration, local_context);
     }
 
-    void updateConfigurationImpl(ContextPtr local_context)
+    void updateConfigurationImpl(const ContextPtr & local_context)
     {
         const bool updated = base_configuration.update(local_context);
         auto new_keys = getDataFiles(base_configuration, local_context);
