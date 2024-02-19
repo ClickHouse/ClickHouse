@@ -17,7 +17,6 @@ def start_cluster():
 
 @pytest.mark.parametrize("inject_failpoint", [1, 0])
 def test_insert_over_http_exception(start_cluster, inject_failpoint):
-
     instance.query("DROP TABLE IF EXISTS tt SYNC")
     instance.query(
         "CREATE TABLE tt (KeyID UInt32) Engine = ReplicatedMergeTree('/test_insert_exception_over_http/tt', 'r1') ORDER BY (KeyID)"
@@ -51,7 +50,6 @@ def test_insert_over_http_exception(start_cluster, inject_failpoint):
 
 
 def test_insert_over_http_invalid_statement(start_cluster):
-
     http_status = 400
     log_comment = f"{http_status}_02988_66a57d6f-d1cc-4693-8bf4-206848edab87"
     assert True == instance.http_query_and_get_error(
@@ -65,8 +63,8 @@ def test_insert_over_http_invalid_statement(start_cluster):
         f"select count() from system.query_log where log_comment ='{log_comment}' and current_database = currentDatabase() and event_date >= yesterday()"
     )
 
-def test_insert_over_http_unknown_table(start_cluster):
 
+def test_insert_over_http_unknown_table(start_cluster):
     http_status = 404
     log_comment = f"{http_status}_02988_66a57d6f-d1cc-4693-8bf4-206848edab87"
     assert True == instance.http_query_and_get_error(
@@ -94,7 +92,7 @@ def test_insert_over_http_ok(start_cluster):
         "insert into tt settings log_comment='02988_66a57d6f-d1cc-4693-8bf4-206848edab87' values (1), (2), (3), (4), (5)",
         method="POST",
     )
-    assert(error == None)
+    assert error == None
 
     assert "5\n" == instance.query("select count() from tt")
 
