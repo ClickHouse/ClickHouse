@@ -369,11 +369,16 @@ std::unordered_map<AccessFlags::ParameterType, AccessFlags> AccessFlags::splitIn
 {
     std::unordered_map<ParameterType, AccessFlags> result;
 
+    auto table_engine_flags = AccessFlags::allTableEngineFlags() & *this;
+    if (table_engine_flags)
+        result.emplace(ParameterType::TABLE_ENGINE, table_engine_flags);
+
     auto named_collection_flags = AccessFlags::allNamedCollectionFlags() & *this;
     if (named_collection_flags)
         result.emplace(ParameterType::NAMED_COLLECTION, named_collection_flags);
 
-    auto other_flags = (~AccessFlags::allNamedCollectionFlags()) & *this;
+    auto other_flags = (~AccessFlags::allTableEngineFlags()) &
+        (~AccessFlags::allNamedCollectionFlags()) & *this;
     if (other_flags)
         result.emplace(ParameterType::NONE, other_flags);
 

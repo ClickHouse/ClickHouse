@@ -1891,6 +1891,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
         auto source_access_type = StorageFactory::instance().getSourceAccessType(create.storage->engine->name);
         if (source_access_type != AccessType::NONE)
             required_access.emplace_back(source_access_type);
+        required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
     }
 
     return required_access;
