@@ -5,6 +5,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/getColumnFromBlock.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
@@ -814,10 +815,10 @@ void StorageBuffer::flushAllBuffers(bool check_thresholds)
     {
         if (flush_pool)
         {
-            flush_pool->scheduleOrThrowOnError([&] ()
+            scheduleFromThreadPool<void>([&] ()
             {
                 flushBuffer(buf, check_thresholds, false);
-            });
+            }, *flush_pool, "BufferFlush");
         }
         else
         {
