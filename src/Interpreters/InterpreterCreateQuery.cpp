@@ -82,7 +82,8 @@
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
-
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Parsers/QueryParameterVisitor.h>
 
 namespace DB
 {
@@ -692,6 +693,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (!attach && !is_restore_from_backup && context_->getSettingsRef().flatten_nested)
         res.flattenNested();
 
+
     if (res.getAllPhysical().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without physical columns");
 
@@ -796,6 +798,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (create.select)
     {
+        if (create.isParameterizedView())
+            return properties;
+
         Block as_select_sample;
 
         if (getContext()->getSettingsRef().allow_experimental_analyzer)
@@ -820,11 +825,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
               * for example: LIMIT, OFFSET, functions parameters, functions constant only arguments.
               */
 
-            SelectQueryOptions options;
-            if (create.isParameterizedView())
-                options = options.createParameterizedView();
-
-            InterpreterSelectWithUnionQuery interpreter(create.select->clone(), getContext(), options);
+            InterpreterSelectWithUnionQuery interpreter(create.select->clone(), getContext(), SelectQueryOptions());
             as_select_sample = interpreter.getSampleBlock();
         }
 

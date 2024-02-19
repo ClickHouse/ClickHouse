@@ -141,7 +141,7 @@ class JobNames(metaclass=WithIter):
     BUILD_CHECK_SPECIAL = "ClickHouse special build check"
 
     DOCS_CHECK = "Docs check"
-    BUGFIX_VALIDATE = "tests bugfix validate check"
+    BUGFIX_VALIDATE = "Bugfix validation"
 
 
 # dynamically update JobName with Build jobs
@@ -282,7 +282,6 @@ class BuildReportConfig:
 @dataclass
 class TestConfig:
     required_build: str
-    force_tests: bool = False
     job_config: JobConfig = field(default_factory=JobConfig)
 
 
@@ -302,6 +301,7 @@ install_check_digest = DigestConfig(
 )
 stateless_check_digest = DigestConfig(
     include_paths=[
+        "./tests/ci/functional_test_check.py",
         "./tests/queries/0_stateless/",
         "./tests/clickhouse-test",
         "./tests/config",
@@ -312,6 +312,7 @@ stateless_check_digest = DigestConfig(
 )
 stateful_check_digest = DigestConfig(
     include_paths=[
+        "./tests/ci/functional_test_check.py",
         "./tests/queries/1_stateful/",
         "./tests/clickhouse-test",
         "./tests/config",
@@ -473,9 +474,6 @@ class CIConfig:
             if check_name in config:  # type: ignore
                 res = config[check_name].job_config  # type: ignore
                 break
-        assert (
-            res is not None
-        ), f"Invalid check_name or CI_CONFIG outdated, config not found for [{check_name}]"
         return res  # type: ignore
 
     @staticmethod
@@ -890,7 +888,9 @@ CI_CONFIG = CIConfig(
         JobNames.BUGFIX_VALIDATE: TestConfig(
             "",
             # we run this check by label - no digest required
-            job_config=JobConfig(run_by_label="pr-bugfix"),
+            job_config=JobConfig(
+                run_by_label="pr-bugfix", run_command="bugfix_validate_check.py"
+            ),
         ),
     },
     test_configs={
@@ -1173,10 +1173,10 @@ CHECK_DESCRIPTIONS = [
         lambda x: x.startswith("AST fuzzer"),
     ),
     CheckDescription(
-        "Bugfix validate check",
+        JobNames.BUGFIX_VALIDATE,
         "Checks that either a new test (functional or integration) or there "
         "some changed tests that fail with the binary built on master branch",
-        lambda x: x == "Bugfix validate check",
+        lambda x: x == JobNames.BUGFIX_VALIDATE,
     ),
     CheckDescription(
         "CI running",
