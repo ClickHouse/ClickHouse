@@ -177,9 +177,8 @@ void HedgedConnections::sendQuery(
     {
         Settings modified_settings = settings;
 
-        // Kusto and PRQL queries to replicas are transformed to ClickHouse-SQL. Ensure the setting before sending.
-        if (modified_settings.dialect == Dialect::kusto || modified_settings.dialect == Dialect::prql)
-            modified_settings.dialect = Dialect::clickhouse;
+        /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
+        modified_settings.dialect = Dialect::clickhouse;
 
         if (disable_two_level_aggregation)
         {
