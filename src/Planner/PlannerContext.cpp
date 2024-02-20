@@ -3,8 +3,6 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
-#include <Interpreters/Context.h>
-#include "Interpreters/SelectQueryOptions.h"
 
 namespace DB
 {
@@ -43,10 +41,9 @@ bool GlobalPlannerContext::hasColumnIdentifier(const ColumnIdentifier & column_i
     return column_identifiers.contains(column_identifier);
 }
 
-PlannerContext::PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_, const SelectQueryOptions & select_query_options_)
+PlannerContext::PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_)
     : query_context(std::move(query_context_))
     , global_planner_context(std::move(global_planner_context_))
-    , select_query_options(select_query_options_)
 {}
 
 TableExpressionData & PlannerContext::getOrCreateTableExpressionData(const QueryTreeNodePtr & table_expression_node)
@@ -117,11 +114,6 @@ const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const Que
         return nullptr;
 
     return table_expression_data->getColumnIdentifierOrNull(column_name);
-}
-
-bool PlannerContext::isASTLevelOptimizationAllowed() const
-{
-    return !(query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY || select_query_options.ignore_ast_optimizations);
 }
 
 PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node)

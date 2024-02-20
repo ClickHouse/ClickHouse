@@ -794,6 +794,7 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
         QueryTreeNodePtr fake_node = std::make_shared<IdentifierNode>(Identifier{column_name});
 
         QueryAnalysisPass query_analysis_pass(original_table_expression);
+        query_analysis_pass.setAllowOptimizations(false);
         query_analysis_pass.run(fake_node, context);
 
         auto * resolved_column = fake_node->as<ColumnNode>();
@@ -878,6 +879,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
                     QueryTreeNodePtr fake_node = std::make_shared<IdentifierNode>(Identifier{column});
 
                     QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
+                    query_analysis_pass.setAllowOptimizations(false);
                     query_analysis_pass.run(fake_node, modified_context);
 
                     auto * resolved_column = fake_node->as<ColumnNode>();
@@ -1409,6 +1411,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
             query_tree->setAlias(alias.name);
 
             QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
+            query_analysis_pass.setAllowOptimizations(false);
             query_analysis_pass.run(query_tree, local_context);
 
             PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, false /*use_column_identifier_as_action_node_name*/);

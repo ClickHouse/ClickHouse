@@ -192,6 +192,7 @@ void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node)
 
 void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr query_tree_node)
 {
+    typeid_cast<QueryAnalysisPass *>(passes[0].get())->setAllowOptimizations(false);
     // Run only QueryAnalysisPass and GroupingFunctionsResolvePass passes.
     run(query_tree_node, 2);
 }

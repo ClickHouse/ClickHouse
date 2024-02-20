@@ -10,7 +10,6 @@
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <Planner/TableExpressionData.h>
-#include <Interpreters/SelectQueryOptions.h>
 
 namespace DB
 {
@@ -64,7 +63,7 @@ class PlannerContext
 {
 public:
     /// Create planner context with query context and global planner context
-    PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_, const SelectQueryOptions & select_query_options_);
+    PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_);
 
     /// Get planner context query context
     ContextPtr getQueryContext() const
@@ -94,11 +93,6 @@ public:
     GlobalPlannerContextPtr & getGlobalPlannerContext()
     {
         return global_planner_context;
-    }
-
-    const SelectQueryOptions & getSelectQueryOptions() const
-    {
-        return select_query_options;
     }
 
     /// Get or create table expression data for table expression node.
@@ -156,16 +150,12 @@ public:
     static SetKey createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node);
 
     PreparedSets & getPreparedSets() { return prepared_sets; }
-
-    bool isASTLevelOptimizationAllowed() const;
 private:
     /// Query context
     ContextMutablePtr query_context;
 
     /// Global planner context
     GlobalPlannerContextPtr global_planner_context;
-
-    SelectQueryOptions select_query_options;
 
     /// Column node to column identifier
     std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> column_node_to_column_identifier;

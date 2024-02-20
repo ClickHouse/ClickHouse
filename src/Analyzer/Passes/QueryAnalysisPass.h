@@ -91,8 +91,14 @@ public:
 
     void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
+    void setAllowOptimizations(bool allow_optimizations_)
+    {
+        allow_optimizations = allow_optimizations_;
+    }
+
 private:
     QueryTreeNodePtr table_expression;
+    bool allow_optimizations = false;
 };
 
 }
