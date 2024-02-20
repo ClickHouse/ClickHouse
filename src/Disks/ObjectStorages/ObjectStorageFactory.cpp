@@ -254,7 +254,7 @@ void registerWebObjectStorage(ObjectStorageFactory & factory)
 
 void registerLocalObjectStorage(ObjectStorageFactory & factory)
 {
-    factory.registerObjectStorageType("local_blob_storage", [](
+    auto creator = [](
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
@@ -267,7 +267,10 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
         /// keys are mapped to the fs, object_key_prefix is a directory also
         fs::create_directories(object_key_prefix);
         return std::make_shared<LocalObjectStorage>(object_key_prefix);
-    });
+    };
+
+    factory.registerObjectStorageType("local_blob_storage", creator);
+    factory.registerObjectStorageType("local", creator);
 }
 #endif
 
