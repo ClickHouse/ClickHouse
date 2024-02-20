@@ -38,6 +38,12 @@ String formatZxid(int64_t zxid)
 
 }
 
+#if USE_NURAFT
+namespace ProfileEvents
+{
+    extern const std::vector<Event> keeper_profile_events;
+}
+#endif
 
 namespace DB
 {
@@ -657,6 +663,7 @@ String ProfileEventsCommand::run()
 {
     StringBuffer ret;
 
+#if USE_NURAFT
     auto append = [&ret] (const String & metric, uint64_t value, const String & docs) -> void
     {
         writeText(metric, ret);
@@ -667,14 +674,14 @@ String ProfileEventsCommand::run()
         writeText('\n', ret);
     };
 
-    for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
+    for (auto i : ProfileEvents::keeper_profile_events)
     {
         const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
-
         std::string metric_name{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
         std::string metric_doc{ProfileEvents::getDocumentation(static_cast<ProfileEvents::Event>(i))};
         append(metric_name, counter, metric_doc);
     }
+#endif
 
     return ret.str();
 }
