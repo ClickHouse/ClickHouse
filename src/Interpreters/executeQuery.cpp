@@ -722,7 +722,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
 
-#if 0
+#ifndef NDEBUG
             /// Verify that AST formatting is consistent:
             /// If you format AST, parse it back, and format it again, you get the same string.
 
