@@ -59,11 +59,9 @@ def create_source_table(node, table_name, replicated):
         ORDER BY (postcode1, postcode2, addr1, addr2)
         SETTINGS disk = disk(type = web, endpoint = 'https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/')
         """.format(
-            table_name=table_name,
-            engine=engine
+            table_name=table_name, engine=engine
         )
     )
-
 
 
 def create_destination_table(node, table_name, replicated):
@@ -95,30 +93,31 @@ def create_destination_table(node, table_name, replicated):
         ENGINE = {engine} 
         ORDER BY (postcode1, postcode2, addr1, addr2)
         """.format(
-            table_name=table_name,
-            engine=engine
+            table_name=table_name, engine=engine
         )
     )
+
 
 def test_both_mergtree(start_cluster):
     create_source_table(replica1, "source", False)
     create_destination_table(replica1, "destination", False)
 
-    replica1.query(
-        f"ALTER TABLE destination ATTACH PARTITION tuple() FROM source"
-    )
-    
+    replica1.query(f"ALTER TABLE destination ATTACH PARTITION tuple() FROM source")
+
     assert_eq_with_retry(
-        replica1, f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC",
-        replica1.query(f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM source GROUP BY year ORDER BY year ASC"),
+        replica1,
+        f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC",
+        replica1.query(
+            f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM source GROUP BY year ORDER BY year ASC"
+        ),
     )
-    
+
     assert_eq_with_retry(
-        replica1, f"SELECT town from destination LIMIT 1",
-        "SCARBOROUGH"
+        replica1, f"SELECT town from destination LIMIT 1", "SCARBOROUGH"
     )
 
     cleanup([replica1])
+
 
 def test_all_replicated(start_cluster):
     create_source_table(replica1, "source", True)
@@ -126,30 +125,33 @@ def test_all_replicated(start_cluster):
     create_destination_table(replica2, "destination", True)
 
     replica1.query("SYSTEM SYNC REPLICA destination")
-    replica1.query(
-        f"ALTER TABLE destination ATTACH PARTITION tuple() FROM source"
+    replica1.query(f"ALTER TABLE destination ATTACH PARTITION tuple() FROM source")
+
+    assert_eq_with_retry(
+        replica1,
+        f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC",
+        replica1.query(
+            f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM source GROUP BY year ORDER BY year ASC"
+        ),
+    )
+    assert_eq_with_retry(
+        replica1,
+        f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM source GROUP BY year ORDER BY year ASC",
+        replica2.query(
+            f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC"
+        ),
     )
 
     assert_eq_with_retry(
-        replica1, f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC",
-        replica1.query(f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM source GROUP BY year ORDER BY year ASC"),
-    )
-    assert_eq_with_retry(
-        replica1, f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM source GROUP BY year ORDER BY year ASC",
-        replica2.query(f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC"),
+        replica1, f"SELECT town from destination LIMIT 1", "SCARBOROUGH"
     )
 
     assert_eq_with_retry(
-        replica1, f"SELECT town from destination LIMIT 1",
-        "SCARBOROUGH"
-    )
-
-    assert_eq_with_retry(
-        replica2, f"SELECT town from destination LIMIT 1",
-        "SCARBOROUGH"
+        replica2, f"SELECT town from destination LIMIT 1", "SCARBOROUGH"
     )
 
     cleanup([replica1, replica2])
+
 
 def test_only_destination_replicated(start_cluster):
     create_source_table(replica1, "source", False)
@@ -157,27 +159,29 @@ def test_only_destination_replicated(start_cluster):
     create_destination_table(replica2, "destination", True)
 
     replica1.query("SYSTEM SYNC REPLICA destination")
-    replica1.query(
-        f"ALTER TABLE destination ATTACH PARTITION tuple() FROM source"
+    replica1.query(f"ALTER TABLE destination ATTACH PARTITION tuple() FROM source")
+
+    assert_eq_with_retry(
+        replica1,
+        f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC",
+        replica1.query(
+            f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM source GROUP BY year ORDER BY year ASC"
+        ),
+    )
+    assert_eq_with_retry(
+        replica1,
+        f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM source GROUP BY year ORDER BY year ASC",
+        replica2.query(
+            f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC"
+        ),
     )
 
     assert_eq_with_retry(
-        replica1, f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC",
-        replica1.query(f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM source GROUP BY year ORDER BY year ASC"),
-    )
-    assert_eq_with_retry(
-        replica1, f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM source GROUP BY year ORDER BY year ASC",
-        replica2.query(f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC"),
+        replica1, f"SELECT town from destination LIMIT 1", "SCARBOROUGH"
     )
 
     assert_eq_with_retry(
-        replica1, f"SELECT town from destination LIMIT 1",
-        "SCARBOROUGH"
-    )
-
-    assert_eq_with_retry(
-        replica2, f"SELECT town from destination LIMIT 1",
-        "SCARBOROUGH"
+        replica2, f"SELECT town from destination LIMIT 1", "SCARBOROUGH"
     )
 
     cleanup([replica1, replica2])
