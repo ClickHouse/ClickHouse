@@ -37,7 +37,7 @@ public:
     explicit StreamInfo(std::unique_ptr<WriteBuffer> archive_write_buffer_) : archive_write_buffer(std::move(archive_write_buffer_)) { }
 
 
-    static ssize_t memory_write([[maybe_unused]] struct archive * a, void * client_data, const void * buff, size_t length)
+    static ssize_t memory_write([[maybe_unused]] struct archive * archive, void * client_data, const void * buff, size_t length)
     {
         auto * stream_info = reinterpret_cast<StreamInfo *>(client_data);
         stream_info->archive_write_buffer->write(reinterpret_cast<const char *>(buff), length);
@@ -57,7 +57,6 @@ public:
         archive = archive_writer_->getArchive();
         entry = nullptr;
     }
-
 
     ~WriteBufferFromLibArchive() override
     {
@@ -82,7 +81,6 @@ public:
     void sync() override { next(); }
     std::string getFileName() const override { return filename; }
 
-
 private:
     void nextImpl() override
     {
@@ -102,7 +100,6 @@ private:
                 quoteString(filename));
         }
     }
-
 
     void writeEntry()
     {
@@ -163,11 +160,6 @@ private:
     size_t expected_size;
 };
 
-LibArchiveWriter::LibArchiveWriter(const String & path_to_archive_) : path_to_archive(path_to_archive_)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not Implemented");
-}
-
 LibArchiveWriter::LibArchiveWriter(const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_)
     : path_to_archive(path_to_archive_)
 {
@@ -186,11 +178,9 @@ LibArchiveWriter::LibArchiveWriter(const String & path_to_archive_, std::unique_
     }
 }
 
-
 LibArchiveWriter::~LibArchiveWriter()
 {
-    if (!finalized && !std::uncaught_exceptions() && !std::current_exception())
-        chassert(false && "TarArchiveWriter is not finalized in destructor.");
+    chassert((finalized || std::uncaught_exceptions() || std::current_exception()) && "TarArchiveWriter is not finalized in destructor.");
     if (archive)
         archive_write_free(archive);
 }
