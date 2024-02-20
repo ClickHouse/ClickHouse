@@ -73,6 +73,7 @@ static void splitAndModifyMutationCommands(
     LoggerPtr log)
 {
     auto part_columns = part->getColumnsDescription();
+    const auto & table_columns = metadata_snapshot->getColumns();
 
     if (!isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
     {
@@ -81,9 +82,19 @@ static void splitAndModifyMutationCommands(
 
         for (const auto & command : commands)
         {
+            if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
+            {
+                /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
+                /// So we only mutate column if `command.column_name` is a default/materialized column or if the part does not have physical column file
+                auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
+                if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                {
+                    for_interpreter.push_back(command);
+                    mutated_columns.emplace(command.column_name);
+                }
+            }
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTIC
-                || command.type == MutationCommand::Type::MATERIALIZE_COLUMN
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
@@ -93,9 +104,6 @@ static void splitAndModifyMutationCommands(
                 for_interpreter.push_back(command);
                 for (const auto & [column_name, expr] : command.column_to_update_expression)
                     mutated_columns.emplace(column_name);
-
-                if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
-                    mutated_columns.emplace(command.column_name);
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX
                      || command.type == MutationCommand::Type::DROP_PROJECTION
@@ -205,8 +213,15 @@ static void splitAndModifyMutationCommands(
     {
         for (const auto & command : commands)
         {
-            if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
-                || command.type == MutationCommand::Type::MATERIALIZE_COLUMN
+            if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
+            {
+                /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
+                /// So we only mutate column if `command.column_name` is a default/materialized column or if the part does not have physical column file
+                auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
+                if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                    for_interpreter.push_back(command);
+            }
+            else if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTIC
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
