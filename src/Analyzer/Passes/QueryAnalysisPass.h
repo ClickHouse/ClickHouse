@@ -98,7 +98,7 @@ public:
 
 private:
     QueryTreeNodePtr table_expression;
-    bool allow_optimizations = false;
+    bool allow_optimizations = true;
 };
 
 }
