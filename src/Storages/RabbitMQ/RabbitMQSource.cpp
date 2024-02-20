@@ -129,12 +129,6 @@ Chunk RabbitMQSource::generateImpl()
         return {};
     }
 
-    if (consumer->needChannelUpdate())
-    {
-        LOG_TRACE(log, "Channel {} is in error state, will update", consumer->getChannelID());
-        consumer->updateChannel(storage.getConnection());
-    }
-
     /// Currently it is one time usage source: to make sure data is flushed
     /// strictly by timeout or by block size.
     is_finished = true;
