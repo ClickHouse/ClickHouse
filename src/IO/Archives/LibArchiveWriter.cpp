@@ -123,7 +123,7 @@ private:
             return offset();
     }
 
-    void closeFile([[maybe_unused]] bool throw_if_error)
+    void closeFile(bool throw_if_error)
     {
         if (entry)
         {
