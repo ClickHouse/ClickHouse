@@ -35,7 +35,7 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 
 #include <boost/multi_index_container.hpp>
@@ -231,7 +231,6 @@ public:
                    < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.info.partition_id);
         }
     };
-
 
     using DataParts = std::set<DataPartPtr, LessDataPart>;
     using MutableDataParts = std::set<MutableDataPartPtr, LessDataPart>;
@@ -854,23 +853,6 @@ public:
         const IDataPartStorage::ClonePartParams & params,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings);
-
-    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
-        const MergeTreeData::DataPartPtr & src_part,
-        const MergeTreePartition & new_partition,
-        const String & partition_id,
-        const IMergeTreeDataPart::MinMaxIndex & min_max_index,
-        const String & tmp_part_prefix,
-        const StorageMetadataPtr & my_metadata_snapshot,
-        const IDataPartStorage::ClonePartParams & clone_params,
-        ContextPtr local_context,
-        Int64 min_block,
-        Int64 max_block);
-
-    static std::pair<MergeTreePartition, IMergeTreeDataPart::MinMaxIndex> createPartitionAndMinMaxIndexFromSourcePart(
-        const MergeTreeData::DataPartPtr & src_part,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr local_context);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
