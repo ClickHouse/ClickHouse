@@ -209,6 +209,28 @@ SELECT * FROM destination ORDER BY A;
 SELECT partition_id FROM system.parts where table='source' AND database = currentDatabase() AND active = 1;
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 6-12
+-- Should be allowed, it is a local operation, no different than regular attach. Replicated to replicated.
+DROP TABLE IF EXISTS source sync;
+DROP TABLE IF EXISTS destination sync;
+CREATE TABLE
+    source(timestamp DateTime)
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test/source_replicated_to_replicated_distinct_expression', '1')
+        PARTITION BY toYYYYMMDD(timestamp)
+        ORDER BY tuple();
+CREATE TABLE
+    destination(timestamp DateTime)
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test/destination_replicated_to_replicated_distinct_expression', '1')
+        PARTITION BY toYYYYMM(timestamp)
+        ORDER BY tuple();
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-02 02:01:03');
+ALTER TABLE source MOVE PARTITION ID '20100302' TO TABLE destination;
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+2010-03-02 02:01:01
+2010-03-02 02:01:03
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+201003
 -- Should not be allowed because data would be split into two different partitions
 DROP TABLE IF EXISTS source SYNC;
 DROP TABLE IF EXISTS destination SYNC;
