@@ -103,6 +103,16 @@ sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
   > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
 sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
 
+sudo cat /etc/clickhouse-server/config.d/azure_storage_conf.xml \
+  | sed "s|<object_storage_type>azure</object_storage_type>>|<object_storage_type>>azure_blob_storage</object_storage_type>>|" \
+  > /etc/clickhouse-server/config.d/azure_storage_conf.xml.tmp
+sudo mv /etc/clickhouse-server/config.d/azure_storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
+
+sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
+  | sed "s|<object_storage_type>local</object_storage_type>>|<object_storage_type>>local_blob_storage</object_storage_type>>|" \
+  > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
+sudo mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
+
 # async_replication setting doesn't exist on some older versions
 remove_keeper_config "async_replication" "1"
 
