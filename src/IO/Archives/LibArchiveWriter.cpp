@@ -163,24 +163,26 @@ private:
 LibArchiveWriter::LibArchiveWriter(const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_)
     : path_to_archive(path_to_archive_)
 {
+    if (archive_write_buffer_)
+        stream_info = std::make_unique<StreamInfo>(std::move(archive_write_buffer_));
+}
+
+void LibArchiveWriter::createArchive()
+{
+    std::lock_guard lock{mutex};
     archive = archive_write_new();
-    archive_write_set_format_pax_restricted(archive);
+    setFormatAndSettings(archive);
     //this allows use to write directly to a writer buffer rather than an intermediate buffer in LibArchive
     //archive_write_set_bytes_per_block(a, 0);
-    if (archive_write_buffer_)
-    {
-        stream_info = std::make_unique<StreamInfo>(std::move(archive_write_buffer_));
+    if (stream_info)
         archive_write_open2(archive, stream_info.get(), nullptr, &StreamInfo::memory_write, nullptr, nullptr);
-    }
     else
-    {
         archive_write_open_filename(archive, path_to_archive.c_str());
-    }
 }
 
 LibArchiveWriter::~LibArchiveWriter()
 {
-    chassert((finalized || std::uncaught_exceptions() || std::current_exception()) && "TarArchiveWriter is not finalized in destructor.");
+    chassert((finalized || std::uncaught_exceptions() || std::current_exception()) && "LibArchiveWriter is not finalized in destructor.");
     if (archive)
         archive_write_free(archive);
 }
@@ -230,19 +232,11 @@ void LibArchiveWriter::finalize()
     finalized = true;
 }
 
-void LibArchiveWriter::setCompression(const String & compression_method_, int compression_level_)
-{
-    // throw an error unless setCompression is passed the default value
-    if (compression_method_.empty() && compression_level_ == -1)
-        return;
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Compressing tar archives is currently not supported");
-}
-
 void LibArchiveWriter::setPassword(const String & password_)
 {
     if (password_.empty())
         return;
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Setting a password is not currently supported for tar archives");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Setting a password is not currently supported for libarchive");
 }
 
 LibArchiveWriter::Archive LibArchiveWriter::getArchive()

@@ -1,4 +1,5 @@
 #include <IO/Archives/LibArchiveWriter.h>
+#include <IO/Archives/TarArchiveWriter.h>
 #include <IO/Archives/ZipArchiveWriter.h>
 #include <IO/Archives/createArchiveWriter.h>
 #include <IO/WriteBuffer.h>
@@ -32,10 +33,13 @@ createArchiveWriter(const String & path_to_archive, [[maybe_unused]] std::unique
 #endif
     }
     //todo add support for extentsions i.e .gz
-    else if (path_to_archive.ends_with(".tar"))
+    else if (std::any_of(
+                 TarArchiveWriter::TarExtensions.begin(),
+                 TarArchiveWriter::TarExtensions.end(),
+                 [&](const auto extension) { return path_to_archive.ends_with(extension); }))
     {
 #if USE_LIBARCHIVE
-        return std::make_shared<LibArchiveWriter>(path_to_archive, std::move(archive_write_buffer));
+        return std::make_shared<TarArchiveWriter>(path_to_archive, std::move(archive_write_buffer));
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "libarchive library is disabled");
 #endif

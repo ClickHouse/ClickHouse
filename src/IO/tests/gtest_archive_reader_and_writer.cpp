@@ -398,9 +398,9 @@ TEST_P(ArchiveReaderAndWriterTest, Password)
 {   
     auto writer = createArchiveWriter(getPathToArchive());
     //don't support passwords for tar archives
-    if(getPathToArchive().ends_with(".tar"))
+    if(getPathToArchive().ends_with(".tar") || getPathToArchive().ends_with(".tar.gz") || getPathToArchive().ends_with(".tar.bz2") || getPathToArchive().ends_with(".tar.lzma"))
     {
-        expectException(ErrorCodes::NOT_IMPLEMENTED, "Setting a password is not currently supported for tar archives",
+        expectException(ErrorCodes::NOT_IMPLEMENTED, "Setting a password is not currently supported for libarchive",
                 [&]{ writer->setPassword("a.txt"); });
         writer->finalize();
     }
@@ -675,6 +675,9 @@ namespace
         #endif
         #if USE_LIBARCHIVE
         ".tar",
+        ".tar.gz",
+        ".tar.bz2",
+        ".tar.lzma",
         #endif
     };
 }

@@ -607,13 +607,61 @@ def test_tar_archive():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
 
+def test_tar_bz2_archive():
+    backup_name = f"Disk('backups', 'archive.tar.bz2')"
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    assert os.path.isfile(get_path_to_backup(backup_name))
+
+    instance.query("DROP TABLE test.table")
+    assert instance.query("EXISTS test.table") == "0\n"
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+def test_tar_gz_archive():
+    backup_name = f"Disk('backups', 'archive.tar.gz')"
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    assert os.path.isfile(get_path_to_backup(backup_name))
+
+    instance.query("DROP TABLE test.table")
+    assert instance.query("EXISTS test.table") == "0\n"
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+def test_tar_lzma_archive():
+    backup_name = f"Disk('backups', 'archive.tar.lzma')"
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    assert os.path.isfile(get_path_to_backup(backup_name))
+
+    instance.query("DROP TABLE test.table")
+    assert instance.query("EXISTS test.table") == "0\n"
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
 def test_tar_archive_with_password():
     backup_name = f"Disk('backups', 'archive_with_password.tar')"
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
-    expected_error = "Setting a password is not currently supported for tar archives"
+    expected_error = "Setting a password is not currently supported for libarchive"
     assert expected_error in instance.query_and_get_error(
         f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='tar_archive_with_password', password='password123'"
     )
