@@ -335,6 +335,16 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
 }
 
 template <is_decimal T>
+bool ColumnDecimal<T>::tryInsert(const Field & x)
+{
+    DecimalField<T> value;
+    if (!x.tryGet<DecimalField<T>>(value))
+        return false;
+    data.push_back(value);
+    return true;
+}
+
+template <is_decimal T>
 void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
 {
     T tmp;

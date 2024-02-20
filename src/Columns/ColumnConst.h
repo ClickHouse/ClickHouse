@@ -131,6 +131,12 @@ public:
         ++s;
     }
 
+    bool tryInsert(const Field &) override
+    {
+        ++s;
+        return true;
+    }
+
     void insertData(const char *, size_t) override
     {
         ++s;

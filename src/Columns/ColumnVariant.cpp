@@ -427,10 +427,29 @@ void ColumnVariant::insertData(const char *, size_t)
 
 void ColumnVariant::insert(const Field & x)
 {
+    if (!tryInsert(x))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert field {} into column {}", toString(x), getName());
+}
+
+bool ColumnVariant::tryInsert(const DB::Field & x)
+{
     if (x.isNull())
+    {
         insertDefault();
-    else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert field {} to column {}", toString(x), getName());
+        return true;
+    }
+
+    for (size_t i = 0; i != variants.size(); ++i)
+    {
+        if (variants[i]->tryInsert(x))
+        {
+            getLocalDiscriminators().push_back(i);
+            getOffsets().push_back(variants[i]->size() - 1);
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void ColumnVariant::insertFrom(const IColumn & src_, size_t n)
@@ -1073,16 +1092,79 @@ bool ColumnVariant::hasEqualValues() const
     return local_discriminators->hasEqualValues() && variants[localDiscriminatorAt(0)]->hasEqualValues();
 }
 
-void ColumnVariant::getPermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability, size_t, int, IColumn::Permutation & res) const
+int ColumnVariant::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 {
-    size_t s = local_discriminators->size();
-    res.resize(s);
-    for (size_t i = 0; i < s; ++i)
-        res[i] = i;
+    const auto & rhs_variant = assert_cast<const ColumnVariant &>(rhs);
+    Discriminator left_discr = globalDiscriminatorAt(n);
+    Discriminator right_discr = rhs_variant.globalDiscriminatorAt(m);
+
+    /// Check if we have NULLs and return result based on nan_direction_hint.
+    if (left_discr == NULL_DISCRIMINATOR && right_discr == NULL_DISCRIMINATOR)
+        return 0;
+    else if (left_discr == NULL_DISCRIMINATOR)
+        return nan_direction_hint;
+    else if (right_discr == NULL_DISCRIMINATOR)
+        return -nan_direction_hint;
+
+    /// If rows have different discriminators, row with least discriminator is considered the least.
+    if (left_discr != right_discr)
+        return left_discr < right_discr ? -1 : 1;
+
+    /// If rows have the same discriminators, compare actual values from corresponding variants.
+    return getVariantByGlobalDiscriminator(left_discr).compareAt(offsetAt(n), rhs_variant.offsetAt(m), rhs_variant.getVariantByGlobalDiscriminator(right_discr), nan_direction_hint);
 }
 
-void ColumnVariant::updatePermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability, size_t, int, IColumn::Permutation &, DB::EqualRanges &) const
+void ColumnVariant::compareColumn(
+    const IColumn & rhs, size_t rhs_row_num,
+    PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+    int direction, int nan_direction_hint) const
 {
+    return doCompareColumn<ColumnVariant>(assert_cast<const ColumnVariant &>(rhs), rhs_row_num, row_indexes,
+                                         compare_results, direction, nan_direction_hint);
+}
+
+struct ColumnVariant::ComparatorBase
+{
+    const ColumnVariant & parent;
+    int nan_direction_hint;
+
+    ComparatorBase(const ColumnVariant & parent_, int nan_direction_hint_)
+        : parent(parent_), nan_direction_hint(nan_direction_hint_)
+    {
+    }
+
+    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    {
+        int res = parent.compareAt(lhs, rhs, parent, nan_direction_hint);
+
+        return res;
+    }
+};
+
+void ColumnVariant::getPermutation(PermutationSortDirection direction, PermutationSortStability stability, size_t limit, int nan_direction_hint, Permutation & res) const
+{
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+        getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+        getPermutationImpl(limit, res, ComparatorAscendingStable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+        getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+        getPermutationImpl(limit, res, ComparatorDescendingStable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+}
+
+void ColumnVariant::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability, size_t limit, int nan_direction_hint, IColumn::Permutation & res, DB::EqualRanges & equal_ranges) const
+{
+    auto comparator_equal = ComparatorEqual(*this, nan_direction_hint);
+
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingUnstable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingStable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingUnstable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
 }
 
 void ColumnVariant::reserve(size_t n)

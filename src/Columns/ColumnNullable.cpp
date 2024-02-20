@@ -259,6 +259,22 @@ void ColumnNullable::insert(const Field & x)
     }
 }
 
+bool ColumnNullable::tryInsert(const Field & x)
+{
+    if (x.isNull())
+    {
+        getNestedColumn().insertDefault();
+        getNullMapData().push_back(1);
+        return true;
+    }
+
+    if (!getNestedColumn().tryInsert(x))
+        return false;
+
+    getNullMapData().push_back(0);
+    return true;
+}
+
 void ColumnNullable::insertFrom(const IColumn & src, size_t n)
 {
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);

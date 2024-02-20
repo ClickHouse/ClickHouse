@@ -70,6 +70,14 @@ public:
     static constexpr UInt8 NULL_DISCRIMINATOR = std::numeric_limits<Discriminator>::max(); /// 255
     static constexpr size_t MAX_NESTED_COLUMNS = std::numeric_limits<Discriminator>::max(); /// 255
 
+    struct ComparatorBase;
+
+    using ComparatorAscendingUnstable = ComparatorAscendingUnstableImpl<ComparatorBase>;
+    using ComparatorAscendingStable = ComparatorAscendingStableImpl<ComparatorBase>;
+    using ComparatorDescendingUnstable = ComparatorDescendingUnstableImpl<ComparatorBase>;
+    using ComparatorDescendingStable = ComparatorDescendingStableImpl<ComparatorBase>;
+    using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
+
 private:
     friend class COWHelper<IColumn, ColumnVariant>;
 
@@ -174,6 +182,7 @@ public:
     StringRef getDataAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
+    bool tryInsert(const Field & x) override;
     void insertIntoVariant(const Field & x, Discriminator global_discr);
     void insertFrom(const IColumn & src_, size_t n) override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -197,21 +206,16 @@ public:
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
     void gather(ColumnGathererStream & gatherer_stream) override;
 
-    /// Variant type is not comparable.
-    int compareAt(size_t, size_t, const IColumn &, int) const override
-    {
-        return 0;
-    }
-
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compareColumn is not supported for ColumnVariant");
-    }
+    int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                               PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                               int direction, int nan_direction_hint) const override;
 
     bool hasEqualValues() const override;
     void getExtremes(Field & min, Field & max) const override;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
+
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                            size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const override;
 
