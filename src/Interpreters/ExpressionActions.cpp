@@ -736,10 +736,6 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
         {
             executeAction(action, execution_context, dry_run);
             checkLimits(execution_context.columns);
-
-            //std::cerr << "Action: " << action.toString() << std::endl;
-            //for (const auto & col : execution_context.columns)
-            //    std::cerr << col.dumpStructure() << std::endl;
         }
         catch (Exception & e)
         {
