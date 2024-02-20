@@ -181,7 +181,7 @@ SOURCE(CLICKHOUSE(TABLE 'source_table'))
 LIFETIME(MIN  0 MAX  1000)
 LAYOUT(FLAT());
 
-SELECT dictGetOrNull('id_value_dictionary', 'missing_attribute', toUInt64(1)) AS value;
+SELECT dictGetOrNull('id_value_dictionary', 'value', toUInt64(3)) AS value;
 ```
 
 **Result**:
