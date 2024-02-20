@@ -5,15 +5,25 @@
 #include "DataTypes/IDataType.h"
 #include "Formats/EscapingRuleUtils.h"
 #include "Formats/FormatSettings.h"
-#include "Formats/SchemaInferenceUtils.h"
-#include "IO/ReadBufferFromString.h"
+#include <DataTypes/Serializations/SerializationNullable.h>
+#include <Formats/JSONUtils.h>
 #include "Processors/Formats/IRowInputFormat.h"
 #include "base/find_symbols.h"
 #include <Formats/FormatFactory.h>
 #include <DataTypes/NestedUtils.h>
 
 namespace DB
-{  
+{
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
+}  
+
+namespace 
+{
 
 enum
 {
@@ -21,24 +31,6 @@ enum
     NESTED_FIELD = size_t(-2)
 };
 
-/**
-  * Recursively check if column_name contains '.' in name
-  * and split into separate columns if it does
-  */
-void FormInputFormat::checkAndSplitIfNested(const StringRef column_name)
-{
-    while(true)
-    {
-        const auto split = Nested::splitName(column_name.toView());
-        if (!split.second.empty())
-        {
-            const StringRef table_name(column_name.data, split.first.size());
-            name_map[table_name] = NESTED_FIELD;
-            const StringRef next_table_name(String(split.second).c_str(), split.second.size());
-            checkAndSplitIfNested(next_table_name);
-        }
-        break;
-    }
 }
 
 FormInputFormat::FormInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_) 
@@ -47,11 +39,15 @@ FormInputFormat::FormInputFormat(ReadBuffer & in_, Block header_, Params params_
     const auto & header = getPort().getHeader();
     name_map = header.getNamesToIndexesMap();
     
-    /// not sure if this needs to be on a setting or not? 
-    for (size_t i=0; i != header.columns(); ++i)
+    for (size_t i = 0; i != header.columns(); ++i)
     {
         const StringRef column_name = header.getByPosition(i).name;
-        checkAndSplitIfNested(column_name);
+        const auto split = Nested::splitName(column_name.toView());
+        if (!split.second.empty())
+        {
+            const StringRef table_name(column_name.data, split.first.size());
+            name_map[table_name] = NESTED_FIELD;
+        }
     }
 }
 
@@ -65,12 +61,6 @@ const String & FormInputFormat::columnName(size_t i) const
     return getPort().getHeader().getByPosition(i).name;
 }
 
-/** Read the field name in the `Form` format.
-  * Return true if field name is followed by an equal sign,
-  * otherwise (field with no value) return false.
-  * The reference to the field name is written to `ref`.
-  * Temporary buffer `tmp` is used to copy the field name to it.
-  */
 StringRef readName(ReadBuffer & buf, StringRef & ref, String & tmp)
 {
     tmp.clear();
@@ -87,7 +77,6 @@ StringRef readName(ReadBuffer & buf, StringRef & ref, String & tmp)
             continue;
         }
 
-        /// Column names (keys) occur before '=' 
         if (*next_pos == '=')
         {
             ref = StringRef(buf.position(), next_pos - buf.position());
@@ -105,28 +94,40 @@ void FormInputFormat::readField(size_t index, MutableColumns & columns)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing Form format: {}", columnName(index));
 
     seen_columns[index] = read_columns[index] = true;
+    const auto & type = getPort().getHeader().getByPosition(index).type;
     const auto & serialization = serializations[index];
+
     String encoded_str, decoded_str;
     readStringUntilAmpersand(encoded_str,*in);
     Poco::URI::decode(encoded_str, decoded_str);
-
-    /// skip '&' before next key value pair
-    if (!in->eof())
-        ++in->position(); 
-
-    ReadBufferFromString buf(decoded_str); 
-    serialization->deserializeTextRaw(*columns[index], buf, format_settings);
-    read_columns[index] = true;
+    ReadBufferFromString buf(decoded_str);
+    
+    if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
+        read_columns[index] = SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(*columns[index], buf, format_settings, serialization);
+    else
+      serialization->deserializeTextRaw(*columns[index], buf, format_settings);    
 }
 
 
-String readFieldName(ReadBuffer & in)
+String readFieldName(ReadBuffer & buf)
 {
     String field;
-    readStringUntilEquals(field, in);
-    assertChar('=', in);
+    readStringUntilEquals(field, buf);
+    assertChar('=', buf);
     return field;
 }
+
+void FormInputFormat::skipUnknownFormField(StringRef name_ref)
+{
+    if (!format_settings.skip_unknown_fields)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing Form format: {}", name_ref.toString());
+
+    /// read name and value but do nothing with them
+    readFieldName(*in);
+    String value;
+    readStringUntilAmpersand(value,*in);
+}
+
 
 inline size_t FormInputFormat::columnIndex(StringRef name)
 {
@@ -139,19 +140,84 @@ inline size_t FormInputFormat::columnIndex(StringRef name)
         return UNKNOWN_FIELD;
 }
 
-bool FormInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
+
+void FormInputFormat::readFormData(MutableColumns & columns)
 {
+    size_t index = 0;
+    while (index < columns.size())
+    {
+        if (in->eof())
+            break;
+
+        StringRef name_ref = readFieldName(*in);
+        const size_t column_index = columnIndex(name_ref);
+
+        if (ssize_t(column_index) < 0)
+        {
+            /// copy name_ref to temporary string as name_ref may 
+            /// point directly to the input buffer
+
+            current_column_name.assign(name_ref.data, name_ref.size);
+            name_ref = StringRef(current_column_name);
+
+            if (column_index == UNKNOWN_FIELD)
+                skipUnknownFormField(name_ref);
+            else if (column_index == NESTED_FIELD)
+                readNestedFormData(name_ref.toString(), columns);
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: illegal value of column_index");
+        }
+        else
+        {
+            readField(column_index, columns);    
+        }
+        ++index;
+    }
+}
+
+void FormInputFormat::readNestedFormData(const String & name, MutableColumns & columns)
+{
+    current_column_name = name;
+    current_column_name.push_back('.');
+    nested_prefix_length = current_column_name.size();
+    readFormData(columns);
+    nested_prefix_length = 0;
+}
+
+bool FormInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
+{
+    if (in->eof())
+        return false;
+
     size_t num_columns = columns.size();
 
     read_columns.assign(num_columns, false);
     seen_columns.assign(num_columns, false);
 
-    for (size_t index = 0; index < num_columns; ++index)
-    {
-        readField(1, columns);
-    }
+    readFormData(columns);
+
+    const auto & header = getPort().getHeader();
+    /// Non-visited columns get filled with default values
+    for (size_t i = 0; i < num_columns; ++i)
+        if(!seen_columns[i])
+            header.getByPosition(i).type->insertDefaultInto(*columns[i]);
+
+    /// Return info about defaults set.
+    /// If defaults_for_omitted_fields is set to 0, then we leave already inserted defaults.
+    if (format_settings.defaults_for_omitted_fields)
+        ext.read_columns = read_columns;
+    else
+        ext.read_columns.assign(read_columns.size(), true);
 
     return true;
+}
+
+void FormInputFormat::resetParser()
+{
+    IRowInputFormat::resetParser();
+    nested_prefix_length = 0;
+    read_columns.clear();
+    seen_columns.clear();
 }
 
 FormSchemaReader::FormSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
