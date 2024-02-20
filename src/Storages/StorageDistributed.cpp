@@ -797,7 +797,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
 
-    return buildQueryTreeForShard(query_info, query_tree_to_modify);
+    return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify);
 }
 
 }
@@ -831,7 +831,7 @@ void StorageDistributed::read(
           */
         for (auto & column : header)
             column.column = column.column->convertToFullColumnIfConst();
-        query_ast = queryNodeToSelectQuery(query_tree_distributed);
+        query_ast = queryNodeToDistributedSelectQuery(query_tree_distributed);
     }
     else
     {
@@ -976,8 +976,10 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         new_query->select = select_with_union_query;
     }
 
-    const Cluster::AddressesWithFailover & src_addresses = src_distributed.getCluster()->getShardsAddresses();
-    const Cluster::AddressesWithFailover & dst_addresses = getCluster()->getShardsAddresses();
+    const auto src_cluster = src_distributed.getCluster();
+    const auto dst_cluster = getCluster();
+    const Cluster::AddressesWithFailover & src_addresses = src_cluster->getShardsAddresses();
+    const Cluster::AddressesWithFailover & dst_addresses = dst_cluster->getShardsAddresses();
     /// Compare addresses instead of cluster name, to handle remote()/cluster().
     /// (since for remote()/cluster() the getClusterName() is empty string)
     if (src_addresses != dst_addresses)
@@ -1006,8 +1008,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         new_query->table_function.reset();
     }
 
-    const auto & cluster = getCluster();
-    const auto & shards_info = cluster->getShardsInfo();
+    const auto & shards_info = dst_cluster->getShardsInfo();
 
     String new_query_str;
     {
@@ -1138,7 +1139,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
-    for (const auto & replicas : getCluster()->getShardsInfo())
+    const auto cluster = getCluster();
+    for (const auto & replicas : cluster->getShardsInfo())
     {
         /// Skip unavailable hosts if necessary
         auto try_results = replicas.pool->getMany(timeouts, current_settings, PoolMode::GET_MANY, /*async_callback*/ {}, /*skip_unavailable_endpoints*/ true);

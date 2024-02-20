@@ -2,6 +2,7 @@
 
 #include <Coordination/Defines.h>
 #include <Coordination/KeeperConstants.h>
+#include <Server/CloudPlacementInfo.h>
 #include <Coordination/KeeperFeatureFlags.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskSelector.h>
@@ -40,26 +41,11 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
 {
     dispatcher = dispatcher_;
 
-    if (config.hasProperty("keeper_server.availability_zone"))
+    const auto keeper_az = PlacementInfo::PlacementInfo::instance().getAvailabilityZone();
+    if (!keeper_az.empty())
     {
-        auto keeper_az = config.getString("keeper_server.availability_zone.value", "");
-        const auto auto_detect_for_cloud = config.getBool("keeper_server.availability_zone.enable_auto_detection_on_cloud", false);
-        if (keeper_az.empty() && auto_detect_for_cloud)
-        {
-            try
-            {
-                keeper_az = DB::S3::getRunningAvailabilityZone();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-        if (!keeper_az.empty())
-        {
-            system_nodes_with_data[keeper_availability_zone_path] = keeper_az;
-            LOG_INFO(getLogger("KeeperContext"), "Initialize the KeeperContext with availability zone: '{}'", keeper_az);
-        }
+        system_nodes_with_data[keeper_availability_zone_path] = keeper_az;
+        LOG_INFO(getLogger("KeeperContext"), "Initialize the KeeperContext with availability zone: '{}'", keeper_az);
     }
 
     updateKeeperMemorySoftLimit(config);
