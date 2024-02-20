@@ -68,9 +68,13 @@ void moveFileBetweenDisks(DiskPtr disk_from, ChangelogFileDescriptionPtr descrip
 
     /// a different thread could be trying to read from the file
     /// we should make sure the source disk contains the file while read is in progress
-    description->withLock([&]{ description->disk = disk_to; });
+    description->withLock(
+        [&]
+        {
+            description->disk = disk_to;
+            description->path = path_to;
+        });
     disk_from->removeFile(description->path);
-    description->path = path_to;
 }
 
 constexpr auto DEFAULT_PREFIX = "changelog";
