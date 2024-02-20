@@ -93,7 +93,6 @@ private:
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, Priority priority);
 
     void resetPrefetch(FilesystemPrefetchState state);
-
 };
 
 }

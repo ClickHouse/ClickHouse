@@ -70,12 +70,10 @@ bool AsynchronousBoundedReadBuffer::hasPendingDataToRead()
             return false;
 
         if (file_offset_of_buffer_end > *read_until_position)
-        {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Read beyond last offset ({} > {}, info: {})",
-                file_offset_of_buffer_end, *read_until_position, impl->getInfoForLog());
-        }
+                "Read beyond last offset ({} > {}): file size = {}, info: {}",
+                file_offset_of_buffer_end, *read_until_position, impl->getFileSize(), impl->getInfoForLog());
     }
 
     return true;
@@ -117,14 +115,15 @@ void AsynchronousBoundedReadBuffer::setReadUntilPosition(size_t position)
         if (position < file_offset_of_buffer_end)
         {
             /// file has been read beyond new read until position already
-            if (working_buffer.size() >= file_offset_of_buffer_end - position)
+            if (available() >= file_offset_of_buffer_end - position)
             {
-                /// new read until position is inside working buffer
+                /// new read until position is after the current position in the working buffer
                 file_offset_of_buffer_end = position;
+                working_buffer.resize(working_buffer.size() - (file_offset_of_buffer_end - position));
             }
             else
             {
-                /// new read until position is before working buffer begin
+                /// new read until position is before the current position in the working buffer
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Attempt to set read until position before already read data ({} > {}, info: {})",
@@ -177,6 +176,7 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
         return false;
 
     chassert(file_offset_of_buffer_end <= impl->getFileSize());
+    size_t old_file_offset_of_buffer_end = file_offset_of_buffer_end;
 
     size_t size, offset;
     if (prefetch_future.valid())
@@ -212,9 +212,9 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     }
 
     bytes_to_ignore = 0;
+    resetWorkingBuffer();
 
     chassert(size >= offset);
-
     size_t bytes_read = size - offset;
     if (bytes_read)
     {
@@ -232,7 +232,20 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     chassert(file_offset_of_buffer_end >= impl->getFileOffsetOfBufferEnd());
     chassert(file_offset_of_buffer_end <= impl->getFileSize());
 
-    return bytes_read;
+    if (read_until_position && (file_offset_of_buffer_end > *read_until_position))
+    {
+        size_t excessive_bytes_read = file_offset_of_buffer_end - *read_until_position;
+
+        if (excessive_bytes_read > working_buffer.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "File offset moved too far: old_file_offset = {}, new_file_offset = {}, read_until_position = {}, bytes_read = {}",
+                            old_file_offset_of_buffer_end, file_offset_of_buffer_end, *read_until_position, bytes_read);
+
+        working_buffer.resize(working_buffer.size() - excessive_bytes_read);
+        file_offset_of_buffer_end = *read_until_position;
+    }
+
+    return !working_buffer.empty();
 }
 
 
