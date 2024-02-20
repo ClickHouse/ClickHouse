@@ -679,7 +679,7 @@ def test_tar_archive_with_bad_compression_method():
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
-    expected_error = "Compressing tar archives is currently not supported"
+    expected_error = "Using compression_method and compression_level options are not supported for tar archives"
     assert expected_error in instance.query_and_get_error(
         f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='tar_archive_with_bad_compression_method', compression_method='foobar'"
     )
