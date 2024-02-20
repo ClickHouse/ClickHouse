@@ -170,7 +170,7 @@ RESTORE TABLE test.table PARTITIONS '2', '3'
 
 ### Backups as tar archives
 
-Backups can also be stored as tar archives. The functionality is the same as for zip, except that compressing the archive or adding a password is not supported. 
+Backups can also be stored as tar archives. The functionality is the same as for zip, except that a password is not supported. 
 
 Write a backup as a tar:
 ```
@@ -181,6 +181,14 @@ Corresponding restore:
 ```
 RESTORE TABLE test.table FROM Disk('backups', '1.tar')
 ```
+
+To change the compression method, the correct file suffix should be appended to the backup name. I.E to compress the tar archive using gzip:
+```
+BACKUP TABLE test.table TO Disk('backups', '1.tar.gz')
+```
+
+The supported compression file suffixes are `.gz` `.bz2` and `.lzma`.
+
 
 ### Check the status of backups
 
