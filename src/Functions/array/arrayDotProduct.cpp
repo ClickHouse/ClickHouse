@@ -212,16 +212,54 @@ public:
         return result_type;
     }
 
+    /// Modeled after the implementation of distance functions L1Distance(), L2Distance() etc.
+    template <typename Type>
+    struct State
+    {
+        Type sum = 0;
+
+        void accumulate(Type x, Type y)
+        {
+            sum += x * y;
+        }
+
+        void combine(const State<Type> & other_state)
+        {
+            sum += other_state.sum;
+        }
+
+        Type finalize()
+        {
+            return sum;
+        }
+    };
+
     template <typename ResultType, typename LeftType, typename RightType>
     static NO_SANITIZE_UNDEFINED ResultType apply(
         const LeftType * left,
         const RightType * right,
         size_t size)
     {
-        ResultType result = 0;
-        for (size_t i = 0; i < size; ++i)
-            result += static_cast<ResultType>(left[i]) * static_cast<ResultType>(right[i]);
-        return result;
+        /// Process chunks in vectorized manner
+        static constexpr size_t VEC_SIZE = 4;
+        State<ResultType> states[VEC_SIZE];
+        size_t i = 0;
+        for (; i + VEC_SIZE < size; i += VEC_SIZE)
+        {
+            for (size_t j = 0; j < VEC_SIZE; ++j)
+                states[j].accumulate(static_cast<ResultType>(left[i + j]), static_cast<ResultType>(right[i + j]));
+        }
+
+        State<ResultType> state;
+        for (const auto & other_state : states)
+            state.combine(other_state);
+
+        /// Process the tail
+        for (; i < size; ++i)
+            state.accumulate(static_cast<ResultType>(left[i]), static_cast<ResultType>(right[i]));
+
+        ResultType res = state.finalize();
+        return res;
     }
 };
 
