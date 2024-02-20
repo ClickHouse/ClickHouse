@@ -3,6 +3,7 @@
 #include <IO/WriteSettings.h>
 #include <Core/Block.h>
 #include <base/types.h>
+#include <base/defines.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Storages/LightweightDeleteDescription.h>
@@ -562,9 +563,11 @@ public:
 
 protected:
     /// Primary key (correspond to primary.idx file).
-    /// Always loaded in RAM. Contains each index_granularity-th value of primary key tuple.
+    /// Lazily loaded in RAM. Contains each index_granularity-th value of primary key tuple.
     /// Note that marks (also correspond to primary key) are not always in RAM, but cached. See MarkCache.h.
-    Index index;
+    mutable std::mutex index_mutex;
+    mutable Index index TSA_GUARDED_BY(index_mutex);
+    mutable bool index_loaded TSA_GUARDED_BY(index_mutex) = false;
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;
@@ -662,7 +665,7 @@ private:
     virtual void appendFilesOfIndexGranularity(Strings & files) const;
 
     /// Loads the index file.
-    void loadIndex();
+    void loadIndex() const TSA_REQUIRES(index_mutex);
 
     void appendFilesOfIndex(Strings & files) const;
 
