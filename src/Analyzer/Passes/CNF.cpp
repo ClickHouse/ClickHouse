@@ -163,7 +163,7 @@ private:
 class PushOrVisitor
 {
 public:
-    PushOrVisitor(size_t max_atoms_)
+    explicit PushOrVisitor(size_t max_atoms_)
         : max_atoms(max_atoms_)
         , and_resolver(createInternalFunctionAndOverloadResolver())
         , or_resolver(createInternalFunctionOrOverloadResolver())
