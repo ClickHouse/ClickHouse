@@ -1,8 +1,6 @@
 #include <chrono>
 #include <gtest/gtest.h>
-#include "Common/ZooKeeper/IKeeper.h"
 
-#include "Core/Defines.h"
 #include "config.h"
 
 #if USE_NURAFT
@@ -22,7 +20,7 @@
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/SummingStateMachine.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
-#include <Coordination/pathUtils.h>
+#include <Coordination/KeeperCommon.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <libnuraft/nuraft.hxx>
