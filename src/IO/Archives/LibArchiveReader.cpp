@@ -42,6 +42,7 @@ public:
     {
         current_archive = openWithPath(path_to_archive);
     }
+
     explicit Handle(std::string path_to_archive_, bool lock_on_reading_, const ReadArchiveFunction & archive_read_function_)
         : path_to_archive(std::move(path_to_archive_)), archive_read_function(archive_read_function_), lock_on_reading(lock_on_reading_)
     {
