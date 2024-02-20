@@ -248,7 +248,7 @@ void LibArchiveWriter::setCompression(const String & compression_method_, int co
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Compressing tar archives is currently not supported");
 }
 
-void LibArchiveWriter::setPassword([[maybe_unused]] const String & password_)
+void LibArchiveWriter::setPassword(const String & password_)
 {
     if (password_.empty())
         return;
