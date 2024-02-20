@@ -271,8 +271,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         {
             if (!filesystem_cache_name.empty())
             {
-                settings.ostr << ' ';
-                print_identifier(filesystem_cache_name);
+                settings.ostr << ' ' << quoteString(filesystem_cache_name);
                 if (!key_to_drop.empty())
                 {
                     print_keyword(" KEY ");
