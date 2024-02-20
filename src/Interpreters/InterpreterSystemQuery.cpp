@@ -364,18 +364,18 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
             if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
                 cache->clear();
+            break;
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for JIT compilation");
 #endif
-            break;
         case Type::DROP_S3_CLIENT_CACHE:
 #if USE_AWS_S3
             getContext()->checkAccess(AccessType::SYSTEM_DROP_S3_CLIENT_CACHE);
             S3::ClientCacheRegistry::instance().clearCacheForAll();
+            break;
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AWS S3");
 #endif
-            break;
 
         case Type::DROP_FILESYSTEM_CACHE:
         {
