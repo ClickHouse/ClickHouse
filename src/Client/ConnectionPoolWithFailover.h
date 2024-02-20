@@ -83,8 +83,8 @@ public:
     struct NestedPoolStatus
     {
         const Base::NestedPoolPtr pool;
-        size_t error_count;
-        size_t slowdown_count;
+        size_t error_count = 0;
+        size_t slowdown_count = 0;
         std::chrono::seconds estimated_recovery_time;
     };
 
