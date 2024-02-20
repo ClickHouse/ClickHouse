@@ -12,7 +12,7 @@ engine = ReplicatedMergeTree('/test/02995/{database}/rmt', '1')
 order by (k, d)
 partition by toYYYYMMDD(d);
 
-insert into forget_partition select number, '2024-01-01' + interval number day, base64Encode(randomString(20)) from system.numbers limit 10;
+insert into forget_partition select number, '2024-01-01' + interval number day, randomString(20) from system.numbers limit 10;
 
 alter table forget_partition drop partition '20240101';
 alter table forget_partition drop partition '20240102';
