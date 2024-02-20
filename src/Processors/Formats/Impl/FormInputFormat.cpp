@@ -39,16 +39,21 @@ FormInputFormat::FormInputFormat(ReadBuffer & in_, Block header_, Params params_
     const auto & header = getPort().getHeader();
     name_map = header.getNamesToIndexesMap();
     
-    for (size_t i = 0; i != header.columns(); ++i)
+    // we don't want this as the data should be flattened
+    if (format_settings_.import_nested_json)
     {
-        const StringRef column_name = header.getByPosition(i).name;
-        const auto split = Nested::splitName(column_name.toView());
-        if (!split.second.empty())
+        for (size_t i = 0; i != header.columns(); ++i)
         {
-            const StringRef table_name(column_name.data, split.first.size());
-            name_map[table_name] = NESTED_FIELD;
+            const StringRef column_name = header.getByPosition(i).name;
+            const auto split = Nested::splitName(column_name.toView());
+            if (!split.second.empty())
+            {
+                const StringRef table_name(column_name.data, split.first.size());
+                name_map[table_name] = NESTED_FIELD;
+            }
         }
     }
+
 }
 
 void FormInputFormat::readPrefix()
@@ -99,6 +104,7 @@ void FormInputFormat::readField(size_t index, MutableColumns & columns)
 
     String encoded_str, decoded_str;
     readStringUntilAmpersand(encoded_str,*in);
+    assertChar('&',*in);
     Poco::URI::decode(encoded_str, decoded_str);
     ReadBufferFromString buf(decoded_str);
     
@@ -123,9 +129,13 @@ void FormInputFormat::skipUnknownFormField(StringRef name_ref)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing Form format: {}", name_ref.toString());
 
     /// read name and value but do nothing with them
-    readFieldName(*in);
-    String value;
-    readStringUntilAmpersand(value,*in);
+    if(!in->eof())
+    {
+        readFieldName(*in);
+        String value;
+        readStringUntilAmpersand(value,*in);
+    }
+    
 }
 
 
