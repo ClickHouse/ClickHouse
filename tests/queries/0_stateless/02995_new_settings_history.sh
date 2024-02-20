@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
+# Tags: no-tsan, no-asan, no-ubsan, no-msan, no-cpu-aarch64, no-random-settings
+# Some settings can be different for builds with sanitizers or aarch64
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Tags: no-tsan, no-asan, no-msan, no-ubsan, no-cpu-aarch64
-# Some settings can be different for builds with sanitizers
-
 # Note that this is a broad check. A per version check is done in the upgrade test
-# Baseline generated with 23.12
+# Baseline generated with 23.12.1
 # clickhouse local --query "select name, default from system.settings order by name format TSV" > 02995_baseline_23_12_1.tsv
 $CLICKHOUSE_LOCAL --query "
     WITH old_settings AS
