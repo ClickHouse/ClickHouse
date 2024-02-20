@@ -11,7 +11,7 @@
 
 #include <Columns/ColumnArray.h>
 
-#include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/assert_cast.h>
 
@@ -44,8 +44,9 @@ struct Settings;
 template <typename T>
 struct AggregateFunctionGroupArrayIntersectData
 {
-    using Map = HashMap<T, UInt64>;
-    Map value;
+    using Set = HashSet<T>;
+
+    Set value;
     UInt64 version = 0;
 };
 
@@ -75,7 +76,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto & version = this->data(place).version;
-        auto & map = this->data(place).value;
+        auto & set = this->data(place).value;
 
         const auto data_column = assert_cast<const ColumnArray &>(*columns[0]).getDataPtr();
         const auto & offsets = assert_cast<const ColumnArray &>(*columns[0]).getOffsets();
@@ -86,25 +87,25 @@ public:
         if (version == 1)
         {
             for (size_t i = 0; i < arr_size; ++i)
-                map[static_cast<T>((*data_column)[offset + i].get<T>())] = version;
+                set.insert(static_cast<T>((*data_column)[offset + i].get<T>()));
         }
-        else if (map.size() > 0)
+        else if (set.size() > 0)
         {
-            typename State::Map new_map;
+            typename State::Set new_set;
             for (size_t i = 0; i < arr_size; ++i)
             {
-                typename State::Map::LookupResult value = map.find(static_cast<T>((*data_column)[offset + i].get<T>()));
-                if (value != nullptr && value->getMapped() == version - 1)
-                    new_map[static_cast<T>((*data_column)[offset + i].get<T>())] = version;
+                typename State::Set::LookupResult set_value = set.find(static_cast<T>((*data_column)[offset + i].get<T>()));
+                if (set_value != nullptr)
+                    new_set.insert(static_cast<T>((*data_column)[offset + i].get<T>()));
             }
-            map = std::move(new_map);
+            set = std::move(new_set);
         }
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        auto & map = this->data(place).value;
-        const auto & rhs_map = this->data(rhs).value;
+        auto & set = this->data(place).value;
+        const auto & rhs_set = this->data(rhs).value;
 
         if (this->data(rhs).version == 0)
             return;
@@ -112,49 +113,39 @@ public:
         UInt64 version = this->data(place).version++;
         if (version == 0)
         {
-            for (auto & rhs_elem : rhs_map)
-                map[rhs_elem.getKey()] = 1;
+            for (auto & rhs_elem : rhs_set)
+                set.insert(rhs_elem.getValue());
             return;
         }
 
-        if (map.size() > 0)
+        if(set.size() > 0)
         {
-            typename State::Map new_map;
-            if (rhs_map.size() < map.size())
+            auto create_new_set = [](auto & lhs_val, auto & rhs_val)
             {
-                for (auto & rhs_elem : rhs_map)
+                typename State::Set new_set;
+                for (auto & lhs_elem : lhs_val)
                 {
-                    auto value = map.find(rhs_elem.getKey());
-                    if (value != nullptr)
-                        new_map[rhs_elem.getKey()] = version;
+                    auto res = rhs_val.find(lhs_elem.getValue());
+                    if (res != nullptr)
+                        new_set.insert(lhs_elem.getValue());
                 }
-            }
-            else
-            {
-                for (auto & elem : map)
-                {
-                    auto value = rhs_map.find(elem.getKey());
-                    if (value != nullptr)
-                        new_map[elem.getKey()] = version;
-                }
-            }
-            map = std::move(new_map);
+                return new_set;
+            };
+            auto new_set = rhs_set.size() < set.size() ? create_new_set(rhs_set, set) : create_new_set(set, rhs_set);
+            set = std::move(new_set);
         }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        auto & map = this->data(place).value;
+        auto & set = this->data(place).value;
         auto version = this->data(place).version;
 
         writeVarUInt(version, buf);
-        writeVarUInt(map.size(), buf);
+        writeVarUInt(set.size(), buf);
 
-        for (const auto & elem : map)
-        {
-            writeIntBinary(elem.getKey(), buf);
-            writeVarUInt(elem.getMapped(), buf);
-        }
+        for (const auto & elem : set)
+            writeIntBinary(elem.getValue(), buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
@@ -168,17 +159,16 @@ public:
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
-        const auto & map = this->data(place).value;
-
-        offsets_to.push_back(offsets_to.back() + map.size());
+        const auto & set = this->data(place).value;
+        offsets_to.push_back(offsets_to.back() + set.size());
 
         typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
         size_t old_size = data_to.size();
-        data_to.resize(old_size + map.size());
+        data_to.resize(old_size + set.size());
 
         size_t i = 0;
-        for (auto it = map.begin(); it != map.end(); ++it)
-            data_to[old_size + i++] = it->getKey();
+        for (auto it = set.begin(); it != set.end(); ++it)
+            data_to[old_size + i++] = it->getValue();
     }
 };
 
@@ -186,9 +176,9 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggregateFunctionGroupArrayIntersectGenericData
 {
-    using Map = HashMap<StringRef, UInt64>;
+    using Set = HashSet<StringRef>;
 
-    Map value;
+    Set value;
     UInt64 version = 0;
 };
 
@@ -219,10 +209,10 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        auto & map = this->data(place).value;
+        auto & set = this->data(place).value;
         auto & version = this->data(place).version;
         bool inserted;
-        State::Map::LookupResult it;
+        State::Set::LookupResult it;
 
         const auto data_column = assert_cast<const ColumnArray &>(*columns[0]).getDataPtr();
         const auto & offsets = assert_cast<const ColumnArray &>(*columns[0]).getOffsets();
@@ -235,49 +225,46 @@ public:
             for (size_t i = 0; i < arr_size; ++i)
             {
                 if constexpr (is_plain_column)
-                    map.emplace(ArenaKeyHolder{data_column->getDataAt(offset + i), *arena}, it, inserted);
+                    set.emplace(ArenaKeyHolder{data_column->getDataAt(offset + i), *arena}, it, inserted);
                 else
                 {
                     const char * begin = nullptr;
                     StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
                     assert(serialized.data != nullptr);
-                    map.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
+                    set.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
                 }
-
-                if (inserted)
-                    new (&it->getMapped()) UInt64(version);
             }
         }
-        else if (map.size() > 0)
+        else if (set.size() > 0)
         {
-            typename State::Map new_map;
+            typename State::Set new_set;
             for (size_t i = 0; i < arr_size; ++i)
             {
                 if constexpr (is_plain_column)
                 {
-                    it = map.find(data_column->getDataAt(offset + i));
+                    it = set.find(data_column->getDataAt(offset + i));
                     if (it != nullptr)
-                        new_map.emplace(ArenaKeyHolder{data_column->getDataAt(offset + i), *arena}, it, inserted);
+                        new_set.emplace(ArenaKeyHolder{data_column->getDataAt(offset + i), *arena}, it, inserted);
                 }
                 else
                 {
                     const char * begin = nullptr;
                     StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
                     assert(serialized.data != nullptr);
-                    it = map.find(serialized);
+                    it = set.find(serialized);
 
                     if (it != nullptr)
-                        new_map.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
+                        new_set.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
                 }
             }
-            map = std::move(new_map);
+            set = std::move(new_set);
         }
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        auto & map = this->data(place).value;
-        const auto & rhs_map = this->data(rhs).value;
+        auto & set = this->data(place).value;
+        const auto & rhs_value = this->data(rhs).value;
         
         if (this->data(rhs).version == 0)
             return;
@@ -286,69 +273,56 @@ public:
         if (version == 0)
         {
             bool inserted;
-            State::Map::LookupResult it;
-            for (auto & rhs_elem : rhs_map)
+            State::Set::LookupResult it;
+            for (auto & rhs_elem : rhs_value)
             {
-                map[rhs_elem.getKey()] = 1;
-                map.emplace(ArenaKeyHolder{rhs_elem.getKey(), *arena}, it, inserted);
-                if (inserted)
-                    new (&it->getMapped()) UInt64(version);
+                set.emplace(ArenaKeyHolder{rhs_elem.getValue(), *arena}, it, inserted);
             }
         }
-        else if (map.size() > 0)
+        else if (set.size() > 0)
         {
-            typename State::Map new_map;
-            if (rhs_map.size() < map.size())
+            auto create_new_map = [](auto & lhs_val, auto & rhs_val)
             {
-                for (auto & rhs_elem : rhs_map)
+                typename State::Set new_map;
+                for (auto & lhs_elem : lhs_val)
                 {
-                    auto value = map.find(rhs_elem.getKey());
-                    if (value != nullptr)
-                        new_map[rhs_elem.getKey()] = version;
+                    auto val = rhs_val.find(lhs_elem.getValue());
+                    if (val != nullptr)
+                        new_map.insert(lhs_elem.getValue());
                 }
-            }
-            else
-            {
-                for (auto & elem : map)
-                {
-                    auto value = rhs_map.find(elem.getKey());
-                    if (value != nullptr)
-                        new_map[elem.getKey()] = version;
-                }
-            }
-            map = std::move(new_map);
+                return new_map;
+            };
+            auto new_map = rhs_value.size() < set.size() ? create_new_map(rhs_value, set) : create_new_map(set, rhs_value);
+            set = std::move(new_map);
         }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        auto & map = this->data(place).value;
+        auto & set = this->data(place).value;
         auto & version = this->data(place).version;
         writeVarUInt(version, buf);
-        writeVarUInt(map.size(), buf);
+        writeVarUInt(set.size(), buf);
 
-        for (const auto & elem : map)
-        {
-            writeStringBinary(elem.getKey(), buf);
-            writeVarUInt(elem.getMapped(), buf);
-        }
+        for (const auto & elem : set)
+            writeStringBinary(elem.getValue(), buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        auto & map = this->data(place).value;
+        auto & set = this->data(place).value;
         auto & version = this->data(place).version;
         size_t size;
         readVarUInt(version, buf);
         readVarUInt(size, buf);
-        map.reserve(size);
+        set.reserve(size);
         UInt64 elem_version;
         for (size_t i = 0; i < size; ++i)
         {
             auto key = readStringBinaryInto(*arena, buf);
             readVarUInt(elem_version, buf);
             if (elem_version == version)
-                map[key] = version;
+                set.insert(key);
         }
     }
 
@@ -358,16 +332,16 @@ public:
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
         IColumn & data_to = arr_to.getData();
 
-        auto & map = this->data(place).value;
+        auto & set = this->data(place).value;
 
-        offsets_to.push_back(offsets_to.back() + map.size());
+        offsets_to.push_back(offsets_to.back() + set.size());
 
-        for (auto & elem : map)
+        for (auto & elem : set)
         {
             if constexpr (is_plain_column)
-                data_to.insertData(elem.getKey().data, elem.getKey().size);
+                data_to.insertData(elem.getValue().data, elem.getValue().size);
             else
-                std::ignore = data_to.deserializeAndInsertFromArena(elem.getKey().data);
+                std::ignore = data_to.deserializeAndInsertFromArena(elem.getValue().data);
         }
     }
 };
