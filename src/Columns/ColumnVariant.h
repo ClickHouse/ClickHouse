@@ -7,11 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 /**
  * Column for storing Variant(...) type values.
  * Variant type represents a union of other data types.
