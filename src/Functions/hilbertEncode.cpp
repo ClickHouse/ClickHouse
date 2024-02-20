@@ -10,8 +10,6 @@ REGISTER_FUNCTION(HilbertEncode)
     .description=R"(
 
 )",
-        .examples{
-            },
         .categories {}
     });
 }
