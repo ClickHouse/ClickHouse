@@ -5,7 +5,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int CANNOT_PACK_ARCHIVE;
 extern const int NOT_IMPLEMENTED;
 }
 void TarArchiveWriter::setCompression(const String & compression_method_, int compression_level_)
