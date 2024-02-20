@@ -118,7 +118,7 @@ public:
             return;
         }
 
-        if(set.size() > 0)
+        if (set.size() > 0)
         {
             auto create_new_set = [](auto & lhs_val, auto & rhs_val)
             {
@@ -265,7 +265,7 @@ public:
     {
         auto & set = this->data(place).value;
         const auto & rhs_value = this->data(rhs).value;
-        
+
         if (this->data(rhs).version == 0)
             return;
 
