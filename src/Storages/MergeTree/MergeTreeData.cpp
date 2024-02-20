@@ -8,6 +8,7 @@
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
+#include "Common/logger_useful.h"
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Increment.h>
@@ -7170,7 +7171,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             }
         }
         if (!copy_successful)
-            throw;
+        {
+            LOG_FATAL(&Poco::Logger::get("MergeTreeData"), "Hard link fail, clone fail");
+        } 
     }
 
 
@@ -7301,8 +7304,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         }
     }
     if (!copy_successful)
-        throw;
-
+    {
+        LOG_FATAL( &Poco::Logger::get("MergeTreeData"), "Hard link fail, clone fail.");
+    }
     if (params.metadata_version_to_write.has_value())
     {
         chassert(!params.keep_metadata_version);

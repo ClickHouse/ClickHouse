@@ -2104,7 +2104,6 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         }
         else
         {
-            clone_params.copy_instead_of_hardlink = true;
             auto [dst_part, part_lock] = cloneAndLoadDataPartOnOtherDisk(
                 src_part,
                 TMP_PREFIX,

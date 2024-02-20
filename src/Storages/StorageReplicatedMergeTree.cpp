@@ -7933,7 +7933,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             for (const DiskPtr & disk : this->getStoragePolicy()->getDisks())
                 if (disk->getName() == src_part->getDataPartStorage().getDiskName())
                     on_same_disk = true;
-            if (on_same_disk)
+            if (on_same_disk && !clone_params.copy_instead_of_hardlink)
             {
                 auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
                     src_part,
@@ -7948,7 +7948,6 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             }
             else
             {
-                clone_params.copy_instead_of_hardlink = true;
                 auto [dst_part, part_lock] = cloneAndLoadDataPartOnOtherDisk(
                     src_part,
                     TMP_PREFIX,
