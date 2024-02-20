@@ -32,12 +32,10 @@ namespace DB
 IStorageCluster::IStorageCluster(
     const String & cluster_name_,
     const StorageID & table_id_,
-    Poco::Logger * log_,
-    bool structure_argument_was_provided_)
+    LoggerPtr log_)
     : IStorage(table_id_)
     , log(log_)
     , cluster_name(cluster_name_)
-    , structure_argument_was_provided(structure_argument_was_provided_)
 {
 }
 
@@ -54,7 +52,7 @@ public:
         ASTPtr query_to_send_,
         QueryProcessingStage::Enum processed_stage_,
         ClusterPtr cluster_,
-        Poco::Logger * log_,
+        LoggerPtr log_,
         ContextPtr context_)
         : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
         , storage(std::move(storage_))
@@ -71,7 +69,7 @@ private:
     ASTPtr query_to_send;
     QueryProcessingStage::Enum processed_stage;
     ClusterPtr cluster;
-    Poco::Logger * log;
+    LoggerPtr log;
     ContextPtr context;
 
     std::optional<RemoteQueryExecutor::Extension> extension;
@@ -82,7 +80,7 @@ private:
 
 void ReadFromCluster::applyFilters()
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -130,8 +128,7 @@ void IStorageCluster::read(
         query_to_send = interpreter.getQueryInfo().query->clone();
     }
 
-    if (!structure_argument_was_provided)
-        addColumnsStructureToQuery(query_to_send, storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(), context);
+    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context);
 
     RestoreQualifiedNamesVisitor::Data data;
     data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));

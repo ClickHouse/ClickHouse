@@ -231,7 +231,7 @@ public:
 
         using RangesInfo = std::vector<RangeInfo>;
 
-        explicit ReadResult(Poco::Logger * log_) : log(log_) {}
+        explicit ReadResult(LoggerPtr log_) : log(log_) {}
 
         static size_t getLastMark(const MergeTreeRangeReader::ReadResult::RangesInfo & ranges);
 
@@ -298,7 +298,7 @@ public:
         size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules) const;
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
 
-        Poco::Logger * log;
+        LoggerPtr log;
     };
 
     ReadResult read(size_t max_rows, MarkRanges & ranges);
@@ -325,7 +325,7 @@ private:
     bool is_initialized = false;
     Names non_const_virtual_column_names;
 
-    Poco::Logger * log = &Poco::Logger::get("MergeTreeRangeReader");
+    LoggerPtr log = getLogger("MergeTreeRangeReader");
 };
 
 }

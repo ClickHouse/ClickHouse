@@ -1,4 +1,3 @@
-#include "Common/StackTrace.h"
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
@@ -20,6 +19,13 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
 
         if (response.getChunkedTransferEncoding())
             setChunked();
+        else if (response.getContentLength() == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH)
+        {
+            /// In case there is no Content-Length we cannot use keep-alive,
+            /// since there is no way to know when the server send all the
+            /// data, so "Connection: close" should be sent.
+            response.setKeepAlive(false);
+        }
 
         if (add_cors_header)
             response.set("Access-Control-Allow-Origin", "*");

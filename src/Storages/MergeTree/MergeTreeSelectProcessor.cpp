@@ -525,6 +525,7 @@ Block MergeTreeSelectProcessor::transformHeader(
     const DataTypePtr & partition_value_type,
     const Names & virtual_columns)
 {
+    injectVirtualColumns(block, 0, nullptr, partition_value_type, virtual_columns);
     auto transformed = applyPrewhereActions(std::move(block), prewhere_info);
     injectVirtualColumns(transformed, 0, nullptr, partition_value_type, virtual_columns);
     injectLazilyReadColumns(0, transformed, lazily_read_block, nullptr, lazily_read_info);

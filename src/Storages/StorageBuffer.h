@@ -3,6 +3,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
+#include <Common/ThreadPool.h>
 
 #include <Poco/Event.h>
 
@@ -149,6 +150,7 @@ private:
 
     /// There are `num_shards` of independent buffers.
     const size_t num_shards;
+    std::unique_ptr<ThreadPool> flush_pool;
     std::vector<Buffer> buffers;
 
     const Thresholds min_thresholds;
@@ -166,7 +168,7 @@ private:
     Writes lifetime_writes;
     Writes total_writes;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     void flushAllBuffers(bool check_thresholds = true);
     bool flushBuffer(Buffer & buffer, bool check_thresholds, bool locked = false);

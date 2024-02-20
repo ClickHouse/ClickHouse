@@ -51,8 +51,9 @@ static void writeData(const ISerialization & serialization, const ColumnPtr & co
 {
     /** If there are columns-constants - then we materialize them.
       * (Since the data type does not know how to serialize / deserialize constants.)
+      * The same for compressed columns in-memory.
       */
-    ColumnPtr full_column = column->convertToFullColumnIfConst();
+    ColumnPtr full_column = column->convertToFullColumnIfConst()->decompress();
 
     if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(*full_column))
     {

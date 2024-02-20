@@ -45,6 +45,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 using OperationID = BackupOperationID;
@@ -73,7 +74,8 @@ namespace
                 all_hosts,
                 backup_settings.host_id,
                 !backup_settings.deduplicate_files,
-                backup_settings.internal);
+                backup_settings.internal,
+                context->getProcessListElement());
         }
         else
         {
@@ -110,7 +112,8 @@ namespace
                 toString(*restore_settings.restore_uuid),
                 all_hosts,
                 restore_settings.host_id,
-                restore_settings.internal);
+                restore_settings.internal,
+                context->getProcessListElement());
         }
         else
         {
@@ -150,15 +153,50 @@ namespace
         }
     }
 
-    bool isFinalStatus(BackupStatus status)
+    bool isFinishedSuccessfully(BackupStatus status)
     {
-        return (status == BackupStatus::BACKUP_CREATED) || (status == BackupStatus::BACKUP_FAILED) || (status == BackupStatus::RESTORED)
-            || (status == BackupStatus::RESTORE_FAILED);
+        return (status == BackupStatus::BACKUP_CREATED) || (status == BackupStatus::RESTORED);
     }
 
-    bool isErrorStatus(BackupStatus status)
+    bool isFailed(BackupStatus status)
     {
         return (status == BackupStatus::BACKUP_FAILED) || (status == BackupStatus::RESTORE_FAILED);
+    }
+
+    bool isCancelled(BackupStatus status)
+    {
+        return (status == BackupStatus::BACKUP_CANCELLED) || (status == BackupStatus::RESTORE_CANCELLED);
+    }
+
+    bool isFailedOrCancelled(BackupStatus status)
+    {
+        return isFailed(status) || isCancelled(status);
+    }
+
+    bool isFinalStatus(BackupStatus status)
+    {
+        return isFinishedSuccessfully(status) || isFailedOrCancelled(status);
+    }
+
+    bool isBackupStatus(BackupStatus status)
+    {
+        return (status == BackupStatus::CREATING_BACKUP) || (status == BackupStatus::BACKUP_CREATED) || (status == BackupStatus::BACKUP_FAILED) || (status == BackupStatus::BACKUP_CANCELLED);
+    }
+
+    BackupStatus getBackupStatusFromCurrentException()
+    {
+        if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED)
+            return BackupStatus::BACKUP_CANCELLED;
+        else
+            return BackupStatus::BACKUP_FAILED;
+    }
+
+    BackupStatus getRestoreStatusFromCurrentException()
+    {
+        if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED)
+            return BackupStatus::RESTORE_CANCELLED;
+        else
+            return BackupStatus::RESTORE_FAILED;
     }
 
     /// Used to change num_active_backups.
@@ -337,13 +375,15 @@ private:
 };
 
 
-BackupsWorker::BackupsWorker(ContextPtr global_context, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_)
+BackupsWorker::BackupsWorker(ContextMutablePtr global_context, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_, bool test_inject_sleep_)
     : thread_pools(std::make_unique<ThreadPools>(num_backup_threads, num_restore_threads))
     , allow_concurrent_backups(allow_concurrent_backups_)
     , allow_concurrent_restores(allow_concurrent_restores_)
-    , log(&Poco::Logger::get("BackupsWorker"))
+    , test_inject_sleep(test_inject_sleep_)
+    , log(getLogger("BackupsWorker"))
+    , backup_log(global_context->getBackupLog())
+    , process_list(global_context->getProcessList())
 {
-    backup_log = global_context->getBackupLog();
 }
 
 
@@ -400,7 +440,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
 
     try
     {
-        addInfo(backup_id, backup_name_for_logging, base_backup_name, backup_settings.internal, BackupStatus::CREATING_BACKUP);
+        addInfo(backup_id, backup_name_for_logging, base_backup_name, backup_settings.internal, context->getProcessListElement(), BackupStatus::CREATING_BACKUP);
 
         /// Prepare context to use.
         ContextPtr context_in_use = context;
@@ -408,8 +448,9 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
         bool on_cluster = !backup_query->cluster.empty();
         if (on_cluster || backup_settings.async)
         {
-            /// For ON CLUSTER queries we will need to change some settings.
-            /// For ASYNC queries we have to clone the context anyway.
+            /// We have to clone the query context here because:
+            /// if this is an "ON CLUSTER" query we need to change some settings, and
+            /// if this is an "ASYNC" query it's going to be executed in another thread.
             context_in_use = mutable_context = Context::createCopy(context);
             mutable_context->makeQueryContext();
         }
@@ -417,8 +458,22 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
         if (backup_settings.async)
         {
             auto & thread_pool = getThreadPool(on_cluster ? ThreadPoolId::BACKUP_ASYNC_ON_CLUSTER : ThreadPoolId::BACKUP_ASYNC);
+
+            /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
+            auto process_list_element = context_in_use->getProcessListElement();
+
             thread_pool.scheduleOrThrowOnError(
-                [this, backup_query, backup_id, backup_name_for_logging, backup_info, backup_settings, backup_coordination, context_in_use, mutable_context]
+                [this,
+                 backup_query,
+                 backup_id,
+                 backup_name_for_logging,
+                 backup_info,
+                 backup_settings,
+                 backup_coordination,
+                 context_in_use,
+                 mutable_context,
+                 thread_group = CurrentThread::getGroup(),
+                 process_list_element_holder = process_list_element ? process_list_element->getProcessListEntry() : nullptr]
                 {
                     doBackup(
                         backup_query,
@@ -429,6 +484,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
                         backup_coordination,
                         context_in_use,
                         mutable_context,
+                        thread_group,
                         /* called_async= */ true);
                 });
         }
@@ -443,6 +499,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
                 backup_coordination,
                 context_in_use,
                 mutable_context,
+                nullptr,
                 /* called_async= */ false);
         }
 
@@ -452,7 +509,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
     {
         tryLogCurrentException(log, fmt::format("Failed to start {} {}", (backup_settings.internal ? "internal backup" : "backup"), backup_name_for_logging));
         /// Something bad happened, the backup has not built.
-        setStatusSafe(backup_id, BackupStatus::BACKUP_FAILED);
+        setStatusSafe(backup_id, getBackupStatusFromCurrentException());
         sendCurrentExceptionToCoordination(backup_coordination);
         throw;
     }
@@ -468,19 +525,22 @@ void BackupsWorker::doBackup(
     std::shared_ptr<IBackupCoordination> backup_coordination,
     const ContextPtr & context,
     ContextMutablePtr mutable_context,
+    ThreadGroupPtr thread_group,
     bool called_async)
 {
-    std::optional<CurrentThread::QueryScope> query_scope;
+    SCOPE_EXIT_SAFE(
+        if (called_async && thread_group)
+            CurrentThread::detachFromGroupIfNotDetached();
+    );
+
     try
     {
+        if (called_async && thread_group)
+            CurrentThread::attachToGroup(thread_group);
         if (called_async)
-        {
-            query_scope.emplace(mutable_context);
             setThreadName("BackupWorker");
-        }
 
         bool on_cluster = !backup_query->cluster.empty();
-
         assert(mutable_context || (!on_cluster && !called_async));
 
         /// Checks access rights if this is not ON CLUSTER query.
@@ -557,8 +617,8 @@ void BackupsWorker::doBackup(
             }
 
             /// Write the backup entries to the backup.
-            buildFileInfosForBackupEntries(backup, backup_entries, backup_create_params.read_settings, backup_coordination);
-            writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, backup_settings.internal);
+            buildFileInfosForBackupEntries(backup, backup_entries, backup_create_params.read_settings, backup_coordination, context->getProcessListElement());
+            writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, backup_settings.internal, context->getProcessListElement());
 
             /// We have written our backup entries, we need to tell other hosts (they could be waiting for it).
             backup_coordination->setStage(Stage::COMPLETED,"");
@@ -596,7 +656,7 @@ void BackupsWorker::doBackup(
         if (called_async)
         {
             tryLogCurrentException(log, fmt::format("Failed to make {} {}", (backup_settings.internal ? "internal backup" : "backup"), backup_name_for_logging));
-            setStatusSafe(backup_id, BackupStatus::BACKUP_FAILED);
+            setStatusSafe(backup_id, getBackupStatusFromCurrentException());
             sendCurrentExceptionToCoordination(backup_coordination);
         }
         else
@@ -608,15 +668,21 @@ void BackupsWorker::doBackup(
 }
 
 
-void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination)
+void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, QueryStatusPtr process_list_element)
 {
     backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "");
     backup_coordination->waitForStage(Stage::BUILDING_FILE_INFOS);
-    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(ThreadPoolId::BACKUP_MAKE_FILES_LIST)));
+    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(ThreadPoolId::BACKUP_MAKE_FILES_LIST), process_list_element));
 }
 
 
-void BackupsWorker::writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const OperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool internal)
+void BackupsWorker::writeBackupEntries(
+    BackupMutablePtr backup,
+    BackupEntries && backup_entries,
+    const OperationID & backup_id,
+    std::shared_ptr<IBackupCoordination> backup_coordination,
+    bool internal,
+    QueryStatusPtr process_list_element)
 {
     LOG_TRACE(log, "{}, num backup entries={}", Stage::WRITING_BACKUP, backup_entries.size());
     backup_coordination->setStage(Stage::WRITING_BACKUP, "");
@@ -677,7 +743,13 @@ void BackupsWorker::writeBackupEntries(BackupMutablePtr backup, BackupEntries &&
                         return;
                 }
 
+                if (process_list_element)
+                    process_list_element->checkTimeLimit();
+
                 backup->writeFile(file_info, std::move(entry));
+
+                maybeSleepForTesting();
+
                 // Update metadata
                 if (!internal)
                 {
@@ -690,7 +762,6 @@ void BackupsWorker::writeBackupEntries(BackupMutablePtr backup, BackupEntries &&
                             backup->getCompressedSize(),
                             0, 0);
                 }
-
             }
             catch (...)
             {
@@ -752,15 +823,16 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
         if (restore_settings.base_backup_info)
             base_backup_name = restore_settings.base_backup_info->toStringForLogging();
 
-        addInfo(restore_id, backup_name_for_logging, base_backup_name, restore_settings.internal, BackupStatus::RESTORING);
+        addInfo(restore_id, backup_name_for_logging, base_backup_name, restore_settings.internal, context->getProcessListElement(), BackupStatus::RESTORING);
 
         /// Prepare context to use.
         ContextMutablePtr context_in_use = context;
         bool on_cluster = !restore_query->cluster.empty();
         if (restore_settings.async || on_cluster)
         {
-            /// For ON CLUSTER queries we will need to change some settings.
-            /// For ASYNC queries we have to clone the context anyway.
+            /// We have to clone the query context here because:
+            /// if this is an "ON CLUSTER" query we need to change some settings, and
+            /// if this is an "ASYNC" query it's going to be executed in another thread.
             context_in_use = Context::createCopy(context);
             context_in_use->makeQueryContext();
         }
@@ -768,8 +840,21 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
         if (restore_settings.async)
         {
             auto & thread_pool = getThreadPool(on_cluster ? ThreadPoolId::RESTORE_ASYNC_ON_CLUSTER : ThreadPoolId::RESTORE_ASYNC);
+
+            /// process_list_element_holder is used to make an element in ProcessList live while RESTORE is working asynchronously.
+            auto process_list_element = context_in_use->getProcessListElement();
+
             thread_pool.scheduleOrThrowOnError(
-                [this, restore_query, restore_id, backup_name_for_logging, backup_info, restore_settings, restore_coordination, context_in_use]
+                [this,
+                 restore_query,
+                 restore_id,
+                 backup_name_for_logging,
+                 backup_info,
+                 restore_settings,
+                 restore_coordination,
+                 context_in_use,
+                 thread_group = CurrentThread::getGroup(),
+                 process_list_element_holder = process_list_element ? process_list_element->getProcessListEntry() : nullptr]
                 {
                     doRestore(
                         restore_query,
@@ -779,6 +864,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
                         restore_settings,
                         restore_coordination,
                         context_in_use,
+                        thread_group,
                         /* called_async= */ true);
                 });
         }
@@ -792,6 +878,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
                 restore_settings,
                 restore_coordination,
                 context_in_use,
+                nullptr,
                 /* called_async= */ false);
         }
 
@@ -800,7 +887,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
     catch (...)
     {
         /// Something bad happened, the backup has not built.
-        setStatusSafe(restore_id, BackupStatus::RESTORE_FAILED);
+        setStatusSafe(restore_id, getRestoreStatusFromCurrentException());
         sendCurrentExceptionToCoordination(restore_coordination);
         throw;
     }
@@ -815,16 +902,20 @@ void BackupsWorker::doRestore(
     RestoreSettings restore_settings,
     std::shared_ptr<IRestoreCoordination> restore_coordination,
     ContextMutablePtr context,
+    ThreadGroupPtr thread_group,
     bool called_async)
 {
-    std::optional<CurrentThread::QueryScope> query_scope;
+    SCOPE_EXIT_SAFE(
+        if (called_async && thread_group)
+            CurrentThread::detachFromGroupIfNotDetached();
+    );
+
     try
     {
+        if (called_async && thread_group)
+            CurrentThread::attachToGroup(thread_group);
         if (called_async)
-        {
-            query_scope.emplace(context);
             setThreadName("RestoreWorker");
-        }
 
         /// Open the backup for reading.
         BackupFactory::CreateParams backup_open_params;
@@ -913,7 +1004,7 @@ void BackupsWorker::doRestore(
             }
 
             /// Execute the data restoring tasks.
-            restoreTablesData(restore_id, backup, std::move(data_restore_tasks), getThreadPool(ThreadPoolId::RESTORE_TABLES_DATA));
+            restoreTablesData(restore_id, backup, std::move(data_restore_tasks), getThreadPool(ThreadPoolId::RESTORE_TABLES_DATA), context->getProcessListElement());
 
             /// We have restored everything, we need to tell other hosts (they could be waiting for it).
             restore_coordination->setStage(Stage::COMPLETED, "");
@@ -928,7 +1019,7 @@ void BackupsWorker::doRestore(
         if (called_async)
         {
             tryLogCurrentException(log, fmt::format("Failed to restore from {} {}", (restore_settings.internal ? "internal backup" : "backup"), backup_name_for_logging));
-            setStatusSafe(restore_id, BackupStatus::RESTORE_FAILED);
+            setStatusSafe(restore_id, getRestoreStatusFromCurrentException());
             sendCurrentExceptionToCoordination(restore_coordination);
         }
         else
@@ -940,7 +1031,7 @@ void BackupsWorker::doRestore(
 }
 
 
-void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool)
+void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
 {
     size_t num_active_jobs = 0;
     std::mutex mutex;
@@ -980,7 +1071,13 @@ void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr 
                         return;
                 }
 
+                if (process_list_element)
+                    process_list_element->checkTimeLimit();
+
                 std::move(task)();
+
+                maybeSleepForTesting();
+
                 setNumFilesAndSize(
                     restore_id,
                     backup->getNumFiles(),
@@ -1011,9 +1108,10 @@ void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr 
 }
 
 
-void BackupsWorker::addInfo(const OperationID & id, const String & name, const String & base_backup_name, bool internal, BackupStatus status)
+void BackupsWorker::addInfo(const OperationID & id, const String & name, const String & base_backup_name, bool internal, QueryStatusPtr process_list_element, BackupStatus status)
 {
-    BackupOperationInfo info;
+    ExtendedOperationInfo extended_info;
+    auto & info = extended_info.info;
     info.id = id;
     info.name = name;
     info.base_backup_name = base_backup_name;
@@ -1021,7 +1119,16 @@ void BackupsWorker::addInfo(const OperationID & id, const String & name, const S
     info.status = status;
     info.start_time = std::chrono::system_clock::now();
 
-    if (isFinalStatus(status))
+    bool is_final_status = isFinalStatus(status);
+
+    if (process_list_element)
+    {
+        info.profile_counters = process_list_element->getInfo(/* get_thread_list= */ false, /* get_profile_events= */ true, /* get_settings= */ false).profile_counters;
+        if (!is_final_status)
+            extended_info.process_list_element = process_list_element;
+    }
+
+    if (is_final_status)
         info.end_time = info.start_time;
 
     std::lock_guard lock{infos_mutex};
@@ -1030,7 +1137,7 @@ void BackupsWorker::addInfo(const OperationID & id, const String & name, const S
     if (it != infos.end())
     {
         /// It's better not allow to overwrite the current status if it's in progress.
-        auto current_status = it->second.status;
+        auto current_status = it->second.info.status;
         if (!isFinalStatus(current_status))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot start a backup or restore: ID {} is already in use", id);
     }
@@ -1038,7 +1145,7 @@ void BackupsWorker::addInfo(const OperationID & id, const String & name, const S
     if (backup_log)
         backup_log->add(BackupLogElement{info});
 
-    infos[id] = std::move(info);
+    infos[id] = std::move(extended_info);
 
     num_active_backups += getNumActiveBackupsChange(status);
     num_active_restores += getNumActiveRestoresChange(status);
@@ -1057,16 +1164,24 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
             return;
     }
 
-    auto & info = it->second;
+    auto & extended_info = it->second;
+    auto & info = extended_info.info;
+
     auto old_status = info.status;
-
     info.status = status;
-    info.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(CurrentThread::getProfileEvents().getPartiallyAtomicSnapshot());
+    bool is_final_status = isFinalStatus(status);
 
-    if (isFinalStatus(status))
+    if (extended_info.process_list_element)
+    {
+        info.profile_counters = extended_info.process_list_element->getInfo(/* get_thread_list= */ false, /* get_profile_events= */ true, /* get_settings= */ false).profile_counters;
+        if (is_final_status)
+            extended_info.process_list_element = nullptr;
+    }
+
+    if (is_final_status)
         info.end_time = std::chrono::system_clock::now();
 
-    if (isErrorStatus(status))
+    if (isFailedOrCancelled(status))
     {
         info.error_message = getCurrentExceptionMessage(false);
         info.exception = std::current_exception();
@@ -1077,6 +1192,9 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
 
     num_active_backups += getNumActiveBackupsChange(status) - getNumActiveBackupsChange(old_status);
     num_active_restores += getNumActiveRestoresChange(status) - getNumActiveRestoresChange(old_status);
+
+    if (status != old_status)
+        status_changed.notify_all();
 }
 
 
@@ -1090,7 +1208,7 @@ void BackupsWorker::setNumFilesAndSize(const OperationID & id, size_t num_files,
     if (it == infos.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup ID {}", id);
 
-    auto & info = it->second;
+    auto & info = it->second.info;
     info.num_files = num_files;
     info.total_size = total_size;
     info.num_entries = num_entries;
@@ -1101,21 +1219,103 @@ void BackupsWorker::setNumFilesAndSize(const OperationID & id, size_t num_files,
 }
 
 
-void BackupsWorker::wait(const OperationID & id, bool rethrow_exception)
+void BackupsWorker::maybeSleepForTesting() const
+{
+    if (test_inject_sleep)
+        sleepForSeconds(1);
+}
+
+
+void BackupsWorker::wait(const OperationID & backup_or_restore_id, bool rethrow_exception)
 {
     std::unique_lock lock{infos_mutex};
     status_changed.wait(lock, [&]
     {
-        auto it = infos.find(id);
+        auto it = infos.find(backup_or_restore_id);
         if (it == infos.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup ID {}", id);
-        const auto & info = it->second;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup ID {}", backup_or_restore_id);
+        const auto & info = it->second.info;
         auto current_status = info.status;
-        if (rethrow_exception && isErrorStatus(current_status))
+        if (rethrow_exception && isFailedOrCancelled(current_status))
             std::rethrow_exception(info.exception);
-        return isFinalStatus(current_status);
+        if (isFinalStatus(current_status))
+            return true;
+        LOG_INFO(log, "Waiting {} {}", isBackupStatus(info.status) ? "backup" : "restore", info.name);
+        return false;
     });
 }
+
+void BackupsWorker::waitAll()
+{
+    std::vector<OperationID> current_operations;
+    {
+        std::lock_guard lock{infos_mutex};
+        for (const auto & [id, extended_info] : infos)
+            if (!isFinalStatus(extended_info.info.status))
+                current_operations.push_back(id);
+    }
+
+    if (current_operations.empty())
+        return;
+
+    LOG_INFO(log, "Waiting for running backups and restores to finish");
+
+    for (const auto & id : current_operations)
+        wait(id, /* rethrow_exception= */ false);
+
+    LOG_INFO(log, "Backups and restores finished");
+}
+
+void BackupsWorker::cancel(const BackupOperationID & backup_or_restore_id, bool wait_)
+{
+    QueryStatusPtr process_list_element;
+    {
+        std::unique_lock lock{infos_mutex};
+        auto it = infos.find(backup_or_restore_id);
+        if (it == infos.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup ID {}", backup_or_restore_id);
+
+        const auto & extended_info = it->second;
+        const auto & info = extended_info.info;
+        if (isFinalStatus(info.status) || !extended_info.process_list_element)
+            return;
+
+        LOG_INFO(log, "Cancelling {} {}", isBackupStatus(info.status) ? "backup" : "restore", info.name);
+        process_list_element = extended_info.process_list_element;
+    }
+
+    process_list.sendCancelToQuery(process_list_element);
+
+    if (wait_)
+        wait(backup_or_restore_id, /* rethrow_exception= */ false);
+}
+
+
+void BackupsWorker::cancelAll(bool wait_)
+{
+    std::vector<OperationID> current_operations;
+    {
+        std::lock_guard lock{infos_mutex};
+        for (const auto & [id, extended_info] : infos)
+            if (!isFinalStatus(extended_info.info.status))
+                current_operations.push_back(id);
+    }
+
+    if (current_operations.empty())
+        return;
+
+    LOG_INFO(log, "Cancelling running backups and restores");
+
+    for (const auto & id : current_operations)
+        cancel(id, /* wait= */ false);
+
+    if (wait_)
+        for (const auto & id : current_operations)
+            wait(id, /* rethrow_exception= */ false);
+
+    LOG_INFO(log, "Backups and restores finished or stopped");
+}
+
 
 BackupOperationInfo BackupsWorker::getInfo(const OperationID & id) const
 {
@@ -1123,15 +1323,16 @@ BackupOperationInfo BackupsWorker::getInfo(const OperationID & id) const
     auto it = infos.find(id);
     if (it == infos.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup ID {}", id);
-    return it->second;
+    return it->second.info;
 }
 
 std::vector<BackupOperationInfo> BackupsWorker::getAllInfos() const
 {
     std::vector<BackupOperationInfo> res_infos;
     std::lock_guard lock{infos_mutex};
-    for (const auto & info : infos | boost::adaptors::map_values)
+    for (const auto & extended_info : infos | boost::adaptors::map_values)
     {
+        const auto & info = extended_info.info;
         if (!info.internal)
             res_infos.push_back(info);
     }
@@ -1140,14 +1341,11 @@ std::vector<BackupOperationInfo> BackupsWorker::getAllInfos() const
 
 void BackupsWorker::shutdown()
 {
-    bool has_active_backups_and_restores = (num_active_backups || num_active_restores);
-    if (has_active_backups_and_restores)
-        LOG_INFO(log, "Waiting for {} backups and {} restores to be finished", num_active_backups, num_active_restores);
+    /// Cancel running backups and restores.
+    cancelAll(/* wait= */ true);
 
+    /// Wait for our thread pools (it must be done before destroying them).
     thread_pools->wait();
-
-    if (has_active_backups_and_restores)
-        LOG_INFO(log, "All backup and restore tasks have finished");
 }
 
 }

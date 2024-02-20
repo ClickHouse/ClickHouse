@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexSet.h>
 
+#include <DataTypes/IDataType.h>
+
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -13,7 +15,6 @@
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
-#include "DataTypes/IDataType.h"
 
 namespace DB
 {

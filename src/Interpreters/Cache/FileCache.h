@@ -17,6 +17,7 @@
 #include <Interpreters/Cache/QueryLimit.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
+#include <Interpreters/Cache/UserInfo.h>
 #include <filesystem>
 
 
@@ -34,12 +35,29 @@ struct FileCacheReserveStat
 
         size_t non_releasable_size = 0;
         size_t non_releasable_count = 0;
+
+        Stat & operator +=(const Stat & other)
+        {
+            releasable_size += other.releasable_size;
+            releasable_count += other.releasable_count;
+            non_releasable_size += other.non_releasable_size;
+            non_releasable_count += other.non_releasable_count;
+            return *this;
+        }
     };
 
     Stat stat;
     std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
 
     void update(size_t size, FileSegmentKind kind, bool releasable);
+
+    FileCacheReserveStat & operator +=(const FileCacheReserveStat & other)
+    {
+        stat += other.stat;
+        for (const auto & [name, stat_] : other.stat_by_kind)
+            stat_by_kind[name] += stat_;
+        return *this;
+    }
 };
 
 /// Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
@@ -51,6 +69,9 @@ public:
     using QueryLimit = DB::FileCacheQueryLimit;
     using Priority = IFileCachePriority;
     using PriorityEntry = IFileCachePriority::Entry;
+    using QueryContextHolder = FileCacheQueryLimit::QueryContextHolder;
+    using UserInfo = FileCacheUserInfo;
+    using UserID = UserInfo::UserID;
 
     FileCache(const std::string & cache_name, const FileCacheSettings & settings);
 
@@ -62,9 +83,13 @@ public:
 
     static Key createKeyForPath(const String & path);
 
-    String getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const;
+    static const UserInfo & getCommonUser();
 
-    String getPathInLocalCache(const Key & key) const;
+    static const UserInfo & getInternalUser();
+
+    String getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const UserInfo & user) const;
+
+    String getKeyPath(const Key & key, const UserInfo & user) const;
 
     /**
      * Given an `offset` and `size` representing [offset, offset + size) bytes interval,
@@ -83,7 +108,8 @@ public:
         size_t size,
         size_t file_size,
         const CreateFileSegmentSettings & settings,
-        size_t file_segments_limit = 0);
+        size_t file_segments_limit,
+        const UserInfo & user);
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
@@ -94,24 +120,34 @@ public:
      * with the destruction of the holder, while in getOrSet() EMPTY file segments can eventually change
      * it's state (and become DOWNLOADED).
      */
-    FileSegmentsHolderPtr get(const Key & key, size_t offset, size_t size, size_t file_segments_limit);
+    FileSegmentsHolderPtr get(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        size_t file_segments_limit,
+        const UserID & user_id);
 
-    FileSegmentsHolderPtr set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
+    FileSegmentsHolderPtr set(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        const CreateFileSegmentSettings & settings,
+        const UserInfo & user);
 
     /// Remove file segment by `key` and `offset`. Throws if file segment does not exist.
-    void removeFileSegment(const Key & key, size_t offset);
+    void removeFileSegment(const Key & key, size_t offset, const UserID & user_id);
 
     /// Remove files by `key`. Throws if key does not exist.
-    void removeKey(const Key & key);
+    void removeKey(const Key & key, const UserID & user_id);
 
     /// Remove files by `key`.
-    void removeKeyIfExists(const Key & key);
+    void removeKeyIfExists(const Key & key, const UserID & user_id);
 
     /// Removes files by `path`.
-    void removePathIfExists(const String & path);
+    void removePathIfExists(const String & path, const UserID & user_id);
 
     /// Remove files by `key`.
-    void removeAllReleasable();
+    void removeAllReleasable(const UserID & user_id);
 
     std::vector<String> tryGetCachePaths(const Key & key);
 
@@ -121,50 +157,43 @@ public:
 
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
-    bool tryReserve(FileSegment & file_segment, size_t size, FileCacheReserveStat & stat);
+    bool tryReserve(
+        FileSegment & file_segment,
+        size_t size,
+        FileCacheReserveStat & stat,
+        const UserInfo & user);
 
-    std::vector<FileSegment::Info> getFileSegmentInfos();
+    std::vector<FileSegment::Info> getFileSegmentInfos(const UserID & user_id);
 
-    std::vector<FileSegment::Info> getFileSegmentInfos(const Key & key);
+    std::vector<FileSegment::Info> getFileSegmentInfos(const Key & key, const UserID & user_id);
 
-    std::vector<FileSegment::Info> dumpQueue();
+
+    IFileCachePriority::PriorityDumpPtr dumpQueue();
 
     void deactivateBackgroundOperations();
-
-    /// For per query cache limit.
-    struct QueryContextHolder : private boost::noncopyable
-    {
-        QueryContextHolder(const String & query_id_, FileCache * cache_, QueryLimit::QueryContextPtr context_);
-
-        QueryContextHolder() = default;
-
-        ~QueryContextHolder();
-
-        String query_id;
-        FileCache * cache = nullptr;
-        QueryLimit::QueryContextPtr context;
-    };
-    using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
-    QueryContextHolderPtr getQueryContextHolder(const String & query_id, const ReadSettings & settings);
 
     CacheGuard::Lock lockCache() const;
 
     std::vector<FileSegment::Info> sync();
 
+    using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
+    QueryContextHolderPtr getQueryContextHolder(const String & query_id, const ReadSettings & settings);
+
     using IterateFunc = std::function<void(const FileSegmentInfo &)>;
-    void iterate(IterateFunc && func);
+    void iterate(IterateFunc && func, const UserID & user_id);
 
     void applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings);
 
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
-    const size_t max_file_segment_size;
+    std::atomic<size_t> max_file_segment_size;
     const size_t bypass_cache_threshold;
     const size_t boundary_alignment;
     size_t load_metadata_threads;
+    const bool write_cache_per_user_directory;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::exception_ptr init_exception;
     std::atomic<bool> is_initialized = false;
