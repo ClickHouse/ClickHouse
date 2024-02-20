@@ -182,6 +182,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.values.allow_data_after_semicolon = settings.input_format_values_allow_data_after_semicolon;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
+    format_settings.values.escape_quote_with_quote = settings.output_format_values_escape_quote_with_quote;
     format_settings.with_names_use_header = settings.input_format_with_names_use_header;
     format_settings.with_types_use_header = settings.input_format_with_types_use_header;
     format_settings.write_statistics = settings.output_format_write_statistics;
@@ -229,6 +230,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.try_infer_integers = settings.input_format_try_infer_integers;
     format_settings.try_infer_dates = settings.input_format_try_infer_dates;
     format_settings.try_infer_datetimes = settings.input_format_try_infer_datetimes;
+    format_settings.try_infer_exponent_floats = settings.input_format_try_infer_exponent_floats;
     format_settings.markdown.escape_special_characters = settings.output_format_markdown_escape_special_characters;
     format_settings.bson.output_string_as_string = settings.output_format_bson_string_as_string;
     format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_bson_skip_fields_with_unsupported_types_in_schema_inference;

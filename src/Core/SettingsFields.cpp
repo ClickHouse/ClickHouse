@@ -1,8 +1,7 @@
 #include <Core/SettingsFields.h>
-
 #include <Core/Field.h>
+#include <Core/AccurateComparison.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
@@ -13,6 +12,7 @@
 
 #include <cmath>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int CANNOT_PARSE_BOOL;
     extern const int CANNOT_PARSE_NUMBER;
+    extern const int CANNOT_CONVERT_TYPE;
 }
 
 
@@ -48,9 +49,51 @@ namespace
     T fieldToNumber(const Field & f)
     {
         if (f.getType() == Field::Types::String)
+        {
             return stringToNumber<T>(f.get<const String &>());
+        }
+        else if (f.getType() == Field::Types::UInt64)
+        {
+            T result;
+            if (!accurate::convertNumeric(f.get<UInt64>(), result))
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+            return result;
+        }
+        else if (f.getType() == Field::Types::Int64)
+        {
+            T result;
+            if (!accurate::convertNumeric(f.get<Int64>(), result))
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+            return result;
+        }
+        else if (f.getType() == Field::Types::Bool)
+        {
+            return T(f.get<bool>());
+        }
+        else if (f.getType() == Field::Types::Float64)
+        {
+            Float64 x = f.get<Float64>();
+            if constexpr (std::is_floating_point_v<T>)
+            {
+                return T(x);
+            }
+            else
+            {
+                if (!isFinite(x))
+                {
+                    /// Conversion of infinite values to integer is undefined.
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert infinite value to integer type");
+                }
+                else if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
+                {
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
+                }
+                else
+                    return T(x);
+            }
+        }
         else
-            return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Invalid value {} of the setting, which needs {}", f, demangle(typeid(T).name()));
     }
 
     Map stringToMap(const String & str)
@@ -174,7 +217,7 @@ namespace
         if (f.getType() == Field::Types::String)
             return stringToMaxThreads(f.get<const String &>());
         else
-            return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), f);
+            return fieldToNumber<UInt64>(f);
     }
 }
 
