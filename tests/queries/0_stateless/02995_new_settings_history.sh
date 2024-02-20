@@ -16,7 +16,8 @@ $CLICKHOUSE_LOCAL --query "
     ),
     new_settings AS
     (
-        select name, default from system.settings order by name
+        -- Ignore settings that depend on the machine config (max_threads and similar)
+        SELECT name, default FROM system.settings WHERE default NOT LIKE '%auto(%'
     )
     SELECT * FROM
     (
