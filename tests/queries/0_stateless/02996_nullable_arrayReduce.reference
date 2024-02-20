@@ -11,4 +11,5 @@ SELECT arrayReduce('any_respect_nulls', [NULL, 10]::Array(Nullable(UInt8))) as a
 \N	Nullable(UInt8)
 SELECT arrayReduce('any_respect_nulls', [10, NULL]::Array(Nullable(UInt8))) as a, toTypeName(a);
 10	Nullable(UInt8)
-SELECT arrayReduce('any', toNullable(3)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayReduce('median', [toLowCardinality(toNullable(8))]) as t, toTypeName(t);
+8	Nullable(Float64)
