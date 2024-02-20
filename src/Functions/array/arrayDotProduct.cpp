@@ -49,14 +49,13 @@ public:
         if (!valid)
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Arguments of function {} "
-                "only support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
-                std::string(NameArrayDotProduct::name));
+                "Arguments of function {} only support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                NameArrayDotProduct::name);
         return result_type;
     }
 
     template <typename ResultType, typename T, typename U>
-    static inline NO_SANITIZE_UNDEFINED ResultType apply(
+    static NO_SANITIZE_UNDEFINED ResultType apply(
         const T * left,
         const U * right,
         size_t size)
