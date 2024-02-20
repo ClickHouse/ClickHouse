@@ -74,15 +74,15 @@ MergeTreePartition verifyCompatibilityAndCreatePartition(
 
     MergeTreePartition partition;
 
+    if (!destination_metadata->hasPartitionKey())
+    {
+        return partition;
+    }
+
     // If destination partition expression columns are a subset of source partition expression columns,
     // there is no need to check for monotonicity.
     if (isExpressionDirectSubsetOf(source_partition_key_ast, destination_partition_key_ast))
     {
-        if (!destination_metadata->hasPartitionKey())
-        {
-            return partition;
-        }
-
         const auto src_global_min_max_indexes = MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(source_parts, destination_storage);
 
         assert(!src_global_min_max_indexes.hyperrectangle.empty());

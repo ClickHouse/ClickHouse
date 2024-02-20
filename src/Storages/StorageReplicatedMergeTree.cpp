@@ -8454,7 +8454,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         waitForLogEntryToBeProcessedIfNecessary(entry_delete, query_context);
 
         /// Cleaning possibly stored information about parts from /quorum/last_part node in ZooKeeper.
-        cleanLastPartNode(destination_partition_id);
+        cleanLastPartNode(source_partition_id);
 
         return;
     }
