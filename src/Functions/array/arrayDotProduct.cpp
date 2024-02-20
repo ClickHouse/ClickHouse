@@ -9,6 +9,9 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 
+#if USE_MULTITARGET_CODE
+#include <immintrin.h>
+#endif
 
 namespace DB
 {
@@ -234,25 +237,80 @@ public:
         }
     };
 
+#if USE_MULTITARGET_CODE
+    template <typename ResultType>
+    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
+        const ResultType * __restrict data_x,
+        const ResultType * __restrict data_y,
+        size_t i_max,
+        size_t & i,
+        State<ResultType> & state)
+    {
+        __m512 sums;
+        if constexpr (std::is_same_v<ResultType, Float32>)
+            sums = _mm512_setzero_ps();
+        else
+            sums = _mm512_setzero_pd();
+
+        const size_t n = (std::is_same_v<ResultType, Float32>) ? 16 : 8;
+
+        for (; i + n < i_max; i += n)
+        {
+            if constexpr (std::is_same_v<ResultType, Float32>)
+            {
+                __m512 x = _mm512_loadu_ps(data_x + i);
+                __m512 y = _mm512_loadu_ps(data_y + i);
+                sums = _mm512_fmadd_ps(x, y, sums);
+            }
+            else
+            {
+                __m512 x = _mm512_loadu_pd(data_x + i);
+                __m512 y = _mm512_loadu_pd(data_y + i);
+                sums = _mm512_fmadd_pd(x, y, sums);
+            }
+        }
+
+        if constexpr (std::is_same_v<ResultType, Float32>)
+            state.sum = _mm512_reduce_add_ps(sums);
+        else
+            state.sum = _mm512_reduce_add_pd(sums);
+    }
+#endif
+
     template <typename ResultType, typename LeftType, typename RightType>
     static NO_SANITIZE_UNDEFINED ResultType apply(
         const LeftType * left,
         const RightType * right,
         size_t size)
     {
+        State<ResultType> state;
+        size_t i = 0;
+
+        /// SIMD optimization: process multiple elements in both input arrays at once.
+        /// To avoid combinatorial explosion of SIMD kernels, focus on
+        /// - the two most common input/output types (Float32 x Float32) --> Float32 and (Float64 x Float64) --> Float64 instead of 10 x
+        ///   10 input types x 8 output types,
+        /// - the most powerful SIMD instruction set (AVX-512F).
+#if USE_MULTITARGET_CODE
+        if constexpr ((std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>)
+                        && std::is_same_v<ResultType, LeftType> && std::is_same_v<LeftType, RightType>)
+        {
+            if (isArchSupported(TargetArch::AVX512F))
+                accumulateCombine(left, right, size, i, state);
+        }
+#else
         /// Process chunks in vectorized manner
         static constexpr size_t VEC_SIZE = 4;
         State<ResultType> states[VEC_SIZE];
-        size_t i = 0;
         for (; i + VEC_SIZE < size; i += VEC_SIZE)
         {
             for (size_t j = 0; j < VEC_SIZE; ++j)
                 states[j].accumulate(static_cast<ResultType>(left[i + j]), static_cast<ResultType>(right[i + j]));
         }
 
-        State<ResultType> state;
         for (const auto & other_state : states)
             state.combine(other_state);
+#endif
 
         /// Process the tail
         for (; i < size; ++i)
