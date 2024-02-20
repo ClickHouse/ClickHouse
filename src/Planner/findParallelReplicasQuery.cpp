@@ -126,8 +126,10 @@ public:
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
             auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
 
-            auto storage_dummy
-                = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(), ColumnsDescription(storage_snapshot->getColumns(get_column_options)));
+            auto storage_dummy = std::make_shared<StorageDummy>(
+                storage_snapshot->storage.getStorageID(),
+                ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
+                &storage_snapshot->storage);
 
             auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
 

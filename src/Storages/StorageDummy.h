@@ -8,10 +8,12 @@
 namespace DB
 {
 
+using StorageRawPtr = const IStorage *;
+
 class StorageDummy final : public IStorage
 {
 public:
-    StorageDummy(const StorageID & table_id_, const ColumnsDescription & columns_, ColumnsDescription object_columns_ = {});
+    StorageDummy(const StorageID & table_id_, const ColumnsDescription & columns_, StorageRawPtr orignal_storage = nullptr);
 
     std::string getName() const override { return "StorageDummy"; }
 
@@ -20,7 +22,7 @@ public:
     bool supportsPrewhere() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
-    bool canMoveConditionsToPrewhere() const override { return false; }
+    bool canMoveConditionsToPrewhere() const override { return original_storage ? original_storage->canMoveConditionsToPrewhere() : false; }
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
     {
@@ -42,16 +44,25 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
+
+    StorageRawPtr getOriginalStorage() const { return original_storage; }
+
 private:
     const ColumnsDescription object_columns;
+
+    /// The original storage which is replaced during planning. See collectFiltersForAnalysis.
+    StorageRawPtr original_storage;
 };
 
 class ReadFromDummy final : public SourceStepWithFilter
 {
 public:
-    explicit ReadFromDummy(const StorageDummy & storage_,
-        StorageSnapshotPtr storage_snapshot_,
-        Names column_names_);
+    explicit ReadFromDummy(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        const StorageDummy & storage_);
 
     const StorageDummy & getStorage() const
     {
@@ -74,7 +85,6 @@ public:
 
 private:
     const StorageDummy & storage;
-    StorageSnapshotPtr storage_snapshot;
     Names column_names;
 };
 

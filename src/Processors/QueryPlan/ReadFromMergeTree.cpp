@@ -260,12 +260,13 @@ void ReadFromMergeTree::AnalysisResult::checkLimits(const Settings & settings, c
 ReadFromMergeTree::ReadFromMergeTree(
     MergeTreeData::DataPartsVector parts_,
     std::vector<AlterConversionsPtr> alter_conversions_,
+    const Names & column_names_,
     Names real_column_names_,
     Names virt_column_names_,
     const MergeTreeData & data_,
     const SelectQueryInfo & query_info_,
-    StorageSnapshotPtr storage_snapshot_,
-    ContextPtr context_,
+    const StorageSnapshotPtr & storage_snapshot_,
+    const ContextPtr & context_,
     size_t max_block_size_,
     size_t num_streams_,
     bool sample_factor_column_queried_,
@@ -277,18 +278,15 @@ ReadFromMergeTree::ReadFromMergeTree(
         storage_snapshot_->getSampleBlockForColumns(real_column_names_),
         query_info_.prewhere_info,
         data_.getPartitionValueType(),
-        virt_column_names_)}, query_info_.prewhere_info)
+        virt_column_names_)}, column_names_, query_info_, storage_snapshot_, context_)
     , reader_settings(getMergeTreeReaderSettings(context_, query_info_))
     , prepared_parts(std::move(parts_))
     , alter_conversions_for_parts(std::move(alter_conversions_))
     , real_column_names(std::move(real_column_names_))
     , virt_column_names(std::move(virt_column_names_))
     , data(data_)
-    , query_info(query_info_)
     , actions_settings(ExpressionActionsSettings::fromContext(context_))
-    , storage_snapshot(std::move(storage_snapshot_))
     , metadata_for_reading(storage_snapshot->getMetadataForQuery())
-    , context(std::move(context_))
     , block_size{
         .max_block_size_rows = max_block_size_,
         .preferred_block_size_bytes = context->getSettingsRef().preferred_block_size_bytes,
@@ -1464,8 +1462,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     MergeTreeData::DataPartsVector parts,
     std::vector<AlterConversionsPtr> alter_conversions,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
-    ContextPtr context,
+    const SelectQueryInfo & query_info_,
+    ContextPtr context_,
     size_t num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
     const MergeTreeData & data,
@@ -1478,8 +1476,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
         std::move(alter_conversions),
         metadata_snapshot,
-        query_info,
-        context,
+        query_info_,
+        context_,
         num_streams,
         max_block_numbers_to_read,
         data,
@@ -1493,8 +1491,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     MergeTreeData::DataPartsVector parts,
     std::vector<AlterConversionsPtr> alter_conversions,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
-    ContextPtr context,
+    const SelectQueryInfo & query_info_,
+    ContextPtr context_,
     size_t num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
     const MergeTreeData & data,
@@ -1504,7 +1502,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     std::optional<Indexes> & indexes)
 {
     AnalysisResult result;
-    const auto & settings = context->getSettingsRef();
+    const auto & settings = context_->getSettingsRef();
 
     size_t total_parts = parts.size();
 
@@ -1522,7 +1520,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     const Names & primary_key_column_names = primary_key.column_names;
 
     if (!indexes)
-        buildIndexes(indexes, query_info.filter_actions_dag, data, parts, context, query_info, metadata_snapshot);
+        buildIndexes(indexes, query_info_.filter_actions_dag, data, parts, context_, query_info_, metadata_snapshot);
 
     if (indexes->part_values && indexes->part_values->empty())
         return std::make_shared<AnalysisResult>(std::move(result));
@@ -1554,19 +1552,19 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
             indexes->part_values,
             metadata_snapshot,
             data,
-            context,
+            context_,
             max_block_numbers_to_read.get(),
             log,
             result.index_stats);
 
         result.sampling = MergeTreeDataSelectExecutor::getSampling(
-            query_info,
+            query_info_,
             metadata_snapshot->getColumns().getAllPhysical(),
             parts,
             indexes->key_condition,
             data,
             metadata_snapshot,
-            context,
+            context_,
             sample_factor_column_queried,
             log);
 
@@ -1577,12 +1575,12 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
             total_marks_pk += part->index_granularity.getMarksCountWithoutFinal();
         parts_before_pk = parts.size();
 
-        auto reader_settings = getMergeTreeReaderSettings(context, query_info);
+        auto reader_settings = getMergeTreeReaderSettings(context_, query_info_);
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
             std::move(parts),
             std::move(alter_conversions),
             metadata_snapshot,
-            context,
+            context_,
             indexes->key_condition,
             indexes->part_offset_condition,
             indexes->skip_indexes,
@@ -1618,8 +1616,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     result.total_marks_pk = total_marks_pk;
     result.selected_rows = sum_rows;
 
-    if (query_info.input_order_info)
-        result.read_type = (query_info.input_order_info->direction > 0)
+    if (query_info_.input_order_info)
+        result.read_type = (query_info_.input_order_info->direction > 0)
             ? ReadType::InOrder
             : ReadType::InReverseOrder;
 
@@ -1766,11 +1764,6 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
         : selectRangesToRead(prepared_parts, alter_conversions_for_parts);
 
     return *result_ptr;
-}
-
-bool ReadFromMergeTree::isQueryWithFinal() const
-{
-    return query_info.isFinal();
 }
 
 bool ReadFromMergeTree::isQueryWithSampling() const

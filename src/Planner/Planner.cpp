@@ -45,6 +45,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageMerge.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/ColumnNode.h>
@@ -135,6 +136,7 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
   *
   * StorageDistributed skip unused shards optimization relies on this.
   * Parallel replicas estimation relies on this too.
+  * StorageMerge common header calculation relies on this too.
   *
   * To collect filters that will be applied to specific table in case we have JOINs requires
   * to run query plan optimization pipeline.
@@ -162,7 +164,7 @@ void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const Planne
             continue;
 
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-        if (typeid_cast<const StorageDistributed *>(storage.get())
+        if (typeid_cast<const StorageDistributed *>(storage.get()) || typeid_cast<const StorageMerge *>(storage.get())
             || (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage)))
         {
             collect_filters = true;
@@ -210,6 +212,7 @@ void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const Planne
         auto filter_actions = ActionsDAG::buildFilterActionsDAG(read_from_dummy->getFilterNodes().nodes);
         auto & table_expression_data = dummy_storage_to_table_expression_data.at(&read_from_dummy->getStorage());
         table_expression_data->setFilterActions(std::move(filter_actions));
+        table_expression_data->setPrewhereInfo(read_from_dummy->getPrewhereInfo());
     }
 }
 

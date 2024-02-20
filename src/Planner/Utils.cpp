@@ -410,8 +410,10 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr &
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
             auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
 
-            storage_dummy
-                = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(), ColumnsDescription(storage_snapshot->getColumns(get_column_options)));
+            storage_dummy = std::make_shared<StorageDummy>(
+                storage_snapshot->storage.getStorageID(),
+                ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
+                &storage_snapshot->storage);
         }
         else if (subquery_node || union_node)
         {
@@ -429,7 +431,9 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr &
                     storage_dummy_columns.emplace_back(projection_column);
             }
 
-            storage_dummy = std::make_shared<StorageDummy>(StorageID{"dummy", "subquery_" + std::to_string(subquery_index)}, ColumnsDescription::fromNamesAndTypes(storage_dummy_columns));
+            storage_dummy = std::make_shared<StorageDummy>(
+                StorageID{"dummy", "subquery_" + std::to_string(subquery_index)},
+                ColumnsDescription::fromNamesAndTypes(storage_dummy_columns));
             ++subquery_index;
         }
 

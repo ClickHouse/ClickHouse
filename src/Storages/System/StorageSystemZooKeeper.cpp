@@ -32,7 +32,6 @@
 #include <boost/algorithm/string.hpp>
 #include <algorithm>
 #include <deque>
-#include <climits>
 
 
 namespace DB
@@ -180,7 +179,13 @@ using Paths = std::deque<std::pair<String, ZkPathType>>;
 class ReadFromSystemZooKeeper final : public SourceStepWithFilter
 {
 public:
-    ReadFromSystemZooKeeper(const Block & header, SelectQueryInfo & query_info_, UInt64 max_block_size_, ContextPtr context_);
+    ReadFromSystemZooKeeper(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        const Block & header,
+        UInt64 max_block_size_);
 
     String getName() const override { return "ReadFromSystemZooKeeper"; }
 
@@ -191,7 +196,6 @@ public:
 private:
     std::shared_ptr<const StorageLimitsList> storage_limits;
     const UInt64 max_block_size;
-    ContextPtr context;
     Paths paths;
 };
 
@@ -235,7 +239,7 @@ StorageSystemZooKeeper::StorageSystemZooKeeper(const StorageID & table_id_)
 
 void StorageSystemZooKeeper::read(
     QueryPlan & query_plan,
-    const Names & /*column_names*/,
+    const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
@@ -244,7 +248,13 @@ void StorageSystemZooKeeper::read(
     size_t /*num_streams*/)
 {
     auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtuals());
-    auto read_step = std::make_unique<ReadFromSystemZooKeeper>(header, query_info, max_block_size, context);
+    auto read_step = std::make_unique<ReadFromSystemZooKeeper>(
+        column_names,
+        query_info,
+        storage_snapshot,
+        context,
+        header,
+        max_block_size);
     query_plan.addStep(std::move(read_step));
 }
 
@@ -646,11 +656,21 @@ Chunk SystemZooKeeperSource::generate()
     return Chunk(std::move(res_columns), row_count);
 }
 
-ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(const Block & header, SelectQueryInfo & query_info, UInt64 max_block_size_, ContextPtr context_)
-    : SourceStepWithFilter({.header = header})
+ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(
+    const Names & column_names_,
+    const SelectQueryInfo & query_info_,
+    const StorageSnapshotPtr & storage_snapshot_,
+    const ContextPtr & context_,
+    const Block & header,
+    UInt64 max_block_size_)
+    : SourceStepWithFilter(
+        {.header = header},
+        column_names_,
+        query_info_,
+        storage_snapshot_,
+        context_)
     , storage_limits(query_info.storage_limits)
     , max_block_size(max_block_size_)
-    , context(std::move(context_))
 {
 }
 

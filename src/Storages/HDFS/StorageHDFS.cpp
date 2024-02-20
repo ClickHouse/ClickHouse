@@ -918,18 +918,25 @@ public:
     void applyFilters() override;
 
     ReadFromHDFS(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
         Block sample_block,
         ReadFromFormatInfo info_,
         bool need_only_count_,
         std::shared_ptr<StorageHDFS> storage_,
-        ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        : SourceStepWithFilter(
+            DataStream{.header = std::move(sample_block)},
+            column_names_,
+            query_info_,
+            storage_snapshot_,
+            context_)
         , info(std::move(info_))
         , need_only_count(need_only_count_)
         , storage(std::move(storage_))
-        , context(std::move(context_))
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
     {
@@ -940,7 +947,6 @@ private:
     const bool need_only_count;
     std::shared_ptr<StorageHDFS> storage;
 
-    ContextPtr context;
     size_t max_block_size;
     size_t num_streams;
 
@@ -976,11 +982,14 @@ void StorageHDFS::read(
     auto this_ptr = std::static_pointer_cast<StorageHDFS>(shared_from_this());
 
     auto reading = std::make_unique<ReadFromHDFS>(
+        column_names,
+        query_info,
+        storage_snapshot,
+        context_,
         read_from_format_info.source_header,
         std::move(read_from_format_info),
         need_only_count,
         std::move(this_ptr),
-        context_,
         max_block_size,
         num_streams);
 

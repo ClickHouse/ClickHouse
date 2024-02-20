@@ -321,21 +321,24 @@ void shrinkRanges(Ranges & ranges, size_t size)
 
 ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     const Names & column_names_,
-    StoragePtr storage_,
+    const SelectQueryInfo & query_info_,
     const StorageSnapshotPtr & storage_snapshot_,
-    SelectQueryInfo & query_info,
-    ContextPtr context_,
+    const ContextPtr & context_,
+    StoragePtr storage_,
     size_t max_block_size_,
     size_t num_streams_)
-    : SourceStepWithFilter{DataStream{.header = storage_snapshot_->getSampleBlockForColumns(column_names_)}}
+    : SourceStepWithFilter(
+        DataStream{.header = storage_snapshot_->getSampleBlockForColumns(column_names_)},
+        column_names_,
+        query_info_,
+        storage_snapshot_,
+        context_)
     , column_names{column_names_}
     , storage{std::move(storage_)}
-    , storage_snapshot{storage_snapshot_}
-    , context{std::move(context_)}
     , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context).expression}
     , max_block_size{max_block_size_}
     , num_streams{num_streams_}
-    , limit_length_and_offset(InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery&>(), context))
+    , limit_length_and_offset(InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context))
     , should_pushdown_limit(shouldPushdownLimit(query_info, limit_length_and_offset.first))
     , limit(query_info.limit)
     , storage_limits(query_info.storage_limits)

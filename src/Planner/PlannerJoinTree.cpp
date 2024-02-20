@@ -624,6 +624,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         auto table_expression_query_info = select_query_info;
         table_expression_query_info.table_expression = table_expression;
         table_expression_query_info.filter_actions_dag = table_expression_data.getFilterActions();
+        table_expression_query_info.prewhere_info = table_expression_data.getPrewhereInfo();
         table_expression_query_info.analyzer_can_use_parallel_replicas_on_follower = table_node == planner_context->getGlobalPlannerContext()->parallel_replicas_table;
 
         size_t max_streams = settings.max_threads;
@@ -763,15 +764,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                 }
 
+                PrewhereInfoPtr prewhere_info;
                 const auto & prewhere_actions = table_expression_data.getPrewhereFilterActions();
 
                 if (prewhere_actions)
                 {
-                    table_expression_query_info.prewhere_info = std::make_shared<PrewhereInfo>();
-                    table_expression_query_info.prewhere_info->prewhere_actions = prewhere_actions;
-                    table_expression_query_info.prewhere_info->prewhere_column_name = prewhere_actions->getOutputs().at(0)->result_name;
-                    table_expression_query_info.prewhere_info->remove_prewhere_column = true;
-                    table_expression_query_info.prewhere_info->need_filter = true;
+                    prewhere_info = std::make_shared<PrewhereInfo>();
+                    prewhere_info->prewhere_actions = prewhere_actions;
+                    prewhere_info->prewhere_column_name = prewhere_actions->getOutputs().at(0)->result_name;
+                    prewhere_info->remove_prewhere_column = true;
+                    prewhere_info->need_filter = true;
                 }
 
                 updatePrewhereOutputsIfNeeded(table_expression_query_info, table_expression_data.getColumnNames(), storage_snapshot);
@@ -784,32 +786,29 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     if (!filter_info.actions)
                         return;
 
-                    bool is_final = table_expression_query_info.table_expression_modifiers &&
-                        table_expression_query_info.table_expression_modifiers->hasFinal();
-                    bool optimize_move_to_prewhere = settings.optimize_move_to_prewhere && (!is_final || settings.optimize_move_to_prewhere_if_final);
+                    bool is_final = table_expression_query_info.table_expression_modifiers
+                        && table_expression_query_info.table_expression_modifiers->hasFinal();
+                    bool optimize_move_to_prewhere
+                        = settings.optimize_move_to_prewhere && (!is_final || settings.optimize_move_to_prewhere_if_final);
 
                     if (storage->supportsPrewhere() && optimize_move_to_prewhere)
                     {
-                        if (!table_expression_query_info.prewhere_info)
-                            table_expression_query_info.prewhere_info = std::make_shared<PrewhereInfo>();
+                        if (!prewhere_info)
+                            prewhere_info = std::make_shared<PrewhereInfo>();
 
-                        if (!table_expression_query_info.prewhere_info->prewhere_actions)
+                        if (!prewhere_info->prewhere_actions)
                         {
-                            table_expression_query_info.prewhere_info->prewhere_actions = filter_info.actions;
-                            table_expression_query_info.prewhere_info->prewhere_column_name = filter_info.column_name;
-                            table_expression_query_info.prewhere_info->remove_prewhere_column = filter_info.do_remove_column;
-                            table_expression_query_info.prewhere_info->need_filter = true;
+                            prewhere_info->prewhere_actions = filter_info.actions;
+                            prewhere_info->prewhere_column_name = filter_info.column_name;
+                            prewhere_info->remove_prewhere_column = filter_info.do_remove_column;
                         }
                         else if (!table_expression_query_info.prewhere_info->row_level_filter)
                         {
-                            table_expression_query_info.prewhere_info->row_level_filter = filter_info.actions;
-                            table_expression_query_info.prewhere_info->row_level_column_name = filter_info.column_name;
-                            table_expression_query_info.prewhere_info->need_filter = true;
+                            prewhere_info->row_level_filter = filter_info.actions;
+                            prewhere_info->row_level_column_name = filter_info.column_name;
                         }
-                        else
-                        {
-                            where_filters.emplace_back(filter_info, std::move(description));
-                        }
+
+                        prewhere_info->need_filter = true;
                     }
                     else
                     {
@@ -817,7 +816,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                 };
 
-                auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context, used_row_policies);
+                auto row_policy_filter_info
+                    = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context, used_row_policies);
                 add_filter(row_policy_filter_info, "Row-level security filter");
                 if (row_policy_filter_info.actions)
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info.actions);
@@ -826,25 +826,37 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 {
                     if (settings.parallel_replicas_count > 1)
                     {
-                        auto parallel_replicas_custom_key_filter_info = buildCustomKeyFilterIfNeeded(storage, table_expression_query_info, planner_context);
+                        auto parallel_replicas_custom_key_filter_info
+                            = buildCustomKeyFilterIfNeeded(storage, table_expression_query_info, planner_context);
                         add_filter(parallel_replicas_custom_key_filter_info, "Parallel replicas custom key filter");
                     }
-                    else
+                    else if (auto * distributed = typeid_cast<StorageDistributed *>(storage.get());
+                             distributed && query_context->canUseParallelReplicasCustomKey(*distributed->getCluster()))
                     {
-                        if (auto * distributed = typeid_cast<StorageDistributed *>(storage.get());
-                            distributed && query_context->canUseParallelReplicasCustomKey(*distributed->getCluster()))
-                        {
-                            planner_context->getMutableQueryContext()->setSetting("distributed_group_by_no_merge", 2);
-                        }
+                        planner_context->getMutableQueryContext()->setSetting("distributed_group_by_no_merge", 2);
                     }
                 }
 
                 const auto & table_expression_alias = table_expression->getOriginalAlias();
-                auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context);
+                auto additional_filters_info
+                    = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context);
                 add_filter(additional_filters_info, "additional filter");
 
-                from_stage = storage->getQueryProcessingStage(query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
-                storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
+                if (!table_expression_query_info.prewhere_info)
+                    table_expression_query_info.prewhere_info = prewhere_info;
+
+                from_stage = storage->getQueryProcessingStage(
+                    query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
+
+                storage->read(
+                    query_plan,
+                    columns_names,
+                    storage_snapshot,
+                    table_expression_query_info,
+                    query_context,
+                    from_stage,
+                    max_block_size,
+                    max_streams);
 
                 for (const auto & filter_info_and_description : where_filters)
                 {

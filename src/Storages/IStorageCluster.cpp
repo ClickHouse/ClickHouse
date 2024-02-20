@@ -47,20 +47,27 @@ public:
     void applyFilters() override;
 
     ReadFromCluster(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
         Block sample_block,
         std::shared_ptr<IStorageCluster> storage_,
         ASTPtr query_to_send_,
         QueryProcessingStage::Enum processed_stage_,
         ClusterPtr cluster_,
-        LoggerPtr log_,
-        ContextPtr context_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        LoggerPtr log_)
+        : SourceStepWithFilter(
+            DataStream{.header = std::move(sample_block)},
+            column_names_,
+            query_info_,
+            storage_snapshot_,
+            context_)
         , storage(std::move(storage_))
         , query_to_send(std::move(query_to_send_))
         , processed_stage(processed_stage_)
         , cluster(std::move(cluster_))
         , log(log_)
-        , context(std::move(context_))
     {
     }
 
@@ -70,7 +77,6 @@ private:
     QueryProcessingStage::Enum processed_stage;
     ClusterPtr cluster;
     LoggerPtr log;
-    ContextPtr context;
 
     std::optional<RemoteQueryExecutor::Extension> extension;
 
@@ -143,13 +149,16 @@ void IStorageCluster::read(
     auto this_ptr = std::static_pointer_cast<IStorageCluster>(shared_from_this());
 
     auto reading = std::make_unique<ReadFromCluster>(
+        column_names,
+        query_info,
+        storage_snapshot,
+        context,
         sample_block,
         std::move(this_ptr),
         std::move(query_to_send),
         processed_stage,
         cluster,
-        log,
-        context);
+        log);
 
     query_plan.addStep(std::move(reading));
 }

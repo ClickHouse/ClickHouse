@@ -49,10 +49,8 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
-    bool supportsPrewhere() const override { return true; }
+    bool supportsPrewhere() const override { return tableSupportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override;
-
-    bool canMoveConditionsToPrewhere() const override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
@@ -142,14 +140,14 @@ public:
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
 
     ReadFromMerge(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
         Block common_header_,
-        Names all_column_names_,
         size_t max_block_size,
         size_t num_streams,
         StoragePtr storage,
-        StorageSnapshotPtr storage_snapshot,
-        const SelectQueryInfo & query_info_,
-        ContextMutablePtr context_,
         QueryProcessingStage::Enum processed_stage);
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
@@ -160,6 +158,8 @@ public:
     bool requestReadingInOrder(InputOrderInfoPtr order_info_);
 
     void applyFilters() override;
+
+    QueryPlanRawPtrs getChildPlans() override;
 
 private:
     const size_t required_max_block_size;
@@ -174,8 +174,6 @@ private:
     StoragePtr storage_merge;
     StorageSnapshotPtr merge_storage_snapshot;
 
-    SelectQueryInfo query_info;
-    ContextMutablePtr context;
     QueryProcessingStage::Enum common_processed_stage;
 
     InputOrderInfoPtr order_info;
@@ -265,7 +263,6 @@ private:
         const Aliases & aliases,
         const RowPolicyDataOpt & row_policy_data_opt,
         const StorageWithLockAndName & storage_with_lock,
-        ContextMutablePtr modified_context,
         bool concat_streams = false) const;
 
     static void convertAndFilterSourceStream(
@@ -274,7 +271,7 @@ private:
         const StorageSnapshotPtr & snapshot,
         const Aliases & aliases,
         const RowPolicyDataOpt & row_policy_data_opt,
-        ContextMutablePtr context,
+        ContextPtr context,
         QueryPipelineBuilder & builder,
         QueryProcessingStage::Enum processed_stage);
 

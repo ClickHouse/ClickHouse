@@ -2,6 +2,7 @@
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {
@@ -64,6 +65,8 @@ public:
 
 using DataStreams = std::vector<DataStream>;
 
+using QueryPlanRawPtrs = std::list<QueryPlan *>;
+
 /// Single step of query plan.
 class IQueryPlanStep
 {
@@ -108,6 +111,9 @@ public:
 
     /// Get description of processors added in current step. Should be called after updatePipeline().
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
+
+    /// Get child plans contained inside some steps (e.g ReadFromMerge) so that they are visible when doing EXPLAIN.
+    virtual QueryPlanRawPtrs getChildPlans() { return {}; }
 
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);

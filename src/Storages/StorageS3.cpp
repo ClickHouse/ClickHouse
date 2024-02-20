@@ -146,39 +146,35 @@ public:
     void applyFilters() override;
 
     ReadFromStorageS3Step(
-        Block sample_block,
         const Names & column_names_,
-        StorageSnapshotPtr storage_snapshot_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        Block sample_block,
         StorageS3 & storage_,
         ReadFromFormatInfo read_from_format_info_,
         bool need_only_count_,
-        ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
         , column_names(column_names_)
-        , storage_snapshot(std::move(storage_snapshot_))
         , storage(storage_)
         , read_from_format_info(std::move(read_from_format_info_))
         , need_only_count(need_only_count_)
-        , local_context(std::move(context_))
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
     {
-        query_configuration = storage.updateConfigurationAndGetCopy(local_context);
+        query_configuration = storage.updateConfigurationAndGetCopy(context);
         virtual_columns = storage.getVirtuals();
     }
 
 private:
     Names column_names;
-    StorageSnapshotPtr storage_snapshot;
     StorageS3 & storage;
     ReadFromFormatInfo read_from_format_info;
     bool need_only_count;
     StorageS3::Configuration query_configuration;
     NamesAndTypesList virtual_columns;
-
-    ContextPtr local_context;
 
     size_t max_block_size;
     size_t num_streams;
@@ -1153,13 +1149,14 @@ void StorageS3::read(
         && local_context->getSettingsRef().optimize_count_from_files;
 
     auto reading = std::make_unique<ReadFromStorageS3Step>(
-        read_from_format_info.source_header,
         column_names,
+        query_info,
         storage_snapshot,
+        local_context,
+        read_from_format_info.source_header,
         *this,
         std::move(read_from_format_info),
         need_only_count,
-        local_context,
         max_block_size,
         num_streams);
 
@@ -1182,8 +1179,8 @@ void ReadFromStorageS3Step::createIterator(const ActionsDAG::Node * predicate)
         return;
 
     iterator_wrapper = createFileIterator(
-        query_configuration, storage.distributed_processing, local_context, predicate,
-        virtual_columns, nullptr, local_context->getFileProgressCallback());
+        query_configuration, storage.distributed_processing, context, predicate,
+        virtual_columns, nullptr, context->getFileProgressCallback());
 }
 
 void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -1200,7 +1197,7 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
         /// Disclosed glob iterator can underestimate the amount of keys in some cases. We will keep one stream for this particular case.
         num_streams = 1;
 
-    const size_t max_threads = local_context->getSettingsRef().max_threads;
+    const size_t max_threads = context->getSettingsRef().max_threads;
     const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
     LOG_DEBUG(getLogger("StorageS3"), "Reading in {} streams, {} threads per stream", num_streams, max_parsing_threads);
 
@@ -1212,7 +1209,7 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
             read_from_format_info,
             query_configuration.format,
             storage.getName(),
-            local_context,
+            context,
             storage.format_settings,
             max_block_size,
             query_configuration.request_settings,
@@ -1225,7 +1222,7 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
             max_parsing_threads,
             need_only_count);
 
-        source->setKeyCondition(filter_nodes.nodes, local_context);
+        source->setKeyCondition(filter_nodes.nodes, context);
         pipes.emplace_back(std::move(source));
     }
 

@@ -1007,6 +1007,7 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     return std::make_unique<ReadFromMergeTree>(
         std::move(parts),
         std::move(alter_conversions),
+        column_names_to_return,
         real_column_names,
         virt_column_names,
         data,

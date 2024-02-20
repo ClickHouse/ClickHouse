@@ -243,15 +243,22 @@ public:
     void applyFilters() override;
 
     ReadFromS3Queue(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
         Block sample_block,
         ReadFromFormatInfo info_,
         std::shared_ptr<StorageS3Queue> storage_,
-        ContextPtr context_,
         size_t max_block_size_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        : SourceStepWithFilter(
+            DataStream{.header = std::move(sample_block)},
+            column_names_,
+            query_info_,
+            storage_snapshot_,
+            context_)
         , info(std::move(info_))
         , storage(std::move(storage_))
-        , context(std::move(context_))
         , max_block_size(max_block_size_)
     {
     }
@@ -259,7 +266,6 @@ public:
 private:
     ReadFromFormatInfo info;
     std::shared_ptr<StorageS3Queue> storage;
-    ContextPtr context;
     size_t max_block_size;
 
     std::shared_ptr<StorageS3Queue::FileIterator> iterator;
@@ -290,7 +296,7 @@ void StorageS3Queue::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -312,10 +318,13 @@ void StorageS3Queue::read(
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
 
     auto reading = std::make_unique<ReadFromS3Queue>(
+        column_names,
+        query_info,
+        storage_snapshot,
+        local_context,
         read_from_format_info.source_header,
         read_from_format_info,
         std::move(this_ptr),
-        local_context,
         max_block_size);
 
     query_plan.addStep(std::move(reading));

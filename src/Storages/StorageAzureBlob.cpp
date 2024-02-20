@@ -680,18 +680,20 @@ public:
     void applyFilters() override;
 
     ReadFromAzureBlob(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
         Block sample_block,
         std::shared_ptr<StorageAzureBlob> storage_,
         ReadFromFormatInfo info_,
         const bool need_only_count_,
-        ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , info(std::move(info_))
         , need_only_count(need_only_count_)
-        , context(std::move(context_))
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
     {
@@ -701,8 +703,6 @@ private:
     std::shared_ptr<StorageAzureBlob> storage;
     ReadFromFormatInfo info;
     const bool need_only_count;
-
-    ContextPtr context;
 
     size_t max_block_size;
     const size_t num_streams;
@@ -742,11 +742,14 @@ void StorageAzureBlob::read(
         && local_context->getSettingsRef().optimize_count_from_files;
 
     auto reading = std::make_unique<ReadFromAzureBlob>(
+        column_names,
+        query_info,
+        storage_snapshot,
+        local_context,
         read_from_format_info.source_header,
         std::move(this_ptr),
         std::move(read_from_format_info),
         need_only_count,
-        local_context,
         max_block_size,
         num_streams);
 

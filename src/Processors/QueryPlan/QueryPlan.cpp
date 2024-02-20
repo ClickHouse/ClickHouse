@@ -360,7 +360,7 @@ std::string debugExplainStep(const IQueryPlanStep & step)
     return out.str();
 }
 
-void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options)
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent)
 {
     checkInitialized();
 
@@ -382,7 +382,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
 
         if (!frame.is_description_printed)
         {
-            settings.offset = (stack.size() - 1) * settings.indent;
+            settings.offset = (indent + stack.size() - 1) * settings.indent;
             explainStep(*frame.node->step, settings, options);
             frame.is_description_printed = true;
         }
@@ -393,7 +393,14 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
             ++frame.next_child;
         }
         else
+        {
+            auto child_plans = frame.node->step->getChildPlans();
+
+            for (const auto & child_plan : child_plans)
+                child_plan->explainPlan(buffer, options, indent + stack.size());
+
             stack.pop();
+        }
     }
 }
 

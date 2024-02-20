@@ -696,12 +696,19 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromSystemTables(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
         Block sample_block,
-        ContextPtr context_,
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
-        , context(std::move(context_))
+        : SourceStepWithFilter(
+            DataStream{.header = std::move(sample_block)},
+            column_names_,
+            query_info_,
+            storage_snapshot_,
+            context_)
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
     {
@@ -710,7 +717,6 @@ public:
     void applyFilters() override;
 
 private:
-    ContextPtr context;
     std::vector<UInt8> columns_mask;
     size_t max_block_size;
 
@@ -722,7 +728,7 @@ void StorageSystemTables::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
@@ -734,10 +740,7 @@ void StorageSystemTables::read(
     auto [columns_mask, res_block] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
 
     auto reading = std::make_unique<ReadFromSystemTables>(
-        std::move(res_block),
-        context,
-        std::move(columns_mask),
-        max_block_size);
+        column_names, query_info, storage_snapshot, context, std::move(res_block), std::move(columns_mask), max_block_size);
 
     query_plan.addStep(std::move(reading));
 }

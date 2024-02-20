@@ -600,7 +600,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         query.setFinal();
     }
 
-    auto analyze = [&] (bool try_move_to_prewhere)
+    auto analyze = [&] ()
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
@@ -618,7 +618,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             required_result_column_names,
             table_join);
 
-
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         context->setDistributed(syntax_analyzer_result->is_remote_storage);
 
@@ -630,38 +629,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             /// Restore original view name. Save rewritten subquery for future usage in StorageView.
             query_info.view_query = view->restoreViewName(getSelectQuery(), view_table);
             view = nullptr;
-        }
-
-        if (try_move_to_prewhere
-            && storage && storage->canMoveConditionsToPrewhere()
-            && query.where() && !query.prewhere()
-            && !query.hasJoin()) /// Join may produce rows with nulls or default values, it's difficult to analyze if they affected or not.
-        {
-            /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
-            if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
-            {
-                /// Extract column compressed sizes.
-                std::unordered_map<std::string, UInt64> column_compressed_sizes;
-                for (const auto & [name, sizes] : column_sizes)
-                    column_compressed_sizes[name] = sizes.data_compressed;
-
-                SelectQueryInfo current_info;
-                current_info.query = query_ptr;
-                current_info.syntax_analyzer_result = syntax_analyzer_result;
-
-                Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
-                const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
-
-                MergeTreeWhereOptimizer where_optimizer{
-                    std::move(column_compressed_sizes),
-                    metadata_snapshot,
-                    storage->getConditionEstimatorByPredicate(query_info, storage_snapshot, context),
-                    queried_columns,
-                    supported_prewhere_columns,
-                    log};
-
-                where_optimizer.optimize(current_info, context);
-            }
         }
 
         if (query.prewhere() && query.where())
@@ -777,7 +744,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         result_header = getSampleBlockImpl();
     };
 
-    analyze(shouldMoveToPrewhere());
+    analyze();
 
     bool need_analyze_again = false;
     bool can_analyze_again = false;
@@ -823,7 +790,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         /// Do not try move conditions to PREWHERE for the second time.
         /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
-        analyze(/* try_move_to_prewhere = */ false);
+        analyze();
     }
 
     /// If there is no WHERE, filter blocks as usual

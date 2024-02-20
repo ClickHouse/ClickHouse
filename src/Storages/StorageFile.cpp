@@ -1495,7 +1495,7 @@ std::optional<size_t> StorageFileSource::tryGetNumRowsFromCache(const String & p
     return schema_cache.tryGetNumRows(key, get_last_mod_time);
 }
 
-class ReadFromFile : public SourceStepWithFilter, WithContext
+class ReadFromFile : public SourceStepWithFilter
 {
 public:
     std::string getName() const override { return "ReadFromFile"; }
@@ -1503,14 +1503,17 @@ public:
     void applyFilters() override;
 
     ReadFromFile(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
         Block sample_block,
         std::shared_ptr<StorageFile> storage_,
         ReadFromFormatInfo info_,
         const bool need_only_count_,
-        const ContextPtr & context_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}), WithContext(context_)
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , info(std::move(info_))
         , need_only_count(need_only_count_)
@@ -1583,11 +1586,14 @@ void StorageFile::read(
         && context->getSettingsRef().optimize_count_from_files;
 
     auto reading = std::make_unique<ReadFromFile>(
+        column_names,
+        query_info,
+        storage_snapshot,
+        context,
         read_from_format_info.source_header,
         std::move(this_ptr),
         std::move(read_from_format_info),
         need_only_count,
-        context,
         max_block_size,
         num_streams);
 
@@ -1604,7 +1610,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->archive_info,
         predicate,
         storage->virtual_columns,
-        getContext(),
+        context,
         storage->distributed_processing);
 }
 
