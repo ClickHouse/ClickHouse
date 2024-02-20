@@ -76,6 +76,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageDummy.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
 
@@ -223,9 +225,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const ContextPtr & context_,
     const StoragePtr & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const SelectQueryOptions & options_)
-    : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, storage_, options_.copy().noSubquery(), {}, metadata_snapshot_)
-{}
+    const SelectQueryOptions & options_,
+    PreparedSetsPtr prepared_sets_)
+    : InterpreterSelectQuery(
+        query_ptr_, context_, std::nullopt, storage_, options_.copy().noSubquery(), {}, metadata_snapshot_, prepared_sets_)
+{
+}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
@@ -2320,6 +2325,57 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
     return 0;
 }
 
+/** Storages can rely that filters that for storage will be available for analysis before
+  * plan is fully constructed and optimized.
+  *
+  * StorageMerge common header calculation and prewhere push-down relies on this.
+  *
+  * This is similar to Planner::collectFiltersForAnalysis
+  */
+void collectFiltersForAnalysis(
+    const ASTPtr & query_ptr,
+    const ContextPtr & query_context,
+    const StorageSnapshotPtr & storage_snapshot,
+    const SelectQueryOptions & options,
+    SelectQueryInfo & query_info,
+    PreparedSetsPtr prepared_sets)
+{
+    const auto & storage = storage_snapshot->storage;
+    bool collect_filters = typeid_cast<const StorageMerge *>(&storage);
+
+    if (!collect_filters)
+        return;
+
+    auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+
+    auto dummy = std::make_shared<StorageDummy>(
+        storage_snapshot->storage.getStorageID(), ColumnsDescription(storage_snapshot->getColumns(get_column_options)), storage_snapshot);
+
+    QueryPlan query_plan;
+    InterpreterSelectQuery(query_ptr, query_context, dummy, dummy->getInMemoryMetadataPtr(), options, prepared_sets)
+        .buildQueryPlan(query_plan);
+
+    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(query_context);
+    query_plan.optimize(optimization_settings);
+
+    std::vector<QueryPlan::Node *> nodes_to_process;
+    nodes_to_process.push_back(query_plan.getRootNode());
+
+    while (!nodes_to_process.empty())
+    {
+        const auto * node_to_process = nodes_to_process.back();
+        nodes_to_process.pop_back();
+        nodes_to_process.insert(nodes_to_process.end(), node_to_process->children.begin(), node_to_process->children.end());
+
+        auto * read_from_dummy = typeid_cast<ReadFromDummy *>(node_to_process->step.get());
+        if (!read_from_dummy)
+            continue;
+
+        query_info.filter_actions_dag = ActionsDAG::buildFilterActionsDAG(read_from_dummy->getFilterNodes().nodes);
+        query_info.prewhere_info = read_from_dummy->getPrewhereInfo();
+    }
+}
+
 void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan)
 {
     auto & query = getSelectQuery();
@@ -2446,6 +2502,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
     else if (storage)
     {
+        collectFiltersForAnalysis(query_ptr, context, storage_snapshot, options, query_info, prepared_sets);
+
         /// Table.
         if (max_streams == 0)
             max_streams = 1;
@@ -2456,7 +2514,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         auto & prewhere_info = analysis_result.prewhere_info;
 
-        if (prewhere_info)
+        if (!query_info.prewhere_info && prewhere_info)
             query_info.prewhere_info = prewhere_info;
 
         bool optimize_read_in_order = analysis_result.optimize_read_in_order;

@@ -52,7 +52,9 @@ ReadFromDummy::ReadFromDummy(
     const ContextPtr & context_,
     const StorageDummy & storage_)
     : SourceStepWithFilter(
-        DataStream{.header = storage_snapshot_->getSampleBlockForColumns(column_names_)},
+        DataStream{
+            .header = SourceStepWithFilter::applyPrewhereActions(
+                storage_snapshot_->getSampleBlockForColumns(column_names_), query_info_.prewhere_info)},
         column_names_,
         query_info_,
         storage_snapshot_,
