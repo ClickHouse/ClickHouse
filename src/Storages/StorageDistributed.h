@@ -58,7 +58,7 @@ public:
         const String & storage_policy_name_,
         const String & relative_data_path_,
         const DistributedSettings & distributed_settings_,
-        bool attach_,
+        bool disable_sanity_checks,
         ClusterPtr owned_cluster_ = {},
         ASTPtr remote_table_function_ptr_ = {});
 
@@ -73,7 +73,7 @@ public:
         const String & storage_policy_name_,
         const String & relative_data_path_,
         const DistributedSettings & distributed_settings_,
-        bool attach,
+        bool disable_sanity_checks,
         ClusterPtr owned_cluster_ = {});
 
     ~StorageDistributed() override;

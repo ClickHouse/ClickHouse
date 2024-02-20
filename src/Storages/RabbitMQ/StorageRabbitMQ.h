@@ -27,7 +27,7 @@ public:
             ContextPtr context_,
             const ColumnsDescription & columns_,
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
-            bool is_attach);
+            bool allow_delayed_initialization);
 
     std::string getName() const override { return "RabbitMQ"; }
 

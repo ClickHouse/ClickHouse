@@ -22,15 +22,15 @@ public:
     using Configuration = typename Storage::Configuration;
 
     template <class ...Args>
-    explicit IStorageDataLake(const Configuration & configuration_, ContextPtr context_, bool attach, Args && ...args)
-        : Storage(getConfigurationForDataRead(configuration_, context_, {}, attach), context_, std::forward<Args>(args)...)
+    explicit IStorageDataLake(const Configuration & configuration_, ContextPtr context_, bool allow_delayed_initialization, Args && ...args)
+        : Storage(getConfigurationForDataRead(configuration_, context_, {}, !allow_delayed_initialization), context_, std::forward<Args>(args)...)
         , base_configuration(configuration_)
         , log(getLogger(getName())) {} // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
 
     template <class ...Args>
-    static StoragePtr create(const Configuration & configuration_, ContextPtr context_, bool attach, Args && ...args)
+    static StoragePtr create(const Configuration & configuration_, ContextPtr context_, bool allow_delayed_initialization, Args && ...args)
     {
-        return std::make_shared<IStorageDataLake<Storage, Name, MetadataParser>>(configuration_, context_, attach, std::forward<Args>(args)...);
+        return std::make_shared<IStorageDataLake<Storage, Name, MetadataParser>>(configuration_, context_, allow_delayed_initialization, std::forward<Args>(args)...);
     }
 
     String getName() const override { return name; }
@@ -64,7 +64,7 @@ public:
 
 private:
     static Configuration getConfigurationForDataRead(
-        const Configuration & base_configuration, ContextPtr local_context, const Strings & keys = {}, bool attach = false)
+        const Configuration & base_configuration, ContextPtr local_context, const Strings & keys = {}, bool throw_on_error = true)
     {
         auto configuration{base_configuration};
         configuration.update(local_context);
@@ -87,7 +87,7 @@ private:
         }
         catch (...)
         {
-            if (!attach)
+            if (throw_on_error)
                 throw;
             tryLogCurrentException(__PRETTY_FUNCTION__);
             return configuration;
@@ -125,7 +125,7 @@ static StoragePtr createDataLakeStorage(const StorageFactory::Arguments & args)
     if (configuration.format == "auto")
         configuration.format = "Parquet";
 
-    return DataLake::create(configuration, args.getContext(), args.attach, args.table_id, args.columns, args.constraints,
+    return DataLake::create(configuration, args.getContext(), args.attach || args.replicated_create, args.table_id, args.columns, args.constraints,
         args.comment, getFormatSettings(args.getContext()));
 }
 

@@ -46,6 +46,7 @@ public:
         bool attach;
         bool has_force_restore_data_flag;
         const String & comment;
+        bool replicated_create;
 
         ContextMutablePtr getContext() const;
         ContextMutablePtr getLocalContext() const;

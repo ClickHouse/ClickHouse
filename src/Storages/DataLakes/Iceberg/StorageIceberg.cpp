@@ -8,7 +8,7 @@ namespace DB
 StoragePtr StorageIceberg::create(
     const DB::StorageIceberg::Configuration & base_configuration,
     DB::ContextPtr context_,
-    bool attach,
+    bool allow_delayed_initialization,
     const DB::StorageID & table_id_,
     const DB::ColumnsDescription & columns_,
     const DB::ConstraintsDescription & constraints_,
@@ -27,7 +27,7 @@ StoragePtr StorageIceberg::create(
     }
     catch (...)
     {
-        if (!attach)
+        if (!allow_delayed_initialization)
             throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }

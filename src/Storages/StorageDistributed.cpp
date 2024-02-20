@@ -1,7 +1,5 @@
 #include <Storages/StorageDistributed.h>
 
-#include <Databases/IDatabase.h>
-
 #include <Disks/IDisk.h>
 
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -18,7 +16,6 @@
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageDummy.h>
-#include <Storages/removeGroupingFunctionSpecializations.h>
 
 #include <Columns/ColumnConst.h>
 
@@ -38,10 +35,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 
-#include <Analyzer/Utils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
@@ -50,7 +45,6 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 
 #include <Planner/Planner.h>
@@ -59,26 +53,21 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Cluster.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/JoinedTables.h>
-#include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/createBlockSelector.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
-#include <Interpreters/getTableExpressions.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
 #include <TableFunctions/TableFunctionView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -88,7 +77,6 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -96,8 +84,8 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sinks/EmptySink.h>
 
-#include <Core/Settings.h>
-#include <Core/SettingsEnums.h>
+//#include <Core/Settings.h>
+//#include <Core/SettingsEnums.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -321,7 +309,7 @@ StorageDistributed::StorageDistributed(
     const String & storage_policy_name_,
     const String & relative_data_path_,
     const DistributedSettings & distributed_settings_,
-    bool attach_,
+    bool disable_sanity_checks,
     ClusterPtr owned_cluster_,
     ASTPtr remote_table_function_ptr_)
     : IStorage(id_)
@@ -372,7 +360,7 @@ StorageDistributed::StorageDistributed(
     }
 
     /// Sanity check. Skip check if the table is already created to allow the server to start.
-    if (!attach_)
+    if (!disable_sanity_checks)
     {
         if (remote_database.empty() && !remote_table_function_ptr && !getCluster()->maybeCrossReplication())
             LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
@@ -397,7 +385,7 @@ StorageDistributed::StorageDistributed(
     const String & storage_policy_name_,
     const String & relative_data_path_,
     const DistributedSettings & distributed_settings_,
-    bool attach,
+    bool disable_sanity_checks,
     ClusterPtr owned_cluster_)
     : StorageDistributed(
         id_,
@@ -412,7 +400,7 @@ StorageDistributed::StorageDistributed(
         storage_policy_name_,
         relative_data_path_,
         distributed_settings_,
-        attach,
+        disable_sanity_checks,
         std::move(owned_cluster_),
         remote_table_function_ptr_)
 {
@@ -1955,7 +1943,7 @@ void registerStorageDistributed(StorageFactory & factory)
             storage_policy,
             args.relative_data_path,
             distributed_settings,
-            args.attach);
+            args.attach || args.replicated_create);
     },
     {
         .supports_settings = true,

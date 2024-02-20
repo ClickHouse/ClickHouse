@@ -132,6 +132,8 @@ public:
     bool replace_table{false};
     bool create_or_replace{false};
 
+    bool replicated_create{false}; /// CREATE query in DatabaseReplicated.
+
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + getDatabase()) + delim + getTable(); }
 

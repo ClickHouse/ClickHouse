@@ -1213,9 +1213,12 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
     if (create.uuid == UUIDHelpers::Nil || create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || create.database)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected query from {}: {}", node_name, query);
 
+    bool is_materialized_view_with_inner_table = create.is_materialized_view && create.to_table_id.empty();
+
     create.setDatabase(getDatabaseName());
     create.setTable(unescapeForFileName(node_name));
-    create.attach = true;
+    create.attach = is_materialized_view_with_inner_table;
+    create.replicated_create = true;
 
     return ast;
 }

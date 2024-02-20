@@ -218,7 +218,8 @@ StoragePtr StorageFactory::get(
         .constraints = constraints,
         .attach = query.attach,
         .has_force_restore_data_flag = has_force_restore_data_flag,
-        .comment = comment};
+        .comment = comment,
+        .replicated_create = query.replicated_create};
 
     assert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
