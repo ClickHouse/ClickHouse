@@ -728,10 +728,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true);
 
+            /// The query can become more verbose after formatting, so:
+            size_t new_max_query_size = 1000 + 2 * max_query_size;
+
             ASTPtr ast2 = parseQuery(parser,
                 formatted1.data(),
                 formatted1.data() + formatted1.size(),
-                "", max_query_size, settings.max_parser_depth);
+                "", new_max_query_size, settings.max_parser_depth);
 
             chassert(ast2);
 
