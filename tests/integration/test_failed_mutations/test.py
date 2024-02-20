@@ -15,6 +15,7 @@ node_with_backoff = cluster.add_instance(
 node_no_backoff = cluster.add_instance(
     "node_no_backoff",
     macros={"cluster": "test_cluster"},
+    main_configs=["configs/config.d/no_backoff_mutation_policy.xml"],
     with_zookeeper=True,
 )
 
