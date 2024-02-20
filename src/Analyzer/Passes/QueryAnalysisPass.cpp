@@ -79,8 +79,6 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 
 namespace ProfileEvents
 {
@@ -1379,6 +1377,8 @@ private:
     ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression);
 
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
+
+    void resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope);
 
     void resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpolate_node_list, IdentifierResolveScope & scope);
 
@@ -5667,7 +5667,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         /// Do not constant fold get scalar functions
         bool disable_constant_folding = function_name == "__getScalar" || function_name == "shardNum" ||
-            function_name == "shardCount" || function_name == "hostName";
+            function_name == "shardCount" || function_name == "hostName" || function_name == "tcpPort";
 
         /** If function is suitable for constant folding try to convert it to constant.
           * Example: SELECT plus(1, 1);
@@ -6263,6 +6263,77 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
     return result_projection_names;
 }
 
+namespace
+{
+
+void expandTuplesInList(QueryTreeNodes & key_list)
+{
+    QueryTreeNodes expanded_keys;
+    expanded_keys.reserve(key_list.size());
+    for (auto const & key : key_list)
+    {
+        if (auto * function = key->as<FunctionNode>(); function != nullptr && function->getFunctionName() == "tuple")
+        {
+            std::copy(function->getArguments().begin(), function->getArguments().end(), std::back_inserter(expanded_keys));
+        }
+        else
+            expanded_keys.push_back(key);
+    }
+    key_list = std::move(expanded_keys);
+}
+
+}
+
+/** Resolve GROUP BY clause.
+  */
+void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope)
+{
+    const auto & settings = scope.context->getSettingsRef();
+
+    if (query_node_typed.isGroupByWithGroupingSets())
+    {
+        for (auto & grouping_sets_keys_list_node : query_node_typed.getGroupBy().getNodes())
+        {
+            if (settings.enable_positional_arguments)
+                replaceNodesWithPositionalArguments(grouping_sets_keys_list_node, query_node_typed.getProjection().getNodes(), scope);
+
+            resolveExpressionNodeList(grouping_sets_keys_list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+            // Remove redundant calls to `tuple` function. It simplifies checking if expression is an aggregation key.
+            // It's required to support queries like: SELECT number FROM numbers(3) GROUP BY (number, number % 2)
+            auto & group_by_list = grouping_sets_keys_list_node->as<ListNode &>().getNodes();
+            expandTuplesInList(group_by_list);
+        }
+
+        if (scope.group_by_use_nulls)
+        {
+            for (const auto & grouping_set : query_node_typed.getGroupBy().getNodes())
+            {
+                for (const auto & group_by_elem : grouping_set->as<ListNode>()->getNodes())
+                    scope.nullable_group_by_keys.insert(group_by_elem);
+            }
+        }
+    }
+    else
+    {
+        if (settings.enable_positional_arguments)
+            replaceNodesWithPositionalArguments(query_node_typed.getGroupByNode(), query_node_typed.getProjection().getNodes(), scope);
+
+        resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        // Remove redundant calls to `tuple` function. It simplifies checking if expression is an aggregation key.
+        // It's required to support queries like: SELECT number FROM numbers(3) GROUP BY (number, number % 2)
+        auto & group_by_list = query_node_typed.getGroupBy().getNodes();
+        expandTuplesInList(group_by_list);
+
+        if (scope.group_by_use_nulls)
+        {
+            for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
+                scope.nullable_group_by_keys.insert(group_by_elem);
+        }
+    }
+}
+
 /** Resolve interpolate columns nodes list.
   */
 void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpolate_node_list, IdentifierResolveScope & scope)
@@ -6664,6 +6735,28 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);
     if (!table_function_ptr)
     {
+        String database_name = scope_context->getCurrentDatabase();
+        String table_name;
+
+        auto function_ast = table_function_node->toAST();
+        Identifier table_identifier{table_function_name};
+        if (table_identifier.getPartsSize() == 1)
+        {
+            table_name = table_identifier[0];
+        }
+        else if (table_identifier.getPartsSize() == 2)
+        {
+            database_name = table_identifier[0];
+            table_name = table_identifier[1];
+        }
+
+        auto parametrized_view_storage = scope_context->getQueryContext()->buildParametrizedViewStorage(function_ast, database_name, table_name);
+        if (parametrized_view_storage)
+        {
+            table_function_node = std::make_shared<TableNode>(parametrized_view_storage, scope_context);
+            return;
+        }
+
         auto hints = TableFunctionFactory::instance().getHints(table_function_name);
         if (!hints.empty())
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
@@ -7453,40 +7546,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveExpressionNode(query_node_typed.getWhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     if (query_node_typed.hasGroupBy())
-    {
-        if (query_node_typed.isGroupByWithGroupingSets())
-        {
-            for (auto & grouping_sets_keys_list_node : query_node_typed.getGroupBy().getNodes())
-            {
-                if (settings.enable_positional_arguments)
-                    replaceNodesWithPositionalArguments(grouping_sets_keys_list_node, query_node_typed.getProjection().getNodes(), scope);
-
-                resolveExpressionNodeList(grouping_sets_keys_list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-            }
-
-            if (scope.group_by_use_nulls)
-            {
-                for (const auto & grouping_set : query_node_typed.getGroupBy().getNodes())
-                {
-                    for (const auto & group_by_elem : grouping_set->as<ListNode>()->getNodes())
-                        scope.nullable_group_by_keys.insert(group_by_elem);
-                }
-            }
-        }
-        else
-        {
-            if (settings.enable_positional_arguments)
-                replaceNodesWithPositionalArguments(query_node_typed.getGroupByNode(), query_node_typed.getProjection().getNodes(), scope);
-
-            resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-            if (scope.group_by_use_nulls)
-            {
-                for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
-                    scope.nullable_group_by_keys.insert(group_by_elem);
-            }
-        }
-    }
+        resolveGroupByNode(query_node_typed, scope);
 
     if (query_node_typed.hasHaving())
         resolveExpressionNode(query_node_typed.getHaving(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);

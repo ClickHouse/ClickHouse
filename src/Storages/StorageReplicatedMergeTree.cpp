@@ -2043,7 +2043,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
             if (entry.quorum)
             {
                 if (entry.type != LogEntry::GET_PART)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: log entry with quorum but type is not GET_PART");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Log entry with quorum but type is not GET_PART");
 
                 LOG_DEBUG(log, "No active replica has part {} which needs to be written with quorum. Will try to mark that quorum as failed.", entry.new_part_name);
 
@@ -2106,7 +2106,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                         auto part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
 
                         if (part_info.min_block != part_info.max_block)
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: log entry with quorum for part covering more than one block number");
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Log entry with quorum for part covering more than one block number");
 
                         ops.emplace_back(zkutil::makeCreateRequest(
                             fs::path(zookeeper_path) / "quorum" / "failed_parts" / entry.new_part_name,
@@ -6796,7 +6796,7 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
     }
     else
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unexpected name of log node: {}", entry.znode_name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected name of log node: {}", entry.znode_name);
     }
 
     /** Second - find the corresponding entry in the queue of the specified replica.
@@ -7172,7 +7172,7 @@ void StorageReplicatedMergeTree::fetchPartition(
     }
 
     if (best_replica.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: cannot choose best replica.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot choose best replica.");
 
     LOG_INFO(log, "Found {} replicas, {} of them are active. Selected {} to fetch from.", replicas.size(), active_replicas.size(), best_replica);
 
