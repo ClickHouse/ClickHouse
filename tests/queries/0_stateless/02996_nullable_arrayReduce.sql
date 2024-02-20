@@ -11,4 +11,4 @@ SELECT arrayReduce('sum', [NULL, 10]::Array(Nullable(UInt8))) as a, toTypeName(a
 SELECT arrayReduce('any_respect_nulls', [NULL, 10]::Array(Nullable(UInt8))) as a, toTypeName(a);
 SELECT arrayReduce('any_respect_nulls', [10, NULL]::Array(Nullable(UInt8))) as a, toTypeName(a);
 
-SELECT arrayReduce('any', toNullable(3));
+SELECT arrayReduce('any', toNullable(3)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
