@@ -746,7 +746,10 @@ namespace
                     break;
                 }
 
-                if (outcome.GetError().GetExceptionName() == "EntityTooLarge" || outcome.GetError().GetExceptionName() == "InvalidRequest" || outcome.GetError().GetExceptionName() == "InvalidArgument")
+                if (outcome.GetError().GetExceptionName() == "EntityTooLarge" ||
+                    outcome.GetError().GetExceptionName() == "InvalidRequest" ||
+                    outcome.GetError().GetExceptionName() == "InvalidArgument" ||
+                    (outcome.GetError().GetExceptionName() == "InternalError" && outcome.GetError().GetResponseCode() == Aws::Http::HttpResponseCode::GATEWAY_TIMEOUT))
                 {
                     if (!supports_multipart_copy)
                     {
