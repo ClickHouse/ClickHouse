@@ -206,7 +206,7 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 #if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
 void registerAzureObjectStorage(ObjectStorageFactory & factory)
 {
-    factory.registerObjectStorageType("azure_blob_storage", [](
+    auto creator = [](
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
@@ -220,7 +220,9 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
             getAzureBlobStorageSettings(config, config_prefix, context),
             container_name);
 
-    });
+    };
+    factory.registerObjectStorageType("azure_blob_storage", creator);
+    factory.registerObjectStorageType("azure", creator);
 }
 #endif
 
