@@ -3393,7 +3393,7 @@ ENGINE = Log
 
 ## default_temporary_table_engine {#default_temporary_table_engine}
 
-Same as [default_table_engine](#default_table_engine) but for temporary tables.
+Same as [default_table_engine](#default_table_engine) but for temporary tables. The default temporary table engine also can support `MergeTree` well.
 
 Default value: `Memory`.
 
