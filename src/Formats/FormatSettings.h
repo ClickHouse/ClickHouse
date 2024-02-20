@@ -46,6 +46,7 @@ struct FormatSettings
     bool try_infer_integers = false;
     bool try_infer_dates = false;
     bool try_infer_datetimes = false;
+    bool try_infer_exponent_floats = false;
 
     enum class DateTimeInputFormat
     {
