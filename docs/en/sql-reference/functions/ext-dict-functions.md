@@ -73,7 +73,7 @@ SELECT dictGet('id_value_dictionary', 'value', toUInt64(1)) AS value;
 
 ## dictGetOrDefault
 
-Retrieves values from a dictionary. If that value cannot be found, returns the default value set by the user.
+Retrieves values from a dictionary. Returns the default value set by the user for keys that are not found in the dictionary.
 
 **Syntax**
 
