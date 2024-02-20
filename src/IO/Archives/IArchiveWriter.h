@@ -24,7 +24,6 @@ public:
 
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & filename, size_t size) = 0;
 
-
     /// Returns true if there is an active instance of WriteBuffer returned by writeFile().
     /// This function should be used mostly for debugging purposes.
     virtual bool isWritingFile() const = 0;
