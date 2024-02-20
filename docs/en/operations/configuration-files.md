@@ -10,11 +10,57 @@ The ClickHouse server can be configured with configuration files in XML or YAML 
 
 It is possible to mix XML and YAML configuration files, for example you could have a main configuration file `config.xml` and additional configuration files `config.d/network.xml`, `config.d/timezone.yaml` and `config.d/keeper.yaml`. Mixing XML and YAML within a single configuration file is not supported. XML configuration files should use `<clickhouse>...</clickhouse>` as top-level tag. In YAML configuration files, `clickhouse:` is optional, the parser inserts it implicitly if absent.
 
-## Overriding Configuration {#override}
+## Merging Configuration {#merging}
 
-The merge of configuration files behaves as one intuitively expects: The contents of both files are combined recursively, children with the same name are replaced by the element of the more specific configuration file. The merge can be customized using attributes `replace` and `remove`.
-- Attribute `replace` means that the element is replaced by the specified one.
-- Attribute `remove` means that the element is deleted.
+Two configuration files (usually the main configuration file and another configuration files from `config.d/`) are merged as follows:
+
+- If a node (i.e. a path leading to an element) appears in both files and does not have attributes `replace` or `remove`, it is included in the merged configuration file and children from both nodes are included and merged recursively.
+- If one of both nodes contains attribute `replace`, it is included in the merged configuration file but only children from the node with attribute `replace` are included.
+- If one of both nodes contains attribute `remove`, the node is not included in the merged configuration file (if it exists already, it is deleted).
+
+```xml
+<clickhouse>
+    <config_a>
+        <setting_1>1</setting_1>
+    </config_a>
+    <config_b>
+        <setting_2>2</setting_2>
+    </config_b>
+    <config_c>
+        <setting_3>3</setting_3>
+    </config_c>
+</clickhouse>
+```
+
+and
+
+```xml
+<clickhouse>
+    <config_a>
+        <setting_4>4</setting_4>
+    </config_a>
+    <config_b replace="replace">
+        <setting_5>5</setting_5>
+    </config_b>
+    <config_c remove="remove">
+        <setting_6>6</setting_6>
+    </config_c>
+</clickhouse>
+```
+
+generates merged configuration file:
+
+```xml
+<clickhouse>
+    <config_a>
+        <setting_1>1</setting_1>
+        <setting_4>4</setting_4>
+    </config_a>
+    <config_b replace="replace">
+        <setting_5>5</setting_5>
+    </config_b>
+</clickhouse>
+```
 
 To specify that a value of an element should be replaced by the value of an environment variable, you can use attribute `from_env`.
 
@@ -125,7 +171,7 @@ Users configuration can be split into separate files similar to `config.xml` and
 Directory name is defined as `users_config` setting without `.xml` postfix concatenated with `.d`.
 Directory `users.d` is used by default, as `users_config` defaults to `users.xml`.
 
-Note that configuration files are first merged taking into account [Override](#override) settings and includes are processed after that.
+Note that configuration files are first [merged](#merging) taking into account settings, and includes are processed after that.
 
 ## XML example {#example}
 
