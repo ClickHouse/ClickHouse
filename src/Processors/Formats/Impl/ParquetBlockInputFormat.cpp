@@ -673,6 +673,15 @@ void ParquetBlockInputFormat::scheduleMoreWorkIfNeeded(std::optional<size_t> row
     }
 }
 
+Chunk ParquetBlockInputFormat::generate()
+{
+    auto res = IInputFormat::generate();
+    if (!res)
+        LOG_INFO(&Poco::Logger::get("ParquetBlockInputFormat"), "{} ms consumed by reading parquet file", consumed_nanosecs / 1e6);
+
+    return res;
+}
+
 Chunk ParquetBlockInputFormat::read()
 {
     initializeIfNeeded();
@@ -683,6 +692,8 @@ Chunk ParquetBlockInputFormat::read()
     if (need_only_count)
         return getChunkForCount(row_group_batches[row_group_batches_completed++].total_rows);
 
+    Stopwatch watch(CLOCK_MONOTONIC);
+    SCOPE_EXIT({ consumed_nanosecs += watch.elapsedNanoseconds(); });
     std::unique_lock lock(mutex);
 
     while (true)
