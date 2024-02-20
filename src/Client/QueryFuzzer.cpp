@@ -1168,23 +1168,13 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
         fuzz(select->children);
     }
-    /*
-     * The time to fuzz the settings has not yet come.
-     * Apparently we don't have any infrastructure to validate the values of
-     * the settings, and the first query with max_block_size = -1 breaks
-     * because of overflows here and there.
-     *//*
-     * else if (auto * set = typeid_cast<ASTSetQuery *>(ast.get()))
-     * {
-     *      for (auto & c : set->changes)
-     *      {
-     *          if (fuzz_rand() % 50 == 0)
-     *          {
-     *              c.value = fuzzField(c.value);
-     *          }
-     *      }
-     * }
-     */
+    else if (auto * set = typeid_cast<ASTSetQuery *>(ast.get()))
+    {
+        /// Fuzz settings
+        for (auto & c : set->changes)
+            if (fuzz_rand() % 50 == 0)
+                c.value = fuzzField(c.value);
+    }
     else if (auto * literal = typeid_cast<ASTLiteral *>(ast.get()))
     {
         // There is a caveat with fuzzing the children: many ASTs also keep the

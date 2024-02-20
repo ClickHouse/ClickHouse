@@ -138,11 +138,17 @@ StorageS3Queue::StorageS3Queue(
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
     {
-        auto columns = StorageS3::getTableStructureFromDataImpl(configuration, format_settings, context_);
+        ColumnsDescription columns;
+        if (configuration.format == "auto")
+            std::tie(columns, configuration.format) = StorageS3::getTableStructureAndFormatFromData(configuration, format_settings, context_);
+        else
+            columns = StorageS3::getTableStructureFromData(configuration, format_settings, context_);
         storage_metadata.setColumns(columns);
     }
     else
     {
+        if (configuration.format == "auto")
+            configuration.format = StorageS3::getTableStructureAndFormatFromData(configuration, format_settings, context_).second;
         storage_metadata.setColumns(columns_);
     }
 

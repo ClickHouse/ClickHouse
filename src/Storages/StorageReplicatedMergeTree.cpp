@@ -513,8 +513,15 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             if (same_structure)
             {
                 Coordination::Stat metadata_stat;
-                current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+                current_zookeeper->get(fs::path(zookeeper_path) / "metadata", &metadata_stat);
+
+                /** We change metadata_snapshot so that `createReplica` method will create `metadata_version` node in ZooKeeper
+                  * with version of table '/metadata' node in Zookeeper.
+                  *
+                  * Otherwise `metadata_version` for not first replica will be initialized with 0 by default.
+                  */
                 setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_stat.version));
+                metadata_snapshot = getInMemoryMetadataPtr();
             }
         }
         catch (Coordination::Exception & e)
@@ -2043,7 +2050,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
             if (entry.quorum)
             {
                 if (entry.type != LogEntry::GET_PART)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: log entry with quorum but type is not GET_PART");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Log entry with quorum but type is not GET_PART");
 
                 LOG_DEBUG(log, "No active replica has part {} which needs to be written with quorum. Will try to mark that quorum as failed.", entry.new_part_name);
 
@@ -2106,7 +2113,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                         auto part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
 
                         if (part_info.min_block != part_info.max_block)
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: log entry with quorum for part covering more than one block number");
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Log entry with quorum for part covering more than one block number");
 
                         ops.emplace_back(zkutil::makeCreateRequest(
                             fs::path(zookeeper_path) / "quorum" / "failed_parts" / entry.new_part_name,
@@ -5817,6 +5824,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     Coordination::Requests requests;
     requests.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "columns", entry.columns_str, -1));
     requests.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "metadata", entry.metadata_str, -1));
+    requests.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "metadata_version", std::to_string(entry.alter_version), -1));
 
     auto table_id = getStorageID();
     auto alter_context = getContext();
@@ -5862,10 +5870,6 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         auto parts_lock = lockParts();
         resetObjectColumnsFromActiveParts(parts_lock);
     }
-
-    /// This transaction may not happen, but it's OK, because on the next retry we will eventually create/update this node
-    /// TODO Maybe do in in one transaction for Replicated database?
-    zookeeper->createOrUpdate(fs::path(replica_path) / "metadata_version", std::to_string(current_metadata->getMetadataVersion()), zkutil::CreateMode::Persistent);
 
     return true;
 }
@@ -6796,7 +6800,7 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
     }
     else
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unexpected name of log node: {}", entry.znode_name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected name of log node: {}", entry.znode_name);
     }
 
     /** Second - find the corresponding entry in the queue of the specified replica.
@@ -7172,7 +7176,7 @@ void StorageReplicatedMergeTree::fetchPartition(
     }
 
     if (best_replica.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: cannot choose best replica.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot choose best replica.");
 
     LOG_INFO(log, "Found {} replicas, {} of them are active. Selected {} to fetch from.", replicas.size(), active_replicas.size(), best_replica);
 
