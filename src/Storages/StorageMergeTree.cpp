@@ -2081,7 +2081,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
-        
+
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
         LOG_TRACE(log, "Partition exps are the same:part id: {}; number of disks:{}",dst_part_info.partition_id, this->getStoragePolicy()->getDisks().size());
         bool on_same_disk = false;

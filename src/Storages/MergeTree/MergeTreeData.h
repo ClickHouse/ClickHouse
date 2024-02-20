@@ -853,7 +853,7 @@ public:
         const IDataPartStorage::ClonePartParams & params,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings);
-    
+
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPartOnOtherDisk(
         const MergeTreeData::DataPartPtr & src_part,
         const String & tmp_part_prefix,
