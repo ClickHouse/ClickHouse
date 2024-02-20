@@ -29,6 +29,7 @@ struct ZooKeeperArgs
     ZooKeeperArgs() = default;
     bool operator == (const ZooKeeperArgs &) const = default;
 
+    String zookeeper_name = "zookeeper";
     String implementation = "zookeeper";
     Strings hosts;
     String auth_scheme;

@@ -976,7 +976,7 @@ ZooKeeperPtr ZooKeeper::startNewSession() const
 
 void ZooKeeper::initSession()
 {
-    String session_path = fs::path(args.sessions_path) / toString(DB::ServerUUID::get());
+    String session_path = fs::path(args.sessions_path) / args.zookeeper_name / toString(DB::ServerUUID::get());
     Coordination::Stat stat;
     if (trySet(session_path, "", -1, &stat) == Coordination::Error::ZOK)
     {
@@ -991,7 +991,7 @@ void ZooKeeper::initSession()
 
 void ZooKeeper::addCheckSessionOp(Coordination::Requests & requests) const
 {
-    String session_path = fs::path(args.sessions_path) / toString(DB::ServerUUID::get());
+    String session_path = fs::path(args.sessions_path) / args.zookeeper_name / toString(DB::ServerUUID::get());
     requests.push_back(zkutil::makeCheckRequest(session_path, session_node_version));
 }
 
