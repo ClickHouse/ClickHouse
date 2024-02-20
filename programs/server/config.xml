@@ -742,6 +742,10 @@
              It also enables 'changeable_in_readonly' constraint type -->
         <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
 
+        <!-- By default, for backward compatibility create table with a specific table engine ignores grant,
+             however you can change this behaviour by setting this to true -->
+        <table_engines_require_grant>false</table_engines_require_grant>
+
         <!-- Number of seconds since last access a role is stored in the Role Cache -->
         <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     </access_control_improvements>

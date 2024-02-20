@@ -12,7 +12,7 @@ enum class AccessType
 /// Macro M should be defined as M(name, aliases, node_type, parent_group_name)
 /// where name is identifier with underscores (instead of spaces);
 /// aliases is a string containing comma-separated list;
-/// node_type either specifies access type's level (GLOBAL/NAMED_COLLECTION/DATABASE/TABLE/DICTIONARY/VIEW/COLUMNS),
+/// node_type either specifies access type's level (GLOBAL/NAMED_COLLECTION/TABLE_ENGINE/DATABASE/TABLE/DICTIONARY/VIEW/COLUMNS),
 /// or specifies that the access type is a GROUP of other access types;
 /// parent_group_name is the name of the group containing this access type (or NONE if there is no such group).
 /// NOTE A parent group must be declared AFTER all its children.

@@ -201,6 +201,7 @@ Hierarchy of privileges:
     - `S3`
 - [dictGet](#grant-dictget)
 - [displaySecretsInShowAndSelect](#grant-display-secrets)
+- [TABLE ENGINE](#grant-table-engine)
 
 Examples of how this hierarchy is treated:
 
@@ -494,6 +495,15 @@ Allows a user to view secrets in `SHOW` and `SELECT` queries if both
 and
 [`format_display_secrets_in_show_and_select` format setting](../../operations/settings/formats#format_display_secrets_in_show_and_select)
 are turned on.
+
+### TABLE ENGINE
+
+Allows using a specified table engine when creating a table. Applies to [table engines](../../engines/table-engines/index.md).
+
+**Examples**
+
+- `GRANT TABLE ENGINE ON * TO john`
+- `GRANT TABLE ENGINE ON TinyLog TO john`
 
 ### ALL
 
