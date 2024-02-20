@@ -120,7 +120,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int SYNTAX_ERROR;
-    extern const int UNEXPECTED_EXPRESSION;
     extern const int INVALID_IDENTIFIER;
 }
 
@@ -1215,7 +1214,7 @@ private:
 
     static void expandGroupByAll(QueryNode & query_tree_node_typed);
 
-    void expandOrderByAll(QueryNode & query_tree_node_typed, const Settings & settings);
+    void expandOrderByAll(QueryNode & query_tree_node_typed);
 
     static std::string
     rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
@@ -2367,9 +2366,9 @@ void QueryAnalyzer::expandGroupByAll(QueryNode & query_tree_node_typed)
     query_tree_node_typed.setIsGroupByAll(false);
 }
 
-void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Settings & settings)
+void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed)
 {
-    if (!settings.enable_order_by_all || !query_tree_node_typed.isOrderByAll())
+    if (!query_tree_node_typed.isOrderByAll())
         return;
 
     auto * all_node = query_tree_node_typed.getOrderBy().getNodes()[0]->as<SortNode>();
@@ -2390,9 +2389,6 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Se
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Expression nodes list expected 1 projection names. Actual {}",
                                 projection_names.size());
-            if (Poco::toUpper(projection_names[0]) == "ALL")
-                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
-                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
         }
 
         auto sort_node = std::make_shared<SortNode>(node, all_node->getSortDirection(), all_node->getNullsSortDirection());
@@ -7559,7 +7555,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         if (settings.enable_positional_arguments)
             replaceNodesWithPositionalArguments(query_node_typed.getOrderByNode(), query_node_typed.getProjection().getNodes(), scope);
 
-        expandOrderByAll(query_node_typed, settings);
+        expandOrderByAll(query_node_typed);
         resolveSortNodeList(query_node_typed.getOrderByNode(), scope);
     }
 
