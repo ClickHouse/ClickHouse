@@ -2224,9 +2224,6 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_remove("REMOVE");
     ParserKeyword s_modify("MODIFY");
 
-    ParserToken parser_opening_round_bracket(TokenType::OpeningRoundBracket);
-    ParserToken parser_closing_round_bracket(TokenType::ClosingRoundBracket);
-
     ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;
     ParserExpression parser_exp;

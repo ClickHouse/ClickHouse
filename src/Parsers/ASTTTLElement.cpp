@@ -1,10 +1,8 @@
-#include <Parsers/ASTTTLElement.h>
-
 #include <Columns/Collator.h>
-#include <Core/ServerSettings.h>
+#include <Common/quoteString.h>
+#include <Parsers/ASTTTLElement.h>
 #include <IO/Operators.h>
 #include <base/EnumReflection.h>
-#include <Common/quoteString.h>
 
 namespace DB
 {
