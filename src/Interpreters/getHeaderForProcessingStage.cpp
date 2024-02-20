@@ -138,7 +138,7 @@ Block getHeaderForProcessingStage(
             if (context->getSettingsRef().allow_experimental_analyzer)
             {
                 auto storage = std::make_shared<StorageDummy>(
-                    storage_snapshot->storage.getStorageID(), storage_snapshot->metadata->getColumns(), &storage_snapshot->storage);
+                    storage_snapshot->storage.getStorageID(), storage_snapshot->metadata->getColumns(), storage_snapshot);
                 InterpreterSelectQueryAnalyzer interpreter(query, context, storage, SelectQueryOptions(processed_stage).analyze());
                 result = interpreter.getSampleBlock();
             }

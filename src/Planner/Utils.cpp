@@ -413,7 +413,7 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr &
             storage_dummy = std::make_shared<StorageDummy>(
                 storage_snapshot->storage.getStorageID(),
                 ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
-                &storage_snapshot->storage);
+                storage_snapshot);
         }
         else if (subquery_node || union_node)
         {

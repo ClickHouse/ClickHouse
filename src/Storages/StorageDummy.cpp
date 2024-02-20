@@ -10,8 +10,9 @@
 namespace DB
 {
 
-StorageDummy::StorageDummy(const StorageID & table_id_, const ColumnsDescription & columns_, StorageRawPtr original_storage_)
-    : IStorage(table_id_), original_storage(original_storage_)
+StorageDummy::StorageDummy(
+    const StorageID & table_id_, const ColumnsDescription & columns_, const StorageSnapshotPtr & original_storage_snapshot_)
+    : IStorage(table_id_), original_storage_snapshot(original_storage_snapshot_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -39,7 +40,7 @@ void StorageDummy::read(QueryPlan & query_plan,
     query_plan.addStep(std::make_unique<ReadFromDummy>(
         column_names,
         query_info,
-        storage_snapshot,
+        original_storage_snapshot ? original_storage_snapshot : storage_snapshot,
         local_context,
         *this));
 }

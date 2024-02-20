@@ -241,7 +241,7 @@ public:
         CNF::OrGroup or_group;
         visitImpl(node, or_group);
         if (!or_group.empty())
-            and_group.insert(std::move(or_group));
+            and_group.push_back(std::move(or_group));
     }
 
     CNF::AndGroup and_group;
@@ -254,7 +254,7 @@ private:
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !isLogicalFunction(*function_node))
         {
-            or_group.insert(CNF::AtomicFormula{false, std::move(node)});
+            or_group.push_back(CNF::AtomicFormula{false, std::move(node)});
             return;
         }
 
@@ -268,7 +268,7 @@ private:
                 CNF::OrGroup argument_or_group;
                 visitImpl(argument, argument_or_group);
                 if (!argument_or_group.empty())
-                    and_group.insert(std::move(argument_or_group));
+                    and_group.push_back(std::move(argument_or_group));
             }
         }
         else if (name == "or")
@@ -281,7 +281,7 @@ private:
         {
             assert(name == "not");
             auto & arguments = function_node->getArguments().getNodes();
-            or_group.insert(CNF::AtomicFormula{true, std::move(arguments[0])});
+            or_group.push_back(CNF::AtomicFormula{true, std::move(arguments[0])});
         }
     }
 };
@@ -351,7 +351,7 @@ CNF & CNF::transformGroups(std::function<OrGroup(const OrGroup &)> fn)
     {
         auto new_group = fn(group);
         if (!new_group.empty())
-            result.insert(std::move(new_group));
+            result.push_back(std::move(new_group));
     }
 
     statements = std::move(result);
@@ -367,7 +367,7 @@ CNF & CNF::transformAtoms(std::function<AtomicFormula(const AtomicFormula &)> fn
         {
             auto new_atom = fn(atom);
             if (new_atom.node_with_hash.node)
-                result.insert(std::move(new_atom));
+                result.push_back(std::move(new_atom));
         }
 
         return result;
@@ -442,7 +442,7 @@ CNF & CNF::filterAlwaysTrueGroups(std::function<bool(const OrGroup &)> predicate
     for (const auto & or_group : statements)
     {
         if (predicate(or_group))
-            filtered.insert(or_group);
+            filtered.push_back(or_group);
     }
 
     statements = std::move(filtered);
@@ -458,16 +458,16 @@ CNF & CNF::filterAlwaysFalseAtoms(std::function<bool(const AtomicFormula &)> pre
         for (const auto & atom : or_group)
         {
             if (predicate(atom))
-                filtered_group.insert(atom);
+                filtered_group.push_back(atom);
         }
 
         if (!filtered_group.empty())
-            filtered.insert(std::move(filtered_group));
+            filtered.push_back(std::move(filtered_group));
         else
         {
             filtered.clear();
-            filtered_group.insert(AtomicFormula{false, QueryTreeNodePtrWithHash{std::make_shared<ConstantNode>(static_cast<UInt8>(0))}});
-            filtered.insert(std::move(filtered_group));
+            filtered_group.push_back(AtomicFormula{false, QueryTreeNodePtrWithHash{std::make_shared<ConstantNode>(static_cast<UInt8>(0))}});
+            filtered.push_back(std::move(filtered_group));
             break;
         }
     }
@@ -494,7 +494,7 @@ CNF & CNF::reduce()
 void CNF::appendGroup(const AndGroup & and_group)
 {
     for (const auto & or_group : and_group)
-        statements.emplace(or_group);
+        statements.emplace_back(or_group);
 }
 
 CNF::CNF(AndGroup statements_)

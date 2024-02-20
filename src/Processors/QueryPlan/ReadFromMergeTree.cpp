@@ -1766,18 +1766,6 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
     return *result_ptr;
 }
 
-bool ReadFromMergeTree::isQueryWithSampling() const
-{
-    if (context->getSettingsRef().parallel_replicas_count > 1 && data.supportsSampling())
-        return true;
-
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
-    if (query_info.table_expression_modifiers)
-        return query_info.table_expression_modifiers->getSampleSizeRatio() != std::nullopt;
-    else
-        return select.sampleSize() != nullptr;
-}
-
 Pipe ReadFromMergeTree::spreadMarkRanges(
     RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, ActionsDAGPtr & result_projection)
 {
@@ -1873,6 +1861,11 @@ Pipe ReadFromMergeTree::groupStreamsByPartition(AnalysisResult & result, Actions
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto result = getAnalysisResult();
+
+    /// Do not keep data parts in snapshot.
+    /// They are stored separately, and some could be released after PK analysis.
+    storage_snapshot->data = std::make_unique<MergeTreeData::SnapshotData>();
+
     result.checkLimits(context->getSettingsRef(), query_info);
 
     LOG_DEBUG(

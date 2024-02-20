@@ -46,9 +46,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
         return;
 
     const auto & storage_snapshot = source_step_with_filter->getStorageSnapshot();
-
-    const auto * maybe_dummy = typeid_cast<const StorageDummy *>(&storage_snapshot->storage);
-    const auto & storage = maybe_dummy && maybe_dummy->getOriginalStorage() ? *maybe_dummy->getOriginalStorage() : storage_snapshot->storage;
+    const auto & storage = storage_snapshot->storage;
     if (!storage.canMoveConditionsToPrewhere())
         return;
 

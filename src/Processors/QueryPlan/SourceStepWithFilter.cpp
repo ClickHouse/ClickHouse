@@ -3,6 +3,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/Operators.h>
+#include <Interpreters/Context.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -67,6 +69,18 @@ Block SourceStepWithFilter::applyPrewhereActions(Block block, const PrewhereInfo
     }
 
     return block;
+}
+
+bool SourceStepWithFilter::isQueryWithSampling() const
+{
+    if (context->getSettingsRef().parallel_replicas_count > 1 && storage_snapshot->storage.supportsSampling())
+        return true;
+
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
+    if (query_info.table_expression_modifiers)
+        return query_info.table_expression_modifiers->getSampleSizeRatio() != std::nullopt;
+    else
+        return select.sampleSize() != nullptr;
 }
 
 void SourceStepWithFilter::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
