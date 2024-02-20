@@ -4,7 +4,6 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ConstantValue.h>
-#include <DataTypes/FieldToDataType.h>
 
 namespace DB
 {
