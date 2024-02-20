@@ -66,6 +66,7 @@ protected:
         const auto & mark_number_column = StorageMergeTreeIndex::mark_number_column;
         const auto & rows_in_granule_column = StorageMergeTreeIndex::rows_in_granule_column;
 
+        const auto & index = part->getIndex();
         Columns result_columns(num_columns);
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
@@ -75,7 +76,7 @@ protected:
             if (index_header.has(column_name))
             {
                 size_t index_position = index_header.getPositionByName(column_name);
-                result_columns[pos] = part->index[index_position];
+                result_columns[pos] = index[index_position];
             }
             else if (column_name == part_name_column.name)
             {
