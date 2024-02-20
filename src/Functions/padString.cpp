@@ -1,5 +1,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/Algorithms.h>
@@ -188,7 +189,7 @@ namespace
                     arguments[2]->getName(),
                     getName());
 
-            return arguments[0];
+            return std::make_shared<DataTypeString>();
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

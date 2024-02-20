@@ -19,6 +19,20 @@
 #include <QueryPipeline/Pipe.h>
 #include <Common/filesystemHelpers.h>
 
+namespace
+{
+
+using namespace DB;
+
+ContextPtr makeSQLiteWriteContext(ContextPtr context)
+{
+    auto write_context = Context::createCopy(context);
+    write_context->setSetting("output_format_values_escape_quote_with_quote", Field(true));
+    return write_context;
+}
+
+}
+
 
 namespace DB
 {
@@ -43,6 +57,7 @@ StorageSQLite::StorageSQLite(
     , database_path(database_path_)
     , sqlite_db(sqlite_db_)
     , log(getLogger("StorageSQLite (" + table_id_.table_name + ")"))
+    , write_context(makeSQLiteWriteContext(getContext()))
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -144,7 +159,7 @@ public:
 
         sqlbuf << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
+        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.write_context);
         writer->write(block);
 
         sqlbuf << ";";

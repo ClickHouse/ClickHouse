@@ -5,6 +5,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -247,30 +248,6 @@ Chain buildPushingToViewsChain(
         {
             insert_context->setSetting("insert_deduplicate", Field{false});
         }
-        else if (insert_settings.update_insert_deduplication_token_in_dependent_materialized_views &&
-            !insert_settings.insert_deduplication_token.value.empty())
-        {
-            /** Update deduplication token passed to dependent MV with current table id. So it is possible to properly handle
-              * deduplication in complex INSERT flows.
-              *
-              * Example:
-              *
-              * landing -┬--> mv_1_1 ---> ds_1_1 ---> mv_2_1 --┬-> ds_2_1 ---> mv_3_1 ---> ds_3_1
-              *          |                                     |
-              *          └--> mv_1_2 ---> ds_1_2 ---> mv_2_2 --┘
-              *
-              * Here we want to avoid deduplication for two different blocks generated from `mv_2_1` and `mv_2_2` that will
-              * be inserted into `ds_2_1`.
-              */
-            auto insert_deduplication_token = insert_settings.insert_deduplication_token.value;
-
-            if (table_id.hasUUID())
-                insert_deduplication_token += "_" + toString(table_id.uuid);
-            else
-                insert_deduplication_token += "_" + table_id.getFullNameNotQuoted();
-
-            insert_context->setSetting("insert_deduplication_token", insert_deduplication_token);
-        }
 
         // Processing of blocks for MVs is done block by block, and there will
         // be no parallel reading after (plus it is not a costless operation)
@@ -326,6 +303,46 @@ Chain buildPushingToViewsChain(
         auto & type = runtime_stats->type;
         auto & target_name = runtime_stats->target_name;
         auto * view_counter_ms = &runtime_stats->elapsed_ms;
+
+        const auto & insert_settings = insert_context->getSettingsRef();
+        ContextMutablePtr view_insert_context = insert_context;
+
+        if (!disable_deduplication_for_children &&
+            insert_settings.update_insert_deduplication_token_in_dependent_materialized_views &&
+            !insert_settings.insert_deduplication_token.value.empty())
+        {
+            /** Update deduplication token passed to dependent MV with current view id. So it is possible to properly handle
+              * deduplication in complex INSERT flows.
+              *
+              * Example:
+              *
+              * landing -┬--> mv_1_1 ---> ds_1_1 ---> mv_2_1 --┬-> ds_2_1 ---> mv_3_1 ---> ds_3_1
+              *          |                                     |
+              *          └--> mv_1_2 ---> ds_1_2 ---> mv_2_2 --┘
+              *
+              * Here we want to avoid deduplication for two different blocks generated from `mv_2_1` and `mv_2_2` that will
+              * be inserted into `ds_2_1`.
+              *
+              * We are forced to use view id instead of table id because there are some possible INSERT flows where no tables
+              * are involved.
+              *
+              * Example:
+              *
+              * landing -┬--> mv_1_1 --┬-> ds_1_1
+              *          |             |
+              *          └--> mv_1_2 --┘
+              *
+              */
+            auto insert_deduplication_token = insert_settings.insert_deduplication_token.value;
+
+            if (view_id.hasUUID())
+                insert_deduplication_token += "_" + toString(view_id.uuid);
+            else
+                insert_deduplication_token += "_" + view_id.getFullNameNotQuoted();
+
+            view_insert_context = Context::createCopy(insert_context);
+            view_insert_context->setSetting("insert_deduplication_token", insert_deduplication_token);
+        }
 
         if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get()))
         {
@@ -394,8 +411,25 @@ Chain buildPushingToViewsChain(
                     insert_columns.emplace_back(column.name);
             }
 
-            InterpreterInsertQuery interpreter(nullptr, insert_context, false, false, false);
+            InterpreterInsertQuery interpreter(nullptr, view_insert_context, false, false, false);
             out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms);
+
+            if (interpreter.shouldAddSquashingFroStorage(inner_table))
+            {
+                bool table_prefers_large_blocks = inner_table->prefersLargeBlocks();
+                const auto & settings = view_insert_context->getSettingsRef();
+
+                out.addSource(std::make_shared<SquashingChunksTransform>(
+                    out.getInputHeader(),
+                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
+                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
+            }
+
+            auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), current_thread, view_insert_context->getQuota());
+            counting->setProcessListElement(view_insert_context->getProcessListElement());
+            counting->setProgressCallback(view_insert_context->getProgressCallback());
+            out.addSource(std::move(counting));
+
             out.addStorageHolder(view);
             out.addStorageHolder(inner_table);
         }
@@ -404,7 +438,7 @@ Chain buildPushingToViewsChain(
             runtime_stats->type = QueryViewsLogElement::ViewType::LIVE;
             query = live_view->getInnerQuery(); // Used only to log in system.query_views_log
             out = buildPushingToViewsChain(
-                view, view_metadata_snapshot, insert_context, ASTPtr(),
+                view, view_metadata_snapshot, view_insert_context, ASTPtr(),
                 /* no_destination= */ true,
                 thread_status_holder, running_group, view_counter_ms, async_insert, storage_header);
         }
@@ -413,13 +447,13 @@ Chain buildPushingToViewsChain(
             runtime_stats->type = QueryViewsLogElement::ViewType::WINDOW;
             query = window_view->getMergeableQuery(); // Used only to log in system.query_views_log
             out = buildPushingToViewsChain(
-                view, view_metadata_snapshot, insert_context, ASTPtr(),
+                view, view_metadata_snapshot, view_insert_context, ASTPtr(),
                 /* no_destination= */ true,
                 thread_status_holder, running_group, view_counter_ms, async_insert);
         }
         else
             out = buildPushingToViewsChain(
-                view, view_metadata_snapshot, insert_context, ASTPtr(),
+                view, view_metadata_snapshot, view_insert_context, ASTPtr(),
                 /* no_destination= */ false,
                 thread_status_holder, running_group, view_counter_ms, async_insert);
 
