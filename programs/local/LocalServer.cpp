@@ -506,6 +506,7 @@ try
     processConfig();
     adjustSettings();
     initTTYBuffer(toProgressOption(config().getString("progress", "default")));
+    ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     applyCmdSettings(global_context);
 

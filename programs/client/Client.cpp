@@ -330,6 +330,7 @@ try
     processConfig();
     adjustSettings();
     initTTYBuffer(toProgressOption(config().getString("progress", "default")));
+    ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     {
         // All that just to set DB::CurrentThread::get().getGlobalContext()
