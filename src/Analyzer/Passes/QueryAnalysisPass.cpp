@@ -1276,7 +1276,7 @@ private:
         return {};
     }
 
-    static void convertJoinedColumnTypeToNullIfNeeded(QueryTreeNodePtr & resolved_identifier, const JoinKind & join_kind, std::optional<JoinTableSide> resolved_side)
+    static void convertJoinedColumnTypeToNullIfNeeded(QueryTreeNodePtr & resolved_identifier, const JoinKind & join_kind, std::optional<JoinTableSide> resolved_side, const ContextPtr & context)
     {
         if (resolved_identifier->getNodeType() == QueryTreeNodeType::COLUMN &&
             JoinCommon::canBecomeNullable(resolved_identifier->getResultType()) &&
@@ -1285,7 +1285,14 @@ private:
             (isRight(join_kind) && resolved_side && *resolved_side == JoinTableSide::Left)))
         {
             auto & resolved_column = resolved_identifier->as<ColumnNode &>();
-            resolved_column.setColumnType(makeNullableOrLowCardinalityNullable(resolved_column.getColumnType()));
+            auto new_result_type = makeNullableOrLowCardinalityNullable(resolved_column.getColumnType());
+            resolved_column.setColumnType(new_result_type);
+            if (resolved_column.hasExpression())
+            {
+                auto & resolved_expression = resolved_column.getExpression();
+                if (!resolved_expression->getResultType()->equals(*new_result_type))
+                    resolved_expression = buildCastFunction(resolved_expression, new_result_type, context, true);
+            }
         }
     }
 
@@ -3258,6 +3265,32 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
     return {};
 }
 
+QueryTreeNodePtr checkIsMissedObjectJSONSubcolumn(const QueryTreeNodePtr & left_resolved_identifier,
+                                                  const QueryTreeNodePtr & right_resolved_identifier)
+{
+    if (left_resolved_identifier && right_resolved_identifier && left_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT
+        && right_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
+    {
+        auto & left_resolved_column = left_resolved_identifier->as<ConstantNode &>();
+        auto & right_resolved_column = right_resolved_identifier->as<ConstantNode &>();
+        if (left_resolved_column.getValueStringRepresentation() == "NULL" && right_resolved_column.getValueStringRepresentation() == "NULL")
+            return left_resolved_identifier;
+    }
+    else if (left_resolved_identifier && left_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
+    {
+        auto & left_resolved_column = left_resolved_identifier->as<ConstantNode &>();
+        if (left_resolved_column.getValueStringRepresentation() == "NULL")
+            return left_resolved_identifier;
+    }
+    else if (right_resolved_identifier && right_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
+    {
+        auto & right_resolved_column = right_resolved_identifier->as<ConstantNode &>();
+        if (right_resolved_column.getValueStringRepresentation() == "NULL")
+            return right_resolved_identifier;
+    }
+    return {};
+}
+
 QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
     const QueryTreeNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
@@ -3358,28 +3391,8 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
 
     /// If columns from left or right table were missed Object(Nullable('json')) subcolumns, they will be replaced
     /// to ConstantNode(NULL), which can't be cast to ColumnNode, so we resolve it here.
-    if (left_resolved_identifier && right_resolved_identifier && left_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT
-        && right_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
-    {
-        auto & left_resolved_column = left_resolved_identifier->as<ConstantNode &>();
-        auto & right_resolved_column = right_resolved_identifier->as<ConstantNode &>();
-        if (left_resolved_column.getValueStringRepresentation() == "NULL" && right_resolved_column.getValueStringRepresentation() == "NULL")
-            return left_resolved_identifier;
-    }
-    else if (left_resolved_identifier && left_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
-    {
-        resolved_side = JoinTableSide::Left;
-        auto & left_resolved_column = left_resolved_identifier->as<ConstantNode &>();
-        if (left_resolved_column.getValueStringRepresentation() == "NULL")
-            return left_resolved_identifier;
-    }
-    else if (right_resolved_identifier && right_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
-    {
-        resolved_side = JoinTableSide::Right;
-        auto & right_resolved_column = right_resolved_identifier->as<ConstantNode &>();
-        if (right_resolved_column.getValueStringRepresentation() == "NULL")
-            return right_resolved_identifier;
-    }
+    if (auto missed_subcolumn_identifier = checkIsMissedObjectJSONSubcolumn(left_resolved_identifier, right_resolved_identifier))
+        return missed_subcolumn_identifier;
 
     if (left_resolved_identifier && right_resolved_identifier)
     {
@@ -3522,7 +3535,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     if (scope.join_use_nulls)
     {
         resolved_identifier = resolved_identifier->clone();
-        convertJoinedColumnTypeToNullIfNeeded(resolved_identifier, join_kind, resolved_side);
+        convertJoinedColumnTypeToNullIfNeeded(resolved_identifier, join_kind, resolved_side, scope.context);
     }
 
     return resolved_identifier;
@@ -4402,6 +4415,31 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                     const auto & join_using_column_nodes_list = join_using_column_node.getExpressionOrThrow()->as<ListNode &>();
                     const auto & join_using_column_nodes = join_using_column_nodes_list.getNodes();
 
+                    /** If column doesn't exists in the table, then do not match column from USING clause.
+                      * Example: SELECT a + 1 AS id, * FROM (SELECT 1 AS a) AS t1 JOIN (SELECT 2 AS id) AS t2 USING (id);
+                      * In this case `id` is not present in the left table expression,
+                      * so asterisk should return `id` from the right table expression.
+                      */
+                    auto is_column_from_parent_scope = [&scope](const QueryTreeNodePtr & using_node_from_table)
+                    {
+                        const auto & using_column_from_table = using_node_from_table->as<ColumnNode &>();
+                        auto table_expression_data_it = scope.table_expression_node_to_data.find(using_column_from_table.getColumnSource());
+                        if (table_expression_data_it != scope.table_expression_node_to_data.end())
+                        {
+                            const auto & table_expression_data = table_expression_data_it->second;
+                            const auto & column_name = using_column_from_table.getColumnName();
+                            if (!table_expression_data.column_name_to_column_node.contains(column_name))
+                            {
+                                return true;
+                            }
+                        }
+                        return false;
+                    };
+
+                    if (is_column_from_parent_scope(join_using_column_nodes.at(0)) ||
+                        is_column_from_parent_scope(join_using_column_nodes.at(1)))
+                        continue;
+
                     QueryTreeNodePtr matched_column_node;
 
                     if (isRight(join_node->getKind()))
@@ -4523,7 +4561,13 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             for (auto & [node, node_name] : matched_expression_nodes_with_names)
             {
                 auto join_identifier_side = getColumnSideFromJoinTree(node, *nearest_scope_join_node);
-                convertJoinedColumnTypeToNullIfNeeded(node, nearest_scope_join_node->getKind(), join_identifier_side);
+                auto projection_name_it = node_to_projection_name.find(node);
+                node = node->clone();
+                /// Set the same projection name for new nullable node
+                if (projection_name_it != node_to_projection_name.end())
+                    node_to_projection_name.emplace(node, projection_name_it->second);
+
+                convertJoinedColumnTypeToNullIfNeeded(node, nearest_scope_join_node->getKind(), join_identifier_side, scope.context);
             }
         }
     }
@@ -7307,11 +7351,45 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             IdentifierLookup identifier_lookup{identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION};
             auto result_left_table_expression = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getLeftTableExpression(), scope);
             if (!result_left_table_expression)
-                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                    "JOIN {} using identifier '{}' cannot be resolved from left table expression. In scope {}",
-                    join_node_typed.formatASTForErrorMessage(),
-                    identifier_full_name,
-                    scope.scope_node->formatASTForErrorMessage());
+            {
+                /** Try to resolve identifier from parent subquery projection.
+                  * Example: SELECT a + 1 AS v FROM (SELECT 1 AS a) t1 JOIN (SELECT 2 AS b) USING b
+                  * In this case `b` is not in the left table expression, but it is in the parent subquery projection.
+                  */
+                QueryNode * query_node = scope.scope_node ? scope.scope_node->as<QueryNode>() : nullptr;
+                if (query_node)
+                {
+                    const auto & projection_list = query_node->getProjection();
+                    for (const auto & projection_node : projection_list.getNodes())
+                    {
+                        if (projection_node->hasAlias() && identifier_full_name == projection_node->getAlias())
+                        {
+                            auto left_subquery = std::make_shared<QueryNode>(query_node->getMutableContext());
+                            left_subquery->getProjection().getNodes().push_back(projection_node->clone());
+                            left_subquery->getJoinTree() = join_node_typed.getLeftTableExpression();
+
+                            IdentifierResolveScope left_subquery_scope(left_subquery, nullptr /*parent_scope*/);
+                            resolveQuery(left_subquery, left_subquery_scope);
+
+                            const auto & resolved_nodes = left_subquery->getProjection().getNodes();
+                            if (resolved_nodes.size() == 1)
+                            {
+                                /// Create ColumnNode with expression from parent projection
+                                result_left_table_expression = std::make_shared<ColumnNode>(
+                                    NameAndTypePair{identifier_full_name, resolved_nodes.at(0)->getResultType()}, resolved_nodes.at(0), join_node_typed.getLeftTableExpression());
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (!result_left_table_expression)
+                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                        "JOIN {} using identifier '{}' cannot be resolved from left table expression. In scope {}",
+                        join_node_typed.formatASTForErrorMessage(),
+                        identifier_full_name,
+                        scope.scope_node->formatASTForErrorMessage());
+            }
 
             if (result_left_table_expression->getNodeType() != QueryTreeNodeType::COLUMN)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
