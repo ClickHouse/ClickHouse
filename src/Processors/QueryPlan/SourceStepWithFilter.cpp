@@ -71,18 +71,6 @@ Block SourceStepWithFilter::applyPrewhereActions(Block block, const PrewhereInfo
     return block;
 }
 
-bool SourceStepWithFilter::isQueryWithSampling() const
-{
-    if (context->getSettingsRef().parallel_replicas_count > 1 && storage_snapshot->storage.supportsSampling())
-        return true;
-
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
-    if (query_info.table_expression_modifiers)
-        return query_info.table_expression_modifiers->getSampleSizeRatio() != std::nullopt;
-    else
-        return select.sampleSize() != nullptr;
-}
-
 void SourceStepWithFilter::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
     query_info.prewhere_info = prewhere_info_value;

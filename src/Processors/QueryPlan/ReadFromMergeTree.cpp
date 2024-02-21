@@ -1766,6 +1766,18 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
     return *result_ptr;
 }
 
+bool ReadFromMergeTree::isQueryWithSampling() const
+{
+    if (context->getSettingsRef().parallel_replicas_count > 1 && data.supportsSampling())
+        return true;
+
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
+    if (query_info.table_expression_modifiers)
+        return query_info.table_expression_modifiers->getSampleSizeRatio() != std::nullopt;
+    else
+        return select.sampleSize() != nullptr;
+}
+
 Pipe ReadFromMergeTree::spreadMarkRanges(
     RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, ActionsDAGPtr & result_projection)
 {

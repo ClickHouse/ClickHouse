@@ -41,7 +41,6 @@ public:
     const StorageSnapshotPtr & getStorageSnapshot() const { return storage_snapshot; }
 
     bool isQueryWithFinal() const { return query_info.isFinal(); }
-    bool isQueryWithSampling() const;
 
     const Names & requiredSourceColumns() const { return required_source_columns; }
 

@@ -180,6 +180,7 @@ public:
     bool readsInOrder() const;
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
+    bool isQueryWithSampling() const;
 
     /// Returns true if the optimization is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePort();

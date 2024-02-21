@@ -225,10 +225,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const ContextPtr & context_,
     const StoragePtr & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const SelectQueryOptions & options_,
-    PreparedSetsPtr prepared_sets_)
+    const SelectQueryOptions & options_)
     : InterpreterSelectQuery(
-        query_ptr_, context_, std::nullopt, storage_, options_.copy().noSubquery(), {}, metadata_snapshot_, prepared_sets_)
+        query_ptr_, context_, std::nullopt, storage_, options_.copy().noSubquery(), {}, metadata_snapshot_)
 {
 }
 
@@ -2337,8 +2336,7 @@ void collectFiltersForAnalysis(
     const ContextPtr & query_context,
     const StorageSnapshotPtr & storage_snapshot,
     const SelectQueryOptions & options,
-    SelectQueryInfo & query_info,
-    PreparedSetsPtr prepared_sets)
+    SelectQueryInfo & query_info)
 {
     const auto & storage = storage_snapshot->storage;
     bool collect_filters = typeid_cast<const StorageMerge *>(&storage);
@@ -2352,8 +2350,7 @@ void collectFiltersForAnalysis(
         storage_snapshot->storage.getStorageID(), ColumnsDescription(storage_snapshot->getColumns(get_column_options)), storage_snapshot);
 
     QueryPlan query_plan;
-    InterpreterSelectQuery(query_ptr, query_context, dummy, dummy->getInMemoryMetadataPtr(), options, prepared_sets)
-        .buildQueryPlan(query_plan);
+    InterpreterSelectQuery(query_ptr, query_context, dummy, dummy->getInMemoryMetadataPtr(), options).buildQueryPlan(query_plan);
 
     auto optimization_settings = QueryPlanOptimizationSettings::fromContext(query_context);
     query_plan.optimize(optimization_settings);
@@ -2502,7 +2499,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
     else if (storage)
     {
-        collectFiltersForAnalysis(query_ptr, context, storage_snapshot, options, query_info, prepared_sets);
+        collectFiltersForAnalysis(query_ptr, context, storage_snapshot, options, query_info);
 
         /// Table.
         if (max_streams == 0)

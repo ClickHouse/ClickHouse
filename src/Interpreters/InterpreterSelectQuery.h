@@ -81,8 +81,7 @@ public:
         const ContextPtr & context_,
         const StoragePtr & storage_,
         const StorageMetadataPtr & metadata_snapshot_ = nullptr,
-        const SelectQueryOptions & = {},
-        PreparedSetsPtr prepared_sets_ = nullptr);
+        const SelectQueryOptions & = {});
 
     /// Reuse existing prepared_sets for another pass of analysis. It's used for projection.
     /// TODO: Find a general way of sharing sets among different interpreters, such as subqueries.
