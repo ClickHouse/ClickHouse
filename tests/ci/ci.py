@@ -1284,10 +1284,13 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
             if CI_CONFIG.is_build_job(job):
                 # no GH status for build jobs
                 continue
-            num_batches = CI_CONFIG.get_job_config(job).num_batches
-            for batch in range(num_batches):
+            job_config = CI_CONFIG.get_job_config(job)
+            if not job_config:
+                # there might be a new job that does not exist on this branch - skip it
+                continue
+            for batch in range(job_config.num_batches):
                 future = executor.submit(
-                    _concurrent_create_status, job, batch, num_batches
+                    _concurrent_create_status, job, batch, job_config.num_batches
                 )
                 futures.append(future)
         done, _ = concurrent.futures.wait(futures)
