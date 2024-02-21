@@ -210,9 +210,8 @@ void LibArchiveWriter::endWritingFile()
 void LibArchiveWriter::startWritingFile()
 {
     std::lock_guard lock{mutex};
-    if (is_writing_file)
+    if (std::exchange(is_writing_file, true))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot write two files to a tar archive in parallel");
-    is_writing_file = true;
 }
 
 void LibArchiveWriter::finalize()
