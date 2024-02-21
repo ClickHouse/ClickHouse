@@ -617,7 +617,7 @@ void FormatFactory::markFormatHasNoAppendSupport(const String & name)
 bool FormatFactory::checkIfFormatSupportAppend(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_)
 {
     auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
-    auto & append_support_checker = getCreators(name).append_support_checker;
+    const auto & append_support_checker = getCreators(name).append_support_checker;
     /// By default we consider that format supports append
     return !append_support_checker || append_support_checker(format_settings);
 }
