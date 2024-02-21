@@ -120,7 +120,7 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::
         return createPrometheusMainHandlerFactory(server, config, metrics_writer, name);
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown HTTP handler factory name.");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: Unknown HTTP handler factory name.");
 }
 
 
