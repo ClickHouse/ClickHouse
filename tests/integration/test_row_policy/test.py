@@ -805,7 +805,7 @@ def test_tags_with_db_and_table_names():
             "CREATE ROW POLICY default ON mydb.`.filtered_table4` FOR SELECT USING c = 2 TO default",
             "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING c > (d + 5) TO default",
             "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 0 TO default",
-            "CREATE ROW POLICY default ON mydb.table FOR SELECT USING a = 0 TO default",
+            "CREATE ROW POLICY default ON mydb.`table` FOR SELECT USING a = 0 TO default",
         ]
     )
 
