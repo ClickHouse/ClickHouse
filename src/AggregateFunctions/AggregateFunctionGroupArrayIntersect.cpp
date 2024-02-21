@@ -118,7 +118,7 @@ public:
             return;
         }
 
-        if(!set.empty())
+        if (!set.empty())
         {
             auto create_new_set = [](auto & lhs_val, auto & rhs_val)
             {
