@@ -18,7 +18,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
 
-#include <Coordination/pathUtils.h>
+#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/KeeperStorage.h>
@@ -26,7 +26,6 @@
 
 #include <functional>
 #include <base/defines.h>
-#include <filesystem>
 
 namespace ProfileEvents
 {
