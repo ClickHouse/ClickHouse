@@ -7,9 +7,7 @@ DROP DATABASE IF EXISTS test_01155_atomic;
 
 set allow_deprecated_database_ordinary=1;
 -- Creation of a database with Ordinary engine emits a warning.
-SET send_logs_level='fatal';
 CREATE DATABASE test_01155_ordinary ENGINE=Ordinary;
-SET send_logs_level='warning';
 CREATE DATABASE test_01155_atomic ENGINE=Atomic;
 
 USE test_01155_ordinary;
