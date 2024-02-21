@@ -1,5 +1,6 @@
 -- Tags: no-parallel
 
+SET send_logs_level = 'fatal';
 SET prefer_localhost_replica = 1;
 
 DROP DATABASE IF EXISTS test_01155_ordinary;

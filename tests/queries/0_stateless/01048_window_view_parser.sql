@@ -1,5 +1,6 @@
 -- Tags: no-parallel
 
+SET send_logs_level = 'fatal';
 SET allow_experimental_analyzer = 0;
 SET allow_experimental_window_view = 1;
 DROP DATABASE IF EXISTS test_01048;

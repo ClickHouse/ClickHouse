@@ -1,5 +1,7 @@
 -- Tags: zookeeper, no-replicated-database, no-parallel, no-ordinary-database
 
+SET send_logs_level = 'fatal';
+
 DROP TABLE IF EXISTS rmt;
 DROP TABLE IF EXISTS rmt1;
 DROP TABLE IF EXISTS rmt2;

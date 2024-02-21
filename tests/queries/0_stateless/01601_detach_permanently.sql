@@ -1,5 +1,7 @@
 -- Tags: no-parallel
 
+SET send_logs_level = 'fatal';
+
 SELECT 'database atomic tests';
 
 DROP DATABASE IF EXISTS test1601_detach_permanently_atomic;

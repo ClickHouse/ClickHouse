@@ -1,5 +1,7 @@
 -- Tags: no-parallel
 
+SET send_logs_level = 'fatal';
+
 --
 -- Atomic no SYNC
 -- (should go first to check that thread for DROP TABLE does not hang)

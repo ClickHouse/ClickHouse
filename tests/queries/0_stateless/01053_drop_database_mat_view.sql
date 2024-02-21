@@ -1,3 +1,4 @@
+SET send_logs_level = 'fatal';
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
 set allow_deprecated_database_ordinary=1;

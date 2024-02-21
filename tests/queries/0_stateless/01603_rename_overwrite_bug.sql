@@ -1,5 +1,7 @@
 -- Tags: no-parallel
 
+SET send_logs_level = 'fatal';
+
 DROP database IF EXISTS test_1603_rename_bug_ordinary;
 set allow_deprecated_database_ordinary=1;
 -- Creation of a database with Ordinary engine emits a warning.
