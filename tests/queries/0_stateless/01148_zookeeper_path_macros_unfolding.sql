@@ -33,9 +33,9 @@ SHOW CREATE TABLE test_01148_atomic.rmt3;
 DROP DATABASE IF EXISTS test_01148_ordinary;
 set allow_deprecated_database_ordinary=1;
 -- Creation of a database with Ordinary engine emits a warning.
-SET send_logs_level=fatal;
+SET send_logs_level='fatal';
 CREATE DATABASE test_01148_ordinary ENGINE=Ordinary;
-SET send_logs_level=warning;
+SET send_logs_level='warning';
 RENAME TABLE test_01148_atomic.rmt3 to test_01148_ordinary.rmt3; -- { serverError 48 }
 DROP DATABASE test_01148_ordinary;
 DROP DATABASE test_01148_atomic;

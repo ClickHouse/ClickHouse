@@ -4,9 +4,9 @@ SET allow_experimental_window_view = 1;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
 set allow_deprecated_database_ordinary=1;
 -- Creation of a database with Ordinary engine emits a warning.
-SET send_logs_level=fatal;
+SET send_logs_level='fatal';
 CREATE DATABASE {CLICKHOUSE_DATABASE:Identifier} ENGINE=Ordinary;
-SET send_logs_level=warning;
+SET send_logs_level='warning';
 
 DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE:Identifier}.mt;
 DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE:Identifier}.mt_2;
