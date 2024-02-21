@@ -552,7 +552,7 @@ void S3ObjectStorage::applyNewSettings(
             static_headers.begin(), static_headers.end());
     }
 
-    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString()))
+    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
         new_s3_settings->auth_settings.updateFrom(endpoint_settings->auth_settings);
 
     auto current_s3_settings = s3_settings.get();

@@ -77,6 +77,8 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable ThrottlerPtr local_read_throttler;              /// A server-wide throttler for local IO reads
     mutable ThrottlerPtr local_write_throttler;             /// A server-wide throttler for local IO writes
+
+    std::optional<StorageS3Settings> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
 };
 
 ContextData::ContextData() = default;
@@ -380,6 +382,19 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
 std::shared_ptr<zkutil::ZooKeeper> Context::getZooKeeper() const
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot connect to ZooKeeper from Keeper");
+}
+
+const StorageS3Settings & Context::getStorageS3Settings() const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->storage_s3_settings)
+    {
+        const auto & config = shared->config ? *shared->config : Poco::Util::Application::instance().config();
+        shared->storage_s3_settings.emplace().loadFromConfig("s3", config, getSettingsRef());
+    }
+
+    return *shared->storage_s3_settings;
 }
 
 }

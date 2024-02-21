@@ -86,7 +86,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
             headers_from_ast.begin(), headers_from_ast.end());
     }
 
-    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString()))
+    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
         s3_settings->auth_settings.updateFrom(endpoint_settings->auth_settings);
 
     auto client = getClient(config, config_prefix, context, *s3_settings, false, &url);
