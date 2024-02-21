@@ -66,7 +66,7 @@ public:
     {
         auto res = std::make_shared<ASTRenameQuery>(*this);
         cloneOutputOptions(*res);
-        for(auto & element : res->elements)
+        for (auto & element : res->elements)
         {
             element.from = element.from.clone();
             element.to = element.to.clone();
