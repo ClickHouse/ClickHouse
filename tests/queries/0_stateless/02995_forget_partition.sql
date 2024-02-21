@@ -1,4 +1,4 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-replicated-database
 
 drop table if exists forget_partition;
 
