@@ -8205,6 +8205,15 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         queryToStringWithEmptyTupleNormalization(dst_partition_expression)
         == queryToStringWithEmptyTupleNormalization(src_partition_expression);
 
+    if (!is_partition_exp_the_same)
+    {
+        // TODO let's see what ci tells me
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot move partition '{}' because it has different partition expression."
+                        "There is no way to calculate the destination partition id",
+                        source_partition_id);
+    }
+
     /// A range for log entry to remove parts from the source table (myself).
     auto zookeeper = getZooKeeper();
     /// Retry if alter_partition_version changes
