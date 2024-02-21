@@ -84,9 +84,11 @@ number:          2
 0	Hello & world
 1	Hello & world
 2	Hello & world
+0	Hello & world
+1	Hello & world
+2	Hello & world
 -- test other function --
-SELECT 1 FORMAT CSV
-SELECT * FROM file(\'data_00309_formats_case_insensitive\', \'Csv\')
+0	Hello & world
 -- test table engine --
 0	Hello & world
 1	Hello & world
