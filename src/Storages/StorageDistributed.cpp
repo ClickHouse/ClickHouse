@@ -1734,16 +1734,27 @@ void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
             directory_queues.push_back(node.second.directory_queue);
     }
 
-    bool need_flush = getDistributedSettingsRef().flush_on_detach;
-    if (!need_flush)
+    if (getDistributedSettingsRef().flush_on_detach)
+    {
+        LOG_INFO(log, "Flushing pending INSERT blocks");
+
+        Stopwatch watch;
+        ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, directory_queues.size());
+        for (const auto & node : directory_queues)
+        {
+            pool.scheduleOrThrowOnError([node_to_flush = node]()
+            {
+                node_to_flush->flushAllData();
+            });
+        }
+        pool.wait();
+        LOG_INFO(log, "Pending INSERT blocks flushed, took {} ms.", watch.elapsedMilliseconds());
+    }
+    else
+    {
         LOG_INFO(log, "Skip flushing data (due to flush_on_detach=0)");
 
-    /// TODO: Maybe it should be executed in parallel
-    for (auto & node : directory_queues)
-    {
-        if (need_flush)
-            node->flushAllData();
-        else
+        for (auto & node : directory_queues)
             node->shutdownWithoutFlush();
     }
 }
