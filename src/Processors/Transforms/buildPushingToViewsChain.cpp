@@ -188,14 +188,6 @@ private:
     std::exception_ptr any_exception;
 };
 
-Block getHeader(ContextPtr context, ASTPtr query)
-{
-    if (context->getSettingsRef().allow_experimental_analyzer)
-        return InterpreterSelectQueryAnalyzer::getSampleBlock(query, context);
-    else
-        return InterpreterSelectQuery(query, context, SelectQueryOptions()).getSampleBlock();
-}
-
 /// Generates one chain part for every view in buildPushingToViewsChain
 std::optional<Chain> generateViewChain(
     ContextPtr context,
@@ -351,7 +343,13 @@ std::optional<Chain> generateViewChain(
 
         target_name = inner_table_id.getFullTableName();
 
-        auto header = getHeader(select_context, query);
+        Block header;
+
+        /// Get list of columns we get from select query.
+        if (select_context->getSettingsRef().allow_experimental_analyzer)
+            header = InterpreterSelectQueryAnalyzer::getSampleBlock(query, select_context);
+        else
+            header = InterpreterSelectQuery(query, select_context, SelectQueryOptions()).getSampleBlock();
 
         /// Insert only columns returned by select.
         Names insert_columns;
@@ -369,7 +367,7 @@ std::optional<Chain> generateViewChain(
         if (interpreter.shouldAddSquashingFroStorage(inner_table))
         {
             bool table_prefers_large_blocks = inner_table->prefersLargeBlocks();
-            const auto & settings = view_insert_context->getSettingsRef();
+            const auto & settings = insert_context->getSettingsRef();
 
             out.addSource(std::make_shared<SquashingChunksTransform>(
                 out.getInputHeader(),
@@ -377,9 +375,9 @@ std::optional<Chain> generateViewChain(
                 table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
         }
 
-        auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), current_thread, view_insert_context->getQuota());
-        counting->setProcessListElement(view_insert_context->getProcessListElement());
-        counting->setProgressCallback(view_insert_context->getProgressCallback());
+        auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), current_thread, insert_context->getQuota());
+        counting->setProcessListElement(insert_context->getProcessListElement());
+        counting->setProgressCallback(insert_context->getProgressCallback());
         out.addSource(std::move(counting));
 
         out.addStorageHolder(view);
@@ -389,7 +387,6 @@ std::optional<Chain> generateViewChain(
     {
         runtime_stats->type = QueryViewsLogElement::ViewType::LIVE;
         query = live_view->getInnerQuery();
-        getHeader(select_context, query);  /// check implicitly that definer has enough rights
         out = buildPushingToViewsChain(
             view, view_metadata_snapshot, insert_context, ASTPtr(),
             /* no_destination= */ true,
