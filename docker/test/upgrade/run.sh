@@ -77,6 +77,18 @@ remove_keeper_config "async_replication" "1"
 # create_if_not_exists feature flag doesn't exist on some older versions
 remove_keeper_config "create_if_not_exists" "[01]"
 
+#todo: remove these after 24.3 released.
+sudo cat /etc/clickhouse-server/config.d/azure_storage_conf.xml \
+  | sed "s|<object_storage_type>azure</object_storage_type>>|<object_storage_type>>azure_blob_storage</object_storage_type>>|" \
+  > /etc/clickhouse-server/config.d/azure_storage_conf.xml.tmp
+sudo mv /etc/clickhouse-server/config.d/azure_storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
+
+#todo: remove these after 24.3 released.
+sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
+  | sed "s|<object_storage_type>local</object_storage_type>>|<object_storage_type>>local_blob_storage</object_storage_type>>|" \
+  > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
+sudo mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
+
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
@@ -103,11 +115,13 @@ sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
   > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
 sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
 
+#todo: remove these after 24.3 released.
 sudo cat /etc/clickhouse-server/config.d/azure_storage_conf.xml \
   | sed "s|<object_storage_type>azure</object_storage_type>>|<object_storage_type>>azure_blob_storage</object_storage_type>>|" \
   > /etc/clickhouse-server/config.d/azure_storage_conf.xml.tmp
 sudo mv /etc/clickhouse-server/config.d/azure_storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
 
+#todo: remove these after 24.3 released.
 sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
   | sed "s|<object_storage_type>local</object_storage_type>>|<object_storage_type>>local_blob_storage</object_storage_type>>|" \
   > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
