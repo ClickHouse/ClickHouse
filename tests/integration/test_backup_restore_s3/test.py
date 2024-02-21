@@ -213,9 +213,7 @@ def test_backup_from_s3_to_s3_disk_native_copy(storage_policy, to_disk):
 def test_backup_to_s3():
     storage_policy = "default"
     backup_name = new_backup_name()
-    backup_destination = (
-        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
-    )
+    backup_destination = (f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')")
     (backup_events, _) = check_backup_and_restore(storage_policy, backup_destination)
     check_system_tables(backup_events["query_id"])
 
