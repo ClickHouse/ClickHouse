@@ -5122,6 +5122,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         true /*allow_lambda_expression*/,
         allow_table_expressions /*allow_table_expression*/);
 
+    if (function_node_ptr->toAST()->hasSecretParts())
+    {
+        for (auto & argument : arguments_projection_names)
+        {
+            SipHash hash;
+            hash.update(argument);
+            argument = getHexUIntLowercase(hash.get128());
+        }
+    }
     auto & function_node = *function_node_ptr;
 
     /// Replace right IN function argument if it is table or table function with subquery that read ordinary columns
