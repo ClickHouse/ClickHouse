@@ -732,9 +732,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// The query can become more verbose after formatting, so:
             size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
 
+            ASTPtr ast2;
             try
             {
-                ASTPtr ast2 = parseQuery(parser,
+                ast2 = parseQuery(parser,
                     formatted1.data(),
                     formatted1.data() + formatted1.size(),
                     "", new_max_query_size, settings.max_parser_depth);
