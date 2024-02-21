@@ -198,6 +198,8 @@ class JobConfig:
     pr_only: bool = False
     # job is for release/master branches only
     release_only: bool = False
+    # to randomly pick and run one job among jobs in the same @random_bucket. Applied in PR branches only.
+    random_bucket: str = ""
 
 
 @dataclass
@@ -993,29 +995,29 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_TSAN,
             job_config=JobConfig(num_batches=5, **statless_test_common_params),  # type: ignore
         ),
-        JobNames.STRESS_TEST_ASAN: TestConfig(
-            Build.PACKAGE_ASAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
+        JobNames.STRESS_TEST_DEBUG: TestConfig(
+            Build.PACKAGE_DEBUG, job_config=JobConfig(**stress_test_common_params)  # type: ignore
         ),
         JobNames.STRESS_TEST_TSAN: TestConfig(
             Build.PACKAGE_TSAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
         ),
+        JobNames.STRESS_TEST_ASAN: TestConfig(
+            Build.PACKAGE_ASAN, job_config=JobConfig(random_bucket="stress_with_sanitizer", **stress_test_common_params)  # type: ignore
+        ),
         JobNames.STRESS_TEST_UBSAN: TestConfig(
-            Build.PACKAGE_UBSAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
+            Build.PACKAGE_UBSAN, job_config=JobConfig(random_bucket="stress_with_sanitizer", **stress_test_common_params)  # type: ignore
         ),
         JobNames.STRESS_TEST_MSAN: TestConfig(
-            Build.PACKAGE_MSAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
-        ),
-        JobNames.STRESS_TEST_DEBUG: TestConfig(
-            Build.PACKAGE_DEBUG, job_config=JobConfig(**stress_test_common_params)  # type: ignore
+            Build.PACKAGE_MSAN, job_config=JobConfig(random_bucket="stress_with_sanitizer", **stress_test_common_params)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_ASAN: TestConfig(
-            Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, **upgrade_test_common_params)  # type: ignore
+            Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_TSAN: TestConfig(
-            Build.PACKAGE_TSAN, job_config=JobConfig(pr_only=True, **upgrade_test_common_params)  # type: ignore
+            Build.PACKAGE_TSAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_MSAN: TestConfig(
-            Build.PACKAGE_MSAN, job_config=JobConfig(pr_only=True, **upgrade_test_common_params)  # type: ignore
+            Build.PACKAGE_MSAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_DEBUG: TestConfig(
             Build.PACKAGE_DEBUG, job_config=JobConfig(pr_only=True, **upgrade_test_common_params)  # type: ignore
