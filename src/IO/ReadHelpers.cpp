@@ -1982,25 +1982,16 @@ bool tryReadJSONField(String & s, ReadBuffer & buf)
     return readParsedValueInto<bool>(s, buf, parse_func);
 }
 
-template<bool supports_crlf>
-void readTSVFieldImpl(String & s, ReadBuffer & buf)
-{
-    if constexpr (supports_crlf)
-        readEscapedStringIntoImpl<String, false, false>(s, buf);
-    else
-        readEscapedStringIntoImpl<String, false, true>(s, buf);
-}
-
 void readTSVField(String & s, ReadBuffer & buf)
 {
     s.clear();
-    readTSVFieldImpl<false>(s, buf);
+    readEscapedStringIntoImpl<String, false, false>(s, buf);
 }
 
 void readTSVFieldCRLF(String & s, ReadBuffer & buf)
 {
     s.clear();
-    readTSVFieldImpl<true>(s, buf);
+    readEscapedStringIntoImpl<String, false, true>(s, buf);
 }
 
 
