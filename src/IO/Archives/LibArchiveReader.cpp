@@ -162,7 +162,7 @@ private:
             archive_read_support_format_tar(archive);
             archive_read_support_format_7zip(archive);
             archive_read_support_format_zip(archive);
-            
+
             if (archive_read_open_filename(archive, path_to_archive.c_str(), 10240) != ARCHIVE_OK)
                 throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't open archive {}: {}", quoteString(path_to_archive), archive_error_string(archive));
         }
