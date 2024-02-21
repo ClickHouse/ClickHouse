@@ -61,14 +61,14 @@ sidebar_label: ORDER BY
 
 我们只建议使用 `COLLATE` 对于少量行的最终排序，因为排序与 `COLLATE` 比正常的按字节排序效率低。
 
-## ORDER BY ALL
+## ORDER BY *
 
-`ORDER BY ALL` 对所有选定的列进行升序排序。
+`ORDER BY *` 对所有选定的列进行升序排序。
 
 示例:
 
 ``` sql
-SELECT a, b, c FROM t ORDER BY ALL
+SELECT a, b, c FROM t ORDER BY *
 ```
 
 等同于：
