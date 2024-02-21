@@ -16,6 +16,15 @@ INSERT INTO test_null VALUES ([1,2]);
 SELECT groupArrayIntersect(*) FROM test_null;
 DROP TABLE test_null;
 
+DROP TABLE IF EXISTS test_nested_arrays;
+CREATE TABLE test_nested_arrays (a Array(Array(Int64))) engine=MergeTree ORDER BY a;
+INSERT INTO test_nested_arrays VALUES ([[1,2,3,4,5,6], [1,2,4,5]]);
+INSERT INTO test_nested_arrays VALUES ([[1,2,4,5]]);
+SELECT groupArrayIntersect(*) FROM test_nested_arrays;
+INSERT INTO test_nested_arrays VALUES ([[1,4,3,0,5,5,5]]);
+SELECT groupArrayIntersect(*) FROM test_nested_arrays;
+DROP TABLE test_nested_arrays;
+
 DROP TABLE IF EXISTS test_numbers;
 CREATE TABLE test_numbers (a Array(Int64)) engine=MergeTree ORDER BY a;
 INSERT INTO test_numbers VALUES ([1,2,3,4,5,6]);

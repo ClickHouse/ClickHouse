@@ -89,7 +89,7 @@ public:
             for (size_t i = 0; i < arr_size; ++i)
                 set.insert(static_cast<T>((*data_column)[offset + i].get<T>()));
         }
-        else if (set.size() > 0)
+        else if (!set.empty())
         {
             typename State::Set new_set;
             for (size_t i = 0; i < arr_size; ++i)
@@ -118,7 +118,7 @@ public:
             return;
         }
 
-        if(set.size() > 0)
+        if(!set.empty())
         {
             auto create_new_set = [](auto & lhs_val, auto & rhs_val)
             {
@@ -167,8 +167,8 @@ public:
         data_to.resize(old_size + set.size());
 
         size_t i = 0;
-        for (auto it = set.begin(); it != set.end(); ++it)
-            data_to[old_size + i++] = it->getValue();
+        for (auto it = set.begin(); it != set.end(); ++it, ++i)
+            data_to[old_size + i] = it->getValue();
     }
 };
 
@@ -235,7 +235,7 @@ public:
                 }
             }
         }
-        else if (set.size() > 0)
+        else if (!set.empty())
         {
             typename State::Set new_set;
             for (size_t i = 0; i < arr_size; ++i)
@@ -279,7 +279,7 @@ public:
                 set.emplace(ArenaKeyHolder{rhs_elem.getValue(), *arena}, it, inserted);
             }
         }
-        else if (set.size() > 0)
+        else if (!set.empty())
         {
             auto create_new_map = [](auto & lhs_val, auto & rhs_val)
             {
@@ -321,8 +321,7 @@ public:
         {
             auto key = readStringBinaryInto(*arena, buf);
             readVarUInt(elem_version, buf);
-            if (elem_version == version)
-                set.insert(key);
+            set.insert(key);
         }
     }
 
