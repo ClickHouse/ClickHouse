@@ -779,7 +779,7 @@ static void writeFieldsToColumn(
                         casted_int32_column->insertValue(num & 0x800000 ? num | 0xFF000000 : num);
                     }
                     else
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "MaterializedMySQL is a bug.");
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: it is a bug.");
                 }
             }
         }
@@ -844,7 +844,7 @@ static inline bool differenceSortingKeys(const Tuple & row_old_data, const Tuple
 static inline size_t onUpdateData(const Row & rows_data, Block & buffer, size_t version, const std::vector<size_t> & sorting_columns_index)
 {
     if (rows_data.size() % 2 != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "MaterializedMySQL is a bug.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: It is a bug.");
 
     size_t prev_bytes = buffer.bytes();
     std::vector<bool> writeable_rows_mask(rows_data.size());

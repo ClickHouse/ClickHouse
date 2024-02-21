@@ -1582,7 +1582,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
         {
             auto path_prefix = request.path;
             if (path_prefix.empty())
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Path cannot be empty");
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: path cannot be empty");
 
             const auto & children = node_it->value.getChildren();
             response.names.reserve(children.size());
