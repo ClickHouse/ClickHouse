@@ -33,11 +33,6 @@ class KnownFormatNames : public KnownObjectNames
 {
 public:
     static KnownFormatNames & instance();
-    void add(const String & name, bool case_insensitive = true);
-    String getOriginalFormatNameIfExists(const String & name) const;
-
-private:
-    std::unordered_map<String, String> case_insensitive_names_map;
 };
 
 }

@@ -8,7 +8,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/BinStringDecodeHelper.h>
-#include <Common/KnownObjectNames.h>
 
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAsterisk.h>
@@ -239,39 +238,6 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         node = std::make_shared<ASTIdentifier>("", std::make_shared<ASTQueryParameter>(name, type));
         return true;
     }
-    return false;
-}
-
-
-bool ParserFormatIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    /// Identifier in backquotes or in double quotes
-    if (pos->type == TokenType::QuotedIdentifier)
-    {
-        ReadBufferFromMemory buf(pos->begin, pos->size());
-        String s;
-
-        if (*pos->begin == '`')
-            readBackQuotedStringWithSQLStyle(s, buf);
-        else
-            readDoubleQuotedStringWithSQLStyle(s, buf);
-
-        if (s.empty())    /// Identifiers "empty string" are not allowed.
-            return false;
-
-        auto format_name = KnownFormatNames::instance().getOriginalFormatNameIfExists(s);
-        node = std::make_shared<ASTIdentifier>(format_name);
-        ++pos;
-        return true;
-    }
-    else if (pos->type == TokenType::BareWord)
-    {
-        auto format_name = KnownFormatNames::instance().getOriginalFormatNameIfExists(String(pos->begin, pos->end));
-        node = std::make_shared<ASTIdentifier>(format_name);
-        ++pos;
-        return true;
-    }
-    expected.add(pos, "format name");
     return false;
 }
 

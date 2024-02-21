@@ -45,29 +45,4 @@ KnownFormatNames & KnownFormatNames::instance()
     return the_instance;
 }
 
-
-void KnownFormatNames::add(const String & name, bool case_insensitive)
-{
-    std::lock_guard lock{mutex};
-    if (case_insensitive)
-    {
-        String lower_case_name = Poco::toLower(name);
-        case_insensitive_names.emplace(lower_case_name);
-        case_insensitive_names_map[lower_case_name] = name;
-    }
-    else
-        names.emplace(name);
-}
-
-
-String KnownFormatNames::getOriginalFormatNameIfExists(const String & name) const
-{
-    std::lock_guard lock{mutex};
-    String lower_case_name = Poco::toLower(name);
-    auto it = case_insensitive_names_map.find(lower_case_name);
-    if (case_insensitive_names_map.end() != it)
-        return it->second;
-    return name;
-}
-
 }

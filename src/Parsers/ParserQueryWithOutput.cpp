@@ -154,7 +154,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (s_format.ignore(pos, expected))
     {
-        ParserFormatIdentifier format_p;
+        ParserIdentifier format_p;
 
         if (!format_p.parse(pos, query_with_output.format, expected))
             return false;
