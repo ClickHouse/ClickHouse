@@ -31,7 +31,7 @@ public:
 
     static size_t getMaxNumberOfArguments() { return 4; }
 
-    static void addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr &);
+    static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr &);
 
 protected:
 
@@ -39,10 +39,9 @@ protected:
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context);
 
     virtual void parseFirstArguments(const ASTPtr & arg, const ContextPtr & context);
-    virtual String getFormatFromFirstArgument();
+    virtual std::optional<String> tryGetFormatFromFirstArgument();
 
     String filename;
-    String path_to_archive;
     String format = "auto";
     String structure = "auto";
     String compression_method = "auto";

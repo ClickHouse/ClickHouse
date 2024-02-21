@@ -2,6 +2,8 @@
 
 
 /// Available metrics. Add something here as you wish.
+/// If the metric is generic (i.e. not server specific)
+/// it should be also added to src/Coordination/KeeperConstant.cpp
 #define APPLY_FOR_BUILTIN_METRICS(M) \
     M(Query, "Number of executing queries") \
     M(Merge, "Number of executing background merges") \
@@ -260,6 +262,9 @@
     M(ActiveTimersInQueryProfiler, "Number of Active thread local timers in QueryProfiler") \
     M(RefreshableViews, "Number materialized views with periodic refreshing (REFRESH)") \
     M(RefreshingViews, "Number of materialized views currently executing a refresh") \
+    M(StorageBufferFlushThreads, "Number of threads for background flushes in StorageBuffer") \
+    M(StorageBufferFlushThreadsActive, "Number of threads for background flushes in StorageBuffer running a task") \
+    M(StorageBufferFlushThreadsScheduled, "Number of queued or active threads for background flushes in StorageBuffer")
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

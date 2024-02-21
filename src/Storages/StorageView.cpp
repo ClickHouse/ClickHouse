@@ -114,7 +114,15 @@ StorageView::StorageView(
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+    if (!is_parameterized_view_)
+    {
+        /// If CREATE query is to create parameterized view, then we dont want to set columns
+        if (!query.isParameterizedView())
+            storage_metadata.setColumns(columns_);
+    }
+    else
+        storage_metadata.setColumns(columns_);
+
     storage_metadata.setComment(comment);
     if (query.sql_security)
         storage_metadata.setDefiner(query.sql_security->as<ASTSQLSecurity &>());
@@ -203,12 +211,12 @@ void StorageView::read(
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)
 {
     if (!select_query.tables() || select_query.tables()->children.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no table expression in view select AST");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No table expression in view select AST");
 
     auto * select_element = select_query.tables()->children[0]->as<ASTTablesInSelectQueryElement>();
 
     if (!select_element->table_expression)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: incorrect table expression");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect table expression");
 
     return select_element->table_expression->as<ASTTableExpression>();
 }
@@ -239,7 +247,7 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
 
         }
         if (!table_expression->database_and_table_name)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: incorrect table expression");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect table expression");
     }
 
     DatabaseAndTableWithAlias db_table(table_expression->database_and_table_name);
@@ -247,8 +255,7 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
 
     view_name = table_expression->database_and_table_name;
     table_expression->database_and_table_name = {};
-    table_expression->subquery = std::make_shared<ASTSubquery>();
-    table_expression->subquery->children.push_back(view_query);
+    table_expression->subquery = std::make_shared<ASTSubquery>(view_query);
     table_expression->subquery->setAlias(alias);
 
     for (auto & child : table_expression->children)
@@ -267,7 +274,7 @@ ASTPtr StorageView::restoreViewName(ASTSelectQuery & select_query, const ASTPtr 
     ASTTableExpression * table_expression = getFirstTableExpression(select_query);
 
     if (!table_expression->subquery)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: incorrect table expression");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect table expression");
 
     ASTPtr subquery = table_expression->subquery;
     table_expression->subquery = {};
