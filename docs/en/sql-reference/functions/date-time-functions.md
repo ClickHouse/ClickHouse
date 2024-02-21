@@ -735,6 +735,40 @@ Result:
 └─────────────────────────────────────────────┘
 ```
 
+## toMilliSecond
+
+Similar to the `toSecond` function, it converts a date with time to the milliseconds in the minute of the time as `UInt16` value.
+
+**Syntax**
+
+```sql
+toMilliSecond(value)
+```
+
+*Arguments**
+
+- `value` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
+
+Alias: `MILLISECOND`
+
+```sql
+SELECT toMilliSecond(toDateTime('2023-04-21 10:20:30'))
+```
+
+Result:
+
+```response
+┌─toSecond(toDateTime('2023-04-21 10:20:30'))─┐
+│                                       30000 │
+└─────────────────────────────────────────────┘
+```
+
+**Returned value**
+
+- The millisecond in the minute (0 - 59) of the given date/time
+
+Type: `UInt16`
+
 ## toUnixTimestamp
 
 Converts a string, a date or a date with time to the [Unix Timestamp](https://en.wikipedia.org/wiki/Unix_time) in `UInt32` representation.
