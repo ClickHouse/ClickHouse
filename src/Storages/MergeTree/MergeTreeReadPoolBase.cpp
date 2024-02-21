@@ -12,7 +12,6 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
-    const Names & virtual_column_names_,
     const PoolSettings & pool_settings_,
     const ContextPtr & context_)
     : parts_ranges(std::move(parts_))
@@ -21,7 +20,6 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , actions_settings(actions_settings_)
     , reader_settings(reader_settings_)
     , column_names(column_names_)
-    , virtual_column_names(virtual_column_names_)
     , pool_settings(pool_settings_)
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
@@ -52,21 +50,14 @@ void MergeTreeReadPoolBase::fillPerPartInfos()
 
         LoadedMergeTreeDataPartInfoForReader part_info(part_with_ranges.data_part, part_with_ranges.alter_conversions);
 
-        Names column_and_virtual_column_names;
-        column_and_virtual_column_names.reserve(column_names.size() + virtual_column_names.size());
-        column_and_virtual_column_names.insert(column_and_virtual_column_names.end(), column_names.begin(), column_names.end());
-        column_and_virtual_column_names.insert(
-            column_and_virtual_column_names.end(), virtual_column_names.begin(), virtual_column_names.end());
         read_task_info.task_columns = getReadTaskColumns(
             part_info,
             storage_snapshot,
-            column_and_virtual_column_names,
+            column_names,
             prewhere_info,
             actions_settings,
             reader_settings,
             /*with_subcolumns=*/true);
-
-        read_task_info.virt_column_names = {virtual_column_names.begin(), virtual_column_names.end()};
 
         if (pool_settings.preferred_block_size_bytes > 0)
         {

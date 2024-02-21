@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/BlockNumberColumn.h>
 
 namespace DB
 {

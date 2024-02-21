@@ -39,7 +39,6 @@ MergeTreeReadPool::MergeTreeReadPool(
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
-    const Names & virtual_column_names_,
     const PoolSettings & settings_,
     const ContextPtr & context_)
     : MergeTreeReadPoolBase(
@@ -49,7 +48,6 @@ MergeTreeReadPool::MergeTreeReadPool(
         actions_settings_,
         reader_settings_,
         column_names_,
-        virtual_column_names_,
         settings_,
         context_)
     , min_marks_for_concurrent_read(pool_settings.min_marks_for_concurrent_read)

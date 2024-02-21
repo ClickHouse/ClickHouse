@@ -28,7 +28,6 @@ public:
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
-        const Names & virtual_column_names_,
         const PoolSettings & settings_,
         const ContextPtr & context_);
 
@@ -42,7 +41,6 @@ protected:
     const ExpressionActionsSettings actions_settings;
     const MergeTreeReaderSettings reader_settings;
     const Names column_names;
-    const Names virtual_column_names;
     const PoolSettings pool_settings;
     const MarkCachePtr owned_mark_cache;
     const UncompressedCachePtr owned_uncompressed_cache;

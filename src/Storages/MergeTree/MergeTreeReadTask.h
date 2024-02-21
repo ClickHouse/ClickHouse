@@ -60,8 +60,6 @@ struct MergeTreeReadTaskInfo
     AlterConversionsPtr alter_conversions;
     /// Column names to read during PREWHERE and WHERE
     MergeTreeReadTaskColumns task_columns;
-    /// Virtual column names to read
-    NameSet virt_column_names;
     /// Shared initialized size predictor. It is copied for each new task.
     MergeTreeBlockSizePredictorPtr shared_size_predictor;
 };

@@ -46,17 +46,11 @@ public:
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReadTask::BlockSizeParams & block_size_params_,
-        const MergeTreeReaderSettings & reader_settings_,
-        const Names & virt_column_names_);
+        const MergeTreeReaderSettings & reader_settings_);
 
     String getName() const;
 
-    static Block transformHeader(
-        Block block,
-        const StorageSnapshotPtr & storage_snapshot,
-        const PrewhereInfoPtr & prewhere_info,
-        const Names & virtual_columns);
-
+    static Block transformHeader(Block block, const PrewhereInfoPtr & prewhere_info);
     Block getHeader() const { return result_header; }
 
     ChunkAndProgress read();
@@ -83,7 +77,6 @@ private:
     };
 
     /// Used for filling header with no rows as well as block with data
-    static void injectVirtualColumns(Block & block, const StorageSnapshotPtr & storage_snapshot, const Names & virtual_columns);
     static Block applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info);
 
     /// Sets up range readers corresponding to data readers
@@ -99,7 +92,6 @@ private:
 
     const MergeTreeReaderSettings reader_settings;
     const MergeTreeReadTask::BlockSizeParams block_size_params;
-    const Names virt_column_names;
 
     /// Current task to read from.
     MergeTreeReadTaskPtr task;

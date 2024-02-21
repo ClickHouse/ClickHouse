@@ -265,29 +265,24 @@ void ReadFromMergeTree::AnalysisResult::checkLimits(const Settings & settings, c
 ReadFromMergeTree::ReadFromMergeTree(
     MergeTreeData::DataPartsVector parts_,
     std::vector<AlterConversionsPtr> alter_conversions_,
-    Names real_column_names_,
-    Names virt_column_names_,
+    Names all_column_names_,
     const MergeTreeData & data_,
     const SelectQueryInfo & query_info_,
     StorageSnapshotPtr storage_snapshot_,
     ContextPtr context_,
     size_t max_block_size_,
     size_t num_streams_,
-    bool sample_factor_column_queried_,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
     LoggerPtr log_,
     AnalysisResultPtr analyzed_result_ptr_,
     bool enable_parallel_reading)
     : SourceStepWithFilter(DataStream{.header = MergeTreeSelectProcessor::transformHeader(
-        storage_snapshot_->getSampleBlockForColumns(real_column_names_),
-        storage_snapshot_,
-        query_info_.prewhere_info,
-        virt_column_names_)})
+        storage_snapshot_->getSampleBlockForColumns(all_column_names_),
+        query_info_.prewhere_info)})
     , reader_settings(getMergeTreeReaderSettings(context_, query_info_))
     , prepared_parts(std::move(parts_))
     , alter_conversions_for_parts(std::move(alter_conversions_))
-    , real_column_names(std::move(real_column_names_))
-    , virt_column_names(std::move(virt_column_names_))
+    , all_column_names(std::move(all_column_names_))
     , data(data_)
     , query_info(query_info_)
     , prewhere_info(query_info_.prewhere_info)
@@ -300,7 +295,7 @@ ReadFromMergeTree::ReadFromMergeTree(
         .preferred_block_size_bytes = context->getSettingsRef().preferred_block_size_bytes,
         .preferred_max_column_in_block_size_bytes = context->getSettingsRef().preferred_max_column_in_block_size_bytes}
     , requested_num_streams(num_streams_)
-    , sample_factor_column_queried(sample_factor_column_queried_)
+    , sample_factor_column_queried(false) /// TODO: kek
     , max_block_numbers_to_read(std::move(max_block_numbers_to_read_))
     , log(std::move(log_))
     , analyzed_result_ptr(analyzed_result_ptr_)
@@ -380,7 +375,6 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         actions_settings,
         reader_settings,
         required_columns,
-        virt_column_names,
         pool_settings,
         context);
 
@@ -395,7 +389,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
 
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
             pool, std::move(algorithm), storage_snapshot, prewhere_info,
-            actions_settings, block_size_copy, reader_settings, virt_column_names);
+            actions_settings, block_size_copy, reader_settings);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor));
         pipes.emplace_back(std::move(source));
@@ -461,7 +455,6 @@ Pipe ReadFromMergeTree::readFromPool(
             actions_settings,
             reader_settings,
             required_columns,
-            virt_column_names,
             pool_settings,
             context);
     }
@@ -474,7 +467,6 @@ Pipe ReadFromMergeTree::readFromPool(
             actions_settings,
             reader_settings,
             required_columns,
-            virt_column_names,
             pool_settings,
             context);
     }
@@ -494,7 +486,7 @@ Pipe ReadFromMergeTree::readFromPool(
 
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
             pool, std::move(algorithm), storage_snapshot, prewhere_info,
-            actions_settings, block_size_copy, reader_settings, virt_column_names);
+            actions_settings, block_size_copy, reader_settings);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor));
 
@@ -550,7 +542,6 @@ Pipe ReadFromMergeTree::readInOrder(
             actions_settings,
             reader_settings,
             required_columns,
-            virt_column_names,
             pool_settings,
             context);
     }
@@ -565,7 +556,6 @@ Pipe ReadFromMergeTree::readInOrder(
             actions_settings,
             reader_settings,
             required_columns,
-            virt_column_names,
             pool_settings,
             context);
     }
@@ -600,7 +590,7 @@ Pipe ReadFromMergeTree::readInOrder(
 
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
             pool, std::move(algorithm), storage_snapshot, prewhere_info,
-            actions_settings, block_size, reader_settings, virt_column_names);
+            actions_settings, block_size, reader_settings);
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
@@ -1311,8 +1301,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         requested_num_streams,
         max_block_numbers_to_read,
         data,
-        real_column_names,
-        sample_factor_column_queried,
+        all_column_names,
         log,
         indexes);
 }
@@ -1506,8 +1495,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     size_t num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
     const MergeTreeData & data,
-    const Names & real_column_names,
-    bool sample_factor_column_queried,
+    const Names & all_column_names,
     LoggerPtr log,
     std::optional<Indexes> & indexes)
 {
@@ -1523,8 +1511,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         num_streams,
         max_block_numbers_to_read,
         data,
-        real_column_names,
-        sample_factor_column_queried,
+        all_column_names,
         log,
         indexes);
 }
@@ -1538,8 +1525,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     size_t num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
     const MergeTreeData & data,
-    const Names & real_column_names,
-    bool sample_factor_column_queried,
+    const Names & all_column_names,
     LoggerPtr log,
     std::optional<Indexes> & indexes)
 {
@@ -1548,7 +1534,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
 
     size_t total_parts = parts.size();
 
-    result.column_names_to_read = real_column_names;
+    result.column_names_to_read = all_column_names;
 
     /// If there are only virtual columns in the query, you must request at least one non-virtual one.
     if (result.column_names_to_read.empty())
@@ -1607,7 +1593,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
             data,
             metadata_snapshot,
             context,
-            sample_factor_column_queried,
             log);
 
         if (result.sampling.read_nothing)
@@ -1724,10 +1709,8 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
     prewhere_info = prewhere_info_value;
 
     output_stream = DataStream{.header = MergeTreeSelectProcessor::transformHeader(
-        storage_snapshot->getSampleBlockForColumns(real_column_names),
-        storage_snapshot,
-        prewhere_info_value,
-        virt_column_names)};
+        storage_snapshot->getSampleBlockForColumns(all_column_names),
+        prewhere_info_value)};
 
     updateSortDescriptionForOutputStream(
         *output_stream,

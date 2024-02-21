@@ -32,8 +32,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReadTask::BlockSizeParams & block_size_params_,
-    const MergeTreeReaderSettings & reader_settings_,
-    const Names & virt_column_names_)
+    const MergeTreeReaderSettings & reader_settings_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
     , storage_snapshot(storage_snapshot_)
@@ -42,7 +41,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings, reader_settings_.enable_multiple_prewhere_read_steps))
     , reader_settings(reader_settings_)
     , block_size_params(block_size_params_)
-    , virt_column_names(virt_column_names_)
+    , result_header(applyPrewhereActions(pool->getHeader(), prewhere_info))
 {
     if (reader_settings.apply_deleted_mask)
     {
@@ -58,10 +57,6 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
 
         lightweight_delete_filter_step = std::make_shared<PrewhereExprStep>(std::move(step));
     }
-
-    result_header = pool->getHeader();
-    injectVirtualColumns(result_header, storage_snapshot, virt_column_names);
-    result_header = applyPrewhereActions(result_header, prewhere_info);
 
     if (!prewhere_actions.steps.empty())
         LOG_TRACE(log, "PREWHERE condition was split into {} steps: {}", prewhere_actions.steps.size(), prewhere_actions.dumpConditions());
@@ -181,23 +176,6 @@ void MergeTreeSelectProcessor::initializeRangeReaders()
     task->initializeRangeReaders(all_prewhere_actions);
 }
 
-void MergeTreeSelectProcessor::injectVirtualColumns(
-    Block & block,
-    const StorageSnapshotPtr & storage_snapshot,
-    const Names & virtual_columns)
-{
-    for (const auto & virtual_column_name : virtual_columns)
-    {
-        auto column = storage_snapshot->virtual_columns.tryGet(virtual_column_name);
-        if (!column)
-            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                "There is no virtual column {} in table {}",
-                virtual_column_name, storage_snapshot->storage.getStorageID().getNameForLogs());
-
-        block.insert({column->type->createColumn(), column->type, column->name});
-    }
-}
-
 Block MergeTreeSelectProcessor::applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info)
 {
     if (prewhere_info)
@@ -249,15 +227,9 @@ Block MergeTreeSelectProcessor::applyPrewhereActions(Block block, const Prewhere
     return block;
 }
 
-Block MergeTreeSelectProcessor::transformHeader(
-    Block block,
-    const StorageSnapshotPtr & storage_snapshot,
-    const PrewhereInfoPtr & prewhere_info,
-    const Names & virtual_columns)
+Block MergeTreeSelectProcessor::transformHeader(Block block, const PrewhereInfoPtr & prewhere_info)
 {
-    injectVirtualColumns(block, storage_snapshot, virtual_columns);
-    auto transformed = applyPrewhereActions(std::move(block), prewhere_info);
-    return transformed;
+    return applyPrewhereActions(std::move(block), prewhere_info);
 }
 
 }

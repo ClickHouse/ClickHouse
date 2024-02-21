@@ -23,7 +23,6 @@ namespace
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 IMergeTreeReader::IMergeTreeReader(
