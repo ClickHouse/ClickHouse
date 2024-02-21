@@ -1002,7 +1002,7 @@ def test_system_users():
     )
     assert (
         instance.query("SHOW CREATE ROW POLICY rowpol1")
-        == "CREATE ROW POLICY rowpol1 ON test.table FOR SELECT USING x < 50 TO u1\n"
+        == "CREATE ROW POLICY rowpol1 ON test.`table` FOR SELECT USING x < 50 TO u1\n"
     )
     assert instance.query("SHOW CREATE QUOTA q1") == "CREATE QUOTA q1 TO r1\n"
 
