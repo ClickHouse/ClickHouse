@@ -119,7 +119,7 @@ class SourceMySQL(ExternalSource):
 
     def prepare(self, structure, table_name, cluster):
         if self.internal_hostname is None:
-            self.internal_hostname = cluster.mysql_ip
+            self.internal_hostname = cluster.mysql8_ip
         self.create_mysql_conn()
         self.execute_mysql_query(
             "create database if not exists test default character set 'utf8'"

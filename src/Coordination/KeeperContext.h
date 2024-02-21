@@ -1,7 +1,5 @@
 #pragma once
 #include <Coordination/KeeperFeatureFlags.h>
-#include <Disks/DiskSelector.h>
-#include <IO/WriteBufferFromString.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <condition_variable>
 #include <cstdint>
@@ -12,10 +10,19 @@ namespace DB
 
 class KeeperDispatcher;
 
+struct CoordinationSettings;
+using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
+
+class DiskSelector;
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+
+class WriteBufferFromOwnString;
+
 class KeeperContext
 {
 public:
-    explicit KeeperContext(bool standalone_keeper_);
+    KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr coordination_settings_);
 
     enum class Phase : uint8_t
     {
@@ -68,6 +75,8 @@ public:
 
     void waitLocalLogsPreprocessedOrShutdown();
 
+    const CoordinationSettingsPtr & getCoordinationSettings() const;
+
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
@@ -89,7 +98,7 @@ private:
     std::atomic<bool> local_logs_preprocessed = false;
     std::atomic<bool> shutdown_called = false;
 
-    Phase server_state{Phase::INIT};
+    std::atomic<Phase> server_state{Phase::INIT};
 
     bool ignore_system_path_on_startup{false};
     bool digest_enabled{true};
@@ -113,6 +122,8 @@ private:
     KeeperDispatcher * dispatcher{nullptr};
 
     std::atomic<UInt64> memory_soft_limit = 0;
+
+    CoordinationSettingsPtr coordination_settings;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;

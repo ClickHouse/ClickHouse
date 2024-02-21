@@ -513,8 +513,15 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             if (same_structure)
             {
                 Coordination::Stat metadata_stat;
-                current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+                current_zookeeper->get(fs::path(zookeeper_path) / "metadata", &metadata_stat);
+
+                /** We change metadata_snapshot so that `createReplica` method will create `metadata_version` node in ZooKeeper
+                  * with version of table '/metadata' node in Zookeeper.
+                  *
+                  * Otherwise `metadata_version` for not first replica will be initialized with 0 by default.
+                  */
                 setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_stat.version));
+                metadata_snapshot = getInMemoryMetadataPtr();
             }
         }
         catch (Coordination::Exception & e)
@@ -5817,6 +5824,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     Coordination::Requests requests;
     requests.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "columns", entry.columns_str, -1));
     requests.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "metadata", entry.metadata_str, -1));
+    requests.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "metadata_version", std::to_string(entry.alter_version), -1));
 
     auto table_id = getStorageID();
     auto alter_context = getContext();
@@ -5862,10 +5870,6 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         auto parts_lock = lockParts();
         resetObjectColumnsFromActiveParts(parts_lock);
     }
-
-    /// This transaction may not happen, but it's OK, because on the next retry we will eventually create/update this node
-    /// TODO Maybe do in in one transaction for Replicated database?
-    zookeeper->createOrUpdate(fs::path(replica_path) / "metadata_version", std::to_string(current_metadata->getMetadataVersion()), zkutil::CreateMode::Persistent);
 
     return true;
 }
