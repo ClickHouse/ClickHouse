@@ -5,9 +5,8 @@ from helpers.test_tools import TSV
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    user_configs=[
-        "configs/users.d/users.xml",
-    ],
+    main_configs=["configs/config.xml"],
+    user_configs=["configs/users.d/users.xml"],
 )
 
 
@@ -719,3 +718,36 @@ def test_current_grants_override():
             "REVOKE SELECT ON test.* FROM B",
         ]
     )
+
+
+def test_table_engine_grant_and_revoke():
+    instance.query("DROP USER IF EXISTS A")
+    instance.query("CREATE USER A")
+    instance.query("GRANT CREATE TABLE ON test.table1 TO A")
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "CREATE TABLE test.table1(a Integer) engine=TinyLog", user="A"
+    )
+
+    instance.query("GRANT TABLE ENGINE ON TinyLog TO A")
+
+    assert "Not enough privileges" not in instance.query(
+        "CREATE TABLE test.table1(a Integer) engine=TinyLog", user="A"
+    )
+
+    assert instance.query("SHOW GRANTS FOR A") == TSV(
+        [
+            "GRANT TABLE ENGINE ON TinyLog TO A",
+            "GRANT CREATE TABLE ON test.table1 TO A",
+        ]
+    )
+
+    instance.query("REVOKE TABLE ENGINE ON TinyLog FROM A")
+
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "CREATE TABLE test.table1(a Integer) engine=TinyLog", user="A"
+    )
+
+    instance.query("REVOKE CREATE TABLE ON test.table1 FROM A")
+    instance.query("DROP TABLE test.table1")
+
+    assert instance.query("SHOW GRANTS FOR A") == TSV([])
