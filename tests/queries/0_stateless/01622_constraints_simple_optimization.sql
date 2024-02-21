@@ -40,8 +40,6 @@ SELECT count() FROM constraint_test_transitivity WHERE a = d; ---> assumption ->
 
 DROP TABLE constraint_test_transitivity;
 
-DROP TABLE IF EXISTS constraint_test_transitivity;
-
 CREATE TABLE constraint_test_strong_connectivity (a String, b String, c String, d String, CONSTRAINT c1 ASSUME a <= b AND b <= c AND c <= d AND d <= a) ENGINE = TinyLog;
 
 INSERT INTO constraint_test_strong_connectivity (a, b, c, d) VALUES ('1', '2', '3', '4');
