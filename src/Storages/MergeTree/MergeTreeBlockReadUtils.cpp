@@ -7,6 +7,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 #include "Storages/ColumnsDescription.h"
+#include "Storages/MergeTreeVirtualColumns.h"
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBufferFromString.h>
@@ -107,21 +108,14 @@ NameSet injectRequiredColumns(
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
         .withExtendedObjects()
-        .withVirtuals(VirtualsKind::Persistent)
+        .withVirtuals()
         .withSubcolumns(with_subcolumns);
-
-    auto virtuals_options = GetColumnsOptions(GetColumnsOptions::None).withVirtuals();
 
     for (size_t i = 0; i < columns.size(); ++i)
     {
         /// We are going to fetch physical columns and system columns first
         if (!storage_snapshot->tryGetColumn(options, columns[i]))
-        {
-            if (storage_snapshot->tryGetColumn(virtuals_options, columns[i]))
-                continue;
-            else
-                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column or subcolumn {} in table", columns[i]);
-        }
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column or subcolumn {} in table", columns[i]);
 
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
             columns[i], storage_snapshot, alter_conversions,
@@ -285,11 +279,19 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         .withVirtuals()
         .withSubcolumns(with_subcolumns);
 
-    bool has_part_offset = std::find(required_columns.begin(), required_columns.end(), "_part_offset") != required_columns.end();
+    static const NameSet columns_to_read_at_first_step = {"_part_offset", BlockOffsetColumn::name};
+
     NameSet columns_from_previous_steps;
     auto add_step = [&](const PrewhereExprStep & step)
     {
         Names step_column_names;
+
+        if (columns_from_previous_steps.empty())
+        {
+            for (const auto & required_column : required_columns)
+                if (columns_to_read_at_first_step.contains(required_column))
+                    step_column_names.push_back(required_column);
+        }
 
         /// Computation results from previous steps might be used in the current step as well. In such a case these
         /// computed columns will be present in the current step inputs. They don't need to be read from the disk so
@@ -300,13 +302,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         for (const auto & name : step.actions->getActionsDAG().getRequiredColumnsNames())
             if (!columns_from_previous_steps.contains(name))
                 step_column_names.push_back(name);
-
-        /// Make sure _part_offset is read in STEP 0
-        if (columns_from_previous_steps.empty() && has_part_offset)
-        {
-            if (std::find(step_column_names.begin(), step_column_names.end(), "_part_offset") == step_column_names.end())
-                step_column_names.push_back("_part_offset");
-        }
 
         if (!step_column_names.empty())
             injectRequiredColumns(
