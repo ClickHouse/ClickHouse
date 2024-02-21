@@ -34,7 +34,6 @@ class LibArchiveWriter::StreamInfo
 {
 public:
     explicit StreamInfo(std::unique_ptr<WriteBuffer> archive_write_buffer_) : archive_write_buffer(std::move(archive_write_buffer_)) { }
-
     static ssize_t memory_write([[maybe_unused]] struct archive * archive, void * client_data, const void * buff, size_t length)
     {
         auto * stream_info = reinterpret_cast<StreamInfo *>(client_data);
