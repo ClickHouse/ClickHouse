@@ -3,6 +3,7 @@
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
+#include <Coordination/CoordinationSettings.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -14,7 +15,7 @@
 #include <unordered_map>
 #include <Common/logger_useful.h>
 #include <Coordination/KeeperContext.h>
-#include <Coordination/pathUtils.h>
+#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/Field.h>
@@ -32,23 +33,15 @@ namespace ErrorCodes
 
 namespace
 {
-    constexpr std::string_view tmp_prefix = "tmp_";
-
-    void moveFileBetweenDisks(DiskPtr disk_from, const std::string & path_from, DiskPtr disk_to, const std::string & path_to)
+    void moveSnapshotFileBetweenDisks(
+        DiskPtr disk_from,
+        const std::string & path_from,
+        DiskPtr disk_to,
+        const std::string & path_to,
+        const KeeperContextPtr & keeper_context)
     {
-        /// we use empty file with prefix tmp_ to detect incomplete copies
-        /// if a copy is complete we don't care from which disk we use the same file
-        /// so it's okay if a failure happens after removing of tmp file but before we remove
-        /// the snapshot from the source disk
-        auto from_path = fs::path(path_from);
-        auto tmp_snapshot_name = from_path.parent_path() / (std::string{tmp_prefix} + from_path.filename().string());
-        {
-            auto buf = disk_to->writeFile(tmp_snapshot_name);
-            buf->finalize();
-        }
-        disk_from->copyFile(from_path, *disk_to, path_to, {});
-        disk_to->removeFile(tmp_snapshot_name);
-        disk_from->removeFile(path_from);
+        moveFileBetweenDisks(
+            std::move(disk_from), path_from, std::move(disk_to), path_to, getLogger("KeeperSnapshotManager"), keeper_context);
     }
 
     uint64_t getSnapshotPathUpToLogIdx(const String & snapshot_path)
@@ -601,9 +594,9 @@ KeeperSnapshotManager::KeeperSnapshotManager(
         std::vector<std::string> snapshot_files;
         for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
         {
-            if (it->name().starts_with(tmp_prefix))
+            if (it->name().starts_with(tmp_keeper_file_prefix))
             {
-                incomplete_files.emplace(it->name().substr(tmp_prefix.size()), it->path());
+                incomplete_files.emplace(it->name().substr(tmp_keeper_file_prefix.size()), it->path());
                 continue;
             }
 
@@ -793,7 +786,7 @@ void KeeperSnapshotManager::moveSnapshotsIfNeeded()
         {
             if (file_info.disk != latest_snapshot_disk)
             {
-                moveFileBetweenDisks(file_info.disk, file_info.path, latest_snapshot_disk, file_info.path);
+                moveSnapshotFileBetweenDisks(file_info.disk, file_info.path, latest_snapshot_disk, file_info.path, keeper_context);
                 file_info.disk = latest_snapshot_disk;
             }
         }
@@ -801,7 +794,7 @@ void KeeperSnapshotManager::moveSnapshotsIfNeeded()
         {
             if (file_info.disk != disk)
             {
-                moveFileBetweenDisks(file_info.disk, file_info.path, disk, file_info.path);
+                moveSnapshotFileBetweenDisks(file_info.disk, file_info.path, disk, file_info.path, keeper_context);
                 file_info.disk = disk;
             }
         }

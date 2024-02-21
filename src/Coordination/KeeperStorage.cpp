@@ -18,7 +18,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
 
-#include <Coordination/pathUtils.h>
+#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/KeeperStorage.h>
@@ -26,7 +26,6 @@
 
 #include <functional>
 #include <base/defines.h>
-#include <filesystem>
 
 namespace ProfileEvents
 {
@@ -1614,7 +1613,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
         {
             auto path_prefix = request.path;
             if (path_prefix.empty())
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: path cannot be empty");
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Path cannot be empty");
 
             const auto & children = node_it->value.getChildren();
             response.names.reserve(children.size());

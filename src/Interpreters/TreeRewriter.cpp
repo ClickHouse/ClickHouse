@@ -73,7 +73,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_IDENTIFIER;
-    extern const int UNEXPECTED_EXPRESSION;
 }
 
 namespace
@@ -262,8 +261,7 @@ struct ExistsExpressionData
         select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
         select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
 
-        auto new_subquery = std::make_shared<ASTSubquery>();
-        new_subquery->children.push_back(select_with_union_query);
+        auto new_subquery = std::make_shared<ASTSubquery>(std::move(select_with_union_query));
 
         auto function = makeASTFunction("in", std::make_shared<ASTLiteral>(1u), new_subquery);
         func = *function;
@@ -787,16 +785,6 @@ void expandOrderByAll(ASTSelectQuery * select_query)
 
     for (const auto & expr : select_query->select()->children)
     {
-        if (auto * identifier = expr->as<ASTIdentifier>(); identifier != nullptr)
-            if (Poco::toUpper(identifier->name()) == "ALL" || Poco::toUpper(identifier->alias) == "ALL")
-                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
-                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
-
-        if (auto * function = expr->as<ASTFunction>(); function != nullptr)
-            if (Poco::toUpper(function->alias) == "ALL")
-                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
-                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
-
         auto elem = std::make_shared<ASTOrderByElement>();
         elem->direction = all_elem->direction;
         elem->nulls_direction = all_elem->nulls_direction;
@@ -1323,8 +1311,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (select_query->group_by_all)
         expandGroupByAll(select_query);
 
-    // expand ORDER BY ALL
-    if (settings.enable_order_by_all && select_query->order_by_all)
+    // expand ORDER BY *
+    if (select_query->order_by_all)
         expandOrderByAll(select_query);
 
     /// Remove unneeded columns according to 'required_result_columns'.
