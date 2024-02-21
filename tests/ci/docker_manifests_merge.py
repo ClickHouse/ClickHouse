@@ -21,7 +21,6 @@ from pr_info import PRInfo
 from report import TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
-from env_helper import ROOT_DIR
 from upload_result_helper import upload_results
 from docker_images_helper import docker_login, get_images_oredered_list
 
@@ -126,8 +125,6 @@ def create_manifest(
 
 
 def main():
-    # to be aligned with docker paths from image.json
-    os.chdir(ROOT_DIR)
     logging.basicConfig(level=logging.INFO)
     stopwatch = Stopwatch()
 
