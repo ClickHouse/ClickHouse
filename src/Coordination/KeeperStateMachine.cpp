@@ -43,22 +43,20 @@ namespace ErrorCodes
 KeeperStateMachine::KeeperStateMachine(
     ResponsesQueue & responses_queue_,
     SnapshotsQueue & snapshots_queue_,
-    const CoordinationSettingsPtr & coordination_settings_,
     const KeeperContextPtr & keeper_context_,
     KeeperSnapshotManagerS3 * snapshot_manager_s3_,
     CommitCallback commit_callback_,
     const std::string & superdigest_)
     : commit_callback(commit_callback_)
-    , coordination_settings(coordination_settings_)
     , snapshot_manager(
-          coordination_settings->snapshots_to_keep,
+          keeper_context_->getCoordinationSettings()->snapshots_to_keep,
           keeper_context_,
-          coordination_settings->compress_snapshots_with_zstd_format,
+          keeper_context_->getCoordinationSettings()->compress_snapshots_with_zstd_format,
           superdigest_,
-          coordination_settings->dead_session_check_period_ms.totalMilliseconds())
+          keeper_context_->getCoordinationSettings()->dead_session_check_period_ms.totalMilliseconds())
     , responses_queue(responses_queue_)
     , snapshots_queue(snapshots_queue_)
-    , min_request_size_to_cache(coordination_settings_->min_request_size_for_cache)
+    , min_request_size_to_cache(keeper_context_->getCoordinationSettings()->min_request_size_for_cache)
     , log(getLogger("KeeperStateMachine"))
     , superdigest(superdigest_)
     , keeper_context(keeper_context_)
@@ -130,7 +128,7 @@ void KeeperStateMachine::init()
 
     if (!storage)
         storage = std::make_unique<KeeperStorage>(
-            coordination_settings->dead_session_check_period_ms.totalMilliseconds(), superdigest, keeper_context);
+            keeper_context->getCoordinationSettings()->dead_session_check_period_ms.totalMilliseconds(), superdigest, keeper_context);
 }
 
 namespace

@@ -5,6 +5,8 @@
 #include <Coordination/Changelog.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperContext.h>
+#include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperCommon.h>
 #include <Disks/DiskLocal.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -49,32 +51,31 @@ namespace ErrorCodes
 namespace
 {
 
-constexpr std::string_view tmp_prefix = "tmp_";
-
-void moveFileBetweenDisks(DiskPtr disk_from, ChangelogFileDescriptionPtr description, DiskPtr disk_to, const std::string & path_to)
+void moveChangelogBetweenDisks(
+    DiskPtr disk_from,
+    ChangelogFileDescriptionPtr description,
+    DiskPtr disk_to,
+    const std::string & path_to,
+    const KeeperContextPtr & keeper_context)
 {
-    /// we use empty file with prefix tmp_ to detect incomplete copies
-    /// if a copy is complete we don't care from which disk we use the same file
-    /// so it's okay if a failure happens after removing of tmp file but before we remove
-    /// the changelog from the source disk
-    auto from_path = fs::path(description->path);
-    auto tmp_changelog_name = from_path.parent_path() / (std::string{tmp_prefix} + from_path.filename().string());
-    {
-        auto buf = disk_to->writeFile(tmp_changelog_name);
-        buf->finalize();
-    }
-    disk_from->copyFile(from_path, *disk_to, path_to, {});
-    disk_to->removeFile(tmp_changelog_name);
-
-    /// a different thread could be trying to read from the file
-    /// we should make sure the source disk contains the file while read is in progress
-    description->withLock(
+    moveFileBetweenDisks(
+        disk_from,
+        description->path,
+        disk_to,
+        path_to,
         [&]
         {
-            description->disk = disk_to;
-            description->path = path_to;
-        });
-    disk_from->removeFile(description->path);
+            /// a different thread could be trying to read from the file
+            /// we should make sure the source disk contains the file while read is in progress
+            description->withLock(
+                [&]
+                {
+                    description->disk = disk_to;
+                    description->path = path_to;
+                });
+        },
+        getLogger("Changelog"),
+        keeper_context);
 }
 
 constexpr auto DEFAULT_PREFIX = "changelog";
@@ -198,7 +199,7 @@ public:
                     }
                     else
                     {
-                        moveFileBetweenDisks(log_disk, current_file_description, disk, new_path);
+                        moveChangelogBetweenDisks(log_disk, current_file_description, disk, new_path, keeper_context);
                     }
                 }
             }
@@ -221,7 +222,7 @@ public:
         }
         catch (...)
         {
-            tryLogCurrentException(log);
+            tryLogCurrentException(log, "While setting new changelog file");
             throw;
         }
     }
@@ -1562,9 +1563,9 @@ Changelog::Changelog(
                 if (file_name == changelogs_detached_dir)
                     continue;
 
-                if (file_name.starts_with(tmp_prefix))
+                if (file_name.starts_with(tmp_keeper_file_prefix))
                 {
-                    incomplete_files.emplace(file_name.substr(tmp_prefix.size()), it->path());
+                    incomplete_files.emplace(file_name.substr(tmp_keeper_file_prefix.size()), it->path());
                     continue;
                 }
 
@@ -1729,7 +1730,7 @@ try
         auto disk = getDisk();
 
         if (latest_log_disk != disk && latest_log_disk == description->disk)
-            moveFileBetweenDisks(latest_log_disk, description, disk, description->path);
+            moveChangelogBetweenDisks(latest_log_disk, description, disk, description->path, keeper_context);
     };
 
     /// we can have empty log (with zero entries) and last_log_read_result will be initialized
@@ -1812,7 +1813,7 @@ try
         }
 
         if (description->disk != disk)
-            moveFileBetweenDisks(description->disk, description, disk, description->path);
+            moveChangelogBetweenDisks(description->disk, description, disk, description->path, keeper_context);
     }
 
     initialized = true;
@@ -1837,7 +1838,7 @@ void Changelog::initWriter(ChangelogFileDescriptionPtr description)
     auto log_disk = description->disk;
     auto latest_log_disk = getLatestLogDisk();
     if (log_disk != latest_log_disk)
-        moveFileBetweenDisks(log_disk, description, latest_log_disk, description->path);
+        moveChangelogBetweenDisks(log_disk, description, latest_log_disk, description->path, keeper_context);
 
     current_writer->setFile(std::move(description), WriteMode::Append);
 }
@@ -1900,11 +1901,11 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
             catch (const DB::Exception & e)
             {
                 if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED)
-                    moveFileBetweenDisks(changelog_disk, changelog_description, disk, new_path);
+                    moveChangelogBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
             }
         }
         else
-            moveFileBetweenDisks(changelog_disk, changelog_description, disk, new_path);
+            moveChangelogBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
 
         itr = existing_changelogs.erase(itr);
     }
@@ -2001,69 +2002,77 @@ void Changelog::writeThread()
             LOG_WARNING(log, "Changelog is shut down");
     };
 
-    /// NuRaft writes a batch of request by first calling multiple store requests, i.e. AppendLog
-    /// finished by a flush request
-    /// We assume that after some number of appends, we always get flush request
-    while (true)
+    try
     {
-        if (try_batch_flush)
+        /// NuRaft writes a batch of request by first calling multiple store requests, i.e. AppendLog
+        /// finished by a flush request
+        /// We assume that after some number of appends, we always get flush request
+        while (true)
         {
-            try_batch_flush = false;
-            /// we have Flush request stored in write operation
-            /// but we try to get new append operations
-            /// if there are none, we apply the currently set Flush
-            chassert(std::holds_alternative<Flush>(write_operation));
-            if (!write_operations.tryPop(write_operation))
+            if (try_batch_flush)
             {
-                chassert(batch_append_ok);
-                const auto & flush = std::get<Flush>(write_operation);
-                flush_logs(flush);
-                notify_append_completion();
-                if (!write_operations.pop(write_operation))
-                    break;
-            }
-        }
-        else if (!write_operations.pop(write_operation))
-        {
-            break;
-        }
-
-        assert(initialized);
-
-        if (auto * append_log = std::get_if<AppendLog>(&write_operation))
-        {
-            if (!batch_append_ok)
-                continue;
-
-            std::lock_guard writer_lock(writer_mutex);
-            assert(current_writer);
-
-            batch_append_ok = current_writer->appendRecord(buildRecord(append_log->index, append_log->log_entry));
-            ++pending_appends;
-        }
-        else
-        {
-            const auto & flush = std::get<Flush>(write_operation);
-
-            if (batch_append_ok)
-            {
-                /// we can try batching more logs for flush
-                if (pending_appends < flush_settings.max_flush_batch_size)
+                try_batch_flush = false;
+                /// we have Flush request stored in write operation
+                /// but we try to get new append operations
+                /// if there are none, we apply the currently set Flush
+                chassert(std::holds_alternative<Flush>(write_operation));
+                if (!write_operations.tryPop(write_operation))
                 {
-                    try_batch_flush = true;
-                    continue;
+                    chassert(batch_append_ok);
+                    const auto & flush = std::get<Flush>(write_operation);
+                    flush_logs(flush);
+                    notify_append_completion();
+                    if (!write_operations.pop(write_operation))
+                        break;
                 }
-                /// we need to flush because we have maximum allowed pending records
-                flush_logs(flush);
+            }
+            else if (!write_operations.pop(write_operation))
+            {
+                break;
+            }
+
+            assert(initialized);
+
+            if (auto * append_log = std::get_if<AppendLog>(&write_operation))
+            {
+                if (!batch_append_ok)
+                    continue;
+
+                std::lock_guard writer_lock(writer_mutex);
+                assert(current_writer);
+
+                batch_append_ok = current_writer->appendRecord(buildRecord(append_log->index, append_log->log_entry));
+                ++pending_appends;
             }
             else
             {
-                std::lock_guard lock{durable_idx_mutex};
-                *flush.failed = true;
+                const auto & flush = std::get<Flush>(write_operation);
+
+                if (batch_append_ok)
+                {
+                    /// we can try batching more logs for flush
+                    if (pending_appends < flush_settings.max_flush_batch_size)
+                    {
+                        try_batch_flush = true;
+                        continue;
+                    }
+                    /// we need to flush because we have maximum allowed pending records
+                    flush_logs(flush);
+                }
+                else
+                {
+                    std::lock_guard lock{durable_idx_mutex};
+                    *flush.failed = true;
+                }
+                notify_append_completion();
+                batch_append_ok = true;
             }
-            notify_append_completion();
-            batch_append_ok = true;
         }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Write thread failed, aborting");
+        std::abort();
     }
 }
 
@@ -2104,7 +2113,7 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             auto log_disk = description->disk;
             auto latest_log_disk = getLatestLogDisk();
             if (log_disk != latest_log_disk)
-                moveFileBetweenDisks(log_disk, description, latest_log_disk, description->path);
+                moveChangelogBetweenDisks(log_disk, description, latest_log_disk, description->path, keeper_context);
 
             current_writer->setFile(std::move(description), WriteMode::Append);
 

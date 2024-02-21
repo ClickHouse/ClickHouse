@@ -1,8 +1,6 @@
 #include <chrono>
 #include <gtest/gtest.h>
-#include "Common/ZooKeeper/IKeeper.h"
 
-#include "Core/Defines.h"
 #include "config.h"
 
 #if USE_NURAFT
@@ -22,7 +20,7 @@
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/SummingStateMachine.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
-#include <Coordination/pathUtils.h>
+#include <Coordination/KeeperCommon.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <libnuraft/nuraft.hxx>
@@ -65,7 +63,7 @@ struct CompressionParam
 class CoordinationTest : public ::testing::TestWithParam<CompressionParam>
 {
 protected:
-    DB::KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true);
+    DB::KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true, std::make_shared<DB::CoordinationSettings>());
     LoggerPtr log{getLogger("CoordinationTest")};
 
     void SetUp() override
@@ -1760,7 +1758,7 @@ getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Co
 }
 
 void testLogAndStateMachine(
-    Coordination::CoordinationSettingsPtr settings,
+    DB::CoordinationSettingsPtr settings,
     uint64_t total_logs,
     bool enable_compression)
 {
@@ -1772,7 +1770,7 @@ void testLogAndStateMachine(
 
     auto get_keeper_context = [&]
     {
-        auto local_keeper_context = std::make_shared<DB::KeeperContext>(true);
+        auto local_keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
         local_keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("SnapshotDisk", "./snapshots"));
         local_keeper_context->setLogDisk(std::make_shared<DiskLocal>("LogDisk", "./logs"));
         return local_keeper_context;
@@ -1780,8 +1778,10 @@ void testLogAndStateMachine(
 
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
+
     auto keeper_context = get_keeper_context();
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, keeper_context, nullptr);
+
     state_machine->init();
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{
@@ -1826,7 +1826,7 @@ void testLogAndStateMachine(
 
     SnapshotsQueue snapshots_queue1{1};
     keeper_context = get_keeper_context();
-    auto restore_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue1, settings, keeper_context, nullptr);
+    auto restore_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue1, keeper_context, nullptr);
     restore_machine->init();
     EXPECT_EQ(restore_machine->last_commit_index(), total_logs - total_logs % settings->snapshot_distance);
 
@@ -1873,6 +1873,7 @@ TEST_P(CoordinationTest, TestStateMachineAndLogStore)
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 10;
         settings->rotate_log_storage_interval = 10;
+
         testLogAndStateMachine(settings, 37, params.enable_compression);
     }
     {
@@ -1941,11 +1942,10 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     ChangelogDirTest snapshots("./snapshots");
     setSnapshotDirectory("./snapshots");
 
-    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
+
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, keeper_context, nullptr);
     state_machine->init();
 
     std::shared_ptr<ZooKeeperCreateRequest> request_c = std::make_shared<ZooKeeperCreateRequest>();
@@ -1975,11 +1975,10 @@ TEST_P(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecommitte
 
     ChangelogDirTest snapshots("./snapshots");
     setSnapshotDirectory("./snapshots");
-    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
 
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, keeper_context, nullptr);
     state_machine->init();
 
     String user_auth_data = "test_user:test_password";
@@ -2027,11 +2026,10 @@ TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
     ChangelogDirTest snapshots("./snapshots");
     setSnapshotDirectory("./snapshots");
 
-    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
 
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, keeper_context, nullptr);
     state_machine->init();
 
     String user_auth_data = "test_user:test_password";
