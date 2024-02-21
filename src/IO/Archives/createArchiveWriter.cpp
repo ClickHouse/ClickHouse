@@ -24,6 +24,8 @@ std::shared_ptr<IArchiveWriter> createArchiveWriter(const String & path_to_archi
 std::shared_ptr<IArchiveWriter>
 createArchiveWriter(const String & path_to_archive, [[maybe_unused]] std::unique_ptr<WriteBuffer> archive_write_buffer)
 {
+    using namespace std::literals;
+    static constexpr std::array tar_extensions{".tar"sv, ".tar.gz"sv, ".tar.bz2"sv, ".tar.lzma"sv};
     if (path_to_archive.ends_with(".zip") || path_to_archive.ends_with(".zipx"))
     {
 #if USE_MINIZIP
@@ -34,9 +36,7 @@ createArchiveWriter(const String & path_to_archive, [[maybe_unused]] std::unique
     }
     //todo add support for extentsions i.e .gz
     else if (std::any_of(
-                 TarArchiveWriter::TarExtensions.begin(),
-                 TarArchiveWriter::TarExtensions.end(),
-                 [&](const auto extension) { return path_to_archive.ends_with(extension); }))
+                 tar_extensions.begin(), tar_extensions.end(), [&](const auto extension) { return path_to_archive.ends_with(extension); }))
     {
 #if USE_LIBARCHIVE
         return std::make_shared<TarArchiveWriter>(path_to_archive, std::move(archive_write_buffer));

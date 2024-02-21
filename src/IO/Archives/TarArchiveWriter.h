@@ -12,8 +12,6 @@ using namespace std::literals;
 class TarArchiveWriter : public LibArchiveWriter
 {
 public:
-    static constexpr std::array TarExtensions{".tar"sv, ".tar.gz"sv, ".tar.bz2"sv, ".tar.lzma"sv};
-
     explicit TarArchiveWriter(const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_)
         : LibArchiveWriter(path_to_archive_, std::move(archive_write_buffer_))
     {
