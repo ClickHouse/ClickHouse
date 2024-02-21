@@ -884,6 +884,9 @@ void HTTPHandler::processQuery(
     {
         if (settings.http_write_exception_in_output_format && output_format.supportsWritingException())
         {
+            ExecutionStatus status = ExecutionStatus::fromCurrentException("", false);
+            formatExceptionForClient(status.code, request, response, used_output);
+
             output_format.setException(getCurrentExceptionMessage(false));
             output_format.finalize();
             used_output.exception_is_written = true;
@@ -916,31 +919,7 @@ void HTTPHandler::trySendExceptionToClient(
     const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 try
 {
-    if (used_output.out_holder)
-        used_output.out_holder->setExceptionCode(exception_code);
-    else
-        response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
-
-    /// FIXME: make sure that no one else is reading from the same stream at the moment.
-
-    /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
-    /// to avoid reading part of the current request body in the next request.
-    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
-        && response.getKeepAlive()
-        && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED
-        && !request.getStream().eof())
-    {
-        request.getStream().ignoreAll();
-    }
-
-    if (exception_code == ErrorCodes::REQUIRED_PASSWORD)
-    {
-        response.requireAuthentication("ClickHouse server HTTP API");
-    }
-    else
-    {
-        response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
-    }
+    formatExceptionForClient(exception_code, request, response, used_output);
 
     if (!used_output.out_holder && !used_output.exception_is_written)
     {
@@ -1001,6 +980,28 @@ catch (...)
     }
 }
 
+void HTTPHandler::formatExceptionForClient(int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
+{
+    if (used_output.out_holder)
+        used_output.out_holder->setExceptionCode(exception_code);
+    else
+        response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
+
+    /// FIXME: make sure that no one else is reading from the same stream at the moment.
+
+    /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
+    /// to avoid reading part of the current request body in the next request.
+    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && response.getKeepAlive()
+        && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED && !request.getStream().eof())
+    {
+        request.getStream().ignoreAll();
+    }
+
+    if (exception_code == ErrorCodes::REQUIRED_PASSWORD)
+        response.requireAuthentication("ClickHouse server HTTP API");
+    else
+        response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
+}
 
 void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
