@@ -23,7 +23,11 @@ struct SecondaryIndexCacheCell
 
     size_t memory_bytes;
 
-    SecondaryIndexCacheCell(MergeTreeIndexGranulePtr g) : granule(std::move(g)), memory_bytes(granule->memoryUsageBytes())
+    static constexpr size_t ENTRY_OVERHEAD_BYTES_GUESS = 200;
+
+    SecondaryIndexCacheCell(MergeTreeIndexGranulePtr g)
+        : granule(std::move(g))
+        , memory_bytes(granule->memoryUsageBytes() + ENTRY_OVERHEAD_BYTES_GUESS)
     {
         CurrentMetrics::add(CurrentMetrics::SecondaryIndexCacheSize, memory_bytes);
     }
@@ -68,7 +72,7 @@ public:
     template <typename LoadFunc>
     MergeTreeIndexGranulePtr getOrSet(const Key & key, LoadFunc && load)
     {
-        auto wrapped_load = [&] {
+        auto wrapped_load = [&]() -> std::shared_ptr<SecondaryIndexCacheCell> {
             MergeTreeIndexGranulePtr granule = load();
             return std::make_shared<SecondaryIndexCacheCell>(std::move(granule));
         };

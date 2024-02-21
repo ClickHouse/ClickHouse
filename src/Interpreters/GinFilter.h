@@ -77,7 +77,7 @@ public:
     const GinSegmentWithRowIdRangeVector & getFilter() const { return rowid_ranges; }
     GinSegmentWithRowIdRangeVector & getFilter() { return rowid_ranges; }
 
-    size_t memoryUsageBytes() const { return rowid_ranges.size() * sizeof(rowid_ranges[0]); }
+    size_t memoryUsageBytes() const { return rowid_ranges.capacity() * sizeof(rowid_ranges[0]); }
 
 private:
     /// Filter parameters
