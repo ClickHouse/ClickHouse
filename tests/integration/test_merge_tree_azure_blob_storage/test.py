@@ -633,6 +633,7 @@ def test_endpoint(cluster):
 
     assert 10 == int(node.query("SELECT count() FROM test"))
 
+
 def test_endpoint_new_container(cluster):
     node = cluster.instances[NODE_NAME]
     account_name = "devstoreaccount1"
