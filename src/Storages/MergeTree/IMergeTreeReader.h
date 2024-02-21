@@ -2,15 +2,12 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Common/HashTable/HashMap.h>
-#include "DataTypes/Serializations/ISerialization.h"
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 
 namespace DB
 {
-
-class IDataType;
 
 /// Reads the data between pairs of marks in the same part. When reading consecutive ranges, avoids unnecessary seeks.
 /// When ranges are almost consecutive, seeks are fast because they are performed inside the buffer.
@@ -19,12 +16,13 @@ class IMergeTreeReader : private boost::noncopyable
 {
 public:
     using ValueSizeMap = std::map<std::string, double>;
+    using VirtualFields = std::unordered_map<String, Field>;
     using DeserializeBinaryBulkStateMap = std::map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
 
     IMergeTreeReader(
         MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
         const NamesAndTypesList & columns_,
-        const MergeTreeReadTaskInfoPtr & read_task_info_,
+        const VirtualFields & virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
@@ -119,8 +117,8 @@ private:
     /// Actual columns description in part.
     const ColumnsDescription & part_columns;
 
-    /// Shared information required for reading.
-    MergeTreeReadTaskInfoPtr read_task_info;
+    /// TODO:
+    VirtualFields virtual_fields;
 };
 
 }

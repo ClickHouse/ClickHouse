@@ -20,6 +20,8 @@ using MergeTreeBlockSizePredictorPtr = std::shared_ptr<MergeTreeBlockSizePredict
 class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
+using VirtualFields = std::unordered_map<String, Field>;
+
 
 enum class MergeTreeReadType
 {
@@ -62,6 +64,8 @@ struct MergeTreeReadTaskInfo
     MergeTreeReadTaskColumns task_columns;
     /// Shared initialized size predictor. It is copied for each new task.
     MergeTreeBlockSizePredictorPtr shared_size_predictor;
+    /// TODO: comment
+    VirtualFields const_virtual_fields;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
@@ -116,7 +120,11 @@ public:
     };
 
     MergeTreeReadTask(
-        MergeTreeReadTaskInfoPtr info_, Readers readers_, MarkRanges mark_ranges_, MergeTreeBlockSizePredictorPtr size_predictor_);
+        MergeTreeReadTaskInfoPtr info_,
+        Readers readers_,
+        MarkRanges mark_ranges_,
+
+        MergeTreeBlockSizePredictorPtr size_predictor_);
 
     void initializeRangeReaders(const PrewhereExprInfo & prewhere_actions);
 

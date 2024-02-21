@@ -33,7 +33,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartInMemory::getReader(
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
     const MarkRanges & mark_ranges,
-    const MergeTreeReadTaskInfoPtr & read_task_info_,
+    const VirtualFields & virtual_fields,
     UncompressedCache * /* uncompressed_cache */,
     MarkCache * /* mark_cache */,
     const AlterConversionsPtr & alter_conversions,
@@ -48,7 +48,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartInMemory::getReader(
         read_info,
         ptr,
         columns_to_read,
-        read_task_info_,
+        virtual_fields,
         storage_snapshot,
         mark_ranges,
         reader_settings);

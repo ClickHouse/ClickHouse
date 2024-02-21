@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
@@ -23,12 +24,13 @@ namespace
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 IMergeTreeReader::IMergeTreeReader(
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
     const NamesAndTypesList & columns_,
-    const MergeTreeReadTaskInfoPtr & read_task_info_,
+    const VirtualFields & virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
@@ -51,7 +53,7 @@ IMergeTreeReader::IMergeTreeReader(
     , part_columns(data_part_info_for_read->isWidePart()
         ? data_part_info_for_read->getColumnsDescriptionWithCollectedNested()
         : data_part_info_for_read->getColumnsDescription())
-    , read_task_info(read_task_info_)
+    , virtual_fields(virtual_fields_)
 {
     columns_to_read.reserve(requested_columns.size());
     serializations.reserve(requested_columns.size());
@@ -70,12 +72,11 @@ const IMergeTreeReader::ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() 
 
 void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
 {
-    chassert(read_task_info != nullptr);
+    const auto * loaded_part_info = typeid_cast<const LoadedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get());
+    if (!loaded_part_info)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Filling of virtual columns is supported only for LoadedMergeTreeDataPartInfoForReader");
 
-    const IMergeTreeDataPart * part = read_task_info->data_part.get();
-    if (part->isProjectionPart())
-        part = part->getParentPart();
-
+    const auto & data_part = loaded_part_info->getDataPart();
     const auto & storage_columns = storage_snapshot->getMetadataForQuery()->getColumns();
     const auto & virtual_columns = storage_snapshot->virtual_columns;
 
@@ -90,11 +91,21 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
             continue;
 
         if (!it->type->equals(*virtual_column->type))
+        {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Data type for virtual column {} mismatched. Requested type: {}, Virtual column type: {}",
+                "Data type for virtual column {} mismatched. Requested type: {}, virtual column type: {}",
                 it->name, it->type->getName(), virtual_column->type->getName());
+        }
 
-        auto field = getFieldForConstVirtualColumn(it->name, *part, read_task_info->part_index_in_query);
+        if (it->name == "_part_offset" || it->name == BlockOffsetColumn::name)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Virtual column {} must be filled by range reader", it->name);
+
+        Field field;
+        if (auto field_it = virtual_fields.find(it->name); field_it != virtual_fields.end())
+            field = field_it->second;
+        else
+            field = getFieldForConstVirtualColumn(it->name, *data_part);
+
         columns[pos] = virtual_column->type->createColumnConst(rows, field)->convertToFullColumnIfConst();
     }
 }

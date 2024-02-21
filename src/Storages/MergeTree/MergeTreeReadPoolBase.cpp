@@ -7,6 +7,7 @@ namespace DB
 
 MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     RangesInDataParts && parts_,
+    VirtualFields shared_virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
@@ -15,6 +16,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     const PoolSettings & pool_settings_,
     const ContextPtr & context_)
     : parts_ranges(std::move(parts_))
+    , shared_virtual_fields(std::move(shared_virtual_fields_))
     , storage_snapshot(storage_snapshot_)
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
@@ -58,6 +60,9 @@ void MergeTreeReadPoolBase::fillPerPartInfos()
             actions_settings,
             reader_settings,
             /*with_subcolumns=*/true);
+
+        read_task_info.const_virtual_fields = shared_virtual_fields;
+        read_task_info.const_virtual_fields.emplace("_part_index", read_task_info.part_index_in_query);
 
         if (pool_settings.preferred_block_size_bytes > 0)
         {

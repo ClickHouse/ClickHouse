@@ -1030,7 +1030,7 @@ Block MergeTreeData::getBlockWithVirtualsForFilter(const MergeTreeData::DataPart
 
         for (auto & column : block)
         {
-            auto field = getFieldForConstVirtualColumn(column.name, *part, 0);
+            auto field = getFieldForConstVirtualColumn(column.name, *part);
             column.column->assumeMutableRef().insert(field);
         }
     }

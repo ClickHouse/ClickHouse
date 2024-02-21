@@ -21,7 +21,7 @@ public:
         const NamesAndTypesList & columns,
         const StorageSnapshotPtr & storage_snapshot,
         const MarkRanges & mark_ranges,
-        const MergeTreeReadTaskInfoPtr & read_task_info_,
+        const VirtualFields & virtual_fields,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
         const AlterConversionsPtr & alter_conversions,

@@ -31,11 +31,8 @@ const String BlockOffsetColumn::name = "_block_offset";
 const DataTypePtr BlockOffsetColumn::type = std::make_shared<DataTypeUInt64>();
 const ASTPtr BlockOffsetColumn::codec = getCompressionCodecDeltaLZ4();
 
-Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part, UInt64 part_index)
+Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part)
 {
-    if (column_name == "_part_offset" || column_name == BlockOffsetColumn::name)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not const and must be filled by range reader", column_name);
-
     if (column_name == RowExistsColumn::name)
         return 1ULL;
 
@@ -44,9 +41,6 @@ Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTree
 
     if (column_name == "_part")
         return part.name;
-
-    if (column_name == "_part_index")
-        return part_index;
 
     if (column_name == "_part_uuid")
         return part.uuid;
@@ -57,7 +51,7 @@ Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTree
     if (column_name == "_partition_value")
         return Tuple(part.partition.value.begin(), part.partition.value.end());
 
-    throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Unexpected virtual column name: {}", column_name);
+    throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Unexpected const virtual column: {}", column_name);
 }
 
 }

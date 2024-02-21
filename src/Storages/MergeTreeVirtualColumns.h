@@ -28,6 +28,6 @@ struct BlockOffsetColumn
     static const ASTPtr codec;
 };
 
-Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part, UInt64 part_index);
+Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part);
 
 }

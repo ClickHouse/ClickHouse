@@ -26,6 +26,7 @@ public:
 
     MergeTreeReadPool(
         RangesInDataParts && parts_,
+        VirtualFields shared_virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,

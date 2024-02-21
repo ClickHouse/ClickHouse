@@ -295,20 +295,11 @@ ReadFromMergeTree::ReadFromMergeTree(
         .preferred_block_size_bytes = context->getSettingsRef().preferred_block_size_bytes,
         .preferred_max_column_in_block_size_bytes = context->getSettingsRef().preferred_max_column_in_block_size_bytes}
     , requested_num_streams(num_streams_)
-    , sample_factor_column_queried(false) /// TODO: kek
     , max_block_numbers_to_read(std::move(max_block_numbers_to_read_))
     , log(std::move(log_))
     , analyzed_result_ptr(analyzed_result_ptr_)
     , is_parallel_reading_from_replicas(enable_parallel_reading)
 {
-    if (sample_factor_column_queried)
-    {
-        /// Only _sample_factor virtual column is added by ReadFromMergeTree
-        /// Other virtual columns are added by MergeTreeSelectProcessor.
-        auto type = std::make_shared<DataTypeFloat64>();
-        output_stream->header.insert({type->createColumn(), type, "_sample_factor"});
-    }
-
     if (is_parallel_reading_from_replicas)
     {
         all_ranges_callback = context->getMergeTreeAllRangesCallback();
@@ -370,6 +361,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
     auto pool = std::make_shared<MergeTreeReadPoolParallelReplicas>(
         std::move(extension),
         std::move(parts_with_range),
+        shared_virtual_fields,
         storage_snapshot,
         prewhere_info,
         actions_settings,
@@ -450,6 +442,7 @@ Pipe ReadFromMergeTree::readFromPool(
     {
         pool = std::make_shared<MergeTreePrefetchedReadPool>(
             std::move(parts_with_range),
+            shared_virtual_fields,
             storage_snapshot,
             prewhere_info,
             actions_settings,
@@ -462,6 +455,7 @@ Pipe ReadFromMergeTree::readFromPool(
     {
         pool = std::make_shared<MergeTreeReadPool>(
             std::move(parts_with_range),
+            shared_virtual_fields,
             storage_snapshot,
             prewhere_info,
             actions_settings,
@@ -537,6 +531,7 @@ Pipe ReadFromMergeTree::readInOrder(
             std::move(extension),
             mode,
             parts_with_ranges,
+            shared_virtual_fields,
             storage_snapshot,
             prewhere_info,
             actions_settings,
@@ -551,6 +546,7 @@ Pipe ReadFromMergeTree::readInOrder(
             has_limit_below_one_block,
             read_type,
             parts_with_ranges,
+            shared_virtual_fields,
             storage_snapshot,
             prewhere_info,
             actions_settings,
@@ -1904,6 +1900,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 {
     auto result = getAnalysisResult();
     result.checkLimits(context->getSettingsRef(), query_info);
+    shared_virtual_fields.emplace("_sample_factor", result.sampling.used_sample_factor);
 
     LOG_DEBUG(
         log,
@@ -1987,18 +1984,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         else
             result_projection = ActionsDAG::merge(std::move(*result_projection), std::move(*actions));
     };
-
-    /// By the way, if a distributed query or query to a Merge table is made, then the `_sample_factor` column can have different values.
-    if (sample_factor_column_queried)
-    {
-        ColumnWithTypeAndName column;
-        column.name = "_sample_factor";
-        column.type = std::make_shared<DataTypeFloat64>();
-        column.column = column.type->createColumnConst(0, Field(result.sampling.used_sample_factor));
-
-        auto adding_column = ActionsDAG::makeAddingColumnActions(std::move(column));
-        append_actions(std::move(adding_column));
-    }
 
     if (result_projection)
         cur_header = result_projection->updateHeader(cur_header);

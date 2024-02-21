@@ -18,7 +18,7 @@ public:
         MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
         DataPartInMemoryPtr data_part_,
         NamesAndTypesList columns_,
-        const MergeTreeReadTaskInfoPtr & read_task_info_,
+        const VirtualFields & virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         MarkRanges mark_ranges_,
         MergeTreeReaderSettings settings_);

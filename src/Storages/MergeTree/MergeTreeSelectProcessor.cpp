@@ -22,7 +22,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int QUERY_WAS_CANCELLED;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 MergeTreeSelectProcessor::MergeTreeSelectProcessor(

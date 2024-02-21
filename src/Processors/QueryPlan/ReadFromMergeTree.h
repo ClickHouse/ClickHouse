@@ -243,7 +243,6 @@ private:
 
     size_t requested_num_streams;
     size_t output_streams_limit = 0;
-    const bool sample_factor_column_queried;
 
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;
@@ -284,7 +283,9 @@ private:
         RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection);
 
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
+
     AnalysisResultPtr analyzed_result_ptr;
+    VirtualFields shared_virtual_fields;
 
     bool is_parallel_reading_from_replicas;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
