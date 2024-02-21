@@ -458,7 +458,7 @@ std::vector<std::string> LibArchiveReader::getAllFiles(NameFilter filter)
     return handle.getAllFiles(filter);
 }
 
-void LibArchiveReader::setPassword([[maybe_unused]] const String & password_)
+void LibArchiveReader::setPassword(const String & password_)
 {
     if (password_.empty())
         return;
