@@ -1,19 +1,18 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
-#include <IO/Operators.h>
+#include <Common/assert_cast.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Common/AlignedBuffer.h>
-#include <Common/Arena.h>
+#include <IO/Operators.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
-#include <Common/WeakHash.h>
-#include <Common/assert_cast.h>
-#include <Common/iota.h>
+#include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
+#include <Common/Arena.h>
+#include <Common/WeakHash.h>
+#include <Common/HashTable/Hash.h>
 
 
 namespace DB
@@ -627,7 +626,8 @@ void ColumnAggregateFunction::getPermutation(PermutationSortDirection /*directio
 {
     size_t s = data.size();
     res.resize(s);
-    iota(res.data(), s, IColumn::Permutation::value_type(0));
+    for (size_t i = 0; i < s; ++i)
+        res[i] = i;
 }
 
 void ColumnAggregateFunction::updatePermutation(PermutationSortDirection, PermutationSortStability,

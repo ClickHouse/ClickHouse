@@ -34,6 +34,7 @@ public:
         ContextPtr context,
         UInt64 max_block_size,
         size_t num_streams,
+        QueryProcessingStage::Enum processed_stage,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
         bool enable_parallel_reading = false) const;
 
@@ -48,16 +49,17 @@ public:
         UInt64 max_block_size,
         size_t num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
-        ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr = nullptr,
+        MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr = nullptr,
         bool enable_parallel_reading = false) const;
 
     /// Get an estimation for the number of marks we are going to read.
     /// Reads nothing. Secondary indexes are not used.
     /// This method is used to select best projection for table.
-    ReadFromMergeTree::AnalysisResultPtr estimateNumMarksToRead(
+    MergeTreeDataSelectAnalysisResultPtr estimateNumMarksToRead(
         MergeTreeData::DataPartsVector parts,
         const PrewhereInfoPtr & prewhere_info,
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const ActionDAGNodes & added_filter_nodes,
@@ -167,6 +169,12 @@ public:
     /// If possible, filter using expression on virtual columns.
     /// Example: SELECT count() FROM table WHERE _part = 'part_name'
     /// If expression found, return a set with allowed part names (std::nullopt otherwise).
+    static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
+        const MergeTreeData & data,
+        const MergeTreeData::DataPartsVector & parts,
+        const ASTPtr & query,
+        ContextPtr context);
+
     static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
         const MergeTreeData & data,
         const MergeTreeData::DataPartsVector & parts,

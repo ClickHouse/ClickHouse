@@ -15,7 +15,7 @@
 namespace DB
 {
 
-ColumnsDescription AsynchronousInsertLogElement::getColumnsDescription()
+NamesAndTypesList AsynchronousInsertLogElement::getNamesAndTypes()
 {
     auto type_status = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -32,7 +32,7 @@ ColumnsDescription AsynchronousInsertLogElement::getColumnsDescription()
             {"Preprocessed", static_cast<Int8>(DataKind::Preprocessed)},
         });
 
-    return ColumnsDescription
+    return
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},

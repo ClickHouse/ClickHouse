@@ -15,12 +15,11 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
-#include <Common/re2.h>
 #include <string_view>
+#include <regex>
 #include <gtest/gtest.h>
 #include "gtest_common.h"
 #include <boost/algorithm/string/replace.hpp>
-
 
 namespace
 {
@@ -72,14 +71,14 @@ TEST_P(ParserTest, parseQuery)
                 if (input_text.starts_with("ATTACH"))
                 {
                     auto salt = (dynamic_cast<const ASTCreateUserQuery *>(ast.get())->auth_data)->getSalt().value_or("");
-                    EXPECT_TRUE(re2::RE2::FullMatch(salt, expected_ast));
+                    EXPECT_TRUE(std::regex_match(salt, std::regex(expected_ast)));
                 }
                 else
                 {
                     WriteBufferFromOwnString buf;
                     formatAST(*ast->clone(), buf, false, false);
                     String formatted_ast = buf.str();
-                    EXPECT_TRUE(re2::RE2::FullMatch(formatted_ast, expected_ast));
+                    EXPECT_TRUE(std::regex_match(formatted_ast, std::regex(expected_ast)));
                 }
             }
         }

@@ -177,11 +177,6 @@ public:
         return server->isObserver();
     }
 
-    bool isExceedingMemorySoftLimit() const
-    {
-        return server->isExceedingMemorySoftLimit();
-    }
-
     uint64_t getLogDirSize() const;
 
     uint64_t getSnapDirSize() const;

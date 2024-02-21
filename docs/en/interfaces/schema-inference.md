@@ -614,26 +614,6 @@ DESC format(JSONEachRow, $$
 └───────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-##### input_format_json_read_bools_as_strings
-
-Enabling this setting allows reading Bool values as strings.
-
-This setting is enabled by default.
-
-**Example:**
-
-```sql
-SET input_format_json_read_bools_as_strings = 1;
-DESC format(JSONEachRow, $$
-                                {"value" : true}
-                                {"value" : "Hello, World"}
-                         $$)
-```
-```response
-┌─name──┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ value │ Nullable(String) │              │                    │         │                  │                │
-└───────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-```
 ##### input_format_json_read_arrays_as_strings
 
 Enabling this setting allows reading JSON array values as strings.

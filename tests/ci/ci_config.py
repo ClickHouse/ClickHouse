@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from enum import Enum
 import logging
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from dataclasses import dataclass, field
@@ -78,7 +79,7 @@ class JobConfig:
     @num_batches - sets number of batches for multi-batch job
     """
 
-    digest: DigestConfig = field(default_factory=DigestConfig)
+    digest: DigestConfig = DigestConfig()
     run_command: str = ""
     timeout: Optional[int] = None
     num_batches: int = 1
@@ -120,6 +121,7 @@ class BuildConfig:
                     "./programs",
                     "./packages",
                     "./docker/packager/packager",
+                    "./rust",
                 ],
                 exclude_files=[".md"],
                 docker=["clickhouse/binary-builder"],
@@ -159,7 +161,7 @@ class BuildReportConfig:
 class TestConfig:
     required_build: str
     force_tests: bool = False
-    job_config: JobConfig = field(default_factory=JobConfig)
+    job_config: JobConfig = JobConfig()
 
 
 BuildConfigs = Dict[str, BuildConfig]
@@ -176,32 +178,19 @@ install_check_digest = DigestConfig(
     include_paths=["./tests/ci/install_check.py"],
     docker=["clickhouse/install-deb-test", "clickhouse/install-rpm-test"],
 )
-stateless_check_digest = DigestConfig(
-    include_paths=[
-        "./tests/queries/0_stateless/",
-        "./tests/clickhouse-test",
-        "./tests/*.txt",
-    ],
+statless_check_digest = DigestConfig(
+    include_paths=["./tests/queries/0_stateless/"],
     exclude_files=[".md"],
     docker=["clickhouse/stateless-test"],
 )
 stateful_check_digest = DigestConfig(
-    include_paths=[
-        "./tests/queries/1_stateful/",
-        "./tests/clickhouse-test",
-        "./tests/*.txt",
-    ],
+    include_paths=["./tests/queries/1_stateful/"],
     exclude_files=[".md"],
     docker=["clickhouse/stateful-test"],
 )
-
+# FIXME: which tests are stresstest? stateless?
 stress_check_digest = DigestConfig(
-    include_paths=[
-        "./tests/queries/0_stateless/",
-        "./tests/queries/1_stateful/",
-        "./tests/clickhouse-test",
-        "./tests/*.txt",
-    ],
+    include_paths=["./tests/queries/0_stateless/"],
     exclude_files=[".md"],
     docker=["clickhouse/stress-test"],
 )
@@ -265,7 +254,7 @@ bugfix_validate_check = DigestConfig(
 )
 # common test params
 statless_test_common_params = {
-    "digest": stateless_check_digest,
+    "digest": statless_check_digest,
     "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
     "timeout": 10800,
 }
@@ -548,7 +537,7 @@ CI_CONFIG = CiConfig(
             compiler="clang-17",
             debug_build=True,
             package_type="deb",
-            sparse_checkout=True,  # Check that it works with at least one build, see also update-submodules.sh
+            sparse_checkout=True,
         ),
         "binary_release": BuildConfig(
             name="binary_release",
@@ -569,7 +558,7 @@ CI_CONFIG = CiConfig(
             compiler="clang-17-darwin",
             package_type="binary",
             static_binary_name="macos",
-            sparse_checkout=True,  # Check that it works with at least one build, see also update-submodules.sh
+            sparse_checkout=True,
         ),
         "binary_aarch64": BuildConfig(
             name="binary_aarch64",
@@ -899,18 +888,10 @@ CI_CONFIG = CiConfig(
             "package_asan",
             job_config=JobConfig(**{**statless_test_common_params, "timeout": 3600}),  # type: ignore
         ),
-        "ClickHouse Keeper Jepsen": TestConfig(
-            "binary_release",
-            job_config=JobConfig(
-                run_by_label="jepsen-test", run_command="jepsen_check.py keeper"
-            ),
-        ),
-        "ClickHouse Server Jepsen": TestConfig(
-            "binary_release",
-            job_config=JobConfig(
-                run_by_label="jepsen-test", run_command="jepsen_check.py server"
-            ),
-        ),
+        # FIXME: add digest and params
+        "ClickHouse Keeper Jepsen": TestConfig("binary_release"),
+        # FIXME: add digest and params
+        "ClickHouse Server Jepsen": TestConfig("binary_release"),
         "Performance Comparison": TestConfig(
             "package_release",
             job_config=JobConfig(num_batches=4, **perf_test_common_params),  # type: ignore

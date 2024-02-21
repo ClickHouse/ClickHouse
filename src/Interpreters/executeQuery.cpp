@@ -662,15 +662,17 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     if (query_span && query_span->trace_id != UUID{})
         LOG_TRACE(&Poco::Logger::get("executeQuery"), "Query span trace_id for opentelemetry log: {}", query_span->trace_id);
 
+    /// Used for logging query start time in system.query_log
     auto query_start_time = std::chrono::system_clock::now();
 
-    /// Used to set the watch in QueryStatus and the output formats. It is not based on query_start_time as that might be based on
-    /// the value passed by the client
+    /// Used for:
+    /// * Setting the watch in QueryStatus (controls timeouts and progress) and the output formats
+    /// * Logging query duration (system.query_log)
     Stopwatch start_watch{CLOCK_MONOTONIC};
 
     const auto & client_info = context->getClientInfo();
 
-    if (!internal)
+    if (!internal && client_info.initial_query_start_time == 0)
     {
         // If it's not an internal query and we don't see an initial_query_start_time yet, initialize it
         // to current time. Internal queries are those executed without an independent client context,
@@ -678,15 +680,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         // possible to have unset initial_query_start_time for non-internal and non-initial queries. For
         // example, the query is from an initiator that is running an old version of clickhouse.
         // On the other hand, if it's initialized then take it as the start of the query
-        if (client_info.initial_query_start_time == 0)
-        {
-            context->setInitialQueryStartTime(query_start_time);
-        }
-        else
-        {
-            query_start_time = std::chrono::time_point<std::chrono::system_clock>(
-                std::chrono::microseconds{client_info.initial_query_start_time_microseconds});
-        }
+        context->setInitialQueryStartTime(query_start_time);
     }
 
     assert(internal || CurrentThread::get().getQueryContext());
@@ -1010,7 +1004,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (can_use_query_cache && settings.enable_reads_from_query_cache)
                 {
-                    QueryCache::Key key(ast, context->getUserID(), context->getCurrentRoles());
+                    QueryCache::Key key(ast, context->getUserName());
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1043,7 +1037,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     }
                 }
 
-                interpreter = InterpreterFactory::instance().get(ast, context, SelectQueryOptions(stage).setInternal(internal));
+                interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
                 const auto & query_settings = context->getSettingsRef();
                 if (context->getCurrentTransaction() && query_settings.throw_on_unsupported_query_inside_transaction)
@@ -1123,8 +1117,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         {
                             QueryCache::Key key(
                                 ast, res.pipeline.getHeader(),
-                                context->getUserID(), context->getCurrentRoles(),
-                                settings.query_cache_share_between_users,
+                                context->getUserName(), settings.query_cache_share_between_users,
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
                                 settings.query_cache_compress_entries);
 
@@ -1435,12 +1428,11 @@ void executeQuery(
                     const auto & compression_method_node = ast_query_with_output->compression->as<ASTLiteral &>();
                     compression_method = compression_method_node.value.safeGet<std::string>();
                 }
-                const auto & settings = context->getSettingsRef();
+
                 compressed_buffer = wrapWriteBufferWithCompressionMethod(
                     std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
                     chooseCompressionMethod(out_file, compression_method),
-                    /* compression level = */ static_cast<int>(settings.output_format_compression_level),
-                    /* zstd_window_log = */ static_cast<int>(settings.output_format_compression_zstd_window_log)
+                    /* compression level = */ 3
                 );
             }
 

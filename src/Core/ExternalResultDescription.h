@@ -35,8 +35,7 @@ struct ExternalResultDescription
         vtDecimal128,
         vtDecimal256,
         vtArray,
-        vtFixedString,
-        vtPoint,
+        vtFixedString
     };
 
     Block sample_block;

@@ -155,7 +155,6 @@ namespace
                 "formats",
                 "privileges",
                 "data_type_families",
-                "database_engines",
                 "table_engines",
                 "table_functions",
                 "aggregate_function_combinators",

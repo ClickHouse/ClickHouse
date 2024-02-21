@@ -115,7 +115,6 @@ public:
     explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_);
 
     const Nodes & getNodes() const { return nodes; }
-    static Nodes detachNodes(ActionsDAG && dag) { return std::move(dag.nodes); }
     const NodeRawConstPtrs & getOutputs() const { return outputs; }
     /** Output nodes can contain any column returned from DAG.
       * You may manually change it if needed.

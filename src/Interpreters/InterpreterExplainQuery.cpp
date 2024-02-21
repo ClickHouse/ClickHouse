@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 
 #include <QueryPipeline/BlockIO.h>
@@ -606,15 +605,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     }
 
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(sample_block.cloneWithColumns(std::move(res_columns))));
-}
-
-void registerInterpreterExplainQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterExplainQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterExplainQuery", create_fn);
 }
 
 }

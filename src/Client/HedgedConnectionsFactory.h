@@ -53,8 +53,7 @@ public:
         bool fallback_to_stale_replicas_,
         UInt64 max_parallel_replicas_,
         bool skip_unavailable_shards_,
-        std::shared_ptr<QualifiedTableName> table_to_check_ = nullptr,
-        GetPriorityForLoadBalancing::Func priority_func = {});
+        std::shared_ptr<QualifiedTableName> table_to_check_ = nullptr);
 
     /// Create and return active connections according to pool_mode.
     std::vector<Connection *> getManyConnections(PoolMode pool_mode, AsyncCallback async_callback = {});

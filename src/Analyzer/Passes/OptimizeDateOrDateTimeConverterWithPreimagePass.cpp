@@ -91,9 +91,6 @@ public:
         const auto * column_id = func_node->getArguments().getNodes()[0]->as<ColumnNode>();
         if (!column_id) return;
 
-        if (column_id->getColumnName() == "__grouping_set")
-            return;
-
         const auto * column_type = column_id->getColumnType().get();
         if (!isDateOrDate32(column_type) && !isDateTime(column_type) && !isDateTime64(column_type)) return;
 

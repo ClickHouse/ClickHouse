@@ -6,15 +6,9 @@ SCRIPT_DIR=$(dirname "${SCRIPT_PATH}")
 GIT_DIR=$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)
 cd $GIT_DIR
 
-# Exclude from contribs some garbage subdirs that we don't need.
-# It reduces the checked out files size about 3 times and therefore speeds up indexing in IDEs and searching.
-# NOTE .git/ still contains everything that we don't check out (although, it's compressed)
-# See also https://git-scm.com/docs/git-sparse-checkout
 contrib/sparse-checkout/setup-sparse-checkout.sh
-
 git submodule init
 git submodule sync
-
 # NOTE: do not use --remote for `git submodule update`[1] command, since the submodule references to the specific commit SHA1 in the subproject.
 #       It may cause unexpected behavior. Instead you need to commit a new SHA1 for a submodule.
 #

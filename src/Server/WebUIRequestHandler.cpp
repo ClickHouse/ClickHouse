@@ -1,13 +1,20 @@
 #include "WebUIRequestHandler.h"
 #include "IServer.h"
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <Interpreters/Context.h>
 #include <IO/HTTPCommon.h>
-#include <Common/re2.h>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 #include <incbin.h>
 
@@ -29,7 +36,7 @@ WebUIRequestHandler::WebUIRequestHandler(IServer & server_)
 }
 
 
-void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
 
@@ -43,7 +50,7 @@ void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerR
     if (request.getURI().starts_with("/play"))
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-        WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout).write(reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize);
+        *response.send() << std::string_view(reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize);
     }
     else if (request.getURI().starts_with("/dashboard"))
     {
@@ -59,17 +66,17 @@ void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerR
         static re2::RE2 uplot_url = R"(https://[^\s"'`]+u[Pp]lot[^\s"'`]*\.js)";
         RE2::Replace(&html, uplot_url, "/js/uplot.js");
 
-        WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout).write(html);
+        *response.send() << html;
     }
     else if (request.getURI().starts_with("/binary"))
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-        WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout).write(reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize);
+        *response.send() << std::string_view(reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize);
     }
     else if (request.getURI() == "/js/uplot.js")
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-        WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout).write(reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize);
+        *response.send() << std::string_view(reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize);
     }
     else
     {

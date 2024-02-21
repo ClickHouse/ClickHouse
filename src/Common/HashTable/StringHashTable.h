@@ -9,7 +9,7 @@
 
 
 using StringKey8 = UInt64;
-using StringKey16 = UInt128;
+using StringKey16 = DB::UInt128;
 struct StringKey24
 {
     UInt64 a;

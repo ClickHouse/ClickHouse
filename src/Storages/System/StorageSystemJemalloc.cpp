@@ -88,19 +88,24 @@ StorageSystemJemallocBins::StorageSystemJemallocBins(const StorageID & table_id_
 {
     StorageInMemoryMetadata storage_metadata;
     ColumnsDescription desc;
-    storage_metadata.setColumns(getColumnsDescription());
+    auto columns = getNamesAndTypes();
+    for (const auto & col : columns)
+    {
+        ColumnDescription col_desc(col.name, col.type);
+        desc.add(col_desc);
+    }
+    storage_metadata.setColumns(desc);
     setInMemoryMetadata(storage_metadata);
 }
 
-ColumnsDescription StorageSystemJemallocBins::getColumnsDescription()
+NamesAndTypesList StorageSystemJemallocBins::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        { "index",          std::make_shared<DataTypeUInt16>(), "Index of the bin ordered by size."},
-        { "large",          std::make_shared<DataTypeUInt8>(), "True for large allocations and False for small."},
-        { "size",           std::make_shared<DataTypeUInt64>(), "Size of allocations in this bin."},
-        { "allocations",    std::make_shared<DataTypeInt64>(), "Number of allocations."},
-        { "deallocations",  std::make_shared<DataTypeInt64>(), "Number of deallocations."},
+    return {
+        { "index",          std::make_shared<DataTypeUInt16>() },
+        { "large",          std::make_shared<DataTypeUInt8>() },
+        { "size",           std::make_shared<DataTypeUInt64>() },
+        { "allocations",    std::make_shared<DataTypeInt64>() },
+        { "deallocations",  std::make_shared<DataTypeInt64>() },
     };
 }
 

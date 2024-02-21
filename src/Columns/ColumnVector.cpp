@@ -1,25 +1,24 @@
 #include "ColumnVector.h"
 
-#include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
-#include <IO/WriteHelpers.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-#include <base/bit_cast.h>
-#include <base/scope_guard.h>
-#include <base/sort.h>
-#include <base/unaligned.h>
+#include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/NaNUtils.h>
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
-#include <Common/TargetSpecific.h>
 #include <Common/WeakHash.h>
+#include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
-#include <Common/iota.h>
+#include <base/sort.h>
+#include <base/unaligned.h>
+#include <base/bit_cast.h>
+#include <base/scope_guard.h>
 
 #include <bit>
 #include <cmath>
@@ -245,7 +244,8 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
     if (limit >= data_size)
         limit = 0;
 
-    iota(res.data(), data_size, IColumn::Permutation::value_type(0));
+    for (size_t i = 0; i < data_size; ++i)
+        res[i] = i;
 
     if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
     {

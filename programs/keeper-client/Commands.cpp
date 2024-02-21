@@ -413,13 +413,13 @@ void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient
     switch (operation)
     {
         case static_cast<UInt8>(ReconfigCommand::Operation::ADD):
-            joining = query->args[1].safeGet<String>();
+            joining = query->args[1].safeGet<DB::String>();
             break;
         case static_cast<UInt8>(ReconfigCommand::Operation::REMOVE):
-            leaving = query->args[1].safeGet<String>();
+            leaving = query->args[1].safeGet<DB::String>();
             break;
         case static_cast<UInt8>(ReconfigCommand::Operation::SET):
-            new_members = query->args[1].safeGet<String>();
+            new_members = query->args[1].safeGet<DB::String>();
             break;
         default:
             UNREACHABLE();

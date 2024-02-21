@@ -14,7 +14,7 @@
 namespace DB
 {
 
-ColumnsDescription S3QueueLogElement::getColumnsDescription()
+NamesAndTypesList S3QueueLogElement::getNamesAndTypes()
 {
     auto status_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -22,9 +22,7 @@ ColumnsDescription S3QueueLogElement::getColumnsDescription()
             {"Processed", static_cast<Int8>(S3QueueLogElement::S3QueueStatus::Processed)},
             {"Failed", static_cast<Int8>(S3QueueLogElement::S3QueueStatus::Failed)},
         });
-
-    return ColumnsDescription
-    {
+    return {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},

@@ -199,13 +199,8 @@ jobs:
     if: ${{ !cancelled() }}
     needs:
       - RunConfig
-      - BuilderDebRelease
-      - BuilderDebAarch64
-      - BuilderDebAsan
-      - BuilderDebTsan
-      - BuilderDebUBsan
-      - BuilderDebMsan
-      - BuilderDebDebug
+      - BuilderBinDarwin
+      - BuilderBinDarwinAarch64
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse special build check
@@ -218,7 +213,7 @@ jobs:
       run_command: |
         python3 build_report_check.py "$CHECK_NAME"
   MarkReleaseReady:
-    if: ${{ !failure() && !cancelled() }}
+    if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
     needs:
       - BuilderBinDarwin
       - BuilderBinDarwinAarch64

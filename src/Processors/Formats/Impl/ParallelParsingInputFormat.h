@@ -135,7 +135,7 @@ public:
 
 private:
 
-    Chunk read() override final;
+    Chunk generate() override final;
 
     void onCancel() override final
     {
@@ -333,7 +333,7 @@ private:
     /// threads. This function is used by segmentator and parsed threads.
     /// readImpl() is called from the main thread, so the exception handling
     /// is different.
-    void onBackgroundException();
+    void onBackgroundException(size_t offset);
 };
 
 }

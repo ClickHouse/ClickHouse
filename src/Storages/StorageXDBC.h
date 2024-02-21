@@ -19,8 +19,7 @@ namespace DB
 class StorageXDBC : public IStorageURLBase
 {
 public:
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,

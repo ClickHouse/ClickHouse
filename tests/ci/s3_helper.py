@@ -5,19 +5,20 @@ import shutil
 import time
 from multiprocessing.dummy import Pool
 from pathlib import Path
-from typing import Any, List, Union
+from typing import List, Union
 
 import boto3  # type: ignore
 import botocore  # type: ignore
-from compress_files import compress_file_fast
+
 from env_helper import (
-    CI,
-    RUNNER_TEMP,
-    S3_BUILDS_BUCKET,
-    S3_DOWNLOAD,
     S3_TEST_REPORTS_BUCKET,
+    S3_BUILDS_BUCKET,
+    RUNNER_TEMP,
+    CI,
     S3_URL,
+    S3_DOWNLOAD,
 )
+from compress_files import compress_file_fast
 
 
 def _flatten_list(lst):
@@ -33,14 +34,11 @@ def _flatten_list(lst):
 class S3Helper:
     max_pool_size = 100
 
-    def __init__(self, client: Any = None, endpoint: str = S3_URL):
-        self.host = endpoint
-        if client is not None:
-            self.client = client
-            return
+    def __init__(self):
         config = botocore.config.Config(max_pool_connections=self.max_pool_size)
-        session = boto3.session.Session(region_name="us-east-1")
-        self.client = session.client("s3", endpoint_url=endpoint, config=config)
+        self.session = boto3.session.Session(region_name="us-east-1")
+        self.client = self.session.client("s3", endpoint_url=S3_URL, config=config)
+        self.host = S3_URL
 
     def _upload_file_to_s3(
         self, bucket_name: str, file_path: Path, s3_path: str
@@ -201,7 +199,6 @@ class S3Helper:
                     t = time.time()
             except Exception as ex:
                 logging.critical("Failed to upload file, expcetion %s", ex)
-                return ""
             return self.s3_url(bucket_name, s3_path)
 
         p = Pool(self.max_pool_size)

@@ -846,7 +846,7 @@ def create_build_html_report(
                 build_result.build_config is not None
                 and build_result.build_config.sparse_checkout
             ):
-                comment += " (note: sparse checkout is used, see update-submodules.sh)"
+                comment += " (note: sparse checkout is used)"
             row.append(f"<td>{comment}</td>")
 
             row.append("</tr>")

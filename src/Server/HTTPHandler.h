@@ -6,9 +6,15 @@
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <IO/CascadeWriteBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Common/re2.h>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace CurrentMetrics
 {
@@ -34,7 +40,7 @@ public:
     HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_);
     virtual ~HTTPHandler() override;
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 
     /// This method is called right before the query execution.
     virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */, ReadBuffer & /* body */) {}
@@ -55,22 +61,11 @@ private:
          * WriteBufferFromHTTPServerResponse out
          */
 
-        /// Holds original response buffer
-        std::shared_ptr<WriteBufferFromHTTPServerResponse> out_holder;
-        /// If HTTP compression is enabled holds compression wrapper over original response buffer
-        std::shared_ptr<WriteBuffer> wrap_compressed_holder;
-        /// Points either to out_holder or to wrap_compressed_holder
-        std::shared_ptr<WriteBuffer> out;
-
-        /// If internal compression is enabled holds compression wrapper over out buffer
-        std::shared_ptr<CompressedWriteBuffer> out_compressed_holder;
-        /// Points to 'out' or to CompressedWriteBuffer(*out)
+        std::shared_ptr<WriteBufferFromHTTPServerResponse> out;
+        /// Points to 'out' or to CompressedWriteBuffer(*out), depending on settings.
         std::shared_ptr<WriteBuffer> out_maybe_compressed;
-
-        /// If output should be delayed holds cascade buffer
-        std::unique_ptr<CascadeWriteBuffer> out_delayed_and_compressed_holder;
-        /// Points to out_maybe_compressed or to CascadeWriteBuffer.
-        WriteBuffer * out_maybe_delayed_and_compressed = nullptr;
+        /// Points to 'out' or to CompressedWriteBuffer(*out) or to CascadeWriteBuffer.
+        std::shared_ptr<WriteBuffer> out_maybe_delayed_and_compressed;
 
         bool finalized = false;
 
@@ -78,7 +73,7 @@ private:
 
         inline bool hasDelayed() const
         {
-            return out_maybe_delayed_and_compressed != out_maybe_compressed.get();
+            return out_maybe_delayed_and_compressed != out_maybe_compressed;
         }
 
         inline void finalize()
@@ -87,8 +82,10 @@ private:
                 return;
             finalized = true;
 
-            if (out_compressed_holder)
-                out_compressed_holder->finalize();
+            if (out_maybe_delayed_and_compressed)
+                out_maybe_delayed_and_compressed->finalize();
+            if (out_maybe_compressed)
+                out_maybe_compressed->finalize();
             if (out)
                 out->finalize();
         }
@@ -138,8 +135,7 @@ private:
         HTMLForm & params,
         HTTPServerResponse & response,
         Output & used_output,
-        std::optional<CurrentThread::QueryScope> & query_scope,
-        const ProfileEvents::Event & write_event);
+        std::optional<CurrentThread::QueryScope> & query_scope);
 
     void trySendExceptionToClient(
         const std::string & s,

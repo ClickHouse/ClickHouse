@@ -61,7 +61,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
     }
     catch (...)
     {
-        onBackgroundException();
+        onBackgroundException(successfully_read_rows_count);
     }
 }
 
@@ -90,7 +90,7 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupPtr thread_grou
         ReadBuffer read_buffer(unit.segment.data(), unit.segment.size(), 0);
 
         InputFormatPtr input_format = internal_parser_creator(read_buffer);
-        input_format->setRowsReadBefore(unit.offset);
+        input_format->setCurrentUnitNumber(current_ticket_number);
         input_format->setErrorsLogger(errors_logger);
         InternalParser parser(input_format);
 
@@ -132,16 +132,28 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupPtr thread_grou
     }
     catch (...)
     {
-        onBackgroundException();
+        onBackgroundException(unit.offset);
     }
 }
 
 
-void ParallelParsingInputFormat::onBackgroundException()
+void ParallelParsingInputFormat::onBackgroundException(size_t offset)
 {
     std::lock_guard lock(mutex);
     if (!background_exception)
+    {
         background_exception = std::current_exception();
+        if (ParsingException * e = exception_cast<ParsingException *>(background_exception))
+        {
+            /// NOTE: it is not that safe to use line number hack here (may exceed INT_MAX)
+            if (e->getLineNumber() != -1)
+                e->setLineNumber(static_cast<int>(e->getLineNumber() + offset));
+
+            auto file_name = getFileNameFromReadBuffer(getReadBuffer());
+            if (!file_name.empty())
+                e->setFileName(file_name);
+        }
+    }
 
     if (is_server)
         tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -152,7 +164,7 @@ void ParallelParsingInputFormat::onBackgroundException()
     segmentator_condvar.notify_all();
 }
 
-Chunk ParallelParsingInputFormat::read()
+Chunk ParallelParsingInputFormat::generate()
 {
     /// Delayed launching of segmentator thread
     if (unlikely(!parsing_started.exchange(true)))

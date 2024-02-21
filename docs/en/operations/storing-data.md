@@ -196,7 +196,7 @@ These settings should be defined in the disk configuration section.
 
 - `max_elements` - a limit for a number of cache files. Default: `10000000`.
 
-- `load_metadata_threads` - number of threads being used to load cache metadata on starting time. Default: `16`.
+- `load_metadata_threads` - number of threads being used to load cache metadata on starting time. Default: `1`.
 
 File Cache **query/profile settings**:
 

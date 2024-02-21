@@ -61,8 +61,6 @@ public:
             return;
 
         auto & count_distinct_argument_column = count_distinct_arguments_nodes[0];
-        if (count_distinct_argument_column->getNodeType() != QueryTreeNodeType::COLUMN)
-            return;
         auto & count_distinct_argument_column_typed = count_distinct_argument_column->as<ColumnNode &>();
 
         /// Build subquery SELECT count_distinct_argument_column FROM table_expression GROUP BY count_distinct_argument_column

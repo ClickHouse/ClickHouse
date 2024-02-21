@@ -124,9 +124,7 @@ public:
             size_t max_ignored_errors,
             bool fallback_to_stale_replicas,
             const TryGetEntryFunc & try_get_entry,
-            const GetPriorityFunc & get_priority);
-
-    size_t getPoolSize() const { return nested_pools.size(); }
+            const GetPriorityFunc & get_priority = GetPriorityFunc());
 
 protected:
 
@@ -149,7 +147,7 @@ protected:
         return std::make_tuple(shared_pool_states, nested_pools, last_error_decrease_time);
     }
 
-    const NestedPools nested_pools;
+    NestedPools nested_pools;
 
     const time_t decrease_error_period;
     const size_t max_error_cap;

@@ -27,7 +27,6 @@ from ssh import SSHKey
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
-
 JEPSEN_GROUP_NAME = "jepsen_group"
 
 KEEPER_DESIRED_INSTANCE_COUNT = 3
@@ -203,36 +202,27 @@ def main():
     # always use latest
     docker_image = KEEPER_IMAGE_NAME if args.program == "keeper" else SERVER_IMAGE_NAME
 
-    if pr_info.is_scheduled() or pr_info.is_dispatched():
-        # get latest clcikhouse by the static link for latest master buit - get its version and provide permanent url for this version to the jepsen
-        build_url = f"{S3_URL}/{S3_BUILDS_BUCKET}/master/amd64/clickhouse"
-        download_build_with_progress(build_url, Path(TEMP_PATH) / "clickhouse")
-        git_runner.run(f"chmod +x {TEMP_PATH}/clickhouse")
-        sha = git_runner.run(
-            f"{TEMP_PATH}/clickhouse local -q \"select value from system.build_options where name='GIT_HASH'\""
-        )
-        version_full = git_runner.run(
-            f'{TEMP_PATH}/clickhouse local -q "select version()"'
-        )
-        version = ".".join(version_full.split(".")[0:2])
-        assert len(sha) == 40, f"failed to fetch sha from the binary. result: {sha}"
-        assert (
-            version
-        ), f"failed to fetch version from the binary. result: {version_full}"
-        build_url = (
-            f"{S3_URL}/{S3_BUILDS_BUCKET}/{version}/{sha}/binary_release/clickhouse"
-        )
-        print(f"Clickhouse version: [{version_full}], sha: [{sha}], url: [{build_url}]")
+    build_name = get_build_name_for_check(check_name)
+
+    release_or_pr, _ = get_release_or_pr(pr_info, get_version_from_repo())
+
+    # This check run separately from other checks because it requires exclusive
+    # run (see .github/workflows/jepsen.yml) So we cannot add explicit
+    # dependency on a build job and using busy loop on it's results. For the
+    # same reason we are using latest docker image.
+    build_url = (
+        f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{release_or_pr}/{pr_info.sha}/"
+        f"{build_name}/clickhouse"
+    )
+    head = requests.head(build_url)
+    counter = 0
+    while head.status_code != 200:
+        time.sleep(10)
         head = requests.head(build_url)
-        assert head.status_code == 200, f"Clickhouse binary not found: {build_url}"
-    else:
-        build_name = get_build_name_for_check(check_name)
-        urls = read_build_urls(build_name, REPORT_PATH)
-        build_url = None
-        for url in urls:
-            if url.endswith("clickhouse"):
-                build_url = url
-        assert build_url, "No build url found in the report"
+        counter += 1
+        if counter >= 180:
+            logging.warning("Cannot fetch build in 30 minutes, exiting")
+            sys.exit(0)
 
     extra_args = ""
     if args.program == "server":

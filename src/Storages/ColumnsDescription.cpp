@@ -53,16 +53,6 @@ ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
 {
 }
 
-ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, String comment_)
-    : name(std::move(name_)), type(std::move(type_)), comment(comment_)
-{
-}
-
-ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_)
-    : name(std::move(name_)), type(std::move(type_)), comment(comment_), codec(codec_)
-{
-}
-
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
     auto ast_to_str = [](const ASTPtr & ast) { return ast ? queryToString(ast) : String{}; };
@@ -150,7 +140,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
 
             if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true);
 
             if (col_ast->ttl)
                 ttl = col_ast->ttl;
@@ -160,18 +150,16 @@ void ColumnDescription::readText(ReadBuffer & buf)
     }
 }
 
-ColumnsDescription::ColumnsDescription(std::initializer_list<ColumnDescription> ordinary)
+ColumnsDescription::ColumnsDescription(std::initializer_list<NameAndTypePair> ordinary)
 {
-    for (auto && elem : ordinary)
-        add(elem);
+    for (const auto & elem : ordinary)
+        add(ColumnDescription(elem.name, elem.type));
 }
 
-ColumnsDescription ColumnsDescription::fromNamesAndTypes(NamesAndTypes ordinary)
+ColumnsDescription::ColumnsDescription(NamesAndTypes ordinary)
 {
-    ColumnsDescription result;
     for (auto & elem : ordinary)
-        result.add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
-    return result;
+        add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
 }
 
 ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary)
@@ -185,11 +173,6 @@ ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary, NamesAndAlias
     for (auto & elem : ordinary)
         add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
 
-    setAliases(std::move(aliases));
-}
-
-void ColumnsDescription::setAliases(NamesAndAliases aliases)
-{
     for (auto & alias : aliases)
     {
         ColumnDescription description(std::move(alias.name), std::move(alias.type));

@@ -14,8 +14,7 @@ SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 function curl_with_retry
 {
     for _ in 1 2 3 4 5 6 7 8 9 10; do
-        if curl --fail --head "$1"
-        then
+        if curl --fail --head "$1";then
             return 0
         else
             sleep 1

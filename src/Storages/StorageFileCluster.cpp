@@ -71,9 +71,9 @@ void StorageFileCluster::addColumnsStructureToQuery(ASTPtr & query, const String
     TableFunctionFileCluster::addColumnsStructureToArguments(expression_list->children, structure, context);
 }
 
-RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const
+RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const
 {
-    auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, virtual_columns, context);
+    auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, query, virtual_columns, context);
     auto callback = std::make_shared<TaskIterator>([iter = std::move(iterator)]() mutable -> String { return iter->next(); });
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }

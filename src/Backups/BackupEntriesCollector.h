@@ -22,9 +22,6 @@ class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 struct StorageID;
 enum class AccessEntityType;
-class QueryStatus;
-using QueryStatusPtr = std::shared_ptr<QueryStatus>;
-
 
 /// Collects backup entries for all databases and tables which should be put to a backup.
 class BackupEntriesCollector : private boost::noncopyable
@@ -100,15 +97,11 @@ private:
 
     Strings setStage(const String & new_stage, const String & message = "");
 
-    /// Throws an exception if the BACKUP query was cancelled.
-    void checkIsQueryCancelled() const;
-
     const ASTBackupQuery::Elements backup_query_elements;
     const BackupSettings backup_settings;
     std::shared_ptr<IBackupCoordination> backup_coordination;
     const ReadSettings read_settings;
     ContextPtr context;
-    QueryStatusPtr process_list_element;
 
     /// The time a BACKUP ON CLUSTER or RESTORE ON CLUSTER command will wait until all the nodes receive the BACKUP (or RESTORE) query and start working.
     /// This setting is similar to `distributed_ddl_task_timeout`.

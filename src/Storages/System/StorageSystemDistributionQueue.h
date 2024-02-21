@@ -16,7 +16,7 @@ class StorageSystemDistributionQueue final : public IStorageSystemOneBlock<Stora
 public:
     std::string getName() const override { return "SystemDistributionQueue"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

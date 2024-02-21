@@ -236,10 +236,6 @@ function check_logs_for_critical_errors()
         && echo -e "S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)$FAIL$(trim_server_logs no_such_key_errors.txt)" >> /test_output/test_results.tsv \
         || echo -e "No lost s3 keys$OK" >> /test_output/test_results.tsv
 
-    rg -Fa "it is lost forever" /var/log/clickhouse-server/clickhouse-server*.log | grep 'SharedMergeTreePartCheckThread' > /dev/null \
-        && echo -e "Lost forever for SharedMergeTree$FAIL" >> /test_output/test_results.tsv \
-        || echo -e "No SharedMergeTree lost forever in clickhouse-server.log$OK" >> /test_output/test_results.tsv
-
     # Remove file no_such_key_errors.txt if it's empty
     [ -s /test_output/no_such_key_errors.txt ] || rm /test_output/no_such_key_errors.txt
 
