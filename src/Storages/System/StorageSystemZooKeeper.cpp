@@ -220,6 +220,7 @@ private:
     const UInt64 max_block_size;
     Paths paths;
     ContextPtr context;
+    ZooKeeperWithFaultInjection::Ptr zookeeper;
     bool started = false;
 };
 
@@ -484,7 +485,6 @@ Chunk SystemZooKeeperSource::generate()
         settings.insert_keeper_retry_initial_backoff_ms,
         settings.insert_keeper_retry_max_backoff_ms);
 
-    ZooKeeperWithFaultInjection::Ptr zookeeper;
     /// Handles reconnects when needed
     auto get_zookeeper = [&] ()
     {

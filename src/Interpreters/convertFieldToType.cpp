@@ -493,10 +493,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         /// Promote data type to avoid overflows. Note that overflows in the largest data type are still possible.
         /// But don't promote Float32, since we want to keep the exact same value
+        /// Also don't promote domain types (like bool) because we would otherwise use the serializer of the promoted type (e.g. UInt64 for
+        /// bool, which does not allow 'true' and 'false' as input values)
         const IDataType * type_to_parse = &type;
         DataTypePtr holder;
 
-        if (type.canBePromoted() && !which_type.isFloat32())
+        if (type.canBePromoted() && !which_type.isFloat32() && !type.getCustomSerialization())
         {
             holder = type.promoteNumericType();
             type_to_parse = holder.get();

@@ -34,6 +34,7 @@ SUCCESS: Final = "success"
 
 OK: Final = "OK"
 FAIL: Final = "FAIL"
+SKIPPED: Final = "SKIPPED"
 
 StatusType = Literal["error", "failure", "pending", "success"]
 STATUSES = [ERROR, FAILURE, PENDING, SUCCESS]  # type: List[StatusType]
@@ -292,9 +293,10 @@ class JobReport:
         return JOB_REPORT_FILE.is_file()
 
     @classmethod
-    def load(cls):  # type: ignore
+    def load(cls, from_file=None):  # type: ignore
         res = {}
-        with open(JOB_REPORT_FILE, "r") as json_file:
+        from_file = from_file or JOB_REPORT_FILE
+        with open(from_file, "r") as json_file:
             res = json.load(json_file)
             # Deserialize the nested lists of TestResult
             test_results_data = res.get("test_results", [])
@@ -307,13 +309,14 @@ class JobReport:
         if JOB_REPORT_FILE.exists():
             JOB_REPORT_FILE.unlink()
 
-    def dump(self):
+    def dump(self, to_file=None):
         def path_converter(obj):
             if isinstance(obj, Path):
                 return str(obj)
             raise TypeError("Type not serializable")
 
-        with open(JOB_REPORT_FILE, "w") as json_file:
+        to_file = to_file or JOB_REPORT_FILE
+        with open(to_file, "w") as json_file:
             json.dump(asdict(self), json_file, default=path_converter, indent=2)
 
 
@@ -449,6 +452,12 @@ class BuildResult:
         if self.build_config is None:
             return self._wrong_config_message
         return self.build_config.sanitizer
+
+    @property
+    def coverage(self) -> str:
+        if self.build_config is None:
+            return self._wrong_config_message
+        return str(self.build_config.coverage)
 
     @property
     def grouped_urls(self) -> List[List[str]]:
@@ -588,7 +597,6 @@ class ReportColorTheme:
         blue = "#00B4FF"
 
     default = (ReportColor.green, ReportColor.red, ReportColor.yellow)
-    bugfixcheck = (ReportColor.yellow, ReportColor.blue, ReportColor.blue)
 
 
 ColorTheme = Tuple[str, str, str]
@@ -776,6 +784,7 @@ HTML_BASE_BUILD_TEMPLATE = (
 <th>Build type</th>
 <th>Version</th>
 <th>Sanitizer</th>
+<th>Coverage</th>
 <th>Status</th>
 <th>Build log</th>
 <th>Build time</th>
@@ -816,6 +825,8 @@ def create_build_html_report(
                 row.append(f"<td>{build_result.sanitizer}</td>")
             else:
                 row.append("<td>none</td>")
+
+            row.append(f"<td>{build_result.coverage}</td>")
 
             if build_result.status:
                 style = _get_status_style(build_result.status)

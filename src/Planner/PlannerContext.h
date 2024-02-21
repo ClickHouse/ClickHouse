@@ -18,10 +18,18 @@ namespace DB
   *
   * 1. Column identifiers.
   */
+
+class QueryNode;
+class TableNode;
+
 class GlobalPlannerContext
 {
 public:
-    GlobalPlannerContext() = default;
+    explicit GlobalPlannerContext(const QueryNode * parallel_replicas_node_, const TableNode * parallel_replicas_table_)
+        : parallel_replicas_node(parallel_replicas_node_)
+        , parallel_replicas_table(parallel_replicas_table_)
+    {
+    }
 
     /** Create column identifier for column node.
       *
@@ -37,6 +45,13 @@ public:
 
     /// Check if context has column identifier
     bool hasColumnIdentifier(const ColumnIdentifier & column_identifier);
+
+    /// The query which will be executed with parallel replicas.
+    /// In case if only the most inner subquery can be executed with parallel replicas, node is nullptr.
+    const QueryNode * const parallel_replicas_node = nullptr;
+    /// Table which is used with parallel replicas reading. Now, only one table is supported by the protocol.
+    /// It is the left-most table of the query (in JOINs, UNIONs and subqueries).
+    const TableNode * const parallel_replicas_table = nullptr;
 
 private:
     std::unordered_set<ColumnIdentifier> column_identifiers;

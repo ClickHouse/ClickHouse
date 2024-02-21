@@ -8,6 +8,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# This test does many invocations of clickhouse-client in a loop,
+# leading to "Too many parts" in the system.coverage_log,
+# but we are not interested in client-side coverage here.
+unset CLICKHOUSE_WRITE_COVERAGE
+
 NUM_REPLICAS=10
 
 for i in $(seq 1 $NUM_REPLICAS); do

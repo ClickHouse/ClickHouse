@@ -1662,6 +1662,10 @@ Result:
 
 Path to file which contains format string for result set (for Template format).
 
+### format_template_resultset_format {#format_template_resultset_format}
+
+Format string for result set (for Template format)
+
 ### format_template_row {#format_template_row}
 
 Path to file which contains format string for rows (for Template format).
@@ -1669,6 +1673,10 @@ Path to file which contains format string for rows (for Template format).
 ### format_template_rows_between_delimiter {#format_template_rows_between_delimiter}
 
 Delimiter between rows (for Template format).
+
+### format_template_row_format {#format_template_row_format}
+
+Format string for rows (for Template format)
 
 ## CustomSeparated format settings {custom-separated-format-settings}
 

@@ -9,9 +9,8 @@ from pathlib import Path
 from typing import Tuple
 
 from build_download_helper import download_all_deb_packages
-from commit_status_helper import override_status
-from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
+from docker_images_helper import DockerImage, pull_image, get_docker_image
+from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
 from report import (
     ERROR,
     FAIL,
@@ -163,7 +162,7 @@ def main():
         status, description = ERROR, "Empty test_results.tsv"
 
     assert status is not None
-    status = override_status(status, check_name)
+
     test_results.append(
         TestResult(
             "All tests",
