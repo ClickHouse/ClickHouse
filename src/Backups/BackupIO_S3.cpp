@@ -36,14 +36,16 @@ std::shared_ptr<S3::Client> makeS3Client(
     const S3::URI & s3_uri,
     const String & access_key_id,
     const String & secret_access_key,
+    const String & session_token,
     const S3Settings & settings,
     const ContextPtr & context)
 {
-    Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
+    Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);
     HTTPHeaderEntries headers;
     if (access_key_id.empty())
     {
-        credentials = Aws::Auth::AWSCredentials(settings.auth_settings.access_key_id, settings.auth_settings.secret_access_key);
+        credentials = Aws::Auth::AWSCredentials(
+            settings.auth_settings.access_key_id, settings.auth_settings.secret_access_key, settings.auth_settings.session_token);
         headers = settings.auth_settings.headers;
     }
 
@@ -91,7 +93,8 @@ std::shared_ptr<S3::Client> makeS3Client(
             settings.auth_settings.expiration_window_seconds.value_or(
                 context->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
             settings.auth_settings.no_sign_request.value_or(context->getConfigRef().getBool("s3.no_sign_request", false)),
-        });
+        },
+        credentials.GetSessionToken());
 }
 
 Aws::Vector<Aws::S3::Model::Object> listObjects(S3::Client & client, const S3::URI & s3_uri, const String & file_name)
@@ -117,6 +120,7 @@ BackupReaderS3::BackupReaderS3(
     const S3::URI & s3_uri_,
     const String & access_key_id_,
     const String & secret_access_key_,
+    const String & session_token_,
     bool allow_s3_native_copy,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
@@ -131,7 +135,7 @@ BackupReaderS3::BackupReaderS3(
     request_settings.max_single_read_retries
         = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
     request_settings.allow_native_copy = allow_s3_native_copy;
-    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, s3_settings, context_);
+    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, session_token_, s3_settings, context_);
 
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
         blob_storage_log = std::make_shared<BlobStorageLogWriter>(blob_storage_system_log);
@@ -215,6 +219,7 @@ BackupWriterS3::BackupWriterS3(
     const S3::URI & s3_uri_,
     const String & access_key_id_,
     const String & secret_access_key_,
+    const String & session_token_,
     bool allow_s3_native_copy,
     const String & storage_class_name,
     const ReadSettings & read_settings_,
@@ -231,7 +236,7 @@ BackupWriterS3::BackupWriterS3(
         = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
     request_settings.allow_native_copy = allow_s3_native_copy;
     request_settings.setStorageClassName(storage_class_name);
-    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, s3_settings, context_);
+    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, session_token_, s3_settings, context_);
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
     {
         blob_storage_log = std::make_shared<BlobStorageLogWriter>(blob_storage_system_log);

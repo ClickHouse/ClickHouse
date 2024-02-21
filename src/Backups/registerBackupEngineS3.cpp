@@ -50,7 +50,7 @@ void registerBackupEngineS3(BackupFactory & factory)
         const String & id_arg = params.backup_info.id_arg;
         const auto & args = params.backup_info.args;
 
-        String s3_uri, access_key_id, secret_access_key;
+        String s3_uri, access_key_id, secret_access_key, session_token;
 
         if (!id_arg.empty())
         {
@@ -63,6 +63,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             s3_uri = config.getString(config_prefix + ".url");
             access_key_id = config.getString(config_prefix + ".access_key_id", "");
             secret_access_key = config.getString(config_prefix + ".secret_access_key", "");
+            session_token = config.getString(config_prefix + ".session_token", "");
 
             if (config.has(config_prefix + ".filename"))
                 s3_uri = fs::path(s3_uri) / config.getString(config_prefix + ".filename");
@@ -76,10 +77,10 @@ void registerBackupEngineS3(BackupFactory & factory)
         }
         else
         {
-            if ((args.size() != 1) && (args.size() != 3))
+            if ((args.size() != 1) && (args.size() != 3) && (args.size() != 4))
                 throw Exception(
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Backup S3 requires 1 or 3 arguments: url, [access_key_id, secret_access_key]");
+                    "Backup S3 requires 1, 3 or 4 arguments: url, [access_key_id, secret_access_key], [session_token]");
 
             s3_uri = args[0].safeGet<String>();
             if (args.size() >= 3)
@@ -87,6 +88,9 @@ void registerBackupEngineS3(BackupFactory & factory)
                 access_key_id = args[1].safeGet<String>();
                 secret_access_key = args[2].safeGet<String>();
             }
+
+            if (args.size() >= 4)
+                session_token = args[3].safeGet<String>();
         }
 
         BackupImpl::ArchiveParams archive_params;
@@ -112,6 +116,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 S3::URI{s3_uri},
                 access_key_id,
                 secret_access_key,
+                session_token,
                 params.allow_s3_native_copy,
                 params.read_settings,
                 params.write_settings,
@@ -131,6 +136,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 S3::URI{s3_uri},
                 access_key_id,
                 secret_access_key,
+                session_token,
                 params.allow_s3_native_copy,
                 params.s3_storage_class,
                 params.read_settings,
