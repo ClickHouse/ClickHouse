@@ -805,14 +805,19 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             prewhere_info->prewhere_actions = filter_info.actions;
                             prewhere_info->prewhere_column_name = filter_info.column_name;
                             prewhere_info->remove_prewhere_column = filter_info.do_remove_column;
+                            prewhere_info->need_filter = true;
                         }
-                        else if (!table_expression_query_info.prewhere_info->row_level_filter)
+                        else if (!prewhere_info->row_level_filter)
                         {
                             prewhere_info->row_level_filter = filter_info.actions;
                             prewhere_info->row_level_column_name = filter_info.column_name;
+                            prewhere_info->need_filter = true;
+                        }
+                        else
+                        {
+                            where_filters.emplace_back(filter_info, std::move(description));
                         }
 
-                        prewhere_info->need_filter = true;
                     }
                     else
                     {
