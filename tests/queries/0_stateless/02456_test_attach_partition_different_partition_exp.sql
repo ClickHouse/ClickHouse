@@ -340,6 +340,56 @@ SELECT * FROM source ORDER BY A;
 SELECT * FROM destination ORDER BY A;
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
+-- Should be allowed, validate tuple() to non-partitioned (should be the same).
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+
+CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY tuple();
+CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple();
+
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
+INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-02 02:01:03');
+
+ALTER TABLE destination ATTACH PARTITION ID 'all' FROM source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE destination;
+
+ALTER TABLE destination ATTACH PARTITION tuple() FROM source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+-- Should be allowed, validate non-partitioned to tuple() (should be the same).
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+
+CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple();
+CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY tuple();
+
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
+INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-02 02:01:03');
+
+ALTER TABLE destination ATTACH PARTITION ID 'all' FROM source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE destination;
+
+ALTER TABLE destination ATTACH PARTITION tuple() FROM source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
 -- Should be allowed, it is a local operation, no different than regular attach. Replicated to replicated.
 DROP TABLE IF EXISTS source;
 DROP TABLE IF EXISTS destination;

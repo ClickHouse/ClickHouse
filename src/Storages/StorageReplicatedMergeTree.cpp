@@ -2707,7 +2707,9 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
             const auto my_partition_expression = metadata_snapshot->getPartitionKeyAST();
             const auto src_partition_expression = source_table->getInMemoryMetadataPtr()->getPartitionKeyAST();
 
-            const auto is_partition_exp_the_same = queryToStringNullable(my_partition_expression) == queryToStringNullable(src_partition_expression);
+            const auto is_partition_exp_the_same =
+                queryToStringWithEmptyTupleNormalization(my_partition_expression)
+                == queryToStringWithEmptyTupleNormalization(src_partition_expression);
 
             if (is_partition_exp_the_same)
             {
@@ -7892,7 +7894,10 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
     const auto my_partition_expression = metadata_snapshot->getPartitionKeyAST();
     const auto src_partition_expression = source_metadata_snapshot->getPartitionKeyAST();
-    const auto is_partition_exp_the_same = queryToStringNullable(my_partition_expression) == queryToStringNullable(src_partition_expression);
+
+    const auto is_partition_exp_the_same =
+        queryToStringWithEmptyTupleNormalization(my_partition_expression)
+        == queryToStringWithEmptyTupleNormalization(src_partition_expression);
 
     if (replace && !is_partition_exp_the_same)
     {
@@ -8195,7 +8200,10 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
     const auto dst_partition_expression = dest_metadata_snapshot->getPartitionKeyAST();
     const auto src_partition_expression = metadata_snapshot->getPartitionKeyAST();
-    const auto is_partition_exp_the_same = queryToStringNullable(src_partition_expression) == queryToStringNullable(dst_partition_expression);
+
+    const auto is_partition_exp_the_same =
+        queryToStringWithEmptyTupleNormalization(dst_partition_expression)
+        == queryToStringWithEmptyTupleNormalization(src_partition_expression);
 
     /// A range for log entry to remove parts from the source table (myself).
     auto zookeeper = getZooKeeper();
