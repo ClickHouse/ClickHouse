@@ -25,7 +25,6 @@ public:
     KeeperStateMachine(
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
-        const CoordinationSettingsPtr & coordination_settings_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
         CommitCallback commit_callback_ = {},
@@ -138,8 +137,6 @@ private:
     SnapshotMetadataPtr latest_snapshot_meta = nullptr;
     SnapshotFileInfo latest_snapshot_info;
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
-
-    CoordinationSettingsPtr coordination_settings;
 
     /// Main state machine logic
     KeeperStoragePtr storage TSA_PT_GUARDED_BY(storage_and_responses_lock);

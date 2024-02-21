@@ -251,8 +251,7 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
 
     view_name = table_expression->database_and_table_name;
     table_expression->database_and_table_name = {};
-    table_expression->subquery = std::make_shared<ASTSubquery>();
-    table_expression->subquery->children.push_back(view_query);
+    table_expression->subquery = std::make_shared<ASTSubquery>(view_query);
     table_expression->subquery->setAlias(alias);
 
     for (auto & child : table_expression->children)
