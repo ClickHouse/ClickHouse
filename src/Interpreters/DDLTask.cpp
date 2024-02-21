@@ -148,9 +148,8 @@ void DDLLogEntry::parse(const String & data)
             String settings_str;
             rb >> "settings: " >> settings_str >> "\n";
             ParserSetQuery parser{true};
-            constexpr UInt64 max_size = 4096;
             constexpr UInt64 max_depth = 16;
-            ASTPtr settings_ast = parseQuery(parser, settings_str, max_size, max_depth);
+            ASTPtr settings_ast = parseQuery(parser, settings_str, Context::getGlobalContextInstance()->getSettingsRef().max_query_size, max_depth);
             settings.emplace(std::move(settings_ast->as<ASTSetQuery>()->changes));
         }
     }

@@ -552,7 +552,7 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::nextImpl()
             if (!can_retry_request)
                 throw;
 
-            LOG_ERROR(
+            LOG_WARNING(
                 log,
                 "HTTP request to `{}` failed at try {}/{} with bytes read: {}/{}. "
                 "Error: {}. (Current backoff wait is {}/{} ms)",

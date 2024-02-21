@@ -35,7 +35,7 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 
 #include <boost/multi_index_container.hpp>
@@ -462,14 +462,19 @@ public:
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
 
-    String getLogName() const { return *std::atomic_load(&log_name); }
+    String getLogName() const { return log.loadName(); }
 
     Int64 getMaxBlockNumber() const;
 
     struct ProjectionPartsVector
     {
-        DataPartsVector projection_parts;
         DataPartsVector data_parts;
+
+        DataPartsVector projection_parts;
+        DataPartStateVector projection_parts_states;
+
+        DataPartsVector broken_projection_parts;
+        DataPartStateVector broken_projection_parts_states;
     };
 
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
@@ -484,7 +489,7 @@ public:
         const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
     /// Same as above but only returns projection parts
     ProjectionPartsVector getProjectionPartsVectorForInternalUsage(
-        const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
+        const DataPartStates & affordable_states, MergeTreeData::DataPartStateVector * out_states) const;
 
 
     /// Returns absolutely all parts (and snapshot of their states)
@@ -1115,10 +1120,7 @@ protected:
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
 
-    /// log_name will change during table RENAME. Use atomic_shared_ptr to allow concurrent RW.
-    /// NOTE clang-14 doesn't have atomic_shared_ptr yet. Use std::atomic* operations for now.
-    std::shared_ptr<String> log_name;
-    LoggerPtr log;
+    AtomicLogger log;
 
     /// Storage settings.
     /// Use get and set to receive readonly versions.

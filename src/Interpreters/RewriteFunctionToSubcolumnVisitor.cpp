@@ -122,6 +122,21 @@ void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast)
             ast = transformToSubcolumn(name_in_storage, subcolumn_name);
             ast->setAlias(alias);
         }
+        else if (function.name == "variantElement" && column_type_id == TypeIndex::Variant)
+        {
+            const auto * literal = arguments[1]->as<ASTLiteral>();
+            if (!literal)
+                return;
+
+            String subcolumn_name;
+            auto value_type = literal->value.getType();
+            if (value_type != Field::Types::String)
+                return;
+
+            subcolumn_name = literal->value.get<const String &>();
+            ast = transformToSubcolumn(name_in_storage, subcolumn_name);
+            ast->setAlias(alias);
+        }
         else
         {
             auto it = binary_function_to_subcolumn.find(function.name);
