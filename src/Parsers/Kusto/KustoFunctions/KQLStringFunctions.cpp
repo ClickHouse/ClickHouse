@@ -240,7 +240,7 @@ bool ExtractAll::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ExtractJson::convertImpl(String & out, IParser::Pos & pos)
+bool ExtractJSON::convertImpl(String & out, IParser::Pos & pos)
 {
     String datatype = "String";
     ParserKeyword s_kql("typeof");
@@ -431,7 +431,7 @@ bool ParseCSV::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ParseJson::convertImpl(String & out, IParser::Pos & pos)
+bool ParseJSON::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())

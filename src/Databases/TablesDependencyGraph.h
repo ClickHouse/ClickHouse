@@ -107,11 +107,11 @@ public:
     /// tables which depend on the tables which depend on the tables without dependencies, and so on.
     std::vector<StorageID> getTablesSortedByDependency() const;
 
-    /// Returns a map of lists of tables by the number of dependencies they have:
-    /// tables without dependencies first with level 0, then
-    /// tables with depend on the tables without dependencies with level 1, then
-    /// tables which depend on the tables which depend on the tables without dependencies with level 2, and so on.
-    std::map<size_t, std::vector<StorageID>> getTablesSortedByDependencyWithLevels() const;
+    /// Returns a list of lists of tables by the number of dependencies they have:
+    /// tables without dependencies are in the first list, then
+    /// tables which depend on the tables without dependencies are in the second list, then
+    /// tables which depend on the tables which depend on the tables without dependencies are in the third list, and so on.
+    std::vector<std::vector<StorageID>> getTablesSplitByDependencyLevel() const;
 
     /// Outputs information about this graph as a bunch of logging messages.
     void log() const;

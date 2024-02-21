@@ -1,8 +1,8 @@
 SELECT
-3	0	0
-3	0	0
+3	1
+3	1
 INSERT
 CHECK
 1
 2
-6	0	2
+6	2
