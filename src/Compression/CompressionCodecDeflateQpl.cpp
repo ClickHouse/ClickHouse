@@ -228,7 +228,7 @@ Int32 HardwareCodecDeflateQpl::doDecompressDataSynchronous(const char * source, 
     {
         _tpause(1, __rdtsc() + 1000);
         status = qpl_check_job(job_ptr);
-    }while (status == QPL_STS_BEING_PROCESSED);
+    } while (status == QPL_STS_BEING_PROCESSED);
 
     if (status != QPL_STS_OK)
     {
