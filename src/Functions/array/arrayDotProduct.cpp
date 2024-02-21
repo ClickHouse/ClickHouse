@@ -24,14 +24,121 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <typename Impl, typename Name>
+
+struct DotProduct
+{
+    static constexpr auto name = "arrayDotProduct";
+
+    static DataTypePtr getReturnType(const DataTypePtr & left, const DataTypePtr & right)
+    {
+        using Types = TypeList<DataTypeFloat32, DataTypeFloat64,
+                               DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64,
+                               DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64>;
+        Types types;
+
+        DataTypePtr result_type;
+        bool valid = castTypeToEither(types, left.get(), [&](const auto & left_)
+        {
+            return castTypeToEither(types, right.get(), [&](const auto & right_)
+            {
+                using LeftType = typename std::decay_t<decltype(left_)>::FieldType;
+                using RightType = typename std::decay_t<decltype(right_)>::FieldType;
+                using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<LeftType, RightType>::Type;
+
+                if constexpr (std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)
+                    result_type = std::make_shared<DataTypeFloat32>();
+                else
+                    result_type = std::make_shared<DataTypeFromFieldType<ResultType>>();
+                return true;
+            });
+        });
+
+        if (!valid)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Arguments of function {} only support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.", name);
+        return result_type;
+    }
+
+    template <typename Type>
+    struct State
+    {
+        Type sum = 0;
+    };
+
+    template <typename Type>
+    static void accumulate(State<Type> & state, Type x, Type y)
+    {
+        state.sum += x * y;
+    }
+
+    template <typename Type>
+    static void combine(State<Type> & state, const State<Type> & other_state)
+    {
+        state.sum += other_state.sum;
+    }
+
+#if USE_MULTITARGET_CODE
+    template <typename Type>
+    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
+        const Type * __restrict data_x,
+        const Type * __restrict data_y,
+        size_t i_max,
+        size_t & i,
+        State<Type> & state)
+    {
+        static constexpr bool is_float32 = std::is_same_v<Type, Float32>;
+
+        __m512 sums;
+        if constexpr (is_float32)
+            sums = _mm512_setzero_ps();
+        else
+            sums = _mm512_setzero_pd();
+
+        constexpr size_t n = is_float32 ? 16 : 8;
+
+        for (; i + n < i_max; i += n)
+        {
+            if constexpr (is_float32)
+            {
+                __m512 x = _mm512_loadu_ps(data_x + i);
+                __m512 y = _mm512_loadu_ps(data_y + i);
+                sums = _mm512_fmadd_ps(x, y, sums);
+            }
+            else
+            {
+                __m512 x = _mm512_loadu_pd(data_x + i);
+                __m512 y = _mm512_loadu_pd(data_y + i);
+                sums = _mm512_fmadd_pd(x, y, sums);
+            }
+        }
+
+        if constexpr (is_float32)
+            state.sum = _mm512_reduce_add_ps(sums);
+        else
+            state.sum = _mm512_reduce_add_pd(sums);
+    }
+#endif
+
+    template <typename Type>
+    static Type finalize(const State<Type> & state)
+    {
+        return state.sum;
+    }
+
+};
+
+
+/// The implementation is modeled after the implementation of distance functions arrayL1Distance, arrayL2Distance, etc.
+/// The main difference is that arrayDotProduct() interfers the result type differently.
+template <typename Kernel>
 class FunctionArrayScalarProduct : public IFunction
 {
 public:
-    static constexpr auto name = Name::name;
+    static constexpr auto name = Kernel::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayScalarProduct>(); }
     String getName() const override { return name; }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayScalarProduct>(); }
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -53,7 +160,7 @@ public:
             nested_types[i] = nested_type;
         }
 
-        return Impl::getReturnType(nested_types[0], nested_types[1]);
+        return Kernel::getReturnType(nested_types[0], nested_types[1]);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /* input_rows_count */) const override
@@ -155,7 +262,7 @@ private:
     }
 
     template <typename ResultType, typename LeftType, typename RightType>
-    static NO_INLINE void vector(
+    static void vector(
         const PaddedPODArray<LeftType> & left,
         const PaddedPODArray<RightType> & right,
         const ColumnArray::Offsets & offsets,
@@ -165,163 +272,52 @@ private:
         result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
-        for (size_t i = 0; i < size; ++i)
+        for (size_t row = 0; row < size; ++row)
         {
-            size_t array_size = offsets[i] - current_offset;
-            result[i] = Impl::template apply<ResultType, LeftType, RightType>(&left[current_offset], &right[current_offset], array_size);
-            current_offset = offsets[i];
-        }
-    }
+            size_t array_size = offsets[row] - current_offset;
 
-};
+            typename Kernel::template State<ResultType> state;
+            size_t i = 0;
 
-struct NameArrayDotProduct
-{
-    static constexpr auto name = "arrayDotProduct";
-};
-
-class ArrayDotProductImpl
-{
-public:
-    static DataTypePtr getReturnType(const DataTypePtr & left, const DataTypePtr & right)
-    {
-        using Types = TypeList<DataTypeFloat32, DataTypeFloat64,
-                               DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64,
-                               DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64>;
-        Types types;
-
-        DataTypePtr result_type;
-        bool valid = castTypeToEither(types, left.get(), [&](const auto & left_)
-        {
-            return castTypeToEither(types, right.get(), [&](const auto & right_)
-            {
-                using LeftType = typename std::decay_t<decltype(left_)>::FieldType;
-                using RightType = typename std::decay_t<decltype(right_)>::FieldType;
-                using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<LeftType, RightType>::Type;
-
-                if constexpr (std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)
-                    result_type = std::make_shared<DataTypeFloat32>();
-                else
-                    result_type = std::make_shared<DataTypeFromFieldType<ResultType>>();
-                return true;
-            });
-        });
-
-        if (!valid)
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Arguments of function {} only support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
-                NameArrayDotProduct::name);
-        return result_type;
-    }
-
-    /// Modeled after the implementation of distance functions L1Distance(), L2Distance() etc.
-    template <typename Type>
-    struct State
-    {
-        Type sum = 0;
-
-        void accumulate(Type x, Type y)
-        {
-            sum += x * y;
-        }
-
-        void combine(const State<Type> & other_state)
-        {
-            sum += other_state.sum;
-        }
-
-        Type finalize()
-        {
-            return sum;
-        }
-    };
-
+            /// SIMD optimization: process multiple elements in both input arrays at once.
+            /// To avoid combinatorial explosion of SIMD kernels, focus on
+            /// - the two most common input/output types (Float32 x Float32) --> Float32 and (Float64 x Float64) --> Float64 instead of 10 x
+            ///   10 input types x 8 output types,
+            /// - the most powerful SIMD instruction set (AVX-512F).
 #if USE_MULTITARGET_CODE
-    template <typename ResultType>
-    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
-        const ResultType * __restrict data_x,
-        const ResultType * __restrict data_y,
-        size_t i_max,
-        size_t & i,
-        State<ResultType> & state)
-    {
-        __m512 sums;
-        if constexpr (std::is_same_v<ResultType, Float32>)
-            sums = _mm512_setzero_ps();
-        else
-            sums = _mm512_setzero_pd();
-
-        const size_t n = (std::is_same_v<ResultType, Float32>) ? 16 : 8;
-
-        for (; i + n < i_max; i += n)
-        {
-            if constexpr (std::is_same_v<ResultType, Float32>)
+            if constexpr ((std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>)
+                            && std::is_same_v<ResultType, LeftType> && std::is_same_v<LeftType, RightType>)
             {
-                __m512 x = _mm512_loadu_ps(data_x + i);
-                __m512 y = _mm512_loadu_ps(data_y + i);
-                sums = _mm512_fmadd_ps(x, y, sums);
+                if (isArchSupported(TargetArch::AVX512F))
+                    Kernel::template accumulateCombine<ResultType>(&left[current_offset], &right[current_offset], array_size, i, state);
             }
-            else
-            {
-                __m512 x = _mm512_loadu_pd(data_x + i);
-                __m512 y = _mm512_loadu_pd(data_y + i);
-                sums = _mm512_fmadd_pd(x, y, sums);
-            }
-        }
-
-        if constexpr (std::is_same_v<ResultType, Float32>)
-            state.sum = _mm512_reduce_add_ps(sums);
-        else
-            state.sum = _mm512_reduce_add_pd(sums);
-    }
-#endif
-
-    template <typename ResultType, typename LeftType, typename RightType>
-    static NO_SANITIZE_UNDEFINED ResultType apply(
-        const LeftType * left,
-        const RightType * right,
-        size_t size)
-    {
-        State<ResultType> state;
-        size_t i = 0;
-
-        /// SIMD optimization: process multiple elements in both input arrays at once.
-        /// To avoid combinatorial explosion of SIMD kernels, focus on
-        /// - the two most common input/output types (Float32 x Float32) --> Float32 and (Float64 x Float64) --> Float64 instead of 10 x
-        ///   10 input types x 8 output types,
-        /// - the most powerful SIMD instruction set (AVX-512F).
-#if USE_MULTITARGET_CODE
-        if constexpr ((std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>)
-                        && std::is_same_v<ResultType, LeftType> && std::is_same_v<LeftType, RightType>)
-        {
-            if (isArchSupported(TargetArch::AVX512F))
-                accumulateCombine(left, right, size, i, state);
-        }
 #else
-        /// Process chunks in vectorized manner
-        static constexpr size_t VEC_SIZE = 4;
-        State<ResultType> states[VEC_SIZE];
-        for (; i + VEC_SIZE < size; i += VEC_SIZE)
-        {
-            for (size_t j = 0; j < VEC_SIZE; ++j)
-                states[j].accumulate(static_cast<ResultType>(left[i + j]), static_cast<ResultType>(right[i + j]));
-        }
+            /// Process chunks in vectorized manner
+            static constexpr size_t VEC_SIZE = 4;
+            typename Kernel::template State<ResultType> states[VEC_SIZE];
+            for (; i + VEC_SIZE < array_size; i += VEC_SIZE)
+            {
+                for (size_t j = 0; j < VEC_SIZE; ++j)
+                    Kernel::template accumulate<ResultType>(states[j], static_cast<ResultType>(left[i + j]), static_cast<ResultType>(right[i + j]));
+            }
 
-        for (const auto & other_state : states)
-            state.combine(other_state);
+            for (const auto & other_state : states)
+                Kernel::template combine<ResultType>(state, other_state);
 #endif
 
-        /// Process the tail
-        for (; i < size; ++i)
-            state.accumulate(static_cast<ResultType>(left[i]), static_cast<ResultType>(right[i]));
+            /// Process the tail
+            for (; i < array_size; ++i)
+                Kernel::template accumulate<ResultType>(state, static_cast<ResultType>(left[i]), static_cast<ResultType>(right[i]));
 
-        ResultType res = state.finalize();
-        return res;
+            /// ResultType res = Kernel::template finalize<ResultType>(state);
+            result[row] = Kernel::template finalize<ResultType>(state);
+
+            current_offset = offsets[row];
+        }
     }
 };
 
-using FunctionArrayDotProduct = FunctionArrayScalarProduct<ArrayDotProductImpl, NameArrayDotProduct>;
+using FunctionArrayDotProduct = FunctionArrayScalarProduct<DotProduct>;
 
 REGISTER_FUNCTION(ArrayDotProduct)
 {
