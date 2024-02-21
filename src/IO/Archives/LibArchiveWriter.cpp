@@ -92,7 +92,7 @@ private:
         {
             throw Exception(
                 ErrorCodes::CANNOT_PACK_ARCHIVE,
-                "Couldn't pack tar archive: Failed to write all bytes, {} of {} , filename={}",
+                "Couldn't pack tar archive: Failed to write all bytes, {} of {}, filename={}",
                 written,
                 to_write,
                 quoteString(filename));
