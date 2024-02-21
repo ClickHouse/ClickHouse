@@ -22,7 +22,7 @@
 #include <Core/Types.h>
 #include <Disks/DirectoryIterator.h>
 #include <Common/ThreadPool.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/Exception.h>
 #include "config.h"
 
