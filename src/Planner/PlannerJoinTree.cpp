@@ -801,14 +801,18 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             table_expression_query_info.prewhere_info->prewhere_actions = filter_info.actions;
                             table_expression_query_info.prewhere_info->prewhere_column_name = filter_info.column_name;
                             table_expression_query_info.prewhere_info->remove_prewhere_column = filter_info.do_remove_column;
+                            table_expression_query_info.prewhere_info->need_filter = true;
                         }
-                        else
+                        else if (!table_expression_query_info.prewhere_info->row_level_filter)
                         {
                             table_expression_query_info.prewhere_info->row_level_filter = filter_info.actions;
                             table_expression_query_info.prewhere_info->row_level_column_name = filter_info.column_name;
+                            table_expression_query_info.prewhere_info->need_filter = true;
                         }
-
-                        table_expression_query_info.prewhere_info->need_filter = true;
+                        else
+                        {
+                            where_filters.emplace_back(filter_info, std::move(description));
+                        }
                     }
                     else
                     {

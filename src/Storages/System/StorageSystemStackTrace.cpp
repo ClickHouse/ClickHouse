@@ -168,7 +168,7 @@ bool wait(int timeout_ms)
                 continue;   /// Drain delayed notifications.
         }
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Read wrong number of bytes from pipe");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: read wrong number of bytes from pipe");
     }
 }
 
