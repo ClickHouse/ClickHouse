@@ -319,7 +319,7 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
 
     if (cluster_info.current_cluster_is_invisible)
     {
-        LOG_DEBUG(log, "cluster '{}' is invisible!", cluster_info.name);
+        LOG_DEBUG(log, "Cluster '{}' is invisible.", cluster_info.name);
         return true;
     }
 

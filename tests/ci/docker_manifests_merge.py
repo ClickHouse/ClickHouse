@@ -5,24 +5,23 @@ import json
 import logging
 import os
 import subprocess
-
 import sys
 from typing import List, Tuple
 
+# isort: off
 from github import Github
 
-from clickhouse_helper import (
-    ClickHouseHelper,
-    prepare_tests_results_for_clickhouse,
-)
+# isort: on
+
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import format_description, get_commit, post_commit_status
+from docker_images_helper import docker_login, get_images_oredered_list
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResult
+from report import FAILURE, SUCCESS, StatusType, TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
-from docker_images_helper import docker_login, get_images_oredered_list
 
 NAME = "Push multi-arch images to Dockerhub"
 
@@ -149,29 +148,35 @@ def main():
         else json.load(open(args.missing_images))
     )
     test_results = []
-    status = "success"
+    status = SUCCESS  # type: StatusType
 
     ok_cnt, fail_cnt = 0, 0
     images = get_images_oredered_list()
     for image_obj in images:
-        if image_obj.repo not in missing_images:
-            continue
         tag = image_tags[image_obj.repo]
         if image_obj.only_amd64:
             # FIXME: WA until full arm support
             tags = [f"{tag}-{arch}" for arch in archs if arch != "aarch64"]
         else:
             tags = [f"{tag}-{arch}" for arch in archs]
-        manifest, test_result = create_manifest(image_obj.repo, tag, tags, args.push)
-        test_results.append(TestResult(manifest, test_result))
+
+        # 1. update multiarch latest manifest for every image
         if args.set_latest:
             manifest, test_result = create_manifest(
                 image_obj.repo, "latest", tags, args.push
             )
             test_results.append(TestResult(manifest, test_result))
 
+        # 2. skip manifest create if not missing
+        if image_obj.repo not in missing_images:
+            continue
+
+        # 3. created image:digest multiarch manifest for changed images only
+        manifest, test_result = create_manifest(image_obj.repo, tag, tags, args.push)
+        test_results.append(TestResult(manifest, test_result))
+
         if test_result != "OK":
-            status = "failure"
+            status = FAILURE
             fail_cnt += 1
         else:
             ok_cnt += 1
@@ -207,7 +212,7 @@ def main():
     )
     ch_helper = ClickHouseHelper()
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-    if status == "failure":
+    if status == FAILURE:
         sys.exit(1)
 
 
