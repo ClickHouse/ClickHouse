@@ -16,14 +16,14 @@ extern const int BAD_ARGUMENTS;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-class FunctionSeriesDecomposeAnomaliesDetection : public IFunction
+class FunctionSeriesAnomaliesDetectDecompose : public IFunction
 {
 public:
-    static constexpr auto name = "seriesDecomposeAnomaliesDetection";
+    static constexpr auto name = "seriesAnomaliesDetectDecompose";
 
-    explicit FunctionSeriesDecomposeAnomaliesDetection(ContextPtr context_) : context(context_) { }
+    explicit FunctionSeriesAnomaliesDetectDecompose(ContextPtr context_) : context(context_) { }
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionSeriesDecomposeAnomaliesDetection>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionSeriesAnomaliesDetectDecompose>(context); }
 
     std::string getName() const override { return name; }
 
@@ -210,16 +210,16 @@ public:
 private:
     ContextPtr context;
 };
-REGISTER_FUNCTION(seriesDecomposeAnomaliesDetection)
+REGISTER_FUNCTION(seriesAnomaliesDetectDecompose)
 {
-    factory.registerFunction<FunctionSeriesDecomposeAnomaliesDetection>(FunctionDocumentation{
-        .description = R"(Detect anomalies in series data through [series decomposition](#seriesDecomposeSTL).
+    factory.registerFunction<FunctionSeriesAnomaliesDetectDecompose>(FunctionDocumentation{
+        .description = R"(Detect anomalies in series data by decomposing it into its constituent components through [series decomposition](#seriesDecomposeSTL) and then analyzing the residual component to detect unusual patterns.
 
 **Syntax**
 
 ``` sql
-seriesDecomposeAnomaliesDetection(series);
-seriesDecomposeAnomaliesDetection(series, threshold, seasonality, AD_method);
+seriesAnomaliesDetectDecompose(series);
+seriesAnomaliesDetectDecompose(series, threshold, seasonality, AD_method);
 ```
 
 **Arguments**
@@ -248,7 +248,7 @@ Type: [Array](../../sql-reference/data-types/array.md).
 Query:
 
 ``` sql
-SELECT seriesDecomposeAnomaliesDetection([4, 3, 2, 4, 3, 2, 4, 3, 2, 4, 3, 2, 4, 3, 2, 4, 3, 2, 4, 3, 2], 1.5, -1, 'tukey') AS print_0;
+SELECT seriesAnomaliesDetectDecompose([4, 3, 2, 4, 3, 2, 4, 3, 2, 4, 3, 2, 4, 3, 2, 4, 3, 2, 4, 3, 2], 1.5, -1, 'tukey') AS print_0;
 ```
 
 Result:
