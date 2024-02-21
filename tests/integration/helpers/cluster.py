@@ -104,8 +104,8 @@ def run_and_check(
     res = subprocess.run(
         args, stdout=stdout, stderr=stderr, env=env, shell=shell, timeout=timeout
     )
-    out = res.stdout.decode("utf-8")
-    err = res.stderr.decode("utf-8")
+    out = res.stdout.decode("utf-8", 'ignore')
+    err = res.stderr.decode("utf-8", 'ignore')
     # check_call(...) from subprocess does not print stderr, so we do it manually
     for outline in out.splitlines():
         logging.debug(f"Stdout:{outline}")
