@@ -48,12 +48,13 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
         const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
         const String path = hdfs_uri.substr(begin_of_path);
 
-        fout = hdfsOpenFile(fs.get(), path.c_str(), flags, 0, replication_, 0);     /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
+        /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
+        fout = hdfsOpenFile(fs.get(), path.c_str(), flags, 0, replication_, 0);
 
         if (fout == nullptr)
         {
-            throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Unable to open HDFS file: {} error: {}",
-                path, std::string(hdfsGetLastError()));
+            throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Unable to open HDFS file: {} ({}) error: {}",
+                path, hdfs_uri, std::string(hdfsGetLastError()));
         }
     }
 

@@ -22,13 +22,14 @@ StorageHDFSConfiguration::StorageHDFSConfiguration(const StorageHDFSConfiguratio
 void StorageHDFSConfiguration::check(ContextPtr context) const
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(url));
-    checkHDFSURL(url);
+    checkHDFSURL(fs::path(url) / path);
 }
 
 ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage(ContextPtr context, bool is_readonly) /// NOLINT
 {
     UNUSED(is_readonly);
     auto settings = std::make_unique<HDFSObjectStorageSettings>();
+    chassert(!url.empty());
     return std::make_shared<HDFSObjectStorage>(url, std::move(settings), context->getConfigRef());
 }
 
@@ -36,15 +37,20 @@ void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr, bool /* with_str
 {
     url = checkAndGetLiteralArgument<String>(args[0], "url");
 
-    String format_name = "auto";
     if (args.size() > 1)
-        format_name = checkAndGetLiteralArgument<String>(args[1], "format_name");
+        format = checkAndGetLiteralArgument<String>(args[1], "format_name");
+    else
+        format = "auto";
 
-    String compression_method;
     if (args.size() == 3)
         compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
     else
         compression_method = "auto";
+
+    const size_t begin_of_path = url.find('/', url.find("//") + 2);
+    path = url.substr(begin_of_path + 1);
+    url = url.substr(0, begin_of_path);
+    paths = {path};
 }
 
 }

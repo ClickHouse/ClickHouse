@@ -36,10 +36,10 @@ ObjectStorageKey HDFSObjectStorage::generateObjectKeyForPath(const std::string &
 
 bool HDFSObjectStorage::exists(const StoredObject & object) const
 {
-    const auto & path = object.remote_path;
-    const size_t begin_of_path = path.find('/', path.find("//") + 2);
-    const String remote_fs_object_path = path.substr(begin_of_path);
-    return (0 == hdfsExists(hdfs_fs.get(), remote_fs_object_path.c_str()));
+    // const auto & path = object.remote_path;
+    // const size_t begin_of_path = path.find('/', path.find("//") + 2);
+    // const String remote_fs_object_path = path.substr(begin_of_path);
+    return (0 == hdfsExists(hdfs_fs.get(), object.remote_path.c_str()));
 }
 
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLINT
@@ -86,9 +86,12 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
             ErrorCodes::UNSUPPORTED_METHOD,
             "HDFS API doesn't support custom attributes/metadata for stored objects");
 
+    auto path = object.remote_path.starts_with('/') ? object.remote_path.substr(1) : object.remote_path;
+    path = fs::path(hdfs_root_path) / path;
+
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     return std::make_unique<WriteBufferFromHDFS>(
-        object.remote_path, config, settings->replication, patchSettings(write_settings), buf_size,
+        path, config, settings->replication, patchSettings(write_settings), buf_size,
         mode == WriteMode::Rewrite ? O_WRONLY : O_WRONLY | O_APPEND);
 }
 
@@ -124,11 +127,18 @@ void HDFSObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
         removeObjectIfExists(object);
 }
 
-ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string &) const
+ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path) const
 {
-    throw Exception(
-        ErrorCodes::UNSUPPORTED_METHOD,
-        "HDFS API doesn't support custom attributes/metadata for stored objects");
+    auto * file_info = hdfsGetPathInfo(hdfs_fs.get(), path.data());
+    if (!file_info)
+        throw Exception(ErrorCodes::HDFS_ERROR, "Cannot get file info for: {}. Error: {}", path, hdfsGetLastError());
+
+    ObjectMetadata metadata;
+    metadata.size_bytes = static_cast<size_t>(file_info->mSize);
+    metadata.last_modified = file_info->mLastMod;
+
+    hdfsFreeFileInfo(file_info, 1);
+    return metadata;
 }
 
 void HDFSObjectStorage::copyObject( /// NOLINT

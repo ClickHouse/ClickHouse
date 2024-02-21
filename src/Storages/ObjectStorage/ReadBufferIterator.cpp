@@ -195,19 +195,19 @@ ReadBufferIterator::Data ReadBufferIterator::next()
                     throw Exception(
                         ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
                         "The table structure cannot be extracted from a {} format file, because there are no files with provided path "
-                        "in S3 or all files are empty. You can specify table structure manually",
-                        *format);
+                        "in {} or all files are empty. You can specify table structure manually",
+                        *format, object_storage->getName());
 
                 throw Exception(
                     ErrorCodes::CANNOT_DETECT_FORMAT,
                     "The data format cannot be detected by the contents of the files, because there are no files with provided path "
-                    "in S3 or all files are empty. You can specify the format manually");
+                    "in {} or all files are empty. You can specify the format manually", object_storage->getName());
             }
 
             return {nullptr, std::nullopt, format};
         }
 
-        /// S3 file iterator could get new keys after new iteration
+        /// file iterator could get new keys after new iteration
         if (read_keys.size() > prev_read_keys_size)
         {
             /// If format is unknown we can try to determine it by new file names.
@@ -234,7 +234,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             prev_read_keys_size = read_keys.size();
         }
 
-        if (getContext()->getSettingsRef().s3_skip_empty_files
+        if (query_settings.skip_empty_files
             && current_object_info->metadata && current_object_info->metadata->size_bytes == 0)
             continue;
 
@@ -255,7 +255,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             {},
             current_object_info->metadata->size_bytes);
 
-        if (!getContext()->getSettingsRef().s3_skip_empty_files || !read_buffer->eof())
+        if (!query_settings.skip_empty_files || !read_buffer->eof())
         {
             first = false;
 
