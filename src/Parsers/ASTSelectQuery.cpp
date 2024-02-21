@@ -165,7 +165,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     if (order_by_all)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY ALL" << (s.hilite ? hilite_none : "");
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY *" << (s.hilite ? hilite_none : "");
 
         auto * elem = orderBy()->children[0]->as<ASTOrderByElement>();
         s.ostr << (s.hilite ? hilite_keyword : "")

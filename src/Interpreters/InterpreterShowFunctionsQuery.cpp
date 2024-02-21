@@ -25,13 +25,13 @@ String InterpreterShowFunctionsQuery::getRewrittenQuery()
 
     const auto & query = query_ptr->as<ASTShowFunctionsQuery &>();
 
-    DatabasePtr systemDb = DatabaseCatalog::instance().getSystemDatabase();
+    DatabasePtr system_db = DatabaseCatalog::instance().getSystemDatabase();
 
     String rewritten_query = fmt::format(
         R"(
 SELECT *
 FROM {}.{})",
-        systemDb->getDatabaseName(),
+        system_db->getDatabaseName(),
         functions_table);
 
     if (!query.like.empty())
