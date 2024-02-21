@@ -176,7 +176,7 @@ void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const Planne
         return;
 
     ResultReplacementMap replacement_map;
-    auto updated_query_tree = replaceTableExpressionsWithDummyTables(query_tree, planner_context->getQueryContext(), &replacement_map);
+    auto updated_query_tree = replaceTableExpressionsWithDummyTables(query_tree, *planner_context, &replacement_map);
 
     std::unordered_map<const IStorage *, TableExpressionData *> dummy_storage_to_table_expression_data;
 
@@ -1359,10 +1359,11 @@ void Planner::buildPlanForQueryNode()
         }
     }
 
+    bool top_level = planner_context->getTableExpressionNodeToData().empty();
     collectTableExpressionData(query_tree, planner_context);
     checkStoragesSupportTransactions(planner_context);
 
-    if (!select_query_options.only_analyze)
+    if (!select_query_options.only_analyze && top_level)
         collectFiltersForAnalysis(query_tree, planner_context);
 
     if (query_context->canUseTaskBasedParallelReplicas())

@@ -252,7 +252,8 @@ void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)
 void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr & planner_context)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
-    auto table_expressions_nodes = extractTableExpressions(query_node_typed.getJoinTree());
+    auto table_expressions_nodes
+        = extractTableExpressions(query_node_typed.getJoinTree(), false /* add_array_join */, true /* recursive */);
 
     for (auto & table_expression_node : table_expressions_nodes)
     {

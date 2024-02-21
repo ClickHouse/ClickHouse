@@ -36,6 +36,8 @@ void optimizePrimaryKeyCondition(const Stack & stack)
         else
             break;
     }
+
+    source_step_with_filter->applyFilters();
 }
 
 }

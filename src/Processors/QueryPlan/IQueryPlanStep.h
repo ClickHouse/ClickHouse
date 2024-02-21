@@ -2,7 +2,6 @@
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {
@@ -65,6 +64,7 @@ public:
 
 using DataStreams = std::vector<DataStream>;
 
+class QueryPlan;
 using QueryPlanRawPtrs = std::list<QueryPlan *>;
 
 /// Single step of query plan.

@@ -7,7 +7,7 @@ CreatingSets
           Keys: 
             id
             value
-          Condition: and((id in (-Inf, 10]), (value in 1-element set))
+          Condition: and((value in 1-element set), (id in (-Inf, 10]))
           Parts: 1/1
           Granules: 1/1
 CreatingSets
@@ -19,7 +19,7 @@ CreatingSets
           Keys: 
             id
             value
-          Condition: and((id in (-Inf, 10]), (value in 1-element set))
+          Condition: and((value in 1-element set), (id in (-Inf, 10]))
           Parts: 1/1
           Granules: 1/1
 CreatingSets
@@ -31,7 +31,7 @@ CreatingSets
           Keys: 
             id
             value
-          Condition: and((id in (-Inf, 10]), (value in 5-element set))
+          Condition: and((value in 5-element set), (id in (-Inf, 10]))
           Parts: 1/1
           Granules: 1/1
 CreatingSets
@@ -43,7 +43,7 @@ CreatingSets
           Keys: 
             id
             value
-          Condition: and((id in (-Inf, 10]), (value in 5-element set))
+          Condition: and((value in 5-element set), (id in (-Inf, 10]))
           Parts: 1/1
           Granules: 1/1
 CreatingSets
@@ -55,7 +55,7 @@ CreatingSets
           Keys: 
             id
             value
-          Condition: and((id in (-Inf, 10]), (value in 1-element set))
+          Condition: and((value in 1-element set), (id in (-Inf, 10]))
           Parts: 1/1
           Granules: 1/1
 CreatingSets
@@ -67,7 +67,7 @@ CreatingSets
           Keys: 
             id
             value
-          Condition: and((id in (-Inf, 10]), (value in 1-element set))
+          Condition: and((value in 1-element set), (id in (-Inf, 10]))
           Parts: 1/1
           Granules: 1/1
 CreatingSets
@@ -79,7 +79,7 @@ CreatingSets
           Keys: 
             id
             value
-          Condition: and((id in (-Inf, 10]), (value in 5-element set))
+          Condition: and((value in 5-element set), (id in (-Inf, 10]))
           Parts: 1/1
           Granules: 1/1
 CreatingSets
@@ -91,6 +91,6 @@ CreatingSets
           Keys: 
             id
             value
-          Condition: and((id in (-Inf, 10]), (value in 5-element set))
+          Condition: and((value in 5-element set), (id in (-Inf, 10]))
           Parts: 1/1
           Granules: 1/1

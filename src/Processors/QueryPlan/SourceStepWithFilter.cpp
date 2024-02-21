@@ -53,7 +53,7 @@ Block SourceStepWithFilter::applyPrewhereActions(Block block, const PrewhereInfo
             }
             else if (prewhere_info->need_filter)
             {
-                if (const auto * type = typeid_cast<const DataTypeNullable *>(prewhere_column.type.get()); type->onlyNull())
+                if (const auto * type = typeid_cast<const DataTypeNullable *>(prewhere_column.type.get()); type && type->onlyNull())
                 {
                     prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), Null());
                 }

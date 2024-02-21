@@ -55,6 +55,17 @@ public:
 
 private:
     std::unordered_set<ColumnIdentifier> column_identifiers;
+
+    friend class PlannerContext;
+
+    /// Column node to column identifier
+    std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> column_node_to_column_identifier;
+
+    /// Table expression node to data
+    std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
+
+    /// Set key to set
+    PreparedSets prepared_sets;
 };
 
 using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
@@ -158,13 +169,13 @@ private:
     GlobalPlannerContextPtr global_planner_context;
 
     /// Column node to column identifier
-    std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> column_node_to_column_identifier;
+    std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> & column_node_to_column_identifier;
 
     /// Table expression node to data
-    std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
+    std::unordered_map<QueryTreeNodePtr, TableExpressionData> & table_expression_node_to_data;
 
     /// Set key to set
-    PreparedSets prepared_sets;
+    PreparedSets & prepared_sets;
 };
 
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;

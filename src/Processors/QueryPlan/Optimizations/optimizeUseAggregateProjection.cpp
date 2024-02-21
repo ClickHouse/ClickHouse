@@ -589,7 +589,6 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
     }
     else if (!candidates.real.empty())
     {
-        reading->applyFilters();
         auto ordinary_reading_select_result = reading->selectRangesToRead(parts, alter_conversions);
         size_t ordinary_reading_marks = ordinary_reading_select_result->selected_marks;
 
