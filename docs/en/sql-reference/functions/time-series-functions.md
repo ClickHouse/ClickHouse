@@ -173,7 +173,7 @@ Result:
 
 ## seriesDecomposeAnomaliesDetection
 
-Detect anomalies in series data using [series decomposition](#seriesDecomposeSTL).
+Detect anomalies in series data by decomposing it into its constituent components through [series decomposition](#seriesDecomposeSTL) and then analyzing the residual component to detect unusual patterns.
 
 **Syntax**
 
@@ -185,7 +185,7 @@ seriesDecomposeAnomaliesDetection(series, threshold, seasonality, AD_method);
 **Arguments**
 
 - `series` - An array of numeric values
-- `threshold` - A positive number to detect mild or stronger anomalies. The default is 1.5, K value.
+- `threshold` - A positive number to detect mild or stronger anomalies. The default is 1.5, [K value](https://en.wikipedia.org/wiki/Outlier#Tukey's_fences).
 - `Seasonality` - Represents the period for the seasonal analysis of series data. Supported values are:
                 - `-1`: Autodetect period using [seriesPeriodDetectFFT](#seriesPeriodDetectFFT). The default value.
                 - `0`: Used to skip extracting seasonal component.

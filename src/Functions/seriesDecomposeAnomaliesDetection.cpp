@@ -66,16 +66,16 @@ public:
             return ColumnArray::create(ColumnFloat64::create());
 
         /// Assigning default values for function arguments
-        Float64 K_value = 1.50;
+        Float64 k_value = 1.50;
         Float64 min_percentile = 10;
         Float64 max_percentile = 90;
         Int64 seasonality = -1;
 
         if (arguments.size() > 1)
         {
-            K_value = arguments[1].column->getFloat64(0);
-            if (K_value < 0.0 || isnan(K_value) || !isFinite(K_value))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument can only be a positive number, got {}", K_value);
+            k_value = arguments[1].column->getFloat64(0);
+            if (k_value < 0.0 || isnan(k_value) || !isFinite(k_value))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument can only be a positive number, got {}", k_value);
 
             seasonality = arguments[2].column->getInt(0);
             if (seasonality < -1)
@@ -154,7 +154,7 @@ public:
 
             auto min_percentile_column = DataTypeFloat64().createColumnConst(1, min_percentile);
             auto max_percentile_column = DataTypeFloat64().createColumnConst(1, max_percentile);
-            auto k_value_column = DataTypeFloat64().createColumnConst(1, K_value);
+            auto k_value_column = DataTypeFloat64().createColumnConst(1, k_value);
 
             ColumnsWithTypeAndName outliers_arg{
                 std::move(residuals_col),
@@ -185,7 +185,7 @@ public:
             res_col_offsets_data.push_back(res_data.size());
 
             res_data.insert(outlier_score.begin(), outlier_score.end());
-            res_col_offsets_data.push_back(res_data.size()); //fix this
+            res_col_offsets_data.push_back(res_data.size());
 
             ColumnArray::Offset baseline_start_offset = nested_decompose_offsets[prev_decompose_offset + 2];
             ColumnArray::Offset baseline_end_offset = nested_decompose_offsets[prev_decompose_offset + 3];
