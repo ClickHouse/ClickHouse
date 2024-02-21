@@ -63,7 +63,7 @@ private:
 public:
     AggregateFunctionGroupArrayIntersect(const DataTypePtr & argument_type, const Array & parameters_)
         : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectData<T>,
-          AggregateFunctionGroupArrayIntersect<T>>({argument_type}, parameters_, std::make_shared<DataTypeArray>(argument_type)) {}
+          AggregateFunctionGroupArrayIntersect<T>>({argument_type}, parameters_, argument_type) {}
 
     AggregateFunctionGroupArrayIntersect(const DataTypePtr & argument_type, const Array & parameters_, const DataTypePtr & result_type_)
         : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectData<T>,
@@ -196,7 +196,7 @@ class AggregateFunctionGroupArrayIntersectGeneric
 
 public:
     AggregateFunctionGroupArrayIntersectGeneric(const DataTypePtr & input_data_type_, const Array & parameters_)
-        : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectGenericData, AggregateFunctionGroupArrayIntersectGeneric<is_plain_column>>({input_data_type_}, parameters_, std::make_shared<DataTypeArray>(input_data_type_))
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectGenericData, AggregateFunctionGroupArrayIntersectGeneric<is_plain_column>>({input_data_type_}, parameters_, input_data_type_)
         , input_data_type(this->argument_types[0]) {}
 
     AggregateFunctionGroupArrayIntersectGeneric(const DataTypePtr & input_data_type_, const Array & parameters_, const DataTypePtr & result_type_)
@@ -399,10 +399,10 @@ IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, con
 inline AggregateFunctionPtr createAggregateFunctionGroupArrayIntersectImpl(const std::string & name, const DataTypePtr & argument_type, const Array & parameters)
 {
     const auto & nested_type = dynamic_cast<const DataTypeArray &>(*argument_type).getNestedType();
-    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionGroupArrayIntersect, const DataTypePtr &>(*nested_type, nested_type, parameters));
+    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionGroupArrayIntersect, const DataTypePtr &>(*nested_type, argument_type, parameters));
     if (!res)
     {
-        res = AggregateFunctionPtr(createWithExtraTypes(nested_type, parameters));
+        res = AggregateFunctionPtr(createWithExtraTypes(argument_type, parameters));
     }
 
     if (!res)
