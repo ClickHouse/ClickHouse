@@ -1284,10 +1284,13 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
             if CI_CONFIG.is_build_job(job):
                 # no GH status for build jobs
                 continue
-            num_batches = CI_CONFIG.get_job_config(job).num_batches
-            for batch in range(num_batches):
+            job_config = CI_CONFIG.get_job_config(job)
+            if not job_config:
+                # there might be a new job that does not exist on this branch - skip it
+                continue
+            for batch in range(job_config.num_batches):
                 future = executor.submit(
-                    _concurrent_create_status, job, batch, num_batches
+                    _concurrent_create_status, job, batch, job_config.num_batches
                 )
                 futures.append(future)
         done, _ = concurrent.futures.wait(futures)
@@ -1639,13 +1642,7 @@ def main() -> int:
         if not args.skip_jobs:
             ci_cache = CiCache(s3, jobs_data["digests"])
 
-            if (
-                pr_info.is_release_branch()
-                or pr_info.event.get("pull_request", {})
-                .get("user", {})
-                .get("login", "not_maxknv")
-                == "maxknv"
-            ):
+            if pr_info.is_release_branch():
                 # wait for pending jobs to be finished, await_jobs is a long blocking call
                 # wait pending jobs (for now only on release/master branches)
                 ready_jobs_batches_dict = ci_cache.await_jobs(
@@ -1835,7 +1832,7 @@ def main() -> int:
                         pr_info.sha,
                         job_report.test_results,
                         job_report.additional_files,
-                        job_report.check_name or args.job_name,
+                        job_report.check_name or _get_ext_check_name(args.job_name),
                         additional_urls=additional_urls or None,
                     )
                 commit = get_commit(
@@ -1846,7 +1843,7 @@ def main() -> int:
                     job_report.status,
                     check_url,
                     format_description(job_report.description),
-                    job_report.check_name or args.job_name,
+                    job_report.check_name or _get_ext_check_name(args.job_name),
                     pr_info,
                     dump_to_file=True,
                 )
@@ -1864,7 +1861,7 @@ def main() -> int:
                 job_report.duration,
                 job_report.start_time,
                 check_url or "",
-                job_report.check_name or args.job_name,
+                job_report.check_name or _get_ext_check_name(args.job_name),
             )
             ch_helper.insert_events_into(
                 db="default", table="checks", events=prepared_events

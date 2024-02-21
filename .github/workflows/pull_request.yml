@@ -391,14 +391,6 @@ jobs:
       test_name: Stateless tests (release)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestCoverage:
-    needs: [RunConfig, BuilderDebReleaseCoverage]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (coverage)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestReleaseDatabaseReplicated:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
@@ -500,21 +492,9 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: tests bugfix validate check
+      test_name: Bugfix validation
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
-      additional_envs: |
-        KILL_TIMEOUT=3600
-      run_command: |
-        TEMP_PATH="${TEMP_PATH}/integration" \
-          python3 integration_test_check.py "Integration $CHECK_NAME" \
-            --validate-bugfix --post-commit-status=file || echo "ignore exit code"
-
-        TEMP_PATH="${TEMP_PATH}/stateless" \
-          python3 functional_test_check.py "Stateless $CHECK_NAME" "$KILL_TIMEOUT" \
-            --validate-bugfix --post-commit-status=file || echo "ignore exit code"
-
-        python3 bugfix_validate_check.py "${TEMP_PATH}/stateless/functional_commit_status.tsv" "${TEMP_PATH}/integration/integration_commit_status.tsv"
 ##############################################################################################
 ############################ FUNCTIONAl STATEFUL TESTS #######################################
 ##############################################################################################
@@ -524,14 +504,6 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateful tests (release)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestCoverage:
-    needs: [RunConfig, BuilderDebReleaseCoverage]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (coverage)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatefulTestAarch64:
@@ -915,6 +887,7 @@ jobs:
       - BuilderSpecialReport
       - DocsCheck
       - FastTest
+      - TestsBugfixCheck
       - FunctionalStatelessTestDebug
       - FunctionalStatelessTestRelease
       - FunctionalStatelessTestReleaseDatabaseReplicated

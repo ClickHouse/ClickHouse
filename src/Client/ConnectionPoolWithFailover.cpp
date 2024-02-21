@@ -253,13 +253,13 @@ ConnectionPoolWithFailover::tryGetEntry(
 }
 
 std::vector<ConnectionPoolWithFailover::Base::ShuffledPool>
-ConnectionPoolWithFailover::getShuffledPools(const Settings & settings, GetPriorityForLoadBalancing::Func priority_func)
+ConnectionPoolWithFailover::getShuffledPools(const Settings & settings, GetPriorityForLoadBalancing::Func priority_func, bool use_slowdown_count)
 {
     if (!priority_func)
         priority_func = makeGetPriorityFunc(settings);
 
     UInt64 max_ignored_errors = settings.distributed_replica_max_ignored_errors.value;
-    return Base::getShuffledPools(max_ignored_errors, priority_func);
+    return Base::getShuffledPools(max_ignored_errors, priority_func, use_slowdown_count);
 }
 
 }
