@@ -53,7 +53,7 @@ protected:
     using Archive = struct archive *;
     using Entry = struct archive_entry *;
 
-    //derived classes must call createArcive. createArchive calls initArchive
+    /// derived classes must call createArcive. createArchive calls initArchive
     void createArchive();
     virtual void setFormatAndSettings(Archive) = 0;
 
