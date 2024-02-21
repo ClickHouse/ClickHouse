@@ -12,7 +12,6 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <filesystem>
 #include <memory>
-#include <unordered_map>
 #include <Common/logger_useful.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperCommon.h>
@@ -377,17 +376,18 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
 
     for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
     {
-        StringRef path;
-        readVarUInt(path.size, in);
-        auto * path_data = new char[path.size];
-        in.readStrict(path_data, path.size);
-        path.data = path_data;
-        
+        size_t path_size = 0;
+        readVarUInt(path_size, in);
+        chassert(path_size != 0);
+        auto path_data = storage.container.allocateKey(path_size);
+        in.readStrict(path_data.get(), path_size);
+        std::string_view path{path_data.get(), path_size};
+
         KeeperStorage::Node node{};
         readNode(node, in, current_version, storage.acl_map);
 
         using enum Coordination::PathMatchResult;
-        auto match_result = Coordination::matchPath(path.toView(), keeper_system_path);
+        auto match_result = Coordination::matchPath(path, keeper_system_path);
 
         const auto get_error_msg = [&]
         {
@@ -430,15 +430,16 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         if (!node.isEphemeral() && node.numChildren() > 0)
             node.getChildren().reserve(node.numChildren());
 
-        storage.container.insertOrReplace(path, std::move(node));
         if (ephemeral_owner != 0)
-            storage.ephemerals[node.ephemeralOwner()].insert(path.toString());
+            storage.ephemerals[node.ephemeralOwner()].insert(std::string{path});
 
         if (recalculate_digest)
-            storage.nodes_digest += node.getDigest(path.toView());
+            storage.nodes_digest += node.getDigest(path);
+
+        storage.container.insertOrReplace(std::move(path_data), path_size, std::move(node));
     }
 
-    LOG_TRACE(getLogger("KeeperSnapshotManager"), "Adding children");
+    LOG_TRACE(getLogger("KeeperSnapshotManager"), "Building structure for children nodes");
 
     for (const auto & itr : storage.container)
     {

@@ -254,6 +254,7 @@ KeeperStorage::Node & KeeperStorage::Node::operator=(Node && other) noexcept
 
     other.data_size = 0;
 
+    static_assert(std::is_nothrow_move_assignable_v<ChildrenSet>);
     children = std::move(other.children);
 
     return *this;
