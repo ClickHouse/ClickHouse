@@ -163,6 +163,8 @@ public:
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
     const StorageS3Settings & getStorageS3Settings() const;
+
+    const String & getUserName() const { static std::string user; return user; }
 };
 
 }
