@@ -3,7 +3,6 @@
 #include <base/types.h>
 #include <mutex>
 #include <unordered_set>
-#include <unordered_map>
 
 
 namespace DB
@@ -15,7 +14,7 @@ public:
     bool exists(const String & name) const;
     void add(const String & name, bool case_insensitive = false);
 
-protected:
+private:
     mutable std::mutex mutex;
     std::unordered_set<String> names;
     std::unordered_set<String> case_insensitive_names;
