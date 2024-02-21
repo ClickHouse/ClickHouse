@@ -71,7 +71,8 @@ public:
             // lock(mutex) is not required because `Dequeued` request cannot be used by the scheduler thread
             chassert(state == Dequeued);
             state = Finished;
-            ResourceRequest::finish();
+            if (constraint)
+                constraint->finishRequest(this);
         }
 
         static Request & local()
@@ -123,6 +124,12 @@ public:
             request.finish();
             link.queue = nullptr;
         }
+    }
+
+    /// Mark request as unsuccessful; by default request is considered to be successful
+    void setFailure()
+    {
+        request.successful = false;
     }
 
     ResourceLink link;
