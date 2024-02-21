@@ -32,9 +32,9 @@ std::string toString(const Values & value)
 
 int compareValues(const Values & lhs, const Values & rhs)
 {
-    chassert(lhs.size() == rhs.size());
+    size_t size = std::min(lhs.size(), rhs.size());
 
-    for (size_t i = 0; i < lhs.size(); ++i)
+    for (size_t i = 0; i < size; ++i)
     {
         if (applyVisitor(FieldVisitorAccurateLess(), lhs[i], rhs[i]))
             return -1;
@@ -55,8 +55,9 @@ public:
     Values getValue(size_t part_idx, size_t mark) const
     {
         const auto & index = parts[part_idx].data_part->getIndex();
-        Values values(index.size());
-        for (size_t i = 0; i < values.size(); ++i)
+        size_t size = index.size();
+        Values values(size);
+        for (size_t i = 0; i < size; ++i)
         {
             index[i]->get(mark, values[i]);
             if (values[i].isNull())
