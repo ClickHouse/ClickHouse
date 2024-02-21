@@ -25,7 +25,8 @@ void checkResultCodeImpl(int code, const String & filename)
 {
     if (code == ARCHIVE_OK)
         return;
-    throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Couldn't pack archive: LibArchive Code = {}, filename={}", code, quoteString(filename));
+    throw Exception(
+        ErrorCodes::CANNOT_PACK_ARCHIVE, "Couldn't pack archive: LibArchive Code = {}, filename={}", code, quoteString(filename));
 }
 }
 
@@ -168,11 +169,14 @@ void LibArchiveWriter::createArchive()
 {
     std::lock_guard lock{mutex};
     archive = archive_write_new();
-    setFormatAndSettings(archive);
-    //this allows use to write directly to a writer buffer rather than an intermediate buffer in LibArchive
-    //archive_write_set_bytes_per_block(a, 0);
+    setFormatAndSettings();
     if (stream_info)
+    {
+        //This allows use to write directly to a writebuffer rather than an intermediate buffer in libarchive.
+        //This has to be set otherwise zstd breaks due to extra bytes being written at the end of the archive.
+        archive_write_set_bytes_per_block(archive, 0);
         archive_write_open2(archive, stream_info.get(), nullptr, &StreamInfo::memory_write, nullptr, nullptr);
+    }
     else
         archive_write_open_filename(archive, path_to_archive.c_str());
 }

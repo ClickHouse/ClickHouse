@@ -53,9 +53,9 @@ protected:
     using Archive = struct archive *;
     using Entry = struct archive_entry *;
 
-    /// derived classes must call createArcive. createArchive calls initArchive
+    /// derived classes must call createArchive. CreateArchive calls setFormatAndSettings.
     void createArchive();
-    virtual void setFormatAndSettings(Archive) = 0;
+    virtual void setFormatAndSettings() = 0;
 
     Archive archive = nullptr;
     String path_to_archive;

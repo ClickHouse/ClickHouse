@@ -655,6 +655,38 @@ def test_tar_lzma_archive():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
 
+def test_tar_zst_archive():
+    backup_name = f"Disk('backups', 'archive.tar.zst')"
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    assert os.path.isfile(get_path_to_backup(backup_name))
+
+    instance.query("DROP TABLE test.table")
+    assert instance.query("EXISTS test.table") == "0\n"
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+def test_tar_xz_archive():
+    backup_name = f"Disk('backups', 'archive.tar.xz')"
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    assert os.path.isfile(get_path_to_backup(backup_name))
+
+    instance.query("DROP TABLE test.table")
+    assert instance.query("EXISTS test.table") == "0\n"
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
 def test_tar_archive_with_password():
     backup_name = f"Disk('backups', 'archive_with_password.tar')"
     create_and_fill_table()

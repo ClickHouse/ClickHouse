@@ -25,7 +25,8 @@ std::shared_ptr<IArchiveWriter>
 createArchiveWriter(const String & path_to_archive, [[maybe_unused]] std::unique_ptr<WriteBuffer> archive_write_buffer)
 {
     using namespace std::literals;
-    static constexpr std::array tar_extensions{".tar"sv, ".tar.gz"sv, ".tar.bz2"sv, ".tar.lzma"sv};
+    static constexpr std::array tar_extensions{
+        ".tar"sv, ".tar.gz"sv, ".tgz"sv, ".tar.bz2"sv, ".tar.lzma"sv, ".tar.zst"sv, ".tzst"sv, ".tar.xz"sv};
     if (path_to_archive.ends_with(".zip") || path_to_archive.ends_with(".zipx"))
     {
 #if USE_MINIZIP

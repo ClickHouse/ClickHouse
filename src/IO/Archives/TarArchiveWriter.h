@@ -19,7 +19,7 @@ public:
     }
 
     void setCompression(const String & compression_method_, int compression_level_) override;
-    void setFormatAndSettings(Archive archive_) override;
+    void setFormatAndSettings() override;
     void inferCompressionFromPath();
 };
 }

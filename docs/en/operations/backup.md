@@ -187,7 +187,7 @@ To change the compression method, the correct file suffix should be appended to 
 BACKUP TABLE test.table TO Disk('backups', '1.tar.gz')
 ```
 
-The supported compression file suffixes are `.gz` `.bz2` and `.lzma`.
+The supported compression file suffixes are `tar.gz`, `.tgz` `tar.bz2`, `tar.lzma`, `.tar.zst`, `.tzst` and `.tar.xz`.
 
 
 ### Check the status of backups
