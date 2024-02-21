@@ -18,7 +18,11 @@ Two configuration files (usually the main configuration file and another configu
 - If one of both nodes contains attribute `replace`, it is included in the merged configuration file but only children from the node with attribute `replace` are included.
 - If one of both nodes contains attribute `remove`, the node is not included in the merged configuration file (if it exists already, it is deleted).
 
+Example:
+
+
 ```xml
+<!-- config.xml -->
 <clickhouse>
     <config_a>
         <setting_1>1</setting_1>
@@ -35,6 +39,7 @@ Two configuration files (usually the main configuration file and another configu
 and
 
 ```xml
+<!-- config.d/other_config.xml -->
 <clickhouse>
     <config_a>
         <setting_4>4</setting_4>
@@ -56,7 +61,7 @@ generates merged configuration file:
         <setting_1>1</setting_1>
         <setting_4>4</setting_4>
     </config_a>
-    <config_b replace="replace">
+    <config_b>
         <setting_5>5</setting_5>
     </config_b>
 </clickhouse>

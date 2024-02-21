@@ -5,7 +5,7 @@ FROM
 )
 GROUP BY number
 HAVING 1 AND sin(sum(number))
-ORDER BY ALL
+ORDER BY *
 SETTINGS enable_optimize_predicate_expression = 0;
 
 SELECT '=====';
@@ -17,7 +17,7 @@ FROM
 )
 GROUP BY number
 HAVING 1 AND sin(1)
-ORDER BY ALL
+ORDER BY *
 SETTINGS enable_optimize_predicate_expression = 0;
 
 SELECT '=====';
@@ -29,7 +29,7 @@ FROM
 )
 GROUP BY number
 HAVING x AND sin(sum(number))
-ORDER BY ALL
+ORDER BY *
 SETTINGS enable_optimize_predicate_expression = 1;
 
 SELECT '=====';
@@ -41,7 +41,7 @@ FROM
 )
 GROUP BY number
 HAVING 1 AND sin(sum(number))
-ORDER BY ALL
+ORDER BY *
 SETTINGS enable_optimize_predicate_expression = 0;
 
 SELECT '=====';
@@ -61,7 +61,7 @@ FROM
 )
 GROUP BY number
 HAVING 1 AND sin(sum(number))
-ORDER BY ALL
+ORDER BY *
 SETTINGS enable_optimize_predicate_expression = 1;
 
 select '#45440';
