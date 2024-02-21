@@ -220,6 +220,16 @@ def test_backup_to_s3():
     check_system_tables(backup_events["query_id"])
 
 
+def test_backup_to_s3_session_token():
+    storage_policy = "default"
+    backup_name = new_backup_name()
+    backup_destination = (
+        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123', 'session token that will not be checked by MiniIO')"
+    )
+    (backup_events, _) = check_backup_and_restore(storage_policy, backup_destination)
+    check_system_tables(backup_events["query_id"])
+
+
 def test_backup_to_s3_named_collection():
     storage_policy = "default"
     backup_name = new_backup_name()
