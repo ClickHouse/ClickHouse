@@ -25,6 +25,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+void ColumnTuple::checkElementsSizesConsistency() const
+{
+    if (columns.size() <= 1)
+        return;
+
+    auto size = columns[0]->size();
+    for (size_t i = 1; i != columns.size(); ++i)
+    {
+        if (columns[i]->size() != size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnTuple contains elements with different sizes: {} and {}", size, columns[i]->size());
+    }
+}
+
 
 std::string ColumnTuple::getName() const
 {
@@ -168,6 +181,7 @@ void ColumnTuple::insertDefault()
 
 void ColumnTuple::popBack(size_t n)
 {
+    checkElementsSizesConsistency();
     for (auto & column : columns)
         column->popBack(n);
 }

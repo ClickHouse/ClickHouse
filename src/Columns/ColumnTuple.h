@@ -126,6 +126,8 @@ private:
 
     void updatePermutationImpl(
         IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges, const Collator * collator=nullptr) const;
+
+    void checkElementsSizesConsistency() const;
 };
 
 

@@ -228,6 +228,8 @@ private:
     ColumnPtr filterGeneric(const Filter & filt, ssize_t result_size_hint) const;
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator * collator=nullptr) const;
+
+    void checkDataConsistency() const;
 };
 
 

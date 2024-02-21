@@ -42,6 +42,11 @@ namespace ErrorCodes
   */
 static constexpr size_t max_array_size_as_field = 1000000;
 
+void ColumnArray::checkDataConsistency() const
+{
+    if (data->size() != getOffsets().back())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "offsets_column has data inconsistent with nested_column. Data size: {}, last offset: {}", data->size(), getOffsets().back());
+}
 
 ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column)
     : data(std::move(nested_column)), offsets(std::move(offsets_column))
@@ -52,15 +57,7 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "offsets_column must be a ColumnUInt64");
 
     if (!offsets_concrete->empty() && data && !data->empty())
-    {
-        Offset last_offset = offsets_concrete->getData().back();
-
-        /// This will also prevent possible overflow in offset.
-        if (data->size() != last_offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "offsets_column has data inconsistent with nested_column. Data size: {}, last offset: {}",
-                data->size(), last_offset);
-    }
+        checkDataConsistency();
 
     /** NOTE
       * Arrays with constant value are possible and used in implementation of higher order functions (see FunctionReplicate).
@@ -328,6 +325,7 @@ void ColumnArray::insertDefault()
 
 void ColumnArray::popBack(size_t n)
 {
+    checkDataConsistency();
     auto & offsets_data = getOffsets();
     size_t nested_n = offsets_data.back() - offsetAt(offsets_data.size() - n);
     if (nested_n)
