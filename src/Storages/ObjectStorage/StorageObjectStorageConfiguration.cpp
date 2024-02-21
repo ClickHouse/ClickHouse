@@ -20,6 +20,13 @@ void StorageObjectStorageConfiguration::initialize(
         configuration.format = FormatFactory::instance().tryGetFormatFromFileName(configuration.getPath()).value_or("auto");
 }
 
+StorageObjectStorageConfiguration::StorageObjectStorageConfiguration(const StorageObjectStorageConfiguration & other)
+{
+    format = other.format;
+    compression_method = other.compression_method;
+    structure = other.structure;
+}
+
 bool StorageObjectStorageConfiguration::withWildcard() const
 {
     static const String PARTITION_ID_WILDCARD = "{_partition_id}";

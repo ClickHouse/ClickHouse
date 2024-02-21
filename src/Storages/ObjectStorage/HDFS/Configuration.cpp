@@ -12,13 +12,11 @@ namespace DB
 {
 
 StorageHDFSConfiguration::StorageHDFSConfiguration(const StorageHDFSConfiguration & other)
+    : StorageObjectStorageConfiguration(other)
 {
     url = other.url;
     path = other.path;
     paths = other.paths;
-    format = other.format;
-    compression_method = other.compression_method;
-    structure = other.structure;
 }
 
 void StorageHDFSConfiguration::check(ContextPtr context) const

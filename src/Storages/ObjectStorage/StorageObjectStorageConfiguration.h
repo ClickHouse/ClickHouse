@@ -12,6 +12,7 @@ class StorageObjectStorageConfiguration
 {
 public:
     StorageObjectStorageConfiguration() = default;
+    StorageObjectStorageConfiguration(const StorageObjectStorageConfiguration & other);
     virtual ~StorageObjectStorageConfiguration() = default;
 
     using Path = std::string;

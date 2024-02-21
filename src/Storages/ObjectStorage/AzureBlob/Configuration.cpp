@@ -78,6 +78,7 @@ void StorageAzureBlobConfiguration::check(ContextPtr context) const
 }
 
 StorageAzureBlobConfiguration::StorageAzureBlobConfiguration(const StorageAzureBlobConfiguration & other)
+    : StorageObjectStorageConfiguration(other)
 {
     connection_url = other.connection_url;
     is_connection_string = other.is_connection_string;
@@ -86,10 +87,6 @@ StorageAzureBlobConfiguration::StorageAzureBlobConfiguration(const StorageAzureB
     container = other.container;
     blob_path = other.blob_path;
     blobs_paths = other.blobs_paths;
-
-    format = other.format;
-    compression_method = other.compression_method;
-    structure = other.structure;
 }
 
 AzureObjectStorage::SettingsPtr StorageAzureBlobConfiguration::createSettings(ContextPtr context)

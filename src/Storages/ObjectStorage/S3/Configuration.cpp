@@ -57,15 +57,12 @@ void StorageS3Configuration::check(ContextPtr context) const
 }
 
 StorageS3Configuration::StorageS3Configuration(const StorageS3Configuration & other)
+    : StorageObjectStorageConfiguration(other)
 {
     url = other.url;
     static_configuration = other.static_configuration;
     headers_from_ast = other.headers_from_ast;
     keys = other.keys;
-
-    format = other.format;
-    compression_method = other.compression_method;
-    structure = other.structure;
 }
 
 ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context, bool /* is_readonly */) /// NOLINT
