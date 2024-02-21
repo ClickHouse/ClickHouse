@@ -885,7 +885,7 @@ def test_required_privileges():
     instance.query("CREATE USER u1")
 
     backup_name = new_backup_name()
-    expected_error = "necessary to have the grant BACKUP ON test.table"
+    expected_error = "necessary to have the grant BACKUP ON test.`table`"
     assert expected_error in instance.query_and_get_error(
         f"BACKUP TABLE test.table TO {backup_name}", user="u1"
     )
