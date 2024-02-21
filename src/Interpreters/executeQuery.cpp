@@ -104,6 +104,7 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int INCORRECT_DATA;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int SYNTAX_ERROR;
 }
 
 namespace FailPoints
@@ -731,10 +732,22 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// The query can become more verbose after formatting, so:
             size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
 
-            ASTPtr ast2 = parseQuery(parser,
-                formatted1.data(),
-                formatted1.data() + formatted1.size(),
-                "", new_max_query_size, settings.max_parser_depth);
+            try
+            {
+                ASTPtr ast2 = parseQuery(parser,
+                    formatted1.data(),
+                    formatted1.data() + formatted1.size(),
+                    "", new_max_query_size, settings.max_parser_depth);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::SYNTAX_ERROR)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Inconsistent AST formatting: the query:\n{}\ncannot parse.",
+                        formatted1);
+                else
+                    throw;
+            }
 
             chassert(ast2);
 
