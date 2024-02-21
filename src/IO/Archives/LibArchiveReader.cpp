@@ -23,7 +23,7 @@ class LibArchiveReader::StreamInfo
 public:
     explicit StreamInfo(std::unique_ptr<SeekableReadBuffer> read_buffer_) : read_buffer(std::move(read_buffer_)) { }
 
-    static ssize_t read([[maybe_unused]] struct archive * a, void * client_data, const void ** buff)
+    static ssize_t read(struct archive *, void * client_data, const void ** buff)
     {
         auto * read_stream = reinterpret_cast<StreamInfo *>(client_data);
         *buff = reinterpret_cast<void *>(read_stream->buf);

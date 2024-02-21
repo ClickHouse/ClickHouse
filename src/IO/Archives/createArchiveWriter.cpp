@@ -34,7 +34,6 @@ createArchiveWriter(const String & path_to_archive, [[maybe_unused]] std::unique
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "minizip library is disabled");
 #endif
     }
-    //todo add support for extentsions i.e .gz
     else if (std::any_of(
                  tar_extensions.begin(), tar_extensions.end(), [&](const auto extension) { return path_to_archive.ends_with(extension); }))
     {
@@ -47,5 +46,4 @@ createArchiveWriter(const String & path_to_archive, [[maybe_unused]] std::unique
     else
         throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Cannot determine the type of archive {}", path_to_archive);
 }
-
 }
