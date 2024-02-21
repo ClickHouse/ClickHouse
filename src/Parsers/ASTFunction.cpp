@@ -1049,8 +1049,10 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             {
                 /// Special case: zero elements tuple in lhs of lambda is printed as ().
                 /// Special case: one-element tuple in lhs of lambda is printed as its element.
+                /// If lambda function is not the first element in the list, it has to be put in parentheses.
+                /// Example: f(x, (y -> z)) should not be printed as f((x, y) -> z).
 
-                if (frame.need_parens)
+                if (frame.need_parens || frame.list_element_index > 0)
                     settings.ostr << '(';
 
                 if (first_argument_is_tuple
@@ -1067,7 +1069,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
                 settings.ostr << (settings.hilite ? hilite_operator : "") << " -> " << (settings.hilite ? hilite_none : "");
                 arguments->children[1]->formatImpl(settings, state, nested_need_parens);
-                if (frame.need_parens)
+                if (frame.need_parens || frame.list_element_index > 0)
                     settings.ostr << ')';
                 written = true;
             }
@@ -1244,6 +1246,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 continue;
             }
 
+            nested_dont_need_parens.list_element_index = i;
             argument->formatImpl(settings, state, nested_dont_need_parens);
         }
     }
