@@ -25,8 +25,7 @@ void checkResultCodeImpl(int code, const String & filename)
 {
     if (code == ARCHIVE_OK)
         return;
-    String message = "LibArchive Code = " + std::to_string(code);
-    throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Couldn't pack archive: {}, filename={}", message, quoteString(filename));
+    throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Couldn't pack archive: LibArchive Code = {}, filename={}", code, quoteString(filename));
 }
 }
 
