@@ -537,8 +537,19 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
             }
         }
 
-        if (*buf.position() == '\r')
-            ++buf.position();
+        if constexpr (support_crlf)
+        {
+            if (*buf.position() == '\r')
+            {
+                ++buf.position();
+                if (!buf.eof() && *buf.position() != '\n')
+                {
+                    s.push_back('\r');
+                    continue;
+                }
+                return;
+            }
+        }
     }
 }
 
@@ -555,20 +566,16 @@ void readEscapedString(String & s, ReadBuffer & buf)
     readEscapedStringInto<String,false>(s, buf);
 }
 
-template<bool support_crlf>
 void readEscapedStringCRLF(String & s, ReadBuffer & buf)
 {
     s.clear();
-    readEscapedStringInto<String,support_crlf>(s, buf);
+    readEscapedStringInto<String,true>(s, buf);
 }
 
 template void readEscapedStringInto<PaddedPODArray<UInt8>,false>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readEscapedStringInto<NullOutput,false>(NullOutput & s, ReadBuffer & buf);
 template void readEscapedStringInto<PaddedPODArray<UInt8>,true>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readEscapedStringInto<NullOutput,true>(NullOutput & s, ReadBuffer & buf);
-
-template void readEscapedStringCRLF<true>(String & s, ReadBuffer & buf);
-template void readEscapedStringCRLF<false>(String & s, ReadBuffer & buf);
 
 /** If enable_sql_style_quoting == true,
   *  strings like 'abc''def' will be parsed as abc'def.
@@ -1975,13 +1982,26 @@ bool tryReadJSONField(String & s, ReadBuffer & buf)
     return readParsedValueInto<bool>(s, buf, parse_func);
 }
 
-template<bool support_crlf>
+template<bool supports_crlf>
+void readTSVFieldImpl(String & s, ReadBuffer & buf)
+{
+    if constexpr (supports_crlf)
+        readEscapedStringIntoImpl<String, false, false>(s, buf);
+    else
+        readEscapedStringIntoImpl<String, false, true>(s, buf);
+}
+
 void readTSVField(String & s, ReadBuffer & buf)
 {
     s.clear();
-    readEscapedStringIntoImpl<String, false, support_crlf>(s, buf);
+    readTSVFieldImpl<false>(s, buf);
 }
 
-template void readTSVField<true>(String & s, ReadBuffer & buf);
-template void readTSVField<false>(String & s, ReadBuffer & buf);
+void readTSVFieldCRLF(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readTSVFieldImpl<true>(s, buf);
+}
+
+
 }

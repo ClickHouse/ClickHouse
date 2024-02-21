@@ -581,7 +581,6 @@ void readString(String & s, ReadBuffer & buf);
 
 void readEscapedString(String & s, ReadBuffer & buf);
 
-template<bool support_crlf>
 void readEscapedStringCRLF(String & s, ReadBuffer & buf);
 
 void readQuotedString(String & s, ReadBuffer & buf);

@@ -24,17 +24,14 @@ namespace ErrorCodes
 
 /** Check for a common error case - usage of Windows line feed.
   */
-template<bool supports_crlf>
 static void checkForCarriageReturn(ReadBuffer & in)
 {
-    bool crlf_escaped = false;
-    if constexpr (supports_crlf)
-        crlf_escaped = true;
-    if (!in.eof() && (in.position()[0] == '\r' || (crlf_escaped ? false : (in.position() != in.buffer().begin() && in.position()[-1] == '\r'))))
+    if (!in.eof() && (in.position()[0] == '\r' || (in.position() != in.buffer().begin() && in.position()[-1] == '\r')))
         throw Exception(ErrorCodes::INCORRECT_DATA, "\nYou have carriage return (\\r, 0x0D, ASCII 13) at end of first row."
             "\nIt's like your input data has DOS/Windows style line separators, that are illegal in TabSeparated format."
             " You must transform your file to Unix format."
-            "\nBut if you really need carriage return at end of string value of last column, you need to escape it as \\r.");
+            "\nBut if you really need carriage return at end of string value of last column, you need to escape it as \\r"
+            "\nor else enable setting 'input_format_tsv_crlf_end_of_line'");
 }
 
 TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
@@ -104,7 +101,8 @@ void TabSeparatedFormatReader::skipRowEndDelimiter()
     }
     if (unlikely(first_row))
     {
-        supports_crlf ? checkForCarriageReturn<true>(*buf) : checkForCarriageReturn<false>(*buf);
+        if (!supports_crlf)
+            checkForCarriageReturn(*buf);
         first_row = false;
     }
     assertChar('\n', *buf);
@@ -120,7 +118,7 @@ String TabSeparatedFormatReader::readFieldIntoString()
     else
     {
         if constexpr (read_string)
-            support_crlf ? readEscapedStringCRLF<true>(field, *buf) : readEscapedStringCRLF<false>(field, *buf);
+            support_crlf ? readEscapedStringCRLF(field, *buf) : readEscapedString(field, *buf);
         else
             support_crlf ? readTSVField<true>(field, *buf) : readTSVField<false>(field, *buf);
     }
