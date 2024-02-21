@@ -207,7 +207,7 @@ public:
     /// It's like "get if exists, otherwise return null", but instead of null we return a usable
     /// temporary buffer, for convenience. Pinning and page eviction make the story more complicated:
     ///  * If the chunk for this key is pinned, we return it even if it's not fully populated
-    ///    (because PageCache doesn't mean what "fully populated" means).
+    ///    (because PageCache doesn't know what "fully populated" means).
     ///  * If the chunk exists, but some of its pages were evicted, we detach it. (Currently we only
     ///    check the first page here.)
     PinnedPageChunk getOrSet(PageCacheKey key, bool detached_if_missing, bool inject_eviction);

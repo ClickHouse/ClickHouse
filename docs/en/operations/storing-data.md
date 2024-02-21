@@ -283,7 +283,7 @@ To enable userspace page cache for disks that don't use file cache, use setting 
 
 By default, on Linux, the userspace page cache will use all available memory, similar to the OS page cache. In tools like `top` and `ps`, the clickhouse server process will typically show resident set size near 100% of the machine's RAM - this is normal, and most of this memory is actually reclaimable by the OS on memory pressure (`MADV_FREE`). This behavior can be disabled with server setting `page_cache_use_madv_free = 0`, making the userspace page cache just use a fixed amount of memory `page_cache_size` with no special interaction with the OS. On Mac OS, `page_cache_use_madv_free` is always disabled as it doesn't have lazy `MADV_FREE`.
 
-Unfortunately, `page_cache_use_madv_free` makes it difficult to tell if the server is close to running out of memory, since the RSS metric becomes useless. Async metric `UnreclaimableRss` shows the amount of physical memory used by the server, excluding the memory reclaimable by the OS: `select value from system.asynchronous_metrics where metric = 'UnreclaimableRss'`. Use it for monitoring instead of RSS. This metric is only available if `page_cache_use_madv_free` is enabled.
+Unfortunately, `page_cache_use_madv_free` makes it difficult to tell if the server is close to running out of memory, since the RSS metric becomes useless. Async metric `UnreclaimableRSS` shows the amount of physical memory used by the server, excluding the memory reclaimable by the OS: `select value from system.asynchronous_metrics where metric = 'UnreclaimableRSS'`. Use it for monitoring instead of RSS. This metric is only available if `page_cache_use_madv_free` is enabled.
 
 ## Storing Data on Web Server {#storing-data-on-webserver}
 
