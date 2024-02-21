@@ -49,8 +49,8 @@ public:
         };
 
         FunctionArgumentDescriptors optional_args{
-            {"threshold", &isNativeNumber<IDataType>, isColumnConst, "Number"},
-            {"seasonality", &isNativeInteger<IDataType>, isColumnConst, "Integer"},
+            {"threshold", &isNativeNumber<IDataType>, isColumnConst, "const positive Float"},
+            {"seasonality", &isNativeInteger<IDataType>, isColumnConst, "const Integer"},
             {"AD_method", &isString<IDataType>, isColumnConst, "const String"}};
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
@@ -65,35 +65,32 @@ public:
         if (input_rows_count == 0)
             return ColumnArray::create(ColumnFloat64::create());
 
+        /// Assigning default values for function arguments
         Float64 K_value = 1.50;
-
         Float64 min_percentile = 10;
         Float64 max_percentile = 90;
-
         Int64 seasonality = -1;
 
         if (arguments.size() > 1)
         {
-            Float64 threshold = arguments[1].column->getFloat64(0);
-            if (threshold < 0.0 || isnan(threshold) || !isFinite(threshold))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Threshold value can only be a positive number.");
-            K_value = threshold;
+            K_value = arguments[1].column->getFloat64(0);
+            if (K_value < 0.0 || isnan(K_value) || !isFinite(K_value))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument can only be a positive number, got {}", K_value);
 
             seasonality = arguments[2].column->getInt(0);
             if (seasonality < -1)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Seasoanlity value can only be -1, 0 or a positive number.");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The third argument can only be -1, 0 or a positive number, got {}", seasonality);
 
             const auto * kind_const_col = checkAndGetColumnConstData<ColumnString>(arguments[3].column.get());
 
             String kind = kind_const_col->getDataAt(0).toString();
-            if (kind != "ctukey" && kind != "tukey")
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The fourth argument of function can only be 'tukey' or 'ctukey'.");
-
             if (kind == "tukey")
             {
                 min_percentile = 25;
                 max_percentile = 75;
             }
+            else if (kind != "ctukey")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The fourth argument of function can only be 'tukey' or 'ctukey', got '{}'", kind);
         }
 
         ColumnsWithTypeAndName decompose_cols{arguments[0]};
@@ -197,7 +194,7 @@ public:
                 decompose_data.begin() + baseline_start_offset,
                 decompose_data.begin() + baseline_end_offset,
                 std::back_inserter(res_data),
-                [](Float32 value) { return static_cast<Float64>(value); });
+                [](Float32 value) { return Float64(value); });
 
             res_col_offsets_data.push_back(res_data.size());
 

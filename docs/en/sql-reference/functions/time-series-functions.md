@@ -173,7 +173,7 @@ Result:
 
 ## seriesDecomposeAnomaliesDetection
 
-Detect anomalies in series data through [series decomposition](#seriesDecomposeSTL).
+Detect anomalies in series data using [series decomposition](#seriesDecomposeSTL).
 
 **Syntax**
 
@@ -187,12 +187,12 @@ seriesDecomposeAnomaliesDetection(series, threshold, seasonality, AD_method);
 - `series` - An array of numeric values
 - `threshold` - A positive number to detect mild or stronger anomalies. The default is 1.5, K value.
 - `Seasonality` - Represents the period for the seasonal analysis of series data. Supported values are:
-                - `-1`: Autodetect period using [seriesPeriodDetectFFT](#seriesPeriodDetectFFT). This is the default value.
-                - `0`: Set period to 0 to skip extracting seasonal component.
+                - `-1`: Autodetect period using [seriesPeriodDetectFFT](#seriesPeriodDetectFFT). The default value.
+                - `0`: Used to skip extracting seasonal component.
                 - A positive integer representing the period of series.
 - `AD_method` - The method to use for anomaly detection on residual component. Supported values are:
                 - `tukey` : [Tukey fence](#seriesoutliersdetecttukey) test with standard 25th-75th percentile range.
-                - `ctukey`: Tukey fence test with custom 10th-90th percentile range. This is the default value.
+                - `ctukey`: Tukey fence test with custom 10th-90th percentile range. The default value.
 
 The number of data points in `series` should be at least twice the value of `period`.
 
