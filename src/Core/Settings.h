@@ -640,7 +640,7 @@ class IColumn;
     M(Bool, describe_include_subcolumns, false, "If true, subcolumns of all table columns will be included into result of DESCRIBE query", 0) \
     M(Bool, describe_include_virtual_columns, false, "If true, virtual columns of table will be included into result of DESCRIBE query", 0) \
     M(Bool, describe_compact_output, false, "If true, include only column names and types into result of DESCRIBE query", 0) \
-    M(Bool, apply_mutations_on_fly, false, "Generate a conflict", 0) \
+    M(Bool, apply_mutations_on_fly, false, "Only available in ClickHouse Cloud", 0) \
     M(Bool, mutations_execute_nondeterministic_on_initiator, false, "If true nondeterministic function are executed on initiator and replaced to literals in UPDATE and DELETE queries", 0) \
     M(Bool, mutations_execute_subqueries_on_initiator, false, "If true scalar subqueries are executed on initiator and replaced to literals in UPDATE and DELETE queries", 0) \
     M(UInt64, mutations_max_literal_size_to_replace, 16384, "The maximum size of serialized literal in bytes to replace in UPDATE and DELETE queries", 0) \
