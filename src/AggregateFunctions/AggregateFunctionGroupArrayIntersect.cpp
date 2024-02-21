@@ -265,7 +265,7 @@ public:
     {
         auto & set = this->data(place).value;
         const auto & rhs_value = this->data(rhs).value;
-        
+
         if (this->data(rhs).version == 0)
             return;
 
