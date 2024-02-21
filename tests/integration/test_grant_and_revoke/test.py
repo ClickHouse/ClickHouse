@@ -219,7 +219,9 @@ def test_implicit_show_grants():
     )
 
     instance.query("GRANT SELECT(x) ON test.table TO A")
-    assert instance.query("SHOW GRANTS FOR A") == "GRANT SELECT(x) ON test.`table` TO A\n"
+    assert (
+        instance.query("SHOW GRANTS FOR A") == "GRANT SELECT(x) ON test.`table` TO A\n"
+    )
     assert (
         instance.query(
             "select count() FROM system.databases WHERE name='test'", user="A"
