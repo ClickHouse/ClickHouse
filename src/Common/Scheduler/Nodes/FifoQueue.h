@@ -39,7 +39,7 @@ public:
 
     void enqueueRequest(ResourceRequest * request) override
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
         queue_cost += request->cost;
         bool was_empty = requests.empty();
         requests.push_back(request);
@@ -49,7 +49,7 @@ public:
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
         if (requests.empty())
             return {nullptr, false};
         ResourceRequest * result = requests.front();
@@ -64,7 +64,7 @@ public:
 
     bool cancelRequest(ResourceRequest * request) override
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
         // TODO(serxa): reimplement queue as intrusive list of ResourceRequest to make this O(1) instead of O(N)
         for (auto i = requests.begin(), e = requests.end(); i != e; ++i)
         {
@@ -84,7 +84,7 @@ public:
 
     bool isActive() override
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
         return !requests.empty();
     }
 
@@ -117,7 +117,7 @@ public:
 
     std::pair<UInt64, Int64> getQueueLengthAndCost()
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
         return {requests.size(), queue_cost};
     }
 

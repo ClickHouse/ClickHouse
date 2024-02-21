@@ -102,6 +102,7 @@ public:
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
     {
+        // Cycle is required to do deactivations in the case of canceled requests, when dequeueRequest returns `nullptr`
         while (true)
         {
             if (items.empty())
