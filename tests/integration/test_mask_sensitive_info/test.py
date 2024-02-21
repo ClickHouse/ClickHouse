@@ -195,6 +195,10 @@ def test_create_table():
             f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
             "DNS_ERROR",
         ),
+        f"S3Queue('http://minio1:9001/root/data/', 'CSV')",
+        f"S3Queue('http://minio1:9001/root/data/', 'CSV', 'gzip')",
+        f"S3Queue('http://minio1:9001/root/data/', 'minio', '{password}', 'CSV')",
+        f"S3Queue('http://minio1:9001/root/data/', 'minio', '{password}', 'CSV', 'gzip')",
     ]
 
     def make_test_case(i):
@@ -254,6 +258,10 @@ def test_create_table():
             "CREATE TABLE table14 (x int) ENGINE = S3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV', 'gzip')",
             "CREATE TABLE table15 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '[HIDDEN]')",
             "CREATE TABLE table16 (`x` int) ENGINE = DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            "CREATE TABLE table17 (x int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'CSV')",
+            "CREATE TABLE table18 (x int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'CSV', 'gzip')",
+            "CREATE TABLE table19 (`x` int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'minio', '[HIDDEN]', 'CSV')",
+            "CREATE TABLE table20 (`x` int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'minio', '[HIDDEN]', 'CSV', 'gzip')",
         ],
         must_not_contain=[password],
     )
