@@ -1,3 +1,10 @@
+-- Tags: no-parallel
+
+-- CNF optimization uses QueryNodeHash to order conditions. We need fixed database.table.column identifier name to stabilize result
+DROP DATABASE IF EXISTS db_memory_01625;
+CREATE DATABASE db_memory_01625 ENGINE = Memory;
+USE db_memory_01625;
+
 DROP TABLE IF EXISTS index_append_test_test;
 
 CREATE TABLE index_append_test_test (i Int64, a UInt32, b UInt64, CONSTRAINT c1 ASSUME i <= 2 * b AND i + 40 > a) ENGINE = MergeTree() ORDER BY i;
@@ -16,3 +23,4 @@ SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=
 SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT i FROM index_append_test_test WHERE 2 * b < 100) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 
 DROP TABLE index_append_test_test;
+DROP DATABASE db_memory_01625;

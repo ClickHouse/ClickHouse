@@ -161,10 +161,12 @@ public:
 
     QueryPlanRawPtrs getChildPlans() override;
 
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
+
 private:
     const size_t required_max_block_size;
     const size_t requested_num_streams;
-    const Block common_header;
+    Block common_header;
 
     StorageListWithLocks selected_tables;
     Names all_column_names;

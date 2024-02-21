@@ -177,7 +177,7 @@ void traverseCNF(const ASTPtr & node, CNFQuery::AndGroup & and_group, CNFQuery::
             CNFQuery::OrGroup group;
             traverseCNF(child, and_group, group);
             if (!group.empty())
-                and_group.push_back(std::move(group));
+                and_group.insert(std::move(group));
         }
     }
     else if (func && func->name == "or")
@@ -191,11 +191,11 @@ void traverseCNF(const ASTPtr & node, CNFQuery::AndGroup & and_group, CNFQuery::
     {
         if (func->arguments->children.size() != 1)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Bad NOT function. Expected 1 argument");
-        or_group.push_back(CNFQuery::AtomicFormula{true, func->arguments->children.front()});
+        or_group.insert(CNFQuery::AtomicFormula{true, func->arguments->children.front()});
     }
     else
     {
-        or_group.push_back(CNFQuery::AtomicFormula{false, node});
+        or_group.insert(CNFQuery::AtomicFormula{false, node});
     }
 }
 
@@ -204,7 +204,7 @@ void traverseCNF(const ASTPtr & node, CNFQuery::AndGroup & result)
     CNFQuery::OrGroup or_group;
     traverseCNF(node, result, or_group);
     if (!or_group.empty())
-        result.push_back(or_group);
+        result.insert(or_group);
 }
 
 }

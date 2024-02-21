@@ -2338,12 +2338,6 @@ void collectFiltersForAnalysis(
     const SelectQueryOptions & options,
     SelectQueryInfo & query_info)
 {
-    const auto & storage = storage_snapshot->storage;
-    bool collect_filters = typeid_cast<const StorageMerge *>(&storage);
-
-    if (!collect_filters)
-        return;
-
     auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
 
     auto dummy = std::make_shared<StorageDummy>(
@@ -2369,7 +2363,7 @@ void collectFiltersForAnalysis(
             continue;
 
         query_info.filter_actions_dag = ActionsDAG::buildFilterActionsDAG(read_from_dummy->getFilterNodes().nodes);
-        query_info.prewhere_info = read_from_dummy->getPrewhereInfo();
+        query_info.optimized_prewhere_info = read_from_dummy->getPrewhereInfo();
     }
 }
 
@@ -2499,7 +2493,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
     else if (storage)
     {
-        collectFiltersForAnalysis(query_ptr, context, storage_snapshot, options, query_info);
+        if (typeid_cast<const StorageMerge *>(storage.get()))
+            collectFiltersForAnalysis(query_ptr, context, storage_snapshot, options, query_info);
 
         /// Table.
         if (max_streams == 0)
@@ -2511,7 +2506,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         auto & prewhere_info = analysis_result.prewhere_info;
 
-        if (!query_info.prewhere_info && prewhere_info)
+        if (prewhere_info)
             query_info.prewhere_info = prewhere_info;
 
         bool optimize_read_in_order = analysis_result.optimize_read_in_order;

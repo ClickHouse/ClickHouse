@@ -354,6 +354,12 @@ ReadFromMerge::ReadFromMerge(
 {
 }
 
+void ReadFromMerge::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
+{
+    SourceStepWithFilter::updatePrewhereInfo(prewhere_info_value);
+    common_header = applyPrewhereActions(common_header, prewhere_info);
+}
+
 void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     filterTablesAndCreateChildrenPlans();
@@ -605,6 +611,9 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             current_streams);
     }
 
+    if (!res.empty())
+        res[0].plan.addInterpreterContext(modified_context);
+
     return res;
 }
 
@@ -817,6 +826,8 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
     const StorageID current_storage_id = storage->getStorageID();
 
     SelectQueryInfo modified_query_info = query_info;
+    if (modified_query_info.optimized_prewhere_info && !modified_query_info.prewhere_info)
+        modified_query_info.prewhere_info = modified_query_info.optimized_prewhere_info;
 
     if (modified_query_info.table_expression)
     {

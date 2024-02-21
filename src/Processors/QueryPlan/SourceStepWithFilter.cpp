@@ -53,17 +53,24 @@ Block SourceStepWithFilter::applyPrewhereActions(Block block, const PrewhereInfo
             }
             else if (prewhere_info->need_filter)
             {
-                WhichDataType which(removeNullable(recursiveRemoveLowCardinality(prewhere_column.type)));
-
-                if (which.isNativeInt() || which.isNativeUInt())
-                    prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
-                else if (which.isFloat())
-                    prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f)->convertToFullColumnIfConst();
+                if (const auto * type = typeid_cast<const DataTypeNullable *>(prewhere_column.type.get()); type->onlyNull())
+                {
+                    prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), Null());
+                }
                 else
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                        "Illegal type {} of column for filter",
-                        prewhere_column.type->getName());
+                {
+                    WhichDataType which(removeNullable(recursiveRemoveLowCardinality(prewhere_column.type)));
+
+                    if (which.isNativeInt() || which.isNativeUInt())
+                        prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
+                    else if (which.isFloat())
+                        prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f)->convertToFullColumnIfConst();
+                    else
+                        throw Exception(
+                            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                            "Illegal type {} of column for filter",
+                            prewhere_column.type->getName());
+                }
             }
         }
     }

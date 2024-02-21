@@ -6,10 +6,8 @@
 #include <Common/SipHash.h>
 
 #include <Interpreters/Context_fwd.h>
-#include <boost/multi_index_container.hpp>
-#include <boost/multi_index/sequenced_index.hpp>
-#include <boost/multi_index/identity.hpp>
-#include <boost/multi_index/ordered_index.hpp>
+
+#include <unordered_set>
 
 namespace DB::Analyzer
 {
@@ -17,12 +15,6 @@ namespace DB::Analyzer
 class CNF
 {
 public:
-    template <typename T>
-    using CNFSet = boost::multi_index_container<
-        T,
-        boost::multi_index::
-            indexed_by<boost::multi_index::sequenced<>, boost::multi_index::ordered_unique<boost::multi_index::identity<T>>>>;
-
     struct AtomicFormula
     {
         bool negative = false;
@@ -32,9 +24,9 @@ public:
         bool operator<(const AtomicFormula & rhs) const;
     };
 
-    /// Keep insertion order so that optimization result is stable
-    using OrGroup = CNFSet<AtomicFormula>;
-    using AndGroup = CNFSet<OrGroup>;
+    // Different hash is generated for different order, so we use std::set
+    using OrGroup = std::set<AtomicFormula>;
+    using AndGroup = std::set<OrGroup>;
 
     std::string dump() const;
 

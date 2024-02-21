@@ -1,12 +1,10 @@
 #pragma once
 
+#include <set>
+#include <unordered_map>
+#include <vector>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST_fwd.h>
-
-#include <boost/multi_index_container.hpp>
-#include <boost/multi_index/sequenced_index.hpp>
-#include <boost/multi_index/identity.hpp>
-#include <boost/multi_index/ordered_index.hpp>
 
 namespace DB
 {
@@ -14,12 +12,6 @@ namespace DB
 class CNFQuery
 {
 public:
-    template <typename T>
-    using CNFSet = boost::multi_index_container<
-        T,
-        boost::multi_index::
-            indexed_by<boost::multi_index::sequenced<>, boost::multi_index::ordered_unique<boost::multi_index::identity<T>>>>;
-
     struct AtomicFormula
     {
         bool negative = false;
@@ -41,8 +33,8 @@ public:
         }
     };
 
-    using OrGroup = CNFSet<AtomicFormula>;
-    using AndGroup = CNFSet<OrGroup>;
+    using OrGroup = std::set<AtomicFormula>;
+    using AndGroup = std::set<OrGroup>;
 
     CNFQuery(AndGroup && statements_) : statements(std::move(statements_)) { } /// NOLINT
 
@@ -53,7 +45,7 @@ public:
         for (const auto & or_group : statements)
         {
             if (predicate_is_unknown(or_group))
-                filtered.push_back(or_group);
+                filtered.insert(or_group);
         }
         std::swap(statements, filtered);
         return *this;
@@ -69,17 +61,17 @@ public:
             for (auto ast : or_group)
             {
                 if (predicate_is_unknown(ast))
-                    filtered_group.push_back(ast);
+                    filtered_group.insert(ast);
             }
             if (!filtered_group.empty())
-                filtered.push_back(filtered_group);
+                filtered.insert(filtered_group);
             else
             {
                 /// all atoms false -> group false -> CNF false
                 filtered.clear();
                 filtered_group.clear();
-                filtered_group.push_back(AtomicFormula{false, std::make_shared<ASTLiteral>(static_cast<UInt8>(0))});
-                filtered.push_back(filtered_group);
+                filtered_group.insert(AtomicFormula{false, std::make_shared<ASTLiteral>(static_cast<UInt8>(0))});
+                filtered.insert(filtered_group);
                 std::swap(statements, filtered);
                 return *this;
             }
@@ -99,7 +91,7 @@ public:
     CNFQuery & appendGroup(AndGroup&& and_group)
     {
         for (auto && or_group : and_group)
-            statements.emplace_back(or_group);
+            statements.emplace(or_group);
         return *this;
     }
 
@@ -111,7 +103,7 @@ public:
         {
             auto new_group = func(group);
             if (!new_group.empty())
-                result.push_back(std::move(new_group));
+                result.insert(std::move(new_group));
         }
         std::swap(statements, result);
         return *this;
@@ -127,7 +119,7 @@ public:
                             {
                                 auto new_atom = func(atom);
                                 if (new_atom.ast)
-                                    result.push_back(std::move(new_atom));
+                                    result.insert(std::move(new_atom));
                             }
                             return result;
                         });
@@ -183,25 +175,25 @@ TAndGroup reduceOnceCNFStatements(const TAndGroup & groups)
         bool inserted = false;
         for (const auto & atom : group)
         {
-            copy.template get<1>().erase(atom);
+            copy.erase(atom);
             using AtomType = std::decay_t<decltype(atom)>;
             AtomType negative_atom(atom);
             negative_atom.negative = !atom.negative;
-            copy.push_back(negative_atom);
+            copy.insert(negative_atom);
 
-            if (groups.template get<1>().contains(copy))
+            if (groups.contains(copy))
             {
-                copy.template get<1>().erase(negative_atom);
-                result.push_back(copy);
+                copy.erase(negative_atom);
+                result.insert(copy);
                 inserted = true;
                 break;
             }
 
-            copy.template get<1>().erase(negative_atom);
-            copy.push_back(atom);
+            copy.erase(negative_atom);
+            copy.insert(atom);
         }
         if (!inserted)
-            result.push_back(group);
+            result.insert(group);
     }
     return result;
 }
@@ -212,7 +204,7 @@ bool isCNFGroupSubset(const TOrGroup & left, const TOrGroup & right)
     if (left.size() > right.size())
         return false;
     for (const auto & elem : left)
-        if (!right.template get<1>().contains(elem))
+        if (!right.contains(elem))
             return false;
     return true;
 }
@@ -235,7 +227,7 @@ TAndGroup filterCNFSubsets(const TAndGroup & groups)
         }
 
         if (insert)
-            result.push_back(group);
+            result.insert(group);
     }
     return result;
 }

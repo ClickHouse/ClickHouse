@@ -624,7 +624,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         auto table_expression_query_info = select_query_info;
         table_expression_query_info.table_expression = table_expression;
         table_expression_query_info.filter_actions_dag = table_expression_data.getFilterActions();
-        table_expression_query_info.prewhere_info = table_expression_data.getPrewhereInfo();
+        table_expression_query_info.optimized_prewhere_info = table_expression_data.getPrewhereInfo();
         table_expression_query_info.analyzer_can_use_parallel_replicas_on_follower = table_node == planner_context->getGlobalPlannerContext()->parallel_replicas_table;
 
         size_t max_streams = settings.max_threads;
@@ -718,12 +718,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         }
 
         /// Apply trivial_count optimization if possible
-        bool is_trivial_count_applied = !select_query_options.only_analyze &&
-            is_single_table_expression &&
-            (table_node || table_function_node) &&
-            select_query_info.has_aggregates &&
-            settings.additional_table_filters.value.empty() &&
-            applyTrivialCountIfPossible(query_plan, table_expression_query_info, table_node, table_function_node, select_query_info.query_tree, planner_context->getMutableQueryContext(), table_expression_data.getColumnNames());
+        bool is_trivial_count_applied = !select_query_options.only_analyze && is_single_table_expression
+            && (table_node || table_function_node) && select_query_info.has_aggregates && settings.additional_table_filters.value.empty()
+            && applyTrivialCountIfPossible(
+                query_plan,
+                table_expression_query_info,
+                table_node,
+                table_function_node,
+                select_query_info.query_tree,
+                planner_context->getMutableQueryContext(),
+                table_expression_data.getColumnNames());
 
         if (is_trivial_count_applied)
         {
@@ -764,7 +768,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                 }
 
-                PrewhereInfoPtr prewhere_info;
+                auto & prewhere_info = table_expression_query_info.prewhere_info;
                 const auto & prewhere_actions = table_expression_data.getPrewhereFilterActions();
 
                 if (prewhere_actions)
@@ -841,9 +845,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 auto additional_filters_info
                     = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context);
                 add_filter(additional_filters_info, "additional filter");
-
-                if (!table_expression_query_info.prewhere_info)
-                    table_expression_query_info.prewhere_info = prewhere_info;
 
                 from_stage = storage->getQueryProcessingStage(
                     query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);

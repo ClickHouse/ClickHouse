@@ -47,8 +47,6 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    const StorageSnapshotPtr & getOriginalStorageSnapshot() const { return original_storage_snapshot; }
-
 private:
     const ColumnsDescription object_columns;
 
