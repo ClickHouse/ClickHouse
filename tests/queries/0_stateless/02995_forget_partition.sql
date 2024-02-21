@@ -23,7 +23,7 @@ select '---before---';
 select name from system.zookeeper where path = '/test/02995/' || currentDatabase() || '/rmt/block_numbers' order by name;
 
 alter table forget_partition forget partition '20240103'; -- {serverError CANNOT_FORGET_PARTITION}
-alter table forget_partition forget partition '20240203'; -- {serverError KEEPER_EXCEPTION}
+alter table forget_partition forget partition '20240203'; -- {serverError CANNOT_FORGET_PARTITION}
 alter table forget_partition forget partition '20240101';
 
 
