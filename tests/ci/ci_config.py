@@ -934,16 +934,16 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_DEBUG, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_ASAN: TestConfig(
-            Build.PACKAGE_ASAN, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
+            Build.PACKAGE_ASAN, job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_MSAN: TestConfig(
-            Build.PACKAGE_MSAN, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
+            Build.PACKAGE_MSAN, job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_UBSAN: TestConfig(
-            Build.PACKAGE_UBSAN, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
+            Build.PACKAGE_UBSAN, job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_TSAN: TestConfig(
-            Build.PACKAGE_TSAN, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
+            Build.PACKAGE_TSAN, job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
         ),
         # End stateful tests for parallel replicas
         JobNames.STATELESS_TEST_ASAN: TestConfig(
