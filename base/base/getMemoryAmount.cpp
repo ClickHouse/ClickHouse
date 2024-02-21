@@ -1,17 +1,14 @@
 #include <base/getMemoryAmount.h>
 
+#include <base/cgroupsv2.h>
 #include <base/getPageSize.h>
 
 #include <fstream>
-#include <sstream>
 #include <stdexcept>
 
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/param.h>
-#if defined(BSD)
-#include <sys/sysctl.h>
-#endif
 
 
 namespace
@@ -20,44 +17,14 @@ namespace
 std::optional<uint64_t> getCgroupsV2MemoryLimit()
 {
 #if defined(OS_LINUX)
-    const std::filesystem::path default_cgroups_mount = "/sys/fs/cgroup";
-
-    /// This file exists iff the host has cgroups v2 enabled.
-    std::ifstream controllers_file(default_cgroups_mount / "cgroup.controllers");
-    if (!controllers_file.is_open())
+    if (!cgroupsV2Enabled())
         return {};
 
-    /// Make sure that the memory controller is enabled.
-    /// - cgroup.controllers defines which controllers *can* be enabled.
-    /// - cgroup.subtree_control defines which controllers *are* enabled.
-    /// (see https://docs.kernel.org/admin-guide/cgroup-v2.html)
-    /// Caveat: nested groups may disable controllers. For simplicity, check only the top-level group.
-    std::ifstream subtree_control_file(default_cgroups_mount / "cgroup.subtree_control");
-    std::stringstream subtree_control_buf;
-    subtree_control_buf << subtree_control_file.rdbuf();
-    std::string subtree_control = subtree_control_buf.str();
-    if (subtree_control.find("memory") == std::string::npos)
+    if (!cgroupsV2MemoryControllerEnabled())
         return {};
 
-    /// Identify the cgroup the process belongs to
-    /// All PIDs assigned to a cgroup are in /sys/fs/cgroups/{cgroup_name}/cgroup.procs
-    /// A simpler way to get the membership is:
-    std::ifstream cgroup_name_file("/proc/self/cgroup");
-    if (!cgroup_name_file.is_open())
-        return {};
-
-    std::stringstream cgroup_name_buf;
-    cgroup_name_buf << cgroup_name_file.rdbuf();
-    std::string cgroup_name = cgroup_name_buf.str();
-    if (!cgroup_name.empty() && cgroup_name.back() == '\n')
-        cgroup_name.pop_back(); /// remove trailing newline, if any
-    /// With cgroups v2, there will be a *single* line with prefix "0::/"
-    const std::string v2_prefix = "0::/";
-    if (!cgroup_name.starts_with(v2_prefix))
-        return {};
-    cgroup_name = cgroup_name.substr(v2_prefix.length());
-
-    std::filesystem::path current_cgroup = cgroup_name.empty() ? default_cgroups_mount : (default_cgroups_mount / cgroup_name);
+    std::string cgroup = cgroupV2OfProcess();
+    auto current_cgroup = cgroup.empty() ? default_cgroups_mount : (default_cgroups_mount / cgroup);
 
     /// Open the bottom-most nested memory limit setting file. If there is no such file at the current
     /// level, try again at the parent level as memory settings are inherited.

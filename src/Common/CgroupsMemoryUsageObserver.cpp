@@ -8,6 +8,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
+#include <base/cgroupsv2.h>
 #include <base/sleep.h>
 
 #include <filesystem>
@@ -106,10 +107,6 @@ uint64_t CgroupsMemoryUsageObserver::readMemoryUsage() const
 namespace
 {
 
-/// I think it is possible to mount the cgroups hierarchy somewhere else (e.g. when in containers).
-/// /sys/fs/cgroup was still symlinked to the actual mount in the cases that I have seen.
-const std::filesystem::path default_cgroups_mount = "/sys/fs/cgroup";
-
 /// Caveats:
 /// - All of the logic in this file assumes that the current process is the only process in the
 ///   containing cgroup (or more precisely: the only process with significant memory consumption).
@@ -122,35 +119,13 @@ const std::filesystem::path default_cgroups_mount = "/sys/fs/cgroup";
 
 std::optional<std::string> getCgroupsV2FileName()
 {
-    /// This file exists iff the host has cgroups v2 enabled.
-    auto controllers_file_path = default_cgroups_mount / "cgroup.controllers";
-    if (!std::filesystem::exists(controllers_file_path))
+    if (!cgroupsV2Enabled())
         return {};
 
-    /// Make sure that the memory controller is enabled.
-    /// - cgroup.controllers defines which controllers *can* be enabled.
-    /// - cgroup.subtree_control defines which controllers *are* enabled.
-    /// (see https://docs.kernel.org/admin-guide/cgroup-v2.html)
-    /// Caveat: child cgroups may disable controllers but such a situation should be very rare.
-    /// Therefore, only check the top-level cgroup for simplicity.
-    ReadBufferFromFile subtree_control_file(default_cgroups_mount / "cgroup.subtree_control");
-    std::string subtree_control;
-    readString(subtree_control, subtree_control_file);
-    if (subtree_control.find("memory") == std::string::npos)
+    if (!cgroupsV2MemoryControllerEnabled())
         return {};
 
-    /// Identify the cgroup the process belongs to.
-    /// All PIDs assigned to a cgroup are in /sys/fs/cgroups/{cgroup_name}/cgroup.procs
-    /// A simpler way to get the membership is:
-    ReadBufferFromFile cgroup_file("/proc/self/cgroup");
-    std::string cgroup;
-    readString(cgroup, cgroup_file);
-    /// With cgroups v2, there will be a *single* line with prefix "0::/"
-    const std::string v2_prefix = "0::/";
-    if (!cgroup.starts_with(v2_prefix))
-        return {};
-    cgroup = cgroup.substr(v2_prefix.length());
-
+    String cgroup = cgroupV2OfProcess();
     auto current_cgroup = cgroup.empty() ? default_cgroups_mount : (default_cgroups_mount / cgroup);
 
     /// Return the bottom-most nested current memory file. If there is no such file at the current
