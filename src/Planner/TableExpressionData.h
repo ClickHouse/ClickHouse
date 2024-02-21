@@ -82,8 +82,8 @@ public:
     /// Mark existing column as selected
     void markSelectedColumn(const std::string & column_name)
     {
-        auto [_, insetred] = selected_column_names_set.emplace(column_name);
-        if (insetred)
+        auto [_, inserted] = selected_column_names_set.emplace(column_name);
+        if (inserted)
             selected_column_names.push_back(column_name);
     }
 

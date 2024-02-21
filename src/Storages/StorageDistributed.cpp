@@ -746,17 +746,27 @@ namespace
 
 class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasColumnsVisitor>
 {
-public:
+    static QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node || !column_node->hasExpression())
+            return nullptr;
 
+        const auto & column_source = column_node->getColumnSourceOrNull();
+        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
+                           || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+            return nullptr;
+
+        auto column_expression = column_node->getExpression();
+        column_expression->setAlias(column_node->getColumnName());
+        return column_expression;
+    }
+
+public:
     void visitImpl(QueryTreeNodePtr & node)
     {
-        auto * column_node = node->as<ColumnNode>();
-        if (!column_node || !column_node->hasExpression())
-            return;
-        const auto & column_source = column_node->getColumnSourceOrNull();
-        if (column_source && (column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN || column_source->getNodeType() == QueryTreeNodeType::JOIN))
-            return;
-        node = column_node->getExpression();
+        if (auto column_expression = getColumnNodeAliasExpression(node))
+            node = column_expression;
     }
 };
 

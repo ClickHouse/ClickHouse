@@ -29,8 +29,9 @@ namespace
 class CollectSourceColumnsVisitor : public InDepthQueryTreeVisitor<CollectSourceColumnsVisitor>
 {
 public:
-    explicit CollectSourceColumnsVisitor(PlannerContextPtr & planner_context_)
+    explicit CollectSourceColumnsVisitor(PlannerContextPtr & planner_context_, bool keep_alias_columns_ = true)
         : planner_context(planner_context_)
+        , keep_alias_columns(keep_alias_columns_)
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -70,9 +71,8 @@ public:
             if (!column_already_exists)
             {
                 CollectSourceColumnsVisitor visitor_for_alias_column(planner_context);
-                /// While we are processing expression of ALIAS columns we should not add source columns to selected
-                /// For example if table has column `a ALIAS x + y` and query is `SELECT a FROM table`
-                /// We consider `a` as selected column, but not `x` and `y`, which should be read still.
+                /// While we are processing expression of ALIAS columns we should not add source columns to selected.
+                /// See also comment for `select_added_columns`
                 visitor_for_alias_column.select_added_columns = false;
                 visitor_for_alias_column.keep_alias_columns = keep_alias_columns;
                 visitor_for_alias_column.visit(column_node->getExpression());
@@ -156,8 +156,15 @@ private:
 
     /// Replace ALIAS columns with their expressions or register them in table expression data.
     /// Usually we can replace them when we build some "local" actions DAG
-    /// (for example Row Policy or PREWHERE) that is applied on right top of table expression.
+    /// (for example Row Policy or PREWHERE) that is applied on top of the table expression.
+    /// In other cases, we keep ALIAS columns as ColumnNode with an expression child node,
+    /// and handle them in the Planner by inserting ActionsDAG to compute them after reading from storage.
     bool keep_alias_columns = true;
+
+    /// Flag `select_added_columns` indicates if we should mark column as explicitly selected.
+    /// For example, for table with columns (a Int32, b ALIAS a+1) and query SELECT b FROM table
+    /// Column `b` is selected explicitly by user, but not `a` (that is also read though).
+    /// Distinguishing such columns is important for checking access rights for ALIAS columns.
     bool select_added_columns = true;
 };
 
@@ -349,8 +356,7 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
 
 void collectSourceColumns(QueryTreeNodePtr & expression_node, PlannerContextPtr & planner_context, bool keep_alias_columns)
 {
-    CollectSourceColumnsVisitor collect_source_columns_visitor(planner_context);
-    collect_source_columns_visitor.setKeepAliasColumns(keep_alias_columns);
+    CollectSourceColumnsVisitor collect_source_columns_visitor(planner_context, keep_alias_columns);
     collect_source_columns_visitor.visit(expression_node);
 }
 
