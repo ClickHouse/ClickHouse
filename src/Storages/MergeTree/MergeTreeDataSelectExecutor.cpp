@@ -46,7 +46,7 @@
 #include <Functions/IFunction.h>
 
 #include <IO/WriteBufferFromOStream.h>
-#include <Storages/BlockNumberColumn.h>
+#include <Storages/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
 namespace CurrentMetrics
@@ -483,12 +483,13 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
 {
     if (!filter_dag)
         return {};
-    auto sample = data.getSampleBlockWithVirtualColumns();
+
+    auto sample = data.getHeaderWithVirtualsForFilter();
     auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->getOutputs().at(0), &sample);
     if (!dag)
         return {};
 
-    auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, false /* one_part */);
+    auto virtual_columns_block = data.getBlockWithVirtualsForFilter(parts);
     VirtualColumnUtils::filterBlockWithDAG(dag, virtual_columns_block, context);
     return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 }
@@ -876,52 +877,15 @@ static void selectColumnNames(
     bool & sample_factor_column_queried)
 {
     sample_factor_column_queried = false;
+    const auto & virtual_columns = data.getVirtualsDescription();
 
-    for (const String & name : column_names_to_return)
+    for (const auto & name : column_names_to_return)
     {
-        if (name == "_part")
+        if (virtual_columns.has(name))
         {
-            virt_column_names.push_back(name);
-        }
-        else if (name == "_part_index")
-        {
-            virt_column_names.push_back(name);
-        }
-        else if (name == "_partition_id")
-        {
-            virt_column_names.push_back(name);
-        }
-        else if (name == "_part_offset")
-        {
-            virt_column_names.push_back(name);
-        }
-        else if (name == LightweightDeleteDescription::FILTER_COLUMN.name)
-        {
-            virt_column_names.push_back(name);
-        }
-        else if (name == BlockNumberColumn::name)
-        {
-            virt_column_names.push_back(name);
-        }
-        else if (name == "_part_uuid")
-        {
-            virt_column_names.push_back(name);
-        }
-        else if (name == "_partition_value")
-        {
-            if (!typeid_cast<const DataTypeTuple *>(data.getPartitionValueType().get()))
-            {
-                throw Exception(
-                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                    "Missing column `_partition_value` because there is no partition column in table {}",
-                    data.getStorageID().getTableName());
-            }
+            if (name == "_sample_factor")
+                sample_factor_column_queried = true;
 
-            virt_column_names.push_back(name);
-        }
-        else if (name == "_sample_factor")
-        {
-            sample_factor_column_queried = true;
             virt_column_names.push_back(name);
         }
         else

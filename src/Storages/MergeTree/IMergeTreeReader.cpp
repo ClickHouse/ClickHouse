@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
-#include <Storages/BlockNumberColumn.h>
+#include <Storages/MergeTreeVirtualColumns.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNested.h>
@@ -22,8 +23,8 @@ namespace
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
-
 
 IMergeTreeReader::IMergeTreeReader(
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
@@ -56,16 +57,10 @@ IMergeTreeReader::IMergeTreeReader(
     columns_to_read.reserve(requested_columns.size());
     serializations.reserve(requested_columns.size());
 
-    size_t pos = 0;
     for (const auto & column : requested_columns)
     {
         columns_to_read.emplace_back(getColumnInPart(column));
         serializations.emplace_back(getSerializationInPart(column));
-
-        if (read_task_info && read_task_info->virt_column_names.contains(column.name))
-            virt_column_pos_to_name.emplace(pos, column.name);
-
-        ++pos;
     }
 }
 
@@ -76,72 +71,36 @@ const IMergeTreeReader::ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() 
 
 void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
 {
-    if (std::all_of(
-            virt_column_pos_to_name.begin(),
-            virt_column_pos_to_name.end(),
-            [&columns](auto & elem)
-            {
-                chassert(elem.first < columns.size());
-                return columns[elem.first] != nullptr;
-            }))
-        return;
-
     chassert(read_task_info != nullptr);
 
     const IMergeTreeDataPart * part = read_task_info->data_part.get();
     if (part->isProjectionPart())
         part = part->getParentPart();
 
-    for (auto [pos, name] : virt_column_pos_to_name)
-    {
-        auto & column = columns[pos];
+    const auto & storage_columns = storage_snapshot->getMetadataForQuery()->getColumns();
+    const auto & virtual_columns = storage_snapshot->virtual_columns;
 
-        if (column != nullptr)
+    auto it = requested_columns.begin();
+    for (size_t pos = 0; pos < columns.size(); ++pos, ++it)
+    {
+        if (columns[pos] || storage_columns.has(it->name))
             continue;
 
-        if (name == "_part_offset")
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} must have been filled by part reader", name);
-        }
-        else if (name == LightweightDeleteDescription::FILTER_COLUMN.name)
-        {
-            /// If _row_exists column isn't present in the part then fill it here with 1s
-            column = LightweightDeleteDescription::FILTER_COLUMN.type->createColumnConst(rows, 1)->convertToFullColumnIfConst();
-        }
-        else if (name == BlockNumberColumn::name)
-        {
-            column = BlockNumberColumn::type->createColumnConst(rows, part->info.min_block)->convertToFullColumnIfConst();
-        }
-        else if (name == "_part")
-        {
-            column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}
-                         .createColumnConst(rows, part->name)
-                         ->convertToFullColumnIfConst();
-        }
-        else if (name == "_part_index")
-        {
-            column = DataTypeUInt64().createColumnConst(rows, read_task_info->part_index_in_query)->convertToFullColumnIfConst();
-        }
-        else if (name == "_part_uuid")
-        {
-            column = DataTypeUUID().createColumnConst(rows, part->uuid)->convertToFullColumnIfConst();
-        }
-        else if (name == "_partition_id")
-        {
-            column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}
-                         .createColumnConst(rows, part->info.partition_id)
-                         ->convertToFullColumnIfConst();
-        }
-        else if (name == "_partition_value")
-        {
-            column = read_task_info->partition_value_type
-                         ->createColumnConst(rows, Tuple(part->partition.value.begin(), part->partition.value.end()))
-                         ->convertToFullColumnIfConst();
-        }
+        auto virtual_column = virtual_columns.tryGet(it->name);
+        if (!virtual_column)
+            continue;
+
+        if (!it->type->equals(*virtual_column->type))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Data type for virtual column {} mismatched. Requested type: {}, Virtual column type: {}",
+                it->name, it->type->getName(), virtual_column->type->getName());
+
+        auto field = getFieldForConstVirtualColumn(it->name, *part, read_task_info->part_index_in_query);
+        columns[pos] = virtual_column->type->createColumnConst(rows, field)->convertToFullColumnIfConst();
     }
 }
 
-void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows, size_t block_number) const
+void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const
 {
     try
     {
@@ -150,7 +109,7 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
             res_columns, num_rows,
             Nested::convertToSubcolumns(requested_columns),
             Nested::convertToSubcolumns(available_columns),
-            partially_read_columns, storage_snapshot->metadata, block_number);
+            partially_read_columns, storage_snapshot->metadata);
 
         should_evaluate_missing_defaults = std::any_of(
             res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });

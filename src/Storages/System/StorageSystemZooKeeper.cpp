@@ -243,7 +243,7 @@ void StorageSystemZooKeeper::read(
     size_t max_block_size,
     size_t /*num_streams*/)
 {
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtuals());
+    auto header = storage_snapshot->metadata->getSampleBlockwithVirtuals(getVirtuals());
     auto read_step = std::make_unique<ReadFromSystemZooKeeper>(header, query_info, max_block_size, context);
     query_plan.addStep(std::move(read_step));
 }

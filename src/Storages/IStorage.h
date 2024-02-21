@@ -17,6 +17,7 @@
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
+#include "Storages/VirtualColumnsDescription.h"
 
 #include <optional>
 #include <compare>
@@ -226,7 +227,9 @@ public:
     /// virtual column will be overridden and inaccessible.
     ///
     /// By default return empty list of columns.
-    virtual NamesAndTypesList getVirtuals() const;
+    virtual VirtualColumnsDescription getVirtualsDescription() const;
+    virtual NamesAndTypesList getVirtuals() const; /// TODO: make non virtual.
+    Block getVirtualsHeader() const;
 
     Names getAllRegisteredNames() const override;
 

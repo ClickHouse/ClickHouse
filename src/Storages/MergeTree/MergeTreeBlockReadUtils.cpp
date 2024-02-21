@@ -6,6 +6,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
+#include "Storages/ColumnsDescription.h"
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBufferFromString.h>
@@ -106,10 +107,8 @@ NameSet injectRequiredColumns(
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
         .withExtendedObjects()
-        .withSystemColumns();
-
-    if (with_subcolumns)
-        options.withSubcolumns();
+        .withVirtuals(VirtualsKind::Persistent)
+        .withSubcolumns(with_subcolumns);
 
     auto virtuals_options = GetColumnsOptions(GetColumnsOptions::None).withVirtuals();
 
@@ -283,12 +282,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     MergeTreeReadTaskColumns result;
     auto options = GetColumnsOptions(GetColumnsOptions::All)
         .withExtendedObjects()
-        .withSystemColumns();
-
-    if (with_subcolumns)
-        options.withSubcolumns();
-
-    options.withVirtuals();
+        .withVirtuals()
+        .withSubcolumns(with_subcolumns);
 
     bool has_part_offset = std::find(required_columns.begin(), required_columns.end(), "_part_offset") != required_columns.end();
     NameSet columns_from_previous_steps;

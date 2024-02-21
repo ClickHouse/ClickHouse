@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTreeVirtualColumns.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -16,6 +17,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int MEMORY_LIMIT_EXCEEDED;
@@ -55,7 +57,6 @@ protected:
     Chunk generate() override;
 
 private:
-
     const MergeTreeData & storage;
     StorageSnapshotPtr storage_snapshot;
 
@@ -85,7 +86,6 @@ private:
     /// Closes readers and unlock part locks
     void finish();
 };
-
 
 MergeTreeSequentialSource::MergeTreeSequentialSource(
     MergeTreeSequentialSourceType type,
@@ -136,10 +136,8 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     {
         auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
             .withExtendedObjects()
-            .withSystemColumns();
-
-        if (storage.supportsSubcolumns())
-            options.withSubcolumns();
+            .withVirtuals(VirtualsKind::Persistent)
+            .withSubcolumns(storage.supportsSubcolumns());
 
         columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
     }
@@ -193,6 +191,38 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         {});
 }
 
+static void fillBlockNumberColumns(
+    Columns & res_columns,
+    const NamesAndTypesList & columns_list,
+    UInt64 block_number,
+    UInt64 block_offset,
+    UInt64 num_rows)
+{
+    chassert(res_columns.size() == columns_list.size());
+
+    auto it = columns_list.begin();
+    for (size_t i = 0; i < res_columns.size(); ++i, ++it)
+    {
+        if (res_columns[i])
+            continue;
+
+        if (it->name == BlockNumberColumn::name)
+        {
+            res_columns[i] = BlockNumberColumn::type->createColumnConst(num_rows, block_number)->convertToFullColumnIfConst();
+        }
+        else if (it->name == BlockOffsetColumn::name)
+        {
+            auto column = BlockOffsetColumn::type->createColumn();
+            auto & block_offset_data = assert_cast<ColumnUInt64 &>(*column).getData();
+
+            block_offset_data.resize(num_rows);
+            std::iota(block_offset_data.begin(), block_offset_data.end(), block_offset);
+
+            res_columns[i] = std::move(column);
+        }
+    }
+}
+
 Chunk MergeTreeSequentialSource::generate()
 try
 {
@@ -211,16 +241,16 @@ try
 
         if (rows_read)
         {
+            fillBlockNumberColumns(columns, sample, data_part->info.min_block, current_row, rows_read);
+
             current_row += rows_read;
             current_mark += (rows_to_read == rows_read);
 
             bool should_evaluate_missing_defaults = false;
-            reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_read, data_part->info.min_block);
+            reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_read);
 
             if (should_evaluate_missing_defaults)
-            {
                 reader->evaluateMissingDefaults({}, columns);
-            }
 
             reader->performRequiredConversions(columns);
 

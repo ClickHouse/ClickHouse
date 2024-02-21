@@ -5,8 +5,6 @@
 namespace DB
 {
 
-    CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -55,14 +53,10 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         marks_source_hashing = std::make_unique<HashingWriteBuffer>(*marks_compressor);
     }
 
-    const auto & storage_columns = metadata_snapshot->getColumns();
+    auto storage_snapshot = std::make_shared<StorageSnapshot>(data_part->storage, metadata_snapshot);
     for (const auto & column : columns_list)
     {
-        ASTPtr compression;
-        if (column.name == BlockNumberColumn::name)
-            compression = BlockNumberColumn::compression_codec->getFullCodecDesc();
-        else
-            compression = storage_columns.getCodecDescOrDefault(column.name, default_codec);
+        auto compression = storage_snapshot->getCodecDescOrDefault(column.name, default_codec);
         addStreams(column, compression);
     }
 }

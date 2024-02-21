@@ -18,7 +18,6 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
     const Names & virtual_column_names_,
-    const DataTypePtr & partition_value_type_,
     const PoolSettings & settings_,
     const ContextPtr & context_)
     : MergeTreeReadPoolBase(
@@ -29,7 +28,6 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
         reader_settings_,
         column_names_,
         virtual_column_names_,
-        partition_value_type_,
         settings_,
         context_)
     , extension(std::move(extension_))

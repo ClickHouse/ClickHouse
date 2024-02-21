@@ -104,7 +104,7 @@
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
 
-#include <Storages/BlockNumberColumn.h>
+#include <Storages/MergeTreeVirtualColumns.h>
 
 #include <memory>
 #include <filesystem>

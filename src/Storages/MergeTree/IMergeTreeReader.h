@@ -2,6 +2,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Common/HashTable/HashMap.h>
+#include "DataTypes/Serializations/ISerialization.h"
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
@@ -49,7 +50,7 @@ public:
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// num_rows is needed in case if all res_columns are nullptr.
-    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows, size_t block_number = 0) const;
+    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const;
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
@@ -120,9 +121,6 @@ private:
 
     /// Shared information required for reading.
     MergeTreeReadTaskInfoPtr read_task_info;
-
-    /// Map of positions in requested_columns which are virtual columns to their names.
-    std::map<size_t, String> virt_column_pos_to_name;
 };
 
 }

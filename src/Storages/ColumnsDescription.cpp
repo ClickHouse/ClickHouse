@@ -31,14 +31,11 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Storages/BlockNumberColumn.h>
+#include <Storages/MergeTreeVirtualColumns.h>
 
 
 namespace DB
 {
-
-CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
-
 
 namespace ErrorCodes
 {
@@ -563,6 +560,12 @@ const ColumnDescription & ColumnsDescription::get(const String & column_name) co
     return *it;
 }
 
+const ColumnDescription * ColumnsDescription::tryGet(const String & column_name) const
+{
+    auto it = columns.get<1>().find(column_name);
+    return it == columns.get<1>().end() ? nullptr : &(*it);
+}
+
 static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
 {
     switch (kind)
@@ -787,33 +790,6 @@ bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
     const auto it = columns.get<1>().find(column_name);
 
     return it != columns.get<1>().end() && it->codec != nullptr;
-}
-
-CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
-{
-    const auto it = columns.get<1>().find(column_name);
-
-    if (it == columns.get<1>().end() || !it->codec)
-        return default_codec;
-
-    return CompressionCodecFactory::instance().get(it->codec, it->type, default_codec);
-}
-
-CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name) const
-{
-    assert (column_name != BlockNumberColumn::name);
-    return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
-}
-
-ASTPtr ColumnsDescription::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
-{
-    assert (column_name != BlockNumberColumn::name);
-    const auto it = columns.get<1>().find(column_name);
-
-    if (it == columns.get<1>().end() || !it->codec)
-        return default_codec->getFullCodecDesc();
-
-    return it->codec;
 }
 
 ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const

@@ -29,7 +29,6 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const Names & virtual_column_names_,
-        const DataTypePtr & partition_value_type_,
         const PoolSettings & settings_,
         const ContextPtr & context_);
 
@@ -44,7 +43,6 @@ protected:
     const MergeTreeReaderSettings reader_settings;
     const Names column_names;
     const Names virtual_column_names;
-    const DataTypePtr partition_value_type;
     const PoolSettings pool_settings;
     const MarkCachePtr owned_mark_cache;
     const UncompressedCachePtr owned_uncompressed_cache;

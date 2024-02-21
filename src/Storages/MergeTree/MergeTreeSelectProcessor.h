@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/IMergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
 #include <boost/core/noncopyable.hpp>
+#include "Storages/StorageSnapshot.h"
 
 
 namespace DB
@@ -41,7 +42,7 @@ public:
     MergeTreeSelectProcessor(
         MergeTreeReadPoolPtr pool_,
         MergeTreeSelectAlgorithmPtr algorithm_,
-        const MergeTreeData & storage_,
+        const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReadTask::BlockSizeParams & block_size_params_,
@@ -52,8 +53,8 @@ public:
 
     static Block transformHeader(
         Block block,
+        const StorageSnapshotPtr & storage_snapshot,
         const PrewhereInfoPtr & prewhere_info,
-        const DataTypePtr & partition_value_type,
         const Names & virtual_columns);
 
     Block getHeader() const { return result_header; }
@@ -82,7 +83,7 @@ private:
     };
 
     /// Used for filling header with no rows as well as block with data
-    static void injectVirtualColumns(Block & block, const DataTypePtr & partition_value_type, const Names & virtual_columns);
+    static void injectVirtualColumns(Block & block, const StorageSnapshotPtr & storage_snapshot, const Names & virtual_columns);
     static Block applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info);
 
     /// Sets up range readers corresponding to data readers
@@ -90,6 +91,7 @@ private:
 
     const MergeTreeReadPoolPtr pool;
     const MergeTreeSelectAlgorithmPtr algorithm;
+    const StorageSnapshotPtr storage_snapshot;
 
     const PrewhereInfoPtr prewhere_info;
     const ExpressionActionsSettings actions_settings;
@@ -98,7 +100,6 @@ private:
     const MergeTreeReaderSettings reader_settings;
     const MergeTreeReadTask::BlockSizeParams block_size_params;
     const Names virt_column_names;
-    const DataTypePtr partition_value_type;
 
     /// Current task to read from.
     MergeTreeReadTaskPtr task;

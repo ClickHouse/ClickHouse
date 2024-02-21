@@ -174,7 +174,7 @@ struct StorageInMemoryMetadata
     /// Block with ordinary + materialized + virtuals. Virtuals have to be
     /// explicitly specified, because they are part of Storage type, not
     /// Storage metadata.
-    Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const;
+    Block getSampleBlockwithVirtuals(const NamesAndTypesList & virtuals) const;
 
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;

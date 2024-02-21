@@ -13,7 +13,6 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
     const Names & virtual_column_names_,
-    const DataTypePtr & partition_value_type_,
     const PoolSettings & pool_settings_,
     const ContextPtr & context_)
     : parts_ranges(std::move(parts_))
@@ -23,7 +22,6 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , reader_settings(reader_settings_)
     , column_names(column_names_)
     , virtual_column_names(virtual_column_names_)
-    , partition_value_type(partition_value_type_)
     , pool_settings(pool_settings_)
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
@@ -69,7 +67,6 @@ void MergeTreeReadPoolBase::fillPerPartInfos()
             /*with_subcolumns=*/true);
 
         read_task_info.virt_column_names = {virtual_column_names.begin(), virtual_column_names.end()};
-        read_task_info.partition_value_type = partition_value_type;
 
         if (pool_settings.preferred_block_size_bytes > 0)
         {

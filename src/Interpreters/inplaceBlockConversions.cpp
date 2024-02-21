@@ -20,7 +20,7 @@
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/BlockNumberColumn.h>
+#include <Storages/MergeTreeVirtualColumns.h>
 
 
 namespace DB
@@ -280,7 +280,7 @@ void fillMissingColumns(
     const NamesAndTypesList & requested_columns,
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
-    StorageMetadataPtr metadata_snapshot, size_t block_number)
+    StorageMetadataPtr metadata_snapshot)
 {
     size_t num_columns = requested_columns.size();
     if (num_columns != res_columns.size())
@@ -359,14 +359,9 @@ void fillMissingColumns(
         }
         else
         {
-            if (requested_column->name == BlockNumberColumn::name)
-                res_columns[i] = type->createColumnConst(num_rows, block_number)->convertToFullColumnIfConst();
-            else
-                /// We must turn a constant column into a full column because the interpreter could infer
-                /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
-                res_columns[i] = type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
-
-
+            /// We must turn a constant column into a full column because the interpreter could infer
+            /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
+            res_columns[i] = type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
         }
     }
 }

@@ -237,9 +237,19 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
     storage_id = new_table_id;
 }
 
-NamesAndTypesList IStorage::getVirtuals() const
+VirtualColumnsDescription IStorage::getVirtualsDescription() const
 {
     return {};
+}
+
+NamesAndTypesList IStorage::getVirtuals() const
+{
+    return getVirtualsDescription().getNamesAndTypesList();
+}
+
+Block IStorage::getVirtualsHeader() const
+{
+    return getVirtualsDescription().getSampleBlock();
 }
 
 Names IStorage::getAllRegisteredNames() const

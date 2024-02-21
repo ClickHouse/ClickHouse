@@ -52,7 +52,7 @@ public:
         size_t /*num_streams*/) override
     {
         storage_snapshot->check(column_names);
-        Block sample_block = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtuals());
+        Block sample_block = storage_snapshot->metadata->getSampleBlockwithVirtuals(getVirtuals());
 
         if (supportsColumnsMask())
         {

@@ -214,7 +214,7 @@ Chain buildPushingToViewsChain(
 
     /// If we don't write directly to the destination
     /// then expect that we're inserting with precalculated virtual columns
-    auto storage_header = no_destination ? metadata_snapshot->getSampleBlockWithVirtuals(storage->getVirtuals())
+    auto storage_header = no_destination ? metadata_snapshot->getSampleBlockwithVirtuals(storage->getVirtuals())
                                          : metadata_snapshot->getSampleBlock();
 
     /** TODO This is a very important line. At any insertion into the table one of chains should own lock.

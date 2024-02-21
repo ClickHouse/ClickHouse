@@ -62,8 +62,6 @@ struct MergeTreeReadTaskInfo
     MergeTreeReadTaskColumns task_columns;
     /// Virtual column names to read
     NameSet virt_column_names;
-    /// For `partition_value` virtual column
-    DataTypePtr partition_value_type;
     /// Shared initialized size predictor. It is copied for each new task.
     MergeTreeBlockSizePredictorPtr shared_size_predictor;
 };
