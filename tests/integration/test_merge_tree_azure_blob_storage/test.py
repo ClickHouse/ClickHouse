@@ -632,3 +632,29 @@ def test_endpoint(cluster):
     )
 
     assert 10 == int(node.query("SELECT count() FROM test"))
+
+def test_endpoint_new_container(cluster):
+    node = cluster.instances[NODE_NAME]
+    account_name = "devstoreaccount1"
+    container_name = "cont3"
+    data_prefix = "data_prefix"
+    port = cluster.azurite_port
+
+    node.query(
+        f"""
+    DROP TABLE IF EXISTS test SYNC;
+
+    CREATE TABLE test (a Int32)
+    ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS disk = disk(
+    type = azure_blob_storage,
+    endpoint = 'http://azurite1:{port}/{account_name}/{container_name}/{data_prefix}',
+    account_name = 'devstoreaccount1',
+    account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
+    skip_access_check = 0);
+
+    INSERT INTO test SELECT number FROM numbers(10);
+    """
+    )
+
+    assert 10 == int(node.query("SELECT count() FROM test"))
