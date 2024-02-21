@@ -1413,4 +1413,9 @@ REGISTER_FUNCTION(If)
     factory.registerFunction<FunctionIf>({}, FunctionFactory::CaseInsensitive);
 }
 
+FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool allow_experimental_variant_type, bool use_variant_as_common_type)
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(allow_experimental_variant_type && use_variant_as_common_type));
+}
+
 }

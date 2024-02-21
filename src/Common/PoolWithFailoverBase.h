@@ -66,7 +66,7 @@ public:
         , log(log_)
     {
         for (size_t i = 0;i < nested_pools.size(); ++i)
-            shared_pool_states[i].config_priority = nested_pools[i]->getPriority();
+            shared_pool_states[i].config_priority = nested_pools[i]->getConfigPriority();
     }
 
     struct TryResult
@@ -133,7 +133,7 @@ protected:
 
     void updateErrorCounts(PoolStates & states, time_t & last_decrease_time) const;
 
-    std::vector<ShuffledPool> getShuffledPools(size_t max_ignored_errors, const GetPriorityFunc & get_priority);
+    std::vector<ShuffledPool> getShuffledPools(size_t max_ignored_errors, const GetPriorityFunc & get_priority, bool use_slowdown_count = false);
 
     inline void updateSharedErrorCounts(std::vector<ShuffledPool> & shuffled_pools);
 
@@ -160,7 +160,7 @@ protected:
 template <typename TNestedPool>
 std::vector<typename PoolWithFailoverBase<TNestedPool>::ShuffledPool>
 PoolWithFailoverBase<TNestedPool>::getShuffledPools(
-    size_t max_ignored_errors, const PoolWithFailoverBase::GetPriorityFunc & get_priority)
+    size_t max_ignored_errors, const PoolWithFailoverBase::GetPriorityFunc & get_priority, bool use_slowdown_count)
 {
     /// Update random numbers and error counts.
     PoolStates pool_states = updatePoolStates(max_ignored_errors);
@@ -175,13 +175,13 @@ PoolWithFailoverBase<TNestedPool>::getShuffledPools(
     std::vector<ShuffledPool> shuffled_pools;
     shuffled_pools.reserve(nested_pools.size());
     for (size_t i = 0; i < nested_pools.size(); ++i)
-        shuffled_pools.push_back(ShuffledPool{nested_pools[i], &pool_states[i], i, /* error_count = */ 0, /* slowdown_count = */ 0});
+        shuffled_pools.emplace_back(ShuffledPool{.pool = nested_pools[i], .state = &pool_states[i], .index = i});
 
     ::sort(
         shuffled_pools.begin(), shuffled_pools.end(),
-        [](const ShuffledPool & lhs, const ShuffledPool & rhs)
+        [use_slowdown_count](const ShuffledPool & lhs, const ShuffledPool & rhs)
         {
-            return PoolState::compare(*lhs.state, *rhs.state);
+            return PoolState::compare(*lhs.state, *rhs.state, use_slowdown_count);
         });
 
     return shuffled_pools;
@@ -344,10 +344,14 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
         random = rng();
     }
 
-    static bool compare(const PoolState & lhs, const PoolState & rhs)
+    static bool compare(const PoolState & lhs, const PoolState & rhs, bool use_slowdown_count)
     {
-        return std::forward_as_tuple(lhs.error_count, lhs.slowdown_count, lhs.config_priority, lhs.priority, lhs.random)
-             < std::forward_as_tuple(rhs.error_count, rhs.slowdown_count, rhs.config_priority, rhs.priority, rhs.random);
+        if (use_slowdown_count)
+            return std::forward_as_tuple(lhs.error_count, lhs.slowdown_count, lhs.config_priority, lhs.priority, lhs.random)
+                < std::forward_as_tuple(rhs.error_count, rhs.slowdown_count, rhs.config_priority, rhs.priority, rhs.random);
+        else
+            return std::forward_as_tuple(lhs.error_count, lhs.config_priority, lhs.priority, lhs.random)
+                < std::forward_as_tuple(rhs.error_count, rhs.config_priority, rhs.priority, rhs.random);
     }
 
 private:
