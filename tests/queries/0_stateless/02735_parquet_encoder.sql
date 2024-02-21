@@ -6,6 +6,7 @@ set output_format_parquet_data_page_size = 800;
 set output_format_parquet_batch_size = 100;
 set output_format_parquet_row_group_size_bytes = 1000000000;
 set engine_file_truncate_on_insert=1;
+set allow_suspicious_low_cardinality_types=1;
 
 -- Write random data to parquet file, then read from it and check that it matches what we wrote.
 -- Do this for all kinds of data types: primitive, Nullable(primitive), Array(primitive),
