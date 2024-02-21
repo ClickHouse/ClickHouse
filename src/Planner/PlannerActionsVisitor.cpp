@@ -88,7 +88,18 @@ public:
             case QueryTreeNodeType::CONSTANT:
             {
                 const auto & constant_node = node->as<ConstantNode &>();
-                result = calculateConstantActionNodeName(constant_node.getValue(), constant_node.getResultType());
+                WriteBufferFromOwnString buffer;
+                bool wrap_with_cast = constant_node.requiresCastCall();
+                if (wrap_with_cast)
+                    buffer << "_CAST(";
+
+                buffer << calculateConstantActionNodeName(constant_node.getValue(), constant_node.getResultType());
+
+                if (wrap_with_cast)
+                {
+                    buffer << ", '" << constant_node.getResultType()->getName() << "'_String)";
+                }
+                result = buffer.str();
                 break;
             }
             case QueryTreeNodeType::FUNCTION:
@@ -527,7 +538,21 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     const auto & constant_literal = constant_node.getValue();
     const auto & constant_type = constant_node.getResultType();
 
-    auto constant_node_name = calculateConstantActionNodeName(constant_literal, constant_type);
+    auto constant_node_name = [&]()
+    {
+        WriteBufferFromOwnString buffer;
+        bool wrap_with_cast = constant_node.requiresCastCall();
+        if (wrap_with_cast)
+            buffer << "_CAST(";
+
+        buffer << calculateConstantActionNodeName(constant_literal, constant_type);
+
+        if (wrap_with_cast)
+        {
+            buffer << ", '" << constant_node.getResultType()->getName() << "'_String)";
+        }
+        return buffer.str();
+    }();
 
     ColumnWithTypeAndName column;
     column.name = constant_node_name;

@@ -10,6 +10,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <Planner/TableExpressionData.h>
+#include <Interpreters/SelectQueryOptions.h>
 
 namespace DB
 {
@@ -63,7 +64,7 @@ class PlannerContext
 {
 public:
     /// Create planner context with query context and global planner context
-    PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_);
+    PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_, const SelectQueryOptions & options);
 
     /// Get planner context query context
     ContextPtr getQueryContext() const
@@ -150,6 +151,9 @@ public:
     static SetKey createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node);
 
     PreparedSets & getPreparedSets() { return prepared_sets; }
+
+    bool allowASTLevelOptimizations() const { return allow_ast_level_optimizations; }
+
 private:
     /// Query context
     ContextMutablePtr query_context;
@@ -165,6 +169,8 @@ private:
 
     /// Set key to set
     PreparedSets prepared_sets;
+
+    bool allow_ast_level_optimizations;
 };
 
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;

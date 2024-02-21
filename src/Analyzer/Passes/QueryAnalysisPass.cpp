@@ -5745,7 +5745,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
           * Example: SELECT plus(1, 1);
           * Result: SELECT 2;
           */
-        if (function_base->isSuitableForConstantFolding() && !disable_constant_folding)
+        if (function_base->isSuitableForConstantFolding() && (!disable_constant_folding || function_name == "_CAST"))
         {
             auto result_type = function_base->getResultType();
             auto executable_function = function_base->prepare(argument_columns);

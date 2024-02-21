@@ -3,6 +3,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -41,9 +42,14 @@ bool GlobalPlannerContext::hasColumnIdentifier(const ColumnIdentifier & column_i
     return column_identifiers.contains(column_identifier);
 }
 
-PlannerContext::PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_)
+PlannerContext::PlannerContext(
+    ContextMutablePtr query_context_,
+    GlobalPlannerContextPtr global_planner_context_,
+    const SelectQueryOptions & options
+)
     : query_context(std::move(query_context_))
     , global_planner_context(std::move(global_planner_context_))
+    , allow_ast_level_optimizations(query_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && !options.ignore_ast_optimizations)
 {}
 
 TableExpressionData & PlannerContext::getOrCreateTableExpressionData(const QueryTreeNodePtr & table_expression_node)
