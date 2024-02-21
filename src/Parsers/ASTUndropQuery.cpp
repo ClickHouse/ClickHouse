@@ -28,13 +28,16 @@ void ASTUndropQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     chassert(table);
 
-    if (database)
+    if (table)
     {
-        database->formatImpl(settings, state, frame);
-        settings.ostr << '.';
-    }
+        if (database)
+        {
+            database->formatImpl(settings, state, frame);
+            settings.ostr << '.';
+        }
 
-    table->formatImpl(settings, state, frame);
+        table->formatImpl(settings, state, frame);
+    }
 
     if (uuid != UUIDHelpers::Nil)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
