@@ -24,8 +24,8 @@ description: In order to effectively mitigate possible human errors, you should 
   ALL TEMPORARY TABLES [EXCEPT ...] |
   ALL DATABASES [EXCEPT ...] } [,...]
   [ON CLUSTER 'cluster_name']
-  TO|FROM File('<path>/<filename>') | Disk('<disk_name>', '<path>/') | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')
-  [SETTINGS base_backup = File('<path>/<filename>') | Disk(...) | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')]
+  TO|FROM File('<path>/<filename>') | Disk('<disk_name>', '<path>/') | S3('<S3 endpoint>/<path>' [, '<Access key ID>', '<Secret access key>'] [, '<Session token>'])
+  [SETTINGS base_backup = File('<path>/<filename>') | Disk(...) | S3('<S3 endpoint>/<path>' [,'<Access key ID>', '<Secret access key>'] [, '<Session token>'])]
 
 ```
 
@@ -271,7 +271,7 @@ Creating an S3 bucket is covered in [Use S3 Object Storage as a ClickHouse disk]
 
 The destination for a backup will be specified like this:
 ```
-S3('<S3 endpoint>/<directory>', '<Access key ID>', '<Secret access key>)
+S3('<S3 endpoint>/<directory>' [, '<Access key ID>', '<Secret access key>] [, '<Session token>'])
 ```
 
 ```sql
