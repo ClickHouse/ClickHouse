@@ -191,4 +191,10 @@ bool InMemoryLogStore::compact(uint64_t last_log_index)
     return true;
 }
 
+bool InMemoryLogStore::is_conf(uint64_t index)
+{
+    auto entry = entry_at(index);
+    return entry != nullptr && entry->get_val_type() == nuraft::conf;
+}
+
 }

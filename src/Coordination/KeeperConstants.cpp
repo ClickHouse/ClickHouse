@@ -284,7 +284,12 @@
     M(InterfaceMySQLSendBytes) \
     M(InterfaceMySQLReceiveBytes) \
     M(InterfacePostgreSQLSendBytes) \
-    M(InterfacePostgreSQLReceiveBytes)
+    M(InterfacePostgreSQLReceiveBytes) \
+\
+    M(KeeperLogsEntryReadFromLatestCache) \
+    M(KeeperLogsEntryReadFromCommitCache) \
+    M(KeeperLogsEntryReadFromFile) \
+    M(KeeperLogsPrefetchedEntries) \
 
 namespace ProfileEvents
 {
