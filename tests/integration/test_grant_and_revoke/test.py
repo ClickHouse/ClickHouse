@@ -397,7 +397,7 @@ def test_introspection():
         [
             "CREATE USER A",
             "CREATE USER B",
-            "CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE default",
+            "CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE `default`",
         ]
     )
 
@@ -457,7 +457,7 @@ def test_introspection():
     expected_access1 = (
         "CREATE USER A\n"
         "CREATE USER B\n"
-        "CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE default"
+        "CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE `default`"
     )
     expected_access2 = (
         "GRANT SELECT ON test.`table` TO A\n"
@@ -558,7 +558,7 @@ def test_grant_with_replace_option():
     )
 
     expected_error = (
-        "it's necessary to have the grant INSERT ON test.table WITH GRANT OPTION"
+        "it's necessary to have the grant INSERT ON test.`table` WITH GRANT OPTION"
     )
     assert expected_error in instance.query_and_get_error(
         "GRANT INSERT ON test.`table` TO B WITH REPLACE OPTION", user="A"

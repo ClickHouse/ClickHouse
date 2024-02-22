@@ -893,7 +893,7 @@ def test_required_privileges():
     instance.query("GRANT BACKUP ON test.table TO u1")
     instance.query(f"BACKUP TABLE test.table TO {backup_name}", user="u1")
 
-    expected_error = "necessary to have the grant INSERT, CREATE TABLE ON test.table"
+    expected_error = "necessary to have the grant INSERT, CREATE TABLE ON test.`table`"
     assert expected_error in instance.query_and_get_error(
         f"RESTORE TABLE test.table FROM {backup_name}", user="u1"
     )
@@ -910,7 +910,7 @@ def test_required_privileges():
 
     instance.query("DROP TABLE test.table")
 
-    expected_error = "necessary to have the grant INSERT, CREATE TABLE ON test.table"
+    expected_error = "necessary to have the grant INSERT, CREATE TABLE ON test.`table`"
     assert expected_error in instance.query_and_get_error(
         f"RESTORE ALL FROM {backup_name}", user="u1"
     )
@@ -984,7 +984,7 @@ def test_system_users():
 
     assert (
         instance.query("SHOW CREATE USER u1")
-        == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS PROFILE default, custom_a = 1\n"
+        == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS PROFILE `default`, custom_a = 1\n"
     )
     assert instance.query("SHOW GRANTS FOR u1") == TSV(
         ["GRANT SELECT ON test.* TO u1", "GRANT r2 TO u1"]
