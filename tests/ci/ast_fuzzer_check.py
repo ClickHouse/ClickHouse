@@ -6,29 +6,16 @@ import subprocess
 import sys
 from pathlib import Path
 
-from github import Github
-
 from build_download_helper import get_build_name_for_check, read_build_urls
 from clickhouse_helper import (
     CiLogsCredentials,
-    ClickHouseHelper,
-    prepare_tests_results_for_clickhouse,
-)
-from commit_status_helper import (
-    RerunHelper,
-    format_description,
-    get_commit,
-    post_commit_status,
 )
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPORT_PATH, TEMP_PATH
-from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResult
-from s3_helper import S3Helper
+from report import JobReport
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from upload_result_helper import upload_results
 
 IMAGE_NAME = "clickhouse/fuzzer"
 
@@ -77,14 +64,6 @@ def main():
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token(), per_page=100)
-    commit = get_commit(gh, pr_info.sha)
-
-    rerun_helper = RerunHelper(commit, check_name)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
-
     docker_image = pull_image(get_docker_image(IMAGE_NAME))
 
     build_name = get_build_name_for_check(check_name)
@@ -131,10 +110,6 @@ def main():
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
     ci_logs_credentials.clean_ci_logs_from_credentials(run_log_path)
 
-    check_name_lower = (
-        check_name.lower().replace("(", "").replace(")", "").replace(" ", "")
-    )
-    s3_prefix = f"{pr_info.number}/{pr_info.sha}/fuzzer_{check_name_lower}/"
     paths = {
         "run.log": run_log_path,
         "main.log": main_log_path,
@@ -154,17 +129,6 @@ def main():
     if not_compressed_server_log_path.exists():
         paths["server.log"] = not_compressed_server_log_path
 
-    s3_helper = S3Helper()
-    urls = []
-    report_url = ""
-    for file, path in paths.items():
-        try:
-            url = s3_helper.upload_test_report_to_s3(path, s3_prefix + file)
-            report_url = url if file == "report.html" else report_url
-            urls.append(url)
-        except Exception as ex:
-            logging.info("Exception uploading file %s text %s", file, ex)
-
     # Try to get status message saved by the fuzzer
     try:
         with open(workspace_path / "status.txt", "r", encoding="utf-8") as status_f:
@@ -176,42 +140,19 @@ def main():
         status = "failure"
         description = "Task failed: $?=" + str(retcode)
 
-    description = format_description(description)
+    JobReport(
+        description=description,
+        test_results=[],
+        status=status,
+        start_time=stopwatch.start_time_str,
+        duration=stopwatch.duration_seconds,
+        # test generates its own report.html
+        additional_files=[v for _, v in paths.items()],
+    ).dump()
 
-    test_result = TestResult(description, "OK")
-    if "fail" in status:
-        test_result.status = "FAIL"
-
-    if not report_url:
-        report_url = upload_results(
-            s3_helper,
-            pr_info.number,
-            pr_info.sha,
-            [test_result],
-            [],
-            check_name,
-            urls,
-        )
-
-    ch_helper = ClickHouseHelper()
-
-    prepared_events = prepare_tests_results_for_clickhouse(
-        pr_info,
-        [test_result],
-        status,
-        stopwatch.duration_seconds,
-        stopwatch.start_time_str,
-        report_url,
-        check_name,
-    )
-
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-
-    logging.info("Result: '%s', '%s', '%s'", status, description, report_url)
-    print(f"::notice ::Report url: {report_url}")
-    post_commit_status(
-        commit, status, report_url, description, check_name, pr_info, dump_to_file=True
-    )
+    logging.info("Result: '%s', '%s'", status, description)
+    if status == "failure":
+        sys.exit(1)
 
 
 if __name__ == "__main__":
