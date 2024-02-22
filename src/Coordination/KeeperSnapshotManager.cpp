@@ -33,7 +33,7 @@ namespace ErrorCodes
 
 namespace
 {
-    void moveSnapshotFileBetweenDisks(
+    void moveSnapshotBetweenDisks(
         DiskPtr disk_from,
         const std::string & path_from,
         DiskPtr disk_to,
@@ -41,7 +41,13 @@ namespace
         const KeeperContextPtr & keeper_context)
     {
         moveFileBetweenDisks(
-            std::move(disk_from), path_from, std::move(disk_to), path_to, getLogger("KeeperSnapshotManager"), keeper_context);
+            std::move(disk_from),
+            path_from,
+            std::move(disk_to),
+            path_to,
+            /*before_file_remove_op=*/{},
+            getLogger("KeeperSnapshotManager"),
+            keeper_context);
     }
 
     uint64_t getSnapshotPathUpToLogIdx(const String & snapshot_path)
@@ -596,7 +602,7 @@ KeeperSnapshotManager::KeeperSnapshotManager(
 
             if (!inserted)
                 LOG_WARNING(
-                    getLogger("KeeperSnapshotManager"),
+                    log,
                     "Found another snapshots with last log idx {}, will use snapshot from disk {}",
                     snapshot_up_to,
                     disk->getName());
@@ -604,6 +610,9 @@ KeeperSnapshotManager::KeeperSnapshotManager(
 
         for (const auto & [name, path] : incomplete_files)
             disk->removeFile(path);
+
+        if (snapshot_files.empty())
+            LOG_TRACE(log, "No snapshots were found on {}", disk->getName());
 
         read_disks.insert(disk);
     };
@@ -767,7 +776,7 @@ void KeeperSnapshotManager::moveSnapshotsIfNeeded()
         {
             if (file_info.disk != latest_snapshot_disk)
             {
-                moveSnapshotFileBetweenDisks(file_info.disk, file_info.path, latest_snapshot_disk, file_info.path, keeper_context);
+                moveSnapshotBetweenDisks(file_info.disk, file_info.path, latest_snapshot_disk, file_info.path, keeper_context);
                 file_info.disk = latest_snapshot_disk;
             }
         }
@@ -775,7 +784,7 @@ void KeeperSnapshotManager::moveSnapshotsIfNeeded()
         {
             if (file_info.disk != disk)
             {
-                moveSnapshotFileBetweenDisks(file_info.disk, file_info.path, disk, file_info.path, keeper_context);
+                moveSnapshotBetweenDisks(file_info.disk, file_info.path, disk, file_info.path, keeper_context);
                 file_info.disk = disk;
             }
         }

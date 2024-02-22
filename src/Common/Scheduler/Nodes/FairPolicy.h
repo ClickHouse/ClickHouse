@@ -134,65 +134,56 @@ public:
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
     {
-        // Cycle is required to do deactivations in the case of canceled requests, when dequeueRequest returns `nullptr`
-        while (true)
+        if (heap_size == 0)
+            return {nullptr, false};
+
+        // Recursively pull request from child
+        auto [request, child_active] = items.front().child->dequeueRequest();
+        assert(request != nullptr);
+        std::pop_heap(items.begin(), items.begin() + heap_size);
+        Item & current = items[heap_size - 1];
+
+        // SFQ fairness invariant: system vruntime equals last served request start-time
+        assert(current.vruntime >= system_vruntime);
+        system_vruntime = current.vruntime;
+
+        // By definition vruntime is amount of consumed resource (cost) divided by weight
+        current.vruntime += double(request->cost) / current.child->info.weight;
+        max_vruntime = std::max(max_vruntime, current.vruntime);
+
+        if (child_active) // Put active child back in heap after vruntime update
         {
-            if (heap_size == 0)
-                return {nullptr, false};
-
-            // Recursively pull request from child
-            auto [request, child_active] = items.front().child->dequeueRequest();
-            std::pop_heap(items.begin(), items.begin() + heap_size);
-            Item & current = items[heap_size - 1];
-
-            if (request)
-            {
-                // SFQ fairness invariant: system vruntime equals last served request start-time
-                assert(current.vruntime >= system_vruntime);
-                system_vruntime = current.vruntime;
-
-                // By definition vruntime is amount of consumed resource (cost) divided by weight
-                current.vruntime += double(request->cost) / current.child->info.weight;
-                max_vruntime = std::max(max_vruntime, current.vruntime);
-            }
-
-            if (child_active) // Put active child back in heap after vruntime update
-            {
-                std::push_heap(items.begin(), items.begin() + heap_size);
-            }
-            else // Deactivate child if it is empty, but remember it's vruntime for latter activations
-            {
-                heap_size--;
-
-                // Store index of this inactive child in `parent.idx`
-                // This enables O(1) search of inactive children instead of O(n)
-                current.child->info.parent.idx = heap_size;
-            }
-
-            // Reset any difference between children on busy period end
-            if (heap_size == 0)
-            {
-                // Reset vtime to zero to avoid floating-point error accumulation,
-                // but do not reset too often, because it's O(N)
-                UInt64 ns = clock_gettime_ns();
-                if (last_reset_ns + 1000000000 < ns)
-                {
-                    last_reset_ns = ns;
-                    for (Item & item : items)
-                        item.vruntime = 0;
-                    max_vruntime = 0;
-                }
-                system_vruntime = max_vruntime;
-                busy_periods++;
-            }
-
-            if (request)
-            {
-                dequeued_requests++;
-                dequeued_cost += request->cost;
-                return {request, heap_size > 0};
-            }
+            std::push_heap(items.begin(), items.begin() + heap_size);
         }
+        else // Deactivate child if it is empty, but remember it's vruntime for latter activations
+        {
+            heap_size--;
+
+            // Store index of this inactive child in `parent.idx`
+            // This enables O(1) search of inactive children instead of O(n)
+            current.child->info.parent.idx = heap_size;
+        }
+
+        // Reset any difference between children on busy period end
+        if (heap_size == 0)
+        {
+            // Reset vtime to zero to avoid floating-point error accumulation,
+            // but do not reset too often, because it's O(N)
+            UInt64 ns = clock_gettime_ns();
+            if (last_reset_ns + 1000000000 < ns)
+            {
+                last_reset_ns = ns;
+                for (Item & item : items)
+                    item.vruntime = 0;
+                max_vruntime = 0;
+            }
+            system_vruntime = max_vruntime;
+            busy_periods++;
+        }
+
+        dequeued_requests++;
+        dequeued_cost += request->cost;
+        return {request, heap_size > 0};
     }
 
     bool isActive() override
