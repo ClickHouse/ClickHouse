@@ -3,7 +3,8 @@
 #include <Common/ICachePolicy.h>
 
 #include <list>
-#include <unordered_map>
+
+#include <absl/container/flat_hash_map.h>
 
 namespace DB
 {
@@ -161,7 +162,7 @@ private:
         LRUQueueIterator queue_iterator;
     };
 
-    using Cells = std::unordered_map<Key, Cell, HashFunction>;
+    using Cells = absl::flat_hash_map<Key, Cell, HashFunction>;
 
     Cells cells;
 
