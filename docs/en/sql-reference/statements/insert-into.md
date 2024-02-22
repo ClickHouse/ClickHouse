@@ -176,7 +176,7 @@ INSERT INTO infile_globs FROM INFILE 'input_?.csv' FORMAT CSV;
 ```
 :::
 
-## Inserting into Table Function
+## Inserting using a Table Function
 
 Data can be inserted into tables referenced by [table functions](../../sql-reference/table-functions/index.md).
 
@@ -204,7 +204,7 @@ Result:
 └─────┴───────────────────────┘
 ```
 
-## Inserts into ClickHouse Cloud
+## Inserting into ClickHouse Cloud
 
 By default, services on ClickHouse Cloud provide multiple replicas for high availability. When you connect to a service, a connection is established to one of these replicas.
 
@@ -218,6 +218,12 @@ SELECT .... SETTINGS select_sequential_consistency = 1;
 
 Note that using `select_sequential_consistency` will increase the load on ClickHouse Keeper (used by ClickHouse Cloud internally) and may result in slower performance depending on the load on the service. We recommend against enabling this setting unless necessary. The recommended approach is to execute read/writes in the same session or to use a client driver that uses the native protocol (and thus supports sticky connections).
 
+## Inserting into a replicated setup
+
+In a replicated setup, data will be visible on other replicas after it has been replicated. Data begins being replicated (downloaded on other replicas) immediately after an `INSERT`. This differs from ClickHouse Cloud, where data is immediately written to shared storage and replicas subscribe to metadata changes.
+
+Note that for replicated setups, `INSERTs` can sometimes take a considerable amount of time (in the order of one second) as it requires committing to ClickHouse Keeper for distributed consensus. Using S3 for storage also adds additional latency.
+
 ## Performance Considerations
 
 `INSERT` sorts the input data by primary key and splits them into partitions by a partition key. If you insert data into several partitions at once, it can significantly reduce the performance of the `INSERT` query. To avoid this:
@@ -230,7 +236,15 @@ Performance will not decrease if:
 - Data is added in real time.
 - You upload data that is usually sorted by time.
 
-It's also possible to asynchronously insert data in small but frequent inserts. The data from such insertions is combined into batches and then safely inserted into a table. To enable the asynchronous mode, switch on the [async_insert](../../operations/settings/settings.md#async-insert) setting. Note that asynchronous insertions are supported only over HTTP protocol, and deduplication is not supported for them.
+### Asynchronous inserts
+
+It is possible to asynchronously insert data in small but frequent inserts. The data from such insertions is combined into batches and then safely inserted into a table. To use asynchronous inserts, enable the [`async_insert`](../../operations/settings/settings.md#async-insert) setting. Note that asynchronous inserts are supported only over HTTP protocol and that deduplication is not supported for them.
+
+Using `async_insert` or the [`Buffer` table engine](/en/engines/table-engines/special/buffer) results in results in additional buffering.
+
+### Long-running inserts
+
+For long-running inserts, results will be visible after writing each [`max_insert_block_size`](/en/operations/settings/settings#max_insert_block_size) rows.
 
 **See Also**
 
