@@ -293,12 +293,14 @@ PoolWithFailoverBase<TNestedPool>::getMany(
 
     std::erase_if(try_results, [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; });
 
-    auto comparator = [&](const TryResult & left, const TryResult & right)
-    {
-        return std::forward_as_tuple(!left.is_up_to_date, left.delay)
-             < std::forward_as_tuple(!right.is_up_to_date, right.delay);
-    };
-    std::stable_sort(try_results.begin(), try_results.end(), comparator);
+    /// Sort so that preferred items are near the beginning.
+    std::stable_sort(
+            try_results.begin(), try_results.end(),
+            [](const TryResult & left, const TryResult & right)
+            {
+                return std::forward_as_tuple(!left.is_up_to_date, left.delay)
+                    < std::forward_as_tuple(!right.is_up_to_date, right.delay);
+            });
 
     if (fallback_to_stale_replicas)
     {

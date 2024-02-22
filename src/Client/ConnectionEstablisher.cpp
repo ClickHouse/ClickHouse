@@ -95,7 +95,6 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
 
             LOG_TRACE(log, "Server {} has unacceptable replica delay for table {}.{}: {}", result.entry->getDescription(), table_to_check->database, table_to_check->table, delay);
             ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
-            return;
         }
     }
     catch (const Exception & e)

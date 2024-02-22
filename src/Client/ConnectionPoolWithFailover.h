@@ -62,14 +62,13 @@ public:
 
     /// The same as getMany(), but return std::vector<TryResult>.
     std::vector<TryResult> getManyForTableFunction(const ConnectionTimeouts & timeouts,
-                                                   const Settings & settings,
-                                                   PoolMode pool_mode);
+                                                   const Settings & settings, PoolMode pool_mode);
 
     using Base = PoolWithFailoverBase<IConnectionPool>;
     using TryResult = Base::TryResult;
 
-    /// The same as getMany(), but check that:
-    /// - replication delay for table_to_check is acceptable (delay threshold is taken from settings)
+    /// The same as getMany(), but check that replication delay for table_to_check is acceptable.
+    /// Delay threshold is taken from settings.
     std::vector<TryResult> getManyChecked(
         const ConnectionTimeouts & timeouts,
         const Settings & settings,
