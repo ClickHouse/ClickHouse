@@ -46,7 +46,7 @@ namespace ErrorCodes
 
 using namespace std::chrono_literals;
 const auto MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS = 15000;
-const std::size_t POLL_TIMEOUT_WO_ASSIGNMENT_MS = 50;
+const auto POLL_TIMEOUT_WO_ASSIGNMENT = 50ms;
 const auto DRAIN_TIMEOUT_MS = 5000ms;
 
 
@@ -203,9 +203,17 @@ void KafkaConsumer2::drainConsumerQueue()
 
 void KafkaConsumer2::pollEvents()
 {
+    // POLL_TIMEOUT_WO_ASSIGNMENT_MS (50ms) is 100% enough just to check if we got assignment
+    //  (see https://github.com/ClickHouse/ClickHouse/issues/11218)
+    auto msg = consumer->poll(POLL_TIMEOUT_WO_ASSIGNMENT);
+
     // All the partition queues are detached, so the consumer shouldn't be able to poll any messages
-    auto msg = consumer->poll(10ms);
     chassert(!msg && "Consumer returned a message when it was not expected");
+
+    auto consumer_queue = consumer->get_consumer_queue();
+    // There should be events in the queue, so let's consume them all
+    while (consumer_queue.get_length() > 0)
+        consumer->poll();
 };
 
 KafkaConsumer2::TopicPartitionCounts KafkaConsumer2::getPartitionCounts() const
@@ -298,22 +306,11 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, co
     {
         stalled_status = StalledStatus::NO_MESSAGES_RETURNED;
 
-        // we already wait enough for assignment in the past,
-        // let's make polls shorter and not block other consumer
-        // which can work successfully in parallel
-        // POLL_TIMEOUT_WO_ASSIGNMENT_MS (50ms) is 100% enough just to check if we got assignment
-        //  (see https://github.com/ClickHouse/ClickHouse/issues/11218)
-        auto actual_poll_timeout_ms = (waited_for_assignment >= MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS)
-            ? std::min(POLL_TIMEOUT_WO_ASSIGNMENT_MS, poll_timeout)
-            : poll_timeout;
-
-        auto & queue_to_poll_from = queues[topic_partition];
-        queue_to_poll_from.forward_to_queue(consumer->get_consumer_queue());
-        SCOPE_EXIT({ queue_to_poll_from.disable_queue_forwarding(); });
-
+        auto & queue_to_poll_from = queues.at(topic_partition);
+        LOG_TRACE(log, "Batch size {}, offset {}", batch_size, topic_partition.offset);
         const auto messages_to_pull = message_count.value_or(batch_size);
         /// Don't drop old messages immediately, since we may need them for virtual columns.
-        auto new_messages = consumer->poll_batch(messages_to_pull, std::chrono::milliseconds(actual_poll_timeout_ms));
+        auto new_messages = queue_to_poll_from.consume_batch(messages_to_pull, std::chrono::milliseconds(poll_timeout));
 
         resetIfStopped();
         if (stalled_status == StalledStatus::CONSUMER_STOPPED)
