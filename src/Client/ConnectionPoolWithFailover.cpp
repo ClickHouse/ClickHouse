@@ -205,7 +205,8 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     UInt64 max_ignored_errors = settings.distributed_replica_max_ignored_errors.value;
     bool fallback_to_stale_replicas = settings.fallback_to_stale_replicas_for_distributed_queries.value;
 
-    return Base::getMany(min_entries, max_entries, max_tries, max_ignored_errors, fallback_to_stale_replicas, try_get_entry, priority_func, insert);
+    bool prefer_non_read_only_replica = insert && settings.distributed_insert_prefer_non_readonly_replica;
+    return Base::getMany(min_entries, max_entries, max_tries, max_ignored_errors, fallback_to_stale_replicas, try_get_entry, priority_func, prefer_non_read_only_replica);
 }
 
 ConnectionPoolWithFailover::TryResult
