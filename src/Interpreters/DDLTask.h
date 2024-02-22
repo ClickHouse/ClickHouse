@@ -76,10 +76,11 @@ struct DDLLogEntry
     static constexpr const UInt64 OPENTELEMETRY_ENABLED_VERSION = 4;
     static constexpr const UInt64 PRESERVE_INITIAL_QUERY_ID_VERSION = 5;
     static constexpr const UInt64 BACKUP_RESTORE_FLAG_IN_ZK_VERSION = 6;
+    static constexpr const UInt64 PARENT_TABLE_UUID_VERSION = 7;
     /// Add new version here
 
     /// Remember to update the value below once new version is added
-    static constexpr const UInt64 DDL_ENTRY_FORMAT_MAX_VERSION = 6;
+    static constexpr const UInt64 DDL_ENTRY_FORMAT_MAX_VERSION = 7;
 
     UInt64 version = 1;
     String query;
@@ -89,6 +90,9 @@ struct DDLLogEntry
     OpenTelemetry::TracingContext tracing_context;
     String initial_query_id;
     bool is_backup_restore = false;
+    /// If present, this entry should be executed only if table with this uuid exists.
+    /// Only for DatabaseReplicated.
+    std::optional<UUID> parent_table_uuid;
 
     void setSettingsIfRequired(ContextPtr context);
     String toString() const;
