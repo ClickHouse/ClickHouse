@@ -77,6 +77,8 @@ public:
 
     bool requiresCastCall() const;
 
+    bool receivedFromInitiatorServer() const;
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:

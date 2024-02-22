@@ -3,6 +3,7 @@
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
+#include "Analyzer/FunctionNode.h"
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -89,6 +90,23 @@ bool ConstantNode::requiresCastCall() const
     // Constant folding may lead to type transformation and literal on shard
     // may have a different type.
     return need_to_add_cast_function || source_expression != nullptr;
+}
+
+bool ConstantNode::receivedFromInitiatorServer() const
+{
+    if (!hasSourceExpression())
+        return false;
+
+    auto * cast_function = getSourceExpression()->as<FunctionNode>();
+    if (!cast_function || cast_function->getFunctionName() != "_CAST")
+        return false;
+    for (auto const & argument : cast_function->getArguments())
+    {
+        auto * constant_arg = argument->as<ConstantNode>();
+        if (!constant_arg || constant_arg->hasSourceExpression())
+            return false;
+    }
+    return true;
 }
 
 void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const

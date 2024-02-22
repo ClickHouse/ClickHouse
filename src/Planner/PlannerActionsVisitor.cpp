@@ -111,7 +111,12 @@ public:
                 else
                 {
                     if (constant_node.hasSourceExpression())
-                        result = calculateActionNodeName(constant_node.getSourceExpression());
+                    {
+                        if (constant_node.receivedFromInitiatorServer())
+                            result = calculateActionNodeNameForConstant(constant_node);
+                        else
+                            result = calculateActionNodeName(constant_node.getSourceExpression());
+                    }
                     else
                         result = calculateConstantActionNodeName(constant_node.getValue(), constant_node.getResultType());
                 }
@@ -562,7 +567,12 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         else
         {
             if (constant_node.hasSourceExpression())
-                return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
+            {
+                if (constant_node.receivedFromInitiatorServer())
+                    return calculateActionNodeNameForConstant(constant_node);
+                else
+                    return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
+            }
             else
                 return calculateConstantActionNodeName(constant_literal, constant_type);
         }
