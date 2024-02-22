@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/FunctionsFuzzer.h>
+
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
 #include <Parsers/SyncReplicaMode.h>
@@ -88,6 +90,8 @@ public:
         START_DISTRIBUTED_SENDS,
         START_THREAD_FUZZER,
         STOP_THREAD_FUZZER,
+        START_FUNCTION_FUZZER,
+        STOP_FUNCTION_FUZZER,
         UNFREEZE,
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
@@ -142,6 +146,10 @@ public:
     String schema_cache_format;
 
     String fail_point_name;
+
+    FaultFunctionType fault_function_type;
+
+    double function_fault_probability{};
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 

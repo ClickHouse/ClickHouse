@@ -270,6 +270,45 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::START_FUNCTION_FUZZER:
+        case Type::STOP_FUNCTION_FUZZER:
+        {
+            ASTPtr ast;
+            if (ParserIdentifier{}.parse(pos, ast, expected))
+            {
+                const auto & name = ast->as<ASTIdentifier &>().name();
+                auto fault_function_type = faultFunctionTypeFromString(name);
+                if (!fault_function_type)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown fault function name {}", name);
+
+                res->fault_function_type = *fault_function_type;
+            }
+            else
+            {
+                return false;
+            }
+
+            if (res->type == Type::START_FUNCTION_FUZZER)
+            {
+                if (!ParserLiteral{}.parse(pos, ast, expected))
+                    return false;
+
+                auto & value = ast->as<ASTLiteral &>().value;
+                std::optional<double> fault_probability_value;
+
+                if (value.getType() == Field::Types::Float64)
+                    fault_probability_value = value.get<Float64>();
+
+                if (!fault_probability_value || !(*fault_probability_value >= 0.0 && *fault_probability_value <= 1.0))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid fault probability value {}, expected float in range 0.0 - 1.0",
+                            ast->formatForErrorMessage());
+
+                res->function_fault_probability = *fault_probability_value;
+            }
+
+            break;
+        }
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
