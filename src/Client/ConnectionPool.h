@@ -28,7 +28,10 @@ public:
     using Entry = PoolBase<Connection>::Entry;
 
     IConnectionPool() = default;
-    IConnectionPool(String host_, UInt16 port_) : host(host_), port(port_), address(host + ":" + toString(port_)) {}
+    IConnectionPool(String host_, UInt16 port_, Priority config_priority_)
+        : host(host_), port(port_), address(host + ":" + toString(port_)), config_priority(config_priority_)
+    {
+    }
 
     virtual ~IConnectionPool() = default;
 
@@ -42,12 +45,13 @@ public:
     const std::string & getHost() const { return host; }
     UInt16 getPort() const { return port; }
     const String & getAddress() const { return address; }
-    virtual Priority getPriority() const { return Priority{1}; }
+    Priority getConfigPriority() const { return config_priority; }
 
 protected:
     const String host;
     const UInt16 port = 0;
     const String address;
+    const Priority config_priority;
 };
 
 using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
@@ -61,32 +65,31 @@ public:
     using Entry = IConnectionPool::Entry;
     using Base = PoolBase<Connection>;
 
-    ConnectionPool(unsigned max_connections_,
-            const String & host_,
-            UInt16 port_,
-            const String & default_database_,
-            const String & user_,
-            const String & password_,
-            const String & quota_key_,
-            const String & cluster_,
-            const String & cluster_secret_,
-            const String & client_name_,
-            Protocol::Compression compression_,
-            Protocol::Secure secure_,
-            Priority priority_ = Priority{1})
-       : IConnectionPool(host_, port_),
-        Base(max_connections_,
-        getLogger("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
-        default_database(default_database_),
-        user(user_),
-        password(password_),
-        quota_key(quota_key_),
-        cluster(cluster_),
-        cluster_secret(cluster_secret_),
-        client_name(client_name_),
-        compression(compression_),
-        secure(secure_),
-        priority(priority_)
+    ConnectionPool(
+        unsigned max_connections_,
+        const String & host_,
+        UInt16 port_,
+        const String & default_database_,
+        const String & user_,
+        const String & password_,
+        const String & quota_key_,
+        const String & cluster_,
+        const String & cluster_secret_,
+        const String & client_name_,
+        Protocol::Compression compression_,
+        Protocol::Secure secure_,
+        Priority config_priority_ = Priority{1})
+        : IConnectionPool(host_, port_, config_priority_)
+        , Base(max_connections_, getLogger("ConnectionPool (" + host_ + ":" + toString(port_) + ")"))
+        , default_database(default_database_)
+        , user(user_)
+        , password(password_)
+        , quota_key(quota_key_)
+        , cluster(cluster_)
+        , cluster_secret(cluster_secret_)
+        , client_name(client_name_)
+        , compression(compression_)
+        , secure(secure_)
     {
     }
 
@@ -114,11 +117,6 @@ public:
         return host + ":" + toString(port);
     }
 
-    Priority getPriority() const override
-    {
-        return priority;
-    }
-
 protected:
     /** Creates a new object to put in the pool. */
     ConnectionPtr allocObject() override
@@ -143,7 +141,6 @@ private:
     String client_name;
     Protocol::Compression compression; /// Whether to compress data when interacting with the server.
     Protocol::Secure secure;           /// Whether to encrypt data when interacting with the server.
-    Priority priority;                 /// priority from <remote_servers>
 };
 
 /**

@@ -1385,7 +1385,7 @@ const StorageS3::Configuration & StorageS3::getConfiguration()
 
 bool StorageS3::Configuration::update(const ContextPtr & context)
 {
-    auto s3_settings = context->getStorageS3Settings().getSettings(url.uri.toString());
+    auto s3_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName());
     request_settings = s3_settings.request_settings;
     request_settings.updateFromSettings(context->getSettings());
 
