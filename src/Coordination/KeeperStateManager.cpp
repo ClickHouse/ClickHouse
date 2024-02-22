@@ -247,13 +247,18 @@ KeeperStateManager::KeeperStateManager(
     , config_prefix(config_prefix_)
     , configuration_wrapper(parseServersConfiguration(config, false, keeper_context_->getCoordinationSettings()->async_replication))
     , log_store(nuraft::cs_new<KeeperLogStore>(
-          LogFileSettings{
+          LogFileSettings
+          {
               .force_sync = keeper_context_->getCoordinationSettings()->force_sync,
               .compress_logs = keeper_context_->getCoordinationSettings()->compress_logs,
               .rotate_interval = keeper_context_->getCoordinationSettings()->rotate_log_storage_interval,
               .max_size = keeper_context_->getCoordinationSettings()->max_log_file_size,
-              .overallocate_size = keeper_context_->getCoordinationSettings()->log_file_overallocate_size},
-          FlushSettings{
+              .overallocate_size = keeper_context_->getCoordinationSettings()->log_file_overallocate_size,
+              .latest_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()->latest_logs_cache_size_threshold,
+              .commit_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()->commit_logs_cache_size_threshold
+          },
+          FlushSettings
+          {
               .max_flush_batch_size = keeper_context_->getCoordinationSettings()->max_flush_batch_size,
           },
           keeper_context_))

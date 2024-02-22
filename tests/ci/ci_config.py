@@ -639,16 +639,8 @@ CI_CONFIG = CIConfig(
         Labels.CI_SET_INTEGRATION: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
-                Build.PACKAGE_ASAN,
                 Build.PACKAGE_RELEASE,
-                Build.PACKAGE_TSAN,
-                Build.PACKAGE_AARCH64,
-                JobNames.INTEGRATION_TEST_ASAN,
-                JobNames.INTEGRATION_TEST_ARM,
                 JobNames.INTEGRATION_TEST,
-                JobNames.INTEGRATION_TEST_ASAN_ANALYZER,
-                JobNames.INTEGRATION_TEST_TSAN,
-                JobNames.INTEGRATION_TEST_FLAKY,
             ]
         ),
         Labels.CI_SET_REDUCED: LabelConfig(
@@ -1139,6 +1131,7 @@ CI_CONFIG.validate()
 # checks required by Mergeable Check
 REQUIRED_CHECKS = [
     "PR Check",
+    "A Sync",  # Cloud sync
     JobNames.BUILD_CHECK,
     JobNames.BUILD_CHECK_SPECIAL,
     JobNames.DOCS_CHECK,
