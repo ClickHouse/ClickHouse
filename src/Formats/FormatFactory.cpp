@@ -64,7 +64,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.tuple_delimiter = settings.format_csv_delimiter;
     format_settings.csv.empty_as_default = settings.input_format_csv_empty_as_default;
-    format_settings.csv.default_empty_for_nullable_string = settings.input_format_csv_default_empty_for_nullable_string;
+    format_settings.csv.empty_string_is_not_null = settings.input_format_csv_empty_string_is_not_null;
     format_settings.csv.enum_as_number = settings.input_format_csv_enum_as_number;
     format_settings.csv.null_representation = settings.format_csv_null_representation;
     format_settings.csv.arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
