@@ -73,13 +73,7 @@ public:
     {
         TryResult() = default;
 
-        void reset()
-        {
-            entry = Entry();
-            is_usable = false;
-            is_up_to_date = false;
-            delay = 0;
-        }
+        void reset() { *this = {}; }
 
         Entry entry; /// use isNull() to check if connection is established
         bool is_usable = false; /// if connection is established, then can be false only with table check
