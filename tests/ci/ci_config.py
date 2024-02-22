@@ -65,9 +65,13 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_TSAN = "Stateless tests (tsan)"
     STATELESS_TEST_MSAN = "Stateless tests (msan)"
     STATELESS_TEST_UBSAN = "Stateless tests (ubsan)"
-    STATELESS_TEST_ANALYZER_RELEASE = "Stateless tests (release, analyzer)"
-    STATELESS_TEST_DB_REPL_RELEASE = "Stateless tests (release, DatabaseReplicated)"
-    STATELESS_TEST_S3_RELEASE = "Stateless tests (release, s3 storage)"
+    STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE = (
+        "Stateless tests (release, analyzer, s3, DatabaseReplicated)"
+    )
+    # merged into STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE:
+    # STATELESS_TEST_ANALYZER_RELEASE = "Stateless tests (release, analyzer)"
+    # STATELESS_TEST_DB_REPL_RELEASE = "Stateless tests (release, DatabaseReplicated)"
+    # STATELESS_TEST_S3_RELEASE = "Stateless tests (release, s3 storage)"
     STATELESS_TEST_S3_DEBUG = "Stateless tests (debug, s3 storage)"
     STATELESS_TEST_S3_TSAN = "Stateless tests (tsan, s3 storage)"
     STATELESS_TEST_FLAKY_ASAN = "Stateless tests flaky check (asan)"
@@ -968,16 +972,9 @@ CI_CONFIG = CIConfig(
         JobNames.STATELESS_TEST_AARCH64: TestConfig(
             Build.PACKAGE_AARCH64, job_config=JobConfig(**statless_test_common_params)  # type: ignore
         ),
-        JobNames.STATELESS_TEST_ANALYZER_RELEASE: TestConfig(
-            Build.PACKAGE_RELEASE, job_config=JobConfig(**statless_test_common_params)  # type: ignore
-        ),
-        JobNames.STATELESS_TEST_DB_REPL_RELEASE: TestConfig(
+        JobNames.STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE: TestConfig(
             Build.PACKAGE_RELEASE,
             job_config=JobConfig(num_batches=4, **statless_test_common_params),  # type: ignore
-        ),
-        JobNames.STATELESS_TEST_S3_RELEASE: TestConfig(
-            Build.PACKAGE_RELEASE,
-            job_config=JobConfig(num_batches=2, **statless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_S3_DEBUG: TestConfig(
             Build.PACKAGE_DEBUG,
@@ -1145,7 +1142,7 @@ REQUIRED_CHECKS = [
     JobNames.UNIT_TEST_TSAN,
     JobNames.UNIT_TEST_UBSAN,
     JobNames.INTEGRATION_TEST_ASAN_ANALYZER,
-    JobNames.STATELESS_TEST_ANALYZER_RELEASE,
+    JobNames.STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE,
 ]
 
 

@@ -391,28 +391,12 @@ jobs:
       test_name: Stateless tests (release)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestReleaseDatabaseReplicated:
+  FunctionalStatelessTestReleaseAnalyzerS3Replicated:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Stateless tests (release, DatabaseReplicated)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestReleaseAnalyzer:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (release, analyzer)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestReleaseS3:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (release, s3 storage)
+      test_name: Stateless tests (release, analyzer, s3, DatabaseReplicated)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestS3Debug:
@@ -890,8 +874,6 @@ jobs:
       - TestsBugfixCheck
       - FunctionalStatelessTestDebug
       - FunctionalStatelessTestRelease
-      - FunctionalStatelessTestReleaseDatabaseReplicated
-      - FunctionalStatelessTestReleaseAnalyzer
       - FunctionalStatelessTestAarch64
       - FunctionalStatelessTestAsan
       - FunctionalStatelessTestTsan
@@ -904,9 +886,9 @@ jobs:
       - FunctionalStatefulTestTsan
       - FunctionalStatefulTestMsan
       - FunctionalStatefulTestUBsan
-      - FunctionalStatelessTestReleaseS3
       - FunctionalStatelessTestS3Debug
       - FunctionalStatelessTestS3Tsan
+      - FunctionalStatelessTestReleaseAnalyzerS3Replicated
       - FunctionalStatefulTestReleaseParallelReplicas
       - FunctionalStatefulTestAsanParallelReplicas
       - FunctionalStatefulTestTsanParallelReplicas
