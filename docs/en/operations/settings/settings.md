@@ -2817,6 +2817,17 @@ Possible values:
 
 Default value: 0.
 
+## distributed_insert_replicas_preferences {#distributed_insert_replicas_preferences}
+
+Adds ability to change replica preferences for INSERT queries.
+
+Possible values:
+
+- `no_preferences` - no preferences
+- `prefer_non_read_only` - prefer non read-only replicas for INSERT into Distributed (but note, that they will not be excluded completely, so if you have only read-only replicas it will still try to INSERT into them, with respect to `distributed_replica_max_ignored_errors`).
+
+Default value: `prefer_non_read_only`
+
 ## distributed_foreground_insert {#distributed_foreground_insert}
 
 Enables or disables synchronous data insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table.
