@@ -54,7 +54,7 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context) override;
 
-    const String & engine_name;
+    const String engine_name;
     const Storage::ConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     NamesAndTypesList virtual_columns;
