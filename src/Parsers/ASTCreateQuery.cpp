@@ -2,6 +2,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Common/quoteString.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
@@ -337,12 +338,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
                           << quoteString(toString(uuid));
         formatOnCluster(settings);
-    }
-
-    if (refresh_strategy)
-    {
-        settings.ostr << settings.nl_or_ws;
-        refresh_strategy->formatImpl(settings, state, frame);
     }
 
     if (to_table_id)

@@ -79,14 +79,6 @@ if (ENABLE_NLP)
     list (APPEND PRIVATE_LIBS ch_contrib::cld2)
 endif()
 
-if (TARGET ch_contrib::sqids)
-    list (APPEND PRIVATE_LIBS ch_contrib::sqids)
-endif()
-
-if (TARGET ch_contrib::idna)
-    list (APPEND PRIVATE_LIBS ch_contrib::idna)
-endif()
-
 if (TARGET ch_contrib::h3)
     list (APPEND PRIVATE_LIBS ch_contrib::h3)
 endif()
@@ -101,10 +93,6 @@ endif()
 
 if (TARGET ch_contrib::rapidjson)
     list (APPEND PRIVATE_LIBS ch_contrib::rapidjson)
-endif()
-
-if (TARGET ch_contrib::pocketfft)
-    list (APPEND PRIVATE_LIBS ch_contrib::pocketfft)
 endif()
 
 if (TARGET ch_contrib::crc32-vpmsum)

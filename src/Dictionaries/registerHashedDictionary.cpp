@@ -50,7 +50,7 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         const std::string dictionary_layout_prefix = ".layout." + dictionary_layout_name;
         const bool preallocate = config.getBool(config_prefix + dictionary_layout_prefix + ".preallocate", false);
         if (preallocate)
-            LOG_WARNING(getLogger("HashedDictionary"), "'prellocate' attribute is obsolete, consider looking at 'shards'");
+            LOG_WARNING(&Poco::Logger::get("HashedDictionary"), "'prellocate' attribute is obsolete, consider looking at 'shards'");
 
         Int64 shards = config.getInt(config_prefix + dictionary_layout_prefix + ".shards", 1);
         if (shards <= 0 || shards > 128)

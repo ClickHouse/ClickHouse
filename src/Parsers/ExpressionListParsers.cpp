@@ -225,7 +225,8 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
     select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
 
-    auto new_subquery = std::make_shared<ASTSubquery>(std::move(select_with_union_query));
+    auto new_subquery = std::make_shared<ASTSubquery>();
+    new_subquery->children.push_back(select_with_union_query);
     ast->children[0]->children.back() = std::move(new_subquery);
 
     return true;
@@ -467,8 +468,7 @@ enum class OperatorType
     StartIf,
     FinishIf,
     Cast,
-    Lambda,
-    Not
+    Lambda
 };
 
 /** Operator struct stores parameters of the operator:
@@ -1581,7 +1581,8 @@ public:
         if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             return false;
 
-        auto subquery = std::make_shared<ASTSubquery>(std::move(node));
+        auto subquery = std::make_shared<ASTSubquery>();
+        subquery->children.push_back(std::move(node));
         elements = {makeASTFunction("exists", subquery)};
 
         finished = true;
@@ -2419,7 +2420,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
 
 const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
 {
-    {"NOT",           Operator("not",             5,  1, OperatorType::Not)},
+    {"NOT",           Operator("not",             5,  1)},
     {"-",             Operator("negate",          13, 1)},
     {"−",             Operator("negate",          13, 1)}
 };
@@ -2591,16 +2592,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (cur_op != unary_operators_table.end())
     {
-        if (cur_op->second.type == OperatorType::Not && pos->type == TokenType::OpeningRoundBracket)
-        {
-            ++pos;
-            auto identifier = std::make_shared<ASTIdentifier>(cur_op->second.function_name);
-            layers.push_back(getFunctionLayer(identifier, layers.front()->is_table_function));
-        }
-        else
-        {
-            layers.back()->pushOperator(cur_op->second);
-        }
+        layers.back()->pushOperator(cur_op->second);
         return Action::OPERAND;
     }
 

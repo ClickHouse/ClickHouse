@@ -929,7 +929,7 @@ ZooKeeperRequest::~ZooKeeperRequest()
     constexpr UInt64 max_request_time_ns = 1000000000ULL; /// 1 sec
     if (max_request_time_ns < elapsed_ns)
     {
-        LOG_TEST(getLogger(__PRETTY_FUNCTION__), "Processing of request xid={} took {} ms", xid, elapsed_ns / 1000000UL);
+        LOG_TEST(&Poco::Logger::get(__PRETTY_FUNCTION__), "Processing of request xid={} took {} ms", xid, elapsed_ns / 1000000UL);
     }
 }
 
@@ -950,7 +950,7 @@ ZooKeeperResponse::~ZooKeeperResponse()
     constexpr UInt64 max_request_time_ns = 1000000000ULL; /// 1 sec
     if (max_request_time_ns < elapsed_ns)
     {
-        LOG_TEST(getLogger(__PRETTY_FUNCTION__), "Processing of response xid={} took {} ms", xid, elapsed_ns / 1000000UL);
+        LOG_TEST(&Poco::Logger::get(__PRETTY_FUNCTION__), "Processing of response xid={} took {} ms", xid, elapsed_ns / 1000000UL);
     }
 }
 

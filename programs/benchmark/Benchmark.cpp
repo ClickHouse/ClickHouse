@@ -35,6 +35,7 @@
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
+#include <filesystem>
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -404,7 +405,7 @@ private:
             || sigaddset(&sig_set, SIGINT)
             || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
         {
-            throw ErrnoException(ErrorCodes::CANNOT_BLOCK_SIGNAL, "Cannot block signal");
+            throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
         }
 
         while (true)
@@ -640,8 +641,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
             std::cout << desc << "\n";
-            std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-benchmark/\n";
-            return 0;
+            return 1;
         }
 
         print_stacktrace = options.count("stacktrace");

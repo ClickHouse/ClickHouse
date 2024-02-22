@@ -66,7 +66,7 @@ static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 2;
 static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 
 MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_)
-    : data(data_), log(getLogger(data.getLogName() + " (MergerMutator)"))
+    : data(data_), log(&Poco::Logger::get(data.getLogName() + " (MergerMutator)"))
 {
 }
 
@@ -85,7 +85,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t max_coun
     if (scheduled_tasks_count > max_count)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Invalid argument passed to getMaxSourcePartsSize: scheduled_tasks_count = {} > max_count = {}",
+            "Logical error: invalid argument passed to getMaxSourcePartsSize: scheduled_tasks_count = {} > max_count = {}",
             scheduled_tasks_count, max_count);
     }
 
@@ -239,8 +239,8 @@ MergeTreeDataMergerMutator::PartitionIdsHint MergeTreeDataMergerMutator::getPart
     if (!best_partition_id_to_optimize.empty())
         res.emplace(std::move(best_partition_id_to_optimize));
 
-    LOG_TRACE(log, "Checked {} partitions, found {} partitions with parts that may be merged: [{}] "
-              "(max_total_size_to_merge={}, merge_with_ttl_allowed={})",
+    LOG_TRACE(log, "Checked {} partitions, found {} partitions with parts that may be merged: [{}]"
+              "(max_total_size_to_merge={}, merge_with_ttl_allowed{})",
               all_partition_ids.size(), res.size(), fmt::join(res, ", "), max_total_size_to_merge, merge_with_ttl_allowed);
     return res;
 }
@@ -511,7 +511,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 
         /// Do not allow to "merge" part with itself for regular merges, unless it is a TTL-merge where it is ok to remove some values with expired ttl
         if (parts_to_merge.size() == 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge selector returned only one part to merge");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: merge selector returned only one part to merge");
 
         if (parts_to_merge.empty())
         {

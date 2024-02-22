@@ -120,7 +120,7 @@ ThreadGroupPtr ThreadGroup::createForBackgroundProcess(ContextPtr storage_contex
 
 void ThreadGroup::attachQueryForLog(const String & query_, UInt64 normalized_hash)
 {
-    auto hash = normalized_hash ? normalized_hash : normalizedQueryHash(query_, false);
+    auto hash = normalized_hash ? normalized_hash : normalizedQueryHash<false>(query_);
 
     std::lock_guard lock(mutex);
     shared_data.query_for_logs = query_;
@@ -130,7 +130,7 @@ void ThreadGroup::attachQueryForLog(const String & query_, UInt64 normalized_has
 void ThreadStatus::attachQueryForLog(const String & query_)
 {
     local_data.query_for_logs = query_;
-    local_data.normalized_query_hash = normalizedQueryHash(query_, false);
+    local_data.normalized_query_hash = normalizedQueryHash<false>(query_);
 
     if (!thread_group)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No thread group attached to the thread {}", thread_id);
@@ -221,7 +221,7 @@ void ThreadStatus::applyQuerySettings()
         LOG_TRACE(log, "Setting nice to {}", new_os_thread_priority);
 
         if (0 != setpriority(PRIO_PROCESS, static_cast<unsigned>(thread_id), new_os_thread_priority))
-            throw ErrnoException(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, "Cannot 'setpriority'");
+            throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
 
         os_thread_priority = new_os_thread_priority;
     }
@@ -546,7 +546,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
 static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 {
     String res = serializeAST(*q);
-    if (auto masker = SensitiveDataMasker::getInstance())
+    if (auto * masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);
 
     res = res.substr(0, context->getSettingsRef().log_queries_cut_to_length);

@@ -4,7 +4,6 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
-#include <Common/FailPoint.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryCache.h>
@@ -37,9 +36,6 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/toOneLineQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/PRQL/ParserPRQLQuery.h>
-#include <Parsers/Kusto/parseKQLQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -80,6 +76,10 @@
 #include <memory>
 #include <random>
 
+#include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/PRQL/ParserPRQLQuery.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
+
 namespace ProfileEvents
 {
     extern const Event FailedQuery;
@@ -103,13 +103,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int INCORRECT_DATA;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
-namespace FailPoints
-{
-    extern const char execute_query_calling_empty_set_result_func_on_exception[];
-}
 
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 {
@@ -125,7 +120,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
 {
     if (internal)
     {
-        LOG_DEBUG(getLogger("executeQuery"), "(internal) {} (stage: {})", toOneLineQuery(query), QueryProcessingStage::toString(stage));
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(internal) {} (stage: {})", toOneLineQuery(query), QueryProcessingStage::toString(stage));
     }
     else
     {
@@ -148,7 +143,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
         if (auto txn = context->getCurrentTransaction())
             transaction_info = fmt::format(" (TID: {}, TIDH: {})", txn->tid, txn->tid.getHash());
 
-        LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{} {} (stage: {})",
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}){}{} {} (stage: {})",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
@@ -159,7 +154,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
 
         if (client_info.client_trace_context.trace_id != UUID())
         {
-            LOG_TRACE(getLogger("executeQuery"),
+            LOG_TRACE(&Poco::Logger::get("executeQuery"),
                 "OpenTelemetry traceparent '{}'",
                 client_info.client_trace_context.composeTraceparentHeader());
         }
@@ -213,9 +208,9 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
             elem.stack_trace);
 
     if (log_error)
-        LOG_ERROR(getLogger("executeQuery"), message);
+        LOG_ERROR(&Poco::Logger::get("executeQuery"), message);
     else
-        LOG_INFO(getLogger("executeQuery"), message);
+        LOG_INFO(&Poco::Logger::get("executeQuery"), message);
 }
 
 static void
@@ -263,7 +258,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
     element.query_views.insert(access_info.views.begin(), access_info.views.end());
 
-    const auto factories_info = context_ptr->getQueryFactoriesInfo();
+    const auto & factories_info = context_ptr->getQueryFactoriesInfo();
     element.used_aggregate_functions = factories_info.aggregate_functions;
     element.used_aggregate_function_combinators = factories_info.aggregate_function_combinators;
     element.used_database_engines = factories_info.database_engines;
@@ -304,7 +299,7 @@ QueryLogElement logQueryStart(
     elem.query = query_for_logging;
     if (settings.log_formatted_queries)
         elem.formatted_query = queryToString(query_ast);
-    elem.normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+    elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
     elem.query_kind = query_ast->getQueryKind();
 
     elem.client_info = context->getClientInfo();
@@ -402,7 +397,7 @@ void logQueryFinish(
             double elapsed_seconds = static_cast<double>(info.elapsed_microseconds) / 1000000.0;
             double rows_per_second = static_cast<double>(elem.read_rows) / elapsed_seconds;
             LOG_DEBUG(
-                getLogger("executeQuery"),
+                &Poco::Logger::get("executeQuery"),
                 "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
                 elem.read_rows,
                 ReadableSize(elem.read_bytes),
@@ -578,7 +573,7 @@ void logExceptionBeforeStart(
 
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
-    elem.normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+    elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
 
     // Log query_kind if ast is valid
     if (ast)
@@ -666,7 +661,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     /// we still have enough span logs for the execution of external queries.
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span = internal ? nullptr : std::make_shared<OpenTelemetry::SpanHolder>("query");
     if (query_span && query_span->trace_id != UUID{})
-        LOG_TRACE(getLogger("executeQuery"), "Query span trace_id for opentelemetry log: {}", query_span->trace_id);
+        LOG_TRACE(&Poco::Logger::get("executeQuery"), "Query span trace_id for opentelemetry log: {}", query_span->trace_id);
 
     /// Used for logging query start time in system.query_log
     auto query_start_time = std::chrono::system_clock::now();
@@ -709,7 +704,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     {
         if (settings.dialect == Dialect::kusto && !internal)
         {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Kusto dialect is disabled until these two bugs will be fixed: https://github.com/ClickHouse/ClickHouse/issues/59037 and https://github.com/ClickHouse/ClickHouse/issues/59036");
+            ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
+
+            /// TODO: parser should fail early when max_query_size limit is reached.
+            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
         else if (settings.dialect == Dialect::prql && !internal)
         {
@@ -721,27 +719,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
-
-#if 0
-            /// Verify that AST formatting is consistent:
-            /// If you format AST, parse it back, and format it again, you get the same string.
-
-            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true);
-
-            ASTPtr ast2 = parseQuery(parser,
-                formatted1.data(),
-                formatted1.data() + formatted1.size(),
-                "", max_query_size, settings.max_parser_depth);
-
-            chassert(ast2);
-
-            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true);
-
-            if (formatted1 != formatted2)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Inconsistent AST formatting: the query:\n{}\nWas parsed and formatted back as:\n{}",
-                    formatted1, formatted2);
-#endif
         }
 
         const char * query_end = end;
@@ -943,7 +920,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         bool async_insert = false;
         auto * queue = context->getAsynchronousInsertQueue();
-        auto logger = getLogger("executeQuery");
+        auto * logger = &Poco::Logger::get("executeQuery");
 
         if (insert_query && async_insert_enabled)
         {
@@ -1028,7 +1005,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (can_use_query_cache && settings.enable_reads_from_query_cache)
                 {
-                    QueryCache::Key key(ast, context->getUserID(), context->getCurrentRoles());
+                    QueryCache::Key key(ast, context->getUserName());
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1061,7 +1038,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     }
                 }
 
-                interpreter = InterpreterFactory::instance().get(ast, context, SelectQueryOptions(stage).setInternal(internal));
+                interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
                 const auto & query_settings = context->getSettingsRef();
                 if (context->getCurrentTransaction() && query_settings.throw_on_unsupported_query_inside_transaction)
@@ -1141,15 +1118,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         {
                             QueryCache::Key key(
                                 ast, res.pipeline.getHeader(),
-                                context->getUserID(), context->getCurrentRoles(),
-                                settings.query_cache_share_between_users,
+                                context->getUserName(), settings.query_cache_share_between_users,
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
                                 settings.query_cache_compress_entries);
 
                             const size_t num_query_runs = query_cache->recordQueryRun(key);
                             if (num_query_runs <= settings.query_cache_min_query_runs)
                             {
-                                LOG_TRACE(getLogger("QueryCache"),
+                                LOG_TRACE(&Poco::Logger::get("QueryCache"),
                                         "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
                                         num_query_runs, settings.query_cache_min_query_runs);
                             }
@@ -1385,7 +1361,7 @@ void executeQuery(
     BlockIO streams;
     OutputFormatPtr output_format;
 
-    auto update_format_on_exception_if_needed = [&]()
+    auto update_format_for_exception_if_needed = [&]()
     {
         if (!output_format)
         {
@@ -1398,26 +1374,14 @@ void executeQuery(
                     /// Force an update of the headers before we start writing
                     result_details.content_type = output_format->getContentType();
                     result_details.format = format_name;
-
-                    fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception, {
-                        // it will throw std::bad_function_call
-                        set_result_details = nullptr;
-                        set_result_details(result_details);
-                    });
-
-                    if (set_result_details)
-                    {
-                        /// reset set_result_details func to avoid calling in SCOPE_EXIT()
-                        auto set_result_details_copy = set_result_details;
-                        set_result_details = nullptr;
-                        set_result_details_copy(result_details);
-                    }
+                    set_result_details(result_details);
+                    set_result_details = nullptr;
                 }
             }
             catch (const DB::Exception & e)
             {
                 /// Ignore this exception and report the original one
-                LOG_WARNING(getLogger("executeQuery"), getExceptionMessageAndPattern(e, true));
+                LOG_WARNING(&Poco::Logger::get("executeQuery"), getExceptionMessageAndPattern(e, true));
             }
         }
     };
@@ -1430,7 +1394,7 @@ void executeQuery(
     {
         if (handle_exception_in_output_format)
         {
-            update_format_on_exception_if_needed();
+            update_format_for_exception_if_needed();
             if (output_format)
                 handle_exception_in_output_format(*output_format);
         }
@@ -1465,12 +1429,11 @@ void executeQuery(
                     const auto & compression_method_node = ast_query_with_output->compression->as<ASTLiteral &>();
                     compression_method = compression_method_node.value.safeGet<std::string>();
                 }
-                const auto & settings = context->getSettingsRef();
+
                 compressed_buffer = wrapWriteBufferWithCompressionMethod(
                     std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
                     chooseCompressionMethod(out_file, compression_method),
-                    /* compression level = */ static_cast<int>(settings.output_format_compression_level),
-                    /* zstd_window_log = */ static_cast<int>(settings.output_format_compression_zstd_window_log)
+                    /* compression level = */ 3
                 );
             }
 
@@ -1531,17 +1494,13 @@ void executeQuery(
     }
     catch (...)
     {
-        /// first execute on exception callback, it includes updating query_log
-        /// otherwise closing record ('ExceptionWhileProcessing') can be not appended in query_log
-        /// due to possible exceptions in functions called below (passed as parameter here)
-        streams.onException();
-
         if (handle_exception_in_output_format)
         {
-            update_format_on_exception_if_needed();
+            update_format_for_exception_if_needed();
             if (output_format)
                 handle_exception_in_output_format(*output_format);
         }
+        streams.onException();
         throw;
     }
 

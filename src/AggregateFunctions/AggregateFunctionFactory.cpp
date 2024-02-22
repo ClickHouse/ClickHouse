@@ -51,10 +51,10 @@ void AggregateFunctionFactory::registerFunction(const String & name, Value creat
 void AggregateFunctionFactory::registerNullsActionTransformation(const String & source_ignores_nulls, const String & target_respect_nulls)
 {
     if (!aggregate_functions.contains(source_ignores_nulls))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Source aggregation '{}' not found", source_ignores_nulls);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Source aggregation '{}' not found");
 
     if (!aggregate_functions.contains(target_respect_nulls))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Target aggregation '{}' not found", target_respect_nulls);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Target aggregation '{}' not found");
 
     if (!respect_nulls.emplace(source_ignores_nulls, target_respect_nulls).second)
         throw Exception(
@@ -100,7 +100,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     {
         AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
         if (!combinator)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find aggregate function combinator "
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: cannot find aggregate function combinator "
                             "to apply a function to Nullable arguments.");
 
         DataTypes nested_types = combinator->transformArguments(types_without_low_cardinality);
@@ -123,7 +123,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     auto with_original_arguments = getImpl(name, action, types_without_low_cardinality, parameters, out_properties, false);
 
     if (!with_original_arguments)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory returned nullptr");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: AggregateFunctionFactory returned nullptr");
     return with_original_arguments;
 }
 

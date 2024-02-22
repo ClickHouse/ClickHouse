@@ -39,7 +39,6 @@ struct MutationCommand
         MATERIALIZE_TTL,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
-        APPLY_DELETED_MASK,
         ALTER_WITHOUT_MUTATION, /// pure metadata command, currently unusned
     };
 

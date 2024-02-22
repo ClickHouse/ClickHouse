@@ -1256,7 +1256,7 @@ class S3URI:
         host = parsed_url.netloc
         if host.find(".s3") == -1:
             return False
-        self.bucket, new_host = host.split(".s3", maxsplit=1)
+        self.bucket, new_host = path.split(".s3", maxsplit=1)
         if len(self.bucket) < 3:
             return False
         new_host = "s3" + new_host

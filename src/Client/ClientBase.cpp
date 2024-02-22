@@ -318,14 +318,14 @@ void ClientBase::setupSignalHandler()
     sigemptyset(&new_act.sa_mask);
 #else
     if (sigemptyset(&new_act.sa_mask))
-        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
+        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 #endif
 
     if (sigaction(SIGINT, &new_act, nullptr))
-        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
+        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
     if (sigaction(SIGQUIT, &new_act, nullptr))
-        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
+        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 }
 
 
@@ -543,16 +543,16 @@ try
         if (!pager.empty())
         {
             if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
-                throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
+                throwFromErrno("Cannot set signal handler for SIGPIPE.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
             /// We need to reset signals that had been installed in the
             /// setupSignalHandler() since terminal will send signals to both
             /// processes and so signals will be delivered to the
             /// clickhouse-client/local as well, which will be terminated when
             /// signal will be delivered second time.
             if (SIG_ERR == signal(SIGINT, SIG_IGN))
-                throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGINT");
+                throwFromErrno("Cannot set signal handler for SIGINT.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
             if (SIG_ERR == signal(SIGQUIT, SIG_IGN))
-                throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
+                throwFromErrno("Cannot set signal handler for SIGQUIT.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
             ShellCommand::Config config(pager);
             config.pipe_stdin_only = true;
@@ -632,9 +632,9 @@ try
             }
             else if (query_with_output->out_file)
             {
-                auto format_name = FormatFactory::instance().tryGetFormatFromFileName(out_file);
-                if (format_name)
-                    current_format = *format_name;
+                const auto & format_name = FormatFactory::instance().getFormatFromFileName(out_file);
+                if (!format_name.empty())
+                    current_format = format_name;
             }
         }
 
@@ -1306,11 +1306,11 @@ void ClientBase::resetOutput()
         pager_cmd->wait();
 
         if (SIG_ERR == signal(SIGPIPE, SIG_DFL))
-            throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
+            throwFromErrno("Cannot set signal handler for SIIGPIEP.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
         if (SIG_ERR == signal(SIGINT, SIG_DFL))
-            throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGINT");
+            throwFromErrno("Cannot set signal handler for SIGINT.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
         if (SIG_ERR == signal(SIGQUIT, SIG_DFL))
-            throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
+            throwFromErrno("Cannot set signal handler for SIGQUIT.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
         setupSignalHandler();
     }
@@ -1508,7 +1508,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
         String current_format = parsed_insert_query->format;
         if (current_format.empty())
-            current_format = FormatFactory::instance().getFormatFromFileName(in_file);
+            current_format = FormatFactory::instance().getFormatFromFileName(in_file, true);
 
         /// Create temporary storage file, to support globs and parallel reading
         /// StorageFile doesn't support ephemeral/materialized/alias columns.

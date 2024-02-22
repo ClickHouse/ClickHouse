@@ -18,7 +18,7 @@
 namespace DB
 {
 
-ColumnsDescription TransactionsInfoLogElement::getColumnsDescription()
+NamesAndTypesList TransactionsInfoLogElement::getNamesAndTypes()
 {
     auto type_enum = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -32,7 +32,7 @@ ColumnsDescription TransactionsInfoLogElement::getColumnsDescription()
             {"UnlockPart",      static_cast<Int8>(UNLOCK_PART)},
         });
 
-    return ColumnsDescription
+    return
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"type", std::move(type_enum)},
@@ -92,7 +92,7 @@ void TransactionsInfoLogElement::appendToBlock(MutableColumns & columns) const
 }
 
 
-void tryWriteEventToSystemLog(LoggerPtr log,
+void tryWriteEventToSystemLog(Poco::Logger * log,
                               TransactionsInfoLogElement::Type type, const TransactionID & tid,
                               const TransactionInfoContext & context)
 try

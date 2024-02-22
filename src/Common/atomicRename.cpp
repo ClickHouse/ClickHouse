@@ -87,12 +87,10 @@ static bool renameat2(const std::string & old_path, const std::string & new_path
         return false;
 
     if (errno == EEXIST)
-        throw ErrnoException(
-            ErrorCodes::ATOMIC_RENAME_FAIL, "Cannot rename {} to {} because the second path already exists", old_path, new_path);
+        throwFromErrno(fmt::format("Cannot rename {} to {} because the second path already exists", old_path, new_path), ErrorCodes::ATOMIC_RENAME_FAIL);
     if (errno == ENOENT)
-        throw ErrnoException(
-            ErrorCodes::ATOMIC_RENAME_FAIL, "Paths cannot be exchanged because {} or {} does not exist", old_path, new_path);
-    ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, new_path, "Cannot rename {} to {}", old_path, new_path);
+        throwFromErrno(fmt::format("Paths cannot be exchanged because {} or {} does not exist", old_path, new_path), ErrorCodes::ATOMIC_RENAME_FAIL);
+    throwFromErrnoWithPath(fmt::format("Cannot rename {} to {}", old_path, new_path), new_path, ErrorCodes::SYSTEM_ERROR);
 }
 
 bool supportsAtomicRename()
@@ -141,12 +139,11 @@ static bool renameat2(const std::string & old_path, const std::string & new_path
     if (errnum == ENOTSUP || errnum == EINVAL)
         return false;
     if (errnum == EEXIST)
-        throw ErrnoException(
-            ErrorCodes::ATOMIC_RENAME_FAIL, "Cannot rename {} to {} because the second path already exists", old_path, new_path);
+        throwFromErrno(fmt::format("Cannot rename {} to {} because the second path already exists", old_path, new_path), ErrorCodes::ATOMIC_RENAME_FAIL);
     if (errnum == ENOENT)
-        throw ErrnoException(
-            ErrorCodes::ATOMIC_RENAME_FAIL, "Paths cannot be exchanged because {} or {} does not exist", old_path, new_path);
-    ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, new_path, "Cannot rename {} to {}", old_path, new_path);
+        throwFromErrno(fmt::format("Paths cannot be exchanged because {} or {} does not exist", old_path, new_path), ErrorCodes::ATOMIC_RENAME_FAIL);
+    throwFromErrnoWithPath(
+        fmt::format("Cannot rename {} to {}: {}", old_path, new_path, strerror(errnum)), new_path, ErrorCodes::SYSTEM_ERROR);
 }
 
 

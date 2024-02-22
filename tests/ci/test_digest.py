@@ -5,7 +5,6 @@ from hashlib import md5
 from pathlib import Path
 
 import digest_helper as dh
-from env_helper import ROOT_DIR
 
 _12 = b"12\n"
 _13 = b"13\n"
@@ -14,7 +13,7 @@ _14 = b"14\n"
 
 # pylint:disable=protected-access
 class TestDigests(unittest.TestCase):
-    tests_dir = Path(ROOT_DIR) / "tests/ci/tests/digests"
+    tests_dir = Path("tests/digests")
     broken_link = tests_dir / "broken-symlink"
     empty_digest = "d41d8cd98f00b204e9800998ecf8427e"
 
@@ -37,6 +36,35 @@ class TestDigests(unittest.TestCase):
         # symlink to '12\n'
         hash_tested = md5()
         dh._digest_file(self.tests_dir / "symlink-12", hash_tested)
+        self.assertEqual(hash_expected.digest(), hash_tested.digest())
+
+    def test__digest_directory(self):
+        hash_tested = md5()
+        with self.assertRaises(
+            AssertionError, msg="_digest_directory shouldn't work with files"
+        ):
+            dh._digest_directory(self.tests_dir / "12", hash_tested)
+        with self.assertRaises(
+            AssertionError, msg="_digest_directory shouldn't work with broken links"
+        ):
+            dh._digest_file(self.broken_link, hash_tested)
+
+        # dir1
+        hash_expected = md5()
+        hash_expected.update(_12 + _14)
+        dh._digest_directory(self.tests_dir / "dir1", hash_tested)
+        self.assertEqual(hash_expected.digest(), hash_tested.digest())
+
+        # dir2 contains 12 and 13
+        hash_expected = md5()
+        hash_expected.update(_12 + _13)
+        hash_tested = md5()
+        dh._digest_directory(self.tests_dir / "dir2", hash_tested)
+        self.assertEqual(hash_expected.digest(), hash_tested.digest())
+
+        # dir3 is symlink to dir2
+        hash_tested = md5()
+        dh._digest_directory(self.tests_dir / "dir3", hash_tested)
         self.assertEqual(hash_expected.digest(), hash_tested.digest())
 
     def test_digest_path(self):
@@ -77,7 +105,7 @@ class TestDigests(unittest.TestCase):
         hash_expected = md5()
         hash_expected.update(_12 * 2 + _14 + (_12 + _13) * 2 + _12)
         self.assertEqual(
-            hash_expected.hexdigest(), dh.digest_path(self.tests_dir).hexdigest()
+            hash_expected.digest(), dh.digest_path(self.tests_dir).digest()
         )
 
     def test_digest_paths(self):
@@ -91,9 +119,19 @@ class TestDigests(unittest.TestCase):
         hash_unordered = dh.digest_paths(
             (self.tests_dir / d for d in ("dir3", "dir1", "dir2"))
         )
-        self.assertEqual(hash_ordered.digest(), hash_unordered.digest())
+        self.assertNotEqual(hash_ordered.digest(), hash_unordered.digest())
+        self.assertNotEqual(hash_ordered.digest(), hash_reversed.digest())
+        self.assertNotEqual(hash_unordered.digest(), hash_reversed.digest())
+
+    def test_digest_consistent_paths(self):
+        # test paths order does not matter
+        hash_ordered = dh.digest_consistent_paths(
+            (self.tests_dir / d for d in ("dir1", "dir2", "dir3"))
+        )
+        hash_reversed = dh.digest_consistent_paths(
+            (self.tests_dir / d for d in ("dir3", "dir2", "dir1"))
+        )
         self.assertEqual(hash_ordered.digest(), hash_reversed.digest())
-        self.assertEqual(hash_unordered.digest(), hash_reversed.digest())
 
     @classmethod
     def setUpClass(cls):

@@ -27,7 +27,7 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     bool use_external_buffer_,
     size_t read_until_position_)
     : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0)
-    , log(getLogger("ReadBufferFromWebServer"))
+    , log(&Poco::Logger::get("ReadBufferFromWebServer"))
     , context(context_)
     , url(url_)
     , buf_size(settings_.remote_fs_buffer_size)
@@ -54,17 +54,18 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
     }
 
     const auto & settings = context->getSettingsRef();
-    const auto & server_settings = context->getServerSettings();
-
-    auto connection_timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, server_settings.keep_alive_timeout);
-    connection_timeouts.withConnectionTimeout(std::max<Poco::Timespan>(settings.http_connection_timeout, Poco::Timespan(20, 0)));
-    connection_timeouts.withReceiveTimeout(std::max<Poco::Timespan>(settings.http_receive_timeout, Poco::Timespan(20, 0)));
+    const auto & config = context->getConfigRef();
+    Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0};
 
     auto res = std::make_unique<ReadWriteBufferFromHTTP>(
         uri,
         Poco::Net::HTTPRequest::HTTP_GET,
         ReadWriteBufferFromHTTP::OutStreamCallback(),
-        connection_timeouts,
+        ConnectionTimeouts(std::max(Poco::Timespan(settings.http_connection_timeout.totalSeconds(), 0), Poco::Timespan(20, 0)),
+                           settings.http_send_timeout,
+                           std::max(Poco::Timespan(settings.http_receive_timeout.totalSeconds(), 0), Poco::Timespan(20, 0)),
+                           settings.tcp_keep_alive_timeout,
+                           http_keep_alive_timeout),
         credentials,
         0,
         buf_size,

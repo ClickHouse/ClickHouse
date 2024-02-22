@@ -67,6 +67,12 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     bool supportsParallelInsert() const override { return true; }
+    bool supportsIndexForIn() const override { return true; }
+    bool mayBenefitFromIndexForIn(
+        const ASTPtr & node, ContextPtr /*query_context*/, const StorageMetadataPtr & /*metadata_snapshot*/) const override
+    {
+        return node->getColumnName() == primary_key;
+    }
     bool supportsDelete() const override { return true; }
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -146,7 +152,7 @@ private:
     mutable std::mutex init_mutex;
     mutable std::optional<bool> table_is_valid;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

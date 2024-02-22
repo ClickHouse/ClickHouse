@@ -20,7 +20,6 @@
 #include <Parsers/ParserProjectionSelectQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Parsers/ParserRefreshStrategy.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTColumnDeclaration.h>
 
@@ -684,7 +683,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->database = table_id->getDatabase();
         query->table = table_id->getTable();
         query->uuid = table_id->uuid;
-        query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
 
         if (query->database)
             query->children.push_back(query->database);
@@ -784,7 +782,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->database = table_id->getDatabase();
     query->table = table_id->getTable();
     query->uuid = table_id->uuid;
-    query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
     query->cluster = cluster_str;
 
     if (query->database)
@@ -1393,7 +1390,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ASTPtr as_database;
     ASTPtr as_table;
     ASTPtr select;
-    ASTPtr refresh_strategy;
 
     String cluster_str;
     bool attach = false;
@@ -1440,15 +1436,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
-    if (ParserKeyword{"REFRESH"}.ignore(pos, expected))
-    {
-        // REFRESH only with materialized views
-        if (!is_materialized_view)
-            return false;
-        if (!ParserRefreshStrategy{}.parse(pos, refresh_strategy, expected))
-            return false;
-    }
-
     if (is_materialized_view && ParserKeyword{"TO INNER UUID"}.ignore(pos, expected))
     {
         ParserStringLiteral literal_p;
@@ -1472,42 +1459,34 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
-    if (is_materialized_view)
+    if (is_materialized_view && !to_table)
     {
-        if (!to_table)
-        {
-            /// Internal ENGINE for MATERIALIZED VIEW must be specified.
-            /// Actually check it in Interpreter as default_table_engine can be set
-            storage_p.parse(pos, storage, expected);
+        /// Internal ENGINE for MATERIALIZED VIEW must be specified.
+        /// Actually check it in Interpreter as default_table_engine can be set
+        storage_p.parse(pos, storage, expected);
 
-            if (s_populate.ignore(pos, expected))
-                is_populate = true;
-            else if (s_empty.ignore(pos, expected))
-                is_create_empty = true;
+        if (s_populate.ignore(pos, expected))
+            is_populate = true;
+        else if (s_empty.ignore(pos, expected))
+            is_create_empty = true;
 
-            if (ParserKeyword{"TO"}.ignore(pos, expected))
-                throw Exception(
-                    ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'ENGINE' and 'TO [db].[table]'");
-        }
-        else
-        {
-            if (storage_p.ignore(pos, expected))
-                throw Exception(
-                    ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'ENGINE'");
+        if (ParserKeyword{"TO"}.ignore(pos, expected))
+            throw Exception(
+                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'ENGINE' and 'TO [db].[table]'");
+    }
+    else
+    {
+        if (storage_p.ignore(pos, expected))
+            throw Exception(
+                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'ENGINE'");
 
-            if (s_populate.ignore(pos, expected))
-                throw Exception(
-                    ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'POPULATE'");
+        if (s_populate.ignore(pos, expected))
+            throw Exception(
+                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'POPULATE'");
 
-            if (s_empty.ignore(pos, expected))
-            {
-                if (!refresh_strategy)
-                    throw Exception(
-                        ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'EMPTY'");
-
-                is_create_empty = true;
-            }
-        }
+        if (s_empty.ignore(pos, expected))
+            throw Exception(
+                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'EMPTY'");
     }
 
     /// AS SELECT ...
@@ -1548,8 +1527,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
-    if (refresh_strategy)
-        query->set(query->refresh_strategy, refresh_strategy);
     if (comment)
         query->set(query->comment, comment);
 
@@ -1558,6 +1535,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->set(query->select, select);
 
     return true;
+
 }
 
 bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)

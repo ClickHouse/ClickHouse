@@ -2,6 +2,7 @@
 -- Please help shorten this list down to zero elements.
 SELECT name FROM system.functions WHERE NOT is_aggregate AND origin = 'System' AND alias_to = '' AND length(description) < 10
 AND name NOT IN (
+    'MD4', 'MD5', 'SHA1', 'SHA224', 'SHA256', 'SHA384', 'SHA512', 'halfMD5',
     'aes_decrypt_mysql', 'aes_encrypt_mysql', 'decrypt', 'encrypt',
     'base64Decode', 'base64Encode', 'tryBase64Decode',
     'convertCharset',

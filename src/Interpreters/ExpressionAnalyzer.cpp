@@ -56,7 +56,6 @@
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/logger_useful.h>
-#include <Interpreters/PasteJoin.h>
 #include <QueryPipeline/SizeLimits.h>
 
 
@@ -120,7 +119,7 @@ bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & sett
     return true;
 }
 
-LoggerPtr getLogger() { return ::getLogger("ExpressionAnalyzer"); }
+Poco::Logger * getLogger() { return &Poco::Logger::get("ExpressionAnalyzer"); }
 
 }
 
@@ -859,8 +858,11 @@ const ASTSelectQuery * ExpressionAnalyzer::getSelectQuery() const
 
 bool ExpressionAnalyzer::isRemoteStorage() const
 {
+    const Settings & csettings = getContext()->getSettingsRef();
     // Consider any storage used in parallel replicas as remote, so the query is executed in multiple servers
-    return syntax->is_remote_storage || getContext()->canUseTaskBasedParallelReplicas();
+    const bool enable_parallel_processing_of_joins
+        = csettings.max_parallel_replicas > 1 && csettings.allow_experimental_parallel_reading_from_replicas > 0;
+    return syntax->is_remote_storage || enable_parallel_processing_of_joins;
 }
 
 const ASTSelectQuery * SelectQueryExpressionAnalyzer::getAggregatingQuery() const
@@ -952,9 +954,6 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     std::unique_ptr<QueryPlan> & joined_plan,
     ContextPtr context)
 {
-    if (analyzed_join->kind() == JoinKind::Paste)
-        return std::make_shared<PasteJoin>(analyzed_join, right_sample_block);
-
     if (algorithm == JoinAlgorithm::DIRECT || algorithm == JoinAlgorithm::DEFAULT)
     {
         JoinPtr direct_join = tryKeyValueJoin(analyzed_join, right_sample_block);
@@ -1050,7 +1049,7 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
         join_element.table_expression,
         context,
         original_right_column_names,
-        query_options.copy().setWithAllColumns().ignoreAlias(false));
+        query_options.copy().setWithAllColumns().ignoreProjections(false).ignoreAlias(false));
     auto joined_plan = std::make_unique<QueryPlan>();
     interpreter->buildQueryPlan(*joined_plan);
     {

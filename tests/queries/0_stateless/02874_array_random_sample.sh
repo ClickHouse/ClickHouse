@@ -11,7 +11,7 @@ passed_tests=0
 
 # Test Function for Integer Arrays
 run_integer_test() {
-    query_result=$($CLICKHOUSE_CLIENT_BINARY -q "SELECT arrayRandomSample([1,2,3], 2)")
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample([1,2,3], 2)")
     mapfile -t sorted_result < <(echo "$query_result" | tr -d '[]' | tr ',' '\n' | sort -n)
     declare -A expected_outcomes
     expected_outcomes["1 2"]=1
@@ -34,7 +34,7 @@ run_integer_test() {
 
 # Test Function for String Arrays
 run_string_test() {
-    query_result=$($CLICKHOUSE_CLIENT_BINARY -q "SELECT arrayRandomSample(['a','b','c'], 2)")
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample(['a','b','c'], 2)")
     mapfile -t sorted_result < <(echo "$query_result" | tr -d "[]'" | tr ',' '\n' | sort)
     declare -A expected_outcomes
     expected_outcomes["a b"]=1
@@ -57,7 +57,7 @@ run_string_test() {
 
 # Test Function for Nested Arrays
 run_nested_array_test() {
-    query_result=$($CLICKHOUSE_CLIENT_BINARY -q "SELECT arrayRandomSample([[7,2],[3,4],[7,6]], 2)")
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample([[7,2],[3,4],[7,6]], 2)")
     # Convert to a space-separated string for easy sorting.
     converted_result=$(echo "$query_result" | tr -d '[]' | tr ',' ' ')
 
@@ -87,7 +87,7 @@ run_nested_array_test() {
 
 # Test Function for K > array.size
 run_higher_k_test() {
-    query_result=$($CLICKHOUSE_CLIENT_BINARY -q "SELECT arrayRandomSample([1,2,3], 5)")
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample([1,2,3], 5)")
     mapfile -t sorted_result < <(echo "$query_result" | tr -d '[]' | tr ',' '\n' | sort -n)
     sorted_original=("1" "2" "3")
 
@@ -111,7 +111,7 @@ run_higher_k_test() {
 
 # Test Function for Integer Arrays with samples = 0
 run_integer_with_samples_0_test() {
-    query_result=$($CLICKHOUSE_CLIENT_BINARY -q "SELECT arrayRandomSample([1,2,3], 0)")
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample([1,2,3], 0)")
     mapfile -t sorted_result < <(echo "$query_result" | tr -d '[]' | tr ',' '\n' | sort -n)
 
     # An empty array should produce an empty string after transformations
@@ -137,7 +137,7 @@ run_integer_with_samples_0_test() {
 
 # Test Function for Empty Array with K > 0
 run_empty_array_with_k_test() {
-    query_result=$($CLICKHOUSE_CLIENT_BINARY -q "SELECT arrayRandomSample([], 5)")
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample([], 5)")
 
     if [[ "$query_result" == "[]" ]]; then
         echo "Empty Array with K > 0 Test: Passed"
@@ -153,7 +153,7 @@ run_empty_array_with_k_test() {
 # Test Function for Non-Unsigned-Integer K
 run_non_unsigned_integer_k_test() {
     # Test with negative integer
-    query_result=$($CLICKHOUSE_CLIENT_BINARY -q "SELECT arrayRandomSample([1, 2, 3], -5)" 2>&1)
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample([1, 2, 3], -5)" 2>&1)
     if [[ "$query_result" == *"ILLEGAL_TYPE_OF_ARGUMENT"* ]]; then
         echo "Non-Unsigned-Integer K Test (Negative Integer): Passed"
         ((passed_tests++))
@@ -165,7 +165,7 @@ run_non_unsigned_integer_k_test() {
     ((total_tests++))
 
     # Test with string
-    query_result=$($CLICKHOUSE_CLIENT_BINARY -q "SELECT arrayRandomSample([1, 2, 3], 'a')" 2>&1)
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample([1, 2, 3], 'a')" 2>&1)
     if [[ "$query_result" == *"ILLEGAL_TYPE_OF_ARGUMENT"* ]]; then
         echo "Non-Unsigned-Integer K Test (String): Passed"
         ((passed_tests++))
@@ -177,7 +177,7 @@ run_non_unsigned_integer_k_test() {
     ((total_tests++))
 
     # Test with floating-point number
-    query_result=$($CLICKHOUSE_CLIENT_BINARY -q "SELECT arrayRandomSample([1, 2, 3], 1.5)" 2>&1)
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample([1, 2, 3], 1.5)" 2>&1)
     if [[ "$query_result" == *"ILLEGAL_TYPE_OF_ARGUMENT"* ]]; then
         echo "Non-Unsigned-Integer K Test (Floating-Point): Passed"
         ((passed_tests++))
@@ -193,18 +193,18 @@ run_non_unsigned_integer_k_test() {
 run_multi_row_scalar_k_test() {
     # Create a table. Use a random database name as tests potentially run in parallel.
     db=`tr -dc A-Za-z0-9 </dev/urandom | head -c 13`
-    $CLICKHOUSE_CLIENT_BINARY -q "DROP DATABASE IF EXISTS ${db}"
-    $CLICKHOUSE_CLIENT_BINARY -q "CREATE DATABASE ${db}"
-    $CLICKHOUSE_CLIENT_BINARY -q "CREATE TABLE ${db}.array_test (arr Array(Int32)) ENGINE = Memory"
+    clickhouse-client -q "DROP DATABASE IF EXISTS ${db}"
+    clickhouse-client -q "CREATE DATABASE ${db}"
+    clickhouse-client -q "CREATE TABLE ${db}.array_test (arr Array(Int32)) ENGINE = Memory"
 
     # Insert multi-row data into the table
-    $CLICKHOUSE_CLIENT_BINARY -q "INSERT INTO ${db}.array_test VALUES ([1, 2, 3]), ([4, 5, 6]), ([7, 8, 9])"
+    clickhouse-client -q "INSERT INTO ${db}.array_test VALUES ([1, 2, 3]), ([4, 5, 6]), ([7, 8, 9])"
 
     # Query using arrayRandomSample function and store the result, k is scalar here (for example, 2)
-    query_result=$($CLICKHOUSE_CLIENT_BINARY -q "SELECT arrayRandomSample(arr, 2) FROM ${db}.array_test")
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample(arr, 2) FROM ${db}.array_test")
 
     # Drop the table
-    $CLICKHOUSE_CLIENT_BINARY -q "DROP DATABASE ${db}"
+    clickhouse-client -q "DROP DATABASE ${db}"
 
     # Validate the output here
     is_test_passed=1  # flag to indicate if the test passed; 1 means passed, 0 means failed

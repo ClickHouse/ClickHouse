@@ -434,7 +434,7 @@ public:
         };
 
         FunctionArgumentDescriptors optional_args{
-            {optional_argument_names[0], &isNumber<IDataType>, nullptr, "const Number"},
+            {optional_argument_names[0], &isNumber<IDataType>, isColumnConst, "const Number"},
             {optional_argument_names[1], &isNumber<IDataType>, isColumnConst, "const Number"},
             {optional_argument_names[2], &isString<IDataType>, isColumnConst, "const String"}
         };

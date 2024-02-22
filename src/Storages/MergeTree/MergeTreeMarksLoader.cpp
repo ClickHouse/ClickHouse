@@ -1,11 +1,12 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ThreadPool.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 
 #include <utility>

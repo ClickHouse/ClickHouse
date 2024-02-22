@@ -406,7 +406,7 @@ RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
 :::note
 But keep in mind that:
 - This disk should not be used for `MergeTree` itself, only for `BACKUP`/`RESTORE`
-- If your tables are backed by S3 storage and types of the disks are different, it doesn't use `CopyObject` calls to copy parts to the destination bucket, instead, it downloads and uploads them, which is very inefficient. Prefer to use `BACKUP ... TO S3(<endpoint>)` syntax for this use-case.
+- If your tables are backed by S3 storage, it doesn't use `CopyObject` calls to copy parts to the destination bucket, instead, it downloads and uploads them, which is very inefficient. Prefer to use `BACKUP ... TO S3(<endpoint>)` syntax for this use-case.
 :::
 
 ## Alternatives
@@ -451,24 +451,3 @@ To disallow concurrent backup/restore, you can use these settings respectively.
 
 The default value for both is true, so by default concurrent backup/restores are allowed.
 When these settings are false on a cluster, only 1 backup/restore is allowed to run on a cluster at a time.
-
-## Configuring BACKUP/RESTORE to use an AzureBlobStorage Endpoint
-
-To write backups to an AzureBlobStorage container you need the following pieces of information:
-- AzureBlobStorage endpoint connection string / url,
-- Container,
-- Path,
-- Account name (if url is specified)
-- Account Key (if url is specified)
-
-The destination for a backup will be specified like this:
-```
-AzureBlobStorage('<connection string>/<url>', '<container>', '<path>', '<account name>', '<account key>')
-```
-
-```sql
-BACKUP TABLE data TO AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
-    'test_container', 'data_backup');
-RESTORE TABLE data AS data_restored FROM AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
-    'test_container', 'data_backup');
-```

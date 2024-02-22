@@ -18,6 +18,7 @@
 #pragma clang diagnostic pop
 #endif
 
+#include <any>
 #include <unordered_map>
 
 namespace DB

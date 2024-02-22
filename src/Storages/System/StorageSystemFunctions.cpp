@@ -113,23 +113,22 @@ std::vector<std::pair<String, Int8>> getOriginEnumsAndValues()
     };
 }
 
-ColumnsDescription StorageSystemFunctions::getColumnsDescription()
+NamesAndTypesList StorageSystemFunctions::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"name", std::make_shared<DataTypeString>(), "The name of the function."},
-        {"is_aggregate", std::make_shared<DataTypeUInt8>(), "Whether the function is an aggregate function."},
-        {"is_deterministic", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "Whether the function is deterministic."},
-        {"case_insensitive", std::make_shared<DataTypeUInt8>(), "Whether the function name can be used case-insensitively."},
-        {"alias_to", std::make_shared<DataTypeString>(), "The original function name, if the function name is an alias."},
-        {"create_query", std::make_shared<DataTypeString>(), "Obsolete."},
-        {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsAndValues()), "Obsolete."},
-        {"description", std::make_shared<DataTypeString>(), "A high-level description what the function does."},
-        {"syntax", std::make_shared<DataTypeString>(), "Signature of the function."},
-        {"arguments", std::make_shared<DataTypeString>(), "What arguments does the function take."},
-        {"returned_value", std::make_shared<DataTypeString>(), "What does the function return."},
-        {"examples", std::make_shared<DataTypeString>(), "Usage example."},
-        {"categories", std::make_shared<DataTypeString>(), "The category of the function."}
+    return {
+        {"name", std::make_shared<DataTypeString>()},
+        {"is_aggregate", std::make_shared<DataTypeUInt8>()},
+        {"is_deterministic", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
+        {"case_insensitive", std::make_shared<DataTypeUInt8>()},
+        {"alias_to", std::make_shared<DataTypeString>()},
+        {"create_query", std::make_shared<DataTypeString>()},
+        {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsAndValues())},
+        {"description", std::make_shared<DataTypeString>()},
+        {"syntax", std::make_shared<DataTypeString>()},
+        {"arguments", std::make_shared<DataTypeString>()},
+        {"returned_value", std::make_shared<DataTypeString>()},
+        {"examples", std::make_shared<DataTypeString>()},
+        {"categories", std::make_shared<DataTypeString>()}
     };
 }
 

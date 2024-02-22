@@ -128,7 +128,7 @@ private:
 
     KeeperContextPtr keeper_context;
 
-    LoggerPtr logger;
+    Poco::Logger * logger;
 
 public:
     /// Parse configuration from xml config.

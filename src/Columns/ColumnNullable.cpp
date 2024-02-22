@@ -1,5 +1,7 @@
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
+#include <Common/NaNUtils.h>
+#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Columns/ColumnDecimal.h>
@@ -26,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
+    extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -94,7 +97,7 @@ MutableColumnPtr ColumnNullable::cloneResized(size_t new_size) const
 
     if (new_size > 0)
     {
-        new_null_map->getData().resize_exact(new_size);
+        new_null_map->getData().resize(new_size);
 
         size_t count = std::min(size(), new_size);
         memcpy(new_null_map->getData().data(), getNullMapData().data(), count * sizeof(getNullMapData()[0]));
@@ -675,12 +678,6 @@ void ColumnNullable::reserve(size_t n)
     getNullMapData().reserve(n);
 }
 
-void ColumnNullable::shrinkToFit()
-{
-    getNestedColumn().shrinkToFit();
-    getNullMapData().shrink_to_fit();
-}
-
 void ColumnNullable::ensureOwnership()
 {
     getNestedColumn().ensureOwnership();
@@ -826,25 +823,28 @@ void ColumnNullable::applyNullMap(const ColumnNullable & other)
 void ColumnNullable::checkConsistency() const
 {
     if (null_map->size() != getNestedColumn().size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of nested column and null map of Nullable column are not equal");
+        throw Exception(ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT,
+                        "Logical error: Sizes of nested column and null map of Nullable column are not equal");
 }
 
-ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
+ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const
 {
     ColumnPtr new_values;
     ColumnPtr new_null_map;
 
-    const ColumnNullable & nullable_column_with_default_value = assert_cast<const ColumnNullable &>(column_with_default_value.getDataColumn());
-    if (nullable_column_with_default_value.isNullAt(0))
+    if (default_field.getType() == Field::Types::Null)
     {
+        auto default_column = nested_column->cloneEmpty();
+        default_column->insertDefault();
+
         /// Value in main column, when null map is 1 is implementation defined. So, take any value.
-        new_values = nested_column->createWithOffsets(offsets, *createColumnConstWithDefaultValue(nested_column), total_rows, shift);
-        new_null_map = null_map->createWithOffsets(offsets, *createColumnConst(null_map, Field(1u)), total_rows, shift);
+        new_values = nested_column->createWithOffsets(offsets, (*default_column)[0], total_rows, shift);
+        new_null_map = null_map->createWithOffsets(offsets, Field(1u), total_rows, shift);
     }
     else
     {
-        new_values = nested_column->createWithOffsets(offsets, *ColumnConst::create(nullable_column_with_default_value.getNestedColumnPtr(), 1), total_rows, shift);
-        new_null_map = null_map->createWithOffsets(offsets, *createColumnConst(null_map, Field(0u)), total_rows, shift);
+        new_values = nested_column->createWithOffsets(offsets, default_field, total_rows, shift);
+        new_null_map = null_map->createWithOffsets(offsets, Field(0u), total_rows, shift);
     }
 
     return ColumnNullable::create(new_values, new_null_map);
@@ -890,7 +890,10 @@ ColumnPtr makeNullable(const ColumnPtr & column)
 
 ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column)
 {
-    if (isColumnNullableOrLowCardinalityNullable(*column))
+    if (isColumnNullable(*column))
+        return column;
+
+    if (isColumnLowCardinalityNullable(*column))
         return column;
 
     if (isColumnConst(*column))
@@ -909,23 +912,6 @@ ColumnPtr makeNullableSafe(const ColumnPtr & column)
 
     if (isColumnConst(*column))
         return ColumnConst::create(makeNullableSafe(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
-
-    if (column->canBeInsideNullable())
-        return makeNullable(column);
-
-    return column;
-}
-
-ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column)
-{
-    if (isColumnNullableOrLowCardinalityNullable(*column))
-        return column;
-
-    if (isColumnConst(*column))
-        return ColumnConst::create(makeNullableOrLowCardinalityNullableSafe(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
-
-    if (column->lowCardinality())
-        return assert_cast<const ColumnLowCardinality &>(*column).cloneNullable();
 
     if (column->canBeInsideNullable())
         return makeNullable(column);

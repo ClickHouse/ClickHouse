@@ -24,7 +24,7 @@ namespace ErrorCodes
 ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeCleanupThread)")
-    , log(getLogger(log_name))
+    , log(&Poco::Logger::get(log_name))
     , sleep_ms(storage.getSettings()->cleanup_delay_period * 1000)
 {
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ run(); });

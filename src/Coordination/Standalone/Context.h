@@ -14,18 +14,11 @@
 #include <Core/BackgroundSchedulePool.h>
 
 #include <IO/AsyncReadCounters.h>
-#include <Common/Scheduler/IResourceManager.h>
+#include <IO/IResourceManager.h>
 
 #include <Poco/Util/Application.h>
 
 #include <memory>
-
-#include "config.h"
-namespace zkutil
-{
-    class ZooKeeper;
-    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
-}
 
 namespace DB
 {
@@ -35,7 +28,6 @@ class Macros;
 class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class BlobStorageLog;
-class IOUringReader;
 
 /// A small class which owns ContextShared.
 /// We don't use something like unique_ptr directly to allow ContextShared type to be incomplete.
@@ -135,9 +127,6 @@ public:
     ApplicationType getApplicationType() const { return ApplicationType::KEEPER; }
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
-#if USE_LIBURING
-    IOUringReader & getIOURingReader() const;
-#endif
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
     ThreadPool & getThreadPoolWriter() const;
 
@@ -158,8 +147,6 @@ public:
     void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config);
-
-    zkutil::ZooKeeperPtr getZooKeeper() const;
 };
 
 }

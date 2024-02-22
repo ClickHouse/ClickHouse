@@ -63,7 +63,7 @@ Pipe StorageSystemRemoteDataPaths::read(
             FileCachePtr cache;
 
             if (disk->supportsCache())
-                cache = FileCacheFactory::instance().getByName(disk->getCacheName())->cache;
+                cache = FileCacheFactory::instance().getByName(disk->getCacheName()).cache;
 
             for (const auto & [local_path, storage_objects] : remote_paths_by_local_path)
             {

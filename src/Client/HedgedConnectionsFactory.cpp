@@ -29,21 +29,19 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     bool fallback_to_stale_replicas_,
     UInt64 max_parallel_replicas_,
     bool skip_unavailable_shards_,
-    std::shared_ptr<QualifiedTableName> table_to_check_,
-    GetPriorityForLoadBalancing::Func priority_func)
+    std::shared_ptr<QualifiedTableName> table_to_check_)
     : pool(pool_)
     , timeouts(timeouts_)
     , table_to_check(table_to_check_)
-    , log(getLogger("HedgedConnectionsFactory"))
+    , log(&Poco::Logger::get("HedgedConnectionsFactory"))
     , max_tries(max_tries_)
     , fallback_to_stale_replicas(fallback_to_stale_replicas_)
     , max_parallel_replicas(max_parallel_replicas_)
     , skip_unavailable_shards(skip_unavailable_shards_)
 {
-    shuffled_pools = pool->getShuffledPools(settings_, priority_func);
-    for (const auto & shuffled_pool : shuffled_pools)
-        replicas.emplace_back(
-            std::make_unique<ConnectionEstablisherAsync>(shuffled_pool.pool, &timeouts, settings_, log, table_to_check.get()));
+    shuffled_pools = pool->getShuffledPools(settings_);
+    for (auto shuffled_pool : shuffled_pools)
+        replicas.emplace_back(std::make_unique<ConnectionEstablisherAsync>(shuffled_pool.pool, &timeouts, settings_, log, table_to_check.get()));
 }
 
 HedgedConnectionsFactory::~HedgedConnectionsFactory()
@@ -325,7 +323,8 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processFinishedConnect
     else
     {
         ShuffledPool & shuffled_pool = shuffled_pools[index];
-        LOG_INFO(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
+        LOG_WARNING(
+            log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
         ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
         shuffled_pool.error_count = std::min(pool->getMaxErrorCup(), shuffled_pool.error_count + 1);
@@ -414,7 +413,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::setBestUsableReplica(C
         indexes.end(),
         [&](size_t lhs, size_t rhs)
         {
-            return replicas[lhs].connection_establisher->getResult().delay < replicas[rhs].connection_establisher->getResult().delay;
+            return replicas[lhs].connection_establisher->getResult().staleness < replicas[rhs].connection_establisher->getResult().staleness;
         });
 
     replicas[indexes[0]].is_ready = true;

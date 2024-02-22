@@ -17,26 +17,17 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemRoleGrants::getColumnsDescription()
+NamesAndTypesList StorageSystemRoleGrants::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"user_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "User name."},
-        {"role_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Role name."},
-        {"granted_role_name", std::make_shared<DataTypeString>(),
-            "Name of role granted to the `role_name` role. To grant one role to another one use `GRANT role1 TO role2`."},
-        {"granted_role_id", std::make_shared<DataTypeUUID>(), "The ID of the role."},
-        {"granted_role_is_default", std::make_shared<DataTypeUInt8>(),
-            "Flag that shows whether `granted_role` is a default role. Possible values: "
-            "• 1 — `granted_role` is a default role, "
-            "• 0 — `granted_role` is not a default role."
-        },
-        {"with_admin_option", std::make_shared<DataTypeUInt8>(),
-            "Flag that shows whether `granted_role` is a role with `ADMIN OPTION` privilege. Possible values: "
-            "• 1 — The role has `ADMIN OPTION` privilege."
-            "• 0 — The role without `ADMIN OPTION` privilege."
-        },
+    NamesAndTypesList names_and_types{
+        {"user_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"role_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"granted_role_name", std::make_shared<DataTypeString>()},
+        {"granted_role_id", std::make_shared<DataTypeUUID>()},
+        {"granted_role_is_default", std::make_shared<DataTypeUInt8>()},
+        {"with_admin_option", std::make_shared<DataTypeUInt8>()},
     };
+    return names_and_types;
 }
 
 

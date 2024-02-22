@@ -105,7 +105,7 @@ BackupImpl::BackupImpl(
     , version(INITIAL_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
     , use_same_s3_credentials_for_base_backup(use_same_s3_credentials_for_base_backup_)
-    , log(getLogger("BackupImpl"))
+    , log(&Poco::Logger::get("BackupImpl"))
 {
     open();
 }
@@ -136,7 +136,7 @@ BackupImpl::BackupImpl(
     , base_backup_info(base_backup_info_)
     , deduplicate_files(deduplicate_files_)
     , use_same_s3_credentials_for_base_backup(use_same_s3_credentials_for_base_backup_)
-    , log(getLogger("BackupImpl"))
+    , log(&Poco::Logger::get("BackupImpl"))
 {
     open();
 }
@@ -157,16 +157,11 @@ BackupImpl::~BackupImpl()
 void BackupImpl::open()
 {
     std::lock_guard lock{mutex};
+    LOG_INFO(log, "{} backup: {}", ((open_mode == OpenMode::WRITE) ? "Writing" : "Reading"), backup_name_for_logging);
+    ProfileEvents::increment((open_mode == OpenMode::WRITE) ? ProfileEvents::BackupsOpenedForWrite : ProfileEvents::BackupsOpenedForRead);
 
-    if (open_mode == OpenMode::READ)
+    if (open_mode == OpenMode::WRITE)
     {
-        ProfileEvents::increment(ProfileEvents::BackupsOpenedForRead);
-        LOG_INFO(log, "Reading backup: {}", backup_name_for_logging);
-    }
-    else
-    {
-        ProfileEvents::increment(ProfileEvents::BackupsOpenedForWrite);
-        LOG_INFO(log, "Writing backup: {}", backup_name_for_logging);
         timestamp = std::time(nullptr);
         if (!uuid)
             uuid = UUIDHelpers::generateV4();
@@ -194,7 +189,7 @@ void BackupImpl::open()
 void BackupImpl::close()
 {
     std::lock_guard lock{mutex};
-    closeArchive(/* finalize= */ false);
+    closeArchive();
 
     if (!is_internal_backup && writer && !writing_finalized)
         removeAllFilesAfterFailure();
@@ -227,11 +222,8 @@ void BackupImpl::openArchive()
     }
 }
 
-void BackupImpl::closeArchive(bool finalize)
+void BackupImpl::closeArchive()
 {
-    if (finalize && archive_writer)
-        archive_writer->finalize();
-
     archive_reader.reset();
     archive_writer.reset();
 }
@@ -939,12 +931,12 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     }
     else if (src_disk && from_immutable_file)
     {
-        LOG_INFO(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
+        LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
         writer->copyFileFromDisk(info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
     }
     else
     {
-        LOG_INFO(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
+        LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
         auto create_read_buffer = [entry, read_settings = writer->getReadSettings()] { return entry->getReadBuffer(read_settings); };
         writer->copyDataToFile(info.data_file_name, create_read_buffer, info.base_size, info.size - info.base_size);
     }
@@ -986,7 +978,7 @@ void BackupImpl::finalizeWriting()
     {
         LOG_TRACE(log, "Finalizing backup {}", backup_name_for_logging);
         writeBackupMetadata();
-        closeArchive(/* finalize= */ true);
+        closeArchive();
         setCompressedSize();
         removeLockFile();
         LOG_TRACE(log, "Finalized backup {}", backup_name_for_logging);

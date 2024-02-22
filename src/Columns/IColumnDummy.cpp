@@ -1,8 +1,6 @@
-#include <Columns/ColumnsCommon.h>
-#include <Columns/IColumnDummy.h>
-#include <Core/Field.h>
 #include <Common/Arena.h>
-#include <Common/iota.h>
+#include <Columns/IColumnDummy.h>
+#include <Columns/ColumnsCommon.h>
 
 
 namespace DB
@@ -88,7 +86,8 @@ void IColumnDummy::getPermutation(IColumn::PermutationSortDirection /*direction*
                 size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const
 {
     res.resize(s);
-    iota(res.data(), s, IColumn::Permutation::value_type(0));
+    for (size_t i = 0; i < s; ++i)
+        res[i] = i;
 }
 
 ColumnPtr IColumnDummy::replicate(const Offsets & offsets) const

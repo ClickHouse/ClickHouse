@@ -4,7 +4,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Poco/Message.h>
-#include <Storages/ColumnsDescription.h>
 #include <chrono>
 
 namespace DB
@@ -43,9 +42,10 @@ struct BlobStorageLogElement
 
     static std::string name() { return "BlobStorageLog"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 

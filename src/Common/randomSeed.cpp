@@ -20,11 +20,11 @@ namespace ErrorCodes
 }
 
 
-UInt64 randomSeed()
+DB::UInt64 randomSeed()
 {
     struct timespec times;
     if (clock_gettime(CLOCK_MONOTONIC, &times))
-        throw DB::ErrnoException(DB::ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
+        DB::throwFromErrno("Cannot clock_gettime.", DB::ErrorCodes::CANNOT_CLOCK_GETTIME);
 
     /// Not cryptographically secure as time, pid and stack address can be predictable.
 

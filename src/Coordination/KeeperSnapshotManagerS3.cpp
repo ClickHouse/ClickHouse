@@ -13,7 +13,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3/PocoHTTPClient.h>
-#include <IO/S3/Client.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Common/Macros.h>
@@ -43,7 +42,7 @@ struct KeeperSnapshotManagerS3::S3Configuration
 
 KeeperSnapshotManagerS3::KeeperSnapshotManagerS3()
     : snapshots_s3_queue(std::numeric_limits<size_t>::max())
-    , log(getLogger("KeeperSnapshotManagerS3"))
+    , log(&Poco::Logger::get("KeeperSnapshotManagerS3"))
     , uuid(UUIDHelpers::generateV4())
 {}
 
@@ -70,14 +69,14 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         {
             std::lock_guard client_lock{snapshot_s3_client_mutex};
             // if client is not changed (same auth settings, same endpoint) we don't need to update
-            if (snapshot_s3_client && snapshot_s3_client->client && !snapshot_s3_client->auth_settings.hasUpdates(auth_settings)
+            if (snapshot_s3_client && snapshot_s3_client->client && auth_settings == snapshot_s3_client->auth_settings
                 && snapshot_s3_client->uri.uri == new_uri.uri)
                 return;
         }
 
         LOG_INFO(log, "S3 configuration was updated");
 
-        auto credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key, auth_settings.session_token);
+        auto credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key);
         auto headers = auth_settings.headers;
 
         static constexpr size_t s3_max_redirects = 10;
@@ -99,15 +98,10 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
 
         client_configuration.endpointOverride = new_uri.endpoint;
 
-        S3::ClientSettings client_settings{
-            .use_virtual_addressing = new_uri.is_virtual_hosted_style,
-            .disable_checksum = false,
-            .gcs_issue_compose_request = false,
-        };
-
         auto client = S3::ClientFactory::instance().create(
             client_configuration,
-            client_settings,
+            new_uri.is_virtual_hosted_style,
+            /* disable_checksum= */ false,
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
             auth_settings.server_side_encryption_customer_key_base64,
@@ -214,9 +208,6 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
             return;
         }
 
-        /// To avoid reference to binding
-        const auto & snapshot_path_ref = snapshot_path;
-
         SCOPE_EXIT(
         {
             LOG_INFO(log, "Removing lock file");
@@ -232,7 +223,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
             }
             catch (...)
             {
-                LOG_INFO(log, "Failed to delete lock file for {} from S3", snapshot_path_ref);
+                LOG_INFO(log, "Failed to delete lock file for {} from S3", snapshot_file_info.path);
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         });
