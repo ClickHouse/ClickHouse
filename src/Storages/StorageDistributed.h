@@ -238,7 +238,7 @@ private:
     String remote_table;
     ASTPtr remote_table_function_ptr;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     /// Used to implement TableFunctionRemote.
     std::shared_ptr<Cluster> owned_cluster;

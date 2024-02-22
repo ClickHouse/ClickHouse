@@ -508,9 +508,7 @@ Possible values:
 - Any positive integer number of hops.
 - 0 — No hops allowed.
 
-Default value: `0`.
-
-Cloud default value: `10`.
+Default value: 0.
 
 ## insert_null_as_default {#insert_null_as_default}
 
@@ -1128,9 +1126,7 @@ Possible values:
 - 0 (or 1) — `INSERT SELECT` no parallel execution.
 - Positive integer. Bigger than 1.
 
-Default value: `0`.
-
-Cloud default value: from `2` to `4`, depending on the service size.
+Default value: 0.
 
 Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [max_threads](#max_threads) setting.
 Higher values will lead to higher memory usage.
@@ -1211,9 +1207,7 @@ Default value: 10000.
 
 Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
 
-Default value: `0`.
-
-Cloud default value: `1`.
+Default value: 0
 
 ## poll_interval {#poll-interval}
 
@@ -1775,10 +1769,6 @@ Default value: 0 (no restriction).
 
 ## insert_quorum {#insert_quorum}
 
-:::note
-`insert_quorum` does not apply when using the [`SharedMergeTree` table engine](/en/cloud/reference/shared-merge-tree) in ClickHouse Cloud as all inserts are quorum inserted.
-:::
-
 Enables the quorum writes.
 
 - If `insert_quorum < 2`, the quorum writes are disabled.
@@ -1817,10 +1807,6 @@ See also:
 - [select_sequential_consistency](#select_sequential_consistency)
 
 ## insert_quorum_parallel {#insert_quorum_parallel}
-
-:::note
-`insert_quorum_parallel` does not apply when using the [`SharedMergeTree` table engine](/en/cloud/reference/shared-merge-tree) in ClickHouse Cloud as all inserts are quorum inserted.
-:::
 
 Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
 
@@ -1936,7 +1922,7 @@ Possible values:
 - Positive integer.
 - 0 — Asynchronous insertions are disabled.
 
-Default value: `1000000`.
+Default value: `100000`.
 
 ### async_insert_max_query_number {#async-insert-max-query-number}
 
@@ -1949,7 +1935,7 @@ Possible values:
 
 Default value: `450`.
 
-### async_insert_busy_timeout_max_ms {#async-insert-busy-timeout-max-ms}
+### async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
 
 The maximum timeout in milliseconds since the first `INSERT` query before inserting collected data.
 
@@ -1959,63 +1945,6 @@ Possible values:
 - 0 — Timeout disabled.
 
 Default value: `200`.
-
-Cloud default value: `1000`.
-
-### async_insert_poll_timeout_ms {#async-insert-poll-timeout-ms}
-
-Timeout in milliseconds for polling data from asynchronous insert queue.
-
-Possible values:
-
-- Positive integer.
-
-Default value: `10`.
-
-### async_insert_use_adaptive_busy_timeout {#allow-experimental-async-insert-adaptive-busy-timeout}
-
-Use adaptive asynchronous insert timeout.
-
-Possible values:
-
-- 0 - Disabled.
-- 1 - Enabled.
-
-Default value: `0`.
-
-### async_insert_busy_timeout_min_ms {#async-insert-busy-timeout-min-ms}
-
-If adaptive asynchronous insert timeout is allowed through [async_insert_use_adaptive_busy_timeout](#allow-experimental-async-insert-adaptive-busy-timeout), the setting specifies the minimum value of the asynchronous insert timeout in milliseconds. It also serves as the initial value, which may be increased later by the adaptive algorithm, up to the [async_insert_busy_timeout_ms](#async_insert_busy_timeout_ms).
-
-Possible values:
-
-- Positive integer.
-
-Default value: `50`.
-
-### async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
-
-Alias for [`async_insert_busy_timeout_max_ms`](#async_insert_busy_timeout_max_ms).
-
-### async_insert_busy_timeout_increase_rate {#async-insert-busy-timeout-increase-rate}
-
-If adaptive asynchronous insert timeout is allowed through [async_insert_use_adaptive_busy_timeout](#allow-experimental-async-insert-adaptive-busy-timeout), the setting specifies the exponential growth rate at which the adaptive asynchronous insert timeout increases.
-
-Possible values:
-
-- A positive floating-point number.
-
-Default value: `0.2`.
-
-### async_insert_busy_timeout_decrease_rate {#async-insert-busy-timeout-decrease-rate}
-
-If adaptive asynchronous insert timeout is allowed through [async_insert_use_adaptive_busy_timeout](#allow-experimental-async-insert-adaptive-busy-timeout), the setting specifies the exponential growth rate at which the adaptive asynchronous insert timeout decreases.
-
-Possible values:
-
-- A positive floating-point number.
-
-Default value: `0.2`.
 
 ### async_insert_stale_timeout_ms {#async-insert-stale-timeout-ms}
 
@@ -2111,32 +2040,6 @@ SELECT * FROM test_table
 └───┘
 ```
 
-## update_insert_deduplication_token_in_dependent_materialized_views {#update-insert-deduplication-token-in-dependent-materialized-views}
-
-Allows to update `insert_deduplication_token` with view identifier during insert in dependent materialized views, if setting `deduplicate_blocks_in_dependent_materialized_views` is enabled and `insert_deduplication_token` is set.
-
-Possible values:
-
-      0 — Disabled.
-      1 — Enabled.
-
-Default value: 0.
-
-Usage:
-
-If setting `deduplicate_blocks_in_dependent_materialized_views` is enabled, `insert_deduplication_token` is passed to dependent materialized views. But in complex INSERT flows it is possible that we want to avoid deduplication for dependent materialized views.
-
-Example:
-```
-landing -┬--> mv_1_1 ---> ds_1_1 ---> mv_2_1 --┬-> ds_2_1 ---> mv_3_1 ---> ds_3_1
-         |                                     |
-         └--> mv_1_2 ---> ds_1_2 ---> mv_2_2 --┘
-```
-
-In this example we want to avoid deduplication for two different blocks generated from `mv_2_1` and `mv_2_2` that will be inserted into `ds_2_1`. Without `update_insert_deduplication_token_in_dependent_materialized_views` setting enabled, those two different blocks will be deduplicated, because different blocks from `mv_2_1` and `mv_2_2` will have the same `insert_deduplication_token`.
-
-If setting `update_insert_deduplication_token_in_dependent_materialized_views` is enabled, during each insert into dependent materialized views `insert_deduplication_token` is updated with table identifier, so block from `mv_2_1` and block from `mv_2_2` will have different `insert_deduplication_token` and will not be deduplicated.
-
 ## insert_keeper_max_retries
 
 The setting sets the maximum number of retries for ClickHouse Keeper (or ZooKeeper) requests during insert into replicated MergeTree. Only Keeper requests which failed due to network error, Keeper session timeout, or request timeout are considered for retries.
@@ -2146,9 +2049,7 @@ Possible values:
 - Positive integer.
 - 0 — Retries are disabled
 
-Default value: 20
-
-Cloud default value: `20`.
+Default value: 0
 
 Keeper request retries are done after some timeout. The timeout is controlled by the following settings: `insert_keeper_retry_initial_backoff_ms`, `insert_keeper_retry_max_backoff_ms`.
 The first retry is done after `insert_keeper_retry_initial_backoff_ms` timeout. The consequent timeouts will be calculated as follows:
@@ -2678,8 +2579,6 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Default value: 1000000000 nanoseconds (once a second).
 
-**Temporarily disabled in ClickHouse Cloud.**
-
 See also:
 
 - System table [trace_log](../../operations/system-tables/trace_log.md/#system_tables-trace_log)
@@ -2702,8 +2601,6 @@ Possible values:
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Default value: 1000000000 nanoseconds.
-
-**Temporarily disabled in ClickHouse Cloud.**
 
 See also:
 
@@ -2825,8 +2722,6 @@ Possible values:
 - 1 — Data is inserted in synchronous mode.
 
 Default value: `0`.
-
-Cloud default value: `1`.
 
 **See Also**
 
@@ -3343,9 +3238,7 @@ Possible values:
 
 - a string representing any valid table engine name
 
-Default value: `MergeTree`.
-
-Cloud default value: `SharedMergeTree`.
+Default value: `None`
 
 **Example**
 
@@ -3921,8 +3814,6 @@ Possible values:
 
 Default value: `0`.
 
-Cloud default value: `1`.
-
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
 Sets how long initial DDL query should wait for Replicated database to process previous DDL queue entries in seconds.
@@ -3956,12 +3847,8 @@ Possible values:
 - `none` — Is similar to throw, but distributed DDL query returns no result set.
 - `null_status_on_timeout` — Returns `NULL` as execution status in some rows of result set instead of throwing `TIMEOUT_EXCEEDED` if query is not finished on the corresponding hosts.
 - `never_throw` — Do not throw `TIMEOUT_EXCEEDED` and do not rethrow exceptions if query has failed on some hosts.
-- `null_status_on_timeout_only_active` — similar to `null_status_on_timeout`, but doesn't wait for inactive replicas of the `Replicated` database
-- `throw_only_active` — similar to `throw`, but doesn't wait for inactive replicas of the `Replicated` database
 
 Default value: `throw`.
-
-Cloud default value: `none`.
 
 ## flatten_nested {#flatten-nested}
 
@@ -4097,8 +3984,6 @@ Possible values:
 - 2 — Wait for everyone.
 
 Default value: `1`.
-
-Cloud default value: `0`.
 
 :::note
 `alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
@@ -4755,8 +4640,6 @@ other connections are cancelled. Queries with `max_parallel_replicas > 1` are su
 
 Enabled by default.
 
-Disabled by default on Cloud.
-
 ## hedged_connection_timeout {#hedged_connection_timeout}
 
 If we can't establish connection with replica after this timeout in hedged requests, we start working with the next replica without cancelling connection to the previous.
@@ -4887,45 +4770,6 @@ Allows you to select the max window log of ZSTD (it will not be used for MergeTr
 Type: Int64
 
 Default: 0
-
-## enable_deflate_qpl_codec {#enable_deflate_qpl_codec}
-
-If turned on, the DEFLATE_QPL codec may be used to compress columns.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-
-Type: Bool
-
-## enable_zstd_qat_codec {#enable_zstd_qat_codec}
-
-If turned on, the ZSTD_QAT codec may be used to compress columns.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-
-Type: Bool
-
-## output_format_compression_level
-
-Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`.
-
-Possible values: from `1` to `22`
-
-Default: `3`
-
-
-## output_format_compression_zstd_window_log
-
-Can be used when the output compression method is `zstd`. If greater than `0`, this setting explicitly sets compression window size (power of `2`) and enables a long-range mode for zstd compression. This can help to achieve a better compression ratio.
-
-Possible values: non-negative numbers. Note that if the value is too small or too big, `zstdlib` will throw an exception. Typical values are from `20` (window size = `1MB`) to `30` (window size = `1GB`).
-
-Default: `0`
 
 ## rewrite_count_distinct_if_with_count_distinct_implementation
 
@@ -5280,7 +5124,7 @@ SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 ## storage_metadata_write_full_object_key {#storage_metadata_write_full_object_key}
 
 When set to `true` the metadata files are written with `VERSION_FULL_OBJECT_KEY` format version. With that format full object storage key names are written to the metadata files.
-When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section.
+When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section. 
 
 Default value: `false`.
 
@@ -5291,102 +5135,12 @@ When set to `false` than all attempts are made with identical timeouts.
 
 Default value: `true`.
 
-## allow_experimental_variant_type {#allow_experimental_variant_type}
-
-Allows creation of experimental [Variant](../../sql-reference/data-types/variant.md).
-
-Default value: `false`.
-
-## use_variant_as_common_type {#use_variant_as_common_type}
-
-Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiif)/[array](../../sql-reference/functions/array-functions.md)/[map](../../sql-reference/functions/tuple-map-functions.md) functions when there is no common type for argument types.
-
-Example:
-
-```sql
-SET use_variant_as_common_type = 1;
-SELECT toTypeName(if(number % 2, number, range(number))) as variant_type FROM numbers(1);
-SELECT if(number % 2, number, range(number)) as variant FROM numbers(5);
-```
-
-```text
-┌─variant_type───────────────────┐
-│ Variant(Array(UInt64), UInt64) │
-└────────────────────────────────┘
-┌─variant───┐
-│ []        │
-│ 1         │
-│ [0,1]     │
-│ 3         │
-│ [0,1,2,3] │
-└───────────┘
-```
-
-```sql
-SET use_variant_as_common_type = 1;
-SELECT toTypeName(multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) = 2, 'Hello, World!', NULL)) AS variant_type FROM numbers(1);
-SELECT multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) = 2, 'Hello, World!', NULL) AS variant FROM numbers(4);
-```
-
-```text
-─variant_type─────────────────────────┐
-│ Variant(Array(UInt8), String, UInt8) │
-└──────────────────────────────────────┘
-
-┌─variant───────┐
-│ 42            │
-│ [1,2,3]       │
-│ Hello, World! │
-│ ᴺᵁᴸᴸ          │
-└───────────────┘
-```
-
-```sql
-SET use_variant_as_common_type = 1;
-SELECT toTypeName(array(range(number), number, 'str_' || toString(number))) as array_of_variants_type from numbers(1);
-SELECT array(range(number), number, 'str_' || toString(number)) as array_of_variants FROM numbers(3);
-```
-
-```text
-┌─array_of_variants_type────────────────────────┐
-│ Array(Variant(Array(UInt64), String, UInt64)) │
-└───────────────────────────────────────────────┘
-
-┌─array_of_variants─┐
-│ [[],0,'str_0']    │
-│ [[0],1,'str_1']   │
-│ [[0,1],2,'str_2'] │
-└───────────────────┘
-```
-
-```sql
-SET use_variant_as_common_type = 1;
-SELECT toTypeName(map('a', range(number), 'b', number, 'c', 'str_' || toString(number))) as map_of_variants_type from numbers(1);
-SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as map_of_variants FROM numbers(3);
-```
-
-```text
-┌─map_of_variants_type────────────────────────────────┐
-│ Map(String, Variant(Array(UInt64), String, UInt64)) │
-└─────────────────────────────────────────────────────┘
-
-┌─map_of_variants───────────────┐
-│ {'a':[],'b':0,'c':'str_0'}    │
-│ {'a':[0],'b':1,'c':'str_1'}   │
-│ {'a':[0,1],'b':2,'c':'str_2'} │
-└───────────────────────────────┘
-```
-
-
-Default value: `false`.
-
 ## max_partition_size_to_drop
 
-Restriction on dropping partitions in query time. The value 0 means that you can drop partitions without any restrictions.
+Restriction on dropping partitions in query time.
 
 Default value: 50 GB.
-
-Cloud default value: 1 TB.
+The value 0 means that you can drop partitions without any restrictions.
 
 :::note
 This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-partition-size-to-drop)
@@ -5394,11 +5148,10 @@ This query setting overwrites its server setting equivalent, see [max_partition_
 
 ## max_table_size_to_drop
 
-Restriction on deleting tables in query time. The value 0 means that you can delete all tables without any restrictions.
+Restriction on deleting tables in query time.
 
 Default value: 50 GB.
-
-Cloud default value: 1 TB.
+The value 0 means that you can delete all tables without any restrictions.
 
 :::note
 This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop)

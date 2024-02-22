@@ -63,7 +63,7 @@ public:
 
 private:
     std::unique_ptr<uv_loop_t> loop_ptr;
-    LoggerPtr log = getLogger("UVLoop");
+    Poco::Logger * log = &Poco::Logger::get("UVLoop");
 
     static void onUVWalkClosingCallback(uv_handle_t * handle, void *)
     {

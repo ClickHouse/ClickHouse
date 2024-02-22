@@ -1,5 +1,4 @@
 #include "config.h"
-#include <Common/re2.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -14,13 +13,21 @@
     #include "Poco/Crypto/X509Certificate.h"
 #endif
 
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
+
 namespace DB
 {
 
-ColumnsDescription StorageSystemCertificates::getColumnsDescription()
+NamesAndTypesList StorageSystemCertificates::getNamesAndTypes()
 {
-    /// TODO: Fill in all the comments.
-    return ColumnsDescription
+    return
     {
         {"version",         std::make_shared<DataTypeNumber<Int32>>()},
         {"serial_number",   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},

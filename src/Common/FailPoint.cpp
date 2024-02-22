@@ -6,6 +6,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <optional>
 
 namespace DB
 {
@@ -33,8 +34,6 @@ static struct InitFiu
 
 #define APPLY_FOR_FAILPOINTS(ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE) \
     ONCE(replicated_merge_tree_commit_zk_fail_after_op) \
-    ONCE(replicated_queue_fail_next_entry) \
-    REGULAR(replicated_queue_unfail_entries) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(use_delayed_remote_source) \
@@ -43,8 +42,7 @@ static struct InitFiu
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
     PAUSEABLE_ONCE(dummy_pausable_failpoint_once) \
-    PAUSEABLE(dummy_pausable_failpoint) \
-    ONCE(execute_query_calling_empty_set_result_func_on_exception)
+    PAUSEABLE(dummy_pausable_failpoint)
 
 namespace FailPoints
 {

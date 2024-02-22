@@ -212,8 +212,6 @@ Possible values:
 
 Default value: `'basic'`.
 
-Cloud default value: `'best_effort'`.
-
 See also:
 
 - [DateTime data type.](../../sql-reference/data-types/datetime.md)
@@ -376,12 +374,6 @@ See also:
 ## input_format_json_read_bools_as_numbers {#input_format_json_read_bools_as_numbers}
 
 Allow parsing bools as numbers in JSON input formats.
-
-Enabled by default.
-
-## input_format_json_read_bools_as_strings {#input_format_json_read_bools_as_strings}
-
-Allow parsing bools as strings in JSON input formats.
 
 Enabled by default.
 
@@ -1271,28 +1263,6 @@ Possible values:
 
 Default value: `0`.
 
-### output_format_arrow_use_signed_indexes_for_dictionary {#output_format_arrow_use_signed_indexes_for_dictionary}
-
-Use signed integer types instead of unsigned in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
-
-Possible values:
-
-- 0 — Unsigned integer types are used for indexes in `DICTIONARY` type.
-- 1 — Signed integer types are used for indexes in `DICTIONARY` type.
-
-Default value: `1`.
-
-### output_format_arrow_use_64_bit_indexes_for_dictionary {#output_format_arrow_use_64_bit_indexes_for_dictionary}
-
-Use 64-bit integer type in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
-
-Possible values:
-
-- 0 — Type for indexes in `DICTIONARY` type is determined automatically.
-- 1 — 64-bit integer type is used for indexes in `DICTIONARY` type.
-
-Default value: `0`.
-
 ### output_format_arrow_string_as_string {#output_format_arrow_string_as_string}
 
 Use Arrow String type instead of Binary for String columns.
@@ -1599,13 +1569,7 @@ Result:
 
 Use ANSI escape sequences to paint colors in Pretty formats.
 
-possible values:
-
--   `0` — Disabled. Pretty formats do not use ANSI escape sequences.
--   `1` — Enabled. Pretty formats will use ANSI escape sequences except for `NoEscapes` formats.
--   `auto` - Enabled if `stdout` is a terminal except for `NoEscapes` formats.
-
-Default value is `auto`. 
+Enabled by default.
 
 ### output_format_pretty_grid_charset {#output_format_pretty_grid_charset}
 
@@ -1662,10 +1626,6 @@ Result:
 
 Path to file which contains format string for result set (for Template format).
 
-### format_template_resultset_format {#format_template_resultset_format}
-
-Format string for result set (for Template format)
-
 ### format_template_row {#format_template_row}
 
 Path to file which contains format string for rows (for Template format).
@@ -1673,10 +1633,6 @@ Path to file which contains format string for rows (for Template format).
 ### format_template_rows_between_delimiter {#format_template_rows_between_delimiter}
 
 Delimiter between rows (for Template format).
-
-### format_template_row_format {#format_template_row_format}
-
-Format string for rows (for Template format)
 
 ## CustomSeparated format settings {custom-separated-format-settings}
 

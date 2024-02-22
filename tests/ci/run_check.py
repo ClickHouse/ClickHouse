@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 import atexit
-import logging
 import sys
+import logging
 from typing import Tuple
 
-# isort: off
 from github import Github
-
-# isort: on
 
 from commit_status_helper import (
     CI_STATUS_NAME,
@@ -21,13 +18,13 @@ from commit_status_helper import (
 )
 from env_helper import GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
+from pr_info import FORCE_TESTS_LABEL, PRInfo
 from lambda_shared_package.lambda_shared.pr import (
     CATEGORY_TO_LABEL,
     TRUSTED_CONTRIBUTORS,
     check_pr_description,
 )
-from pr_info import PRInfo
-from report import FAILURE, PENDING
+from report import FAILURE
 
 TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
@@ -66,6 +63,9 @@ def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
 def should_run_ci_for_pr(pr_info: PRInfo) -> Tuple[bool, str]:
     # Consider the labels and whether the user is trusted.
     print("Got labels", pr_info.labels)
+    if FORCE_TESTS_LABEL in pr_info.labels:
+        print(f"Label '{FORCE_TESTS_LABEL}' set, forcing remaining checks")
+        return True, f"Labeled '{FORCE_TESTS_LABEL}'"
 
     if OK_SKIP_LABELS.intersection(pr_info.labels):
         return True, "Don't try new checks for release/backports/cherry-picks"
@@ -146,7 +146,7 @@ def main():
         )
         post_commit_status(
             commit,
-            FAILURE,
+            "failure",
             url,
             format_description(description_error),
             PR_CHECK,
@@ -170,14 +170,6 @@ def main():
         # allow the workflow to continue
 
     if not can_run:
-        post_commit_status(
-            commit,
-            FAILURE,
-            "",
-            description,
-            PR_CHECK,
-            pr_info,
-        )
         print("::notice ::Cannot run")
         sys.exit(1)
 
@@ -185,7 +177,7 @@ def main():
     print("::notice ::Can run")
     post_commit_status(
         commit,
-        PENDING,
+        "pending",
         ci_report_url,
         description,
         CI_STATUS_NAME,

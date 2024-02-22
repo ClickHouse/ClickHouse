@@ -335,12 +335,12 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
                 auto dictionary = dictionary_helper.getDictionary(dictionary_name);
                 if (!dictionary)
                 {
-                    LOG_TRACE(getLogger("JoinedTables"), "Can't use dictionary join: dictionary '{}' was not found", dictionary_name);
+                    LOG_TRACE(&Poco::Logger::get("JoinedTables"), "Can't use dictionary join: dictionary '{}' was not found", dictionary_name);
                     return nullptr;
                 }
                 if (dictionary->getSpecialKeyType() == DictionarySpecialKeyType::Range)
                 {
-                    LOG_TRACE(getLogger("JoinedTables"), "Can't use dictionary join: dictionary '{}' is a range dictionary", dictionary_name);
+                    LOG_TRACE(&Poco::Logger::get("JoinedTables"), "Can't use dictionary join: dictionary '{}' is a range dictionary", dictionary_name);
                     return nullptr;
                 }
 

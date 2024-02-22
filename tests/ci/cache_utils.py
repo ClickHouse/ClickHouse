@@ -116,15 +116,9 @@ class Cache:
         self.s3_helper = s3_helper
 
     def _download(self, url: str, ignore_error: bool = False) -> None:
-        self.temp_path.mkdir(parents=True, exist_ok=True)
         compressed_cache = self.temp_path / self.archive_name
         try:
-            if url.startswith("file://"):
-                local_s3_cache = Path(url[7:])
-                if local_s3_cache.is_file():
-                    shutil.copy2(local_s3_cache, compressed_cache)
-            else:
-                download_build_with_progress(url, compressed_cache)
+            download_build_with_progress(url, compressed_cache)
         except DownloadException as e:
             if not ignore_error:
                 raise CacheError(f"Failed to download {url}") from e

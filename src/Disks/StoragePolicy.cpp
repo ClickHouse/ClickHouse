@@ -41,7 +41,7 @@ StoragePolicy::StoragePolicy(
     const String & config_prefix,
     DiskSelectorPtr disks)
     : name(std::move(name_))
-    , log(getLogger("StoragePolicy (" + name + ")"))
+    , log(&Poco::Logger::get("StoragePolicy (" + name + ")"))
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     String volumes_prefix = config_prefix + ".volumes";
@@ -96,7 +96,7 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
     : volumes(std::move(volumes_))
     , name(std::move(name_))
     , move_factor(move_factor_)
-    , log(getLogger("StoragePolicy (" + name + ")"))
+    , log(&Poco::Logger::get("StoragePolicy (" + name + ")"))
 {
     if (volumes.empty())
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Storage policy {} must contain at least one Volume.", backQuote(name));
@@ -418,7 +418,7 @@ StoragePolicySelector::StoragePolicySelector(
          */
 
         policies.emplace(name, std::make_shared<StoragePolicy>(name, config, config_prefix + "." + name, disks));
-        LOG_INFO(getLogger("StoragePolicySelector"), "Storage policy {} loaded", backQuote(name));
+        LOG_INFO(&Poco::Logger::get("StoragePolicySelector"), "Storage policy {} loaded", backQuote(name));
     }
 
     /// Add default policy if it isn't explicitly specified.

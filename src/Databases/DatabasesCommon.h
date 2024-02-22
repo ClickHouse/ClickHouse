@@ -45,7 +45,7 @@ public:
 
 protected:
     Tables tables TSA_GUARDED_BY(mutex);
-    LoggerPtr log;
+    Poco::Logger * log;
 
     DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context);
 

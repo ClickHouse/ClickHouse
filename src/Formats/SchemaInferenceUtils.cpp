@@ -17,7 +17,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 #include <IO/PeekableReadBuffer.h>
-#include <IO/readFloatText.h>
 
 #include <Core/Block.h>
 #include <Common/assert_cast.h>
@@ -378,22 +377,6 @@ namespace
         type_indexes.erase(TypeIndex::UInt8);
     }
 
-    /// If we have Bool and String types convert all numbers to String.
-    /// It's applied only when setting input_format_json_read_bools_as_strings is enabled.
-    void transformJSONBoolsAndStringsToString(DataTypes & data_types, TypeIndexesSet & type_indexes)
-    {
-        if (!type_indexes.contains(TypeIndex::String) || !type_indexes.contains(TypeIndex::UInt8))
-            return;
-
-        for (auto & type : data_types)
-        {
-            if (isBool(type))
-                type = std::make_shared<DataTypeString>();
-        }
-
-        type_indexes.erase(TypeIndex::UInt8);
-    }
-
     /// If we have type Nothing/Nullable(Nothing) and some other non Nothing types,
     /// convert all Nothing/Nullable(Nothing) types to the first non Nothing.
     /// For example, when we have [Nothing, Array(Int64)] it will convert it to [Array(Int64), Array(Int64)]
@@ -645,10 +628,6 @@ namespace
             if (settings.json.read_bools_as_numbers)
                 transformBoolsAndNumbersToNumbers(data_types, type_indexes);
 
-            /// Convert Bool to String if needed.
-            if (settings.json.read_bools_as_strings)
-                transformJSONBoolsAndStringsToString(data_types, type_indexes);
-
             if (settings.json.try_infer_objects_as_tuples)
                 mergeJSONPaths(data_types, type_indexes, settings, json_info);
         };
@@ -866,13 +845,6 @@ namespace
         return std::make_shared<DataTypeTuple>(nested_types);
     }
 
-    bool tryReadFloat(Float64 & value, ReadBuffer & buf, const FormatSettings & settings)
-    {
-        if (settings.try_infer_exponent_floats)
-            return tryReadFloatText(value, buf);
-        return tryReadFloatTextNoExponent(value, buf);
-    }
-
     DataTypePtr tryInferNumber(ReadBuffer & buf, const FormatSettings & settings)
     {
         if (buf.eof())
@@ -911,7 +883,7 @@ namespace
                     buf.position() = number_start;
                 }
 
-                if (tryReadFloat(tmp_float, buf, settings))
+                if (tryReadFloatText(tmp_float, buf))
                 {
                     if (read_int && buf.position() == int_end)
                         return std::make_shared<DataTypeInt64>();
@@ -945,7 +917,7 @@ namespace
                 peekable_buf.rollbackToCheckpoint(true);
             }
 
-            if (tryReadFloat(tmp_float, peekable_buf, settings))
+            if (tryReadFloatText(tmp_float, peekable_buf))
             {
                 /// Float parsing reads no fewer bytes than integer parsing,
                 /// so position of the buffer is either the same, or further.
@@ -957,7 +929,7 @@ namespace
                 return std::make_shared<DataTypeFloat64>();
             }
         }
-        else if (tryReadFloat(tmp_float, buf, settings))
+        else if (tryReadFloatText(tmp_float, buf))
         {
             return std::make_shared<DataTypeFloat64>();
         }
@@ -974,7 +946,7 @@ namespace
         if constexpr (is_json)
             ok = tryReadJSONStringInto(field, buf);
         else
-            ok = tryReadQuotedString(field, buf);
+            ok = tryReadQuotedStringInto(field, buf);
 
         if (!ok)
             return nullptr;
@@ -1398,7 +1370,7 @@ DataTypePtr tryInferNumberFromString(std::string_view field, const FormatSetting
     buf.position() = buf.buffer().begin();
 
     Float64 tmp;
-    if (tryReadFloat(tmp, buf, settings) && buf.eof())
+    if (tryReadFloatText(tmp, buf) && buf.eof())
         return std::make_shared<DataTypeFloat64>();
 
     return nullptr;

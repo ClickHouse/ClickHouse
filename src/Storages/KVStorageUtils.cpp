@@ -236,7 +236,7 @@ std::pair<FieldVectorPtr, bool> getFilterKeys(
     if (filter_nodes.nodes.empty())
         return {{}, true};
 
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
     const auto * predicate = filter_actions_dag->getOutputs().at(0);
 
     FieldVectorPtr res = std::make_shared<FieldVector>();

@@ -179,7 +179,7 @@ ConstStoragePtr MultipleAccessStorage::getStorage(const UUID & id) const
     return const_cast<MultipleAccessStorage *>(this)->getStorage(id);
 }
 
-StoragePtr MultipleAccessStorage::findStorageByName(const String & storage_name)
+StoragePtr MultipleAccessStorage::findStorageByName(const DB::String & storage_name)
 {
     auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
@@ -192,13 +192,13 @@ StoragePtr MultipleAccessStorage::findStorageByName(const String & storage_name)
 }
 
 
-ConstStoragePtr MultipleAccessStorage::findStorageByName(const String & storage_name) const
+ConstStoragePtr MultipleAccessStorage::findStorageByName(const DB::String & storage_name) const
 {
     return const_cast<MultipleAccessStorage *>(this)->findStorageByName(storage_name);
 }
 
 
-StoragePtr MultipleAccessStorage::getStorageByName(const String & storage_name)
+StoragePtr MultipleAccessStorage::getStorageByName(const DB::String & storage_name)
 {
     auto storage = findStorageByName(storage_name);
     if (storage)
@@ -208,12 +208,12 @@ StoragePtr MultipleAccessStorage::getStorageByName(const String & storage_name)
 }
 
 
-ConstStoragePtr MultipleAccessStorage::getStorageByName(const String & storage_name) const
+ConstStoragePtr MultipleAccessStorage::getStorageByName(const DB::String & storage_name) const
 {
     return const_cast<MultipleAccessStorage *>(this)->getStorageByName(storage_name);
 }
 
-StoragePtr MultipleAccessStorage::findExcludingStorage(AccessEntityType type, const String & name, DB::MultipleAccessStorage::StoragePtr exclude) const
+StoragePtr MultipleAccessStorage::findExcludingStorage(AccessEntityType type, const DB::String & name, DB::MultipleAccessStorage::StoragePtr exclude) const
 {
     auto storages = getStoragesInternal();
     for (const auto & storage : *storages)

@@ -201,7 +201,6 @@ struct Settings;
     M(String, primary_key_compression_codec, "ZSTD(3)", "Compression encoding used by primary, primary key is small enough and cached, so the default compression is ZSTD(3).", 0) \
     M(UInt64, marks_compress_block_size, 65536, "Mark compress block size, the actual size of the block to compress.", 0) \
     M(UInt64, primary_key_compress_block_size, 65536, "Primary compress block size, the actual size of the block to compress.", 0) \
-    M(Bool, primary_key_lazy_load, true, "Load primary key in memory on first use instead of on table initialization. This can save memory in the presence of a large number of tables.", 0) \
     \
     /** Projection settings. */ \
     M(UInt64, max_projections, 25, "The maximum number of merge tree projections.", 0) \
@@ -256,7 +255,7 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>, public 
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context);
 
     /// We check settings after storage creation
     static bool isReadonlySetting(const String & name)
@@ -277,12 +276,5 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>, public 
 };
 
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
-
-
-/// Column-level Merge-Tree settings which overwrite MergeTree settings
-namespace MergeTreeColumnSettings
-{
-    void validate(const SettingsChanges & changes);
-}
 
 }

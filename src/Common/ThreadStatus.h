@@ -236,7 +236,7 @@ private:
     using Deleter = std::function<void()>;
     Deleter deleter;
 
-    LoggerPtr log = nullptr;
+    Poco::Logger * log = nullptr;
 
     bool check_current_thread_on_destruction;
 

@@ -122,7 +122,7 @@ private:
     TasksPerThread per_thread_tasks;
     std::priority_queue<TaskHolder> prefetch_queue; /// the smallest on top
     bool started_prefetches = false;
-    LoggerPtr log;
+    Poco::Logger * log;
 
     /// A struct which allows to track max number of tasks which were in the
     /// threadpool simultaneously (similar to CurrentMetrics, but the result

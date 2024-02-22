@@ -27,9 +27,6 @@ class IConnectionPool : private boost::noncopyable
 public:
     using Entry = PoolBase<Connection>::Entry;
 
-    IConnectionPool() = default;
-    IConnectionPool(String host_, UInt16 port_) : host(host_), port(port_), address(host + ":" + toString(port_)) {}
-
     virtual ~IConnectionPool() = default;
 
     /// Selects the connection to work.
@@ -39,15 +36,7 @@ public:
                       const Settings & settings,
                       bool force_connected = true) = 0;
 
-    const std::string & getHost() const { return host; }
-    UInt16 getPort() const { return port; }
-    const String & getAddress() const { return address; }
     virtual Priority getPriority() const { return Priority{1}; }
-
-protected:
-    const String host;
-    const UInt16 port = 0;
-    const String address;
 };
 
 using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
@@ -74,9 +63,10 @@ public:
             Protocol::Compression compression_,
             Protocol::Secure secure_,
             Priority priority_ = Priority{1})
-       : IConnectionPool(host_, port_),
-        Base(max_connections_,
-        getLogger("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
+       : Base(max_connections_,
+        &Poco::Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
+        host(host_),
+        port(port_),
         default_database(default_database_),
         user(user_),
         password(password_),
@@ -109,6 +99,10 @@ public:
         return entry;
     }
 
+    const std::string & getHost() const
+    {
+        return host;
+    }
     std::string getDescription() const
     {
         return host + ":" + toString(port);
@@ -131,6 +125,8 @@ protected:
     }
 
 private:
+    String host;
+    UInt16 port;
     String default_database;
     String user;
     String password;

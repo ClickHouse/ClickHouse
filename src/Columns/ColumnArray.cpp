@@ -109,7 +109,7 @@ MutableColumnPtr ColumnArray::cloneResized(size_t to_size) const
             offset = getOffsets().back();
         }
 
-        res->getOffsets().resize_exact(to_size);
+        res->getOffsets().resize(to_size);
         for (size_t i = from_size; i < to_size; ++i)
             res->getOffsets()[i] = offset;
     }
@@ -427,12 +427,6 @@ void ColumnArray::reserve(size_t n)
     getData().reserve(n); /// The average size of arrays is not taken into account here. Or it is considered to be no more than 1.
 }
 
-void ColumnArray::shrinkToFit()
-{
-    getOffsets().shrink_to_fit();
-    getData().shrinkToFit();
-}
-
 void ColumnArray::ensureOwnership()
 {
     getData().ensureOwnership();
@@ -554,21 +548,6 @@ void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t leng
 }
 
 
-MutableColumnPtr ColumnArray::getDataInRange(size_t start, size_t length) const
-{
-    if (start + length > getOffsets().size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnArray::getDataPtrForRange method. "
-            "[start({}) + length({}) > offsets.size({})]", start, length, getOffsets().size());
-
-    size_t start_offset = offsetAt(start);
-    size_t end_offset = offsetAt(start + length);
-
-    auto res = getData().cloneEmpty();
-    res->insertRangeFrom(getData(), start_offset, end_offset - start_offset);
-    return res;
-}
-
-
 ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     if (typeid_cast<const ColumnUInt8 *>(data.get()))
@@ -624,7 +603,7 @@ void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
 
     ssize_t index = mask.size() - 1;
     ssize_t from = offsets_data.size() - 1;
-    offsets_data.resize_exact(mask.size());
+    offsets_data.resize(mask.size());
     UInt64 last_offset = offsets_data[from];
     while (index >= 0)
     {
@@ -810,7 +789,7 @@ ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint
     size_t tuple_size = tuple.tupleSize();
 
     if (tuple_size == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty tuple");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: empty tuple");
 
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
@@ -852,7 +831,7 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     auto res = ColumnArray::create(data->cloneEmpty());
 
     Offsets & res_offsets = res->getOffsets();
-    res_offsets.resize_exact(limit);
+    res_offsets.resize(limit);
     size_t current_offset = 0;
 
     for (size_t i = 0; i < limit; ++i)
@@ -1263,7 +1242,7 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
     size_t tuple_size = tuple.tupleSize();
 
     if (tuple_size == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty tuple");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: empty tuple");
 
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)

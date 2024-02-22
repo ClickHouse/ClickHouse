@@ -40,7 +40,7 @@ public:
 private:
     StorageReplicatedMergeTree & storage;
     String log_name;
-    LoggerPtr log;
+    Poco::Logger * log;
     BackgroundSchedulePool::TaskHolder task;
     pcg64 rng{randomSeed()};
 
