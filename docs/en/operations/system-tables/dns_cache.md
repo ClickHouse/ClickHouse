@@ -13,7 +13,7 @@ Columns:
    - 'IPv4' 
    - 'IPv6'
    - 'UNIX_LOCAL'
-- `cached_at` ([DateTime](../../sql-reference/data-types/datetime.md)) - datetime when the record was cached
+- `cached_at` ([DateTime](../../sql-reference/data-types/datetime.md)) - when the record was cached
 
 **Example**
 
