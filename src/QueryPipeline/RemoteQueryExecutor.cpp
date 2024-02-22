@@ -221,7 +221,6 @@ RemoteQueryExecutor::RemoteQueryExecutor(
                 current_settings,
                 pool_mode,
                 main_table.getQualifiedName(),
-                /* insert= */ false,
                 std::move(async_callback),
                 skip_unavailable_endpoints,
                 priority_func);

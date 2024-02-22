@@ -173,8 +173,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             else
                 try_results = my_shard.shard_info.pool->getManyChecked(
                     timeouts, current_settings, PoolMode::GET_MANY,
-                    my_shard.main_table ? my_shard.main_table.getQualifiedName() : my_main_table.getQualifiedName(),
-                    /* insert= */ false);
+                    my_shard.main_table ? my_shard.main_table.getQualifiedName() : my_main_table.getQualifiedName());
         }
         catch (const Exception & ex)
         {

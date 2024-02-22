@@ -70,13 +70,11 @@ public:
 
     /// The same as getMany(), but check that:
     /// - replication delay for table_to_check is acceptable (delay threshold is taken from settings)
-    /// - replica is not read only in case of @insert == true
     std::vector<TryResult> getManyChecked(
         const ConnectionTimeouts & timeouts,
         const Settings & settings,
         PoolMode pool_mode,
         const QualifiedTableName & table_to_check,
-        bool insert,
         AsyncCallback async_callback = {},
         std::optional<bool> skip_unavailable_endpoints = std::nullopt,
         GetPriorityForLoadBalancing::Func priority_func = {});
@@ -109,7 +107,6 @@ private:
         const Settings & settings,
         PoolMode pool_mode,
         const TryGetEntryFunc & try_get_entry,
-        bool insert,
         std::optional<bool> skip_unavailable_endpoints = std::nullopt,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
@@ -128,6 +125,8 @@ private:
 
     GetPriorityForLoadBalancing get_priority_load_balancing;
 };
+
+void sortConnectionPoolByNonReadOnlyReplicas(std::vector<ConnectionPoolWithFailover::TryResult> & results);
 
 using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;
 using ConnectionPoolWithFailoverPtrs = std::vector<ConnectionPoolWithFailoverPtr>;

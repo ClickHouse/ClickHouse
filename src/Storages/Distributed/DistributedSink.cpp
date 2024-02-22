@@ -372,7 +372,10 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
                     /// NOTE: INSERT will also take into account max_replica_delay_for_distributed_queries
                     /// (anyway fallback_to_stale_replicas_for_distributed_queries=true by default)
-                    auto results = shard_info.pool->getManyChecked(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName(), /* insert= */ true);
+                    auto results = shard_info.pool->getManyChecked(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
+                    if (settings.distributed_insert_prefer_non_readonly_replica)
+                        sortConnectionPoolByNonReadOnlyReplicas(results);
+
                     if (results.empty() || results.front().entry.isNull())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection for shard {}", toString(job.shard_index));
 
