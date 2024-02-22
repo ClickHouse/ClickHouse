@@ -795,6 +795,8 @@ bool TCPHandler::readDataNext()
 
             /// We accept and process data.
             read_ok = receivePacket();
+            /// Reset the timeout on Ping packet (NOTE: there is no Ping for INSERT queries yet).
+            watch.restart();
             break;
         }
 
