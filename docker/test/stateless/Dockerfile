@@ -3,7 +3,7 @@
 ARG FROM_TAG=latest
 FROM clickhouse/test-base:$FROM_TAG
 
-ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
+ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.6.20200320/clickhouse-odbc-1.1.6-Linux.tar.gz"
 
 # golang version 1.13 on Ubuntu 20 is enough for tests
 RUN apt-get update -y \
@@ -50,11 +50,14 @@ RUN apt-get update -y \
 RUN pip3 install numpy==1.26.3 scipy==1.12.0 pandas==1.5.3 Jinja2==3.1.3 pyarrow==15.0.0
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
-   && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
-   && cp /tmp/clickhouse-odbc-tmp/lib64/*.so /usr/local/lib/ \
-   && odbcinst -i -d -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbcinst.ini.sample \
-   && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
-   && rm -rf /tmp/clickhouse-odbc-tmp
+  && cd /tmp/clickhouse-odbc-tmp \
+  && curl -L ${odbc_driver_url} | tar --strip-components=1 -xz clickhouse-odbc-1.1.6-Linux \
+  && mkdir /usr/local/lib64 -p \
+  && cp /tmp/clickhouse-odbc-tmp/lib64/*.so /usr/local/lib64/ \
+  && odbcinst -i -d -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbcinst.ini.sample \
+  && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
+  && sed -i 's"=libclickhouseodbc"=/usr/local/lib64/libclickhouseodbc"' /etc/odbcinst.ini \
+  && rm -rf /tmp/clickhouse-odbc-tmp
 
 ENV TZ=Europe/Amsterdam
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
