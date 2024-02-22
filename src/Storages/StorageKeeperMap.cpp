@@ -233,7 +233,7 @@ public:
                     will_be);
         }
 
-        zookeeper->multi(requests);
+        zookeeper->multi(requests, /* check_session_valid */ true);
     }
 };
 
@@ -1208,7 +1208,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
             }
 
             Coordination::Responses responses;
-            auto status = client->tryMulti(delete_requests, responses);
+            auto status = client->tryMulti(delete_requests, responses, /* check_session_valid */ true);
 
             if (status == Coordination::Error::ZOK)
                 return;

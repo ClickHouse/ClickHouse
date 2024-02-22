@@ -99,8 +99,8 @@ static std::vector<std::string> extractFromConfig(
 
         zkutil::validateZooKeeperConfig(*bootstrap_configuration);
 
-        zkutil::ZooKeeperPtr zookeeper = std::make_shared<zkutil::ZooKeeper>(
-            *bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper", nullptr);
+        zkutil::ZooKeeperPtr zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(
+            *bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper");
 
         zkutil::ZooKeeperNodeCache zk_node_cache([&] { return zookeeper; });
         config_xml = processor.processConfig(&has_zk_includes, &zk_node_cache);

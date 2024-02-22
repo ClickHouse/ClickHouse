@@ -407,8 +407,13 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
         {
             Coordination::SimpleFaultInjection fault(fault_probability_before_commit, fault_probability_after_commit, "commit");
 
+            Coordination::Requests requests;
+            requests.push_back(zkutil::makeCreateRequest(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential));
+
             /// Commit point
-            csn_path_created = current_zookeeper->create(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential);
+            auto res = current_zookeeper->multi(requests, /* check_session_valid */ true);
+
+            csn_path_created = dynamic_cast<const Coordination::CreateResponse *>(res.back().get())->path_created;
         }
         catch (const Coordination::Exception & e)
         {
