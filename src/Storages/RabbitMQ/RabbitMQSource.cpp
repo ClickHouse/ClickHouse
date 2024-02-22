@@ -168,7 +168,9 @@ Chunk RabbitMQSource::generateImpl()
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
 
-    RabbitMQConsumer::CommitInfo current_commit_info;
+    /// Channel id will not change during read.
+    commit_info.channel_id = consumer->getChannelID();
+
     while (true)
     {
         exception_message.reset();
@@ -176,14 +178,28 @@ Chunk RabbitMQSource::generateImpl()
 
         if (consumer->hasPendingMessages())
         {
+            /// A buffer containing a single RabbitMQ message.
             if (auto buf = consumer->consume())
+            {
                 new_rows = executor.execute(*buf);
+                chassert(new_rows == 1);
+            }
         }
 
         if (new_rows)
         {
             const auto exchange_name = storage.getExchange();
             const auto & message = consumer->currentMessage();
+
+            if (exception_message.has_value())
+            {
+                commit_info.failed_delivery_tags.push_back(message.delivery_tag);
+            }
+            else
+            {
+                chassert(commit_info.delivery_tag < message.delivery_tag);
+                commit_info.delivery_tag = message.delivery_tag;
+            }
 
             for (size_t i = 0; i < new_rows; ++i)
             {
@@ -209,7 +225,6 @@ Chunk RabbitMQSource::generateImpl()
             }
 
             total_rows += new_rows;
-            current_commit_info = {message.delivery_tag, message.channel_id};
         }
         else if (total_rows == 0)
         {
@@ -251,7 +266,6 @@ Chunk RabbitMQSource::generateImpl()
     for (auto & column : virtual_columns)
         result_columns.push_back(std::move(column));
 
-    commit_info = current_commit_info;
     return Chunk(std::move(result_columns), total_rows);
 }
 
