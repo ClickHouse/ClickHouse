@@ -69,15 +69,17 @@ MergeTreePartition verifyCompatibilityAndCreatePartition(
     const auto source_metadata = source_storage.getInMemoryMetadataPtr();
     const auto destination_metadata = destination_storage.getInMemoryMetadataPtr();
 
-    const auto source_partition_key_ast = source_metadata->getPartitionKeyAST();
-    const auto destination_partition_key_ast = destination_metadata->getPartitionKeyAST();
-
     MergeTreePartition partition;
 
+    // In theory, here is no way for the code to reach this point with `source->hasPartitionKey == false` because it would have failed earlier
+    // since destination partition expression must be a subset of source partition expression. If it is the same, this method is not called.
     if (!destination_metadata->hasPartitionKey())
     {
         return partition;
     }
+
+    const auto source_partition_key_ast = source_metadata->getPartitionKeyAST();
+    const auto destination_partition_key_ast = destination_metadata->getPartitionKeyAST();
 
     // If destination partition expression columns are a subset of source partition expression columns,
     // there is no need to check for monotonicity.

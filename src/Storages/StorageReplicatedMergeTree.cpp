@@ -8227,6 +8227,12 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             src_all_parts = src_data.getActivePartsToReplace(source_drop_range, source_drop_range_fake_part_name, covering_part, parts_lock);
         }
 
+        // Can I safely return here? This is done in all other places.
+        if (src_all_parts.empty())
+        {
+            return;
+        }
+
         if (covering_part)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got part {} covering drop range {}, it's a bug",
                             covering_part->name, source_drop_range_fake_part_name);
