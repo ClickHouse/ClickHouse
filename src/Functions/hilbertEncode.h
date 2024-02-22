@@ -113,7 +113,9 @@ private:
         if (initial_shift < used_bits)
         {
             ++iterations;
-        } else {
+        }
+        else
+        {
             initial_shift -= bit_step;
         }
         UInt8 state = iterations % 2 == 0 ? 0b01 << getHilbertShift(bit_step) : 0;
@@ -169,8 +171,9 @@ public:
         ColumnUInt64::Container & vec_res = col_res->getData();
         vec_res.resize(input_rows_count);
 
-        const auto expand = [mask](const UInt64 value, const UInt8 column_id) {
-            if (mask)
+        const auto expand = [mask](const UInt64 value, const UInt8 column_id)
+        {
+            if z(mask)
                 return value << mask->getColumn(column_id).getUInt(0);
             return value;
         };
