@@ -234,6 +234,15 @@ void ColumnSparse::insert(const Field & x)
     insertSingleValue([&](IColumn & column) { column.insert(x); });
 }
 
+bool ColumnSparse::tryInsert(const Field & x)
+{
+    if (!values->tryInsert(x))
+        return false;
+
+    insertSingleValue([&](IColumn &) {}); /// Value already inserted, use no-op inserter.
+    return true;
+}
+
 void ColumnSparse::insertFrom(const IColumn & src, size_t n)
 {
     if (const auto * src_sparse = typeid_cast<const ColumnSparse *>(&src))
