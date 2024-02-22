@@ -275,6 +275,14 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options)
         }
         else
         {
+            auto child_plans = frame.node->step->getChildPlans();
+
+            if (!frame.children_array && !child_plans.empty())
+                frame.children_array = std::make_unique<JSONBuilder::JSONArray>();
+
+            for (const auto & child_plan : child_plans)
+                frame.children_array->add(child_plan->explainPlan(options));
+
             if (frame.children_array)
                 frame.node_map->add("Plans", std::move(frame.children_array));
 
