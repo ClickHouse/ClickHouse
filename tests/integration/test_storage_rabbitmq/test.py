@@ -3722,6 +3722,7 @@ def test_rabbitmq_reject_broken_messages(rabbitmq_cluster):
         if rows == num_rows:
             break
         attempt += 1
+        time.sleep(1)
 
     assert rows == num_rows
 
