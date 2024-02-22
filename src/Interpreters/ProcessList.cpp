@@ -295,7 +295,7 @@ ProcessListEntry::~ProcessListEntry()
     auto user_process_list_it = parent.user_to_queries.find(user);
     if (user_process_list_it == parent.user_to_queries.end())
     {
-        LOG_ERROR(getLogger("ProcessList"), "Cannot find user in ProcessList");
+        LOG_ERROR(getLogger("ProcessList"), "Logical error: cannot find user in ProcessList");
         std::terminate();
     }
 
@@ -323,7 +323,7 @@ ProcessListEntry::~ProcessListEntry()
 
     if (!found)
     {
-        LOG_ERROR(getLogger("ProcessList"), "Cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
+        LOG_ERROR(getLogger("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
         std::terminate();
     }
 
