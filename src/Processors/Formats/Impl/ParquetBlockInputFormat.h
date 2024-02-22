@@ -65,8 +65,6 @@ public:
 
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
 
-    Chunk generate() override;
-
 private:
     Chunk read() override;
 
@@ -288,8 +286,6 @@ private:
     std::exception_ptr background_exception = nullptr;
     std::atomic<int> is_stopped{0};
     bool is_initialized = false;
-
-    UInt64 consumed_nanosecs = 0;
 };
 
 class ParquetSchemaReader : public ISchemaReader
