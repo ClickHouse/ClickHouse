@@ -860,6 +860,9 @@ ActiveDataPartSet getPartNamesToMutate(
 
 int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback)
 {
+    if (pull_log_blocker.isCancelled())
+        throw Exception(ErrorCodes::ABORTED, "Log pulling is cancelled");
+
     std::lock_guard lock(update_mutations_mutex);
 
     Coordination::Stat mutations_stat;
@@ -1786,7 +1789,7 @@ ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zk
 }
 
 
-std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
+MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
 {
     std::unique_lock lock(state_mutex);
 
@@ -1796,9 +1799,8 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
 
     Int64 part_data_version = part->info.getDataVersion();
     Int64 part_metadata_version = part->getMetadataVersion();
-    LOG_TEST(log, "Looking for mutations for part {} (part data version {}, part metadata version {})", part->name, part_data_version, part_metadata_version);
 
-    std::map<int64_t, MutationCommands> result;
+    MutationCommands result;
 
     bool seen_all_data_mutations = false;
     bool seen_all_metadata_mutations = false;
@@ -1811,7 +1813,15 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
         if (seen_all_data_mutations && seen_all_metadata_mutations)
             break;
 
-        auto alter_version = mutation_status->entry->alter_version;
+        auto & entry = mutation_status->entry;
+
+        auto add_to_result = [&] {
+            for (const auto & command : entry->commands | std::views::reverse)
+                if (AlterConversions::supportsMutationCommandType(command.type))
+                    result.emplace_back(command);
+        };
+
+        auto alter_version = entry->alter_version;
         if (alter_version != -1)
         {
             if (alter_version > storage.getInMemoryMetadataPtr()->getMetadataVersion())
@@ -1819,21 +1829,18 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
 
             /// We take commands with bigger metadata version
             if (alter_version > part_metadata_version)
-                result[mutation_version] = mutation_status->entry->commands;
+                add_to_result();
             else
                 seen_all_metadata_mutations = true;
         }
         else
         {
             if (mutation_version > part_data_version)
-                result[mutation_version] = mutation_status->entry->commands;
+                add_to_result();
             else
                 seen_all_data_mutations = true;
         }
     }
-
-    LOG_TEST(log, "Got {} commands for part {} (part data version {}, part metadata version {})",
-        result.size(), part->name, part_data_version, part_metadata_version);
 
     return result;
 }

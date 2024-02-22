@@ -1775,6 +1775,10 @@ Default value: 0 (no restriction).
 
 ## insert_quorum {#insert_quorum}
 
+:::note
+`insert_quorum` does not apply when using the [`SharedMergeTree` table engine](/en/cloud/reference/shared-merge-tree) in ClickHouse Cloud as all inserts are quorum inserted.
+:::
+
 Enables the quorum writes.
 
 - If `insert_quorum < 2`, the quorum writes are disabled.
@@ -1813,6 +1817,10 @@ See also:
 - [select_sequential_consistency](#select_sequential_consistency)
 
 ## insert_quorum_parallel {#insert_quorum_parallel}
+
+:::note
+`insert_quorum_parallel` does not apply when using the [`SharedMergeTree` table engine](/en/cloud/reference/shared-merge-tree) in ClickHouse Cloud as all inserts are quorum inserted.
+:::
 
 Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
 
@@ -4269,41 +4277,6 @@ Result:
 │  20 │  20 │   10  │
 │  10 │  20 │   30  │
 └─────┴─────┴───────┘
-```
-
-## enable_order_by_all {#enable-order-by-all}
-
-Enables or disables sorting by `ALL` columns, i.e. [ORDER BY](../../sql-reference/statements/select/order-by.md)
-
-Possible values:
-
-- 0 — Disable ORDER BY ALL.
-- 1 — Enable ORDER BY ALL.
-
-Default value: `1`.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE TAB(C1 Int, C2 Int, ALL Int) ENGINE=Memory();
-
-INSERT INTO TAB VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
-
-SELECT * FROM TAB ORDER BY ALL; -- returns an error that ALL is ambiguous
-
-SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all;
-```
-
-Result:
-
-```text
-┌─C1─┬─C2─┬─ALL─┐
-│ 20 │ 20 │  10 │
-│ 30 │ 10 │  20 │
-│ 10 │ 20 │  30 │
-└────┴────┴─────┘
 ```
 
 ## splitby_max_substrings_includes_remaining_string {#splitby_max_substrings_includes_remaining_string}

@@ -452,3 +452,57 @@ def test_backup_to_zip():
     backup_name = new_backup_name()
     backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', 'minio123')"
     check_backup_and_restore(storage_policy, backup_destination)
+
+
+def test_user_specific_auth(start_cluster):
+    def create_user(user):
+        node.query(f"CREATE USER {user}")
+        node.query(f"GRANT CURRENT GRANTS ON *.* TO {user}")
+
+    create_user("superuser1")
+    create_user("superuser2")
+    create_user("regularuser")
+
+    node.query("CREATE TABLE specific_auth (col UInt64) ENGINE=Memory")
+
+    assert "Access Denied" in node.query_and_get_error(
+        "BACKUP TABLE specific_auth TO S3('http://minio1:9001/root/data/backups/limited/backup1.zip')"
+    )
+    assert "Access Denied" in node.query_and_get_error(
+        "BACKUP TABLE specific_auth TO S3('http://minio1:9001/root/data/backups/limited/backup1.zip')",
+        user="regularuser",
+    )
+
+    node.query(
+        "BACKUP TABLE specific_auth TO S3('http://minio1:9001/root/data/backups/limited/backup1.zip')",
+        user="superuser1",
+    )
+    node.query(
+        "RESTORE TABLE specific_auth FROM S3('http://minio1:9001/root/data/backups/limited/backup1.zip')",
+        user="superuser1",
+    )
+
+    node.query(
+        "BACKUP TABLE specific_auth TO S3('http://minio1:9001/root/data/backups/limited/backup2.zip')",
+        user="superuser2",
+    )
+    node.query(
+        "RESTORE TABLE specific_auth FROM S3('http://minio1:9001/root/data/backups/limited/backup2.zip')",
+        user="superuser2",
+    )
+
+    assert "Access Denied" in node.query_and_get_error(
+        "RESTORE TABLE specific_auth FROM S3('http://minio1:9001/root/data/backups/limited/backup1.zip')",
+        user="regularuser",
+    )
+
+    assert "HTTP response code: 403" in node.query_and_get_error(
+        "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup1.zip', 'RawBLOB')",
+        user="regularuser",
+    )
+    node.query(
+        "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup1.zip', 'RawBLOB')",
+        user="superuser1",
+    )
+
+    node.query("DROP TABLE IF EXISTS test.specific_auth")

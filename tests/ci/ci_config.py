@@ -141,7 +141,7 @@ class JobNames(metaclass=WithIter):
     BUILD_CHECK_SPECIAL = "ClickHouse special build check"
 
     DOCS_CHECK = "Docs check"
-    BUGFIX_VALIDATE = "tests bugfix validate check"
+    BUGFIX_VALIDATE = "Bugfix validation"
 
 
 # dynamically update JobName with Build jobs
@@ -198,6 +198,8 @@ class JobConfig:
     pr_only: bool = False
     # job is for release/master branches only
     release_only: bool = False
+    # to randomly pick and run one job among jobs in the same @random_bucket. Applied in PR branches only.
+    random_bucket: str = ""
 
 
 @dataclass
@@ -282,7 +284,6 @@ class BuildReportConfig:
 @dataclass
 class TestConfig:
     required_build: str
-    force_tests: bool = False
     job_config: JobConfig = field(default_factory=JobConfig)
 
 
@@ -302,6 +303,7 @@ install_check_digest = DigestConfig(
 )
 stateless_check_digest = DigestConfig(
     include_paths=[
+        "./tests/ci/functional_test_check.py",
         "./tests/queries/0_stateless/",
         "./tests/clickhouse-test",
         "./tests/config",
@@ -312,6 +314,7 @@ stateless_check_digest = DigestConfig(
 )
 stateful_check_digest = DigestConfig(
     include_paths=[
+        "./tests/ci/functional_test_check.py",
         "./tests/queries/1_stateful/",
         "./tests/clickhouse-test",
         "./tests/config",
@@ -473,9 +476,6 @@ class CIConfig:
             if check_name in config:  # type: ignore
                 res = config[check_name].job_config  # type: ignore
                 break
-        assert (
-            res is not None
-        ), f"Invalid check_name or CI_CONFIG outdated, config not found for [{check_name}]"
         return res  # type: ignore
 
     @staticmethod
@@ -639,16 +639,8 @@ CI_CONFIG = CIConfig(
         Labels.CI_SET_INTEGRATION: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
-                Build.PACKAGE_ASAN,
                 Build.PACKAGE_RELEASE,
-                Build.PACKAGE_TSAN,
-                Build.PACKAGE_AARCH64,
-                JobNames.INTEGRATION_TEST_ASAN,
-                JobNames.INTEGRATION_TEST_ARM,
                 JobNames.INTEGRATION_TEST,
-                JobNames.INTEGRATION_TEST_ASAN_ANALYZER,
-                JobNames.INTEGRATION_TEST_TSAN,
-                JobNames.INTEGRATION_TEST_FLAKY,
             ]
         ),
         Labels.CI_SET_REDUCED: LabelConfig(
@@ -890,7 +882,9 @@ CI_CONFIG = CIConfig(
         JobNames.BUGFIX_VALIDATE: TestConfig(
             "",
             # we run this check by label - no digest required
-            job_config=JobConfig(run_by_label="pr-bugfix"),
+            job_config=JobConfig(
+                run_by_label="pr-bugfix", run_command="bugfix_validate_check.py"
+            ),
         ),
     },
     test_configs={
@@ -932,16 +926,16 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_DEBUG, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_ASAN: TestConfig(
-            Build.PACKAGE_ASAN, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
+            Build.PACKAGE_ASAN, job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_MSAN: TestConfig(
-            Build.PACKAGE_MSAN, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
+            Build.PACKAGE_MSAN, job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_UBSAN: TestConfig(
-            Build.PACKAGE_UBSAN, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
+            Build.PACKAGE_UBSAN, job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_TSAN: TestConfig(
-            Build.PACKAGE_TSAN, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
+            Build.PACKAGE_TSAN, job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
         ),
         # End stateful tests for parallel replicas
         JobNames.STATELESS_TEST_ASAN: TestConfig(
@@ -993,29 +987,29 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_TSAN,
             job_config=JobConfig(num_batches=5, **statless_test_common_params),  # type: ignore
         ),
-        JobNames.STRESS_TEST_ASAN: TestConfig(
-            Build.PACKAGE_ASAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
+        JobNames.STRESS_TEST_DEBUG: TestConfig(
+            Build.PACKAGE_DEBUG, job_config=JobConfig(**stress_test_common_params)  # type: ignore
         ),
         JobNames.STRESS_TEST_TSAN: TestConfig(
             Build.PACKAGE_TSAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
         ),
+        JobNames.STRESS_TEST_ASAN: TestConfig(
+            Build.PACKAGE_ASAN, job_config=JobConfig(random_bucket="stress_with_sanitizer", **stress_test_common_params)  # type: ignore
+        ),
         JobNames.STRESS_TEST_UBSAN: TestConfig(
-            Build.PACKAGE_UBSAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
+            Build.PACKAGE_UBSAN, job_config=JobConfig(random_bucket="stress_with_sanitizer", **stress_test_common_params)  # type: ignore
         ),
         JobNames.STRESS_TEST_MSAN: TestConfig(
-            Build.PACKAGE_MSAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
-        ),
-        JobNames.STRESS_TEST_DEBUG: TestConfig(
-            Build.PACKAGE_DEBUG, job_config=JobConfig(**stress_test_common_params)  # type: ignore
+            Build.PACKAGE_MSAN, job_config=JobConfig(random_bucket="stress_with_sanitizer", **stress_test_common_params)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_ASAN: TestConfig(
-            Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, **upgrade_test_common_params)  # type: ignore
+            Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_TSAN: TestConfig(
-            Build.PACKAGE_TSAN, job_config=JobConfig(pr_only=True, **upgrade_test_common_params)  # type: ignore
+            Build.PACKAGE_TSAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_MSAN: TestConfig(
-            Build.PACKAGE_MSAN, job_config=JobConfig(pr_only=True, **upgrade_test_common_params)  # type: ignore
+            Build.PACKAGE_MSAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_DEBUG: TestConfig(
             Build.PACKAGE_DEBUG, job_config=JobConfig(pr_only=True, **upgrade_test_common_params)  # type: ignore
@@ -1137,6 +1131,7 @@ CI_CONFIG.validate()
 # checks required by Mergeable Check
 REQUIRED_CHECKS = [
     "PR Check",
+    "A Sync",  # Cloud sync
     JobNames.BUILD_CHECK,
     JobNames.BUILD_CHECK_SPECIAL,
     JobNames.DOCS_CHECK,
@@ -1173,10 +1168,10 @@ CHECK_DESCRIPTIONS = [
         lambda x: x.startswith("AST fuzzer"),
     ),
     CheckDescription(
-        "Bugfix validate check",
+        JobNames.BUGFIX_VALIDATE,
         "Checks that either a new test (functional or integration) or there "
         "some changed tests that fail with the binary built on master branch",
-        lambda x: x == "Bugfix validate check",
+        lambda x: x == JobNames.BUGFIX_VALIDATE,
     ),
     CheckDescription(
         "CI running",
