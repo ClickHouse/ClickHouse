@@ -118,6 +118,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_remove_sample_by("REMOVE SAMPLE BY");
     ParserKeyword s_apply_deleted_mask("APPLY DELETED MASK");
 
+    ParserToken parser_opening_round_bracket(TokenType::OpeningRoundBracket);
+    ParserToken parser_closing_round_bracket(TokenType::ClosingRoundBracket);
+
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
     ParserStringAndSubstitution parser_string_and_substituion;
@@ -165,6 +168,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr command_values;
     ASTPtr command_rename_to;
     ASTPtr command_sql_security;
+
+    if (with_round_bracket)
+    {
+        if (!parser_opening_round_bracket.ignore(pos, expected))
+            return false;
+    }
 
     switch (alter_object)
     {
@@ -896,6 +905,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
     }
 
+    if (with_round_bracket)
+    {
+        if (!parser_closing_round_bracket.ignore(pos, expected))
+            return false;
+    }
+
     if (command_col_decl)
         command->col_decl = command->children.emplace_back(std::move(command_col_decl)).get();
     if (command_column)
@@ -951,7 +966,10 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     node = command_list;
 
     ParserToken s_comma(TokenType::Comma);
-    ParserAlterCommand p_command(alter_object);
+
+    const auto with_round_bracket = pos->type == TokenType::OpeningRoundBracket;
+
+    ParserAlterCommand p_command(with_round_bracket, alter_object);
 
     do
     {
