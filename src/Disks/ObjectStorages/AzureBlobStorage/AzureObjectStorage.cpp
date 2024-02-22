@@ -92,10 +92,12 @@ private:
 AzureObjectStorage::AzureObjectStorage(
     const String & name_,
     AzureClientPtr && client_,
-    SettingsPtr && settings_)
+    SettingsPtr && settings_,
+    const String & container_)
     : name(name_)
     , client(std::move(client_))
     , settings(std::move(settings_))
+    , container(container_)
     , log(getLogger("AzureObjectStorage"))
 {
 }
@@ -378,7 +380,8 @@ std::unique_ptr<IObjectStorage> AzureObjectStorage::cloneObjectStorage(const std
     return std::make_unique<AzureObjectStorage>(
         name,
         getAzureBlobContainerClient(config, config_prefix),
-        getAzureBlobStorageSettings(config, config_prefix, context)
+        getAzureBlobStorageSettings(config, config_prefix, context),
+        container
     );
 }
 

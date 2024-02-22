@@ -18,7 +18,7 @@ on:  # yamllint disable-line rule:truthy
 ##########################################################################################
 jobs:
   RunConfig:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, style-checker-aarch64]
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
@@ -145,6 +145,14 @@ jobs:
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_release
+      checkout_depth: 0
+      data: ${{ needs.RunConfig.outputs.data }}
+  BuilderDebReleaseCoverage:
+    needs: [RunConfig, FastTest]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: package_release_coverage
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebAarch64:
@@ -309,6 +317,7 @@ jobs:
       - BuilderDebDebug
       - BuilderDebMsan
       - BuilderDebRelease
+      - BuilderDebReleaseCoverage
       - BuilderDebTsan
       - BuilderDebUBsan
     uses: ./.github/workflows/reusable_test.yml
@@ -483,21 +492,9 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: tests bugfix validate check
+      test_name: Bugfix validation
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
-      additional_envs: |
-        KILL_TIMEOUT=3600
-      run_command: |
-        TEMP_PATH="${TEMP_PATH}/integration" \
-          python3 integration_test_check.py "Integration $CHECK_NAME" \
-            --validate-bugfix --post-commit-status=file || echo "ignore exit code"
-
-        TEMP_PATH="${TEMP_PATH}/stateless" \
-          python3 functional_test_check.py "Stateless $CHECK_NAME" "$KILL_TIMEOUT" \
-            --validate-bugfix --post-commit-status=file || echo "ignore exit code"
-
-        python3 bugfix_validate_check.py "${TEMP_PATH}/stateless/functional_commit_status.tsv" "${TEMP_PATH}/integration/integration_commit_status.tsv"
 ##############################################################################################
 ############################ FUNCTIONAl STATEFUL TESTS #######################################
 ##############################################################################################
@@ -890,6 +887,7 @@ jobs:
       - BuilderSpecialReport
       - DocsCheck
       - FastTest
+      - TestsBugfixCheck
       - FunctionalStatelessTestDebug
       - FunctionalStatelessTestRelease
       - FunctionalStatelessTestReleaseDatabaseReplicated
@@ -1002,7 +1000,7 @@ jobs:
 ####################################### libFuzzer ###########################################
 #############################################################################################
   libFuzzer:
-    if: ${{ !failure() && !cancelled() && contains(github.event.pull_request.labels.*.name, 'libFuzzer') }}
+    if: ${{ !failure() && !cancelled() }}
     needs: [RunConfig, StyleCheck]
     uses: ./.github/workflows/libfuzzer.yml
     with:

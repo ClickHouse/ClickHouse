@@ -230,13 +230,8 @@ inline void fillConstantConstant(const ArrayCond & cond, A a, B b, ArrayResult &
 {
     size_t size = cond.size();
 
-    /// Int8(alias type of uint8_t) has special aliasing properties that prevents compiler from auto-vectorizing for below codes, refer to https://gist.github.com/alexei-zaripov/dcc14c78819c5f1354afe8b70932007c
-    ///
-    /// for (size_t i = 0; i < size; ++i)
-    ///     res[i] = cond[i] ? static_cast<Int8>(a) : static_cast<Int8>(b);
-    ///
-    /// Therefore, we manually optimize it by avoiding branch miss when ResultType is Int8. Other types like (U)Int128|256 or Decimal128/256 also benefit from this optimization.
-    if constexpr (std::is_same_v<ResultType, Int8> || is_over_big_int<ResultType>)
+    /// We manually optimize the loop for types like (U)Int128|256 or Decimal128/256 to avoid branches
+    if constexpr (is_over_big_int<ResultType>)
     {
         alignas(64) const ResultType ab[2] = {static_cast<ResultType>(a), static_cast<ResultType>(b)};
         for (size_t i = 0; i < size; ++i)
@@ -1416,6 +1411,11 @@ public:
 REGISTER_FUNCTION(If)
 {
     factory.registerFunction<FunctionIf>({}, FunctionFactory::CaseInsensitive);
+}
+
+FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool allow_experimental_variant_type, bool use_variant_as_common_type)
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(allow_experimental_variant_type && use_variant_as_common_type));
 }
 
 }

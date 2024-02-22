@@ -521,16 +521,17 @@ const errorMessages = [
 
 
 /// Query to fill `queries` list for the dashboard
-let search_query = `SELECT title, query FROM system.dashboards WHERE dashboard = 'overview'`;
+let search_query = `SELECT title, query FROM system.dashboards WHERE dashboard = 'Overview'`;
 let customized = false;
 let queries = [];
 
 /// Query parameters with predefined default values.
 /// All other parameters will be automatically found in the queries.
-let params = {
+let default_params = {
     'rounding': '60',
     'seconds': '86400'
 };
+let params = default_params;
 
 /// Palette generation for charts
 function generatePalette(baseColor, numColors) {
@@ -594,13 +595,19 @@ let plots = [];
 let charts = document.getElementById('charts');
 
 /// This is not quite correct (we cannot really parse SQL with regexp) but tolerable.
-const query_param_regexp = /\{(\w+):[^}]+\}/g;
+const query_param_regexp = /\{(\w+):([^}]+)\}/g;
 
 /// Automatically parse more parameters from the queries.
 function findParamsInQuery(query, new_params) {
+    const typeDefault = (type) => type.includes('Int') ? '0'
+        : (type.includes('Float') ? '0.0'
+        : (type.includes('Bool') ? 'false'
+        : (type.includes('Date') ? new Date().toISOString().slice(0, 10)
+        : (type.includes('UUID') ? '00000000-0000-0000-0000-000000000000'
+        : ''))));
     for (let match of query.matchAll(query_param_regexp)) {
         const name = match[1];
-        new_params[name] = params[name] || '';
+        new_params[name] = params[name] || default_params[name] || typeDefault(match[2]);
     }
 }
 

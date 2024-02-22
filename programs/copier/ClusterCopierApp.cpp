@@ -78,6 +78,7 @@ void ClusterCopierApp::handleHelp(const std::string &, const std::string &)
     help_formatter.setHeader("Copies tables from one cluster to another");
     help_formatter.setUsage("--config-file <config-file> --task-path <task-path>");
     help_formatter.format(std::cerr);
+    help_formatter.setFooter("See also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-copier/");
 
     stopOptionsProcessing();
 }

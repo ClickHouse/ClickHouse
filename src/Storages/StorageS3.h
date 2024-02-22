@@ -19,7 +19,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/SeekableReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageConfiguration.h>
@@ -80,7 +80,7 @@ public:
             const S3::URI & globbed_uri_,
             const ActionsDAG::Node * predicate,
             const NamesAndTypesList & virtual_columns,
-            ContextPtr context,
+            const ContextPtr & context,
             KeysWithInfo * read_keys_ = nullptr,
             const S3Settings::RequestSettings & request_settings_ = {},
             std::function<void(FileProgress)> progress_callback_ = {});
@@ -134,7 +134,7 @@ public:
         const ReadFromFormatInfo & info,
         const String & format,
         String name_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         std::optional<FormatSettings> format_settings_,
         UInt64 max_block_size_,
         const S3Settings::RequestSettings & request_settings_,
@@ -280,9 +280,9 @@ public:
 
         String getPath() const { return url.key; }
 
-        bool update(ContextPtr context);
+        bool update(const ContextPtr & context);
 
-        void connect(ContextPtr context);
+        void connect(const ContextPtr & context);
 
         bool withGlobs() const { return url.key.find_first_of("*?{") != std::string::npos; }
 
@@ -308,7 +308,7 @@ public:
 
     StorageS3(
         const Configuration & configuration_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -345,21 +345,26 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
-    static StorageS3::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
+    static StorageS3::Configuration getConfiguration(ASTs & engine_args, const ContextPtr & local_context, bool get_format_from_file = true);
 
     static ColumnsDescription getTableStructureFromData(
         const StorageS3::Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx);
+        const ContextPtr & ctx);
+
+    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromData(
+        const StorageS3::Configuration & configuration,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & ctx);
 
     using KeysWithInfo = StorageS3Source::KeysWithInfo;
 
     bool supportsTrivialCountOptimization() const override { return true; }
 
 protected:
-    virtual Configuration updateConfigurationAndGetCopy(ContextPtr local_context);
+    virtual Configuration updateConfigurationAndGetCopy(const ContextPtr & local_context);
 
-    virtual void updateConfiguration(ContextPtr local_context);
+    virtual void updateConfiguration(const ContextPtr & local_context);
 
     void useConfiguration(const Configuration & new_configuration);
 
@@ -380,10 +385,11 @@ private:
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
 
-    static ColumnsDescription getTableStructureFromDataImpl(
+    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromDataImpl(
+        std::optional<String> format,
         const Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx);
+        const ContextPtr & ctx);
 
     bool supportsSubcolumns() const override { return true; }
 

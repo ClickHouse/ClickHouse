@@ -35,7 +35,7 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 
 #include <boost/multi_index_container.hpp>
@@ -231,7 +231,6 @@ public:
                    < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.info.partition_id);
         }
     };
-
 
     using DataParts = std::set<DataPartPtr, LessDataPart>;
     using MutableDataParts = std::set<MutableDataPartPtr, LessDataPart>;
@@ -855,23 +854,6 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings);
 
-    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
-        const MergeTreeData::DataPartPtr & src_part,
-        const MergeTreePartition & new_partition,
-        const String & partition_id,
-        const IMergeTreeDataPart::MinMaxIndex & min_max_index,
-        const String & tmp_part_prefix,
-        const StorageMetadataPtr & my_metadata_snapshot,
-        const IDataPartStorage::ClonePartParams & clone_params,
-        ContextPtr local_context,
-        Int64 min_block,
-        Int64 max_block);
-
-    static std::pair<MergeTreePartition, IMergeTreeDataPart::MinMaxIndex> createPartitionAndMinMaxIndexFromSourcePart(
-        const MergeTreeData::DataPartPtr & src_part,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr local_context);
-
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
     /// Returns true if table can create new parts with adaptive granularity
@@ -1380,11 +1362,12 @@ protected:
     /// mechanisms for parts locking
     virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
 
-    /// Return most recent mutations commands for part which weren't applied
-    /// Used to receive AlterConversions for part and apply them on fly. This
-    /// method has different implementations for replicated and non replicated
-    /// MergeTree because they store mutations in different way.
-    virtual std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
+    /// Return pending mutations that weren't applied to `part` yet and should be applied on the fly
+    /// (i.e. when reading from the part). Mutations not supported by AlterConversions
+    /// (supportsMutationCommandType()) can be omitted.
+    ///
+    /// @return list of mutations, in *reverse* order (newest to oldest)
+    virtual MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
 
     struct PartBackupEntries
     {

@@ -705,7 +705,9 @@ void DataPartStorageOnDiskBase::remove(
             if (file_name.starts_with(proj_dir_name))
                 files_not_to_remove_for_projection.emplace(fs::path(file_name).filename());
 
-        LOG_DEBUG(log, "Will not remove files [{}] for projection {}", fmt::join(files_not_to_remove_for_projection, ", "), projection.name);
+        if (!files_not_to_remove_for_projection.empty())
+            LOG_DEBUG(
+                log, "Will not remove files [{}] for projection {}", fmt::join(files_not_to_remove_for_projection, ", "), projection.name);
 
         CanRemoveDescription proj_description
         {

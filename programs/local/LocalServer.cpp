@@ -249,7 +249,7 @@ void LocalServer::tryInitPath()
         default_path = parent_folder / fmt::format("clickhouse-local-{}-{}-{}", getpid(), time(nullptr), randomSeed());
 
         if (exists(default_path))
-            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessful attempt to create working directory: {} exist!", default_path.string());
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessful attempt to create working directory: {} already exists.", default_path.string());
 
         create_directory(default_path);
         temporary_directory_to_delete = default_path;
@@ -336,23 +336,23 @@ std::string LocalServer::getInitialCreateTableQuery()
     auto table_structure = config().getString("table-structure", "auto");
 
     String table_file;
-    String format_from_file_name;
+    std::optional<String> format_from_file_name;
     if (!config().has("table-file") || config().getString("table-file") == "-")
     {
         /// Use Unix tools stdin naming convention
         table_file = "stdin";
-        format_from_file_name = FormatFactory::instance().getFormatFromFileDescriptor(STDIN_FILENO);
+        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDIN_FILENO);
     }
     else
     {
         /// Use regular file
         auto file_name = config().getString("table-file");
         table_file = quoteString(file_name);
-        format_from_file_name = FormatFactory::instance().getFormatFromFileName(file_name, false);
+        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(file_name);
     }
 
     auto data_format = backQuoteIfNeed(
-        config().getString("table-data-format", config().getString("format", format_from_file_name.empty() ? "TSV" : format_from_file_name)));
+        config().getString("table-data-format", config().getString("format", format_from_file_name ? *format_from_file_name : "TSV")));
 
 
     if (table_structure == "auto")
@@ -828,6 +828,7 @@ void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & o
     std::cout << options_description.main_description.value() << "\n";
     std::cout << getHelpFooter() << "\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
+    std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";
 #endif
 }
 

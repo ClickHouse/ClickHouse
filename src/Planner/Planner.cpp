@@ -64,6 +64,7 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 
+#include <Planner/findQueryForParallelReplicas.h>
 #include <Planner/Utils.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerActionsVisitor.h>
@@ -71,7 +72,6 @@
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerSorting.h>
 #include <Planner/PlannerWindowFunctions.h>
-#include <Planner/ActionsChain.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/PlannerJoinTree.h>
@@ -97,14 +97,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
-
-/** ClickHouse query planner.
-  *
-  * TODO: Support projections.
-  * TODO: Support trivial count using partition predicates.
-  * TODO: Support trivial count for table functions.
-  * TODO: Support indexes for IN function.
-  */
 
 namespace
 {
@@ -1066,7 +1058,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         Planner subquery_planner(
             query_tree,
             subquery_options,
-            std::make_shared<GlobalPlannerContext>()); //planner_context->getGlobalPlannerContext());
+            std::make_shared<GlobalPlannerContext>(nullptr, nullptr));
         subquery_planner.buildQueryPlanIfNeeded();
 
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
@@ -1169,7 +1161,10 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
     SelectQueryOptions & select_query_options_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
-    , planner_context(buildPlannerContext(query_tree, select_query_options, std::make_shared<GlobalPlannerContext>()))
+    , planner_context(buildPlannerContext(query_tree, select_query_options,
+        std::make_shared<GlobalPlannerContext>(
+            findQueryForParallelReplicas(query_tree, select_query_options),
+            findTableForParallelReplicas(query_tree, select_query_options))))
 {
 }
 
@@ -1232,6 +1227,8 @@ void Planner::buildPlanForUnionNode()
         query_planner.buildQueryPlanIfNeeded();
         for (const auto & row_policy : query_planner.getUsedRowPolicies())
             used_row_policies.insert(row_policy);
+        const auto & mapping = query_planner.getQueryNodeToPlanStepMapping();
+        query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
         auto query_node_plan = std::make_unique<QueryPlan>(std::move(query_planner).extractQueryPlan());
         query_plans_headers.push_back(query_node_plan->getCurrentDataStream().header);
         query_plans.push_back(std::move(query_node_plan));
@@ -1411,16 +1408,27 @@ void Planner::buildPlanForQueryNode()
         }
     }
 
-    auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
-    auto join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,
-        select_query_info,
-        select_query_options,
-        top_level_identifiers,
-        planner_context);
+    JoinTreeQueryPlan join_tree_query_plan;
+    if (planner_context->getMutableQueryContext()->canUseTaskBasedParallelReplicas()
+        && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &query_node)
+    {
+        join_tree_query_plan = buildQueryPlanForParallelReplicas(query_node, planner_context, select_query_info.storage_limits);
+    }
+    else
+    {
+        auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
+        join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,
+            select_query_info,
+            select_query_options,
+            top_level_identifiers,
+            planner_context);
+    }
 
     auto from_stage = join_tree_query_plan.from_stage;
     query_plan = std::move(join_tree_query_plan.query_plan);
     used_row_policies = std::move(join_tree_query_plan.used_row_policies);
+    auto & mapping = join_tree_query_plan.query_node_to_plan_step_mapping;
+    query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
 
     LOG_TRACE(getLogger("Planner"), "Query {} from stage {} to stage {}{}",
         query_tree->formatConvertedASTForErrorMessage(),
@@ -1690,6 +1698,8 @@ void Planner::buildPlanForQueryNode()
 
     if (!select_query_options.only_analyze)
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
+
+    query_node_to_plan_step_mapping[&query_node] = query_plan.getRootNode();
 }
 
 SelectQueryInfo Planner::buildSelectQueryInfo() const

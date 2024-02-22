@@ -508,7 +508,9 @@ Possible values:
 - Any positive integer number of hops.
 - 0 — No hops allowed.
 
-Default value: 0.
+Default value: `0`.
+
+Cloud default value: `10`.
 
 ## insert_null_as_default {#insert_null_as_default}
 
@@ -1126,7 +1128,9 @@ Possible values:
 - 0 (or 1) — `INSERT SELECT` no parallel execution.
 - Positive integer. Bigger than 1.
 
-Default value: 0.
+Default value: `0`.
+
+Cloud default value: from `2` to `4`, depending on the service size.
 
 Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [max_threads](#max_threads) setting.
 Higher values will lead to higher memory usage.
@@ -1207,7 +1211,9 @@ Default value: 10000.
 
 Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
 
-Default value: 0
+Default value: `0`.
+
+Cloud default value: `1`.
 
 ## poll_interval {#poll-interval}
 
@@ -1769,6 +1775,10 @@ Default value: 0 (no restriction).
 
 ## insert_quorum {#insert_quorum}
 
+:::note
+`insert_quorum` does not apply when using the [`SharedMergeTree` table engine](/en/cloud/reference/shared-merge-tree) in ClickHouse Cloud as all inserts are quorum inserted.
+:::
+
 Enables the quorum writes.
 
 - If `insert_quorum < 2`, the quorum writes are disabled.
@@ -1807,6 +1817,10 @@ See also:
 - [select_sequential_consistency](#select_sequential_consistency)
 
 ## insert_quorum_parallel {#insert_quorum_parallel}
+
+:::note
+`insert_quorum_parallel` does not apply when using the [`SharedMergeTree` table engine](/en/cloud/reference/shared-merge-tree) in ClickHouse Cloud as all inserts are quorum inserted.
+:::
 
 Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
 
@@ -1945,6 +1959,8 @@ Possible values:
 - 0 — Timeout disabled.
 
 Default value: `200`.
+
+Cloud default value: `1000`.
 
 ### async_insert_poll_timeout_ms {#async-insert-poll-timeout-ms}
 
@@ -2130,7 +2146,9 @@ Possible values:
 - Positive integer.
 - 0 — Retries are disabled
 
-Default value: 0
+Default value: 20
+
+Cloud default value: `20`.
 
 Keeper request retries are done after some timeout. The timeout is controlled by the following settings: `insert_keeper_retry_initial_backoff_ms`, `insert_keeper_retry_max_backoff_ms`.
 The first retry is done after `insert_keeper_retry_initial_backoff_ms` timeout. The consequent timeouts will be calculated as follows:
@@ -2660,6 +2678,8 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Default value: 1000000000 nanoseconds (once a second).
 
+**Temporarily disabled in ClickHouse Cloud.**
+
 See also:
 
 - System table [trace_log](../../operations/system-tables/trace_log.md/#system_tables-trace_log)
@@ -2682,6 +2702,8 @@ Possible values:
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Default value: 1000000000 nanoseconds.
+
+**Temporarily disabled in ClickHouse Cloud.**
 
 See also:
 
@@ -2803,6 +2825,8 @@ Possible values:
 - 1 — Data is inserted in synchronous mode.
 
 Default value: `0`.
+
+Cloud default value: `1`.
 
 **See Also**
 
@@ -3319,7 +3343,9 @@ Possible values:
 
 - a string representing any valid table engine name
 
-Default value: `None`
+Default value: `MergeTree`.
+
+Cloud default value: `SharedMergeTree`.
 
 **Example**
 
@@ -3895,6 +3921,8 @@ Possible values:
 
 Default value: `0`.
 
+Cloud default value: `1`.
+
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
 Sets how long initial DDL query should wait for Replicated database to process previous DDL queue entries in seconds.
@@ -3932,6 +3960,8 @@ Possible values:
 - `throw_only_active` — similar to `throw`, but doesn't wait for inactive replicas of the `Replicated` database
 
 Default value: `throw`.
+
+Cloud default value: `none`.
 
 ## flatten_nested {#flatten-nested}
 
@@ -4067,6 +4097,8 @@ Possible values:
 - 2 — Wait for everyone.
 
 Default value: `1`.
+
+Cloud default value: `0`.
 
 :::note
 `alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
@@ -4245,41 +4277,6 @@ Result:
 │  20 │  20 │   10  │
 │  10 │  20 │   30  │
 └─────┴─────┴───────┘
-```
-
-## enable_order_by_all {#enable-order-by-all}
-
-Enables or disables sorting by `ALL` columns, i.e. [ORDER BY](../../sql-reference/statements/select/order-by.md)
-
-Possible values:
-
-- 0 — Disable ORDER BY ALL.
-- 1 — Enable ORDER BY ALL.
-
-Default value: `1`.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE TAB(C1 Int, C2 Int, ALL Int) ENGINE=Memory();
-
-INSERT INTO TAB VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
-
-SELECT * FROM TAB ORDER BY ALL; -- returns an error that ALL is ambiguous
-
-SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all;
-```
-
-Result:
-
-```text
-┌─C1─┬─C2─┬─ALL─┐
-│ 20 │ 20 │  10 │
-│ 30 │ 10 │  20 │
-│ 10 │ 20 │  30 │
-└────┴────┴─────┘
 ```
 
 ## splitby_max_substrings_includes_remaining_string {#splitby_max_substrings_includes_remaining_string}
@@ -4722,6 +4719,8 @@ or no data was received within `receive_data_timeout`. Query uses the first conn
 other connections are cancelled. Queries with `max_parallel_replicas > 1` are supported.
 
 Enabled by default.
+
+Disabled by default on Cloud.
 
 ## hedged_connection_timeout {#hedged_connection_timeout}
 
@@ -5348,10 +5347,11 @@ Default value: `false`.
 
 ## max_partition_size_to_drop
 
-Restriction on dropping partitions in query time.
+Restriction on dropping partitions in query time. The value 0 means that you can drop partitions without any restrictions.
 
 Default value: 50 GB.
-The value 0 means that you can drop partitions without any restrictions.
+
+Cloud default value: 1 TB.
 
 :::note
 This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-partition-size-to-drop)
@@ -5359,10 +5359,11 @@ This query setting overwrites its server setting equivalent, see [max_partition_
 
 ## max_table_size_to_drop
 
-Restriction on deleting tables in query time.
+Restriction on deleting tables in query time. The value 0 means that you can delete all tables without any restrictions.
 
 Default value: 50 GB.
-The value 0 means that you can delete all tables without any restrictions.
+
+Cloud default value: 1 TB.
 
 :::note
 This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop)

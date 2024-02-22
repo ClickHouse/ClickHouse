@@ -352,7 +352,11 @@ void StorageS3QueueSource::applyActionAfterProcessing(const String & path)
     }
 }
 
-void StorageS3QueueSource::appendLogElement(const std::string & filename, S3QueueFilesMetadata::FileStatus & file_status_, size_t processed_rows, bool processed)
+void StorageS3QueueSource::appendLogElement(
+    const std::string & filename,
+    S3QueueFilesMetadata::FileStatus & file_status_,
+    size_t processed_rows,
+    bool processed)
 {
     if (!s3_queue_log)
         return;
@@ -363,6 +367,9 @@ void StorageS3QueueSource::appendLogElement(const std::string & filename, S3Queu
         elem = S3QueueLogElement
         {
             .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+            .database = storage_id.database_name,
+            .table = storage_id.table_name,
+            .uuid = toString(storage_id.uuid),
             .file_name = filename,
             .rows_processed = processed_rows,
             .status = processed ? S3QueueLogElement::S3QueueStatus::Processed : S3QueueLogElement::S3QueueStatus::Failed,

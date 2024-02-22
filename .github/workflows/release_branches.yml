@@ -14,7 +14,7 @@ on: # yamllint disable-line rule:truthy
 
 jobs:
   RunConfig:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, style-checker-aarch64]
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
@@ -91,6 +91,8 @@ jobs:
       build_name: package_release
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
+      # always rebuild on release branches to be able to publish from any commit
+      force: true
   BuilderDebAarch64:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -99,6 +101,8 @@ jobs:
       build_name: package_aarch64
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
+      # always rebuild on release branches to be able to publish from any commit
+      force: true
   BuilderDebAsan:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -142,6 +146,8 @@ jobs:
       build_name: binary_darwin
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
+      # always rebuild on release branches to be able to publish from any commit
+      force: true
   BuilderBinDarwinAarch64:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -150,6 +156,8 @@ jobs:
       build_name: binary_darwin_aarch64
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
+      # always rebuild on release branches to be able to publish from any commit
+      force: true
 ############################################################################################
 ##################################### Docker images  #######################################
 ############################################################################################
@@ -206,13 +214,8 @@ jobs:
     if: ${{ !cancelled() }}
     needs:
       - RunConfig
-      - BuilderDebRelease
-      - BuilderDebAarch64
-      - BuilderDebAsan
-      - BuilderDebTsan
-      - BuilderDebUBsan
-      - BuilderDebMsan
-      - BuilderDebDebug
+      - BuilderBinDarwin
+      - BuilderBinDarwinAarch64
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse special build check
@@ -225,7 +228,7 @@ jobs:
       run_command: |
         python3 build_report_check.py "$CHECK_NAME"
   MarkReleaseReady:
-    if: ${{ !failure() && !cancelled() }}
+    if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
     needs:
       - BuilderBinDarwin
       - BuilderBinDarwinAarch64
@@ -235,8 +238,6 @@ jobs:
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
       - name: Mark Commit Release Ready
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
