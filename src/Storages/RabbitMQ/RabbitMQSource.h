@@ -32,6 +32,7 @@ public:
     bool needChannelUpdate();
     void updateChannel();
     bool sendAck();
+    bool sendNack();
 
 private:
     StorageRabbitMQ & storage;
