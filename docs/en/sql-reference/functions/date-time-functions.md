@@ -735,14 +735,14 @@ Result:
 └─────────────────────────────────────────────┘
 ```
 
-## toMilliSecond
+## toMillisecond
 
 Similar to the `toSecond` function, it converts a date with time to the milliseconds in the minute of the time as `UInt16` value.
 
 **Syntax**
 
 ```sql
-toMilliSecond(value)
+toMillisecond(value)
 ```
 
 *Arguments**
@@ -752,15 +752,15 @@ toMilliSecond(value)
 Alias: `MILLISECOND`
 
 ```sql
-SELECT toMilliSecond(toDateTime('2023-04-21 10:20:30'))
+SELECT toMillisecond(toDateTime('2023-04-21 10:20:30'))
 ```
 
 Result:
 
 ```response
-┌─toSecond(toDateTime('2023-04-21 10:20:30'))─┐
-│                                       30000 │
-└─────────────────────────────────────────────┘
+┌─toMillisecond(toDateTime('2023-04-21 10:20:30'))─┐
+│                                            30000 │
+└──────────────────────────────────────────────────┘
 ```
 
 **Returned value**
