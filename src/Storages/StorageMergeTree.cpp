@@ -1902,8 +1902,6 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         }
     }
 
-    /// Old part objects is needed to be destroyed before clearing them from filesystem.
-    clearOldMutations(true);
     clearOldPartsFromFilesystem();
     clearEmptyParts();
 }
@@ -1988,8 +1986,6 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         }
     }
 
-    /// Old parts are needed to be destroyed before clearing them from filesystem.
-    clearOldMutations(true);
     clearOldPartsFromFilesystem();
     clearEmptyParts();
 }
