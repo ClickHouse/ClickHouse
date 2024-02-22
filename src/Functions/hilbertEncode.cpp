@@ -12,68 +12,26 @@
 namespace DB
 {
 
-class FunctionHilbertEncode2DWIthLookupTableImpl
-{
+template <UInt8 bit_step>
+class HilbertLookupTable {
 public:
-    static UInt64 encode(UInt64 x, UInt64 y)
-    {
-        const auto leading_zeros_count = getLeadingZeroBits(x | y);
-        const auto used_bits = std::numeric_limits<UInt64>::digits - leading_zeros_count;
+    constexpr static UInt8 LOOKUP_TABLE[0] = {};
+};
 
-        const auto shift_for_align = getShiftForStepsAlign(used_bits);
-        x <<= shift_for_align;
-        y <<= shift_for_align;
+template <>
+class HilbertLookupTable<2> {
+public:
+    constexpr static UInt8 LOOKUP_TABLE[16] = {
+        4, 1, 11, 2,
+        0, 15, 5, 6,
+        10, 9, 3, 12,
+        14, 7, 13, 8
+    };
+};
 
-        UInt8 current_state = 0;
-        UInt64 hilbert_code = 0;
-        Int8 current_shift = used_bits + shift_for_align - BIT_STEP;
-
-        while (current_shift > 0)
-        {
-            const UInt8 x_bits = (x >> current_shift) & STEP_MASK;
-            const UInt8 y_bits = (y >> current_shift) & STEP_MASK;
-            const auto hilbert_bits = getCodeAndUpdateState(x_bits, y_bits, current_state);
-            hilbert_code |= (hilbert_bits << getHilbertShift(current_shift));
-
-            current_shift -= BIT_STEP;
-        }
-
-        hilbert_code >>= getHilbertShift(shift_for_align);
-        return hilbert_code;
-    }
-
-private:
-
-    // LOOKUP_TABLE[SSXXXYYY] = SSHHHHHH
-    // where SS - 2 bits for state, XXX - 3 bits of x, YYY - 3 bits of y
-    static UInt8 getCodeAndUpdateState(UInt8 x_bits, UInt8 y_bits, UInt8& state)
-    {
-        const UInt8 table_index = state | (x_bits << BIT_STEP) | y_bits;
-        const auto table_code = LOOKUP_TABLE[table_index];
-        state = table_code & STATE_MASK;
-        return table_code & HILBERT_MASK;
-    }
-
-    // hilbert code is double size of input values
-    static UInt8 getHilbertShift(UInt8 shift)
-    {
-        return shift << 1;
-    }
-
-    static UInt8 getShiftForStepsAlign(UInt8 used_bits)
-    {
-        UInt8 shift_for_align = BIT_STEP - used_bits % BIT_STEP;
-        if (shift_for_align == BIT_STEP)
-            shift_for_align = 0;
-
-        return shift_for_align;
-    }
-
-    constexpr static UInt8 BIT_STEP = 3;
-    constexpr static UInt8 STEP_MASK = (1 << BIT_STEP) - 1;
-    constexpr static UInt8 HILBERT_MASK = (1 << (BIT_STEP << 1)) - 1;
-    constexpr static UInt8 STATE_MASK = static_cast<UInt8>(-1) - HILBERT_MASK;
-
+template <>
+class HilbertLookupTable<3> {
+public:
     constexpr static UInt8 LOOKUP_TABLE[256] = {
         64, 1, 206, 79, 16, 211, 84, 21, 131, 2, 205, 140, 81, 82, 151, 22, 4, 199, 8, 203, 158,
         157, 88, 25, 69, 70, 73, 74, 31, 220, 155, 26, 186, 185, 182, 181, 32, 227, 100, 37, 59,
@@ -89,6 +47,72 @@ private:
         35, 224, 117, 118, 121, 122, 218, 91, 28, 223, 138, 137, 134, 133, 217, 152, 93, 94, 11,
         200, 7, 196, 214, 87, 146, 145, 76, 13, 194, 67, 213, 148, 19, 208, 143, 14, 193, 128,
     };
+};
+
+
+
+template <UInt8 bit_step = 3>
+class FunctionHilbertEncode2DWIthLookupTableImpl
+{
+public:
+    static UInt64 encode(UInt64 x, UInt64 y)
+    {
+        const auto leading_zeros_count = getLeadingZeroBits(x | y);
+        const auto used_bits = std::numeric_limits<UInt64>::digits - leading_zeros_count;
+
+        auto [iterations, current_shift] = getIterationsAndInitialShift(used_bits);
+        UInt8 current_state = 0;
+        UInt64 hilbert_code = 0;
+
+        for (; iterations > 0; --iterations, current_shift -= bit_step)
+        {
+            if (iterations % 2 == 0) {
+                std::swap(x, y);
+            }
+            const UInt8 x_bits = (x >> current_shift) & STEP_MASK;
+            const UInt8 y_bits = (y >> current_shift) & STEP_MASK;
+            const auto hilbert_bits = getCodeAndUpdateState(x_bits, y_bits, current_state);
+            hilbert_code |= (hilbert_bits << getHilbertShift(current_shift));
+        }
+
+        return hilbert_code;
+    }
+
+private:
+
+    // LOOKUP_TABLE[SSXXXYYY] = SSHHHHHH
+    // where SS - 2 bits for state, XXX - 3 bits of x, YYY - 3 bits of y
+    // State is rotation of curve on every step, left/up/right/down - therefore 2 bits
+    static UInt8 getCodeAndUpdateState(UInt8 x_bits, UInt8 y_bits, UInt8& state)
+    {
+        const UInt8 table_index = state | (x_bits << bit_step) | y_bits;
+        const auto table_code = HilbertLookupTable<bit_step>::LOOKUP_TABLE[table_index];
+        state = table_code & STATE_MASK;
+        return table_code & HILBERT_MASK;
+    }
+
+    // hilbert code is double size of input values
+    static constexpr UInt8 getHilbertShift(UInt8 shift)
+    {
+        return shift << 1;
+    }
+
+    static std::pair<UInt8, UInt8> getIterationsAndInitialShift(UInt8 used_bits)
+    {
+        UInt8 iterations = used_bits / bit_step;
+        UInt8 initial_shift = iterations * bit_step;
+        if (initial_shift < used_bits)
+        {
+            ++iterations;
+        } else {
+            initial_shift -= bit_step;
+        }
+        return {iterations, initial_shift};
+    }
+
+    constexpr static UInt8 STEP_MASK = (1 << bit_step) - 1;
+    constexpr static UInt8 HILBERT_MASK = (1 << getHilbertShift(bit_step)) - 1;
+    constexpr static UInt8 STATE_MASK = 0b11 << getHilbertShift(bit_step);
 };
 
 
@@ -154,7 +178,7 @@ public:
         const ColumnPtr & col1 = non_const_arguments[1 + vector_start_index].column;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            vec_res[i] = FunctionHilbertEncode2DWIthLookupTableImpl::encode(col0->getUInt(i), col1->getUInt(i));
+            vec_res[i] = FunctionHilbertEncode2DWIthLookupTableImpl<3>::encode(col0->getUInt(i), col1->getUInt(i));
         }
         return col_res;
     }
