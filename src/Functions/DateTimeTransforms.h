@@ -1518,6 +1518,31 @@ struct ToSecondImpl
     using FactorTransform = ToStartOfMinuteImpl;
 };
 
+struct ToMillisecondImpl
+{
+    static constexpr auto name = "toMillisecond";
+
+    static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toSecond(t)*1000;
+    }
+    static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toSecond(t)*1000;
+    }
+    static UInt16 execute(Int32, const DateLUTImpl &)
+    {
+        throwDateIsNotSupported(name);
+    }
+    static UInt16 execute(UInt16, const DateLUTImpl &)
+    {
+        throwDateIsNotSupported(name);
+    }
+    static constexpr bool hasPreimage() { return false; }
+
+    using FactorTransform = ToStartOfSecondImpl;
+};
+
 struct ToISOYearImpl
 {
     static constexpr auto name = "toISOYear";
