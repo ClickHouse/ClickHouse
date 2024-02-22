@@ -645,12 +645,18 @@ class CiCache:
             return {}
         poll_interval_sec = 300
         TIMEOUT = 3600
+        MAX_ROUNDS_TO_WAIT = 6
+        MAX_JOB_NUM_TO_WAIT = 3
         await_finished: Dict[str, List[int]] = {}
         round_cnt = 0
-        while len(jobs_with_params) > 4 and round_cnt < 5:
+        while (
+            len(jobs_with_params) > MAX_JOB_NUM_TO_WAIT
+            and round_cnt < MAX_ROUNDS_TO_WAIT
+        ):
             round_cnt += 1
             GHActions.print_in_group(
-                f"Wait pending jobs, round [{round_cnt}]:", list(jobs_with_params)
+                f"Wait pending jobs, round [{round_cnt}/{MAX_ROUNDS_TO_WAIT}]:",
+                list(jobs_with_params),
             )
             # this is initial approach to wait pending jobs:
             # start waiting for the next TIMEOUT seconds if there are more than X(=4) jobs to wait

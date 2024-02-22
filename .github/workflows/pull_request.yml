@@ -734,14 +734,6 @@ jobs:
 #############################################################################################
 ############################# INTEGRATION TESTS #############################################
 #############################################################################################
-  IntegrationTestsAsan:
-    needs: [RunConfig, BuilderDebAsan]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Integration tests (asan)
-      runner_type: stress-tester
-      data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsAnalyzerAsan:
     needs: [RunConfig, BuilderDebAsan]
     if: ${{ !failure() && !cancelled() }}
@@ -756,14 +748,6 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Integration tests (tsan)
-      runner_type: stress-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  IntegrationTestsRelease:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Integration tests (release)
       runner_type: stress-tester
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsAarch64:
@@ -909,10 +893,8 @@ jobs:
       - ASTFuzzerTestTsan
       - ASTFuzzerTestMSan
       - ASTFuzzerTestUBSan
-      - IntegrationTestsAsan
       - IntegrationTestsAnalyzerAsan
       - IntegrationTestsTsan
-      - IntegrationTestsRelease
       - IntegrationTestsAarch64
       - IntegrationTestsFlakyCheck
       - PerformanceComparisonX86
