@@ -15,42 +15,6 @@ extern const int BAD_ARGUMENTS;
 
 namespace DistinctPartitionExpression
 {
-std::unique_ptr<WriteBufferFromFileBase> updatePartitionFile(
-    const MergeTreeData & merge_tree_data,
-    const MergeTreePartition & partition,
-    const MergeTreeData::MutableDataPartPtr & dst_part,
-    IDataPartStorage & storage)
-{
-    storage.removeFile("partition.dat");
-    // Leverage already implemented MergeTreePartition::store to create & store partition.dat.
-    // Checksum is re-calculated later.
-    return partition.store(merge_tree_data, storage, dst_part->checksums);
-}
-
-IMergeTreeDataPart::MinMaxIndex::WrittenFiles updateMinMaxFiles(
-    const MergeTreeData & merge_tree_data,
-    const MergeTreeData::MutableDataPartPtr & dst_part,
-    IDataPartStorage & storage,
-    const StorageMetadataPtr & metadata_snapshot)
-{
-    for (const auto & column_name : MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->partition_key))
-    {
-        auto file = "minmax_" + escapeForFileName(column_name) + ".idx";
-        storage.removeFile(file);
-    }
-
-    return dst_part->minmax_idx->store(merge_tree_data, storage, dst_part->checksums);
-}
-
-void finalizeNewFiles(const std::vector<std::unique_ptr<WriteBufferFromFileBase>> & files, bool sync_new_files)
-{
-    for (const auto & file : files)
-    {
-        file->finalize();
-        if (sync_new_files)
-            file->sync();
-    }
-}
 
 void updateNewPartFiles(
     const MergeTreeData & merge_tree_data,
@@ -64,9 +28,19 @@ void updateNewPartFiles(
 
     *dst_part->minmax_idx = new_min_max_index;
 
-    auto partition_file = updatePartitionFile(merge_tree_data, new_partition, dst_part, storage);
+    storage.removeFile("partition.dat");
 
-    auto min_max_files = updateMinMaxFiles(merge_tree_data, dst_part, storage, src_metadata_snapshot);
+    // Leverage already implemented MergeTreePartition::store to create & store partition.dat.
+    // Checksum is re-calculated later.
+    auto partition_file = new_partition.store(merge_tree_data, storage, dst_part->checksums);
+
+    for (const auto & column_name : MergeTreeData::getMinMaxColumnsNames(src_metadata_snapshot->partition_key))
+    {
+        auto file = "minmax_" + escapeForFileName(column_name) + ".idx";
+        storage.removeFile(file);
+    }
+
+    auto min_max_files = dst_part->minmax_idx->store(merge_tree_data, storage, dst_part->checksums);
 
     IMergeTreeDataPart::MinMaxIndex::WrittenFiles written_files;
 
@@ -75,7 +49,12 @@ void updateNewPartFiles(
 
     written_files.insert(written_files.end(), std::make_move_iterator(min_max_files.begin()), std::make_move_iterator(min_max_files.end()));
 
-    finalizeNewFiles(written_files, sync_new_files);
+    for (const auto & file : written_files)
+    {
+        file->finalize();
+        if (sync_new_files)
+            file->sync();
+    }
 
     // MergeTreeDataPartCloner::finalize_part calls IMergeTreeDataPart::loadColumnsChecksumsIndexes, which will re-create
     // the checksum file if it doesn't exist. Relying on that is cumbersome, but this refactoring is simply a code extraction
