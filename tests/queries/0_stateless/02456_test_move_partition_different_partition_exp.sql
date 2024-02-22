@@ -17,6 +17,18 @@ SELECT * FROM destination ORDER BY timestamp;
 SELECT partition_id FROM system.parts where table='source' AND database = currentDatabase() AND active = 1;
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
+TRUNCATE TABLE source;
+TRUNCATE TABLE destination;
+
+INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-02 02:01:03');
+
+ALTER TABLE source MOVE PARTITION '20100302' TO TABLE destination;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='source' AND database = currentDatabase() AND active = 1;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
 -- Should be allowed since destination partition expr is monotonically increasing and compatible. Note that even though
 -- the destination partition expression is more granular, the data would still fall in the same partition. Thus, it is valid
 DROP TABLE IF EXISTS source SYNC;
@@ -36,6 +48,18 @@ SELECT * FROM destination ORDER BY timestamp;
 SELECT partition_id FROM system.parts where table='source' AND database = currentDatabase() AND active = 1;
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
+TRUNCATE TABLE source;
+TRUNCATE TABLE destination;
+
+INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-02 02:01:03');
+
+ALTER TABLE source MOVE PARTITION '201003' TO TABLE destination;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='source' AND database = currentDatabase() AND active = 1;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
 -- Should be allowed since destination partition expr is monotonically increasing and compatible for those specific values
 DROP TABLE IF EXISTS source SYNC;
 DROP TABLE IF EXISTS destination SYNC;
@@ -49,6 +73,18 @@ ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_d
 INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01', 1), ('2010-03-02 02:01:03', 1);
 
 ALTER TABLE source MOVE PARTITION ID '0' TO TABLE destination;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='source' AND database = currentDatabase() AND active = 1;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE source;
+TRUNCATE TABLE destination;
+
+INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01', 1), ('2010-03-02 02:01:03', 1);
+
+ALTER TABLE source MOVE PARTITION '0' TO TABLE destination;
 
 SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
@@ -75,7 +111,6 @@ SELECT partition_id FROM system.parts where table='source' AND database = curren
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Should be allowed, extra test case to validate https://github.com/ClickHouse/ClickHouse/pull/39507#issuecomment-1747574133
-
 DROP TABLE IF EXISTS source SYNC;
 DROP TABLE IF EXISTS destination SYNC;
 
@@ -87,6 +122,18 @@ ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_d
 INSERT INTO TABLE source VALUES (1267495261123);
 
 ALTER TABLE source MOVE PARTITION ID '14670' TO TABLE destination;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='source' AND database = currentDatabase() AND active = 1;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE source;
+TRUNCATE TABLE destination;
+
+INSERT INTO TABLE source VALUES (1267495261123);
+
+ALTER TABLE source MOVE PARTITION '14670' TO TABLE destination;
 
 SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;

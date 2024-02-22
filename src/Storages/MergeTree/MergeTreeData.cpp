@@ -4936,6 +4936,8 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                     // call to `getPartitionIDFromQuery` using source storage.
                     // Note: `PartitionCommand::REPLACE_PARTITION` is used both for `REPLACE PARTITION` and `ATTACH PARTITION FROM` queries.
                     // But not for `ATTACH PARTITION` queries.
+                    // It is fine not to block `PartitionCommand::MOVE_PARTITION` for different partition expressions
+                    // because it happens on source object, so it will always be valid
                     if (command.type != PartitionCommand::REPLACE_PARTITION)
                         getPartitionIDFromQuery(command.partition, getContext());
                 }
