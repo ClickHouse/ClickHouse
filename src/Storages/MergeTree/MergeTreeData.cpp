@@ -6824,7 +6824,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         {
             for (const auto & part : real_parts)
             {
-                const auto & primary_key_column = *part->index[0];
+                const auto & primary_key_column = *part->getIndex()[0];
                 auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(min_column, primary_key_column[0]);
             }
@@ -6835,7 +6835,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         {
             for (const auto & part : real_parts)
             {
-                const auto & primary_key_column = *part->index[0];
+                const auto & primary_key_column = *part->getIndex()[0];
                 auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(max_column, primary_key_column[primary_key_column.size() - 1]);
             }
@@ -7950,12 +7950,11 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
 
 AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(MergeTreeDataPartPtr part) const
 {
-    auto commands_map = getAlterMutationCommandsForPart(part);
+    auto commands = getAlterMutationCommandsForPart(part);
 
     auto result = std::make_shared<AlterConversions>();
-    for (const auto & [_, commands] : commands_map)
-        for (const auto & command : commands)
-            result->addMutationCommand(command);
+    for (const auto & command : commands | std::views::reverse)
+        result->addMutationCommand(command);
 
     return result;
 }

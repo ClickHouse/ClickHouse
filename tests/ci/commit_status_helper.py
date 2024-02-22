@@ -18,9 +18,7 @@ from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
 from github.Repository import Repository
 
-# isort: on
-
-from ci_config import CHECK_DESCRIPTIONS, CI_CONFIG, REQUIRED_CHECKS, CheckDescription
+from ci_config import REQUIRED_CHECKS, CHECK_DESCRIPTIONS, CheckDescription
 from env_helper import GITHUB_JOB_URL, GITHUB_REPOSITORY, TEMP_PATH
 from pr_info import SKIP_MERGEABLE_CHECK_LABEL, PRInfo
 from report import (
@@ -65,21 +63,6 @@ class RerunHelper:
             if self.check_name in status.context:
                 return status
         return None
-
-
-def override_status(
-    status: StatusType, check_name: str, invert: bool = False
-) -> StatusType:
-    test_config = CI_CONFIG.test_configs.get(check_name)
-    if test_config and test_config.force_tests:
-        return SUCCESS
-
-    if invert:
-        if status == SUCCESS:
-            return ERROR
-        return SUCCESS
-
-    return status
 
 
 def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:

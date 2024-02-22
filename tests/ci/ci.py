@@ -6,12 +6,13 @@ from enum import Enum
 import json
 import logging
 import os
+import random
 import re
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, Set, Union
 
 import docker_images_helper
 import upload_result_helper
@@ -1107,6 +1108,7 @@ def _configure_jobs(
         ci_cache.print_status()
 
     jobs_to_wait: Dict[str, Dict[str, Any]] = {}
+    randomization_buckets = {}  # type: Dict[str, Set[str]]
 
     for job in digests:
         digest = digests[job]
@@ -1115,11 +1117,18 @@ def _configure_jobs(
         batches_to_do: List[int] = []
         add_to_skip = False
 
+        if job_config.pr_only and pr_info.is_release_branch():
+            continue
+        if job_config.release_only and not pr_info.is_release_branch():
+            continue
+
+        # fill job randomization buckets (for jobs with configured @random_bucket property))
+        if job_config.random_bucket:
+            if not job_config.random_bucket in randomization_buckets:
+                randomization_buckets[job_config.random_bucket] = set()
+            randomization_buckets[job_config.random_bucket].add(job)
+
         for batch in range(num_batches):  # type: ignore
-            if job_config.pr_only and pr_info.is_release_branch():
-                continue
-            if job_config.release_only and not pr_info.is_release_branch():
-                continue
             if job_config.run_by_label:
                 # this job controlled by label, add to todo if its label is set in pr
                 if job_config.run_by_label in pr_info.labels:
@@ -1166,6 +1175,24 @@ def _configure_jobs(
             "batches": batches_to_do,
             "num_batches": num_batches,
         }
+
+    if not pr_info.is_release_branch():
+        # randomization bucket filtering (pick one random job from each bucket, for jobs with configured random_bucket property)
+        for _, jobs in randomization_buckets.items():
+            jobs_to_remove_randomization = set()
+            bucket_ = list(jobs)
+            random.shuffle(bucket_)
+            while len(bucket_) > 1:
+                random_job = bucket_.pop()
+                if random_job in jobs_to_do:
+                    jobs_to_remove_randomization.add(random_job)
+            if jobs_to_remove_randomization:
+                print(
+                    f"Following jobs will be removed due to randomization bucket: [{jobs_to_remove_randomization}]"
+                )
+                jobs_to_do = [
+                    job for job in jobs_to_do if job not in jobs_to_remove_randomization
+                ]
 
     ## c. check CI controlling labels and commit messages
     if pr_info.labels:
@@ -1284,10 +1311,13 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
             if CI_CONFIG.is_build_job(job):
                 # no GH status for build jobs
                 continue
-            num_batches = CI_CONFIG.get_job_config(job).num_batches
-            for batch in range(num_batches):
+            job_config = CI_CONFIG.get_job_config(job)
+            if not job_config:
+                # there might be a new job that does not exist on this branch - skip it
+                continue
+            for batch in range(job_config.num_batches):
                 future = executor.submit(
-                    _concurrent_create_status, job, batch, num_batches
+                    _concurrent_create_status, job, batch, job_config.num_batches
                 )
                 futures.append(future)
         done, _ = concurrent.futures.wait(futures)
@@ -1639,13 +1669,7 @@ def main() -> int:
         if not args.skip_jobs:
             ci_cache = CiCache(s3, jobs_data["digests"])
 
-            if (
-                pr_info.is_release_branch()
-                or pr_info.event.get("pull_request", {})
-                .get("user", {})
-                .get("login", "not_maxknv")
-                == "maxknv"
-            ):
+            if pr_info.is_release_branch():
                 # wait for pending jobs to be finished, await_jobs is a long blocking call
                 # wait pending jobs (for now only on release/master branches)
                 ready_jobs_batches_dict = ci_cache.await_jobs(
@@ -1835,7 +1859,7 @@ def main() -> int:
                         pr_info.sha,
                         job_report.test_results,
                         job_report.additional_files,
-                        job_report.check_name or args.job_name,
+                        job_report.check_name or _get_ext_check_name(args.job_name),
                         additional_urls=additional_urls or None,
                     )
                 commit = get_commit(
@@ -1846,7 +1870,7 @@ def main() -> int:
                     job_report.status,
                     check_url,
                     format_description(job_report.description),
-                    job_report.check_name or args.job_name,
+                    job_report.check_name or _get_ext_check_name(args.job_name),
                     pr_info,
                     dump_to_file=True,
                 )
@@ -1864,7 +1888,7 @@ def main() -> int:
                 job_report.duration,
                 job_report.start_time,
                 check_url or "",
-                job_report.check_name or args.job_name,
+                job_report.check_name or _get_ext_check_name(args.job_name),
             )
             ch_helper.insert_events_into(
                 db="default", table="checks", events=prepared_events

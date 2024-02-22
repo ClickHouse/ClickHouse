@@ -2,7 +2,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Common/quoteString.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/HTTPHeaderEntries.h>
