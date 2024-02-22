@@ -373,7 +373,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /// NOTE: INSERT will also take into account max_replica_delay_for_distributed_queries
                     /// (anyway fallback_to_stale_replicas_for_distributed_queries=true by default)
                     auto results = shard_info.pool->getManyChecked(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-                    if (settings.distributed_insert_prefer_non_readonly_replica)
+                    if (settings.distributed_insert_replicas_preferences == ReplicasPreferences::PREFER_NON_READ_ONLY)
                         sortConnectionPoolByNonReadOnlyReplicas(results);
                     job.connection_entry = std::move(results.front().entry);
                 }

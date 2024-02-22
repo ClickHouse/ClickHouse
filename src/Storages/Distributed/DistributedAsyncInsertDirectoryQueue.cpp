@@ -413,7 +413,7 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
 
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
         auto result = pool->getManyChecked(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-        if (distributed_header.insert_settings.distributed_insert_prefer_non_readonly_replica)
+        if (distributed_header.insert_settings.distributed_insert_replicas_preferences == ReplicasPreferences::PREFER_NON_READ_ONLY)
             sortConnectionPoolByNonReadOnlyReplicas(result);
 
         auto connection = std::move(result.front().entry);

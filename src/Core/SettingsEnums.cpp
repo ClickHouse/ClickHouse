@@ -79,6 +79,10 @@ IMPLEMENT_SETTING_ENUM(DistributedProductMode, ErrorCodes::UNKNOWN_DISTRIBUTED_P
      {"global", DistributedProductMode::GLOBAL},
      {"allow",  DistributedProductMode::ALLOW}})
 
+IMPLEMENT_SETTING_ENUM(ReplicasPreferences, ErrorCodes::BAD_ARGUMENTS,
+    {{"no_preferences",       ReplicasPreferences::NO_PREFERENCES},
+     {"prefer_non_read_only", ReplicasPreferences::PREFER_NON_READ_ONLY}})
+
 
 IMPLEMENT_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling, ErrorCodes::BAD_ARGUMENTS,
     {{"throw",  QueryCacheNondeterministicFunctionHandling::Throw},
