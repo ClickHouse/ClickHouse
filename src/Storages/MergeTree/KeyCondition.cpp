@@ -1452,11 +1452,21 @@ public:
             if (dynamic_cast<FunctionDateOrDateTimeBase *>(adaptor->getFunction().get()) && kind == Kind::RIGHT_CONST)
             {
                 auto time_zone = extractTimeZoneNameFromColumn(const_arg.column.get(), const_arg.name);
+
+                const IDataType * type_ptr = &type;
+                if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type_ptr))
+                    type_ptr = low_cardinality_type->getDictionaryType().get();
+
+                if (type_ptr->isNullable())
+                    type_ptr = static_cast<const DataTypeNullable &>(*type_ptr).getNestedType().get();
+
                 DataTypePtr type_with_time_zone;
-                if (typeid_cast<const DataTypeDateTime *>(&type))
+                if (typeid_cast<const DataTypeDateTime *>(type_ptr))
                     type_with_time_zone = std::make_shared<DataTypeDateTime>(time_zone);
-                else if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(&type))
+                else if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(type_ptr))
                     type_with_time_zone = std::make_shared<DataTypeDateTime64>(dt64->getScale(), time_zone);
+                else
+                    return {}; /// In case we will have other types with time zone
 
                 return func->getMonotonicityForRange(*type_with_time_zone, left, right);
             }
