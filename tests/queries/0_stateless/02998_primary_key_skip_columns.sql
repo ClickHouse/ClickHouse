@@ -28,6 +28,6 @@ SELECT count() FROM test WHERE b > 7898976344263989848 AND b < 80403209398191531
 SELECT count() FROM test WHERE a > 1849813033528774208 AND a < 4594276315503201760 AND c > 13239894303140990071 AND c < 16179795840886947236;
 SELECT count() FROM test WHERE a > 1849813033528774208 AND a < 4594276315503201760 AND b > 7898976344263989848 AND b < 8040320939819153137 AND c > 13239894303140990071 AND c < 16179795840886947236;
 
-SELECT 'Key size ok: ', (sum(primary_key_bytes_in_memory) as s) >= 800000, s < 1200000 FROM system.parts WHERE database = currentDatabase() AND table = 'test';
+SELECT 'Key size: ', round(sum(primary_key_bytes_in_memory), -5) FROM system.parts WHERE database = currentDatabase() AND table = 'test';
 
 DROP TABLE test;
