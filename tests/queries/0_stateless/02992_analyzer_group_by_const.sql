@@ -8,3 +8,5 @@ SELECT concatWithSeparator('|', 'a', concatWithSeparator('|', CAST('x', 'LowCard
 -- should be const like for the query w/o GROUP BY
 select dumpColumnStructure('x') GROUP BY 'x';
 select dumpColumnStructure('x');
+-- from https://github.com/ClickHouse/ClickHouse/pull/60046
+SELECT cityHash64('limit', _CAST(materialize('World'), 'LowCardinality(String)')) FROM system.one GROUP BY GROUPING SETS ('limit');
