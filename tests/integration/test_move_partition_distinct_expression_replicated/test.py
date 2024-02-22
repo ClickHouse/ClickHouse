@@ -79,6 +79,7 @@ def test_both_replicated(start_cluster):
 
 def test_both_replicated_partitioned_to_unpartitioned(start_cluster):
     cleanup([replica1, replica2])
+
     def create_tables(nodes):
         for node in nodes:
             source_engine = (
@@ -135,6 +136,7 @@ def test_both_replicated_partitioned_to_unpartitioned(start_cluster):
 
 def test_both_replicated_different_exp_same_id(start_cluster):
     cleanup([replica1, replica2])
+
     def create_tables(nodes):
         for node in nodes:
             source_engine = (
