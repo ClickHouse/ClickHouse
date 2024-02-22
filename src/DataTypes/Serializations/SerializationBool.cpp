@@ -242,7 +242,6 @@ void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & is
 {
     if (istr.eof())
         throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Expected boolean value but get EOF.");
-    
     if (settings.tsv.crlf_end_of_line_input)
         deserializeImpl(column, istr, settings, [](ReadBuffer & buf){ return buf.eof() || *buf.position() == '\t' || *buf.position() == '\n' || *buf.position() == '\r'; });
     else

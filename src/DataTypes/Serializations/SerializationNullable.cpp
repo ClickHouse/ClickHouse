@@ -389,8 +389,7 @@ ReturnType  deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr
 
         if (null_representation.find('\t') != std::string::npos || null_representation.find('\n') != std::string::npos)
             throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "TSV custom null representation "
-                                       "containing '\\t' or '\\n' may not work correctly for large input.");
-                                       
+                                       "containing '\\t' or '\\n' may not work correctly for large input.");              
         if (settings.tsv.crlf_end_of_line_input && null_representation.find('\r') != std::string::npos)
             throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "TSV custom null representation "
                                        "containing '\\r' may not work correctly for large input.");
