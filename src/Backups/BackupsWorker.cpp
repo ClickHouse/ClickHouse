@@ -450,7 +450,13 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
         if (backup_settings.base_backup_info)
             base_backup_name = backup_settings.base_backup_info->toStringForLogging();
 
-        addInfo(backup_id, backup_name_for_logging, base_backup_name, backup_settings.internal, context->getProcessListElement(), BackupStatus::CREATING_BACKUP);
+        addInfo(backup_id,
+            backup_name_for_logging,
+            base_backup_name,
+            context->getCurrentQueryId(),
+            backup_settings.internal,
+            context->getProcessListElement(),
+            BackupStatus::CREATING_BACKUP);
 
         if (backup_settings.internal)
         {
@@ -823,7 +829,13 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
         if (restore_settings.base_backup_info)
             base_backup_name = restore_settings.base_backup_info->toStringForLogging();
 
-        addInfo(restore_id, backup_name_for_logging, base_backup_name, restore_settings.internal, context->getProcessListElement(), BackupStatus::RESTORING);
+        addInfo(restore_id,
+            backup_name_for_logging,
+            base_backup_name,
+            context->getCurrentQueryId(),
+            restore_settings.internal,
+            context->getProcessListElement(),
+            BackupStatus::RESTORING);
 
         if (restore_settings.internal)
         {
@@ -1089,13 +1101,15 @@ void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr 
 }
 
 
-void BackupsWorker::addInfo(const OperationID & id, const String & name, const String & base_backup_name, bool internal, QueryStatusPtr process_list_element, BackupStatus status)
+void BackupsWorker::addInfo(const OperationID & id, const String & name, const String & base_backup_name, const String & query_id,
+                            bool internal, QueryStatusPtr process_list_element, BackupStatus status)
 {
     ExtendedOperationInfo extended_info;
     auto & info = extended_info.info;
     info.id = id;
     info.name = name;
     info.base_backup_name = base_backup_name;
+    info.query_id = query_id;
     info.internal = internal;
     info.status = status;
     info.start_time = std::chrono::system_clock::now();
@@ -1164,7 +1178,7 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
 
     if (isFailedOrCancelled(status))
     {
-        info.error_message = getCurrentExceptionMessage(false);
+        info.error_message = getCurrentExceptionMessage(true /*with_stacktrace*/);
         info.exception = std::current_exception();
     }
 

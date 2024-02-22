@@ -94,6 +94,7 @@
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -793,6 +794,7 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
 {
     auto res = std::shared_ptr<Context>(new Context);
     res->shared = shared_part;
+    res->query_access_info = std::make_shared<QueryAccessInfo>();
     return res;
 }
 
@@ -812,7 +814,9 @@ SharedContextHolder Context::createShared()
 ContextMutablePtr Context::createCopy(const ContextPtr & other)
 {
     SharedLockGuard lock(other->mutex);
-    return std::shared_ptr<Context>(new Context(*other));
+    auto new_context = std::shared_ptr<Context>(new Context(*other));
+    new_context->query_access_info = std::make_shared<QueryAccessInfo>(*other->query_access_info);
+    return new_context;
 }
 
 ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
@@ -907,7 +911,7 @@ Strings Context::getWarnings() const
         if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}", shared->max_table_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}", shared->max_table_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}", shared->max_database_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of active parts is more than {}", shared->max_part_num_to_warn));
     }
@@ -1533,7 +1537,7 @@ void Context::addExternalTable(const String & table_name, TemporaryTableHolder &
 
     std::lock_guard lock(mutex);
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} already exists.", backQuoteIfNeed(table_name));
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} already exists", backQuoteIfNeed(table_name));
     external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
 }
 
@@ -1606,12 +1610,12 @@ void Context::addQueryAccessInfo(
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
 
-    std::lock_guard lock(query_access_info.mutex);
-    query_access_info.databases.emplace(quoted_database_name);
-    query_access_info.tables.emplace(full_quoted_table_name);
+    std::lock_guard lock(query_access_info->mutex);
+    query_access_info->databases.emplace(quoted_database_name);
+    query_access_info->tables.emplace(full_quoted_table_name);
 
     for (const auto & column_name : column_names)
-        query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
+        query_access_info->columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
 }
 
 void Context::addQueryAccessInfo(const Names & partition_names)
@@ -1619,9 +1623,9 @@ void Context::addQueryAccessInfo(const Names & partition_names)
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
 
-    std::lock_guard<std::mutex> lock(query_access_info.mutex);
+    std::lock_guard<std::mutex> lock(query_access_info->mutex);
     for (const auto & partition_name : partition_names)
-        query_access_info.partitions.emplace(partition_name);
+        query_access_info->partitions.emplace(partition_name);
 }
 
 void Context::addViewAccessInfo(const String & view_name)
@@ -1629,8 +1633,8 @@ void Context::addViewAccessInfo(const String & view_name)
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
 
-    std::lock_guard<std::mutex> lock(query_access_info.mutex);
-    query_access_info.views.emplace(view_name);
+    std::lock_guard<std::mutex> lock(query_access_info->mutex);
+    query_access_info->views.emplace(view_name);
 }
 
 void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name)
@@ -1641,8 +1645,8 @@ void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_proje
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
 
-    std::lock_guard<std::mutex> lock(query_access_info.mutex);
-    query_access_info.projections.emplace(fmt::format(
+    std::lock_guard<std::mutex> lock(query_access_info->mutex);
+    query_access_info->projections.emplace(fmt::format(
         "{}.{}", qualified_projection_name.storage_id.getFullTableName(), backQuoteIfNeed(qualified_projection_name.projection_name)));
 }
 
@@ -1927,6 +1931,35 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
     }
 
+    return res;
+}
+
+
+StoragePtr Context::buildParametrizedViewStorage(const ASTPtr & table_expression, const String & database_name, const String & table_name)
+{
+    if (table_name.empty())
+        return nullptr;
+
+    StoragePtr original_view = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
+    if (!original_view || !original_view->isView())
+        return nullptr;
+    auto * storage_view = original_view->as<StorageView>();
+    if (!storage_view || !storage_view->isParameterizedView())
+        return nullptr;
+
+    auto query = original_view->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
+    NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression);
+    StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
+
+    ASTCreateQuery create;
+    create.select = query->as<ASTSelectWithUnionQuery>();
+    auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, shared_from_this());
+    auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
+                                                create,
+                                                ColumnsDescription(sample_block.getNamesAndTypesList()),
+            /* comment */ "",
+            /* is_parameterized_view */ true);
+    res->startup();
     return res;
 }
 
@@ -2264,7 +2297,8 @@ void Context::setMacros(std::unique_ptr<Macros> && macros)
 ContextMutablePtr Context::getQueryContext() const
 {
     auto ptr = query_context.lock();
-    if (!ptr) throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "There is no query or query context has expired");
+    if (!ptr)
+        throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "There is no query or query context has expired");
     return ptr;
 }
 
@@ -4150,12 +4184,12 @@ void Context::setMaxTableSizeToDrop(size_t max_size)
 
 size_t Context::getMaxTableSizeToDrop() const
 {
-    return shared->max_table_size_to_drop.load(std::memory_order_relaxed);
+    return shared->max_table_size_to_drop.load();
 }
 
 void Context::checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size) const
 {
-    size_t max_table_size_to_drop = shared->max_table_size_to_drop.load(std::memory_order_relaxed);
+    size_t max_table_size_to_drop = shared->max_table_size_to_drop.load();
 
     checkCanBeDropped(database, table, table_size, max_table_size_to_drop);
 }
@@ -4173,12 +4207,12 @@ void Context::setMaxPartitionSizeToDrop(size_t max_size)
 
 size_t Context::getMaxPartitionSizeToDrop() const
 {
-    return shared->max_partition_size_to_drop.load(std::memory_order_relaxed);
+    return shared->max_partition_size_to_drop.load();
 }
 
 void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const
 {
-    size_t max_partition_size_to_drop = shared->max_partition_size_to_drop.load(std::memory_order_relaxed);
+    size_t max_partition_size_to_drop = shared->max_partition_size_to_drop.load();
 
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
 }
@@ -4479,7 +4513,7 @@ void Context::setClientConnectionId(uint32_t connection_id_)
     client_info.connection_id = connection_id_;
 }
 
-void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
+void Context::setHTTPClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
 {
     client_info.http_method = http_method;
     client_info.http_user_agent = http_user_agent;

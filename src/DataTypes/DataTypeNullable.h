@@ -43,6 +43,9 @@ public:
     bool canBePromoted() const override { return nested_data_type->canBePromoted(); }
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
+
+    void forEachChild(const ChildCallback & callback) const override;
+
 private:
     SerializationPtr doGetDefaultSerialization() const override;
 

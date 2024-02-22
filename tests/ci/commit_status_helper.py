@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 
-from collections import defaultdict
-import json
-from pathlib import Path
-from typing import Dict, List, Optional, Union
 import csv
+import json
 import logging
 import time
+from collections import defaultdict
 from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Dict, List, Optional, Union
 
+# isort: off
 from github import Github
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
@@ -17,15 +18,15 @@ from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
 from github.Repository import Repository
 
-from ci_config import CI_CONFIG, REQUIRED_CHECKS, CHECK_DESCRIPTIONS, CheckDescription
+from ci_config import REQUIRED_CHECKS, CHECK_DESCRIPTIONS, CheckDescription
 from env_helper import GITHUB_JOB_URL, GITHUB_REPOSITORY, TEMP_PATH
-from pr_info import PRInfo, SKIP_MERGEABLE_CHECK_LABEL
+from pr_info import SKIP_MERGEABLE_CHECK_LABEL, PRInfo
 from report import (
     ERROR,
     FAILURE,
     PENDING,
-    StatusType,
     SUCCESS,
+    StatusType,
     TestResult,
     TestResults,
     get_worst_status,
@@ -64,19 +65,6 @@ class RerunHelper:
         return None
 
 
-def override_status(status: str, check_name: str, invert: bool = False) -> str:
-    test_config = CI_CONFIG.test_configs.get(check_name)
-    if test_config and test_config.force_tests:
-        return SUCCESS
-
-    if invert:
-        if status == SUCCESS:
-            return ERROR
-        return SUCCESS
-
-    return status
-
-
 def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:
     for i in range(retry_count):
         try:
@@ -93,7 +81,7 @@ def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:
 
 def post_commit_status(
     commit: Commit,
-    state: str,
+    state: StatusType,
     report_url: Optional[str] = None,
     description: Optional[str] = None,
     check_name: Optional[str] = None,
@@ -288,7 +276,7 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     return "".join(result)
 
 
-def get_worst_state(statuses: CommitStatuses) -> str:
+def get_worst_state(statuses: CommitStatuses) -> StatusType:
     return get_worst_status(status.state for status in statuses)
 
 
@@ -365,6 +353,9 @@ class CommitStatusData:
     def is_ok(self):
         return self.status == SUCCESS
 
+    def is_failure(self):
+        return self.status == FAILURE
+
     @staticmethod
     def cleanup():
         STATUS_FILE_PATH.unlink(missing_ok=True)
@@ -373,12 +364,12 @@ class CommitStatusData:
 def get_commit_filtered_statuses(commit: Commit) -> CommitStatuses:
     """
     Squash statuses to latest state
-    1. context="first", state="success", update_time=1
-    2. context="second", state="success", update_time=2
-    3. context="first", stat="failure", update_time=3
+    1. context="first", state=SUCCESS, update_time=1
+    2. context="second", state=SUCCESS, update_time=2
+    3. context="first", stat=FAILURE, update_time=3
     =========>
-    1. context="second", state="success"
-    2. context="first", stat="failure"
+    1. context="second", state=SUCCESS
+    2. context="first", stat=FAILURE
     """
     filtered = {}
     for status in sorted(commit.get_statuses(), key=lambda x: x.updated_at):
@@ -430,7 +421,7 @@ def format_description(description: str) -> str:
 def set_mergeable_check(
     commit: Commit,
     description: str = "",
-    state: StatusType = "success",
+    state: StatusType = SUCCESS,
 ) -> None:
     commit.create_status(
         context=MERGEABLE_NAME,
