@@ -1,5 +1,4 @@
 #include <Core/Settings.h>
-#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseLazy.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabasesCommon.h>
@@ -8,7 +7,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>
 
@@ -20,13 +18,6 @@
 
 namespace fs = std::filesystem;
 
-
-namespace CurrentMetrics
-{
-    extern const Metric AttachedTable;
-}
-
-
 namespace DB
 {
 
@@ -36,7 +27,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -184,7 +174,6 @@ void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_n
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists.", backQuote(database_name), backQuote(table_name));
 
     it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), current_time, table_name);
-    CurrentMetrics::add(CurrentMetrics::AttachedTable, 1);
 }
 
 StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & table_name)
@@ -200,7 +189,6 @@ StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & ta
         if (it->second.expiration_iterator != cache_expiration_queue.end())
             cache_expiration_queue.erase(it->second.expiration_iterator);
         tables_cache.erase(it);
-        CurrentMetrics::sub(CurrentMetrics::AttachedTable, 1);
     }
     return res;
 }
@@ -357,26 +345,4 @@ const StoragePtr & DatabaseLazyIterator::table() const
     return current_storage;
 }
 
-void registerDatabaseLazy(DatabaseFactory & factory)
-{
-    auto create_fn = [](const DatabaseFactory::Arguments & args)
-    {
-        auto * engine_define = args.create_query.storage;
-        const ASTFunction * engine = engine_define->engine;
-
-        if (!engine->arguments || engine->arguments->children.size() != 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lazy database require cache_expiration_time_seconds argument");
-
-        const auto & arguments = engine->arguments->children;
-
-        const auto cache_expiration_time_seconds = safeGetLiteralValue<UInt64>(arguments[0], "Lazy");
-
-        return make_shared<DatabaseLazy>(
-            args.database_name,
-            args.metadata_path,
-            cache_expiration_time_seconds,
-            args.context);
-    };
-    factory.registerDatabase("Lazy", create_fn);
-}
 }

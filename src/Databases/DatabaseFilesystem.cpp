@@ -1,4 +1,3 @@
-#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseFilesystem.h>
 
 #include <IO/Operators.h>
@@ -32,7 +31,7 @@ namespace ErrorCodes
 }
 
 DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path_, ContextPtr context_)
-    : IDatabase(name_), WithContext(context_->getGlobalContext()), path(path_), log(getLogger("DatabaseFileSystem(" + name_ + ")"))
+    : IDatabase(name_), WithContext(context_->getGlobalContext()), path(path_), log(&Poco::Logger::get("DatabaseFileSystem(" + name_ + ")"))
 {
     bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
     fs::path user_files_path = is_local ? "" : fs::canonical(getContext()->getUserFilesPath());
@@ -41,15 +40,13 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
     {
         path = user_files_path / path;
     }
-
-    path = fs::absolute(path).lexically_normal();
-
-    if (!is_local && !pathStartsWith(fs::path(path), user_files_path))
+    else if (!is_local && !pathStartsWith(fs::path(path), user_files_path))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Path must be inside user-files path: {}", user_files_path.string());
     }
 
+    path = fs::absolute(path).lexically_normal();
     if (!fs::exists(path))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", path);
 }
@@ -146,18 +143,9 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
     if (!checkTableFilePath(table_path, context_, throw_on_error))
         return {};
 
-    String format;
-    if (throw_on_error)
-    {
-        format = FormatFactory::instance().getFormatFromFileName(table_path);
-    }
-    else
-    {
-        auto format_maybe = FormatFactory::instance().tryGetFormatFromFileName(table_path);
-        if (!format_maybe)
-            return {};
-        format = *format_maybe;
-    }
+    auto format = FormatFactory::instance().getFormatFromFileName(table_path, throw_on_error);
+    if (format.empty())
+        return {};
 
     auto ast_function_ptr = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path), std::make_shared<ASTLiteral>(format));
 
@@ -247,28 +235,4 @@ DatabaseTablesIteratorPtr DatabaseFilesystem::getTablesIterator(ContextPtr, cons
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
-void registerDatabaseFilesystem(DatabaseFactory & factory)
-{
-    auto create_fn = [](const DatabaseFactory::Arguments & args)
-    {
-        auto * engine_define = args.create_query.storage;
-        const ASTFunction * engine = engine_define->engine;
-        const String & engine_name = engine_define->engine->name;
-
-        /// If init_path is empty, then the current path will be used
-        std::string init_path;
-
-        if (engine->arguments && !engine->arguments->children.empty())
-        {
-            if (engine->arguments->children.size() != 1)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filesystem database requires at most 1 argument: filesystem_path");
-
-            const auto & arguments = engine->arguments->children;
-            init_path = safeGetLiteralValue<String>(arguments[0], engine_name);
-        }
-
-        return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context);
-    };
-    factory.registerDatabase("Filesystem", create_fn);
-}
 }

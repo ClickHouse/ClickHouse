@@ -13,7 +13,7 @@ REGISTER_FUNCTION(ToHour)
 {
     factory.registerFunction<FunctionToHour>();
 
-    /// MySQL compatibility alias.
+    /// MysQL compatibility alias.
     factory.registerAlias("HOUR", "toHour", FunctionFactory::CaseInsensitive);
 }
 

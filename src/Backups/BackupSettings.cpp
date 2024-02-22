@@ -31,9 +31,6 @@ namespace ErrorCodes
     M(Bool, read_from_filesystem_cache) \
     M(UInt64, shard_num) \
     M(UInt64, replica_num) \
-    M(Bool, check_parts) \
-    M(Bool, check_projection_parts) \
-    M(Bool, allow_backup_broken_projections) \
     M(Bool, internal) \
     M(String, host_id) \
     M(OptionalUUID, backup_uuid)

@@ -7,17 +7,16 @@
 namespace fs = std::filesystem;
 
 
-DB::DiskPtr createDisk(const std::string & path)
+DB::DiskPtr createDisk()
 {
-    fs::create_directory(path);
-    return std::make_shared<DB::DiskLocal>("local_disk", path);
+    fs::create_directory("tmp/");
+    return std::make_shared<DB::DiskLocal>("local_disk", "tmp/");
 }
 
 void destroyDisk(DB::DiskPtr & disk)
 {
-    const auto path = disk->getPath();
     disk.reset();
-    fs::remove_all(path);
+    fs::remove_all("tmp/");
 }
 
 class DiskTest : public testing::Test
@@ -47,7 +46,7 @@ TEST_F(DiskTest, writeFile)
         writeString("test data", *out);
     }
 
-    String data;
+    DB::String data;
     {
         std::unique_ptr<DB::ReadBuffer> in = disk->readFile("test_file");
         readString(data, *in);

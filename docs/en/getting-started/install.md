@@ -56,7 +56,7 @@ On Linux, macOS and FreeBSD:
   ./clickhouse client
   ClickHouse client version 23.2.1.1501 (official build).
   Connecting to localhost:9000 as user default.
-  Connected to ClickHouse server version 23.2.1.
+  Connected to ClickHouse server version 23.2.1 revision 54461.
 
   local-host :)
   ```
@@ -380,7 +380,7 @@ build.
 
 ### macOS-only: Install with Homebrew
 
-To install ClickHouse using [homebrew](https://brew.sh/), see [here](https://formulae.brew.sh/cask/clickhouse).
+To install ClickHouse using the popular `brew` package manager, follow the instructions listed in the [ClickHouse Homebrew tap](https://github.com/ClickHouse/homebrew-clickhouse).
 
 ## Launch {#launch}
 

@@ -24,10 +24,9 @@ enum SnapshotVersion : uint8_t
     V3 = 3, /// compress snapshots with ZSTD codec
     V4 = 4, /// add Node size to snapshots
     V5 = 5, /// add ZXID and digest to snapshots
-    V6 = 6, /// remove is_sequential, per node size, data length
 };
 
-static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V6;
+static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V5;
 
 /// What is stored in binary snapshot
 struct SnapshotDeserializationResult
@@ -188,7 +187,7 @@ private:
 
     KeeperContextPtr keeper_context;
 
-    LoggerPtr log = getLogger("KeeperSnapshotManager");
+    Poco::Logger * log = &Poco::Logger::get("KeeperSnapshotManager");
 };
 
 /// Keeper create snapshots in background thread. KeeperStateMachine just create

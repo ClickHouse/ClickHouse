@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Interpreters/TransactionLog.h>
@@ -134,15 +133,6 @@ BlockIO InterpreterTransactionControlQuery::executeSetSnapshot(ContextMutablePtr
 
     txn->setSnapshot(snapshot);
     return {};
-}
-
-void registerInterpreterTransactionControlQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterTransactionControlQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterTransactionControlQuery", create_fn);
 }
 
 }
