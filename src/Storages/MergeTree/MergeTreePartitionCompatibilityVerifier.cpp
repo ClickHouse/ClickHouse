@@ -114,7 +114,7 @@ std::pair<MergeTreePartition, std::string> MergeTreePartitionCompatibilityVerifi
     const String & source_partition_id)
 {
     /*
-     * If the partition expression is the same, there is no need to create a new partition
+     * If the partition expression is the same, there is no need to create a new partition (it is not used)
      * and the source partition id can be used as the destination partition id.
      * */
     if (is_partition_exp_the_same)
