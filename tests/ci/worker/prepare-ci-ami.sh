@@ -138,6 +138,21 @@ dpkg -i /tmp/amazon-cloudwatch-agent.deb
 aws ssm get-parameter --region us-east-1 --name AmazonCloudWatch-github-runners --query 'Parameter.Value' --output text > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 systemctl enable amazon-cloudwatch-agent.service
 
+
+echo "Install tailscale"
+# Build get-authkey for tailscale
+docker run --rm -v /usr/local/bin/:/host-local-bin -i golang:alpine sh -ex <<'EOF'
+  CGO_ENABLED=0 go install -tags tag:svc-core-ci-github tailscale.com/cmd/get-authkey@main
+  mv /go/bin/get-authkey /host-local-bin
+EOF
+
+# install tailscale
+curl -fsSL "https://pkgs.tailscale.com/stable/ubuntu/$(lsb_release -cs).noarmor.gpg" > /usr/share/keyrings/tailscale-archive-keyring.gpg
+curl -fsSL "https://pkgs.tailscale.com/stable/ubuntu/$(lsb_release -cs).tailscale-keyring.list" > /etc/apt/sources.list.d/tailscale.list
+apt-get update
+apt-get install tailscale --yes --no-install-recommends
+
+
 # The following line is used in aws TOE check.
 touch /var/tmp/clickhouse-ci-ami.success
 # END OF THE SCRIPT
