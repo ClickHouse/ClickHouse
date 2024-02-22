@@ -151,7 +151,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
-    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
+    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = !read_settings.force_read_through_cache_merges;
     /// It does not make sense to use pthread_threadpool for background merges/mutations
     /// And also to preserve backward compatibility
     read_settings.local_fs_method = LocalFSReadMethod::pread;

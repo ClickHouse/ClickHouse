@@ -19,6 +19,9 @@ def cluster():
             main_configs=[
                 "config.d/storage_conf.xml",
             ],
+            user_configs=[
+                "users.d/cache_on_write_operations.xml",
+            ],
             stay_alive=True,
         )
         cluster.add_instance(
@@ -32,6 +35,17 @@ def cluster():
             main_configs=[
                 "config.d/storage_conf.xml",
                 "config.d/remove_filesystem_caches_path.xml",
+            ],
+            stay_alive=True,
+        )
+        cluster.add_instance(
+            "node_force_read_through_cache_on_merge",
+            main_configs=[
+                "config.d/storage_conf.xml",
+            ],
+            user_configs=[
+                "users.d/force_read_through_cache_on_merge.xml",
+                "users.d/cache_on_write_operations.xml",
             ],
             stay_alive=True,
         )
@@ -323,3 +337,68 @@ def test_custom_cached_disk(cluster):
             "SELECT cache_path FROM system.disks WHERE name = 'custom_cached4'"
         ).strip()
     )
+
+
+def test_force_filesystem_cache_on_merges(cluster):
+    def test(node, forced_read_through_cache_on_merge):
+        node.query(
+            """
+            DROP TABLE IF EXISTS test SYNC;
+
+            CREATE TABLE test (key UInt32, value String)
+            Engine=MergeTree()
+            ORDER BY value
+            SETTINGS disk = disk(
+                type = cache,
+                path = 'force_cache_on_merges',
+                disk = 'hdd_blob',
+                max_file_segment_size = '1Ki',
+                cache_on_write_operations = 1,
+                boundary_alignment = '1Ki',
+                max_size = '10Gi',
+                max_elements = 10000000,
+                load_metadata_threads = 30);
+
+            SYSTEM DROP FILESYSTEM CACHE;
+            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
+            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
+            """
+        )
+        assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
+        assert int(node.query("SELECT max(size) FROM system.filesystem_cache")) == 1024
+
+        write_count = int(
+            node.query(
+                "SELECT value FROM system.events WHERE name = 'CachedWriteBufferCacheWriteBytes'"
+            )
+        )
+        assert write_count > 100000
+        assert "" == node.query(
+            "SELECT value FROM system.events WHERE name = 'CachedReadBufferCacheWriteBytes'"
+        )
+
+        node.query("SYSTEM DROP FILESYSTEM CACHE")
+        node.query("OPTIMIZE TABLE test FINAL")
+
+        new_write_count = int(
+            node.query(
+                "SELECT value FROM system.events WHERE name = 'CachedWriteBufferCacheWriteBytes'"
+            )
+        )
+        assert new_write_count >= write_count
+
+        if forced_read_through_cache_on_merge:
+            assert 100000 < int(
+                node.query(
+                    "SELECT value FROM system.events WHERE name = 'CachedReadBufferCacheWriteBytes'"
+                )
+            )
+        else:
+            assert "" == node.query(
+                "SELECT value FROM system.events WHERE name = 'CachedReadBufferCacheWriteBytes'"
+            )
+
+    node = cluster.instances["node_force_read_through_cache_on_merge"]
+    test(node, True)
+    node = cluster.instances["node"]
+    test(node, False)
