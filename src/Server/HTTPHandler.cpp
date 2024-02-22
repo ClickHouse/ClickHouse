@@ -884,7 +884,9 @@ void HTTPHandler::processQuery(
     {
         if (settings.http_write_exception_in_output_format && output_format.supportsWritingException())
         {
-            ExecutionStatus status = ExecutionStatus::fromCurrentException("", false);
+            bool with_stacktrace = (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true));
+
+            ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
             formatExceptionForClient(status.code, request, response, used_output);
 
             output_format.setException(getCurrentExceptionMessage(false));
