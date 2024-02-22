@@ -9,7 +9,7 @@ Columns:
 
 - `hostname` ([String](../../sql-reference/data-types/string.md)) — cached hostname
 - `ip_address` ([String](../../sql-reference/data-types/string.md)) — ip address for the hostname
-- `family` ([Enum](../../sql-reference/data-types/enum.md)) — family of the ip address, possible values: 
+- `ip_family` ([Enum](../../sql-reference/data-types/enum.md)) — family of the ip address, possible values: 
    - 'IPv4' 
    - 'IPv6'
    - 'UNIX_LOCAL'

@@ -17,7 +17,7 @@ static DataTypePtr getIPFamilyEnumType()
         {
             {"IPv4",           static_cast<Int8>(Poco::Net::AddressFamily::IPv4)},
             {"IPv6",           static_cast<Int8>(Poco::Net::AddressFamily::IPv6)},
-            {"UNIX_LOCAL",         static_cast<Int8>(Poco::Net::AddressFamily::UNIX_LOCAL)},
+            {"UNIX_LOCAL",     static_cast<Int8>(Poco::Net::AddressFamily::UNIX_LOCAL)},
         });
 }
 
@@ -25,10 +25,10 @@ ColumnsDescription StorageSystemDNSCache::getColumnsDescription()
 {
     return ColumnsDescription
         {
-            {"hostname", std::make_shared<DataTypeString>(), "Hostname."},
-            {"ip_address", std::make_shared<DataTypeString>(), "IP address."},
-            {"ip_family", getIPFamilyEnumType(), "IP address family."},
-            {"cached_at", std::make_shared<DataTypeDateTime>(), "Record cached timestamp."},
+            {"hostname",           std::make_shared<DataTypeString>(), "Hostname."},
+            {"ip_address",         std::make_shared<DataTypeString>(), "IP address."},
+            {"ip_family",          getIPFamilyEnumType(), "IP address family."},
+            {"cached_at",          std::make_shared<DataTypeDateTime>(), "Record cached timestamp."},
         };
 }
 
