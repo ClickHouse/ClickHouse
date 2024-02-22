@@ -342,7 +342,7 @@ namespace
                 findMySQLFunctionSecretArguments();
             }
             else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS") ||
-                     (engine_name == "DeltaLake") || (engine_name == "Hudi") || (engine_name == "Iceberg"))
+                     (engine_name == "DeltaLake") || (engine_name == "Hudi") || (engine_name == "Iceberg") || (engine_name == "S3Queue"))
             {
                 /// S3('url', ['aws_access_key_id', 'aws_secret_access_key',] ...)
                 findS3TableEngineSecretArguments();
