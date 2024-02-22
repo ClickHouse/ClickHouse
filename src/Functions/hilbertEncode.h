@@ -1,3 +1,4 @@
+#pragma once
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -11,17 +12,25 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
 namespace HilbertDetails
 {
 
 template <UInt8 bit_step>
-class HilbertLookupTable {
+class HilbertLookupTable
+{
 public:
     constexpr static UInt8 LOOKUP_TABLE[0] = {};
 };
 
 template <>
-class HilbertLookupTable<1> {
+class HilbertLookupTable<1>
+{
 public:
     constexpr static UInt8 LOOKUP_TABLE[16] = {
         4, 1, 11, 2,
@@ -32,7 +41,8 @@ public:
 };
 
 template <>
-class HilbertLookupTable<3> {
+class HilbertLookupTable<3>
+{
 public:
     constexpr static UInt8 LOOKUP_TABLE[256] = {
         64, 1, 206, 79, 16, 211, 84, 21, 131, 2, 205, 140, 81, 82, 151, 22, 4, 199, 8, 203, 158,
@@ -58,52 +68,36 @@ template <UInt8 bit_step = 3>
 class FunctionHilbertEncode2DWIthLookupTableImpl
 {
 public:
-    struct HilbertEncodeState {
-        UInt64 hilbert_code = 0;
-        UInt8 state = 0;
-    };
-
     static UInt64 encode(UInt64 x, UInt64 y)
     {
-        return encodeFromState(x, y, 0).hilbert_code;
-    }
-
-    static HilbertEncodeState encodeFromState(UInt64 x, UInt64 y, UInt8 state)
-    {
-        HilbertEncodeState result;
-        result.state = state;
+        UInt64 hilbert_code = 0;
         const auto leading_zeros_count = getLeadingZeroBits(x | y);
         const auto used_bits = std::numeric_limits<UInt64>::digits - leading_zeros_count;
 
-        auto [iterations, current_shift] = getIterationsAndInitialShift(used_bits);
+        auto [current_shift, state] = getInitialShiftAndState(used_bits);
 
-        for (; iterations > 0; --iterations, current_shift -= bit_step)
+        while (current_shift >= 0)
         {
-            if (iterations % 2 == 0) {
-                std::swap(x, y);
-            }
             const UInt8 x_bits = (x >> current_shift) & STEP_MASK;
             const UInt8 y_bits = (y >> current_shift) & STEP_MASK;
-            const auto current_step_state = getCodeAndUpdateState(x_bits, y_bits, result.state);
-            result.hilbert_code |= (current_step_state.hilbert_code << getHilbertShift(current_shift));
-            result.state = current_step_state.state;
+            const auto hilbert_bits = getCodeAndUpdateState(x_bits, y_bits, state);
+            hilbert_code |= (hilbert_bits << getHilbertShift(current_shift));
+            current_shift -= bit_step;
         }
 
-        return result;
+        return hilbert_code;
     }
 
 private:
     // LOOKUP_TABLE[SSXXXYYY] = SSHHHHHH
     // where SS - 2 bits for state, XXX - 3 bits of x, YYY - 3 bits of y
     // State is rotation of curve on every step, left/up/right/down - therefore 2 bits
-    static HilbertEncodeState getCodeAndUpdateState(UInt8 x_bits, UInt8 y_bits, UInt8 state)
+    static UInt64 getCodeAndUpdateState(UInt8 x_bits, UInt8 y_bits, UInt8& state)
     {
-        HilbertEncodeState result;
         const UInt8 table_index = state | (x_bits << bit_step) | y_bits;
         const auto table_code = HilbertDetails::HilbertLookupTable<bit_step>::LOOKUP_TABLE[table_index];
-        result.state = table_code & STATE_MASK;
-        result.hilbert_code = table_code & HILBERT_MASK;
-        return result;
+        state = table_code & STATE_MASK;
+        return table_code & HILBERT_MASK;
     }
 
     // hilbert code is double size of input values
@@ -112,17 +106,18 @@ private:
         return shift << 1;
     }
 
-    static std::pair<UInt8, UInt8> getIterationsAndInitialShift(UInt8 used_bits)
+    static std::pair<Int8, UInt8> getInitialShiftAndState(UInt8 used_bits)
     {
         UInt8 iterations = used_bits / bit_step;
-        UInt8 initial_shift = iterations * bit_step;
+        Int8 initial_shift = iterations * bit_step;
         if (initial_shift < used_bits)
         {
             ++iterations;
         } else {
             initial_shift -= bit_step;
         }
-        return {iterations, initial_shift};
+        UInt8 state = iterations % 2 == 0 ? 0b01 << getHilbertShift(bit_step) : 0;
+        return {initial_shift, state};
     }
 
     constexpr static UInt8 STEP_MASK = (1 << bit_step) - 1;
@@ -145,12 +140,6 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t num_dimensions = arguments.size();
-        if (num_dimensions < 1 || num_dimensions > 2) {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal number of UInt arguments of function {}: should be at least 1 and not more than 2",
-                getName());
-        }
-
         size_t vector_start_index = 0;
         const auto * const_col = typeid_cast<const ColumnConst *>(arguments[0].column.get());
         const ColumnTuple * mask;
@@ -165,9 +154,9 @@ public:
             for (size_t i = 0; i < num_dimensions; i++)
             {
                 auto ratio = mask->getColumn(i).getUInt(0);
-                if (ratio > 8 || ratio < 1)
+                if (ratio > 32)
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "Illegal argument {} of function {}, should be a number in range 1-8",
+                        "Illegal argument {} of function {}, should be a number in range 0-32",
                         arguments[0].column->getName(), getName());
             }
         }
@@ -180,22 +169,37 @@ public:
         ColumnUInt64::Container & vec_res = col_res->getData();
         vec_res.resize(input_rows_count);
 
+        const auto expand = [mask](const UInt64 value, const UInt8 column_id) {
+            if (mask)
+                return value << mask->getColumn(column_id).getUInt(0);
+            return value;
+        };
+
         const ColumnPtr & col0 = non_const_arguments[0 + vector_start_index].column;
         if (num_dimensions == 1)
         {
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                vec_res[i] = col0->getUInt(i);
+                vec_res[i] = expand(col0->getUInt(i), 0);
             }
             return col_res;
         }
 
         const ColumnPtr & col1 = non_const_arguments[1 + vector_start_index].column;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        if (num_dimensions == 2)
         {
-            vec_res[i] = FunctionHilbertEncode2DWIthLookupTableImpl<3>::encode(col0->getUInt(i), col1->getUInt(i));
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                vec_res[i] = FunctionHilbertEncode2DWIthLookupTableImpl<3>::encode(
+                    expand(col0->getUInt(i), 0),
+                    expand(col1->getUInt(i), 1));
+            }
+            return col_res;
         }
-        return col_res;
+
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal number of UInt arguments of function {}: should be not more than 2 dimensions",
+            getName());
     }
 };
 

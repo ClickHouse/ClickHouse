@@ -1,3 +1,4 @@
+#pragma once
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -12,7 +13,8 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
-class FunctionSpaceFillingCurveEncode: public IFunction {
+class FunctionSpaceFillingCurveEncode: public IFunction
+{
 public:
     bool isVariadic() const override
     {
