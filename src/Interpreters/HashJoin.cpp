@@ -1200,10 +1200,6 @@ protected:
     std::vector<TypeAndName> type_name;
     std::vector<ColumnNullable *> nullable_column_ptrs;
 private:
-
-
-
-
     size_t lazy_defaults_count = 0;
     /// for ASOF
     const IColumn * left_asof_key = nullptr;
