@@ -1013,7 +1013,7 @@ CI_CONFIG = CIConfig(
         ),
         JobNames.INTEGRATION_TEST_ASAN: TestConfig(
             Build.PACKAGE_ASAN,
-            job_config=JobConfig(num_batches=4, **integration_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=4, **integration_test_common_params, release_only=True),  # type: ignore
         ),
         JobNames.INTEGRATION_TEST_ASAN_ANALYZER: TestConfig(
             Build.PACKAGE_ASAN,
@@ -1028,12 +1028,9 @@ CI_CONFIG = CIConfig(
             # add [run_by_label="test arm"] to not run in regular pr workflow by default
             job_config=JobConfig(num_batches=6, **integration_test_common_params, run_by_label="test arm"),  # type: ignore
         ),
-        # FIXME: currently no wf has this job. Try to enable
-        # "Integration tests (msan)": TestConfig(Build.PACKAGE_MSAN, job_config=JobConfig(num_batches=6, **integration_test_common_params) # type: ignore
-        # ),
         JobNames.INTEGRATION_TEST: TestConfig(
             Build.PACKAGE_RELEASE,
-            job_config=JobConfig(num_batches=4, **integration_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=4, **integration_test_common_params, release_only=True),  # type: ignore
         ),
         JobNames.INTEGRATION_TEST_FLAKY: TestConfig(
             Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, **integration_test_common_params)  # type: ignore
