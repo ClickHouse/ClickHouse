@@ -10,8 +10,8 @@
  * https://www.openssl.org/source/license.html
  */
 
-#define PLATFORM "platform: linux-ppc64le"
-#define DATE "built on: Thu Feb 22 12:58:04 2024 UTC"
+#define PLATFORM "platform: linux64-riscv64"
+#define DATE "built on: Thu Feb 22 16:18:09 2024 UTC"
 
 /*
  * Generate compiler_flags as an array of individual characters. This is a
@@ -21,10 +21,9 @@
 static const char compiler_flags[] = {
     'c','o','m','p','i','l','e','r',':',' ','c','l','a','n','g','-',
     '1','7',' ','-','f','P','I','C',' ','-','p','t','h','r','e','a',
-    'd',' ','-','m','6','4',' ','-','W','a','l','l',' ','-','O','3',
-    ' ','-','D','O','P','E','N','S','S','L','_','U','S','E','_','N',
-    'O','D','E','L','E','T','E',' ','-','D','L','_','E','N','D','I',
-    'A','N',' ','-','D','O','P','E','N','S','S','L','_','P','I','C',
+    'd',' ','-','W','a','l','l',' ','-','O','3',' ','-','D','O','P',
+    'E','N','S','S','L','_','U','S','E','_','N','O','D','E','L','E',
+    'T','E',' ','-','D','O','P','E','N','S','S','L','_','P','I','C',
     ' ','-','D','O','P','E','N','S','S','L','_','B','U','I','L','D',
     'I','N','G','_','O','P','E','N','S','S','L',' ','-','D','N','D',
     'E','B','U','G','\0'
