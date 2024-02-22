@@ -148,9 +148,8 @@ void DDLLogEntry::parse(const String & data)
             String settings_str;
             rb >> "settings: " >> settings_str >> "\n";
             ParserSetQuery parser{true};
-            constexpr UInt64 max_size = 4096;
             constexpr UInt64 max_depth = 16;
-            ASTPtr settings_ast = parseQuery(parser, settings_str, max_size, max_depth);
+            ASTPtr settings_ast = parseQuery(parser, settings_str, Context::getGlobalContextInstance()->getSettingsRef().max_query_size, max_depth);
             settings.emplace(std::move(settings_ast->as<ASTSetQuery>()->changes));
         }
     }
@@ -215,7 +214,7 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
 }
 
 
-bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log, const ZooKeeperPtr & zookeeper, const std::optional<std::string> & config_host_name)
+bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const ZooKeeperPtr & zookeeper, const std::optional<std::string> & config_host_name)
 {
     bool host_in_hostlist = false;
     std::exception_ptr first_exception = nullptr;
@@ -312,7 +311,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log, c
     return host_in_hostlist;
 }
 
-void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
+void DDLTask::setClusterInfo(ContextPtr context, LoggerPtr log)
 {
     auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query.get());
     if (!query_on_cluster)
@@ -556,7 +555,7 @@ void ZooKeeperMetadataTransaction::commit()
     if (state != CREATED)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect state ({}), it's a bug", state);
     state = FAILED;
-    current_zookeeper->multi(ops);
+    current_zookeeper->multi(ops, /* check_session_valid */ true);
     state = COMMITTED;
 }
 

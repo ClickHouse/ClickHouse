@@ -350,7 +350,7 @@ struct Adder
 
         if constexpr (Data::is_able_to_parallelize_merge)
         {
-            if (data.set.isSingleLevel() && data.set.size() > 100'000)
+            if (data.set.isSingleLevel() && data.set.worthConvertingToTwoLevel(data.set.size()))
                 data.set.convertToTwoLevel();
         }
     }

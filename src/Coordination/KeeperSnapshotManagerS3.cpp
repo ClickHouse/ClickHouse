@@ -43,7 +43,7 @@ struct KeeperSnapshotManagerS3::S3Configuration
 
 KeeperSnapshotManagerS3::KeeperSnapshotManagerS3()
     : snapshots_s3_queue(std::numeric_limits<size_t>::max())
-    , log(&Poco::Logger::get("KeeperSnapshotManagerS3"))
+    , log(getLogger("KeeperSnapshotManagerS3"))
     , uuid(UUIDHelpers::generateV4())
 {}
 

@@ -69,7 +69,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         ContextPtr context_,
         const ColumnsDescription & columns_,
         std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
-        bool is_attach_)
+        bool is_attach)
         : IStorage(table_id_)
         , WithContext(context_->getGlobalContext())
         , rabbitmq_settings(std::move(rabbitmq_settings_))
@@ -86,12 +86,11 @@ StorageRabbitMQ::StorageRabbitMQ(
         , persistent(rabbitmq_settings->rabbitmq_persistent.value)
         , use_user_setup(rabbitmq_settings->rabbitmq_queue_consume.value)
         , hash_exchange(num_consumers > 1 || num_queues > 1)
-        , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
+        , log(getLogger("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, static_cast<int>(num_consumers))
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
         , milliseconds_to_wait(rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms)
-        , is_attach(is_attach_)
 {
     const auto & config = getContext()->getConfigRef();
 
@@ -318,10 +317,11 @@ void StorageRabbitMQ::connectionFunc()
     try
     {
         if (connection->reconnect())
+        {
             initRabbitMQ();
-
-        streaming_task->scheduleAfter(RESCHEDULE_MS);
-        return;
+            streaming_task->scheduleAfter(RESCHEDULE_MS);
+            return;
+        }
     }
     catch (...)
     {
@@ -373,57 +373,37 @@ void StorageRabbitMQ::initRabbitMQ()
     }
     else
     {
-        try
+        auto rabbit_channel = connection->createChannel();
+
+        /// Main exchange -> Bridge exchange -> ( Sharding exchange ) -> Queues -> Consumers
+
+        initExchange(*rabbit_channel);
+        bindExchange(*rabbit_channel);
+
+        for (const auto i : collections::range(0, num_queues))
+            bindQueue(i + 1, *rabbit_channel);
+
+        if (queues.size() != num_queues)
         {
-            auto rabbit_channel = connection->createChannel();
-
-            /// Main exchange -> Bridge exchange -> ( Sharding exchange ) -> Queues -> Consumers
-
-            initExchange(*rabbit_channel);
-            bindExchange(*rabbit_channel);
-
-            for (const auto i : collections::range(0, num_queues))
-                bindQueue(i + 1, *rabbit_channel);
-
-            if (queues.size() != num_queues)
-            {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Expected all queues to be initialized (but having {}/{})",
-                    queues.size(), num_queues);
-            }
-
-            LOG_TRACE(log, "RabbitMQ setup completed");
-            rabbit_channel->close();
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected all queues to be initialized (but having {}/{})",
+                queues.size(), num_queues);
         }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-            if (is_attach)
-                return; /// A user will have to reattach the table.
-            throw;
-        }
+
+        LOG_TRACE(log, "RabbitMQ setup completed");
+        rabbit_channel->close();
     }
 
     LOG_TRACE(log, "Registering {} conumers", num_consumers);
 
     for (size_t i = 0; i < num_consumers; ++i)
     {
-        try
-        {
-            auto consumer = createConsumer();
-            consumer->updateChannel(*connection);
-            consumers_ref.push_back(consumer);
-            pushConsumer(consumer);
-            ++num_created_consumers;
-        }
-        catch (...)
-        {
-            if (!is_attach)
-                throw;
-
-            tryLogCurrentException(log);
-        }
+        auto consumer = createConsumer();
+        consumer->updateChannel(*connection);
+        consumers_ref.push_back(consumer);
+        pushConsumer(consumer);
+        ++num_created_consumers;
     }
 
     LOG_TRACE(log, "Registered {}/{} conumers", num_created_consumers, num_consumers);
@@ -1081,7 +1061,8 @@ bool StorageRabbitMQ::tryStreamToViews()
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto source = std::make_shared<RabbitMQSource>(
-            *this, storage_snapshot, rabbitmq_context, column_names, block_size, max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode, false);
+            *this, storage_snapshot, rabbitmq_context, column_names, block_size,
+            max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode, false);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
@@ -1089,26 +1070,31 @@ bool StorageRabbitMQ::tryStreamToViews()
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
 
+    std::atomic_size_t rows = 0;
+    block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
+
     if (!connection->getHandler().loopRunning())
         startLoop();
 
+    bool write_failed = false;
+    try
     {
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
     }
+    catch (...)
+    {
+        LOG_ERROR(log, "Failed to push to views. Error: {}", getCurrentExceptionMessage(true));
+        write_failed = true;
+    }
+
+    LOG_TRACE(log, "Processed {} rows", rows);
 
     /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
      * error occurs or connection is lost while ack is being sent
      */
     deactivateTask(looping_task, false, true);
     size_t queue_empty = 0;
-
-    if (!hasDependencies(getStorageID()))
-    {
-        /// Do not commit to rabbitmq if the dependency was removed.
-        LOG_TRACE(log, "No dependencies, reschedule");
-        return false;
-    }
 
     if (!connection->isConnected())
     {
@@ -1150,7 +1136,7 @@ bool StorageRabbitMQ::tryStreamToViews()
              *    the same channel will also commit all previously not-committed messages. Anyway I do not think that for ack frame this
              *    will ever happen.
              */
-            if (!source->sendAck())
+            if (write_failed ? source->sendNack() : source->sendAck())
             {
                 /// Iterate loop to activate error callbacks if they happened
                 connection->getHandler().iterateLoop();
@@ -1160,6 +1146,19 @@ bool StorageRabbitMQ::tryStreamToViews()
 
             connection->getHandler().iterateLoop();
         }
+    }
+
+    if (write_failed)
+    {
+        LOG_TRACE(log, "Write failed, reschedule");
+        return false;
+    }
+
+    if (!hasDependencies(getStorageID()))
+    {
+        /// Do not commit to rabbitmq if the dependency was removed.
+        LOG_TRACE(log, "No dependencies, reschedule");
+        return false;
     }
 
     if ((queue_empty == num_created_consumers) && (++read_attempts == MAX_FAILED_READ_ATTEMPTS))

@@ -5,6 +5,7 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
+#include <Common/Logger.h>
 #include <Storages/IStorage.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
@@ -34,7 +35,7 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 
 #include <boost/multi_index_container.hpp>
@@ -461,14 +462,19 @@ public:
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
 
-    String getLogName() const { return *std::atomic_load(&log_name); }
+    String getLogName() const { return log.loadName(); }
 
     Int64 getMaxBlockNumber() const;
 
     struct ProjectionPartsVector
     {
-        DataPartsVector projection_parts;
         DataPartsVector data_parts;
+
+        DataPartsVector projection_parts;
+        DataPartStateVector projection_parts_states;
+
+        DataPartsVector broken_projection_parts;
+        DataPartStateVector broken_projection_parts_states;
     };
 
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
@@ -483,7 +489,7 @@ public:
         const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
     /// Same as above but only returns projection parts
     ProjectionPartsVector getProjectionPartsVectorForInternalUsage(
-        const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
+        const DataPartStates & affordable_states, MergeTreeData::DataPartStateVector * out_states) const;
 
 
     /// Returns absolutely all parts (and snapshot of their states)
@@ -1114,10 +1120,7 @@ protected:
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
 
-    /// log_name will change during table RENAME. Use atomic_shared_ptr to allow concurrent RW.
-    /// NOTE clang-14 doesn't have atomic_shared_ptr yet. Use std::atomic* operations for now.
-    std::shared_ptr<String> log_name;
-    std::atomic<Poco::Logger *> log;
+    AtomicLogger log;
 
     /// Storage settings.
     /// Use get and set to receive readonly versions.
@@ -1353,11 +1356,12 @@ protected:
     /// mechanisms for parts locking
     virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
 
-    /// Return most recent mutations commands for part which weren't applied
-    /// Used to receive AlterConversions for part and apply them on fly. This
-    /// method has different implementations for replicated and non replicated
-    /// MergeTree because they store mutations in different way.
-    virtual std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
+    /// Return pending mutations that weren't applied to `part` yet and should be applied on the fly
+    /// (i.e. when reading from the part). Mutations not supported by AlterConversions
+    /// (supportsMutationCommandType()) can be omitted.
+    ///
+    /// @return list of mutations, in *reverse* order (newest to oldest)
+    virtual MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
 
     struct PartBackupEntries
     {
@@ -1601,10 +1605,10 @@ struct CurrentlySubmergingEmergingTagger
     MergeTreeData & storage;
     String emerging_part_name;
     MergeTreeData::DataPartsVector submerging_parts;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     CurrentlySubmergingEmergingTagger(
-        MergeTreeData & storage_, const String & name_, MergeTreeData::DataPartsVector && parts_, Poco::Logger * log_)
+        MergeTreeData & storage_, const String & name_, MergeTreeData::DataPartsVector && parts_, LoggerPtr log_)
         : storage(storage_), emerging_part_name(name_), submerging_parts(std::move(parts_)), log(log_)
     {
     }

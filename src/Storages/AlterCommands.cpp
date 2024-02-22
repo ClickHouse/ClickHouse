@@ -36,6 +36,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <ranges>
 
@@ -74,6 +75,8 @@ AlterCommand::RemoveProperty removePropertyFromString(const String & property)
         return AlterCommand::RemoveProperty::CODEC;
     else if (property == "TTL")
         return AlterCommand::RemoveProperty::TTL;
+    else if (property == "SETTINGS")
+        return AlterCommand::RemoveProperty::SETTINGS;
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove unknown property '{}'", property);
 }
@@ -172,6 +175,25 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         if (ast_col_decl.codec)
             command.codec = ast_col_decl.codec;
+
+        if (ast_col_decl.settings)
+            command.settings_changes = ast_col_decl.settings->as<ASTSetQuery &>().changes;
+
+        /// At most only one of ast_col_decl.settings or command_ast->settings_changes is non-null
+        if (command_ast->settings_changes)
+        {
+            command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+            command.append_column_setting = true;
+        }
+
+        if (command_ast->settings_resets)
+        {
+            for (const ASTPtr & identifier_ast : command_ast->settings_resets->children)
+            {
+                const auto & identifier = identifier_ast->as<ASTIdentifier &>();
+                command.settings_resets.emplace(identifier.name());
+            }
+        }
 
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
@@ -420,6 +442,14 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.if_exists = command_ast->if_exists;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_SQL_SECURITY)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::MODIFY_SQL_SECURITY;
+        command.sql_security = command_ast->sql_security->clone();
+        return command;
+    }
     else
         return {};
 }
@@ -501,6 +531,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             {
                 column.ttl.reset();
             }
+            else if (to_remove == RemoveProperty::SETTINGS)
+            {
+                column.settings.clear();
+            }
             else
             {
                 if (codec)
@@ -514,6 +548,22 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
                 if (data_type)
                     column.type = data_type;
+
+                if (!settings_changes.empty())
+                {
+                    MergeTreeColumnSettings::validate(settings_changes);
+                    if (append_column_setting)
+                        for (const auto & change : settings_changes)
+                            column.settings.setSetting(change.name, change.value);
+                    else
+                        column.settings = settings_changes;
+                }
+
+                if (!settings_resets.empty())
+                {
+                    for (const auto & setting : settings_resets)
+                        column.settings.removeSetting(setting);
+                }
 
                 /// User specified default expression or changed
                 /// datatype. We have to replace default.
@@ -812,6 +862,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         for (auto & index : metadata.secondary_indices)
             rename_visitor.visit(index.definition_ast);
     }
+    else if (type == MODIFY_SQL_SECURITY)
+        metadata.setDefiner(sql_security->as<ASTSQLSecurity &>());
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
 }
@@ -1357,7 +1409,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         ErrorCodes::BAD_ARGUMENTS,
                         "Column {} doesn't have COMMENT, cannot remove it",
                         backQuote(column_name));
-
             }
 
             modified_columns.emplace(column_name);

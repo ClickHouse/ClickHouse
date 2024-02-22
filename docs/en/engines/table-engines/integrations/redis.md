@@ -16,30 +16,32 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
     name1 [type1],
     name2 [type2],
     ...
-) ENGINE = Redis(host:port[, db_index[, password[, pool_size]]]) PRIMARY KEY(primary_key_name);
+) ENGINE = Redis({host:port[, db_index[, password[, pool_size]]] | named_collection[, option=value [,..]] })
+PRIMARY KEY(primary_key_name);
 ```
 
 **Engine Parameters**
 
 - `host:port` — Redis server address, you can ignore port and default Redis port 6379 will be used.
-
 - `db_index` — Redis db index range from 0 to 15, default is 0.
-
 - `password` — User password, default is blank string.
-
 - `pool_size` — Redis max connection pool size, default is 16.
-
 - `primary_key_name` - any column name in the column list.
 
-- `primary` must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a Redis key.
+:::note Serialization
+`PRIMARY KEY` supports only one column. The primary key will be serialized in binary as a Redis key.
+Columns other than the primary key will be serialized in binary as Redis value in corresponding order.
+:::
 
-- columns other than the primary key will be serialized in binary as Redis value in corresponding order.
+Arguments also can be passed using [named collections](/docs/en/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment. At this moment, all parameters passed using named collections to redis are required.
 
-- queries with key equals or in filtering will be optimized to multi keys lookup from Redis. If queries without filtering key full table scan will happen which is a heavy operation.
+:::note Filtering
+Queries with `key equals` or `in filtering` will be optimized to multi keys lookup from Redis. If queries without filtering key full table scan will happen which is a heavy operation.
+:::
 
 ## Usage Example {#usage-example}
 
-Create a table in ClickHouse which allows to read data from Redis:
+Create a table in ClickHouse using `Redis` engine with plain arguments:
 
 ``` sql
 CREATE TABLE redis_table
@@ -50,6 +52,31 @@ CREATE TABLE redis_table
     `v3` Float32
 )
 ENGINE = Redis('redis1:6379') PRIMARY KEY(key);
+```
+
+Or using [named collections](/docs/en/operations/named-collections.md):
+
+```
+<named_collections>
+    <redis_creds>
+        <host>localhost</host>
+        <port>6379</port>
+        <password>****</password>
+        <pool_size>16</pool_size>
+        <db_index>s0</db_index>
+    </redis_creds>
+</named_collections>
+```
+
+```sql
+CREATE TABLE redis_table
+(
+    `key` String,
+    `v1` UInt32,
+    `v2` String,
+    `v3` Float32
+)
+ENGINE = Redis(redis_creds) PRIMARY KEY(key);
 ```
 
 Insert:

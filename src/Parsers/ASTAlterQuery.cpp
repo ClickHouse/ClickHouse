@@ -1,6 +1,7 @@
-#include <iomanip>
-#include <IO/Operators.h>
 #include <Parsers/ASTAlterQuery.h>
+
+#include <Core/ServerSettings.h>
+#include <IO/Operators.h>
 #include <Common/quoteString.h>
 
 
@@ -69,6 +70,9 @@ ASTPtr ASTAlterCommand::clone() const
 
 void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    if (format_alter_commands_with_parentheses)
+        settings.ostr << "(";
+
     if (type == ASTAlterCommand::ADD_COLUMN)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD COLUMN " << (if_not_exists ? "IF NOT EXISTS " : "")
@@ -103,6 +107,16 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
         if (!remove_property.empty())
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " REMOVE " << remove_property;
+        }
+        else if (settings_changes)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " MODIFY SETTING " << (settings.hilite ? hilite_none : "");
+            settings_changes->formatImpl(settings, state, frame);
+        }
+        else if (settings_resets)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " RESET SETTING " << (settings.hilite ? hilite_none : "");
+            settings_resets->formatImpl(settings, state, frame);
         }
         else
         {
@@ -459,6 +473,11 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO ";
         rename_to->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::MODIFY_SQL_SECURITY)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY " << (settings.hilite ? hilite_none : "");
+        sql_security->formatImpl(settings, state, frame);
+    }
     else if (type == ASTAlterCommand::APPLY_DELETED_MASK)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY DELETED MASK" << (settings.hilite ? hilite_none : "");
@@ -471,6 +490,9 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     }
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
+
+    if (format_alter_commands_with_parentheses)
+        settings.ostr << ")";
 }
 
 void ASTAlterCommand::forEachPointerToChild(std::function<void(void**)> f)

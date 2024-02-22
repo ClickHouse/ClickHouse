@@ -64,6 +64,7 @@ ln -sf $SRC_PATH/config.d/backups.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/filesystem_caches_path.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/validate_tcp_client_information.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/block_number.xml $DEST_SERVER_PATH/config.d/
 
 # Not supported with fasttest.
 if [ "${DEST_SERVER_PATH}" = "/etc/clickhouse-server" ]
@@ -132,6 +133,12 @@ fi
 # We randomize creating the snapshot on exit for Keeper to test out using older snapshots
 value=$(($RANDOM % 2))
 sed --follow-symlinks -i "s|<create_snapshot_on_exit>[01]</create_snapshot_on_exit>|<create_snapshot_on_exit>$value</create_snapshot_on_exit>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
+
+value=$((($RANDOM + 100) * 2048))
+sed --follow-symlinks -i "s|<latest_logs_cache_size_threshold>[[:digit:]]\+</latest_logs_cache_size_threshold>|<latest_logs_cache_size_threshold>$value</latest_logs_cache_size_threshold>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
+
+value=$((($RANDOM + 100) * 2048))
+sed --follow-symlinks -i "s|<commit_logs_cache_size_threshold>[[:digit:]]\+</commit_logs_cache_size_threshold>|<commit_logs_cache_size_threshold>$value</commit_logs_cache_size_threshold>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
 
 if [[ -n "$USE_POLYMORPHIC_PARTS" ]] && [[ "$USE_POLYMORPHIC_PARTS" -eq 1 ]]; then
     ln -sf $SRC_PATH/config.d/polymorphic_parts.xml $DEST_SERVER_PATH/config.d/
