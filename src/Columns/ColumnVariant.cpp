@@ -824,7 +824,13 @@ ColumnPtr ColumnVariant::permute(const Permutation & perm, size_t limit) const
 {
     /// If we have only NULLs, permutation will take no effect, just return resized column.
     if (hasOnlyNulls())
-        return cloneResized(limit);
+    {
+        if (limit)
+            return cloneResized(limit);
+
+        /// If no limit, we can just return current immutable column.
+        return this->getPtr();
+    }
 
     /// Optimization when we have only one non empty variant and no NULLs.
     /// In this case local_discriminators column is filled with identical values and offsets column
