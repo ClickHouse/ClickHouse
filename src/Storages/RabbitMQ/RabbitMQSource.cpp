@@ -182,7 +182,6 @@ Chunk RabbitMQSource::generateImpl()
             if (auto buf = consumer->consume())
             {
                 new_rows = executor.execute(*buf);
-                chassert(new_rows == 1);
             }
         }
 
