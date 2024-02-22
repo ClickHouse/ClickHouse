@@ -1390,7 +1390,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextMutablePtr local_context,
     QueryPipelineBuilder & builder,
-    QueryProcessingStage::Enum processed_stage [[maybe_unused]])
+    QueryProcessingStage::Enum processed_stage)
 {
     Block before_block_header = builder.getHeader();
 
@@ -1449,9 +1449,9 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     ActionsDAG::MatchColumnsMode convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
 
-    // if (local_context->getSettingsRef().allow_experimental_analyzer
-    //     && (processed_stage != QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr))
-    //     convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
+    if (local_context->getSettingsRef().allow_experimental_analyzer
+        && (processed_stage != QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr))
+        convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
 
     if (row_policy_data_opt)
     {
