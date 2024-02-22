@@ -413,9 +413,6 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
 
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
         auto result = pool->getManyChecked(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-        if (result.empty() || result.front().entry.isNull())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection");
-
         if (distributed_header.insert_settings.distributed_insert_prefer_non_readonly_replica)
             sortConnectionPoolByNonReadOnlyReplicas(result);
 

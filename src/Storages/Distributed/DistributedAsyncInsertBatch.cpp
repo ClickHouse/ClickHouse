@@ -28,7 +28,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTITIONS;
     extern const int DISTRIBUTED_TOO_MANY_PENDING_BYTES;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int LOGICAL_ERROR;
 }
 
 /// Can the batch be split and send files from batch one-by-one instead?
@@ -234,8 +233,6 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
 
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
                 auto result = parent.pool->getManyChecked(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-                if (result.empty() || result.front().entry.isNull())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection");
                 if (distributed_header.insert_settings.distributed_insert_prefer_non_readonly_replica)
                     sortConnectionPoolByNonReadOnlyReplicas(result);
 
@@ -297,8 +294,6 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
 
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
             auto result = parent.pool->getManyChecked(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-            if (result.empty() || result.front().entry.isNull())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection");
             if (distributed_header.insert_settings.distributed_insert_prefer_non_readonly_replica)
                 sortConnectionPoolByNonReadOnlyReplicas(result);
 

@@ -375,10 +375,6 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     auto results = shard_info.pool->getManyChecked(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
                     if (settings.distributed_insert_prefer_non_readonly_replica)
                         sortConnectionPoolByNonReadOnlyReplicas(results);
-
-                    if (results.empty() || results.front().entry.isNull())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection for shard {}", toString(job.shard_index));
-
                     job.connection_entry = std::move(results.front().entry);
                 }
                 else
