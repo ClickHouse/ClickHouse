@@ -937,6 +937,11 @@
     </macros>
     -->
 
+    <!--
+    <default_replica_path>/clickhouse/tables/{database}/{table}</default_replica_path>
+    <default_replica_name>{replica}</default_replica_name>
+    -->
+
     <!-- Replica group name for database Replicated.
           The cluster created by Replicated database will consist of replicas in the same group.
           DDL queries will only wail for the replicas in the same group.

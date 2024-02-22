@@ -26,8 +26,8 @@ from lambda_shared_package.lambda_shared.pr import (
     TRUSTED_CONTRIBUTORS,
     check_pr_description,
 )
-from pr_info import FORCE_TESTS_LABEL, PRInfo
-from report import FAILURE
+from pr_info import PRInfo
+from report import FAILURE, PENDING
 
 TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
@@ -66,9 +66,6 @@ def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
 def should_run_ci_for_pr(pr_info: PRInfo) -> Tuple[bool, str]:
     # Consider the labels and whether the user is trusted.
     print("Got labels", pr_info.labels)
-    if FORCE_TESTS_LABEL in pr_info.labels:
-        print(f"Label '{FORCE_TESTS_LABEL}' set, forcing remaining checks")
-        return True, f"Labeled '{FORCE_TESTS_LABEL}'"
 
     if OK_SKIP_LABELS.intersection(pr_info.labels):
         return True, "Don't try new checks for release/backports/cherry-picks"
@@ -188,7 +185,7 @@ def main():
     print("::notice ::Can run")
     post_commit_status(
         commit,
-        "pending",
+        PENDING,
         ci_report_url,
         description,
         CI_STATUS_NAME,

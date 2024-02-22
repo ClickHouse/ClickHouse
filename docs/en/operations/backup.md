@@ -451,3 +451,24 @@ To disallow concurrent backup/restore, you can use these settings respectively.
 
 The default value for both is true, so by default concurrent backup/restores are allowed.
 When these settings are false on a cluster, only 1 backup/restore is allowed to run on a cluster at a time.
+
+## Configuring BACKUP/RESTORE to use an AzureBlobStorage Endpoint
+
+To write backups to an AzureBlobStorage container you need the following pieces of information:
+- AzureBlobStorage endpoint connection string / url,
+- Container,
+- Path,
+- Account name (if url is specified)
+- Account Key (if url is specified)
+
+The destination for a backup will be specified like this:
+```
+AzureBlobStorage('<connection string>/<url>', '<container>', '<path>', '<account name>', '<account key>')
+```
+
+```sql
+BACKUP TABLE data TO AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
+    'test_container', 'data_backup');
+RESTORE TABLE data AS data_restored FROM AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
+    'test_container', 'data_backup');
+```

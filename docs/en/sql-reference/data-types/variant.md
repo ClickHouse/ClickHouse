@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/data-types/json
+slug: /en/sql-reference/data-types/variant
 sidebar_position: 55
 sidebar_label: Variant
 ---

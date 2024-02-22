@@ -70,6 +70,8 @@ public:
     String getNameByPosition(size_t i) const;
 
     bool haveExplicitNames() const { return have_explicit_names; }
+
+    void forEachChild(const ChildCallback & callback) const override;
 };
 
 }
