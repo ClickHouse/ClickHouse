@@ -9,10 +9,9 @@ The `ORDER BY` clause contains
 
 - a list of expressions, e.g. `ORDER BY visits, search_phrase`,
 - a list of numbers referring to columns in the `SELECT` clause, e.g. `ORDER BY 2, 1`, or
-- `ALL` which means all columns of the `SELECT` clause, e.g. `ORDER BY ALL`.
+- `*` (without other expressions or numbers) which means all columns of the `SELECT` clause: `ORDER BY *`.
 
 To disable sorting by column numbers, set setting [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments) = 0.
-To disable sorting by `ALL`, set setting [enable_order_by_all](../../../operations/settings/settings.md#enable-order-by-all) = 0.
 
 The `ORDER BY` clause can be attributed by a `DESC` (descending) or `ASC` (ascending) modifier which determines the sorting direction.
 Unless an explicit sort order is specified, `ASC` is used by default.

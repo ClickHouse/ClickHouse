@@ -486,7 +486,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             LOG_DEBUG(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
             context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
         }
-        else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+        else if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
         }
@@ -501,7 +501,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             LOG_DEBUG(log, "To use parallel replicas with plain MergeTree tables please enable setting `parallel_replicas_for_non_replicated_merge_tree`. For now query will be executed without using them.");
             context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
         }
-        else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+        else if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "To use parallel replicas with plain MergeTree tables please enable setting `parallel_replicas_for_non_replicated_merge_tree`");
         }
@@ -830,7 +830,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (query.prewhere() && !query.where())
         analysis_result.prewhere_info->need_filter = true;
 
-    if (table_id && got_storage_from_query && !joined_tables.isLeftTableFunction())
+    if (table_id && got_storage_from_query && !joined_tables.isLeftTableFunction() && !options.ignore_access_check)
     {
         /// The current user should have the SELECT privilege. If this table_id is for a table
         /// function we don't check access rights here because in this case they have been already

@@ -132,7 +132,7 @@ INSTANTIATE_TEST_SUITE_P(ParserOptimizeQuery, ParserTest,
 
 INSTANTIATE_TEST_SUITE_P(ParserOptimizeQuery_FAIL, ParserTest,
     ::testing::Combine(
-        ::testing::Values(std::make_shared<ParserAlterCommand>()),
+        ::testing::Values(std::make_shared<ParserAlterCommand>(false)),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>
         {
             {
@@ -159,7 +159,7 @@ INSTANTIATE_TEST_SUITE_P(ParserOptimizeQuery_FAIL, ParserTest,
 
 INSTANTIATE_TEST_SUITE_P(ParserAlterCommand_MODIFY_COMMENT, ParserTest,
     ::testing::Combine(
-        ::testing::Values(std::make_shared<ParserAlterCommand>()),
+        ::testing::Values(std::make_shared<ParserAlterCommand>(false)),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>
         {
             {

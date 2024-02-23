@@ -203,6 +203,7 @@ void ColumnFixedString::updatePermutation(IColumn::PermutationSortDirection dire
 void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
+    chassert(this->n == src_concrete.n);
 
     if (start + length > src_concrete.size())
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound "

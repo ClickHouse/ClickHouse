@@ -63,6 +63,7 @@ public:
 
         DROP_PARTITION,
         DROP_DETACHED_PARTITION,
+        FORGET_PARTITION,
         ATTACH_PARTITION,
         MOVE_PARTITION,
         REPLACE_PARTITION,
@@ -83,6 +84,7 @@ public:
         MODIFY_DATABASE_SETTING,
 
         MODIFY_COMMENT,
+        MODIFY_SQL_SECURITY,
     };
 
     Type type = NO_TYPE;
@@ -139,7 +141,7 @@ public:
 
     IAST * statistic_decl = nullptr;
 
-    /** Used in DROP PARTITION, ATTACH PARTITION FROM, UPDATE, DELETE queries.
+    /** Used in DROP PARTITION, ATTACH PARTITION FROM, FORGET PARTITION, UPDATE, DELETE queries.
      *  The value or ID of the partition is stored here.
      */
     IAST * partition = nullptr;
@@ -164,6 +166,9 @@ public:
 
     /// For MODIFY_QUERY
     IAST * select = nullptr;
+
+    /// For MODIFY_SQL_SECURITY
+    IAST * sql_security = nullptr;
 
     /// In ALTER CHANNEL, ADD, DROP, SUSPEND, RESUME, REFRESH, MODIFY queries, the list of live views is stored here
     IAST * values = nullptr;
@@ -222,10 +227,16 @@ public:
 
     ASTPtr clone() const override;
 
+    // This function is only meant to be called during application startup
+    // For reasons see https://github.com/ClickHouse/ClickHouse/pull/59532
+    static void setFormatAlterCommandsWithParentheses(bool value) { format_alter_commands_with_parentheses = value; }
+
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     void forEachPointerToChild(std::function<void(void**)> f) override;
+
+    static inline bool format_alter_commands_with_parentheses = false;
 };
 
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster

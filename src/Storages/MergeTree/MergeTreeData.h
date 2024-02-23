@@ -35,7 +35,7 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 
 #include <boost/multi_index_container.hpp>
@@ -392,7 +392,7 @@ public:
                   const MergingParams & merging_params_,
                   std::unique_ptr<MergeTreeSettings> settings_,
                   bool require_part_metadata_,
-                  bool attach,
+                  LoadingStrictnessLevel mode,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
     /// Build a block of minmax and count values of a MergeTree table. These values are extracted
@@ -832,7 +832,7 @@ public:
         return secondary_index_sizes;
     }
 
-    /// For ATTACH/DETACH/DROP PARTITION.
+    /// For ATTACH/DETACH/DROP/FORGET PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, DataPartsLock * acquired_lock = nullptr) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
     std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
@@ -1350,6 +1350,8 @@ protected:
         bool fetch_part,
         ContextPtr query_context);
 
+    virtual void forgetPartition(const ASTPtr & partition, ContextPtr context);
+
     virtual void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, ContextPtr query_context);
 
     void writePartLog(
@@ -1367,11 +1369,12 @@ protected:
     /// mechanisms for parts locking
     virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
 
-    /// Return most recent mutations commands for part which weren't applied
-    /// Used to receive AlterConversions for part and apply them on fly. This
-    /// method has different implementations for replicated and non replicated
-    /// MergeTree because they store mutations in different way.
-    virtual std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
+    /// Return pending mutations that weren't applied to `part` yet and should be applied on the fly
+    /// (i.e. when reading from the part). Mutations not supported by AlterConversions
+    /// (supportsMutationCommandType()) can be omitted.
+    ///
+    /// @return list of mutations, in *reverse* order (newest to oldest)
+    virtual MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
 
     struct PartBackupEntries
     {

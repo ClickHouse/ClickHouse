@@ -77,6 +77,12 @@ remove_keeper_config "async_replication" "1"
 # create_if_not_exists feature flag doesn't exist on some older versions
 remove_keeper_config "create_if_not_exists" "[01]"
 
+# latest_logs_cache_size_threshold setting doesn't exist on some older versions
+remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
+
+# commit_logs_cache_size_threshold setting doesn't exist on some older versions
+remove_keeper_config "commit_logs_cache_size_threshold" "[[:digit:]]\+"
+
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
@@ -108,6 +114,12 @@ remove_keeper_config "async_replication" "1"
 
 # create_if_not_exists feature flag doesn't exist on some older versions
 remove_keeper_config "create_if_not_exists" "[01]"
+
+# latest_logs_cache_size_threshold setting doesn't exist on some older versions
+remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
+
+# commit_logs_cache_size_threshold setting doesn't exist on some older versions
+remove_keeper_config "commit_logs_cache_size_threshold" "[[:digit:]]\+"
 
 # But we still need default disk because some tables loaded only into it
 sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \

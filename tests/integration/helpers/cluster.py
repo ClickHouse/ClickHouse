@@ -465,7 +465,7 @@ class ClickHouseCluster:
         self.base_cmd += ["--project-name", self.project_name]
 
         self.base_zookeeper_cmd = None
-        self.base_mysql_cmd = []
+        self.base_mysql57_cmd = []
         self.base_kafka_cmd = []
         self.base_kerberized_kafka_cmd = []
         self.base_kerberos_kdc_cmd = []
@@ -479,7 +479,7 @@ class ClickHouseCluster:
         self.with_zookeeper = False
         self.with_zookeeper_secure = False
         self.with_mysql_client = False
-        self.with_mysql = False
+        self.with_mysql57 = False
         self.with_mysql8 = False
         self.with_mysql_cluster = False
         self.with_postgres = False
@@ -644,12 +644,19 @@ class ClickHouseCluster:
         self.mysql_client_host = "mysql_client"
         self.mysql_client_container = None
 
-        # available when with_mysql == True
-        self.mysql_host = "mysql57"
-        self.mysql_port = 3306
-        self.mysql_ip = None
-        self.mysql_dir = p.abspath(p.join(self.instances_dir, "mysql"))
-        self.mysql_logs_dir = os.path.join(self.mysql_dir, "logs")
+        # available when with_mysql57 == True
+        self.mysql57_host = "mysql57"
+        self.mysql57_port = 3306
+        self.mysql57_ip = None
+        self.mysql57_dir = p.abspath(p.join(self.instances_dir, "mysql"))
+        self.mysql57_logs_dir = os.path.join(self.mysql57_dir, "logs")
+
+        # available when with_mysql8 == True
+        self.mysql8_host = "mysql80"
+        self.mysql8_port = 3306
+        self.mysql8_ip = None
+        self.mysql8_dir = p.abspath(p.join(self.instances_dir, "mysql8"))
+        self.mysql8_logs_dir = os.path.join(self.mysql8_dir, "logs")
 
         # available when with_mysql_cluster == True
         self.mysql2_host = "mysql2"
@@ -659,14 +666,7 @@ class ClickHouseCluster:
         self.mysql3_ip = None
         self.mysql4_ip = None
         self.mysql_cluster_dir = p.abspath(p.join(self.instances_dir, "mysql"))
-        self.mysql_cluster_logs_dir = os.path.join(self.mysql_dir, "logs")
-
-        # available when with_mysql8 == True
-        self.mysql8_host = "mysql80"
-        self.mysql8_port = 3306
-        self.mysql8_ip = None
-        self.mysql8_dir = p.abspath(p.join(self.instances_dir, "mysql8"))
-        self.mysql8_logs_dir = os.path.join(self.mysql8_dir, "logs")
+        self.mysql_cluster_logs_dir = os.path.join(self.mysql8_dir, "logs")
 
         # available when with_zookeper_secure == True
         self.zookeeper_secure_port = 2281
@@ -1045,17 +1045,17 @@ class ClickHouseCluster:
 
         return self.base_mysql_client_cmd
 
-    def setup_mysql_cmd(self, instance, env_variables, docker_compose_yml_dir):
-        self.with_mysql = True
-        env_variables["MYSQL_HOST"] = self.mysql_host
-        env_variables["MYSQL_PORT"] = str(self.mysql_port)
+    def setup_mysql57_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_mysql57 = True
+        env_variables["MYSQL_HOST"] = self.mysql57_host
+        env_variables["MYSQL_PORT"] = str(self.mysql57_port)
         env_variables["MYSQL_ROOT_HOST"] = "%"
-        env_variables["MYSQL_LOGS"] = self.mysql_logs_dir
+        env_variables["MYSQL_LOGS"] = self.mysql57_logs_dir
         env_variables["MYSQL_LOGS_FS"] = "bind"
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_mysql.yml")]
         )
-        self.base_mysql_cmd = [
+        self.base_mysql57_cmd = [
             "docker-compose",
             "--env-file",
             instance.env_file,
@@ -1065,7 +1065,7 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_mysql.yml"),
         ]
 
-        return self.base_mysql_cmd
+        return self.base_mysql57_cmd
 
     def setup_mysql8_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mysql8 = True
@@ -1091,7 +1091,7 @@ class ClickHouseCluster:
 
     def setup_mysql_cluster_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mysql_cluster = True
-        env_variables["MYSQL_CLUSTER_PORT"] = str(self.mysql_port)
+        env_variables["MYSQL_CLUSTER_PORT"] = str(self.mysql8_port)
         env_variables["MYSQL_CLUSTER_ROOT_HOST"] = "%"
         env_variables["MYSQL_CLUSTER_LOGS"] = self.mysql_cluster_logs_dir
         env_variables["MYSQL_CLUSTER_LOGS_FS"] = "bind"
@@ -1572,7 +1572,7 @@ class ClickHouseCluster:
         with_zookeeper=False,
         with_zookeeper_secure=False,
         with_mysql_client=False,
-        with_mysql=False,
+        with_mysql57=False,
         with_mysql8=False,
         with_mysql_cluster=False,
         with_kafka=False,
@@ -1676,7 +1676,7 @@ class ClickHouseCluster:
             with_zookeeper=with_zookeeper,
             zookeeper_config_path=self.zookeeper_config_path,
             with_mysql_client=with_mysql_client,
-            with_mysql=with_mysql,
+            with_mysql57=with_mysql57,
             with_mysql8=with_mysql8,
             with_mysql_cluster=with_mysql_cluster,
             with_kafka=with_kafka,
@@ -1767,9 +1767,9 @@ class ClickHouseCluster:
                 )
             )
 
-        if with_mysql and not self.with_mysql:
+        if with_mysql57 and not self.with_mysql57:
             cmds.append(
-                self.setup_mysql_cmd(instance, env_variables, docker_compose_yml_dir)
+                self.setup_mysql57_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_mysql8 and not self.with_mysql8:
@@ -1805,9 +1805,9 @@ class ClickHouseCluster:
 
         if with_odbc_drivers and not self.with_odbc_drivers:
             self.with_odbc_drivers = True
-            if not self.with_mysql:
+            if not self.with_mysql8:
                 cmds.append(
-                    self.setup_mysql_cmd(
+                    self.setup_mysql8_cmd(
                         instance, env_variables, docker_compose_yml_dir
                     )
                 )
@@ -2148,8 +2148,8 @@ class ClickHouseCluster:
         logging.error("Can't connect to MySQL Client:{}".format(errors))
         raise Exception("Cannot wait MySQL Client container")
 
-    def wait_mysql_to_start(self, timeout=180):
-        self.mysql_ip = self.get_instance_ip("mysql57")
+    def wait_mysql57_to_start(self, timeout=180):
+        self.mysql57_ip = self.get_instance_ip("mysql57")
         start = time.time()
         errors = []
         while time.time() - start < timeout:
@@ -2157,8 +2157,8 @@ class ClickHouseCluster:
                 conn = pymysql.connect(
                     user=mysql_user,
                     password=mysql_pass,
-                    host=self.mysql_ip,
-                    port=self.mysql_port,
+                    host=self.mysql57_ip,
+                    port=self.mysql57_port,
                 )
                 conn.close()
                 logging.debug("Mysql Started")
@@ -2205,7 +2205,7 @@ class ClickHouseCluster:
                         user=mysql_user,
                         password=mysql_pass,
                         host=ip,
-                        port=self.mysql_port,
+                        port=self.mysql8_port,
                     )
                     conn.close()
                     logging.debug(f"Mysql Started {ip}")
@@ -2752,15 +2752,15 @@ class ClickHouseCluster:
                 subprocess_check_call(self.base_mysql_client_cmd + common_opts)
                 self.wait_mysql_client_to_start()
 
-            if self.with_mysql and self.base_mysql_cmd:
+            if self.with_mysql57 and self.base_mysql57_cmd:
                 logging.debug("Setup MySQL")
-                if os.path.exists(self.mysql_dir):
-                    shutil.rmtree(self.mysql_dir)
-                os.makedirs(self.mysql_logs_dir)
-                os.chmod(self.mysql_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                subprocess_check_call(self.base_mysql_cmd + common_opts)
+                if os.path.exists(self.mysql57_dir):
+                    shutil.rmtree(self.mysql57_dir)
+                os.makedirs(self.mysql57_logs_dir)
+                os.chmod(self.mysql57_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                subprocess_check_call(self.base_mysql57_cmd + common_opts)
                 self.up_called = True
-                self.wait_mysql_to_start()
+                self.wait_mysql57_to_start()
 
             if self.with_mysql8 and self.base_mysql8_cmd:
                 logging.debug("Setup MySQL 8")
@@ -2775,7 +2775,7 @@ class ClickHouseCluster:
                 print("Setup MySQL")
                 if os.path.exists(self.mysql_cluster_dir):
                     shutil.rmtree(self.mysql_cluster_dir)
-                os.makedirs(self.mysql_cluster_logs_dir)
+                os.makedirs(self.mysql_cluster_logs_dir, exist_ok=True)
                 os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 subprocess_check_call(self.base_mysql_cluster_cmd + common_opts)
@@ -3239,7 +3239,7 @@ class ClickHouseInstance:
         with_zookeeper,
         zookeeper_config_path,
         with_mysql_client,
-        with_mysql,
+        with_mysql57,
         with_mysql8,
         with_mysql_cluster,
         with_kafka,
@@ -3324,7 +3324,7 @@ class ClickHouseInstance:
         self.library_bridge_bin_path = library_bridge_bin_path
 
         self.with_mysql_client = with_mysql_client
-        self.with_mysql = with_mysql
+        self.with_mysql57 = with_mysql57
         self.with_mysql8 = with_mysql8
         self.with_mysql_cluster = with_mysql_cluster
         self.with_postgres = with_postgres
@@ -3368,7 +3368,7 @@ class ClickHouseInstance:
         self.env_file = self.cluster.env_file
         if with_odbc_drivers:
             self.odbc_ini_path = self.path + "/odbc.ini:/etc/odbc.ini"
-            self.with_mysql = True
+            self.with_mysql8 = True
         else:
             self.odbc_ini_path = ""
 
@@ -4294,7 +4294,7 @@ class ClickHouseInstance:
                     "Database": odbc_mysql_db,
                     "Uid": odbc_mysql_uid,
                     "Pwd": odbc_mysql_pass,
-                    "Server": self.cluster.mysql_host,
+                    "Server": self.cluster.mysql8_host,
                 },
                 "PostgreSQL": {
                     "DSN": "postgresql_odbc",
@@ -4482,14 +4482,14 @@ class ClickHouseInstance:
         if self.with_mysql_client:
             depends_on.append(self.cluster.mysql_client_host)
 
-        if self.with_mysql:
+        if self.with_mysql57:
             depends_on.append("mysql57")
 
         if self.with_mysql8:
             depends_on.append("mysql80")
 
         if self.with_mysql_cluster:
-            depends_on.append("mysql57")
+            depends_on.append("mysql80")
             depends_on.append("mysql2")
             depends_on.append("mysql3")
             depends_on.append("mysql4")

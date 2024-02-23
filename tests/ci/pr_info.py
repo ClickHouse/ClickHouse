@@ -19,7 +19,6 @@ from env_helper import (
     GITHUB_SERVER_URL,
 )
 
-FORCE_TESTS_LABEL = "force tests"
 SKIP_MERGEABLE_CHECK_LABEL = "skip mergeable check"
 NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
 

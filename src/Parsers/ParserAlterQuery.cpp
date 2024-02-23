@@ -40,6 +40,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_modify_setting("MODIFY SETTING");
     ParserKeyword s_reset_setting("RESET SETTING");
     ParserKeyword s_modify_query("MODIFY QUERY");
+    ParserKeyword s_modify_sql_security("MODIFY SQL SECURITY");
     ParserKeyword s_modify_refresh("MODIFY REFRESH");
 
     ParserKeyword s_add_index("ADD INDEX");
@@ -74,6 +75,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_detach_part("DETACH PART");
     ParserKeyword s_drop_partition("DROP PARTITION");
     ParserKeyword s_drop_part("DROP PART");
+    ParserKeyword s_forget_partition("FORGET PARTITION");
     ParserKeyword s_move_partition("MOVE PARTITION");
     ParserKeyword s_move_part("MOVE PART");
     ParserKeyword s_drop_detached_partition("DROP DETACHED PARTITION");
@@ -117,6 +119,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_remove_sample_by("REMOVE SAMPLE BY");
     ParserKeyword s_apply_deleted_mask("APPLY DELETED MASK");
 
+    ParserToken parser_opening_round_bracket(TokenType::OpeningRoundBracket);
+    ParserToken parser_closing_round_bracket(TokenType::ClosingRoundBracket);
+
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
     ParserStringAndSubstitution parser_string_and_substituion;
@@ -138,6 +143,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         /* allow_empty = */ false);
     ParserNameList values_p;
     ParserSelectWithUnionQuery select_p;
+    ParserSQLSecurity sql_security_p;
     ParserRefreshStrategy refresh_p;
     ParserTTLExpressionList parser_ttl_list;
 
@@ -162,6 +168,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr command_select;
     ASTPtr command_values;
     ASTPtr command_rename_to;
+    ASTPtr command_sql_security;
+
+    if (with_round_bracket)
+    {
+        if (!parser_opening_round_bracket.ignore(pos, expected))
+            return false;
+    }
 
     switch (alter_object)
     {
@@ -253,6 +266,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 command->type = ASTAlterCommand::DROP_PARTITION;
                 command->part = true;
+            }
+            else if (s_forget_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command_partition, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::FORGET_PARTITION;
             }
             else if (s_drop_detached_partition.ignore(pos, expected))
             {
@@ -857,6 +877,14 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
                 command->type = ASTAlterCommand::MODIFY_QUERY;
             }
+            else if (s_modify_sql_security.ignore(pos, expected))
+            {
+                /// This is a hack so we can reuse parser from create and don't have to write `MODIFY SQL SECURITY SQL SECURITY INVOKER`
+                pos -= 2;
+                if (!sql_security_p.parse(pos, command_sql_security, expected))
+                    return false;
+                command->type = ASTAlterCommand::MODIFY_SQL_SECURITY;
+            }
             else if (s_modify_refresh.ignore(pos, expected))
             {
                 if (!refresh_p.parse(pos, command->refresh, expected))
@@ -883,6 +911,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else
                 return false;
         }
+    }
+
+    if (with_round_bracket)
+    {
+        if (!parser_closing_round_bracket.ignore(pos, expected))
+            return false;
     }
 
     if (command_col_decl)
@@ -925,6 +959,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->select = command->children.emplace_back(std::move(command_select)).get();
     if (command_values)
         command->values = command->children.emplace_back(std::move(command_values)).get();
+    if (command_sql_security)
+        command->sql_security = command->children.emplace_back(std::move(command_sql_security)).get();
     if (command_rename_to)
         command->rename_to = command->children.emplace_back(std::move(command_rename_to)).get();
 
@@ -938,7 +974,10 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     node = command_list;
 
     ParserToken s_comma(TokenType::Comma);
-    ParserAlterCommand p_command(alter_object);
+
+    const auto with_round_bracket = pos->type == TokenType::OpeningRoundBracket;
+
+    ParserAlterCommand p_command(with_round_bracket, alter_object);
 
     do
     {
