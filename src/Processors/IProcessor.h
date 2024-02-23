@@ -370,7 +370,7 @@ public:
             stats.output_blocks += output.blocks;
         }
         #else
-        getInputPortStats(stats.input );
+        getInputPortStats(stats.input);
         getOutputPortStats(stats.output);
         #endif
 
