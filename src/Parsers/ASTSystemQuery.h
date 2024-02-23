@@ -139,7 +139,7 @@ public:
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
-    std::unordered_set<String> src_replicas;
+    std::vector<String> src_replicas;
 
     ServerType server_type;
 

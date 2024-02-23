@@ -1088,7 +1088,9 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
     {
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
         auto sync_timeout = getContext()->getSettingsRef().receive_timeout.totalMilliseconds();
-        if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.sync_replica_mode, query.src_replicas))
+
+        std::unordered_set<std::string> replicas(query.src_replicas.begin(), query.src_replicas.end());
+        if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.sync_replica_mode, replicas))
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out.", table_id.getNameForLogs());
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \

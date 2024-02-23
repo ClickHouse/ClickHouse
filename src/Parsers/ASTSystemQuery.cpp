@@ -228,13 +228,13 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
                     print_keyword("FROM");
                     settings.ostr << ' ';
 
-                    for (auto it = src_replicas.begin(); it != src_replicas.end(); ++it)
+                    bool first = true;
+                    for (auto & src : src_replicas)
                     {
-                        print_identifier(*it);
-
-                        // Add a comma and space after each identifier, except the last one
-                        if (std::next(it) != src_replicas.end())
+                        if (!first)
                             settings.ostr << ", ";
+                        first = false;
+                        settings.ostr << quoteString(src);
                     }
                 }
             }
