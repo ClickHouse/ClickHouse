@@ -467,11 +467,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_VIEW_MODIFY_REFRESH, database, table);
             break;
         }
-        case ASTAlterCommand::LIVE_VIEW_REFRESH:
-        {
-            required_access.emplace_back(AccessType::ALTER_VIEW_REFRESH, database, table);
-            break;
-        }
         case ASTAlterCommand::RENAME_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_RENAME_COLUMN, database, table, column_name());

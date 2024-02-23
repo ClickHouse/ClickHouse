@@ -3706,7 +3706,7 @@ Default value: `0`.
 
 ## allow_experimental_live_view {#allow-experimental-live-view}
 
-Allows creation of experimental [live views](../../sql-reference/statements/create/view.md/#live-view).
+Allows creation of a deprecated LIVE VIEW.
 
 Possible values:
 
@@ -3717,21 +3717,15 @@ Default value: `0`.
 
 ## live_view_heartbeat_interval {#live-view-heartbeat-interval}
 
-Sets the heartbeat interval in seconds to indicate [live view](../../sql-reference/statements/create/view.md/#live-view) is alive .
-
-Default value: `15`.
+Deprecated.
 
 ## max_live_view_insert_blocks_before_refresh {#max-live-view-insert-blocks-before-refresh}
 
-Sets the maximum number of inserted blocks after which mergeable blocks are dropped and query for [live view](../../sql-reference/statements/create/view.md/#live-view) is re-executed.
-
-Default value: `64`.
+Deprecated.
 
 ## periodic_live_view_refresh {#periodic-live-view-refresh}
 
-Sets the interval in seconds after which periodically refreshed [live view](../../sql-reference/statements/create/view.md/#live-view) is forced to refresh.
-
-Default value: `60`.
+Deprecated.
 
 ## http_connection_timeout {#http_connection_timeout}
 
