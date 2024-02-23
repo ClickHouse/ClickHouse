@@ -1,21 +1,23 @@
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
-    extern const int ILLEGAL_COLUMN;
+extern const int LOGICAL_ERROR;
+extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
+extern const int ILLEGAL_COLUMN;
 
 }
 
@@ -73,6 +75,34 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                     data_type.getName());
             }
         }
+
+        if (!settings.allow_suspicious_variant_types)
+        {
+            if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(&data_type))
+            {
+                const auto & variants = variant_type->getVariants();
+                chassert(!variants.empty());
+                for (size_t i = 0; i < variants.size() - 1; ++i)
+                {
+                    for (size_t j = i + 1; j < variants.size(); ++j)
+                    {
+                        if (auto supertype = tryGetLeastSupertype(DataTypes{variants[i], variants[j]}))
+                        {
+                            throw Exception(
+                                ErrorCodes::ILLEGAL_COLUMN,
+                                "Cannot create column with type '{}' because variants '{}' and '{}' have similar types and working with values "
+                                "of these types may lead to ambiguity. "
+                                "Consider using common single variant '{}' instead of these 2 variants or set setting allow_suspicious_variant_types = 1 "
+                                "in order to allow it",
+                                data_type.getName(),
+                                variants[i]->getName(),
+                                variants[j]->getName(),
+                                supertype->getName());
+                        }
+                    }
+                }
+            }
+        }
     };
 
     validate_callback(*type_to_check);
@@ -104,7 +134,8 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
 
     const char * start = structure.data();
     const char * end = structure.data() + structure.size();
-    ASTPtr columns_list_raw = tryParseQuery(parser, start, end, error, false, "columns declaration list", false, settings.max_query_size, settings.max_parser_depth);
+    ASTPtr columns_list_raw = tryParseQuery(
+        parser, start, end, error, false, "columns declaration list", false, settings.max_query_size, settings.max_parser_depth);
     if (!columns_list_raw)
         return false;
 
