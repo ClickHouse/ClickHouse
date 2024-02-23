@@ -7,7 +7,6 @@
 01244_optimize_distributed_group_by_sharding_key
 01584_distributed_buffer_cannot_find_column
 01624_soft_constraints
-01656_test_query_log_factories_info
 01747_join_view_filter_dictionary
 01761_cast_to_enum_nullable
 01925_join_materialized_columns
@@ -16,7 +15,6 @@
 02354_annoy
 02493_inconsistent_hex_and_binary_number
 02725_agg_projection_resprect_PK
-02763_row_policy_storage_merge_alias
 # Check after constants refactoring
 02901_parallel_replicas_rollup
 # Flaky. Please don't delete them without fixing them:

@@ -219,13 +219,13 @@ public:
         is_group_by_all = is_group_by_all_value;
     }
 
-    /// Returns true, if query node has ORDER BY ALL modifier, false otherwise
+    /// Returns true, if query node has ORDER BY * modifier, false otherwise
     bool isOrderByAll() const
     {
         return is_order_by_all;
     }
 
-    /// Set query node ORDER BY ALL modifier value
+    /// Set query node ORDER BY * modifier value
     void setIsOrderByAll(bool is_order_by_all_value)
     {
         is_order_by_all = is_order_by_all_value;
