@@ -90,17 +90,19 @@ struct L2Distance
         size_t & i_y,
         State<ResultType> & state)
     {
+        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
+
         __m512 sums;
-        if constexpr (std::is_same_v<ResultType, Float32>)
+        if constexpr (is_float32)
             sums = _mm512_setzero_ps();
         else
             sums = _mm512_setzero_pd();
 
-        const size_t n = (std::is_same_v<ResultType, Float32>) ? 16 : 8;
+        constexpr size_t n = is_float32 ? 16 : 8;
 
         for (; i_x + n < i_max; i_x += n, i_y += n)
         {
-            if constexpr (std::is_same_v<ResultType, Float32>)
+            if constexpr (is_float32)
             {
                 __m512 x = _mm512_loadu_ps(data_x + i_x);
                 __m512 y = _mm512_loadu_ps(data_y + i_y);
@@ -116,7 +118,7 @@ struct L2Distance
             }
         }
 
-        if constexpr (std::is_same_v<ResultType, Float32>)
+        if constexpr (is_float32)
             state.sum = _mm512_reduce_add_ps(sums);
         else
             state.sum = _mm512_reduce_add_pd(sums);
@@ -247,11 +249,13 @@ struct CosineDistance
         size_t & i_y,
         State<ResultType> & state)
     {
+        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
+
         __m512 dot_products;
         __m512 x_squareds;
         __m512 y_squareds;
 
-        if constexpr (std::is_same_v<ResultType, Float32>)
+        if constexpr (is_float32)
         {
             dot_products = _mm512_setzero_ps();
             x_squareds = _mm512_setzero_ps();
@@ -264,11 +268,11 @@ struct CosineDistance
             y_squareds = _mm512_setzero_pd();
         }
 
-        const size_t n = (std::is_same_v<ResultType, Float32>) ? 16 : 8;
+        constexpr size_t n = is_float32 ? 16 : 8;
 
         for (; i_x + n < i_max; i_x += n, i_y += n)
         {
-            if constexpr (std::is_same_v<ResultType, Float32>)
+            if constexpr (is_float32)
             {
                 __m512 x = _mm512_loadu_ps(data_x + i_x);
                 __m512 y = _mm512_loadu_ps(data_y + i_y);
@@ -286,7 +290,7 @@ struct CosineDistance
             }
         }
 
-        if constexpr (std::is_same_v<ResultType, Float32>)
+        if constexpr (is_float32)
         {
             state.dot_prod = _mm512_reduce_add_ps(dot_products);
             state.x_squared = _mm512_reduce_add_ps(x_squareds);
@@ -312,7 +316,11 @@ template <class Kernel>
 class FunctionArrayDistance : public IFunction
 {
 public:
-    String getName() const override { static auto name = String("array") + Kernel::name + "Distance"; return name; }
+    String getName() const override
+    {
+        static auto name = String("array") + Kernel::name + "Distance";
+        return name;
+    }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayDistance<Kernel>>(); }
     size_t getNumberOfArguments() const override { return 2; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
