@@ -51,12 +51,10 @@ env:
   CHECK_NAME: ${{inputs.test_name}}
 
 jobs:
-  Test:
+  _:
     runs-on: [self-hosted, '${{inputs.runner_type}}']
     if: ${{ !failure() && !cancelled() && contains(fromJson(inputs.data).jobs_data.jobs_to_do, inputs.test_name) }}
-    name: ${{inputs.test_name}}${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches > 1 && format('-{0}',matrix.batch) || '' }}
-    env:
-      GITHUB_JOB_OVERRIDDEN: ${{inputs.test_name}}${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches > 1 && format('-{0}',matrix.batch) || '' }}
+    name: ${{ matrix.batch }}
     strategy:
       fail-fast: false  # we always wait for entire matrix
       matrix:
