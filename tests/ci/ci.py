@@ -1081,7 +1081,7 @@ def main() -> int:
                         pr_info.sha,
                         job_report.test_results,
                         job_report.additional_files,
-                        job_report.check_name or args.job_name,
+                        job_report.check_name or _get_ext_check_name(args.job_name),
                         additional_urls=additional_urls or None,
                     )
                 commit = get_commit(
@@ -1092,7 +1092,7 @@ def main() -> int:
                     job_report.status,
                     check_url,
                     format_description(job_report.description),
-                    job_report.check_name or args.job_name,
+                    job_report.check_name or _get_ext_check_name(args.job_name),
                     pr_info,
                     dump_to_file=True,
                 )
@@ -1110,7 +1110,7 @@ def main() -> int:
                 job_report.duration,
                 job_report.start_time,
                 check_url or "",
-                job_report.check_name or args.job_name,
+                job_report.check_name or _get_ext_check_name(args.job_name),
             )
             ch_helper.insert_events_into(
                 db="default", table="checks", events=prepared_events
