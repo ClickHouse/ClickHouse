@@ -242,9 +242,9 @@ It is possible to asynchronously insert data in small but frequent inserts. The 
 
 Using `async_insert` or the [`Buffer` table engine](/en/engines/table-engines/special/buffer) results in additional buffering.
 
-### Long-running inserts
+### Large or long-running inserts
 
-For long-running inserts, results will be visible after writing each [`max_insert_block_size`](/en/operations/settings/settings#max_insert_block_size) rows.
+When you are inserting large amounts of data, ClickHouse will optimize write performance through a process called "squashing". Small blocks of inserted data in memory are merged and squashed into larger blocks before being written to disk. Squashing reduces the overhead associated with each write operation. In this process, inserted data will be available to query after ClickHouse completes writing each [`max_insert_block_size`](/en/operations/settings/settings#max_insert_block_size) rows.
 
 **See Also**
 
