@@ -1347,7 +1347,7 @@ void Planner::buildPlanForQueryNode()
     {
         if (planner_context->getPreparedSets().hasSubqueries())
         {
-            if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+            if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");
 
             auto & mutable_context = planner_context->getMutableQueryContext();
@@ -1374,7 +1374,7 @@ void Planner::buildPlanForQueryNode()
             const auto & modifiers = table_node->getTableExpressionModifiers();
             if (modifiers.has_value() && modifiers->hasFinal())
             {
-                if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
                 else
                 {
@@ -1393,7 +1393,7 @@ void Planner::buildPlanForQueryNode()
         /// Check support for JOIN for parallel replicas with custom key
         if (planner_context->getTableExpressionNodeToData().size() > 1)
         {
-            if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+            if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
             else
             {

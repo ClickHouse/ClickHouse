@@ -132,7 +132,7 @@ StorageFileLog::StorageFileLog(
     const String & format_name_,
     std::unique_ptr<FileLogSettings> settings,
     const String & comment,
-    bool attach)
+    LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , filelog_settings(std::move(settings))
@@ -150,7 +150,7 @@ StorageFileLog::StorageFileLog(
 
     if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
     {
-        if (attach)
+        if (LoadingStrictnessLevel::ATTACH <= mode)
         {
             LOG_ERROR(log, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
             return;
@@ -165,7 +165,7 @@ StorageFileLog::StorageFileLog(
     bool created_metadata_directory = false;
     try
     {
-        if (!attach)
+        if (mode < LoadingStrictnessLevel::ATTACH)
         {
             if (disk->exists(metadata_base_path))
             {
@@ -178,7 +178,7 @@ StorageFileLog::StorageFileLog(
             created_metadata_directory = true;
         }
 
-        loadMetaFiles(attach);
+        loadMetaFiles(LoadingStrictnessLevel::ATTACH <= mode);
         loadFiles();
 
         assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
@@ -192,7 +192,7 @@ StorageFileLog::StorageFileLog(
     }
     catch (...)
     {
-        if (!attach)
+        if (mode <= LoadingStrictnessLevel::ATTACH)
         {
             if (created_metadata_directory)
                 disk->removeRecursive(metadata_base_path);
@@ -845,7 +845,7 @@ void registerStorageFileLog(StorageFactory & factory)
             format,
             std::move(filelog_settings),
             args.comment,
-            args.attach);
+            args.mode);
     };
 
     factory.registerStorage(

@@ -66,7 +66,7 @@ public:
         , log(log_)
     {
         for (size_t i = 0;i < nested_pools.size(); ++i)
-            shared_pool_states[i].config_priority = nested_pools[i]->getPriority();
+            shared_pool_states[i].config_priority = nested_pools[i]->getConfigPriority();
     }
 
     struct TryResult
