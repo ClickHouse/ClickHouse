@@ -12,12 +12,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ARGUMENT_OUT_OF_BOUND;
-}
-
 namespace HilbertDetails
 {
 
@@ -161,7 +155,8 @@ public:
         const ColumnPtr & col_code = non_const_arguments[1].column;
         Columns tuple_columns(nd);
 
-        const auto shrink = [mask](const UInt64 value, const UInt8 column_id) {
+        const auto shrink = [mask](const UInt64 value, const UInt8 column_id)
+        {
             if (mask)
                 return value >> mask->getColumn(column_id).getUInt(0);
             return value;
