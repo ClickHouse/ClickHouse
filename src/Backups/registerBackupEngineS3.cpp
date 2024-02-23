@@ -4,12 +4,12 @@
 #include <Common/Exception.h>
 
 #if USE_AWS_S3
-#include <Backups/BackupIO_S3.h>
-#include <Backups/BackupImpl.h>
-#include <IO/Archives/hasRegisteredArchiveFileExtension.h>
-#include <Interpreters/Context.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <filesystem>
+#    include <filesystem>
+#    include <Backups/BackupIO_S3.h>
+#    include <Backups/BackupImpl.h>
+#    include <IO/Archives/hasRegisteredArchiveFileExtension.h>
+#    include <Interpreters/Context.h>
+#    include <Poco/Util/AbstractConfiguration.h>
 #endif
 
 
@@ -19,25 +19,25 @@ namespace fs = std::filesystem;
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SUPPORT_IS_DISABLED;
+extern const int BAD_ARGUMENTS;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int SUPPORT_IS_DISABLED;
 }
 
 #if USE_AWS_S3
 namespace
 {
-    String removeFileNameFromURL(String & url)
-    {
-        Poco::URI url2{url};
-        String path = url2.getPath();
-        size_t slash_pos = path.find_last_of('/');
-        String file_name = path.substr(slash_pos + 1);
-        path.resize(slash_pos + 1);
-        url2.setPath(path);
-        url = url2.toString();
-        return file_name;
-    }
+String removeFileNameFromURL(String & url)
+{
+    Poco::URI url2{url};
+    String path = url2.getPath();
+    size_t slash_pos = path.find_last_of('/');
+    String file_name = path.substr(slash_pos + 1);
+    path.resize(slash_pos + 1);
+    url2.setPath(path);
+    url = url2.toString();
+    return file_name;
+}
 }
 #endif
 
@@ -50,7 +50,7 @@ void registerBackupEngineS3(BackupFactory & factory)
         const String & id_arg = params.backup_info.id_arg;
         const auto & args = params.backup_info.args;
 
-        String s3_uri, access_key_id, secret_access_key;
+        String s3_uri, access_key_id, secret_access_key, session_token;
 
         if (!id_arg.empty())
         {
@@ -63,21 +63,24 @@ void registerBackupEngineS3(BackupFactory & factory)
             s3_uri = config.getString(config_prefix + ".url");
             access_key_id = config.getString(config_prefix + ".access_key_id", "");
             secret_access_key = config.getString(config_prefix + ".secret_access_key", "");
+            session_token = config.getString(config_prefix + ".session_token", "");
 
             if (config.has(config_prefix + ".filename"))
                 s3_uri = fs::path(s3_uri) / config.getString(config_prefix + ".filename");
 
             if (args.size() > 1)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup S3 requires 1 or 2 arguments: named_collection, [filename]");
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup S3 requires 1 or 2 arguments: named_collection, [filename]");
 
             if (args.size() == 1)
                 s3_uri = fs::path(s3_uri) / args[0].safeGet<String>();
         }
         else
         {
-            if ((args.size() != 1) && (args.size() != 3))
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                                "Backup S3 requires 1 or 3 arguments: url, [access_key_id, secret_access_key]");
+            if ((args.size() != 1) && (args.size() != 3) && (args.size() != 4))
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Backup S3 requires 1, 3 or 4 arguments: url, [access_key_id, secret_access_key], [session_token]");
 
             s3_uri = args[0].safeGet<String>();
             if (args.size() >= 3)
@@ -85,6 +88,9 @@ void registerBackupEngineS3(BackupFactory & factory)
                 access_key_id = args[1].safeGet<String>();
                 secret_access_key = args[2].safeGet<String>();
             }
+
+            if (args.size() >= 4)
+                session_token = args[3].safeGet<String>();
         }
 
         BackupImpl::ArchiveParams archive_params;
@@ -106,13 +112,15 @@ void registerBackupEngineS3(BackupFactory & factory)
 
         if (params.open_mode == IBackup::OpenMode::READ)
         {
-            auto reader = std::make_shared<BackupReaderS3>(S3::URI{s3_uri},
-                                                           access_key_id,
-                                                           secret_access_key,
-                                                           params.allow_s3_native_copy,
-                                                           params.read_settings,
-                                                           params.write_settings,
-                                                           params.context);
+            auto reader = std::make_shared<BackupReaderS3>(
+                S3::URI{s3_uri},
+                access_key_id,
+                secret_access_key,
+                session_token,
+                params.allow_s3_native_copy,
+                params.read_settings,
+                params.write_settings,
+                params.context);
 
             return std::make_unique<BackupImpl>(
                 params.backup_info,
@@ -124,14 +132,16 @@ void registerBackupEngineS3(BackupFactory & factory)
         }
         else
         {
-            auto writer = std::make_shared<BackupWriterS3>(S3::URI{s3_uri},
-                                                           access_key_id,
-                                                           secret_access_key,
-                                                           params.allow_s3_native_copy,
-                                                           params.s3_storage_class,
-                                                           params.read_settings,
-                                                           params.write_settings,
-                                                           params.context);
+            auto writer = std::make_shared<BackupWriterS3>(
+                S3::URI{s3_uri},
+                access_key_id,
+                secret_access_key,
+                session_token,
+                params.allow_s3_native_copy,
+                params.s3_storage_class,
+                params.read_settings,
+                params.write_settings,
+                params.context);
 
             return std::make_unique<BackupImpl>(
                 params.backup_info,
