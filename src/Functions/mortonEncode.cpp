@@ -3,7 +3,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
-#include <Functions/FunctionSpaceFillingCurveEncode.h>
+#include <Functions/FunctionSpaceFillingCurve.h>
 #include <Functions/PerformanceAdaptors.h>
 
 #include <morton-nd/mortonND_LUT.h>

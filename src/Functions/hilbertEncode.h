@@ -3,7 +3,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
-#include <Functions/FunctionSpaceFillingCurveEncode.h>
+#include <Functions/FunctionSpaceFillingCurve.h>
 #include <Functions/IFunction.h>
 #include <Functions/PerformanceAdaptors.h>
 #include <limits>
@@ -22,14 +22,14 @@ namespace HilbertDetails
 {
 
 template <UInt8 bit_step>
-class HilbertLookupTable
+class HilbertEncodeLookupTable
 {
 public:
     constexpr static UInt8 LOOKUP_TABLE[0] = {};
 };
 
 template <>
-class HilbertLookupTable<1>
+class HilbertEncodeLookupTable<1>
 {
 public:
     constexpr static UInt8 LOOKUP_TABLE[16] = {
@@ -41,7 +41,7 @@ public:
 };
 
 template <>
-class HilbertLookupTable<3>
+class HilbertEncodeLookupTable<3>
 {
 public:
     constexpr static UInt8 LOOKUP_TABLE[256] = {
@@ -64,9 +64,10 @@ public:
 }
 
 
-template <UInt8 bit_step = 3>
+template <UInt8 bit_step>
 class FunctionHilbertEncode2DWIthLookupTableImpl
 {
+    static_assert(bit_step <= 3, "bit_step should not be more than 3 to fit in UInt8");
 public:
     static UInt64 encode(UInt64 x, UInt64 y)
     {
@@ -89,13 +90,14 @@ public:
     }
 
 private:
+    // for bit_step = 3
     // LOOKUP_TABLE[SSXXXYYY] = SSHHHHHH
     // where SS - 2 bits for state, XXX - 3 bits of x, YYY - 3 bits of y
     // State is rotation of curve on every step, left/up/right/down - therefore 2 bits
     static UInt64 getCodeAndUpdateState(UInt8 x_bits, UInt8 y_bits, UInt8& state)
     {
         const UInt8 table_index = state | (x_bits << bit_step) | y_bits;
-        const auto table_code = HilbertDetails::HilbertLookupTable<bit_step>::LOOKUP_TABLE[table_index];
+        const auto table_code = HilbertDetails::HilbertEncodeLookupTable<bit_step>::LOOKUP_TABLE[table_index];
         state = table_code & STATE_MASK;
         return table_code & HILBERT_MASK;
     }
@@ -173,7 +175,7 @@ public:
 
         const auto expand = [mask](const UInt64 value, const UInt8 column_id)
         {
-            if z(mask)
+            if (mask)
                 return value << mask->getColumn(column_id).getUInt(0);
             return value;
         };
