@@ -1001,7 +1001,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
         Block pipe_header = builder->getHeader();
 
-        if (has_database_virtual_column && !pipe_header.has("_database"))
+        if (has_database_virtual_column && common_header.has("_database") && !pipe_header.has("_database"))
         {
             ColumnWithTypeAndName column;
             column.name = "_database";
@@ -1016,7 +1016,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
                                         { return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); });
         }
 
-        if (has_table_virtual_column && !pipe_header.has("_table"))
+        if (has_table_virtual_column && common_header.has("_table") && !pipe_header.has("_table"))
         {
             ColumnWithTypeAndName column;
             column.name = "_table";
