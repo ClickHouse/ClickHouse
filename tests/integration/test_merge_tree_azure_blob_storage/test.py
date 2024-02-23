@@ -613,7 +613,8 @@ def test_endpoint(cluster):
     container_client = cluster.blob_service_client.get_container_client(container_name)
     container_client.create_container()
 
-    node.query(
+    azure_query(
+        node,
         f"""
     DROP TABLE IF EXISTS test SYNC;
 
@@ -641,7 +642,8 @@ def test_endpoint_new_container(cluster):
     data_prefix = "data_prefix"
     port = cluster.azurite_port
 
-    node.query(
+    azure_query(
+        node,
         f"""
     DROP TABLE IF EXISTS test SYNC;
 
@@ -667,7 +669,8 @@ def test_endpoint_without_prefix(cluster):
     container_name = "cont4"
     port = cluster.azurite_port
 
-    node.query(
+    azure_query(
+        node,
         f"""
     DROP TABLE IF EXISTS test SYNC;
 
