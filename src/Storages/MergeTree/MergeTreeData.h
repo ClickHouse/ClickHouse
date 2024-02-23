@@ -391,7 +391,7 @@ public:
                   const MergingParams & merging_params_,
                   std::unique_ptr<MergeTreeSettings> settings_,
                   bool require_part_metadata_,
-                  bool attach,
+                  LoadingStrictnessLevel mode,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
     /// Build a block of minmax and count values of a MergeTree table. These values are extracted

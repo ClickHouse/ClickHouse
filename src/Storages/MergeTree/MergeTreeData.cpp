@@ -346,7 +346,7 @@ MergeTreeData::MergeTreeData(
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_,
     bool require_part_metadata_,
-    bool attach,
+    LoadingStrictnessLevel mode,
     BrokenPartCallback broken_part_callback_)
     : IStorage(table_id_)
     , WithMutableContext(context_->getGlobalContext())
@@ -367,10 +367,12 @@ MergeTreeData::MergeTreeData(
 
     const auto settings = getSettings();
 
-    allow_nullable_key = attach || settings->allow_nullable_key;
+    bool sanity_checks = mode <= LoadingStrictnessLevel::CREATE;
+
+    allow_nullable_key = !sanity_checks || settings->allow_nullable_key;
 
     /// Check sanity of MergeTreeSettings. Only when table is created.
-    if (!attach)
+    if (sanity_checks)
         settings->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount());
 
     if (!date_column_name.empty())
@@ -378,7 +380,7 @@ MergeTreeData::MergeTreeData(
         try
         {
             checkPartitionKeyAndInitMinMax(metadata_.partition_key);
-            setProperties(metadata_, metadata_, attach);
+            setProperties(metadata_, metadata_, !sanity_checks);
             if (minmax_idx_date_column_pos == -1)
                 throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Could not find Date column");
         }
@@ -394,7 +396,7 @@ MergeTreeData::MergeTreeData(
         is_custom_partitioned = true;
         checkPartitionKeyAndInitMinMax(metadata_.partition_key);
     }
-    setProperties(metadata_, metadata_, attach);
+    setProperties(metadata_, metadata_, !sanity_checks);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(metadata_);
@@ -402,11 +404,11 @@ MergeTreeData::MergeTreeData(
     if (metadata_.sampling_key.definition_ast != nullptr)
     {
         /// This is for backward compatibility.
-        checkSampleExpression(metadata_, attach || settings->compatibility_allow_sampling_expression_not_in_primary_key,
-                              settings->check_sample_column_is_correct && !attach);
+        checkSampleExpression(metadata_, !sanity_checks || settings->compatibility_allow_sampling_expression_not_in_primary_key,
+                              settings->check_sample_column_is_correct && sanity_checks);
     }
 
-    checkColumnFilenamesForCollision(metadata_.getColumns(), *settings, !attach);
+    checkColumnFilenamesForCollision(metadata_.getColumns(), *settings, sanity_checks);
     checkTTLExpressions(metadata_, metadata_);
 
     String reason;
