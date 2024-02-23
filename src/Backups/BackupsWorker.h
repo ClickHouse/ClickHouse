@@ -108,7 +108,8 @@ private:
     /// Run data restoring tasks which insert data to tables.
     void restoreTablesData(const BackupOperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool, QueryStatusPtr process_list_element);
 
-    void addInfo(const BackupOperationID & id, const String & name, const String & base_backup_name, bool internal, QueryStatusPtr process_list_element, BackupStatus status);
+    void addInfo(const BackupOperationID & id, const String & name, const String & base_backup_name, const String & query_id,
+                bool internal, QueryStatusPtr process_list_element, BackupStatus status);
     void setStatus(const BackupOperationID & id, BackupStatus status, bool throw_if_error = true);
     void setStatusSafe(const String & id, BackupStatus status) { setStatus(id, status, false); }
     void setNumFilesAndSize(const BackupOperationID & id, size_t num_files, UInt64 total_size, size_t num_entries,

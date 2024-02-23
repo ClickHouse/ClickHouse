@@ -5345,6 +5345,24 @@ SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as 
 
 Default value: `false`.
 
+## default_normal_view_sql_security {#default_normal_view_sql_security}
+
+Allows to set default `SQL SECURITY` option while creating a normal view. [More about SQL security](../../sql-reference/statements/create/view.md#sql_security).
+
+The default value is `INVOKER`.
+
+## default_materialized_view_sql_security {#default_materialized_view_sql_security}
+
+Allows to set a default value for SQL SECURITY option when creating a materialized view. [More about SQL security](../../sql-reference/statements/create/view.md#sql_security).
+
+The default value is `DEFINER`.
+
+## default_view_definer {#default_view_definer}
+
+Allows to set default `DEFINER` option while creating a view. [More about SQL security](../../sql-reference/statements/create/view.md#sql_security).
+
+The default value is `CURRENT_USER`.
+
 ## max_partition_size_to_drop
 
 Restriction on dropping partitions in query time. The value 0 means that you can drop partitions without any restrictions.
