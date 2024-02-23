@@ -1146,7 +1146,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
                                 settings.query_cache_compress_entries);
 
-                            if (settings.query_cache_min_query_runs && query_cache->recordQueryRun(key) <= settings.query_cache_min_query_runs)
+                            const size_t num_query_runs = settings.query_cache_min_query_runs ? query_cache->recordQueryRun(key) : 1;
+                            if (num_query_runs <= settings.query_cache_min_query_runs)
                             {
                                 LOG_TRACE(getLogger("QueryCache"),
                                         "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
