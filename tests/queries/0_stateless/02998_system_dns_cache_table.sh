@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
 # Retries are necessary because the DNS cache may be flushed before second statement is executed
 i=0 retries=3
 while [[ $i -lt $retries ]]; do
