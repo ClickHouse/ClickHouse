@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnDependency.h>
 #include <Storages/ColumnsDescription.h>
@@ -50,6 +52,14 @@ struct StorageInMemoryMetadata
     SelectQueryDescription select;
     /// Materialized view REFRESH parameters.
     ASTPtr refresh;
+
+    /// DEFINER <user_name>. Allows to specify a definer of the table.
+    /// Supported for MaterializedView and View.
+    std::optional<String> definer;
+
+    /// SQL SECURITY <DEFINER | INVOKER | NONE>
+    /// Supported for MaterializedView and View.
+    std::optional<SQLSecurityType> sql_security_type;
 
     String comment;
 
@@ -104,6 +114,15 @@ struct StorageInMemoryMetadata
     void setMetadataVersion(int32_t metadata_version_);
     /// Get copy of current metadata with metadata_version_
     StorageInMemoryMetadata withMetadataVersion(int32_t metadata_version_) const;
+
+    /// Sets a definer for the storage.
+    void setDefiner(const ASTSQLSecurity & sql_security);
+    UUID getDefinerID(ContextPtr context) const;
+
+    /// Returns a copy of the context with the correct user from SQL security options.
+    /// If the SQL security wasn't set, this is equivalent to `Context::createCopy(context)`.
+    /// The context from this function must be used every time whenever views execute any read/write operations or subqueries.
+    ContextMutablePtr getSQLSecurityOverriddenContext(ContextPtr context) const;
 
     /// Returns combined set of columns
     const ColumnsDescription & getColumns() const;
