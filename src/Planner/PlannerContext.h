@@ -22,12 +22,25 @@ namespace DB
 class QueryNode;
 class TableNode;
 
+struct FiltersForTableExpression
+{
+    ActionsDAGPtr filter_actions;
+    PrewhereInfoPtr prewhere_info;
+};
+
+using FiltersForTableExpressionMap = std::map<QueryTreeNodePtr, FiltersForTableExpression>;
+
+
 class GlobalPlannerContext
 {
 public:
-    explicit GlobalPlannerContext(const QueryNode * parallel_replicas_node_, const TableNode * parallel_replicas_table_)
+    GlobalPlannerContext(
+        const QueryNode * parallel_replicas_node_,
+        const TableNode * parallel_replicas_table_,
+        FiltersForTableExpressionMap filters_for_table_expressions_)
         : parallel_replicas_node(parallel_replicas_node_)
         , parallel_replicas_table(parallel_replicas_table_)
+        , filters_for_table_expressions(std::move(filters_for_table_expressions_))
     {
     }
 
@@ -53,13 +66,10 @@ public:
     /// It is the left-most table of the query (in JOINs, UNIONs and subqueries).
     const TableNode * const parallel_replicas_table = nullptr;
 
+    const FiltersForTableExpressionMap filters_for_table_expressions;
+
 private:
     std::unordered_set<ColumnIdentifier> column_identifiers;
-
-    friend class PlannerContext;
-
-    /// Table expression node to data
-    std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
 };
 
 using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
@@ -166,7 +176,7 @@ private:
     std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> column_node_to_column_identifier;
 
     /// Table expression node to data
-    std::unordered_map<QueryTreeNodePtr, TableExpressionData> & table_expression_node_to_data;
+    std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
 
     /// Set key to set
     PreparedSets prepared_sets;

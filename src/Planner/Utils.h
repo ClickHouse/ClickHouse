@@ -71,7 +71,10 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
 /// Replace table expressions from query JOIN TREE with dummy tables
 using ResultReplacementMap = std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr>;
 QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
-    const QueryTreeNodePtr & query_node, const PlannerContext & planner_context, ResultReplacementMap * result_replacement_map = nullptr);
+    const QueryTreeNodePtr & query_node,
+    const QueryTreeNodes & table_nodes,
+    const ContextPtr & context,
+    ResultReplacementMap * result_replacement_map = nullptr);
 
 /// Build subquery to read specified columns from table expression
 QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,

@@ -44,7 +44,6 @@ bool GlobalPlannerContext::hasColumnIdentifier(const ColumnIdentifier & column_i
 PlannerContext::PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_)
     : query_context(std::move(query_context_))
     , global_planner_context(std::move(global_planner_context_))
-    , table_expression_node_to_data(global_planner_context->table_expression_node_to_data)
 {}
 
 TableExpressionData & PlannerContext::getOrCreateTableExpressionData(const QueryTreeNodePtr & table_expression_node)
