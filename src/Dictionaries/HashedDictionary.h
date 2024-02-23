@@ -365,9 +365,10 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
         }
     }
 
-    LOG_TRACE(log, "Destroying {} non empty hash tables (using {} threads)", hash_tables_count, pool.getMaxThreads());
+    String dictionary_name = getFullName();
+    LOG_TRACE(log, "Destroying {} non empty hash tables for dictionary {} (using {} threads) ", hash_tables_count, dictionary_name, pool.getMaxThreads());
     pool.wait();
-    LOG_TRACE(log, "Hash tables destroyed");
+    LOG_TRACE(log, "Hash tables for dictionary {} destroyed", dictionary_name);
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
@@ -741,6 +742,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::createAttributes()
     attributes.reserve(size);
 
     HashTableGrowerWithPrecalculationAndMaxLoadFactor grower(configuration.max_load_factor);
+    String dictionary_name = getFullName();
 
     for (const auto & dictionary_attribute : dict_struct.attributes)
     {
@@ -770,9 +772,9 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::createAttributes()
             }
 
             if constexpr (IsBuiltinHashTable<typename CollectionsHolder<ValueType>::value_type>)
-                LOG_TRACE(log, "Using builtin hash table for {} attribute", dictionary_attribute.name);
+                LOG_TRACE(log, "Using builtin hash table for {} attribute of {}", dictionary_attribute.name, dictionary_name);
             else
-                LOG_TRACE(log, "Using sparsehash for {} attribute", dictionary_attribute.name);
+                LOG_TRACE(log, "Using sparsehash for {} attribute of {}", dictionary_attribute.name, dictionary_name);
         };
 
         callOnDictionaryAttributeType(dictionary_attribute.underlying_type, type_call);
