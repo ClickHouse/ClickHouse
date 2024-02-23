@@ -238,7 +238,7 @@ Performance will not decrease if:
 
 ### Asynchronous inserts
 
-It is possible to asynchronously insert data in small but frequent inserts. The data from such insertions is combined into batches and then safely inserted into a table. To use asynchronous inserts, enable the [`async_insert`](../../operations/settings/settings.md#async-insert) setting. Note that asynchronous inserts are supported only over HTTP protocol and that deduplication is not supported for them.
+It is possible to asynchronously insert data in small but frequent inserts. The data from such insertions is combined into batches and then safely inserted into a table. To use asynchronous inserts, enable the [`async_insert`](../../operations/settings/settings.md#async-insert) setting.
 
 Using `async_insert` or the [`Buffer` table engine](/en/engines/table-engines/special/buffer) results in additional buffering.
 
