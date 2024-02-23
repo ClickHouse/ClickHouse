@@ -1631,6 +1631,7 @@ NO_INLINE size_t joinRightColumns(
         }
     }
 
+    added_columns.applyLazyDefaults();
     return i;
 }
 
