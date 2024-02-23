@@ -623,6 +623,8 @@ try
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
 
+    ASTAlterCommand::setFormatAlterCommandsWithParentheses(server_settings.format_alter_operations_with_parentheses);
+
     StackTrace::setShowAddresses(server_settings.show_addresses_in_stack_traces);
 
 #if USE_HDFS

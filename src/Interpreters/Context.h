@@ -350,8 +350,11 @@ protected:
         std::set<std::string> projections{};
         std::set<std::string> views{};
     };
+    using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
-    QueryAccessInfo query_access_info;
+    /// In some situations, we want to be able to transfer the access info from children back to parents (e.g. definers context).
+    /// Therefore, query_access_info must be a pointer.
+    QueryAccessInfoPtr query_access_info;
 
     /// Record names of created objects of factories (for testing, etc)
     struct QueryFactoriesInfo
@@ -676,7 +679,9 @@ public:
     const Block * tryGetSpecialScalar(const String & name) const;
     void addSpecialScalar(const String & name, const Block & block);
 
-    const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
+    const QueryAccessInfo & getQueryAccessInfo() const { return *getQueryAccessInfoPtr(); }
+    const QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }
+    void setQueryAccessInfo(QueryAccessInfoPtr other) { query_access_info = other; }
 
     void addQueryAccessInfo(
         const String & quoted_database_name,
