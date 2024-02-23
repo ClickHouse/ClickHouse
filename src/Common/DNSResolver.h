@@ -52,6 +52,9 @@ public:
     /// Disables caching
     void setDisableCacheFlag(bool is_disabled = true);
 
+    /// Set a limit of cache size in bytes
+    void setCacheMaxSize(const UInt64 cache_max_size);
+
     /// Drops all caches
     void dropCache();
 

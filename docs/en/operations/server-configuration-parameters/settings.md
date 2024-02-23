@@ -199,6 +199,20 @@ Type: Bool
 
 Default: 0
 
+
+## dns_cache_max_size
+
+Internal DNS cache max size in bytes.
+
+:::note
+We also have reverse cache, so actually memory usage could be twice as much.
+:::
+
+Type: UInt64
+
+Default: 1024
+
+
 ## dns_cache_update_period
 
 Internal DNS cache update period in seconds.

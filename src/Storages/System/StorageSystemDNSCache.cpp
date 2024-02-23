@@ -35,7 +35,7 @@ ColumnsDescription StorageSystemDNSCache::getColumnsDescription()
 void StorageSystemDNSCache::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     using HostIPPair = std::pair<std::string, std::string>;
-    std::set<HostIPPair> reported_elements;
+    std::unordered_set<HostIPPair, boost::hash<std::pair<std::string, std::string>>> reported_elements;
 
     for (const auto & [hostname, entry] : DNSResolver::instance().cacheEntries())
     {

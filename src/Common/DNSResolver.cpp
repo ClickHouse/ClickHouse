@@ -176,8 +176,8 @@ struct DNSResolver::Impl
     using HostWithConsecutiveFailures = std::unordered_map<String, UInt32>;
     using AddressWithConsecutiveFailures = std::unordered_map<Poco::Net::IPAddress, UInt32>;
 
-    CacheBase<std::string, DNSResolver::CacheEntry> cache_host{100};
-    CacheBase<Poco::Net::IPAddress, std::unordered_set<std::string>> cache_address{100};
+    CacheBase<std::string, DNSResolver::CacheEntry> cache_host{1024};
+    CacheBase<Poco::Net::IPAddress, std::unordered_set<std::string>> cache_address{1024};
 
     std::mutex drop_mutex;
     std::mutex update_mutex;
@@ -287,6 +287,12 @@ void DNSResolver::removeHostFromCache(const std::string & host)
 void DNSResolver::setDisableCacheFlag(bool is_disabled)
 {
     impl->disable_cache = is_disabled;
+}
+
+void DNSResolver::setCacheMaxSize(const UInt64 cache_max_size)
+{
+    impl->cache_address.setMaxSizeInBytes(cache_max_size);
+    impl->cache_host.setMaxSizeInBytes(cache_max_size);
 }
 
 String DNSResolver::getHostName()
