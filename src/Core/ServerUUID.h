@@ -21,6 +21,4 @@ public:
     static void load(const fs::path & server_uuid_file, Poco::Logger * log);
 };
 
-UUID loadServerUUID(const fs::path & server_uuid_file, Poco::Logger * log);
-
 }

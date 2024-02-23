@@ -55,7 +55,7 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 
         format = configuration.format;
         if (format == "auto")
-            format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath()).value_or("auto");
+            format = FormatFactory::instance().getFormatFromFileName(Poco::URI(filename).getPath(), true);
 
         StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
     }
@@ -78,24 +78,15 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
     }
 }
 
-void TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure_, const String & format_, const ContextPtr & context)
+void TableFunctionURL::addColumnsStructureToArguments(ASTs & args, const String & desired_structure, const ContextPtr & context)
 {
-    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
+    if (tryGetNamedCollectionWithOverrides(args, context))
     {
-        /// In case of named collection, just add key-value pairs "format='...', structure='...'"
-        /// at the end of arguments to override existed format and structure with "auto" values.
-        if (collection->getOrDefault<String>("format", "auto") == "auto")
-        {
-            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
-            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
-            args.push_back(format_equal_func);
-        }
-        if (collection->getOrDefault<String>("structure", "auto") == "auto")
-        {
-            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
-            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
-            args.push_back(structure_equal_func);
-        }
+        /// In case of named collection, just add key-value pair "structure='...'"
+        /// at the end of arguments to override existed structure.
+        ASTs equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(desired_structure)};
+        auto equal_func = makeASTFunction("equals", std::move(equal_func_args));
+        args.push_back(equal_func);
     }
     else
     {
@@ -110,7 +101,7 @@ void TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, co
             args.pop_back();
         }
 
-        ITableFunctionFileLike::updateStructureAndFormatArgumentsIfNeeded(args, structure_, format_, context);
+        ITableFunctionFileLike::addColumnsStructureToArguments(args, desired_structure, context);
 
         if (headers_ast)
             args.push_back(headers_ast);
@@ -140,14 +131,6 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
     if (structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
-        if (format == "auto")
-            return StorageURL::getTableStructureAndFormatFromData(
-                       filename,
-                       chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
-                       configuration.headers,
-                       std::nullopt,
-                       context).first;
-
         return StorageURL::getTableStructureFromData(format,
             filename,
             chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
@@ -165,9 +148,9 @@ std::unordered_set<String> TableFunctionURL::getVirtualsToCheckBeforeUsingStruct
     return {virtual_column_names.begin(), virtual_column_names.end()};
 }
 
-std::optional<String> TableFunctionURL::tryGetFormatFromFirstArgument()
+String TableFunctionURL::getFormatFromFirstArgument()
 {
-    return FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath());
+    return FormatFactory::instance().getFormatFromFileName(Poco::URI(filename).getPath(), true);
 }
 
 void registerTableFunctionURL(TableFunctionFactory & factory)

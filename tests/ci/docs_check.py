@@ -6,11 +6,14 @@ import sys
 from pathlib import Path
 
 from docker_images_helper import get_docker_image, pull_image
-from env_helper import REPO_COPY, TEMP_PATH
+from env_helper import TEMP_PATH, REPO_COPY
 from pr_info import PRInfo
-from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
+from report import JobReport, TestResults, TestResult
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+
+
+NAME = "Docs Check"
 
 
 def parse_args() -> argparse.Namespace:
@@ -49,7 +52,7 @@ def main():
         JobReport(
             description="No changes in docs",
             test_results=[],
-            status=SUCCESS,
+            status="success",
             start_time=stopwatch.start_time_str,
             duration=stopwatch.duration_seconds,
             additional_files=[],
@@ -79,11 +82,11 @@ def main():
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
-            status = SUCCESS
+            status = "success"
             description = "Docs check passed"
         else:
             description = "Docs check failed (non zero exit code)"
-            status = FAILURE
+            status = "failure"
             logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
@@ -92,7 +95,7 @@ def main():
     if not any(test_output.iterdir()):
         logging.error("No output files after docs check")
         description = "No output files after docs check"
-        status = FAILURE
+        status = "failure"
     else:
         for p in test_output.iterdir():
             additional_files.append(p)
@@ -101,9 +104,9 @@ def main():
                     if "ERROR" in line:
                         test_results.append(TestResult(line.split(":")[-1], "FAIL"))
         if test_results:
-            status = FAILURE
+            status = "failure"
             description = "Found errors in docs"
-        elif status != FAILURE:
+        elif status != "failure":
             test_results.append(TestResult("No errors found", "OK"))
         else:
             test_results.append(TestResult("Non zero exit code", "FAIL"))
@@ -117,7 +120,7 @@ def main():
         additional_files=additional_files,
     ).dump()
 
-    if status == FAILURE:
+    if status == "failure":
         sys.exit(1)
 
 

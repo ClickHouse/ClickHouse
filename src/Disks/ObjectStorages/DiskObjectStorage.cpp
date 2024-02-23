@@ -389,7 +389,6 @@ void DiskObjectStorage::shutdown()
 {
     LOG_INFO(log, "Shutting down disk {}", name);
     object_storage->shutdown();
-    metadata_storage->shutdown();
     LOG_INFO(log, "Disk {} shut down", name);
 }
 
@@ -532,7 +531,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const bool file_can_be_empty = !file_size.has_value() || *file_size == 0;
 
     if (storage_objects.empty() && file_can_be_empty)
-        return std::make_unique<ReadBufferFromEmptyFile>();
+        return std::make_unique<ReadBufferFromEmptyFile>(path);
 
     return object_storage->readObjects(
         storage_objects,

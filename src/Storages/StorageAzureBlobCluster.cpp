@@ -36,30 +36,23 @@ StorageAzureBlobCluster::StorageAzureBlobCluster(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const ContextPtr & context)
-    : IStorageCluster(cluster_name_, table_id_, getLogger("StorageAzureBlobCluster (" + table_id_.table_name + ")"))
+    ContextPtr context_,
+    bool structure_argument_was_provided_)
+    : IStorageCluster(cluster_name_, table_id_, getLogger("StorageAzureBlobCluster (" + table_id_.table_name + ")"), structure_argument_was_provided_)
     , configuration{configuration_}
     , object_storage(std::move(object_storage_))
 {
-    context->getGlobalContext()->getRemoteHostFilter().checkURL(configuration_.getConnectionURL());
+    context_->getGlobalContext()->getRemoteHostFilter().checkURL(configuration_.getConnectionURL());
     StorageInMemoryMetadata storage_metadata;
 
     if (columns_.empty())
     {
-        ColumnsDescription columns;
         /// `format_settings` is set to std::nullopt, because StorageAzureBlobCluster is used only as table function
-        if (configuration.format == "auto")
-            std::tie(columns, configuration.format) = StorageAzureBlob::getTableStructureAndFormatFromData(object_storage.get(), configuration, /*format_settings=*/std::nullopt, context);
-        else
-            columns = StorageAzureBlob::getTableStructureFromData(object_storage.get(), configuration, /*format_settings=*/std::nullopt, context);
+        auto columns = StorageAzureBlob::getTableStructureFromData(object_storage.get(), configuration, /*format_settings=*/std::nullopt, context_, false);
         storage_metadata.setColumns(columns);
     }
     else
-    {
-        if (configuration.format == "auto")
-            configuration.format = StorageAzureBlob::getTableStructureAndFormatFromData(object_storage.get(), configuration, /*format_settings=*/std::nullopt, context).second;
         storage_metadata.setColumns(columns_);
-    }
 
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
@@ -67,14 +60,13 @@ StorageAzureBlobCluster::StorageAzureBlobCluster(
     virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
-void StorageAzureBlobCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const DB::StorageSnapshotPtr & storage_snapshot, const DB::ContextPtr & context)
+void StorageAzureBlobCluster::addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context)
 {
     ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
     if (!expression_list)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function s3Cluster, got '{}'", queryToString(query));
 
-    TableFunctionAzureBlobStorageCluster::updateStructureAndFormatArgumentsIfNeeded(
-        expression_list->children, storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(), configuration.format, context);
+    TableFunctionAzureBlobStorageCluster::addColumnsStructureToArguments(expression_list->children, structure, context);
 }
 
 RemoteQueryExecutor::Extension StorageAzureBlobCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const

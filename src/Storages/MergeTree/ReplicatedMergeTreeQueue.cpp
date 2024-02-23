@@ -860,9 +860,6 @@ ActiveDataPartSet getPartNamesToMutate(
 
 int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback)
 {
-    if (pull_log_blocker.isCancelled())
-        throw Exception(ErrorCodes::ABORTED, "Log pulling is cancelled");
-
     std::lock_guard lock(update_mutations_mutex);
 
     Coordination::Stat mutations_stat;

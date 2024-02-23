@@ -143,6 +143,9 @@ public:
 
     ~StorageReplicatedMergeTree() override;
 
+    static String getDefaultZooKeeperPath(const Poco::Util::AbstractConfiguration & config);
+    static String getDefaultReplicaName(const Poco::Util::AbstractConfiguration & config);
+
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
 
     bool supportsParallelInsert() const override { return true; }

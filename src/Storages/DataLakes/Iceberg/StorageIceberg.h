@@ -52,28 +52,28 @@ public:
     static ColumnsDescription getTableStructureFromData(
         Configuration & base_configuration,
         const std::optional<FormatSettings> &,
-        const ContextPtr & local_context);
+        ContextPtr local_context);
 
     static Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context)
     {
         return StorageS3::getConfiguration(engine_args, local_context, /* get_format_from_file */false);
     }
 
-    Configuration updateConfigurationAndGetCopy(const ContextPtr & local_context) override
+    Configuration updateConfigurationAndGetCopy(ContextPtr local_context) override
     {
         std::lock_guard lock(configuration_update_mutex);
         updateConfigurationImpl(local_context);
         return StorageS3::getConfiguration();
     }
 
-    void updateConfiguration(const ContextPtr & local_context) override
+    void updateConfiguration(ContextPtr local_context) override
     {
         std::lock_guard lock(configuration_update_mutex);
         updateConfigurationImpl(local_context);
     }
 
 private:
-    void updateConfigurationImpl(const ContextPtr & local_context);
+    void updateConfigurationImpl(ContextPtr local_context);
 
     std::unique_ptr<IcebergMetadata> current_metadata;
     Configuration base_configuration;

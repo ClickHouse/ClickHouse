@@ -16,7 +16,7 @@
 #include <Coordination/pathUtils.h>
 #include <Coordination/KeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Core/Field.h>
+#include "Core/Field.h"
 #include <Disks/DiskLocal.h>
 
 
@@ -79,20 +79,20 @@ namespace
             writeBinary(false, out);
 
         /// Serialize stat
-        writeBinary(node.czxid, out);
-        writeBinary(node.mzxid, out);
-        writeBinary(node.ctime(), out);
-        writeBinary(node.mtime, out);
-        writeBinary(node.version, out);
-        writeBinary(node.cversion, out);
-        writeBinary(node.aversion, out);
-        writeBinary(node.ephemeralOwner(), out);
+        writeBinary(node.stat.czxid, out);
+        writeBinary(node.stat.mzxid, out);
+        writeBinary(node.stat.ctime, out);
+        writeBinary(node.stat.mtime, out);
+        writeBinary(node.stat.version, out);
+        writeBinary(node.stat.cversion, out);
+        writeBinary(node.stat.aversion, out);
+        writeBinary(node.stat.ephemeralOwner, out);
         if (version < SnapshotVersion::V6)
-            writeBinary(static_cast<int32_t>(node.data_size), out);
-        writeBinary(node.numChildren(), out);
-        writeBinary(node.pzxid, out);
+            writeBinary(static_cast<int32_t>(node.getData().size()), out);
+        writeBinary(node.stat.numChildren, out);
+        writeBinary(node.stat.pzxid, out);
 
-        writeBinary(node.seqNum(), out);
+        writeBinary(node.seq_num, out);
 
         if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
             writeBinary(node.sizeInBytes(), out);
@@ -102,7 +102,7 @@ namespace
     {
         String new_data;
         readBinary(new_data, in);
-        node.setData(new_data);
+        node.setData(std::move(new_data));
 
         if (version >= SnapshotVersion::V1)
         {
@@ -138,36 +138,22 @@ namespace
         }
 
         /// Deserialize stat
-        readBinary(node.czxid, in);
-        readBinary(node.mzxid, in);
-        int64_t ctime;
-        readBinary(ctime, in);
-        node.setCtime(ctime);
-        readBinary(node.mtime, in);
-        readBinary(node.version, in);
-        readBinary(node.cversion, in);
-        readBinary(node.aversion, in);
-        int64_t ephemeral_owner = 0;
-        readBinary(ephemeral_owner, in);
-        if (ephemeral_owner != 0)
-            node.setEphemeralOwner(ephemeral_owner);
-
+        readBinary(node.stat.czxid, in);
+        readBinary(node.stat.mzxid, in);
+        readBinary(node.stat.ctime, in);
+        readBinary(node.stat.mtime, in);
+        readBinary(node.stat.version, in);
+        readBinary(node.stat.cversion, in);
+        readBinary(node.stat.aversion, in);
+        readBinary(node.stat.ephemeralOwner, in);
         if (version < SnapshotVersion::V6)
         {
             int32_t data_length = 0;
             readBinary(data_length, in);
         }
-        int32_t num_children = 0;
-        readBinary(num_children, in);
-        if (ephemeral_owner == 0)
-            node.setNumChildren(num_children);
-
-        readBinary(node.pzxid, in);
-
-        int32_t seq_num = 0;
-        readBinary(seq_num, in);
-        if (ephemeral_owner == 0)
-            node.setSeqNum(seq_num);
+        readBinary(node.stat.numChildren, in);
+        readBinary(node.stat.pzxid, in);
+        readBinary(node.seq_num, in);
 
         if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
         {
@@ -252,7 +238,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
         /// Benign race condition possible while taking snapshot: NuRaft decide to create snapshot at some log id
         /// and only after some time we lock storage and enable snapshot mode. So snapshot_container_size can be
         /// slightly bigger than required.
-        if (node.mzxid > snapshot.zxid)
+        if (node.stat.mzxid > snapshot.zxid)
             break;
 
         writeBinary(path, out);
@@ -377,6 +363,11 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
     if (recalculate_digest)
         storage.nodes_digest = 0;
 
+    const auto is_node_empty = [](const auto & node)
+    {
+        return node.getData().empty() && node.stat == KeeperStorage::Node::Stat{};
+    };
+
     for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
     {
         std::string path;
@@ -404,7 +395,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         }
         else if (match_result == EXACT)
         {
-            if (!node.empty())
+            if (!is_node_empty(node))
             {
                 if (keeper_context->ignoreSystemPathOnStartup() || keeper_context->getServerState() != KeeperContext::Phase::INIT)
                 {
@@ -421,8 +412,8 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         }
 
         storage.container.insertOrReplace(path, node);
-        if (node.isEphemeral())
-            storage.ephemerals[node.ephemeralOwner()].insert(path);
+        if (node.stat.ephemeralOwner != 0)
+            storage.ephemerals[node.stat.ephemeralOwner].insert(path);
 
         if (recalculate_digest)
             storage.nodes_digest += node.getDigest(path);
@@ -442,16 +433,16 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
     {
         if (itr.key != "/")
         {
-            if (itr.value.numChildren() != static_cast<int32_t>(itr.value.getChildren().size()))
+            if (itr.value.stat.numChildren != static_cast<int32_t>(itr.value.getChildren().size()))
             {
 #ifdef NDEBUG
                 /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
                 LOG_ERROR(getLogger("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
-                            " is different from actual children size {} for node {}", itr.value.numChildren(), itr.value.getChildren().size(), itr.key);
+                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
 #else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
                                 " is different from actual children size {} for node {}",
-                                itr.value.numChildren(), itr.value.getChildren().size(), itr.key);
+                                itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
 #endif
             }
         }

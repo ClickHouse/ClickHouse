@@ -28,7 +28,7 @@ jobs:
         id: runconfig
         run: |
             echo "::group::configure CI run"
-            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --skip-jobs --outfile ${{ runner.temp }}/ci_run_data.json
+            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --skip-jobs --rebuild-all-docker --outfile ${{ runner.temp }}/ci_run_data.json
             echo "::endgroup::"
 
             echo "::group::CI run configure results"

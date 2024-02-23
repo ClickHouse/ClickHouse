@@ -35,7 +35,7 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Interpreters/PartLog.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 
 
 #include <boost/multi_index_container.hpp>
@@ -468,13 +468,8 @@ public:
 
     struct ProjectionPartsVector
     {
-        DataPartsVector data_parts;
-
         DataPartsVector projection_parts;
-        DataPartStateVector projection_parts_states;
-
-        DataPartsVector broken_projection_parts;
-        DataPartStateVector broken_projection_parts_states;
+        DataPartsVector data_parts;
     };
 
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
@@ -489,7 +484,7 @@ public:
         const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
     /// Same as above but only returns projection parts
     ProjectionPartsVector getProjectionPartsVectorForInternalUsage(
-        const DataPartStates & affordable_states, MergeTreeData::DataPartStateVector * out_states) const;
+        const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
 
 
     /// Returns absolutely all parts (and snapshot of their states)

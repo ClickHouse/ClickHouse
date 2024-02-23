@@ -54,7 +54,7 @@ public:
 
     Values getValue(size_t part_idx, size_t mark) const
     {
-        const auto & index = parts[part_idx].data_part->getIndex();
+        const auto & index = parts[part_idx].data_part->index;
         Values values(index.size());
         for (size_t i = 0; i < values.size(); ++i)
         {

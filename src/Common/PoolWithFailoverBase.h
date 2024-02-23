@@ -73,20 +73,26 @@ public:
     {
         TryResult() = default;
 
+        explicit TryResult(Entry entry_)
+            : entry(std::move(entry_))
+            , is_usable(true)
+            , is_up_to_date(true)
+        {
+        }
+
         void reset()
         {
             entry = Entry();
             is_usable = false;
             is_up_to_date = false;
-            delay = 0;
+            staleness = 0.0;
         }
 
-        Entry entry; /// use isNull() to check if connection is established
-        bool is_usable = false; /// if connection is established, then can be false only with table check
-                                /// if table is not present on remote peer, -> it'll be false
-        bool is_up_to_date = false; /// If true, the entry is a connection to up-to-date replica
-                                    /// Depends on max_replica_delay_for_distributed_queries setting
-        UInt32 delay = 0; /// Helps choosing the "least stale" option when all replicas are stale.
+        Entry entry;
+        bool is_usable = false; /// If false, the entry is unusable for current request
+                                /// (but may be usable for other requests, so error counts are not incremented)
+        bool is_up_to_date = false; /// If true, the entry is a connection to up-to-date replica.
+        double staleness = 0.0; /// Helps choosing the "least stale" option when all replicas are stale.
     };
 
     struct PoolState;
@@ -95,7 +101,7 @@ public:
 
     struct ShuffledPool
     {
-        NestedPoolPtr pool{};
+        NestedPool * pool{};
         const PoolState * state{}; // WARNING: valid only during initial ordering, dangling
         size_t index = 0;
         size_t error_count = 0;
@@ -104,7 +110,7 @@ public:
 
     /// This functor must be provided by a client. It must perform a single try that takes a connection
     /// from the provided pool and checks that it is good.
-    using TryGetEntryFunc = std::function<TryResult(const NestedPoolPtr & pool, std::string & fail_message)>;
+    using TryGetEntryFunc = std::function<TryResult(NestedPool & pool, std::string & fail_message)>;
 
     /// The client can provide this functor to affect load balancing - the index of a pool is passed to
     /// this functor. The pools with lower result value will be tried first.
@@ -175,7 +181,7 @@ PoolWithFailoverBase<TNestedPool>::getShuffledPools(
     std::vector<ShuffledPool> shuffled_pools;
     shuffled_pools.reserve(nested_pools.size());
     for (size_t i = 0; i < nested_pools.size(); ++i)
-        shuffled_pools.push_back(ShuffledPool{nested_pools[i], &pool_states[i], i, /* error_count = */ 0, /* slowdown_count = */ 0});
+        shuffled_pools.push_back(ShuffledPool{nested_pools[i].get(), &pool_states[i], i, /* error_count = */ 0, /* slowdown_count = */ 0});
 
     ::sort(
         shuffled_pools.begin(), shuffled_pools.end(),
@@ -261,7 +267,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                 continue;
 
             std::string fail_message;
-            result = try_get_entry(shuffled_pool.pool, fail_message);
+            result = try_get_entry(*shuffled_pool.pool, fail_message);
 
             if (!fail_message.empty())
                 fail_messages += fail_message + '\n';
@@ -303,8 +309,8 @@ PoolWithFailoverBase<TNestedPool>::getMany(
             try_results.begin(), try_results.end(),
             [](const TryResult & left, const TryResult & right)
             {
-                return std::forward_as_tuple(!left.is_up_to_date, left.delay)
-                    < std::forward_as_tuple(!right.is_up_to_date, right.delay);
+                return std::forward_as_tuple(!left.is_up_to_date, left.staleness)
+                    < std::forward_as_tuple(!right.is_up_to_date, right.staleness);
             });
 
     if (fallback_to_stale_replicas)

@@ -773,18 +773,24 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
             table_function_node->setTableExpressionModifiers(*table_expression_modifiers);
 
         QueryAnalysisPass query_analysis_pass;
-        QueryTreeNodePtr node = table_function_node;
-        query_analysis_pass.run(node, query_context);
+        query_analysis_pass.run(table_function_node, query_context);
 
         replacement_table_expression = std::move(table_function_node);
     }
     else
     {
+        auto resolved_remote_storage_id = remote_storage_id;
+        // In case of cross-replication we don't know what database is used for the table.
+        // `storage_id.hasDatabase()` can return false only on the initiator node.
+        // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
+        if (remote_storage_id.hasDatabase())
+            resolved_remote_storage_id = query_context->resolveStorageID(remote_storage_id);
+
         auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
 
         auto column_names_and_types = distributed_storage_snapshot->getColumns(get_column_options);
 
-        auto storage = std::make_shared<StorageDummy>(remote_storage_id, ColumnsDescription{column_names_and_types});
+        auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, ColumnsDescription{column_names_and_types});
         auto table_node = std::make_shared<TableNode>(std::move(storage), query_context);
 
         if (table_expression_modifiers)
@@ -797,7 +803,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
 
-    return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify);
+    return buildQueryTreeForShard(query_info, query_tree_to_modify);
 }
 
 }
@@ -831,7 +837,7 @@ void StorageDistributed::read(
           */
         for (auto & column : header)
             column.column = column.column->convertToFullColumnIfConst();
-        query_ast = queryNodeToDistributedSelectQuery(query_tree_distributed);
+        query_ast = queryNodeToSelectQuery(query_tree_distributed);
     }
     else
     {
@@ -976,10 +982,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         new_query->select = select_with_union_query;
     }
 
-    const auto src_cluster = src_distributed.getCluster();
-    const auto dst_cluster = getCluster();
-    const Cluster::AddressesWithFailover & src_addresses = src_cluster->getShardsAddresses();
-    const Cluster::AddressesWithFailover & dst_addresses = dst_cluster->getShardsAddresses();
+    const Cluster::AddressesWithFailover & src_addresses = src_distributed.getCluster()->getShardsAddresses();
+    const Cluster::AddressesWithFailover & dst_addresses = getCluster()->getShardsAddresses();
     /// Compare addresses instead of cluster name, to handle remote()/cluster().
     /// (since for remote()/cluster() the getClusterName() is empty string)
     if (src_addresses != dst_addresses)
@@ -1008,7 +1012,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         new_query->table_function.reset();
     }
 
-    const auto & shards_info = dst_cluster->getShardsInfo();
+    const auto & cluster = getCluster();
+    const auto & shards_info = cluster->getShardsInfo();
 
     String new_query_str;
     {
@@ -1139,8 +1144,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
-    const auto cluster = getCluster();
-    for (const auto & replicas : cluster->getShardsInfo())
+    for (const auto & replicas : getCluster()->getShardsInfo())
     {
         /// Skip unavailable hosts if necessary
         auto try_results = replicas.pool->getMany(timeouts, current_settings, PoolMode::GET_MANY, /*async_callback*/ {}, /*skip_unavailable_endpoints*/ true);
