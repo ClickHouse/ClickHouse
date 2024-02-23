@@ -813,8 +813,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
     /// Should this function to be written as operator?
     bool written = false;
-
-    if (arguments && !parameters)
+    if (arguments && !parameters && nulls_action == NullsAction::EMPTY)
     {
         /// Unary prefix operators.
         if (arguments->children.size() == 1)
