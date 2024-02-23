@@ -1086,13 +1086,11 @@ public:
         }
     }
 
-    virtual ~AddedColumns() { }
+    virtual ~AddedColumns() = default;
 
     size_t size() const { return columns.size(); }
 
-    virtual void buildOutput()
-    {
-    }
+    virtual void buildOutput() { }
 
     ColumnWithTypeAndName moveColumn(size_t i)
     {
@@ -1237,7 +1235,7 @@ public:
         lazy_output.row_nums.reserve(rows_to_add);
     }
 
-    virtual void buildOutput() override
+    void buildOutput() override
     {
         for (size_t i = 0; i < this->size(); ++i)
         {
@@ -1277,7 +1275,7 @@ public:
         }
     }
 
-    virtual void appendFromBlock(const Block & block, size_t row_num, bool) override
+    void appendFromBlock(const Block & block, size_t row_num, bool) override
     {
 #ifndef NDEBUG
         for (size_t j = 0; j < right_indexes.size(); ++j)
@@ -1311,7 +1309,7 @@ public:
         }
     }
 
-    virtual void appendDefaultRow() override
+    void appendDefaultRow() override
     {
         if (has_columns_to_add)
         {
@@ -1320,7 +1318,7 @@ public:
         }
     }
 
-    virtual void applyLazyDefaults() override { }
+    void applyLazyDefaults() override { }
 
 private :
     // The default row is represented by an empty RowRef, so that fixed-size blocks can be generated sequentially,
