@@ -57,6 +57,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.avro.schema_registry_url = settings.format_avro_schema_registry_url.toString();
     format_settings.avro.string_column_pattern = settings.output_format_avro_string_column_pattern.toString();
     format_settings.avro.output_rows_in_file = settings.output_format_avro_rows_in_file;
+    format_settings.avro.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_avro_skip_columns_with_unsupported_types_in_schema_inference;
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;

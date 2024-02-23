@@ -110,6 +110,7 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
     }
     catch (...)
     {
+        tryLogCurrentException("SerializationTuple");
         restore_elements();
         if constexpr (throw_exception)
             throw;

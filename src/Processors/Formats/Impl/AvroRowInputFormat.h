@@ -206,7 +206,7 @@ public:
 
     NamesAndTypesList readSchema() override;
 
-    static DataTypePtr avroNodeToDataType(avro::NodePtr node);
+    static DataTypePtr avroNodeToDataType(avro::NodePtr node, bool skip_unsupported_types);
 private:
 
     bool confluent;
