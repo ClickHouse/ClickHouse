@@ -581,7 +581,6 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     {
                         auto skip_fn = createSkipFn(root_node->leafAt(i));
                         nested_deserializers.emplace_back(DeserializeFn{}, skip_fn, pos);
-
                     }
                 }
 
