@@ -770,7 +770,6 @@ class ReadFromHive : public SourceStepWithFilter
 public:
     std::string getName() const override { return "ReadFromHive"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters() override;
 
     ReadFromHive(
         const Names & column_names_,
@@ -819,16 +818,10 @@ private:
 
     std::optional<HiveFiles> hive_files;
 
-    void createFiles(const ActionsDAGPtr & filter_actions_dag);
+    void createFiles();
 };
 
-void ReadFromHive::applyFilters()
-{
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
-    createFiles(filter_actions_dag);
-}
-
-void ReadFromHive::createFiles(const ActionsDAGPtr & filter_actions_dag)
+void ReadFromHive::createFiles()
 {
     if (hive_files)
         return;
@@ -917,7 +910,7 @@ void StorageHive::read(
 
 void ReadFromHive::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    createFiles(nullptr);
+    createFiles();
 
     if (hive_files->empty())
     {

@@ -143,7 +143,7 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    void applyFilters() override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     ReadFromStorageS3Step(
         const Names & column_names_,
@@ -1163,9 +1163,9 @@ void StorageS3::read(
     query_plan.addStep(std::move(reading));
 }
 
-void ReadFromStorageS3Step::applyFilters()
+void ReadFromStorageS3Step::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -1222,7 +1222,7 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
             max_parsing_threads,
             need_only_count);
 
-        source->setKeyCondition(filter_nodes.nodes, context);
+        source->setKeyCondition(filter_actions_dag, context);
         pipes.emplace_back(std::move(source));
     }
 

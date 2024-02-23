@@ -209,7 +209,7 @@ void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const Planne
         if (!read_from_dummy)
             continue;
 
-        auto filter_actions = ActionsDAG::buildFilterActionsDAG(read_from_dummy->getFilterNodes().nodes);
+        auto filter_actions = read_from_dummy->getFilterActionsDAG();
         auto & table_expression_data = dummy_storage_to_table_expression_data.at(&read_from_dummy->getStorage());
         table_expression_data->setFilterActions(std::move(filter_actions));
         table_expression_data->setPrewhereInfo(read_from_dummy->getPrewhereInfo());

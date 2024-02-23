@@ -378,7 +378,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         num_streams = 1;
 
     /// Build rpn of query filters
-    KeyCondition condition(buildFilterDAG(), context, column_names, key_expression);
+    KeyCondition condition(filter_actions_dag, context, column_names, key_expression);
 
     Pipe pipe;
     Ranges ranges;
@@ -505,11 +505,6 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     }
 
     return pipe;
-}
-
-ActionsDAGPtr ReadFromSystemNumbersStep::buildFilterDAG()
-{
-    return ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
 }
 
 void ReadFromSystemNumbersStep::checkLimits(size_t rows)

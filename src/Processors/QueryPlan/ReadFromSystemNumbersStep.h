@@ -32,7 +32,6 @@ private:
     void checkLimits(size_t rows);
 
     Pipe makePipe();
-    ActionsDAGPtr buildFilterDAG();
 
     const Names column_names;
     StoragePtr storage;

@@ -1424,7 +1424,7 @@ static void buildIndexes(
     indexes->skip_indexes = std::move(skip_indexes);
 }
 
-void ReadFromMergeTree::applyFilters()
+void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     if (!indexes)
     {
@@ -1441,15 +1441,17 @@ void ReadFromMergeTree::applyFilters()
             }
         }
 
+        filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, node_name_to_input_node_column);
+
         /// NOTE: Currently we store two DAGs for analysis:
         /// (1) SourceStepWithFilter::filter_nodes, (2) query_info.filter_actions_dag. Make sure there are consistent.
         /// TODO: Get rid of filter_actions_dag in query_info after we move analysis of
         /// parallel replicas and unused shards into optimization, similar to projection analysis.
-        query_info.filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, node_name_to_input_node_column);
+        query_info.filter_actions_dag = filter_actions_dag;
 
         buildIndexes(
             indexes,
-            query_info.filter_actions_dag,
+            filter_actions_dag,
             data,
             prepared_parts,
             context,

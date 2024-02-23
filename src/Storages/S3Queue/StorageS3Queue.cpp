@@ -240,7 +240,7 @@ class ReadFromS3Queue : public SourceStepWithFilter
 public:
     std::string getName() const override { return "ReadFromS3Queue"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters() override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     ReadFromS3Queue(
         const Names & column_names_,
@@ -282,9 +282,9 @@ void ReadFromS3Queue::createIterator(const ActionsDAG::Node * predicate)
 }
 
 
-void ReadFromS3Queue::applyFilters()
+void ReadFromS3Queue::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);

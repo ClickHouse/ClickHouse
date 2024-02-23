@@ -78,6 +78,11 @@ Block SourceStepWithFilter::applyPrewhereActions(Block block, const PrewhereInfo
     return block;
 }
 
+void SourceStepWithFilter::applyFilters(ActionDAGNodes added_filter_nodes)
+{
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+}
+
 void SourceStepWithFilter::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
     query_info.prewhere_info = prewhere_info_value;

@@ -2360,7 +2360,7 @@ void collectFiltersForAnalysis(
         if (!read_from_dummy)
             continue;
 
-        query_info.filter_actions_dag = ActionsDAG::buildFilterActionsDAG(read_from_dummy->getFilterNodes().nodes);
+        query_info.filter_actions_dag = read_from_dummy->getFilterActionsDAG();
         query_info.optimized_prewhere_info = read_from_dummy->getPrewhereInfo();
     }
 }

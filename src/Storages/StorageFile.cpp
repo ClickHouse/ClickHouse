@@ -1236,9 +1236,9 @@ StorageFileSource::~StorageFileSource()
     beforeDestroy();
 }
 
-void StorageFileSource::setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_)
+void StorageFileSource::setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_)
 {
-    setKeyConditionImpl(nodes, context_, block_for_format);
+    setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
 }
 
 
@@ -1500,7 +1500,7 @@ class ReadFromFile : public SourceStepWithFilter
 public:
     std::string getName() const override { return "ReadFromFile"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters() override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     ReadFromFile(
         const Names & column_names_,
@@ -1535,9 +1535,9 @@ private:
     void createIterator(const ActionsDAG::Node * predicate);
 };
 
-void ReadFromFile::applyFilters()
+void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -1659,7 +1659,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             std::move(read_buffer),
             need_only_count);
 
-        source->setKeyCondition(filter_nodes.nodes, ctx);
+        source->setKeyCondition(filter_actions_dag, ctx);
         pipes.emplace_back(std::move(source));
     }
 

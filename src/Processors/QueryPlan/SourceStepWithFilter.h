@@ -32,8 +32,7 @@ public:
     {
     }
 
-    const std::vector<ActionsDAGPtr> & getFilters() const { return filter_dags; }
-    const ActionDAGNodes & getFilterNodes() const { return filter_nodes; }
+    const ActionsDAGPtr & getFilterActionsDAG() const { return filter_actions_dag; }
 
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
     const PrewhereInfoPtr & getPrewhereInfo() const { return prewhere_info; }
@@ -57,7 +56,13 @@ public:
     }
 
     /// Apply filters that can optimize reading from storage.
-    virtual void applyFilters() { }
+    void applyFilters()
+    {
+        applyFilters(std::move(filter_nodes));
+        filter_dags = {};
+    }
+
+    virtual void applyFilters(ActionDAGNodes added_filter_nodes);
 
     virtual void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value);
 
@@ -68,13 +73,18 @@ public:
     static Block applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info);
 
 protected:
-    std::vector<ActionsDAGPtr> filter_dags;
-    ActionDAGNodes filter_nodes;
     Names required_source_columns;
     SelectQueryInfo query_info;
     PrewhereInfoPtr prewhere_info;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
+
+    ActionsDAGPtr filter_actions_dag;
+
+private:
+    /// Will be cleared after applyFilters() is called.
+    ActionDAGNodes filter_nodes;
+    std::vector<ActionsDAGPtr> filter_dags;
 };
 
 }

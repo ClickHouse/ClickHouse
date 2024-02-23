@@ -157,7 +157,7 @@ public:
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_);
 
-    void applyFilters() override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     QueryPlanRawPtrs getChildPlans() override;
 
@@ -243,7 +243,7 @@ private:
 
     void filterTablesAndCreateChildrenPlans();
 
-    void applyFilters(const QueryPlan & plan) const;
+    void applyFilters(const QueryPlan & plan, const ActionDAGNodes & added_filter_nodes) const;
 
     QueryPlan createPlanForTable(
         const StorageSnapshotPtr & storage_snapshot,

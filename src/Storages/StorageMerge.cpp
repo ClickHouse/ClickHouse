@@ -1255,7 +1255,6 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     if (!filter_by_database_virtual_column && !filter_by_table_virtual_column)
         return res;
 
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
     if (!filter_actions_dag)
         return res;
 
@@ -1501,28 +1500,29 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
     return true;
 }
 
-void ReadFromMerge::applyFilters(const QueryPlan & plan) const
+void ReadFromMerge::applyFilters(const QueryPlan & plan, const ActionDAGNodes & added_filter_nodes) const
 {
-    auto apply_filters = [this](ReadFromMergeTree & read_from_merge_tree)
+    auto apply_filters = [&added_filter_nodes](ReadFromMergeTree & read_from_merge_tree)
     {
-        size_t filters_dags_size = filter_dags.size();
-        for (size_t i = 0; i < filters_dags_size; ++i)
-            read_from_merge_tree.addFilter(filter_dags[i], filter_nodes.nodes[i]);
+        for (const auto & node : added_filter_nodes.nodes)
+            read_from_merge_tree.addFilter(nullptr, node);
 
-        read_from_merge_tree.applyFilters();
+        read_from_merge_tree.SourceStepWithFilter::applyFilters();
         return true;
     };
 
     recursivelyApplyToReadingSteps(plan.getRootNode(), apply_filters);
 }
 
-void ReadFromMerge::applyFilters()
+void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
 {
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+
     filterTablesAndCreateChildrenPlans();
 
     for (const auto & child_plan : *child_plans)
         if (child_plan.plan.isInitialized())
-            applyFilters(child_plan.plan);
+            applyFilters(child_plan.plan, added_filter_nodes);
 }
 
 QueryPlanRawPtrs ReadFromMerge::getChildPlans()

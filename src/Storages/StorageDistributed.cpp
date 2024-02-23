@@ -1097,7 +1097,7 @@ static ActionsDAGPtr getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
     if (!source)
         return nullptr;
 
-    return ActionsDAG::buildFilterActionsDAG(source->getFilterNodes().nodes);
+    return source->getFilterActionsDAG();
 }
 
 
