@@ -15,7 +15,6 @@
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
 #include <Coordination/KeeperDispatcher.h>
@@ -2040,6 +2039,7 @@ void Context::applySettingsChangesWithLock(const SettingsChanges & changes, cons
     for (const SettingChange & change : changes)
         applySettingChangeWithLock(change, lock);
     applySettingsQuirks(settings);
+    doSettingsSanityCheck(settings);
 }
 
 void Context::setSetting(std::string_view name, const String & value)
@@ -4327,6 +4327,7 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     setCurrentProfile(shared->system_profile_name);
 
     applySettingsQuirks(settings, getLogger("SettingsQuirks"));
+    doSettingsSanityCheck(settings);
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
     buffer_context = Context::createCopy(shared_from_this());
