@@ -1889,6 +1889,8 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+memtable
+memtables
 mergeable
 mergetree
 messageID
