@@ -529,7 +529,7 @@ void ZooKeeperMetadataTransaction::commit()
     if (state != CREATED)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect state ({}), it's a bug", state);
     state = FAILED;
-    current_zookeeper->multi(ops);
+    current_zookeeper->multi(ops, /* check_session_valid */ true);
     state = COMMITTED;
 }
 

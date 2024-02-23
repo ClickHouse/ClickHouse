@@ -682,7 +682,7 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
                 ops.emplace_back(zkutil::makeSetRequest(
                     fs::path(replica_path) / "min_unprocessed_insert_time", toString(*min_unprocessed_insert_time_changed), -1));
 
-            auto responses = zookeeper->multi(ops);
+            auto responses = zookeeper->multi(ops, /* check_session_valid */ true);
 
             /// Now we have successfully updated the queue in ZooKeeper. Update it in RAM.
 
