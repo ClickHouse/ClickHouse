@@ -8,7 +8,7 @@ namespace DB
 REGISTER_FUNCTION(HilbertEncode)
 {
     factory.registerFunction<FunctionHilbertEncode>(FunctionDocumentation{
-    .description=R"(
+        .description=R"(
 Calculates code for Hilbert Curve for a list of unsigned integers
 
 The function has two modes of operation:
@@ -44,15 +44,15 @@ Please note that you can fit only so much bits of information into Morton code a
 Two arguments will have a range of maximum 2^32 (64/2) each
 All overflow will be clamped to zero
 )",
-    .examples{
-        {"simple", "SELECT hilbertEncode(1, 2, 3)", ""},
-        {"range_expanded", "SELECT hilbertEncode((1,6), 1024, 16)", ""},
-        {"identity", "SELECT hilbertEncode(1)", ""},
-        {"identity_expanded", "SELECT hilbertEncode(tuple(2), 128)", ""},
-        {"from_table", "SELECT hilbertEncode(n1, n2) FROM table", ""},
-        {"from_table_range", "SELECT hilbertEncode((1,2), n1, n2) FROM table", ""},
-    },
-    .categories {"Hilbert coding", "Hilbert Curve"}
+        .examples{
+            {"simple", "SELECT hilbertEncode(1, 2, 3)", ""},
+            {"range_expanded", "SELECT hilbertEncode((1,6), 1024, 16)", ""},
+            {"identity", "SELECT hilbertEncode(1)", ""},
+            {"identity_expanded", "SELECT hilbertEncode(tuple(2), 128)", ""},
+            {"from_table", "SELECT hilbertEncode(n1, n2) FROM table", ""},
+            {"from_table_range", "SELECT hilbertEncode((1,2), n1, n2) FROM table", ""},
+        },
+        .categories {"Hilbert coding", "Hilbert Curve"}
     });
 }
 
