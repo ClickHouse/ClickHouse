@@ -1316,7 +1316,7 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
     ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
     ops.emplace_back(zkutil::makeRemoveRequest(fs::path(zookeeper_path) / "dropped", -1));
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path, -1));
-    code = zookeeper->tryMulti(ops, responses);
+    code = zookeeper->tryMulti(ops, responses, /* check_session_valid */ true);
 
     if (code == Coordination::Error::ZNONODE)
     {
@@ -1863,7 +1863,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
             Coordination::SimpleFaultInjection fault(getSettings()->fault_probability_before_part_commit,
                                                      getSettings()->fault_probability_after_part_commit, "part commit");
             ThreadFuzzer::maybeInjectSleep();
-            e = zookeeper->tryMulti(ops, responses);
+            e = zookeeper->tryMulti(ops, responses, /* check_session_valid */ true);
         }
         if (e == Coordination::Error::ZOK)
         {
@@ -2920,7 +2920,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         /// Check that log pointer of source replica didn't changed while we read queue entries
         ops.push_back(zkutil::makeCheckRequest(fs::path(source_path) / "log_pointer", log_pointer_stat.version));
 
-        auto rc = zookeeper->tryMulti(ops, responses);
+        auto rc = zookeeper->tryMulti(ops, responses, /* check_session_valid */ true);
 
         if (rc == Coordination::Error::ZOK)
         {
@@ -3275,7 +3275,7 @@ void StorageReplicatedMergeTree::cloneMetadataIfNeeded(const String & source_rep
         ops.emplace_back(zkutil::makeCheckRequest(source_path + "/metadata", metadata_stat.version));
         ops.emplace_back(zkutil::makeCheckRequest(source_path + "/columns", columns_stat.version));
 
-        Coordination::Error code = zookeeper->tryMulti(ops, responses);
+        Coordination::Error code = zookeeper->tryMulti(ops, responses, /* check_session_valid */ true);
         if (code == Coordination::Error::ZOK)
             break;
         else if (code == Coordination::Error::ZBADVERSION)
@@ -4150,7 +4150,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             zkutil::CreateMode::PersistentSequential));
 
         Coordination::Responses results;
-        auto rc = zookeeper->tryMulti(ops, results);
+        auto rc = zookeeper->tryMulti(ops, results, /* check_session_valid */ true);
 
         if (rc == Coordination::Error::ZBADVERSION)
         {
@@ -5861,7 +5861,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     }
     else
     {
-        zookeeper->multi(requests);
+        zookeeper->multi(requests, /* check_session_valid */ true);
     }
 
     {
@@ -10027,7 +10027,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
             ThreadFuzzer::maybeInjectSleep();
 
             Coordination::Responses responses;
-            auto code = zookeeper->tryMulti(ops, responses);
+            auto code = zookeeper->tryMulti(ops, responses, /* check_session_valid */ true);
             if (code == Coordination::Error::ZOK)
             {
                 transaction.commit();
