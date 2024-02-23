@@ -892,12 +892,14 @@ def test_kafka_formats(kafka_cluster):
 """
 
     expected_rows_count = raw_expected.count("\n")
-    instance.query_with_retry(
+    result_checker = lambda res: res.count("\n") == expected_rows_count
+    res = instance.query_with_retry(
         f"SELECT * FROM test.kafka_{list(all_formats.keys())[-1]}_mv;",
         retry_count=30,
         sleep_time=1,
-        check_callback=lambda res: res.count("\n") == expected_rows_count,
+        check_callback=result_checker,
     )
+    assert result_checker(res)
 
     for format_name, format_opts in list(all_formats.items()):
         logging.debug(("Checking {}".format(format_name)))
@@ -3808,12 +3810,14 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
 """
 
     expected_rows_count = raw_expected.count("\n")
-    instance.query_with_retry(
+    result_checker = lambda res: res.count("\n") == expected_rows_count
+    res = instance.query_with_retry(
         f"SELECT * FROM test.kafka_data_{list(all_formats.keys())[-1]}_mv;",
         retry_count=30,
         sleep_time=1,
-        check_callback=lambda res: res.count("\n") == expected_rows_count,
+        check_callback=result_checker,
     )
+    assert result_checker(res)
 
     for format_name, format_opts in list(all_formats.items()):
         logging.debug(f"Checking {format_name}")
@@ -4446,7 +4450,7 @@ def test_block_based_formats_1(kafka_cluster):
                      kafka_group_name = '{topic}',
                      kafka_format = 'PrettySpace';
 
-        INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0;
+        INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0, output_format_pretty_color=1;
     """
     )
 
@@ -4832,6 +4836,186 @@ JSONExtractString(rdkafka_stat, 'type'): consumer
     instance.query("DROP TABLE test.persistent_kafka_mv2")
 
     kafka_delete_topic(admin_client, topic)
+
+
+def test_formats_errors(kafka_cluster):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    for format_name in [
+        "Template",
+        "Regexp",
+        "TSV",
+        "TSVWithNamesAndTypes",
+        "TSKV",
+        "CSV",
+        "CSVWithNames",
+        "CSVWithNamesAndTypes",
+        "CustomSeparated",
+        "CustomSeparatedWithNames",
+        "CustomSeparatedWithNamesAndTypes",
+        "Values",
+        "JSON",
+        "JSONEachRow",
+        "JSONStringsEachRow",
+        "JSONCompactEachRow",
+        "JSONCompactEachRowWithNamesAndTypes",
+        "JSONObjectEachRow",
+        "Avro",
+        "RowBinary",
+        "RowBinaryWithNamesAndTypes",
+        "MsgPack",
+        "JSONColumns",
+        "JSONCompactColumns",
+        "JSONColumnsWithMetadata",
+        "BSONEachRow",
+        "Native",
+        "Arrow",
+        "Parquet",
+        "ORC",
+        "JSONCompactColumns",
+        "Npy",
+        "ParquetMetadata",
+        "CapnProto",
+        "Protobuf",
+        "ProtobufSingle",
+        "ProtobufList",
+        "DWARF",
+        "HiveText",
+        "MySQLDump",
+    ]:
+        kafka_create_topic(admin_client, format_name)
+        table_name = f"kafka_{format_name}"
+
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.{table_name};
+
+            CREATE TABLE test.{table_name} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{format_name}',
+                         kafka_group_name = '{format_name}',
+                         kafka_format = '{format_name}',
+                         kafka_max_rows_per_message = 5,
+                         format_template_row='template_row.format',
+                         format_regexp='id: (.+?)',
+                         input_format_with_names_use_header=0,
+                         format_schema='key_value_message:Message';
+
+            CREATE MATERIALIZED VIEW test.view Engine=Log AS
+                SELECT key, value FROM test.{table_name};
+        """
+        )
+
+        kafka_produce(
+            kafka_cluster,
+            format_name,
+            ["Broken message\nBroken message\nBroken message\n"],
+        )
+
+        attempt = 0
+        num_errors = 0
+        while attempt < 200:
+            num_errors = int(
+                instance.query(
+                    f"SELECT length(exceptions.text) from system.kafka_consumers where database = 'test' and table = '{table_name}'"
+                )
+            )
+            if num_errors > 0:
+                break
+            attempt += 1
+
+        assert num_errors > 0
+
+        kafka_delete_topic(admin_client, format_name)
+        instance.query(f"DROP TABLE test.{table_name}")
+        instance.query("DROP TABLE test.view")
+
+
+def test_multiple_read_in_materialized_views(kafka_cluster, max_retries=15):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    topic = "multiple_read_from_mv"
+    kafka_create_topic(admin_client, topic)
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.kafka_multiple_read_input;
+        DROP TABLE IF EXISTS test.kafka_multiple_read_table;
+        DROP TABLE IF EXISTS test.kafka_multiple_read_mv;
+
+        CREATE TABLE test.kafka_multiple_read_input (id Int64)
+        ENGINE = Kafka
+        SETTINGS
+            kafka_broker_list = 'kafka1:19092',
+            kafka_topic_list = '{topic}',
+            kafka_group_name = '{topic}',
+            kafka_format = 'JSONEachRow';
+
+        CREATE TABLE test.kafka_multiple_read_table (id Int64)
+        ENGINE = MergeTree
+        ORDER BY id;
+
+
+        CREATE MATERIALIZED VIEW IF NOT EXISTS test.kafka_multiple_read_mv TO test.kafka_multiple_read_table AS
+        SELECT id
+        FROM test.kafka_multiple_read_input
+        WHERE id NOT IN (
+            SELECT id
+            FROM test.kafka_multiple_read_table
+            WHERE id IN (
+                SELECT id
+                FROM test.kafka_multiple_read_input
+            )
+        );
+        """
+    )
+
+    kafka_produce(
+        kafka_cluster, topic, [json.dumps({"id": 42}), json.dumps({"id": 43})]
+    )
+
+    expected_result = "42\n43\n"
+    res = instance.query_with_retry(
+        f"SELECT id FROM test.kafka_multiple_read_table ORDER BY id",
+        retry_count=30,
+        sleep_time=0.5,
+        check_callback=lambda res: res == expected_result,
+    )
+    assert res == expected_result
+
+    # Verify that the query deduplicates the records as it meant to be
+    messages = []
+    for i in range(0, 10):
+        messages.append(json.dumps({"id": 42}))
+        messages.append(json.dumps({"id": 43}))
+
+    messages.append(json.dumps({"id": 44}))
+
+    kafka_produce(kafka_cluster, topic, messages)
+
+    expected_result = "42\n43\n44\n"
+    res = instance.query_with_retry(
+        f"SELECT id FROM test.kafka_multiple_read_table ORDER BY id",
+        retry_count=30,
+        sleep_time=0.5,
+        check_callback=lambda res: res == expected_result,
+    )
+    assert res == expected_result
+
+    kafka_delete_topic(admin_client, topic)
+    instance.query(
+        f"""
+        DROP TABLE test.kafka_multiple_read_input;
+        DROP TABLE test.kafka_multiple_read_table;
+        DROP TABLE test.kafka_multiple_read_mv;
+        """
+    )
 
 
 if __name__ == "__main__":

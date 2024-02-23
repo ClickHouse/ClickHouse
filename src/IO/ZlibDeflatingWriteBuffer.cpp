@@ -10,36 +10,6 @@ namespace ErrorCodes
     extern const int ZLIB_DEFLATE_FAILED;
 }
 
-
-ZlibDeflatingWriteBuffer::ZlibDeflatingWriteBuffer(
-        std::unique_ptr<WriteBuffer> out_,
-        CompressionMethod compression_method,
-        int compression_level,
-        size_t buf_size,
-        char * existing_memory,
-        size_t alignment)
-    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
-{
-    zstr.zalloc = nullptr;
-    zstr.zfree = nullptr;
-    zstr.opaque = nullptr;
-    zstr.next_in = nullptr;
-    zstr.avail_in = 0;
-    zstr.next_out = nullptr;
-    zstr.avail_out = 0;
-
-    int window_bits = 15;
-    if (compression_method == CompressionMethod::Gzip)
-    {
-        window_bits += 16;
-    }
-
-    int rc = deflateInit2(&zstr, compression_level, Z_DEFLATED, window_bits, 8, Z_DEFAULT_STRATEGY);
-
-    if (rc != Z_OK)
-        throw Exception(ErrorCodes::ZLIB_DEFLATE_FAILED, "deflateInit2 failed: {}; zlib version: {}", zError(rc), ZLIB_VERSION);
-}
-
 void ZlibDeflatingWriteBuffer::nextImpl()
 {
     if (!offset())
@@ -72,11 +42,19 @@ void ZlibDeflatingWriteBuffer::nextImpl()
     }
 }
 
-ZlibDeflatingWriteBuffer::~ZlibDeflatingWriteBuffer() = default;
+ZlibDeflatingWriteBuffer::~ZlibDeflatingWriteBuffer()
+{
+    /// It is OK to call deflateEnd() twice (one from the finalizeAfter() that does the proper error checking)
+    deflateEnd(&zstr);
+}
 
 void ZlibDeflatingWriteBuffer::finalizeBefore()
 {
     next();
+
+    /// Don't write out if no data was ever compressed
+    if (!compress_empty && zstr.total_out == 0)
+        return;
 
     /// https://github.com/zlib-ng/zlib-ng/issues/494
     do

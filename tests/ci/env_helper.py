@@ -9,22 +9,23 @@ from build_download_helper import get_gh_api
 
 module_dir = p.abspath(p.dirname(__file__))
 git_root = p.abspath(p.join(module_dir, "..", ".."))
-
+ROOT_DIR = git_root
 CI = bool(os.getenv("CI"))
 TEMP_PATH = os.getenv("TEMP_PATH", p.abspath(p.join(module_dir, "./tmp")))
-
+REPORT_PATH = f"{TEMP_PATH}/reports"
+# FIXME: latest should not be used in CI, set temporary for transition to "docker with digest as a tag"
+DOCKER_TAG = os.getenv("DOCKER_TAG", "latest")
 CACHES_PATH = os.getenv("CACHES_PATH", TEMP_PATH)
 CLOUDFLARE_TOKEN = os.getenv("CLOUDFLARE_TOKEN")
 GITHUB_EVENT_PATH = os.getenv("GITHUB_EVENT_PATH", "")
-GITHUB_JOB = os.getenv("GITHUB_JOB", "local")
+GITHUB_JOB = os.getenv("GITHUB_JOB_OVERRIDDEN", "") or os.getenv("GITHUB_JOB", "local")
 GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse")
 GITHUB_RUN_ID = os.getenv("GITHUB_RUN_ID", "0")
 GITHUB_SERVER_URL = os.getenv("GITHUB_SERVER_URL", "https://github.com")
 GITHUB_WORKSPACE = os.getenv("GITHUB_WORKSPACE", git_root)
 GITHUB_RUN_URL = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}"
 IMAGES_PATH = os.getenv("IMAGES_PATH", TEMP_PATH)
-REPORTS_PATH = os.getenv("REPORTS_PATH", p.abspath(p.join(module_dir, "./reports")))
-REPO_COPY = os.getenv("REPO_COPY", git_root)
+REPO_COPY = os.getenv("REPO_COPY", GITHUB_WORKSPACE)
 RUNNER_TEMP = os.getenv("RUNNER_TEMP", p.abspath(p.join(module_dir, "./tmp")))
 S3_BUILDS_BUCKET = os.getenv("S3_BUILDS_BUCKET", "clickhouse-builds")
 S3_TEST_REPORTS_BUCKET = os.getenv("S3_TEST_REPORTS_BUCKET", "clickhouse-test-reports")
@@ -38,14 +39,16 @@ S3_ARTIFACT_DOWNLOAD_TEMPLATE = (
 # These parameters are set only on demand, and only once
 _GITHUB_JOB_ID = ""
 _GITHUB_JOB_URL = ""
+_GITHUB_JOB_API_URL = ""
 
 
 def GITHUB_JOB_ID() -> str:
     global _GITHUB_JOB_ID
     global _GITHUB_JOB_URL
+    global _GITHUB_JOB_API_URL
     if _GITHUB_JOB_ID:
         return _GITHUB_JOB_ID
-    _GITHUB_JOB_ID, _GITHUB_JOB_URL = get_job_id_url(GITHUB_JOB)
+    _GITHUB_JOB_ID, _GITHUB_JOB_URL, _GITHUB_JOB_API_URL = get_job_id_url(GITHUB_JOB)
     return _GITHUB_JOB_ID
 
 
@@ -54,13 +57,19 @@ def GITHUB_JOB_URL() -> str:
     return _GITHUB_JOB_URL
 
 
-def get_job_id_url(job_name: str) -> Tuple[str, str]:
+def GITHUB_JOB_API_URL() -> str:
+    GITHUB_JOB_ID()
+    return _GITHUB_JOB_API_URL
+
+
+def get_job_id_url(job_name: str) -> Tuple[str, str, str]:
     job_id = ""
     job_url = ""
+    job_api_url = ""
     if GITHUB_RUN_ID == "0":
         job_id = "0"
     if job_id:
-        return job_id, job_url
+        return job_id, job_url, job_api_url
     jobs = []
     page = 1
     while not job_id:
@@ -76,7 +85,8 @@ def get_job_id_url(job_name: str) -> Tuple[str, str]:
                 continue
             job_id = job["id"]
             job_url = job["html_url"]
-            return job_id, job_url
+            job_api_url = job["url"]
+            return job_id, job_url, job_api_url
         if (
             len(jobs) >= data["total_count"]  # just in case of inconsistency
             or len(data["jobs"]) == 0  # if we excided pages
@@ -100,7 +110,8 @@ def get_job_id_url(job_name: str) -> Tuple[str, str]:
             # The best case scenario
             job_id = matched_jobs[0]["id"]
             job_url = matched_jobs[0]["html_url"]
-            return job_id, job_url
+            job_api_url = matched_jobs[0]["url"]
+            return job_id, job_url, job_api_url
         if matched_jobs:
             logging.error(
                 "We could not get the ID and URL for the current job name %s, there "
@@ -109,4 +120,4 @@ def get_job_id_url(job_name: str) -> Tuple[str, str]:
                 job_name,
             )
 
-    return job_id, job_url
+    return job_id, job_url, job_api_url

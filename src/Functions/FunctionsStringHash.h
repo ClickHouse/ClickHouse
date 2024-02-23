@@ -64,7 +64,7 @@ public:
 
         if (arguments.size() > 1)
         {
-            if (!isUnsignedInteger(arguments[1].type))
+            if (!isUInt(arguments[1].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                                 "Second argument (shingle size) of function {} must be unsigned integer, got {}",
                                 getName(), arguments[1].type->getName());
@@ -85,7 +85,7 @@ public:
                                 "Function {} expect no more than two arguments (text, shingle size), got {}",
                                 getName(), arguments.size());
 
-            if (!isUnsignedInteger(arguments[2].type))
+            if (!isUInt(arguments[2].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                                 "Third argument (num hashes) of function {} must be unsigned integer, got {}",
                                 getName(), arguments[2].type->getName());

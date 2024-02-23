@@ -79,7 +79,7 @@ public:
     String getName() const override { return "Set"; }
 
     /// Access the insides.
-    SetPtr & getSet() { return set; }
+    SetPtr getSet() const;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
@@ -87,7 +87,9 @@ public:
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
 private:
-    SetPtr set;
+    /// Allows to concurrently truncate the set and work (read/fill) the existing set.
+    mutable std::mutex mutex;
+    SetPtr set TSA_GUARDED_BY(mutex);
 
     void insertBlock(const Block & block, ContextPtr) override;
     void finishInsert() override;

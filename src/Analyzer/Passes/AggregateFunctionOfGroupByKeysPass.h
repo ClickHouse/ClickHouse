@@ -20,7 +20,7 @@ public:
         return "Eliminates min/max/any/anyLast aggregators of GROUP BY keys in SELECT section.";
     }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 };
 

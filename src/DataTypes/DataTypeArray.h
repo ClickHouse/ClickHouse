@@ -35,10 +35,6 @@ public:
     {
         return "Array";
     }
-    String getSQLCompatibleName() const override
-    {
-        return "TEXT";
-    }
 
     bool canBeInsideNullable() const override
     {
@@ -47,6 +43,7 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
+    void forEachChild(const ChildCallback & callback) const override;
 
     Field getDefault() const override;
 

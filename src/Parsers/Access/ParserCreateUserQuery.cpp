@@ -15,6 +15,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserDatabaseOrNone.h>
+#include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -43,20 +44,6 @@ namespace
         });
     }
 
-    class ParserStringAndSubstitution : public IParserBase
-    {
-    private:
-        const char * getName() const override { return "ParserStringAndSubstitution"; }
-        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-        {
-            return ParserStringLiteral{}.parse(pos, node, expected) || ParserSubstitution{}.parse(pos, node, expected);
-        }
-
-    public:
-        explicit ParserStringAndSubstitution() = default;
-    };
-
-
     bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTAuthenticationData> & auth_data)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -80,6 +67,8 @@ namespace
             bool expect_kerberos_realm = false;
             bool expect_common_names = false;
             bool expect_public_ssh_key = false;
+            bool expect_http_auth_server = false;
+
 
             if (ParserKeyword{"WITH"}.ignore(pos, expected))
             {
@@ -97,6 +86,8 @@ namespace
                             expect_common_names = true;
                         else if (check_type == AuthenticationType::SSH_KEY)
                             expect_public_ssh_key = true;
+                        else if (check_type == AuthenticationType::HTTP)
+                            expect_http_auth_server = true;
                         else if (check_type != AuthenticationType::NO_PASSWORD)
                             expect_password = true;
 
@@ -134,6 +125,7 @@ namespace
             ASTPtr parsed_salt;
             ASTPtr common_names;
             ASTPtr public_ssh_keys;
+            ASTPtr http_auth_scheme;
 
             if (expect_password || expect_hash)
             {
@@ -178,6 +170,19 @@ namespace
                 if (!ParserList{std::make_unique<ParserPublicSSHKey>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, common_names, expected))
                     return false;
             }
+            else if (expect_http_auth_server)
+            {
+                if (!ParserKeyword{"SERVER"}.ignore(pos, expected))
+                    return false;
+                if (!ParserStringAndSubstitution{}.parse(pos, value, expected))
+                    return false;
+
+                if (ParserKeyword{"SCHEME"}.ignore(pos, expected))
+                {
+                    if (!ParserStringAndSubstitution{}.parse(pos, http_auth_scheme, expected))
+                        return false;
+                }
+            }
 
             auth_data = std::make_shared<ASTAuthenticationData>();
 
@@ -196,6 +201,9 @@ namespace
 
             if (public_ssh_keys)
                 auth_data->children = std::move(public_ssh_keys->children);
+
+            if (http_auth_scheme)
+                auth_data->children.push_back(std::move(http_auth_scheme));
 
             return true;
         });

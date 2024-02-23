@@ -7,7 +7,6 @@
 #include <Common/ConcurrencyControl.h>
 
 #include <queue>
-#include <mutex>
 #include <memory>
 
 
@@ -33,7 +32,7 @@ public:
     /// During pipeline execution new processors can appear. They will be added to existing set.
     ///
     /// Explicit graph representation is built in constructor. Throws if graph is not correct.
-    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, UInt64 partial_result_duration_ms_ = 0);
+    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem);
     ~PipelineExecutor();
 
     /// Execute pipeline in multiple threads. Must be called once.
@@ -68,8 +67,8 @@ private:
     ExecutorTasks tasks;
 
     /// Concurrency control related
-    ConcurrencyControl::AllocationPtr slots;
-    ConcurrencyControl::SlotPtr single_thread_slot; // slot for single-thread mode to work using executeStep()
+    SlotAllocationPtr cpu_slots;
+    AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeStep()
     std::unique_ptr<ThreadPool> pool;
     std::atomic_size_t threads = 0;
 
@@ -83,15 +82,12 @@ private:
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_reading = false;
 
-    Poco::Logger * log = &Poco::Logger::get("PipelineExecutor");
+    LoggerPtr log = getLogger("PipelineExecutor");
 
     /// Now it's used to check if query was killed.
     QueryStatusPtr process_list_element;
 
     ReadProgressCallbackPtr read_progress_callback;
-
-    /// Duration between sending partial result through the pipeline
-    const UInt64 partial_result_duration_ms;
 
     using Queue = std::queue<ExecutingGraph::Node *>;
 

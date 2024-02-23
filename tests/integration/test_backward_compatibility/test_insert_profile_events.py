@@ -11,7 +11,7 @@ upstream_node = cluster.add_instance("upstream_node", allow_analyzer=False)
 old_node = cluster.add_instance(
     "old_node",
     image="clickhouse/clickhouse-server",
-    tag="22.5.1.2079",
+    tag="22.6",
     with_installed_binary=True,
     allow_analyzer=False,
 )

@@ -4,6 +4,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
+#include <base/getPageSize.h>
 #include <base/errnoToString.h>
 #include <Interpreters/Context.h>
 
@@ -75,7 +76,7 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
     last_rusage = std::make_unique<RUsageCounters>();
 
     memory_tracker.setDescription("(for thread)");
-    log = &Poco::Logger::get("ThreadStatus");
+    log = getLogger("ThreadStatus");
 
     current_thread = this;
 

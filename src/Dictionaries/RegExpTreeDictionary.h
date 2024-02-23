@@ -40,6 +40,7 @@ public:
     {
         bool require_nonempty;
         DictionaryLifetime lifetime;
+        bool use_async_executor = false;
     };
 
     const std::string name = "RegExpTree";
@@ -57,14 +58,14 @@ public:
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+    size_t getQueryCount() const override { return query_count.load(); }
 
     double getFoundRate() const override
     {
-        const auto queries = query_count.load(std::memory_order_relaxed);
+        const auto queries = query_count.load();
         if (!queries)
             return 0;
-        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
     }
 
     double getHitRate() const override { return 1.0; }
@@ -207,7 +208,7 @@ private:
     MultiRegexps::DataBasePtr origin_db;
     #endif
 
-    Poco::Logger * logger;
+    LoggerPtr logger;
 };
 
 }

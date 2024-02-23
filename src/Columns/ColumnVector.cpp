@@ -1,24 +1,26 @@
 #include "ColumnVector.h"
 
-#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <base/bit_cast.h>
+#include <base/scope_guard.h>
+#include <base/sort.h>
+#include <base/unaligned.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/NaNUtils.h>
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
-#include <Common/WeakHash.h>
 #include <Common/TargetSpecific.h>
+#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <base/sort.h>
-#include <base/unaligned.h>
-#include <base/bit_cast.h>
-#include <base/scope_guard.h>
+#include <Common/iota.h>
 
 #include <bit>
 #include <cmath>
@@ -236,7 +238,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
                                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
     size_t data_size = data.size();
-    res.resize(data_size);
+    res.resize_exact(data_size);
 
     if (data_size == 0)
         return;
@@ -244,8 +246,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
     if (limit >= data_size)
         limit = 0;
 
-    for (size_t i = 0; i < data_size; ++i)
-        res[i] = i;
+    iota(res.data(), data_size, IColumn::Permutation::value_type(0));
 
     if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
     {
@@ -424,7 +425,7 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
     if (size > 0)
     {
         auto & new_col = static_cast<Self &>(*res);
-        new_col.data.resize(size);
+        new_col.data.resize_exact(size);
 
         size_t count = std::min(this->size(), size);
         memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
@@ -628,8 +629,8 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
         filt_pos += SIMD_ELEMENTS;
         data_pos += SIMD_ELEMENTS;
     }
-    /// resize to the real size.
-    res_data.resize(current_offset);
+    /// Resize to the real size.
+    res_data.resize_exact(current_offset);
 }
 )
 
@@ -940,7 +941,7 @@ ColumnPtr ColumnVector<T>::compress() const
 }
 
 template <typename T>
-ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const
+ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
 {
     if (offsets.size() + shift != size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -949,7 +950,7 @@ ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, c
     auto res = this->create();
     auto & res_data = res->getData();
 
-    T default_value = static_cast<T>(default_field.safeGet<T>());
+    T default_value = assert_cast<const ColumnVector<T> &>(column_with_default_value.getDataColumn()).getElement(0);
     res_data.resize_fill(total_rows, default_value);
     for (size_t i = 0; i < offsets.size(); ++i)
         res_data[offsets[i]] = data[i + shift];

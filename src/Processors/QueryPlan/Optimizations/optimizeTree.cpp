@@ -41,7 +41,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
     std::stack<Frame> stack;
     stack.push({.node = &root});
 
-    size_t max_optimizations_to_apply = settings.max_optimizations_to_apply;
+    const size_t max_optimizations_to_apply = settings.max_optimizations_to_apply;
     size_t total_applied_optimizations = 0;
 
     while (!stack.empty())
@@ -105,7 +105,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
 
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
-    size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
+    const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     size_t num_applied_projection = 0;
     bool has_reading_from_mt = false;
 
@@ -118,6 +118,34 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
         optimizePrewhere(stack, nodes);
         optimizePrimaryKeyCondition(stack);
 
+        auto & frame = stack.back();
+
+        if (frame.next_child == 0)
+        {
+
+            if (optimization_settings.read_in_order)
+                optimizeReadInOrder(*frame.node, nodes);
+
+            if (optimization_settings.distinct_in_order)
+                tryDistinctReadInOrder(frame.node);
+        }
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+
+        stack.pop_back();
+    }
+
+    stack.push_back({.node = &root});
+
+    while (!stack.empty())
+    {
         {
             /// NOTE: frame cannot be safely used after stack was modified.
             auto & frame = stack.back();
@@ -126,19 +154,14 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             {
                 has_reading_from_mt |= typeid_cast<const ReadFromMergeTree *>(frame.node->step.get()) != nullptr;
 
-                if (optimization_settings.read_in_order)
-                    optimizeReadInOrder(*frame.node, nodes);
-
                 /// Projection optimization relies on PK optimization
                 if (optimization_settings.optimize_projection)
                     num_applied_projection
                         += optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings.optimize_use_implicit_projections);
 
+
                 if (optimization_settings.aggregation_in_order)
                     optimizeAggregationInOrder(*frame.node, nodes);
-
-                if (optimization_settings.distinct_in_order)
-                    tryDistinctReadInOrder(frame.node);
             }
 
             /// Traverse all children first.

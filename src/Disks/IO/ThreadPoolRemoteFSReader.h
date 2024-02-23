@@ -3,7 +3,7 @@
 #include <IO/AsynchronousReader.h>
 #include <IO/SeekableReadBuffer.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 namespace DB
 {
@@ -21,6 +21,8 @@ public:
     void wait() override;
 
 private:
+    IAsynchronousReader::Result execute(Request request, bool seek_performed);
+
     std::unique_ptr<ThreadPool> pool;
 };
 

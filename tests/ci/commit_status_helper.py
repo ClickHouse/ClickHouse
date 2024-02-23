@@ -1,29 +1,32 @@
 #!/usr/bin/env python3
 
-from collections import defaultdict
-from pathlib import Path
-from typing import Dict, List, Optional, Union
 import csv
+import json
 import logging
 import time
+from collections import defaultdict
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Dict, List, Optional, Union
 
+# isort: off
 from github import Github
-from github.GithubObject import _NotSetType, NotSet as NotSet
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
+from github.GithubException import GithubException
+from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
-from github.PullRequest import PullRequest
 from github.Repository import Repository
 
-from ci_config import CI_CONFIG, REQUIRED_CHECKS, CHECK_DESCRIPTIONS, CheckDescription
-from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL
-from pr_info import PRInfo, SKIP_MERGEABLE_CHECK_LABEL
+from ci_config import REQUIRED_CHECKS, CHECK_DESCRIPTIONS, CheckDescription
+from env_helper import GITHUB_JOB_URL, GITHUB_REPOSITORY, TEMP_PATH
+from pr_info import SKIP_MERGEABLE_CHECK_LABEL, PRInfo
 from report import (
     ERROR,
     FAILURE,
     PENDING,
-    StatusType,
     SUCCESS,
+    StatusType,
     TestResult,
     TestResults,
     get_worst_status,
@@ -36,6 +39,7 @@ CommitStatuses = List[CommitStatus]
 MERGEABLE_NAME = "Mergeable Check"
 GH_REPO = None  # type: Optional[Repository]
 CI_STATUS_NAME = "CI running"
+STATUS_FILE_PATH = Path(TEMP_PATH) / "status.json"
 
 
 class RerunHelper:
@@ -61,19 +65,6 @@ class RerunHelper:
         return None
 
 
-def override_status(status: str, check_name: str, invert: bool = False) -> str:
-    test_config = CI_CONFIG.test_configs.get(check_name)
-    if test_config and test_config.force_tests:
-        return SUCCESS
-
-    if invert:
-        if status == SUCCESS:
-            return ERROR
-        return SUCCESS
-
-    return status
-
-
 def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:
     for i in range(retry_count):
         try:
@@ -90,11 +81,12 @@ def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:
 
 def post_commit_status(
     commit: Commit,
-    state: str,
-    report_url: Union[_NotSetType, str] = NotSet,
-    description: Union[_NotSetType, str] = NotSet,
-    check_name: Union[_NotSetType, str] = NotSet,
+    state: StatusType,
+    report_url: Optional[str] = None,
+    description: Optional[str] = None,
+    check_name: Optional[str] = None,
     pr_info: Optional[PRInfo] = None,
+    dump_to_file: bool = False,
 ) -> None:
     """The parameters are given in the same order as for commit.create_status,
     if an optional parameter `pr_info` is given, the `set_status_comment` functions
@@ -103,9 +95,9 @@ def post_commit_status(
         try:
             commit.create_status(
                 state=state,
-                target_url=report_url,
-                description=description,
-                context=check_name,
+                target_url=report_url if report_url is not None else NotSet,
+                description=description if description is not None else NotSet,
+                context=check_name if check_name is not None else NotSet,
             )
             break
         except Exception as ex:
@@ -128,6 +120,15 @@ def post_commit_status(
 
         if not status_updated:
             logging.error("Failed to update the status comment, continue anyway")
+    if dump_to_file:
+        assert pr_info
+        CommitStatusData(
+            status=state,
+            description=description or "",
+            report_url=report_url or "",
+            sha=pr_info.sha,
+            pr_num=pr_info.number,
+        ).dump_status()
 
 
 STATUS_ICON_MAP = defaultdict(
@@ -241,12 +242,12 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     for desc, gs in grouped_statuses.items():
         state = get_worst_state(gs)
         state_text = f"{STATUS_ICON_MAP[state]} {state}"
-        # take the first target_url
-        target_url = next(
-            (status.target_url for status in gs if status.target_url), None
-        )
-        if target_url:
-            state_text = f'<a href="{target_url}">{state_text}</a>'
+        # take the first target_url with the worst state
+        for status in gs:
+            if status.target_url and status.state == state:
+                state_text = f'<a href="{status.target_url}">{state_text}</a>'
+                break
+
         table_row = (
             f"<tr><td>{desc.name}</td><td>{desc.description}</td>"
             f"<td>{state_text}</td></tr>\n"
@@ -275,7 +276,7 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     return "".join(result)
 
 
-def get_worst_state(statuses: CommitStatuses) -> str:
+def get_worst_state(statuses: CommitStatuses) -> StatusType:
     return get_worst_status(status.state for status in statuses)
 
 
@@ -308,15 +309,67 @@ def post_commit_status_to_file(
         out.writerow([state, report_url, description])
 
 
+@dataclass
+class CommitStatusData:
+    """
+    if u about to add/remove fields in this class be causious that it dumps/loads to/from files (see it's method)
+    - you might want to add default values for new fields so that it won't break with old files
+    """
+
+    status: str
+    report_url: str
+    description: str
+    sha: str = "deadbeaf"
+    pr_num: int = -1
+
+    @classmethod
+    def _filter_dict(cls, data: dict) -> Dict:
+        return {k: v for k, v in data.items() if k in cls.__annotations__.keys()}
+
+    @classmethod
+    def load_from_file(cls, file_path: Union[Path, str]):  # type: ignore
+        res = {}
+        with open(file_path, "r") as json_file:
+            res = json.load(json_file)
+        return CommitStatusData(**cls._filter_dict(res))
+
+    @classmethod
+    def load_status(cls):  # type: ignore
+        return cls.load_from_file(STATUS_FILE_PATH)
+
+    @classmethod
+    def exist(cls) -> bool:
+        return STATUS_FILE_PATH.is_file()
+
+    def dump_status(self) -> None:
+        STATUS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        self.dump_to_file(STATUS_FILE_PATH)
+
+    def dump_to_file(self, file_path: Union[Path, str]) -> None:
+        file_path = Path(file_path) or STATUS_FILE_PATH
+        with open(file_path, "w") as json_file:
+            json.dump(asdict(self), json_file)
+
+    def is_ok(self):
+        return self.status == SUCCESS
+
+    def is_failure(self):
+        return self.status == FAILURE
+
+    @staticmethod
+    def cleanup():
+        STATUS_FILE_PATH.unlink(missing_ok=True)
+
+
 def get_commit_filtered_statuses(commit: Commit) -> CommitStatuses:
     """
     Squash statuses to latest state
-    1. context="first", state="success", update_time=1
-    2. context="second", state="success", update_time=2
-    3. context="first", stat="failure", update_time=3
+    1. context="first", state=SUCCESS, update_time=1
+    2. context="second", state=SUCCESS, update_time=2
+    3. context="first", stat=FAILURE, update_time=3
     =========>
-    1. context="second", state="success"
-    2. context="first", stat="failure"
+    1. context="second", state=SUCCESS
+    2. context="first", stat=FAILURE
     """
     filtered = {}
     for status in sorted(commit.get_statuses(), key=lambda x: x.updated_at):
@@ -336,7 +389,18 @@ def remove_labels(gh: Github, pr_info: PRInfo, labels_names: List[str]) -> None:
     repo = get_repo(gh)
     pull_request = repo.get_pull(pr_info.number)
     for label in labels_names:
-        pull_request.remove_from_labels(label)
+        try:
+            pull_request.remove_from_labels(label)
+        except GithubException as exc:
+            if not (
+                exc.status == 404
+                and isinstance(exc.data, dict)
+                and exc.data.get("message", "") == "Label does not exist"
+            ):
+                raise
+            logging.warning(
+                "The label '%s' does not exist in PR #%s", pr_info.number, label
+            )
         pr_info.labels.remove(label)
 
 
@@ -357,17 +421,17 @@ def format_description(description: str) -> str:
 def set_mergeable_check(
     commit: Commit,
     description: str = "",
-    state: StatusType = "success",
+    state: StatusType = SUCCESS,
 ) -> None:
     commit.create_status(
         context=MERGEABLE_NAME,
         description=description,
         state=state,
-        target_url=GITHUB_RUN_URL,
+        target_url=GITHUB_JOB_URL(),
     )
 
 
-def update_mergeable_check(gh: Github, pr_info: PRInfo, check_name: str) -> None:
+def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> None:
     not_run = (
         pr_info.labels.intersection({SKIP_MERGEABLE_CHECK_LABEL, "release"})
         or check_name not in REQUIRED_CHECKS
@@ -380,7 +444,6 @@ def update_mergeable_check(gh: Github, pr_info: PRInfo, check_name: str) -> None
 
     logging.info("Update Mergeable Check by %s", check_name)
 
-    commit = get_commit(gh, pr_info.sha)
     statuses = get_commit_filtered_statuses(commit)
 
     required_checks = [
@@ -401,14 +464,17 @@ def update_mergeable_check(gh: Github, pr_info: PRInfo, check_name: str) -> None
         else:
             fail.append(status.context)
 
+    state: StatusType = SUCCESS
+
+    if success:
+        description = ", ".join(success)
+    else:
+        description = "awaiting job statuses"
+
     if fail:
         description = "failed: " + ", ".join(fail)
-        description = format_description(description)
-        if mergeable_status is None or mergeable_status.description != description:
-            set_mergeable_check(commit, description, FAILURE)
-        return
-
-    description = ", ".join(success)
+        state = FAILURE
     description = format_description(description)
+
     if mergeable_status is None or mergeable_status.description != description:
-        set_mergeable_check(commit, description)
+        set_mergeable_check(commit, description, state)

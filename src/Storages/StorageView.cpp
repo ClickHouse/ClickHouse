@@ -101,19 +101,6 @@ ContextPtr getViewContext(ContextPtr context)
     return view_context;
 }
 
-ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)
-{
-    if (!select_query.tables() || select_query.tables()->children.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no table expression in view select AST");
-
-    auto * select_element = select_query.tables()->children[0]->as<ASTTablesInSelectQueryElement>();
-
-    if (!select_element->table_expression)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: incorrect table expression");
-
-    return select_element->table_expression->as<ASTTableExpression>();
-}
-
 }
 
 StorageView::StorageView(
@@ -125,7 +112,15 @@ StorageView::StorageView(
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+    if (!is_parameterized_view_)
+    {
+        /// If CREATE query is to create parameterized view, then we dont want to set columns
+        if (!query.isParameterizedView())
+            storage_metadata.setColumns(columns_);
+    }
+    else
+        storage_metadata.setColumns(columns_);
+
     storage_metadata.setComment(comment);
 
     if (!query.select)
@@ -159,21 +154,6 @@ void StorageView::read(
         if (!query_info.view_query->as<ASTSelectWithUnionQuery>())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected optimized VIEW query");
         current_inner_query = query_info.view_query->clone();
-    }
-
-    const auto & select_query = query_info.query->as<ASTSelectQuery &>();
-    if (auto sample_size = select_query.sampleSize(), sample_offset = select_query.sampleOffset(); sample_size || sample_offset)
-    {
-        for (auto & inner_select_query : current_inner_query->as<ASTSelectWithUnionQuery &>().list_of_selects->children)
-        {
-            if (auto * select = inner_select_query->as<ASTSelectQuery>(); select)
-            {
-                ASTTableExpression * table_expression = getFirstTableExpression(*select);
-
-                table_expression->sample_offset = sample_offset;
-                table_expression->sample_size = sample_size;
-            }
-        }
     }
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
@@ -224,6 +204,19 @@ void StorageView::read(
     query_plan.addStep(std::move(converting));
 }
 
+static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)
+{
+    if (!select_query.tables() || select_query.tables()->children.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no table expression in view select AST");
+
+    auto * select_element = select_query.tables()->children[0]->as<ASTTablesInSelectQueryElement>();
+
+    if (!select_element->table_expression)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: incorrect table expression");
+
+    return select_element->table_expression->as<ASTTableExpression>();
+}
+
 void StorageView::replaceQueryParametersIfParametrizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values)
 {
     ReplaceQueryParameterVisitor visitor(parameter_values);
@@ -258,8 +251,7 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
 
     view_name = table_expression->database_and_table_name;
     table_expression->database_and_table_name = {};
-    table_expression->subquery = std::make_shared<ASTSubquery>();
-    table_expression->subquery->children.push_back(view_query);
+    table_expression->subquery = std::make_shared<ASTSubquery>(view_query);
     table_expression->subquery->setAlias(alias);
 
     for (auto & child : table_expression->children)

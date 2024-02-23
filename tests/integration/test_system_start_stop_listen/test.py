@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
 
 
+import os
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.client import Client
+from helpers.client import Client, QueryRuntimeException
 import requests
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
 main_node = cluster.add_instance(
     "main_node",
-    main_configs=["configs/cluster.xml", "configs/protocols.xml"],
+    main_configs=[
+        "configs/cluster.xml",
+        "configs/protocols.xml",
+        "configs/server.crt",
+        "configs/server.key",
+    ],
     with_zookeeper=True,
 )
 backup_node = cluster.add_instance(
@@ -30,13 +38,25 @@ def started_cluster():
 
 def http_works(port=8123):
     try:
-        response = requests.post(f"http://{main_node.ip_address}:{port}/ping")
-        if response.status_code == 400:
-            return True
-    except:
-        pass
+        response = requests.get(f"http://{main_node.ip_address}:{port}/ping")
+        return response.status_code == 200
+    except requests.exceptions.ConnectionError:
+        return False
 
-    return False
+
+def tcp_secure_works(port=9440):
+    client = Client(
+        main_node.ip_address,
+        port,
+        command=cluster.client_bin_path,
+        secure=True,
+        config=f"{SCRIPT_DIR}/configs/client.xml",
+    )
+    try:
+        client.query(QUERY)
+    except QueryRuntimeException:
+        return False
+    return True
 
 
 def assert_everything_works():
@@ -44,6 +64,7 @@ def assert_everything_works():
     main_node.query(QUERY)
     main_node.query(MYSQL_QUERY)
     custom_client.query(QUERY)
+    assert tcp_secure_works()
     assert http_works()
     assert http_works(8124)
 
@@ -70,6 +91,12 @@ def test_default_protocols(started_cluster):
     main_node.query("SYSTEM STOP LISTEN MYSQL")
     assert "Connections to mysql failed" in main_node.query_and_get_error(MYSQL_QUERY)
     main_node.query("SYSTEM START LISTEN MYSQL")
+
+    # TCP Secure
+    assert_everything_works()
+    main_node.query("SYSTEM STOP LISTEN TCP SECURE")
+    assert not tcp_secure_works()
+    main_node.query("SYSTEM START LISTEN TCP SECURE")
 
     assert_everything_works()
 

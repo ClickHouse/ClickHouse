@@ -38,7 +38,7 @@ def cluster():
             stay_alive=True,
             with_installed_binary=True,
             image="clickhouse/clickhouse-server",
-            tag="22.8.14.53",
+            tag="22.6",
             allow_analyzer=False,
         )
 
@@ -142,6 +142,9 @@ def test_usage(cluster, node_name):
             )
         )
 
+        # to check right handling of paths in disk web
+        node2.query("SELECT count() FROM system.remote_data_paths")
+
         node2.query("DROP TABLE test{} SYNC".format(i))
         print(f"Ok {i}")
 
@@ -169,7 +172,7 @@ def test_incorrect_usage(cluster):
     assert "Table is read-only" in result
 
     result = node2.query_and_get_error("OPTIMIZE TABLE test0 FINAL")
-    assert "Only read-only operations are supported" in result
+    assert "Table is in readonly mode due to static storage" in result
 
     node2.query("DROP TABLE test0 SYNC")
 

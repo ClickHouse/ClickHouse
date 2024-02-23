@@ -25,14 +25,6 @@ void ExpressionTransform::transform(Chunk & chunk)
     chunk.setColumns(block.getColumns(), num_rows);
 }
 
-ProcessorPtr ExpressionTransform::getPartialResultProcessor(const ProcessorPtr & /*current_processor*/, UInt64 /*partial_result_limit*/, UInt64 /*partial_result_duration_ms*/)
-{
-    const auto & header = getInputPort().getHeader();
-    auto result = std::make_shared<ExpressionTransform>(header, expression);
-    result->setDescription("(Partial result)");
-    return result;
-}
-
 ConvertingTransform::ConvertingTransform(const Block & header_, ExpressionActionsPtr expression_)
     : ExceptionKeepingTransform(header_, ExpressionTransform::transformHeader(header_, expression_->getActionsDAG()))
     , expression(std::move(expression_))

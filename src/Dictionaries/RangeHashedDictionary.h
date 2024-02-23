@@ -29,7 +29,9 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
 
+#include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 
 
 namespace DB
@@ -56,6 +58,7 @@ struct RangeHashedDictionaryConfiguration
     bool convert_null_range_bound_to_open;
     RangeHashedDictionaryLookupStrategy lookup_strategy;
     bool require_nonempty;
+    bool use_async_executor = false;
 };
 
 template <DictionaryKeyType dictionary_key_type>
@@ -82,14 +85,14 @@ public:
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+    size_t getQueryCount() const override { return query_count.load(); }
 
     double getFoundRate() const override
     {
-        size_t queries = query_count.load(std::memory_order_relaxed);
+        size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
     }
 
     double getHitRate() const override { return 1.0; }
@@ -224,9 +227,7 @@ private:
     struct KeyAttribute final
     {
         RangeStorageTypeContainer<KeyAttributeContainerType> container;
-
         RangeStorageTypeContainer<InvalidIntervalsContainerType> invalid_intervals_container;
-
     };
 
     void createAttributes();
@@ -655,7 +656,7 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
     if (!source_ptr->hasUpdateField())
     {
         QueryPipeline pipeline(source_ptr->loadAll());
-        PullingPipelineExecutor executor(pipeline);
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
         Block block;
 
         while (executor.pull(block))
@@ -682,7 +683,7 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
 
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
-            "{}: dictionary source is empty and 'require_nonempty' property is set.");
+            "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -919,7 +920,7 @@ void RangeHashedDictionary<dictionary_key_type>::updateData()
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
-        PullingPipelineExecutor executor(pipeline);
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
         update_field_loaded_block.reset();
         Block block;
 

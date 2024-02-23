@@ -24,7 +24,7 @@ namespace ErrorCodes
 ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeCleanupThread)")
-    , log(&Poco::Logger::get(log_name))
+    , log(getLogger(log_name))
     , sleep_ms(storage.getSettings()->cleanup_delay_period * 1000)
 {
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ run(); });
@@ -153,7 +153,6 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
         auto lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
         /// Both use relative_data_path which changes during rename, so we
         /// do it under share lock
-        cleaned_other += storage.clearOldWriteAheadLogs();
         cleaned_part_like += storage.clearOldTemporaryDirectories(storage.getSettings()->temporary_directories_lifetime.totalSeconds());
     }
 

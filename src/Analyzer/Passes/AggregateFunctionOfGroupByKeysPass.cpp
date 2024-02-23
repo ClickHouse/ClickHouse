@@ -177,7 +177,7 @@ private:
 
 }
 
-void AggregateFunctionOfGroupByKeysPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void AggregateFunctionOfGroupByKeysPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     EliminateFunctionVisitor eliminator(context);
     eliminator.visit(query_tree_node);

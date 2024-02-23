@@ -1,0 +1,57 @@
+-- no modifiers
+A	2
+B	3
+C	\N
+D	1
+1	D
+2	A
+3	B
+\N	C
+A	2
+B	3
+C	\N
+D	1
+1	D
+2	A
+3	B
+\N	C
+-- with ASC/DESC modifiers
+A	2
+B	3
+C	\N
+D	1
+D	1
+C	\N
+B	3
+A	2
+A	2
+B	3
+C	\N
+D	1
+D	1
+C	\N
+B	3
+A	2
+-- with NULLS FIRST/LAST modifiers
+\N	C
+1	D
+2	A
+3	B
+1	D
+2	A
+3	B
+\N	C
+\N	C
+1	D
+2	A
+3	B
+1	D
+2	A
+3	B
+\N	C
+-- Special case: all columns in SELECT clause, ORDER BY *
+A	2
+B	3
+C	\N
+D	1
+-- "*" must appear stand-alone in ORDER BY

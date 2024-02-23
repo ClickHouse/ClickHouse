@@ -160,7 +160,7 @@ struct CustomizeAggregateFunctionsSuffixData
         const auto & instance = AggregateFunctionFactory::instance();
         if (instance.isAggregateFunctionName(func.name) && !endsWith(func.name, customized_func_suffix) && !endsWith(func.name, customized_func_suffix + "If"))
         {
-            auto properties = instance.tryGetProperties(func.name);
+            auto properties = instance.tryGetProperties(func.name, func.nulls_action);
             if (properties && !properties->returns_default_when_only_null)
             {
                 func.name += customized_func_suffix;
@@ -204,7 +204,7 @@ struct CustomizeAggregateFunctionsMoveSuffixData
         {
             if (endsWith(func.name, customized_func_suffix))
             {
-                auto properties = instance.tryGetProperties(func.name);
+                auto properties = instance.tryGetProperties(func.name, func.nulls_action);
                 if (properties && !properties->returns_default_when_only_null)
                 {
                     func.name = moveSuffixAhead(func.name);
@@ -261,8 +261,7 @@ struct ExistsExpressionData
         select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
         select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
 
-        auto new_subquery = std::make_shared<ASTSubquery>();
-        new_subquery->children.push_back(select_with_union_query);
+        auto new_subquery = std::make_shared<ASTSubquery>(std::move(select_with_union_query));
 
         auto function = makeASTFunction("in", std::make_shared<ASTLiteral>(1u), new_subquery);
         func = *function;
@@ -641,13 +640,13 @@ bool tryJoinOnConst(TableJoin & analyzed_join, const ASTPtr & on_expression, Con
         if (eval_const_res.value())
         {
             /// JOIN ON 1 == 1
-            LOG_DEBUG(&Poco::Logger::get("TreeRewriter"), "Join on constant executed as cross join");
+            LOG_DEBUG(getLogger("TreeRewriter"), "Join on constant executed as cross join");
             analyzed_join.resetToCross();
         }
         else
         {
             /// JOIN ON 1 != 1
-            LOG_DEBUG(&Poco::Logger::get("TreeRewriter"), "Join on constant executed as empty join");
+            LOG_DEBUG(getLogger("TreeRewriter"), "Join on constant executed as empty join");
             analyzed_join.resetKeys();
         }
         return true;
@@ -774,6 +773,27 @@ void expandGroupByAll(ASTSelectQuery * select_query)
         recursivelyCollectMaxOrdinaryExpressions(expr, *group_expression_list);
 
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_expression_list);
+}
+
+void expandOrderByAll(ASTSelectQuery * select_query)
+{
+    auto * all_elem = select_query->orderBy()->children[0]->as<ASTOrderByElement>();
+    if (!all_elem)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not order by asts.");
+
+    auto order_expression_list = std::make_shared<ASTExpressionList>();
+
+    for (const auto & expr : select_query->select()->children)
+    {
+        auto elem = std::make_shared<ASTOrderByElement>();
+        elem->direction = all_elem->direction;
+        elem->nulls_direction = all_elem->nulls_direction;
+        elem->nulls_direction_was_explicitly_specified = all_elem->nulls_direction_was_explicitly_specified;
+        elem->children.push_back(expr);
+        order_expression_list->children.push_back(elem);
+    }
+
+    select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_expression_list);
 }
 
 ASTs getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
@@ -963,13 +983,12 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
 /// Calculate which columns are required to execute the expression.
 /// Then, delete all other columns from the list of available columns.
 /// After execution, columns will only contain the list of columns needed to read from the table.
-bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select, bool visit_index_hint, bool no_throw)
+bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select, bool no_throw)
 {
     /// We calculate required_source_columns with source_columns modifications and swap them on exit
     required_source_columns = source_columns;
 
     RequiredSourceColumnsVisitor::Data columns_context;
-    columns_context.visit_index_hint = visit_index_hint;
     RequiredSourceColumnsVisitor(columns_context).visit(query);
 
     NameSet source_column_names;
@@ -992,7 +1011,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
             if (required.contains(name))
             {
-                /// Optimisation: do not add columns needed only in JOIN ON section.
+                /// Optimization: do not add columns needed only in JOIN ON section.
                 if (columns_context.nameInclusion(name) > analyzed_join->rightKeyInclusion(name))
                     analyzed_join->addJoinedColumn(joined_column);
 
@@ -1292,6 +1311,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (select_query->group_by_all)
         expandGroupByAll(select_query);
 
+    // expand ORDER BY *
+    if (select_query->order_by_all)
+        expandOrderByAll(select_query);
+
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
     /// Must be after 'normalizeTree' (after expanding aliases, for aliases not get lost)
@@ -1299,7 +1322,24 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
-    executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, result.local_scalars, select_options.only_analyze, select_options.is_create_parameterized_view);
+    Scalars scalars;
+    Scalars local_scalars;
+    executeScalarSubqueries(
+        query,
+        getContext(),
+        subquery_depth,
+        scalars,
+        local_scalars,
+        select_options.only_analyze,
+        select_options.is_create_parameterized_view);
+
+    /// Save scalar sub queries's results in the query context
+    /// Note that we are only saving scalars and not local_scalars since the latter can't be safely shared across contexts
+    if (!select_options.only_analyze && getContext()->hasQueryContext())
+    {
+        for (const auto & it : scalars)
+            getContext()->getQueryContext()->addScalar(it.first, it.second);
+    }
 
     if (settings.legacy_column_name_of_tuple_literal)
         markTupleLiteralsAsLegacy(query);
@@ -1332,7 +1372,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     result.window_function_asts = getWindowFunctions(query, *select_query);
     result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
 
-    result.collectUsedColumns(query, true, settings.query_plan_optimize_primary_key);
+    result.collectUsedColumns(query, true);
 
     if (!result.missed_subcolumns.empty())
     {
@@ -1369,7 +1409,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             result.aggregates = getAggregates(query, *select_query);
             result.window_function_asts = getWindowFunctions(query, *select_query);
             result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
-            result.collectUsedColumns(query, true, settings.query_plan_optimize_primary_key);
+            result.collectUsedColumns(query, true);
         }
     }
 
@@ -1415,7 +1455,17 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases, getContext(), is_create_parameterized_view);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
-    executeScalarSubqueries(query, getContext(), 0, result.scalars, result.local_scalars, !execute_scalar_subqueries, is_create_parameterized_view);
+    Scalars scalars;
+    Scalars local_scalars;
+    executeScalarSubqueries(query, getContext(), 0, scalars, local_scalars, !execute_scalar_subqueries, is_create_parameterized_view);
+
+    /// Save scalar sub queries's results in the query context
+    /// Note that we are only saving scalars and not local_scalars since the latter can't be safely shared across contexts
+    if (execute_scalar_subqueries && getContext()->hasQueryContext())
+    {
+        for (const auto & it : scalars)
+            getContext()->getQueryContext()->addScalar(it.first, it.second);
+    }
 
     if (settings.legacy_column_name_of_tuple_literal)
         markTupleLiteralsAsLegacy(query);
@@ -1436,7 +1486,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     else
         assertNoAggregates(query, "in wrong place");
 
-    bool is_ok = result.collectUsedColumns(query, false, settings.query_plan_optimize_primary_key, no_throw);
+    bool is_ok = result.collectUsedColumns(query, false, no_throw);
     if (!is_ok)
         return {};
 

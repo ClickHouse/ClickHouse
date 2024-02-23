@@ -139,7 +139,7 @@ struct RegExpTreeDictionary::RegexTreeNode
     std::unordered_map<String, AttributeValue> attributes;
 };
 
-std::vector<StringPiece> createStringPieces(const String & value, int num_captures, const String & regex, Poco::Logger * logger)
+std::vector<StringPiece> createStringPieces(const String & value, int num_captures, const String & regex, LoggerPtr logger)
 {
     std::vector<StringPiece> result;
     String literal;
@@ -310,7 +310,7 @@ void RegExpTreeDictionary::loadData()
     if (!source_ptr->hasUpdateField())
     {
         QueryPipeline pipeline(source_ptr->loadAll());
-        PullingPipelineExecutor executor(pipeline);
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
 
         Block block;
         while (executor.pull(block))
@@ -401,7 +401,7 @@ RegExpTreeDictionary::RegExpTreeDictionary(
       use_vectorscan(use_vectorscan_),
       flag_case_insensitive(flag_case_insensitive_),
       flag_dotall(flag_dotall_),
-      logger(&Poco::Logger::get("RegExpTreeDictionary"))
+      logger(getLogger("RegExpTreeDictionary"))
 {
     if (auto * ch_source = typeid_cast<ClickHouseDictionarySource *>(source_ptr.get()))
     {
@@ -867,12 +867,17 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
         String dictionary_layout_prefix = config_prefix + ".layout" + ".regexp_tree";
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
-        RegExpTreeDictionary::Configuration configuration{
-            .require_nonempty = config.getBool(config_prefix + ".require_nonempty", false), .lifetime = dict_lifetime};
-
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
 
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+        const auto * clickhouse_source = typeid_cast<const ClickHouseDictionarySource *>(source_ptr.get());
+        bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef().dictionary_use_async_executor;
+
+        RegExpTreeDictionary::Configuration configuration{
+            .require_nonempty = config.getBool(config_prefix + ".require_nonempty", false),
+            .lifetime = dict_lifetime,
+            .use_async_executor = use_async_executor,
+        };
 
         return std::make_unique<RegExpTreeDictionary>(
             dict_id,

@@ -11,7 +11,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageS3Settings.h>
 
-#include <Processors/ISource.h>
+#include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Poco/URI.h>
@@ -19,11 +19,12 @@
 #include <IO/CompressionMethod.h>
 #include <IO/SeekableReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageConfiguration.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 
 namespace Aws::S3
 {
@@ -36,29 +37,31 @@ namespace DB
 class PullingPipelineExecutor;
 class NamedCollection;
 
-class StorageS3Source : public ISource, WithContext
+class StorageS3Source : public SourceWithKeyCondition, WithContext
 {
 public:
 
     struct KeyWithInfo
     {
         KeyWithInfo() = default;
-        KeyWithInfo(String key_, std::optional<S3::ObjectInfo> info_)
-            : key(std::move(key_)), info(std::move(info_))
-        {
-        }
+
+        explicit KeyWithInfo(String key_, std::optional<S3::ObjectInfo> info_ = std::nullopt)
+            : key(std::move(key_)), info(std::move(info_)) {}
+
+        virtual ~KeyWithInfo() = default;
 
         String key;
         std::optional<S3::ObjectInfo> info;
     };
+    using KeyWithInfoPtr = std::shared_ptr<KeyWithInfo>;
 
-    using KeysWithInfo = std::vector<KeyWithInfo>;
+    using KeysWithInfo = std::vector<KeyWithInfoPtr>;
 
     class IIterator
     {
     public:
         virtual ~IIterator() = default;
-        virtual KeyWithInfo next() = 0;
+        virtual KeyWithInfoPtr next(size_t idx = 0) = 0; /// NOLINT
 
         /// Estimates how many streams we need to process all files.
         /// If keys count >= max_threads_count, the returned number may not represent the actual number of the keys.
@@ -66,7 +69,7 @@ public:
         /// fixme: May underestimate if the glob has a strong filter, so there are few matches among the first 1000 ListObjects results.
         virtual size_t estimatedKeysCount() = 0;
 
-        KeyWithInfo operator ()() { return next(); }
+        KeyWithInfoPtr operator ()() { return next(); }
     };
 
     class DisclosedGlobIterator : public IIterator
@@ -75,14 +78,14 @@ public:
         DisclosedGlobIterator(
             const S3::Client & client_,
             const S3::URI & globbed_uri_,
-            ASTPtr query,
+            const ActionsDAG::Node * predicate,
             const NamesAndTypesList & virtual_columns,
-            ContextPtr context,
+            const ContextPtr & context,
             KeysWithInfo * read_keys_ = nullptr,
             const S3Settings::RequestSettings & request_settings_ = {},
             std::function<void(FileProgress)> progress_callback_ = {});
 
-        KeyWithInfo next() override;
+        KeyWithInfoPtr next(size_t idx = 0) override; /// NOLINT
         size_t estimatedKeysCount() override;
 
     private:
@@ -100,13 +103,10 @@ public:
             const std::vector<String> & keys_,
             const String & bucket_,
             const S3Settings::RequestSettings & request_settings_,
-            ASTPtr query,
-            const NamesAndTypesList & virtual_columns,
-            ContextPtr context,
             KeysWithInfo * read_keys = nullptr,
             std::function<void(FileProgress)> progress_callback_ = {});
 
-        KeyWithInfo next() override;
+        KeyWithInfoPtr next(size_t idx = 0) override; /// NOLINT
         size_t estimatedKeysCount() override;
 
     private:
@@ -118,9 +118,9 @@ public:
     class ReadTaskIterator : public IIterator
     {
     public:
-        explicit ReadTaskIterator(const ReadTaskCallback & callback_, const size_t max_threads_count);
+        explicit ReadTaskIterator(const ReadTaskCallback & callback_, size_t max_threads_count);
 
-        KeyWithInfo next() override;
+        KeyWithInfoPtr next(size_t idx = 0) override; /// NOLINT
         size_t estimatedKeysCount() override;
 
     private:
@@ -134,7 +134,7 @@ public:
         const ReadFromFormatInfo & info,
         const String & format,
         String name_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         std::optional<FormatSettings> format_settings_,
         UInt64 max_block_size_,
         const S3Settings::RequestSettings & request_settings_,
@@ -145,12 +145,16 @@ public:
         const String & url_host_and_port,
         std::shared_ptr<IIterator> file_iterator_,
         size_t max_parsing_threads,
-        bool need_only_count_,
-        std::optional<SelectQueryInfo> query_info);
+        bool need_only_count_);
 
     ~StorageS3Source() override;
 
     String getName() const override;
+
+    void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override
+    {
+        setKeyConditionImpl(nodes, context_, sample_block);
+    }
 
     Chunk generate() override;
 
@@ -170,19 +174,18 @@ private:
     std::shared_ptr<const S3::Client> client;
     Block sample_block;
     std::optional<FormatSettings> format_settings;
-    std::optional<SelectQueryInfo> query_info;
 
     struct ReaderHolder
     {
     public:
         ReaderHolder(
-            KeyWithInfo key_with_info_,
+            KeyWithInfoPtr key_with_info_,
             String bucket_,
             std::unique_ptr<ReadBuffer> read_buf_,
             std::shared_ptr<ISource> source_,
             std::unique_ptr<QueryPipeline> pipeline_,
             std::unique_ptr<PullingPipelineExecutor> reader_)
-            : key_with_info(std::move(key_with_info_))
+            : key_with_info(key_with_info_)
             , bucket(std::move(bucket_))
             , read_buf(std::move(read_buf_))
             , source(std::move(source_))
@@ -216,14 +219,15 @@ private:
         explicit operator bool() const { return reader != nullptr; }
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
-        String getPath() const { return fs::path(bucket) / key_with_info.key; }
-        const String & getFile() const { return key_with_info.key; }
-        const KeyWithInfo & getKeyWithInfo() const { return key_with_info; }
+        String getPath() const { return fs::path(bucket) / key_with_info->key; }
+        const String & getFile() const { return key_with_info->key; }
+        const KeyWithInfo & getKeyWithInfo() const { return *key_with_info; }
+        std::optional<size_t> getFileSize() const { return key_with_info->info ? std::optional(key_with_info->info->size) : std::nullopt; }
 
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
 
     private:
-        KeyWithInfo key_with_info;
+        KeyWithInfoPtr key_with_info;
         String bucket;
         std::unique_ptr<ReadBuffer> read_buf;
         std::shared_ptr<ISource> source;
@@ -238,17 +242,22 @@ private:
     size_t max_parsing_threads = 1;
     bool need_only_count;
 
-    Poco::Logger * log = &Poco::Logger::get("StorageS3Source");
+    LoggerPtr log = getLogger("StorageS3Source");
 
     ThreadPool create_reader_pool;
     ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
+    std::atomic<bool> initialized{false};
 
     size_t total_rows_in_file = 0;
 
+    /// Notice: we should initialize reader and future_reader lazily in generate to make sure key_condition
+    /// is set before createReader is invoked for key_condition is read in createReader.
+    void lazyInitialize(size_t idx = 0);
+
     /// Recreate ReadBuffer and Pipeline for each file.
-    ReaderHolder createReader();
-    std::future<ReaderHolder> createReaderAsync();
+    ReaderHolder createReader(size_t idx = 0);
+    std::future<ReaderHolder> createReaderAsync(size_t idx = 0);
 
     std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key, size_t object_size);
     std::unique_ptr<ReadBuffer> createAsyncS3ReadBuffer(const String & key, const ReadSettings & read_settings, size_t object_size);
@@ -271,9 +280,9 @@ public:
 
         String getPath() const { return url.key; }
 
-        bool update(ContextPtr context);
+        bool update(const ContextPtr & context);
 
-        void connect(ContextPtr context);
+        void connect(const ContextPtr & context);
 
         bool withGlobs() const { return url.key.find_first_of("*?{") != std::string::npos; }
 
@@ -294,13 +303,12 @@ public:
         HTTPHeaderEntries headers_from_ast;
 
         std::shared_ptr<const S3::Client> client;
-        std::shared_ptr<const S3::Client> client_with_long_timeout;
         std::vector<String> keys;
     };
 
     StorageS3(
         const Configuration & configuration_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -314,7 +322,8 @@ public:
         return name;
     }
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -328,6 +337,7 @@ public:
     void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
 
     NamesAndTypesList getVirtuals() const override;
+    static Names getVirtualColumnNames();
 
     bool supportsPartitionBy() const override;
 
@@ -335,36 +345,26 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
-    static StorageS3::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
+    static StorageS3::Configuration getConfiguration(ASTs & engine_args, const ContextPtr & local_context, bool get_format_from_file = true);
 
     static ColumnsDescription getTableStructureFromData(
         const StorageS3::Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx);
+        const ContextPtr & ctx);
+
+    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromData(
+        const StorageS3::Configuration & configuration,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & ctx);
 
     using KeysWithInfo = StorageS3Source::KeysWithInfo;
-
-    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
-        const KeysWithInfo::const_iterator & begin,
-        const KeysWithInfo::const_iterator & end,
-        const Configuration & configuration,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & ctx);
-
-    static void addColumnsToCache(
-        const KeysWithInfo & keys,
-        const Configuration & configuration,
-        const ColumnsDescription & columns,
-        const String & format_name,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & ctx);
 
     bool supportsTrivialCountOptimization() const override { return true; }
 
 protected:
-    virtual Configuration updateConfigurationAndGetCopy(ContextPtr local_context);
+    virtual Configuration updateConfigurationAndGetCopy(const ContextPtr & local_context);
 
-    virtual void updateConfiguration(ContextPtr local_context);
+    virtual void updateConfiguration(const ContextPtr & local_context);
 
     void useConfiguration(const Configuration & new_configuration);
 
@@ -374,6 +374,7 @@ private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
     friend class StorageS3Queue;
+    friend class ReadFromStorageS3Step;
 
     Configuration configuration;
     std::mutex configuration_update_mutex;
@@ -384,19 +385,11 @@ private:
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
 
-    static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
-        const Configuration & configuration,
-        bool distributed_processing,
-        ContextPtr local_context,
-        ASTPtr query,
-        const NamesAndTypesList & virtual_columns,
-        KeysWithInfo * read_keys = nullptr,
-        std::function<void(FileProgress)> progress_callback = {});
-
-    static ColumnsDescription getTableStructureFromDataImpl(
+    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromDataImpl(
+        std::optional<String> format,
         const Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx);
+        const ContextPtr & ctx);
 
     bool supportsSubcolumns() const override { return true; }
 

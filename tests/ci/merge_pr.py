@@ -4,21 +4,23 @@
 
 import argparse
 import logging
-
 from datetime import datetime
 from os import getenv
 from pprint import pformat
 from typing import Dict, List
 
+# isort: off
 from github.PaginatedList import PaginatedList
 from github.PullRequestReview import PullRequestReview
 from github.WorkflowRun import WorkflowRun
+
+# isort: on
 
 from commit_status_helper import get_commit_filtered_statuses
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub, NamedUser, PullRequest, Repository
 from pr_info import PRInfo
-
+from report import SUCCESS
 
 # The team name for accepted approvals
 TEAM_NAME = getenv("GITHUB_TEAM_NAME", "core")
@@ -129,7 +131,7 @@ class Reviews:
         logging.info("The PR is changed at %s", last_changed.isoformat())
 
         approved_at = max(review.submitted_at for review in approved.values())
-        if approved_at == datetime.fromtimestamp(0):
+        if approved_at.timestamp() == 0:
             logging.info(
                 "Unable to get `datetime.fromtimestamp(0)`, "
                 "here's debug info about reviews: %s",
@@ -138,7 +140,7 @@ class Reviews:
         else:
             logging.info("The PR is approved at %s", approved_at.isoformat())
 
-        if approved_at < last_changed:
+        if approved_at.timestamp() < last_changed.timestamp():
             logging.info(
                 "There are changes done at %s after approval at %s",
                 last_changed.isoformat(),
@@ -230,8 +232,8 @@ def main():
     # An ugly and not nice fix to patch the wrong organization URL,
     # see https://github.com/PyGithub/PyGithub/issues/2395#issuecomment-1378629710
     # pylint: disable=protected-access
-    repo.organization._url.value = repo.organization.url.replace(  # type: ignore
-        "/users/", "/orgs/", 1
+    repo.organization._url = repo._makeStringAttribute(
+        repo.organization.url.replace("/users/", "/orgs/", 1)
     )
     # pylint: enable=protected-access
     pr = repo.get_pull(args.pr)
@@ -269,7 +271,7 @@ def main():
         failed_statuses = [
             status.context
             for status in get_commit_filtered_statuses(commit)
-            if status.state != "success"
+            if status.state != SUCCESS
         ]
         if failed_statuses:
             logging.warning(

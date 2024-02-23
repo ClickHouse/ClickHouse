@@ -23,4 +23,9 @@ void ASTQueryParameter::appendColumnNameImpl(WriteBuffer & ostr) const
     writeString(name, ostr);
 }
 
+void ASTQueryParameter::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
 }

@@ -5,6 +5,7 @@
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTRefreshStrategy.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -87,6 +88,12 @@ public:
             visit(child);
     }
 
+    void visit(ASTRefreshStrategy & refresh) const
+    {
+        ASTPtr unused;
+        visit(refresh, unused);
+    }
+
 private:
 
     ContextPtr context;
@@ -148,8 +155,6 @@ private:
     {
         if (table_expression.database_and_table_name)
             tryVisit<ASTTableIdentifier>(table_expression.database_and_table_name);
-        else if (table_expression.subquery)
-            tryVisit<ASTSubquery>(table_expression.subquery);
     }
 
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const
@@ -165,11 +170,6 @@ private:
         if (!identifier.alias.empty())
             qualified_identifier->setAlias(identifier.alias);
         ast = qualified_identifier;
-    }
-
-    void visit(ASTSubquery & subquery, ASTPtr &) const
-    {
-        tryVisit<ASTSelectWithUnionQuery>(subquery.children[0]);
     }
 
     void visit(ASTFunction & function, ASTPtr &) const
@@ -234,6 +234,13 @@ private:
                 visit(child);
             }
         }
+    }
+
+    void visit(ASTRefreshStrategy & refresh, ASTPtr &) const
+    {
+        if (refresh.dependencies)
+            for (auto & table : refresh.dependencies->children)
+                tryVisit<ASTTableIdentifier>(table);
     }
 
     void visitChildren(IAST & ast) const

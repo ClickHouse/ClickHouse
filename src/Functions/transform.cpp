@@ -91,19 +91,6 @@ namespace
 
             const auto type_arr_from_nested = type_arr_from->getNestedType();
 
-            auto src = tryGetLeastSupertype(DataTypes{type_x, type_arr_from_nested});
-            if (!src
-                /// Compatibility with previous versions, that allowed even UInt64 with Int64,
-                /// regardless of ambiguous conversions.
-                && !isNativeNumber(type_x) && !isNativeNumber(type_arr_from_nested))
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument and elements of array "
-                    "of the second argument of function {} must have compatible types",
-                    getName());
-            }
-
             const DataTypeArray * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].get());
 
             if (!type_arr_to)
@@ -154,7 +141,7 @@ namespace
         ColumnPtr executeImpl(
             const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
         {
-            initialize(arguments, result_type);
+            std::call_once(once, [&] { initialize(arguments, result_type); });
 
             const auto * in = arguments[0].column.get();
 
@@ -672,11 +659,9 @@ namespace
             ColumnPtr default_column;
 
             bool is_empty = false;
-            bool initialized = false;
-
-            std::mutex mutex;
         };
 
+        mutable std::once_flag once;
         mutable Cache cache;
 
 
@@ -706,10 +691,6 @@ namespace
         /// Can be called from different threads. It works only on the first call.
         void initialize(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
         {
-            std::lock_guard lock(cache.mutex);
-            if (cache.initialized)
-                return;
-
             const DataTypePtr & from_type = arguments[0].type;
 
             if (from_type->onlyNull())
@@ -772,15 +753,18 @@ namespace
                 }
             }
 
+            WhichDataType which(from_type);
+
             /// Note: Doesn't check the duplicates in the `from` array.
             /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
-            if (WhichDataType which(from_type); isNativeNumber(which) || which.isDecimal32() || which.isDecimal64())
+            if (isNativeNumber(which) || which.isDecimal32() || which.isDecimal64() || which.isEnum())
             {
                 cache.table_num_to_idx = std::make_unique<Cache::NumToIdx>();
                 auto & table = *cache.table_num_to_idx;
                 for (size_t i = 0; i < size; ++i)
                 {
-                    if (applyVisitor(FieldVisitorAccurateEquals(), (*cache.from_column)[i], (*from_column_uncasted)[i]))
+                    if (which.isEnum() /// The correctness of strings are already checked by casting them to the Enum type.
+                        || applyVisitor(FieldVisitorAccurateEquals(), (*cache.from_column)[i], (*from_column_uncasted)[i]))
                     {
                         UInt64 key = 0;
                         auto * dst = reinterpret_cast<char *>(&key);
@@ -824,8 +808,6 @@ namespace
                     }
                 }
             }
-
-            cache.initialized = true;
         }
     };
 

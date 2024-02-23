@@ -23,10 +23,12 @@ $CLICKHOUSE_CLIENT -nm -q "
     create materialized view test_distributed engine Distributed('test_cluster_two_shards', $CLICKHOUSE_DATABASE, 'test_shard', k) as select k, v from test_source;
 
     select * from test_distributed td asof join $CLICKHOUSE_DATABASE.test_local tl on td.k = tl.k and td.v < tl.v;
+    select td.v, td.k, td.v, tl.v, tl.k, td.v from test_distributed td asof join $CLICKHOUSE_DATABASE.test_local tl on td.k = tl.k and td.v < tl.v FORMAT TSVWithNamesAndTypes;
     select * from test_distributed td asof join $CLICKHOUSE_DATABASE.test_local tl on td.k = tl.k and td.v < tl.v order by td.v;
     select * from test_distributed td asof join $CLICKHOUSE_DATABASE.test_local tl on td.k = tl.k and td.v < tl.v order by tl.v;
     select sum(td.v) from test_distributed td asof join $CLICKHOUSE_DATABASE.test_local tl on td.k = tl.k and td.v < tl.v group by tl.k;
     select sum(tl.v) from test_distributed td asof join $CLICKHOUSE_DATABASE.test_local tl on td.k = tl.k and td.v < tl.v group by td.k;
+    select td.k, tl.* from test_distributed td join $CLICKHOUSE_DATABASE.test_local tl on td.k = tl.k;
 
     drop table test_distributed;
     drop table test_source;

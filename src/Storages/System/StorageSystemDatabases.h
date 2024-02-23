@@ -19,9 +19,7 @@ public:
         return "SystemDatabases";
     }
 
-    static NamesAndTypesList getNamesAndTypes();
-
-    static NamesAndAliases getNamesAndAliases();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

@@ -2,6 +2,7 @@
 #include "Commands.h"
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
+#include "Common/VersionNumber.h"
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/EventNotifier.h>
 #include <Common/filesystemHelpers.h>
@@ -206,6 +207,8 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         std::make_shared<SyncCommand>(),
         std::make_shared<HelpCommand>(),
         std::make_shared<FourLetterWordCommand>(),
+        std::make_shared<GetDirectChildrenNumberCommand>(),
+        std::make_shared<GetAllChildrenNumberCommand>(),
     });
 
     String home_path;
@@ -372,7 +375,7 @@ int KeeperClient::main(const std::vector<String> & /* args */)
 
     if (!config().has("host") && !config().has("port") && !keys.empty())
     {
-        LOG_INFO(&Poco::Logger::get("KeeperClient"), "Found keeper node in the config.xml, will use it for connection");
+        LOG_INFO(getLogger("KeeperClient"), "Found keeper node in the config.xml, will use it for connection");
 
         for (const auto & key : keys)
         {
@@ -397,7 +400,7 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
     zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
-    zookeeper = std::make_unique<zkutil::ZooKeeper>(zk_args);
+    zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(zk_args);
 
     if (config().has("no-confirmation") || config().has("query"))
         ask_confirmation = false;

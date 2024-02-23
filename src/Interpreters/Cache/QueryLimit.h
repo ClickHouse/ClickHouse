@@ -27,7 +27,6 @@ public:
     public:
         using Key = FileCacheKey;
         using Priority = IFileCachePriority;
-        using PriorityIterator = IFileCachePriority::Iterator;
 
         QueryContext(size_t query_cache_size, bool recache_on_query_limit_exceeded_);
 
@@ -36,7 +35,7 @@ public:
 
         bool recacheOnFileCacheQueryLimitExceeded() const { return recache_on_query_limit_exceeded; }
 
-        IFileCachePriority::Iterator tryGet(
+        Priority::IteratorPtr tryGet(
             const Key & key,
             size_t offset,
             const CacheGuard::Lock &);
@@ -45,6 +44,7 @@ public:
             KeyMetadataPtr key_metadata,
             size_t offset,
             size_t size,
+            const FileCacheUserInfo & user,
             const CacheGuard::Lock &);
 
         void remove(
@@ -53,11 +53,26 @@ public:
             const CacheGuard::Lock &);
 
     private:
-        using Records = std::unordered_map<FileCacheKeyAndOffset, IFileCachePriority::Iterator, FileCacheKeyAndOffsetHash>;
+        using Records = std::unordered_map<FileCacheKeyAndOffset, Priority::IteratorPtr, FileCacheKeyAndOffsetHash>;
         Records records;
         LRUFileCachePriority priority;
         const bool recache_on_query_limit_exceeded;
     };
+
+    struct QueryContextHolder : private boost::noncopyable
+    {
+        QueryContextHolder(const String & query_id_, FileCache * cache_, FileCacheQueryLimit * query_limit_, QueryContextPtr context_);
+
+        QueryContextHolder() = default;
+
+        ~QueryContextHolder();
+
+        String query_id;
+        FileCache * cache;
+        FileCacheQueryLimit * query_limit;
+        QueryContextPtr context;
+    };
+    using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
 
 private:
     using QueryContextMap = std::unordered_map<String, QueryContextPtr>;

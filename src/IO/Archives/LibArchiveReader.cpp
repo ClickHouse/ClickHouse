@@ -224,6 +224,8 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Seek is not supported when reading from archive");
     }
 
+    bool checkIfActuallySeekable() override { return false; }
+
     off_t getPosition() override
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getPosition not supported when reading from archive");
@@ -330,6 +332,15 @@ std::unique_ptr<LibArchiveReader::FileEnumerator> LibArchiveReader::nextFile(std
     auto handle = std::move(*read_buffer_from_libarchive).releaseHandle();
     if (!handle.nextFile())
         return nullptr;
+    return std::make_unique<FileEnumeratorImpl>(std::move(handle));
+}
+
+std::unique_ptr<LibArchiveReader::FileEnumerator> LibArchiveReader::currentFile(std::unique_ptr<ReadBuffer> read_buffer)
+{
+    if (!dynamic_cast<ReadBufferFromLibArchive *>(read_buffer.get()))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong ReadBuffer passed to nextFile()");
+    auto read_buffer_from_libarchive = std::unique_ptr<ReadBufferFromLibArchive>(static_cast<ReadBufferFromLibArchive *>(read_buffer.release()));
+    auto handle = std::move(*read_buffer_from_libarchive).releaseHandle();
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
 }
 

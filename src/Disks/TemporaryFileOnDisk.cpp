@@ -59,7 +59,7 @@ TemporaryFileOnDisk::~TemporaryFileOnDisk()
 
         if (!disk->exists(relative_path))
         {
-            LOG_WARNING(&Poco::Logger::get("TemporaryFileOnDisk"), "Temporary path '{}' does not exist in '{}'", relative_path, disk->getPath());
+            LOG_WARNING(getLogger("TemporaryFileOnDisk"), "Temporary path '{}' does not exist in '{}'", relative_path, disk->getPath());
             return;
         }
 

@@ -209,7 +209,7 @@ StorageLiveView::StorageLiveView(
     live_view_context = Context::createCopy(getContext());
     live_view_context->makeQueryContext();
 
-    log = &Poco::Logger::get("StorageLiveView (" + table_id_.database_name + "." + table_id_.table_name + ")");
+    log = getLogger("StorageLiveView (" + table_id_.database_name + "." + table_id_.table_name + ")");
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -253,7 +253,7 @@ StorageLiveView::StorageLiveView(
 
 StorageLiveView::~StorageLiveView()
 {
-    shutdown();
+    shutdown(false);
 }
 
 NamesAndTypesList StorageLiveView::getVirtuals() const
@@ -289,7 +289,7 @@ void StorageLiveView::startup()
         periodic_refresh_task->activate();
 }
 
-void StorageLiveView::shutdown()
+void StorageLiveView::shutdown(bool)
 {
     shutdown_called = true;
 
@@ -783,7 +783,7 @@ void registerStorageLiveView(StorageFactory & factory)
 {
     factory.registerStorage("LiveView", [](const StorageFactory::Arguments & args)
     {
-        if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_live_view)
+        if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef().allow_experimental_live_view)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')");
 

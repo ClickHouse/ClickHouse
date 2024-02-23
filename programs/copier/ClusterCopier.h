@@ -20,7 +20,7 @@ public:
                   const String & host_id_,
                   const String & proxy_database_name_,
                   ContextMutablePtr context_,
-                  Poco::Logger * log_)
+                  LoggerRawPtr log_)
             : WithMutableContext(context_),
             task_zookeeper_path(task_path_),
             host_id(host_id_),
@@ -230,7 +230,7 @@ private:
 
     bool experimental_use_sample_offset{false};
 
-    Poco::Logger * log;
+    LoggerRawPtr log;
 
     UInt64 max_table_tries = 3;
     UInt64 max_shard_partition_tries = 3;

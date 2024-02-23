@@ -142,7 +142,7 @@ inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
     skipWhitespaceIfAny(*in);
 
     if (in->eof())
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while parsing JSONEachRow format");
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while parsing JSONEachRow format");
     else if (*in->position() == '}')
     {
         ++in->position();
@@ -205,7 +205,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         return false;
     skipWhitespaceIfAny(*in);
 
-    bool is_first_row = getCurrentUnitNumber() == 0 && getTotalRows() == 1;
+    bool is_first_row = getRowNum() == 0;
     if (checkEndOfData(is_first_row))
         return false;
 
@@ -308,7 +308,7 @@ size_t JSONEachRowRowInputFormat::countRows(size_t max_block_size)
         return 0;
 
     size_t num_rows = 0;
-    bool is_first_row = getCurrentUnitNumber() == 0 && getTotalRows() == 0;
+    bool is_first_row = getRowNum() == 0;
     skipWhitespaceIfAny(*in);
     while (num_rows < max_block_size && !checkEndOfData(is_first_row))
     {
@@ -363,6 +363,11 @@ NamesAndTypesList JSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes(bool &
 void JSONEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
 {
     transformInferredJSONTypesIfNeeded(type, new_type, format_settings, &inference_info);
+}
+
+void JSONEachRowSchemaReader::transformTypesFromDifferentFilesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
+{
+    transformInferredJSONTypesFromDifferentFilesIfNeeded(type, new_type, format_settings);
 }
 
 void JSONEachRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)

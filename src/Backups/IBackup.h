@@ -43,7 +43,7 @@ public:
     /// Returns UUID of the backup.
     virtual UUID getUUID() const = 0;
 
-    /// Returns the base backup (can be null).
+    /// Returns the base backup or null if there is no base backup.
     virtual std::shared_ptr<const IBackup> getBaseBackup() const = 0;
 
     /// Returns the number of files stored in the backup. Compare with getNumEntries().
@@ -117,11 +117,14 @@ public:
     /// Puts a new entry to the backup.
     virtual void writeFile(const BackupFileInfo & file_info, BackupEntryPtr entry) = 0;
 
+    /// Whether it's possible to add new entries to the backup in multiple threads.
+    virtual bool supportsWritingInMultipleThreads() const = 0;
+
     /// Finalizes writing the backup, should be called after all entries have been successfully written.
     virtual void finalizeWriting() = 0;
 
-    /// Whether it's possible to add new entries to the backup in multiple threads.
-    virtual bool supportsWritingInMultipleThreads() const = 0;
+    /// Try to remove all files copied to the backup. Used after an exception or it the backup was cancelled.
+    virtual void tryRemoveAllFiles() = 0;
 };
 
 using BackupPtr = std::shared_ptr<const IBackup>;

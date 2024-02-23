@@ -109,7 +109,8 @@ enum class Error : int32_t
     ZAUTHFAILED = -115,                 /// Client authentication failed
     ZCLOSING = -116,                    /// ZooKeeper is closing
     ZNOTHING = -117,                    /// (not error) no server responses to process
-    ZSESSIONMOVED = -118                /// Session moved to another server, so operation is ignored
+    ZSESSIONMOVED = -118,               /// Session moved to another server, so operation is ignored
+    ZNOTREADONLY = -119,                /// State-changing request is passed to read-only server
 };
 
 /// Network errors and similar. You should reinitialize ZooKeeper session in case of these errors
@@ -445,6 +446,7 @@ enum State
     CONNECTING = 1,
     ASSOCIATING = 2,
     CONNECTED = 3,
+    READONLY = 5,
     NOTCONNECTED = 999
 };
 
@@ -469,7 +471,7 @@ private:
     /// Message must be a compile-time constant
     template <typename T>
     requires std::is_convertible_v<T, String>
-    Exception(T && message, const Error code_) : DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, std::forward<T>(message)), code(code_)
+    Exception(T && message, const Error code_) : DB::Exception(std::forward<T>(message), DB::ErrorCodes::KEEPER_EXCEPTION, /* remote_= */ false), code(code_)
     {
         incrementErrorMetrics(code);
     }
@@ -543,6 +545,15 @@ public:
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
     virtual bool isExpired() const = 0;
+
+    /// Get the current connected node idx.
+    virtual Int8 getConnectedNodeIdx() const = 0;
+
+    /// Get the current connected host and port.
+    virtual String getConnectedHostPort() const = 0;
+
+    /// Get the xid of current connection.
+    virtual int32_t getConnectionXid() const = 0;
 
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;

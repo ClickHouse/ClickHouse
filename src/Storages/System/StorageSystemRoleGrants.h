@@ -12,7 +12,7 @@ class StorageSystemRoleGrants final : public IStorageSystemOneBlock<StorageSyste
 {
 public:
     std::string getName() const override { return "SystemRoleGrants"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

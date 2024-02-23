@@ -32,7 +32,7 @@ public:
         std::vector<String> & queues_,
         size_t channel_id_base_,
         const String & channel_base_,
-        Poco::Logger * log_,
+        LoggerPtr log_,
         uint32_t queue_size_);
 
     struct CommitInfo
@@ -50,7 +50,9 @@ public:
         UInt64 delivery_tag = 0;
         String channel_id;
     };
+
     const MessageData & currentMessage() { return current; }
+    const String & getChannelID() const { return channel_id; }
 
     /// Return read buffer containing next available message
     /// or nullptr if there are no messages to process.
@@ -63,6 +65,7 @@ public:
     bool isConsumerStopped() const { return stopped.load(); }
 
     bool ackMessages(const CommitInfo & commit_info);
+    bool nackMessages(const CommitInfo & commit_info);
 
     bool hasPendingMessages() { return !received.empty(); }
 
@@ -88,7 +91,7 @@ private:
     const String channel_base;
     const size_t channel_id_base;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     std::atomic<bool> stopped;
 
     String channel_id;

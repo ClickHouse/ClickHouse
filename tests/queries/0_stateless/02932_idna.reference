@@ -1,0 +1,88 @@
+-- Negative tests
+-- Regular cases
+straße.de	xn--strae-oqa.de	xn--strae-oqa.de	straße.de	straße.de
+2001:4860:4860::8888	2001:4860:4860::8888	2001:4860:4860::8888	2001:4860:4860::8888	2001:4860:4860::8888
+AMAZON	amazon	amazon	amazon	amazon
+aa--	aa--	aa--	aa--	aa--
+a†--	xn--a---kp0a	xn--a---kp0a	a†--	a†--
+ab--c	ab--c	ab--c	ab--c	ab--c
+-†	xn----xhn	xn----xhn	-†	-†
+-x.xn--zca	-x.xn--zca	-x.xn--zca	-x.ß	-x.ß
+x-.xn--zca	x-.xn--zca	x-.xn--zca	x-.ß	x-.ß
+x-.ß	x-.xn--zca	x-.xn--zca	x-.ß	x-.ß
+x..ß	x..xn--zca	x..xn--zca	x..ß	x..ß
+128.0,0.1	128.0,0.1	128.0,0.1	128.0,0.1	128.0,0.1
+xn--zca.xn--zca	xn--zca.xn--zca	xn--zca.xn--zca	ß.ß	ß.ß
+xn--zca.ß	xn--zca.xn--zca	xn--zca.xn--zca	ß.ß	ß.ß
+x01234567890123456789012345678901234567890123456789012345678901x	x01234567890123456789012345678901234567890123456789012345678901x	x01234567890123456789012345678901234567890123456789012345678901x	x01234567890123456789012345678901234567890123456789012345678901x	x01234567890123456789012345678901234567890123456789012345678901x
+x01234567890123456789012345678901234567890123456789012345678901x.xn--zca	x01234567890123456789012345678901234567890123456789012345678901x.xn--zca	x01234567890123456789012345678901234567890123456789012345678901x.xn--zca	x01234567890123456789012345678901234567890123456789012345678901x.ß	x01234567890123456789012345678901234567890123456789012345678901x.ß
+x01234567890123456789012345678901234567890123456789012345678901x.ß	x01234567890123456789012345678901234567890123456789012345678901x.xn--zca	x01234567890123456789012345678901234567890123456789012345678901x.xn--zca	x01234567890123456789012345678901234567890123456789012345678901x.ß	x01234567890123456789012345678901234567890123456789012345678901x.ß
+01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.0123456789012345678901234567890123456789012345678.x	01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.0123456789012345678901234567890123456789012345678.x	01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.0123456789012345678901234567890123456789012345678.x	01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.0123456789012345678901234567890123456789012345678.x	01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.0123456789012345678901234567890123456789012345678.x
+≠	xn--1ch	xn--1ch	≠	≠
+aa--	aa--	aa--	aa--
+ab--c	ab--c	ab--c	ab--c
+-x	-x	-x	-x
+			
+xn--1ch	≠	xn--1ch	xn--1ch
+xn--dqd20apc	ᄎᆞᆷ	xn--dqd20apc	xn--dqd20apc
+xn--gdh	≮	xn--gdh	xn--gdh
+xn--80aaa0ahbbeh4c	йайзаакпий	xn--80aaa0ahbbeh4c	xn--80aaa0ahbbeh4c
+xn--3bs854c	团淄	xn--3bs854c	xn--3bs854c
+xn--mgb9awbf	عمان	xn--mgb9awbf	xn--mgb9awbf
+xn--mgbaam7a8h	امارات	xn--mgbaam7a8h	xn--mgbaam7a8h
+xn--mgbbh1a71e	بھارت	xn--mgbbh1a71e	xn--mgbbh1a71e
+xn--s7y.com	短.com	xn--s7y.com	xn--s7y.com
+xn--55qx5d.xn--tckwe	公司.コム	xn--55qx5d.xn--tckwe	xn--55qx5d.xn--tckwe
+xn--4dbrk0ce	ישראל	xn--4dbrk0ce	xn--4dbrk0ce
+xn--zckzah	テスト	xn--zckzah	xn--zckzah
+xn--p1ai.com	рф.com	xn--p1ai.com	xn--p1ai.com
+xn--mxahbxey0c.gr	εχαμπλε.gr	xn--mxahbxey0c.gr	xn--mxahbxey0c.gr
+xn--h2brj9c	भारत	xn--h2brj9c	xn--h2brj9c
+xn--d1acpjx3f.xn--p1ai	яндекс.рф	xn--d1acpjx3f.xn--p1ai	xn--d1acpjx3f.xn--p1ai
+xn--q9jyb4c	みんな	xn--q9jyb4c	xn--q9jyb4c
+xn--sterreich-z7a.at	österreich.at	xn--sterreich-z7a.at	xn--sterreich-z7a.at
+xn--h2breg3eve.xn--h2brj9c	भारतम्.भारत	xn--h2breg3eve.xn--h2brj9c	xn--h2breg3eve.xn--h2brj9c
+ejemplo.xn--q9jyb4c	ejemplo.みんな	ejemplo.xn--q9jyb4c	ejemplo.xn--q9jyb4c
+xn--9t4b11yi5a.com	테스트.com	xn--9t4b11yi5a.com	xn--9t4b11yi5a.com
+xn--gk3at1e.com	通販.com	xn--gk3at1e.com	xn--gk3at1e.com
+xn--42c2d9a	คอม	xn--42c2d9a	xn--42c2d9a
+1xn--	1xn--	1xn--	1xn--
+xn--bih.com	⌘.com	xn--bih.com	xn--bih.com
+xn--4gbrim.xn----rmckbbajlc6dj7bxne2c.xn--wgbh1c	موقع.وزارة-الأتصالات.مصر	xn--4gbrim.xn----rmckbbajlc6dj7bxne2c.xn--wgbh1c	xn--4gbrim.xn----rmckbbajlc6dj7bxne2c.xn--wgbh1c
+xn--mgbb9fbpob	موبايلي	xn--mgbb9fbpob	xn--mgbb9fbpob
+xn--55qw42g.xn--55qw42g	公益.公益	xn--55qw42g.xn--55qw42g	xn--55qw42g.xn--55qw42g
+≠	≠	xn--1ch	xn--1ch
+ファッション.biz	ファッション.biz	xn--bck1b9a5dre4c.biz	xn--bck1b9a5dre4c.biz
+-- Special cases
+---- Empty input
+
+
+
+---- NULL input
+\N
+\N
+\N
+---- Garbage inputs for idnaEncode
+
+
+
+
+---- Long input
+Row 1:
+──────
+idna:         Wenn Sie ... vom Hauptbahnhof in München ... mit zehn Minuten, ohne, dass Sie am Flughafen noch einchecken müssen, dann starten Sie im Grunde genommen am Flughafen ... am ... am Hauptbahnhof in München starten Sie Ihren Flug. Zehn Minuten. Schauen Sie sich mal die großen Flughäfen an, wenn Sie in Heathrow in London oder sonst wo, meine se ... Charles de Gaulle äh in Frankreich oder in ...äh... in ... in...äh...in Rom. Wenn Sie sich mal die Entfernungen ansehen, wenn Sie Frankfurt sich ansehen, dann werden Sie feststellen, dass zehn Minuten... Sie jederzeit locker in Frankfurt brauchen, um ihr Gate zu finden. Wenn Sie vom Flug ... vom ... vom Hauptbahnhof starten - Sie steigen in den Hauptbahnhof ein, Sie fahren mit dem Transrapid in zehn Minuten an den Flughafen in ... an den Flughafen Franz Josef Strauß. Dann starten Sie praktisch hier am Hauptbahnhof in München. Das bedeutet natürlich, dass der Hauptbahnhof im Grunde genommen näher an Bayern ... an die bayerischen Städte heranwächst, weil das ja klar ist, weil auf dem Hauptbahnhof viele Linien aus Bayern zusammenlaufen.
+ascii:        wenn sie ...xn-- vom hauptbahnhof in mnchen -n7c...xn-- mit zehn minuten, ohne, dass sie am flughafen noch einchecken mssen, dann starten sie im grunde genommen am flughafen -8gm... am ...xn-- am hauptbahnhof in mnchen starten sie ihren flug-0cf. zehn minuten.xn-- schauen sie sich mal die groen flughfen an, wenn sie in heathrow in london oder sonst wo, meine se -83h23c...xn-- charles de gaulle h in frankreich oder in -jvd...xn--h-zfa... in ... in...xn--h-zfa...in rom. wenn sie sich mal die entfernungen ansehen, wenn sie frankfurt sich ansehen, dann werden sie feststellen, dass zehn minuten... sie jederzeit locker in frankfurt brauchen, um ihr gate zu finden. wenn sie vom flug ... vom ... vom hauptbahnhof starten - sie steigen in den hauptbahnhof ein, sie fahren mit dem transrapid in zehn minuten an den flughafen in ...xn-- an den flughafen franz josef strau-z2c.xn-- dann starten sie praktisch hier am hauptbahnhof in mnchen-t9f.xn-- das bedeutet natrlich, dass der hauptbahnhof im grunde genommen nher an bayern -lxg23q...xn-- an die bayerischen stdte heranwchst, weil das ja klar ist, weil auf dem hauptbahnhof viele linien aus bayern zusammenlaufen-1hkk.
+ascii_try:    wenn sie ...xn-- vom hauptbahnhof in mnchen -n7c...xn-- mit zehn minuten, ohne, dass sie am flughafen noch einchecken mssen, dann starten sie im grunde genommen am flughafen -8gm... am ...xn-- am hauptbahnhof in mnchen starten sie ihren flug-0cf. zehn minuten.xn-- schauen sie sich mal die groen flughfen an, wenn sie in heathrow in london oder sonst wo, meine se -83h23c...xn-- charles de gaulle h in frankreich oder in -jvd...xn--h-zfa... in ... in...xn--h-zfa...in rom. wenn sie sich mal die entfernungen ansehen, wenn sie frankfurt sich ansehen, dann werden sie feststellen, dass zehn minuten... sie jederzeit locker in frankfurt brauchen, um ihr gate zu finden. wenn sie vom flug ... vom ... vom hauptbahnhof starten - sie steigen in den hauptbahnhof ein, sie fahren mit dem transrapid in zehn minuten an den flughafen in ...xn-- an den flughafen franz josef strau-z2c.xn-- dann starten sie praktisch hier am hauptbahnhof in mnchen-t9f.xn-- das bedeutet natrlich, dass der hauptbahnhof im grunde genommen nher an bayern -lxg23q...xn-- an die bayerischen stdte heranwchst, weil das ja klar ist, weil auf dem hauptbahnhof viele linien aus bayern zusammenlaufen-1hkk.
+original:     wenn sie ... vom hauptbahnhof in münchen ... mit zehn minuten, ohne, dass sie am flughafen noch einchecken müssen, dann starten sie im grunde genommen am flughafen ... am ... am hauptbahnhof in münchen starten sie ihren flug. zehn minuten. schauen sie sich mal die großen flughäfen an, wenn sie in heathrow in london oder sonst wo, meine se ... charles de gaulle äh in frankreich oder in ...äh... in ... in...äh...in rom. wenn sie sich mal die entfernungen ansehen, wenn sie frankfurt sich ansehen, dann werden sie feststellen, dass zehn minuten... sie jederzeit locker in frankfurt brauchen, um ihr gate zu finden. wenn sie vom flug ... vom ... vom hauptbahnhof starten - sie steigen in den hauptbahnhof ein, sie fahren mit dem transrapid in zehn minuten an den flughafen in ... an den flughafen franz josef strauß. dann starten sie praktisch hier am hauptbahnhof in münchen. das bedeutet natürlich, dass der hauptbahnhof im grunde genommen näher an bayern ... an die bayerischen städte heranwächst, weil das ja klar ist, weil auf dem hauptbahnhof viele linien aus bayern zusammenlaufen.
+original_try: wenn sie ... vom hauptbahnhof in münchen ... mit zehn minuten, ohne, dass sie am flughafen noch einchecken müssen, dann starten sie im grunde genommen am flughafen ... am ... am hauptbahnhof in münchen starten sie ihren flug. zehn minuten. schauen sie sich mal die großen flughäfen an, wenn sie in heathrow in london oder sonst wo, meine se ... charles de gaulle äh in frankreich oder in ...äh... in ... in...äh...in rom. wenn sie sich mal die entfernungen ansehen, wenn sie frankfurt sich ansehen, dann werden sie feststellen, dass zehn minuten... sie jederzeit locker in frankfurt brauchen, um ihr gate zu finden. wenn sie vom flug ... vom ... vom hauptbahnhof starten - sie steigen in den hauptbahnhof ein, sie fahren mit dem transrapid in zehn minuten an den flughafen in ... an den flughafen franz josef strauß. dann starten sie praktisch hier am hauptbahnhof in münchen. das bedeutet natürlich, dass der hauptbahnhof im grunde genommen näher an bayern ... an die bayerischen städte heranwächst, weil das ja klar ist, weil auf dem hauptbahnhof viele linien aus bayern zusammenlaufen.
+---- Non-const input
+				
+münchen	xn--mnchen-3ya	xn--mnchen-3ya	münchen	münchen
+straße.münchen.de	xn--strae-oqa.xn--mnchen-3ya.de	xn--strae-oqa.xn--mnchen-3ya.de	straße.münchen.de	straße.münchen.de
+---- Non-const input with invalid values sprinkled in
+london.co.uk	london.co.uk	london.co.uk
+microsoft.com	microsoft.com	microsoft.com
+xn--		
+xn--		
+xn--tešla		
+ytraße.münchen.de	xn--ytrae-oqa.xn--mnchen-3ya.de	ytraße.münchen.de

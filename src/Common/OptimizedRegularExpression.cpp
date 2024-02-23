@@ -418,7 +418,7 @@ finish:
         /// this two vals are useless, xxx|xxx cannot be trivial nor prefix.
         bool next_is_trivial = true;
         pos = analyzeImpl(regexp, pos, required_substring, next_is_trivial, next_alternatives);
-        /// For xxx|xxx|xxx, we only conbine the alternatives and return a empty required_substring.
+        /// For xxx|xxx|xxx, we only combine the alternatives and return a empty required_substring.
         if (next_alternatives.empty() || shortest_literal_length(next_alternatives) < required_substring.literal.size())
         {
             global_alternatives.push_back(required_substring);
@@ -463,7 +463,7 @@ catch (...)
     is_trivial = false;
     required_substring_is_prefix = false;
     alternatives.clear();
-    LOG_ERROR(&Poco::Logger::get("OptimizeRegularExpression"), "Analyze RegularExpression failed, got error: {}", DB::getCurrentExceptionMessage(false));
+    LOG_ERROR(getLogger("OptimizeRegularExpression"), "Analyze RegularExpression failed, got error: {}", DB::getCurrentExceptionMessage(false));
 }
 
 OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regexp_, int options)
@@ -484,7 +484,7 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
     if (!is_trivial)
     {
         /// Compile the re2 regular expression.
-        typename re2::RE2::Options regexp_options;
+        re2::RE2::Options regexp_options;
 
         /// Never write error messages to stderr. It's ignorant to do it from library code.
         regexp_options.set_log_errors(false);
