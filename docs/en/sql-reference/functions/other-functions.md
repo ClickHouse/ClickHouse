@@ -780,8 +780,47 @@ If executed in the context of a distributed table, this function generates a nor
 
 ## version()
 
-Returns the server version as a string.
-If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
+Returns the current version of ClickHouse as a string in the form of:
+
+```plaintext
+major version`.minor version.patch version.the number of commits since the previous stable release
+```
+
+If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
+
+**Syntax**
+
+```sql
+version()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+Type: [String](../data-types/string)
+
+**Implementation details**
+
+None.
+
+**Example**
+
+Query:
+
+```sql
+SELECT version()
+```
+
+**Result**:
+
+```response
+┌─version()─┐
+│ 24.2.1.1  │
+└───────────┘
+```
 
 ## buildId()
 
