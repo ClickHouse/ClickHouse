@@ -629,7 +629,7 @@ def test_endpoint(cluster):
     skip_access_check = 0);
 
     INSERT INTO test SELECT number FROM numbers(10);
-    """
+    """,
     )
 
     assert 10 == int(node.query("SELECT count() FROM test"))
@@ -657,7 +657,7 @@ def test_endpoint_new_container(cluster):
     skip_access_check = 0);
 
     INSERT INTO test SELECT number FROM numbers(10);
-    """
+    """,
     )
 
     assert 10 == int(node.query("SELECT count() FROM test"))
@@ -684,7 +684,7 @@ def test_endpoint_without_prefix(cluster):
     skip_access_check = 0);
 
     INSERT INTO test SELECT number FROM numbers(10);
-    """
+    """,
     )
 
     assert 10 == int(node.query("SELECT count() FROM test"))
