@@ -6,6 +6,7 @@
 
 #include <Storages/IStorage.h>
 #include <Common/logger_useful.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFactory.h>
 #include <filesystem>
@@ -22,15 +23,15 @@ public:
     using Configuration = typename Storage::Configuration;
 
     template <class ...Args>
-    explicit IStorageDataLake(const Configuration & configuration_, ContextPtr context_, bool attach, Args && ...args)
-        : Storage(getConfigurationForDataRead(configuration_, context_, {}, attach), context_, std::forward<Args>(args)...)
+    explicit IStorageDataLake(const Configuration & configuration_, ContextPtr context_, LoadingStrictnessLevel mode, Args && ...args)
+        : Storage(getConfigurationForDataRead(configuration_, context_, {}, mode), context_, std::forward<Args>(args)...)
         , base_configuration(configuration_)
         , log(getLogger(getName())) {} // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
 
     template <class ...Args>
-    static StoragePtr create(const Configuration & configuration_, ContextPtr context_, bool attach, Args && ...args)
+    static StoragePtr create(const Configuration & configuration_, ContextPtr context_, LoadingStrictnessLevel mode, Args && ...args)
     {
-        return std::make_shared<IStorageDataLake<Storage, Name, MetadataParser>>(configuration_, context_, attach, std::forward<Args>(args)...);
+        return std::make_shared<IStorageDataLake<Storage, Name, MetadataParser>>(configuration_, context_, mode, std::forward<Args>(args)...);
     }
 
     String getName() const override { return name; }
@@ -64,7 +65,8 @@ public:
 
 private:
     static Configuration getConfigurationForDataRead(
-        const Configuration & base_configuration, const ContextPtr & local_context, const Strings & keys = {}, bool attach = false)
+        const Configuration & base_configuration, const ContextPtr & local_context, const Strings & keys = {},
+        LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE)
     {
         auto configuration{base_configuration};
         configuration.update(local_context);
@@ -87,7 +89,7 @@ private:
         }
         catch (...)
         {
-            if (!attach)
+            if (mode <= LoadingStrictnessLevel::CREATE)
                 throw;
             tryLogCurrentException(__PRETTY_FUNCTION__);
             return configuration;
@@ -125,7 +127,7 @@ static StoragePtr createDataLakeStorage(const StorageFactory::Arguments & args)
     if (configuration.format == "auto")
         configuration.format = "Parquet";
 
-    return DataLake::create(configuration, args.getContext(), args.attach, args.table_id, args.columns, args.constraints,
+    return DataLake::create(configuration, args.getContext(), args.mode, args.table_id, args.columns, args.constraints,
         args.comment, getFormatSettings(args.getContext()));
 }
 
