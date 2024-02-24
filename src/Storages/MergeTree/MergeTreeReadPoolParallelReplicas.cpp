@@ -33,6 +33,7 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
         context_)
     , extension(std::move(extension_))
     , coordination_mode(CoordinationMode::Default)
+    , min_marks_per_task(pool_settings.min_marks_for_concurrent_read)
 {
     extension.all_callback(
         InitialAllRangesAnnouncement(coordination_mode, parts_ranges.getDescriptions(), extension.number_of_current_replica));

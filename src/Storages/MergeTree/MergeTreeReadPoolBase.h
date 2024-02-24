@@ -48,7 +48,7 @@ protected:
     const UncompressedCachePtr owned_uncompressed_cache;
     const Block header;
 
-    void fillPerPartInfos();
+    void fillPerPartInfos(const Settings & settings);
     std::vector<size_t> getPerPartSumMarks() const;
 
     MergeTreeReadTaskPtr createTask(
