@@ -33,6 +33,8 @@ ColumnsDescription TableFunctionHDFS::getActualTableStructure(ContextPtr context
     if (structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
+        if (format == "auto")
+            return StorageHDFS::getTableStructureAndFormatFromData(filename, compression_method, context).first;
         return StorageHDFS::getTableStructureFromData(format, filename, compression_method, context);
     }
 
