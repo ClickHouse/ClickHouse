@@ -13,7 +13,6 @@ import sys
 import os
 import os.path
 import glob
-import platform
 import signal
 import re
 import copy
