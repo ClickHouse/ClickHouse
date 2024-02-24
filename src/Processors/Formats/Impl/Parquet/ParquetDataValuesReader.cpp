@@ -8,6 +8,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int PARQUET_EXCEPTION;
+}
+
 void RleValuesReader::nextGroup()
 {
     // refer to:
@@ -142,7 +148,7 @@ void RleValuesReader::visitNullableBySteps(
                     individual_null_visitor(null_map_cursor);
                     if (unlikely(valid_index_steps[step_idx] == UINT8_MAX))
                     {
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "unsupported packed values number");
+                        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported packed values number");
                     }
                     valid_index_steps[step_idx]++;
                 }
@@ -270,7 +276,7 @@ void ParquetPlainValuesReader<ColumnString>::readBatch(
 
                 auto idx = cursor;
                 cursor += count;
-                // the type of offset_data is PaddedPODArray, which makes sure that the -1 index is avaible
+                // the type of offset_data is PaddedPODArray, which makes sure that the -1 index is available
                 for (auto val_offset = offset_data[idx - 1]; idx < cursor; idx++)
                 {
                     offset_data[idx] = ++val_offset;
@@ -394,14 +400,17 @@ void ParquetRleLCReader<TColumnVector>::readBatch(
         cursor,
         num_values,
         max_def_level,
-        /* individual_null_visitor */ [&](size_t nest_cursor) {
+        /* individual_null_visitor */ [&](size_t nest_cursor)
+        {
             column_data[nest_cursor] = 0;
             has_null = true;
         },
-        /* stepped_valid_visitor */ [&](size_t nest_cursor, const std::vector<UInt8> & valid_index_steps) {
+        /* stepped_valid_visitor */ [&](size_t nest_cursor, const std::vector<UInt8> & valid_index_steps)
+        {
             rle_data_reader->setValueBySteps(column_data + nest_cursor, valid_index_steps, val_getter);
         },
-        /* repeated_visitor */ [&](bool is_valid, size_t nest_cursor, UInt32 count) {
+        /* repeated_visitor */ [&](bool is_valid, size_t nest_cursor, UInt32 count)
+        {
             if (is_valid)
             {
                 rle_data_reader->setValues(column_data + nest_cursor, count, val_getter);
@@ -435,7 +444,8 @@ void ParquetRleDictReader<ColumnString>::readBatch(
     auto * offset_data = column.getOffsets().data();
     auto & chars = column.getChars();
 
-    auto append_nulls = [&](UInt8 num) {
+    auto append_nulls = [&](UInt8 num)
+    {
         for (auto limit = cursor + num; cursor < limit; cursor++)
         {
             chars.push_back(0);
@@ -444,7 +454,8 @@ void ParquetRleDictReader<ColumnString>::readBatch(
         }
     };
 
-    auto append_string = [&](Int32 dict_idx) {
+    auto append_string = [&](Int32 dict_idx)
+    {
         auto dict_chars_cursor = dict_offsets[dict_idx - 1];
         auto value_len = dict_offsets[dict_idx] - dict_chars_cursor;
         auto chars_cursor = chars.size();
@@ -462,7 +473,8 @@ void ParquetRleDictReader<ColumnString>::readBatch(
         num_values,
         max_def_level,
         /* individual_null_visitor */ [&](size_t) {},
-        /* stepped_valid_visitor */ [&](size_t, const std::vector<UInt8> & valid_index_steps) {
+        /* stepped_valid_visitor */ [&](size_t, const std::vector<UInt8> & valid_index_steps)
+        {
             value_cache.resize(valid_index_steps.size());
             rle_data_reader->setValues(
                 value_cache.data() + 1, static_cast<UInt32>(valid_index_steps.size() - 1), val_getter);
@@ -474,7 +486,8 @@ void ParquetRleDictReader<ColumnString>::readBatch(
                 append_nulls(valid_index_steps[i] - 1);
             }
         },
-        /* repeated_visitor */ [&](bool is_valid, size_t, UInt32 count) {
+        /* repeated_visitor */ [&](bool is_valid, size_t, UInt32 count)
+        {
             if (is_valid)
             {
                 value_cache.resize(count);
@@ -505,13 +518,16 @@ void ParquetRleDictReader<TColumnVector>::readBatch(
         cursor,
         num_values,
         max_def_level,
-        /* individual_null_visitor */ [&](size_t nest_cursor) {
+        /* individual_null_visitor */ [&](size_t nest_cursor)
+        {
             null_map.setNull(nest_cursor);
         },
-        /* stepped_valid_visitor */ [&](size_t nest_cursor, const std::vector<UInt8> & valid_index_steps) {
+        /* stepped_valid_visitor */ [&](size_t nest_cursor, const std::vector<UInt8> & valid_index_steps)
+        {
             rle_data_reader->setValueBySteps(column_data + nest_cursor, valid_index_steps, val_getter);
         },
-        /* repeated_visitor */ [&](bool is_valid, size_t nest_cursor, UInt32 count) {
+        /* repeated_visitor */ [&](bool is_valid, size_t nest_cursor, UInt32 count)
+        {
             if (is_valid)
             {
                 rle_data_reader->setValues(column_data + nest_cursor, count, val_getter);
