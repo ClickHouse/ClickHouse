@@ -1505,7 +1505,7 @@ void ReadFromMerge::applyFilters(const QueryPlan & plan, const ActionDAGNodes & 
     auto apply_filters = [&added_filter_nodes](ReadFromMergeTree & read_from_merge_tree)
     {
         for (const auto & node : added_filter_nodes.nodes)
-            read_from_merge_tree.addFilter(nullptr, node);
+            read_from_merge_tree.addFilterFromParentStep(node);
 
         read_from_merge_tree.SourceStepWithFilter::applyFilters();
         return true;
