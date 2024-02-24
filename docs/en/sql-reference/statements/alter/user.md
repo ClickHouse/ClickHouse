@@ -17,7 +17,12 @@ ALTER USER [IF EXISTS] name1 [ON CLUSTER cluster_name1] [RENAME TO new_name1]
     [VALID UNTIL datetime]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
+    [ADD|MODIFY SETTINGS variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
+    [DROP SETTINGS variable [,...] ]
+    [ADD PROFILES 'profile_name' [,...] ]
+    [DROP PROFILES 'profile_name' [,...] ]
+    [DROP ALL PROFILES]
+    [DROP ALL SETTINGS]
 ```
 
 To use `ALTER USER` you must have the [ALTER USER](../../../sql-reference/statements/grant.md#grant-access-management) privilege.

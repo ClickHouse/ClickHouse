@@ -13,5 +13,10 @@ sidebar_label: ROLE
 ``` sql
 ALTER ROLE [IF EXISTS] name1 [ON CLUSTER cluster_name1] [RENAME TO new_name1]
         [, name2 [ON CLUSTER cluster_name2] [RENAME TO new_name2] ...]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+    [ADD|MODIFY SETTINGS variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
+    [DROP SETTINGS variable [,...] ]
+    [ADD PROFILES 'profile_name' [,...] ]
+    [DROP PROFILES 'profile_name' [,...] ]
+    [DROP ALL PROFILES]
+    [DROP ALL SETTINGS]
 ```

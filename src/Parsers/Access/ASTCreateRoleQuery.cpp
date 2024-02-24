@@ -31,6 +31,12 @@ namespace
         format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
         settings.format(format);
     }
+
+    void formatAlterSettings(const ASTAlterSettingsProfileElements & alter_settings, const IAST::FormatSettings & format)
+    {
+        format.ostr << " ";
+        alter_settings.format(format);
+    }
 }
 
 
@@ -46,6 +52,9 @@ ASTPtr ASTCreateRoleQuery::clone() const
 
     if (settings)
         res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
+
+    if (alter_settings)
+        res->alter_settings = std::static_pointer_cast<ASTAlterSettingsProfileElements>(alter_settings->clone());
 
     return res;
 }
@@ -82,7 +91,9 @@ void ASTCreateRoleQuery::formatImpl(const FormatSettings & format, FormatState &
     if (!new_name.empty())
         formatRenameTo(new_name, format);
 
-    if (settings && (!settings->empty() || alter))
+    if (alter_settings)
+        formatAlterSettings(*alter_settings, format);
+    else if (settings)
         formatSettings(*settings, format);
 }
 

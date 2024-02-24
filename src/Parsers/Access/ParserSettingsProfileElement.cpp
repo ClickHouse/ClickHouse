@@ -7,27 +7,13 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <base/insertAtEnd.h>
 
 
 namespace DB
 {
 namespace
 {
-    bool parseProfileKeyword(IParserBase::Pos & pos, Expected & expected, bool use_inherit_keyword)
-    {
-        if (ParserKeyword{"PROFILE"}.ignore(pos, expected))
-            return true;
-
-        if (use_inherit_keyword && ParserKeyword{"INHERIT"}.ignore(pos, expected))
-        {
-            ParserKeyword{"PROFILE"}.ignore(pos, expected);
-            return true;
-        }
-
-        return false;
-    }
-
-
     bool parseProfileNameOrID(IParserBase::Pos & pos, Expected & expected, bool id_mode, String & res)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -120,6 +106,17 @@ namespace
     }
 
 
+    bool parseSettingName(IParserBase::Pos & pos, Expected & expected, String & res)
+    {
+        ASTPtr name_ast;
+        if (!ParserCompoundIdentifier{}.parse(pos, name_ast, expected))
+            return false;
+
+        res = getIdentifierName(name_ast);
+        return true;
+    }
+
+
     bool parseSettingNameWithValueOrConstraints(
         IParserBase::Pos & pos,
         Expected & expected,
@@ -131,11 +128,10 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            ASTPtr name_ast;
-            if (!ParserCompoundIdentifier{}.parse(pos, name_ast, expected))
+            String res_setting_name;
+            if (!parseSettingName(pos, expected, res_setting_name))
                 return false;
 
-            String res_setting_name = getIdentifierName(name_ast);
             std::optional<Field> res_value;
             std::optional<Field> res_min_value;
             std::optional<Field> res_max_value;
@@ -170,52 +166,112 @@ namespace
     }
 
 
-    bool parseSettingsProfileElement(IParserBase::Pos & pos,
-                                     Expected & expected,
-                                     bool id_mode,
-                                     bool use_inherit_keyword,
-                                     bool previous_element_was_parent_profile,
-                                     std::shared_ptr<ASTSettingsProfileElement> & result)
+    bool parseSettingsProfileElements(IParserBase::Pos & pos,
+                                      Expected & expected,
+                                      bool id_mode,
+                                      bool use_inherit_keyword,
+                                      std::vector<std::shared_ptr<ASTSettingsProfileElement>> & res)
     {
-        return IParserBase::wrapParseImpl(pos, [&]
+        std::vector<std::shared_ptr<ASTSettingsProfileElement>> elements;
+        bool found_none = false;
+
+        bool expect_profiles = false;
+        bool expect_settings = false;
+
+        auto parse_element = [&]
         {
-            String parent_profile;
-            String setting_name;
-            std::optional<Field> value;
-            std::optional<Field> min_value;
-            std::optional<Field> max_value;
-            std::optional<SettingConstraintWritability> writability;
+            if (ParserKeyword{"SETTINGS"}.ignore(pos, expected) || ParserKeyword{"SETTING"}.ignore(pos, expected))
+            {
+                expect_settings = true;
+            }
 
-            bool ok = parseSettingNameWithValueOrConstraints(pos, expected, setting_name, value, min_value, max_value, writability);
+            bool expect_settings_next = expect_settings;
 
-            if (!ok && (parseProfileKeyword(pos, expected, use_inherit_keyword) || previous_element_was_parent_profile))
-                ok = parseProfileNameOrID(pos, expected, id_mode, parent_profile);
+            if (ParserKeyword{"PROFILES"}.ignore(pos, expected) || ParserKeyword{"PROFILE"}.ignore(pos, expected))
+            {
+                expect_profiles = true;
+                expect_settings = false;
+            }
+            else if (use_inherit_keyword && ParserKeyword{"INHERIT"}.ignore(pos, expected))
+            {
+                if (!ParserKeyword{"PROFILES"}.ignore(pos, expected))
+                    ParserKeyword{"PROFILE"}.ignore(pos, expected);
+                expect_profiles = true;
+                expect_settings = false;
+            }
 
-            if (!ok)
+            if (!expect_profiles && !expect_settings)
                 return false;
 
-            result = std::make_shared<ASTSettingsProfileElement>();
-            result->parent_profile = std::move(parent_profile);
-            result->setting_name = std::move(setting_name);
-            result->value = std::move(value);
-            result->min_value = std::move(min_value);
-            result->max_value = std::move(max_value);
-            result->writability = writability;
-            result->id_mode = id_mode;
-            result->use_inherit_keyword = use_inherit_keyword;
-            return true;
-        });
+            if (ParserKeyword{"NONE"}.ignore(pos, expected))
+            {
+                found_none = true;
+                expect_settings = expect_settings_next;
+                return true;
+            }
+
+            if (expect_settings)
+            {
+                String setting_name;
+                std::optional<Field> value;
+                std::optional<Field> min_value;
+                std::optional<Field> max_value;
+                std::optional<SettingConstraintWritability> writability;
+                if (parseSettingNameWithValueOrConstraints(pos, expected, setting_name, value, min_value, max_value, writability))
+                {
+                    auto element = std::make_shared<ASTSettingsProfileElement>();
+                    element->setting_name = std::move(setting_name);
+                    element->value = std::move(value);
+                    element->min_value = std::move(min_value);
+                    element->max_value = std::move(max_value);
+                    element->writability = std::move(writability);
+                    elements.push_back(element);
+                    expect_profiles = false;
+                    expect_settings = expect_settings_next;
+                    return true;
+                }
+            }
+
+            if (expect_profiles)
+            {
+                String profile_name;
+                if (parseProfileNameOrID(pos, expected, id_mode, profile_name))
+                {
+                    auto element = std::make_shared<ASTSettingsProfileElement>();
+                    element->parent_profile = std::move(profile_name);
+                    element->id_mode = id_mode;
+                    element->use_inherit_keyword = use_inherit_keyword;
+                    elements.push_back(element);
+                    expect_settings = expect_settings_next;
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        if (!ParserList::parseUtil(pos, expected, parse_element, false))
+            return false;
+
+        if (elements.empty() && !found_none)
+            return false;
+
+        res = std::move(elements);
+        return true;
     }
 }
 
 
 bool ParserSettingsProfileElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    std::shared_ptr<ASTSettingsProfileElement> res;
-    if (!parseSettingsProfileElement(pos, expected, id_mode, use_inherit_keyword, false, res))
+    std::vector<std::shared_ptr<ASTSettingsProfileElement>> elements;
+    if (!parseSettingsProfileElements(pos, expected, id_mode, use_inherit_keyword, elements))
         return false;
 
-    node = res;
+    if (elements.size() != 1)
+        return false;
+
+    node = elements[0];
     return true;
 }
 
@@ -223,31 +279,155 @@ bool ParserSettingsProfileElement::parseImpl(Pos & pos, ASTPtr & node, Expected 
 bool ParserSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     std::vector<std::shared_ptr<ASTSettingsProfileElement>> elements;
+    if (!parseSettingsProfileElements(pos, expected, id_mode, use_inherit_keyword, elements))
+        return false;
 
-    if (ParserKeyword{"NONE"}.ignore(pos, expected))
+    auto result = std::make_shared<ASTSettingsProfileElements>();
+    result->elements = std::move(elements);
+    node = result;
+    return true;
+}
+
+
+bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    std::vector<std::shared_ptr<ASTSettingsProfileElement>> add_settings;
+    std::vector<std::shared_ptr<ASTSettingsProfileElement>> modify_settings;
+    std::vector<std::shared_ptr<ASTSettingsProfileElement>> drop_settings;
+    bool drop_all_settings = false;
+    bool drop_all_profiles = false;
+
+    std::vector<std::shared_ptr<ASTSettingsProfileElement>> old_style_settings;
+    if (parseSettingsProfileElements(pos, expected, /* id_mode= */ false, use_inherit_keyword, old_style_settings))
     {
+        /// old style: "SETTINGS ..." replaces all the settings ad profiles.
+        add_settings = std::move(old_style_settings);
+        drop_all_settings = true;
+        drop_all_profiles = true;
     }
     else
     {
-        bool previous_element_was_parent_profile = false;
+        /// new style: "MODIFY SETTINGS ..., ADD PROFILES ..., DROP PROFILES ..., DROP SETTINGS ..."
+        std::string_view mode;
+        std::string_view submode;
 
         auto parse_element = [&]
         {
-            std::shared_ptr<ASTSettingsProfileElement> element;
-            if (!parseSettingsProfileElement(pos, expected, id_mode, use_inherit_keyword, previous_element_was_parent_profile, element))
+            if (ParserKeyword{"ADD"}.ignore(pos, expected))
+            {
+                mode = "ADD";
+                submode = "";
+            }
+            else if (ParserKeyword{"DROP"}.ignore(pos, expected))
+            {
+                mode = "DROP";
+                submode = "";
+            }
+            else if (ParserKeyword{"MODIFY"}.ignore(pos, expected))
+            {
+                mode = "MODIFY";
+                submode = "";
+            }
+
+            if (!mode.empty())
+            {
+                if (ParserKeyword{"ALL PROFILES"}.ignore(pos, expected))
+                    submode = "ALL PROFILES";
+                else if (ParserKeyword{"ALL SETTINGS"}.ignore(pos, expected))
+                    submode = "ALL SETTINGS";
+                else if (ParserKeyword{"PROFILES"}.ignore(pos, expected) || ParserKeyword{"PROFILE"}.ignore(pos, expected))
+                    submode = "PROFILES";
+                else if (ParserKeyword{"SETTINGS"}.ignore(pos, expected) || ParserKeyword{"SETTING"}.ignore(pos, expected))
+                    submode = "SETTINGS";
+            }
+
+            if (submode.empty())
                 return false;
 
-            elements.push_back(element);
-            previous_element_was_parent_profile = !element->parent_profile.empty();
-            return true;
+            if (submode == "PROFILES")
+            {
+                auto element = std::make_shared<ASTSettingsProfileElement>();
+                if (!parseProfileNameOrID(pos, expected, /* id_mode= */ false, element->parent_profile))
+                    return false;
+                if (mode == "ADD")
+                {
+                    add_settings.push_back(element);
+                    return true;
+                }
+                if (mode == "DROP")
+                {
+                    drop_settings.push_back(element);
+                    return true;
+                }
+                return false;
+            }
+
+            if (submode == "SETTINGS")
+            {
+                auto element = std::make_shared<ASTSettingsProfileElement>();
+                if (mode == "ADD" || mode == "MODIFY")
+                {
+                    if (!parseSettingNameWithValueOrConstraints(pos, expected, element->setting_name, element->value, element->min_value, element->max_value, element->writability))
+                        return false;
+                    if (mode == "ADD")
+                        add_settings.push_back(element);
+                    else
+                        modify_settings.push_back(element);
+                    return true;
+                }
+                if (mode == "DROP")
+                {
+                    ASTPtr name_ast;
+                    if (!ParserCompoundIdentifier{}.parse(pos, name_ast, expected))
+                        return false;
+                    element->setting_name = getIdentifierName(name_ast);
+                    drop_settings.push_back(element);
+                    return true;
+                }
+                return false;
+            }
+
+            if (mode == "DROP" && submode == "ALL PROFILES")
+            {
+                drop_all_profiles = true;
+                return true;
+            }
+
+            if (mode == "DROP" && submode == "ALL SETTINGS")
+            {
+                drop_all_settings = true;
+                return true;
+            }
+
+            return false;
         };
 
         if (!ParserList::parseUtil(pos, expected, parse_element, false))
             return false;
     }
 
-    auto result = std::make_shared<ASTSettingsProfileElements>();
-    result->elements = std::move(elements);
+    if (add_settings.empty() && modify_settings.empty() && drop_settings.empty() && !drop_all_settings && !drop_all_profiles)
+        return false;
+
+    auto result = std::make_shared<ASTAlterSettingsProfileElements>();
+    if (!add_settings.empty())
+    {
+        result->add_settings = std::make_shared<ASTSettingsProfileElements>();
+        result->add_settings->elements = std::move(add_settings);
+    }
+    if (!modify_settings.empty())
+    {
+        result->modify_settings = std::make_shared<ASTSettingsProfileElements>();
+        result->modify_settings->elements = std::move(modify_settings);
+    }
+    if (!drop_settings.empty())
+    {
+        result->drop_settings = std::make_shared<ASTSettingsProfileElements>();
+        result->drop_settings->elements = std::move(drop_settings);
+    }
+    result->drop_all_settings = drop_all_settings;
+    result->drop_all_profiles = drop_all_profiles;
+
     node = result;
     return true;
 }

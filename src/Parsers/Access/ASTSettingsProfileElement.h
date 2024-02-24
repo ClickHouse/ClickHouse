@@ -39,10 +39,41 @@ public:
 
     bool empty() const;
 
+    size_t getNumberOfSettings() const;
+    size_t getNumberOfProfiles() const;
+
     String getID(char) const override { return "SettingsProfileElements"; }
-    ASTPtr clone() const override { return std::make_shared<ASTSettingsProfileElements>(*this); }
+    ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
     void setUseInheritKeyword(bool use_inherit_keyword_);
+
+    void add(ASTSettingsProfileElements && other);
 };
+
+/* Represents a clause used to alter settings or profiles assigned to a user or a role or another profile.
+ *     [ADD|MODIFY SETTINGS variable [=value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...] ]
+ *     [DROP SETTINGS variable [,...] ]
+ *     [ADD PROFILES 'profile_name' [,...] ]
+ *     [DROP PROFILES 'profile_name' [,...] ]
+ *     [DROP ALL PROFILES]
+ *     [DROP ALL SETTINGS]
+*/
+class ASTAlterSettingsProfileElements : public IAST
+{
+public:
+    std::shared_ptr<ASTSettingsProfileElements> add_settings;
+    std::shared_ptr<ASTSettingsProfileElements> modify_settings;
+    std::shared_ptr<ASTSettingsProfileElements> drop_settings;
+
+    bool drop_all_settings = false;
+    bool drop_all_profiles = false;
+
+    String getID(char) const override;
+    ASTPtr clone() const override;
+    void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
+
+    void add(ASTAlterSettingsProfileElements && other);
+};
+
 }

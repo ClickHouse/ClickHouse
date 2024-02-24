@@ -3,6 +3,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <base/insertAtEnd.h>
 
 
 namespace DB
@@ -21,7 +22,53 @@ namespace
             settings.ostr << backQuoteIfNeed(str);
         }
     }
+
+    void formatSettingsProfileElementsForAlter(std::string_view kind, const ASTSettingsProfileElements & elements, const IAST::FormatSettings & settings)
+    {
+        bool need_comma = false;
+
+        size_t num_profiles = elements.getNumberOfProfiles();
+        if (num_profiles > 0)
+        {
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << kind << " " << (num_profiles == 1 ? "PROFILE" : "PROFILES")
+                          << (settings.hilite ? IAST::hilite_none : "") << " ";
+
+            for (const auto & element : elements.elements)
+            {
+                if (!element->parent_profile.empty())
+                {
+                    if (need_comma)
+                        settings.ostr << ", ";
+                    formatProfileNameOrID(element->parent_profile, /* is_id= */ false, settings);
+                    need_comma = true;
+                }
+            }
+        }
+
+        size_t num_settings = elements.getNumberOfSettings();
+        if (num_settings > 0)
+        {
+            if (need_comma)
+                settings.ostr << ", ";
+            need_comma = false;
+
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << kind << " " << (num_settings == 1 ? "SETTING" : "SETTINGS")
+                          << (settings.hilite ? IAST::hilite_none : "") << " ";
+
+            for (const auto & element : elements.elements)
+            {
+                if (!element->setting_name.empty())
+                {
+                    if (need_comma)
+                        settings.ostr << ", ";
+                    element->format(settings);
+                    need_comma = true;
+                }
+            }
+        }
+    }
 }
+
 
 void ASTSettingsProfileElement::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
@@ -82,6 +129,35 @@ bool ASTSettingsProfileElements::empty() const
     return true;
 }
 
+size_t ASTSettingsProfileElements::getNumberOfSettings() const
+{
+    size_t count = 0;
+    for (const auto & element : elements)
+        if (!element->setting_name.empty())
+            ++count;
+    return count;
+}
+
+size_t ASTSettingsProfileElements::getNumberOfProfiles() const
+{
+    size_t count = 0;
+    for (const auto & element : elements)
+        if (!element->parent_profile.empty())
+            ++count;
+    return count;
+}
+
+
+ASTPtr ASTSettingsProfileElements::clone() const
+{
+    auto res = std::make_shared<ASTSettingsProfileElements>(*this);
+
+    for (auto & element : res->elements)
+        element = std::static_pointer_cast<ASTSettingsProfileElement>(element->clone());
+
+    return res;
+}
+
 
 void ASTSettingsProfileElements::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
@@ -107,6 +183,110 @@ void ASTSettingsProfileElements::setUseInheritKeyword(bool use_inherit_keyword_)
 {
     for (auto & element : elements)
         element->use_inherit_keyword = use_inherit_keyword_;
+}
+
+
+void ASTSettingsProfileElements::add(ASTSettingsProfileElements && other)
+{
+    insertAtEnd(elements, std::move(other.elements));
+}
+
+
+String ASTAlterSettingsProfileElements::getID(char) const
+{
+    return "AlterSettingsProfileElements";
+}
+
+ASTPtr ASTAlterSettingsProfileElements::clone() const
+{
+    auto res = std::make_shared<ASTAlterSettingsProfileElements>(*this);
+
+    if (add_settings)
+        res->add_settings = std::static_pointer_cast<ASTSettingsProfileElements>(add_settings->clone());
+
+    if (modify_settings)
+        res->modify_settings = std::static_pointer_cast<ASTSettingsProfileElements>(modify_settings->clone());
+
+    if (drop_settings)
+        res->drop_settings = std::static_pointer_cast<ASTSettingsProfileElements>(drop_settings->clone());
+
+    return res;
+}
+
+void ASTAlterSettingsProfileElements::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
+{
+    bool need_comma = false;
+
+    if (drop_all_settings)
+    {
+        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << "DROP ALL SETTINGS" << (format.hilite ? IAST::hilite_none : "");
+        need_comma = true;
+    }
+
+    if (drop_all_profiles)
+    {
+        if (need_comma)
+            format.ostr << ", ";
+        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << "DROP ALL PROFILES" << (format.hilite ? IAST::hilite_none : "");
+        need_comma = true;
+    }
+
+    if (drop_settings && !drop_settings->empty())
+    {
+        if (need_comma)
+            format.ostr << ", ";
+        formatSettingsProfileElementsForAlter("DROP", *drop_settings, format);
+        need_comma = true;
+    }
+
+    if (add_settings && !add_settings->empty())
+    {
+        if (need_comma)
+            format.ostr << ", ";
+        formatSettingsProfileElementsForAlter("ADD", *add_settings, format);
+        need_comma = true;
+    }
+
+    if (modify_settings && !modify_settings->empty())
+    {
+        if (need_comma)
+            format.ostr << ", ";
+        formatSettingsProfileElementsForAlter("MODIFY", *modify_settings, format);
+    }
+}
+
+void ASTAlterSettingsProfileElements::add(ASTAlterSettingsProfileElements && other)
+{
+    drop_all_settings |= other.drop_all_settings;
+    drop_all_profiles |= other.drop_all_profiles;
+
+    if (other.add_settings)
+    {
+        if (!add_settings)
+            add_settings = std::make_shared<ASTSettingsProfileElements>();
+        add_settings->add(std::move(*other.add_settings));
+    }
+
+    if (other.add_settings)
+    {
+        if (!add_settings)
+            add_settings = std::make_shared<ASTSettingsProfileElements>();
+        add_settings->add(std::move(*other.add_settings));
+    }
+
+    if (other.modify_settings)
+    {
+        if (!modify_settings)
+            modify_settings = std::make_shared<ASTSettingsProfileElements>();
+        modify_settings->add(std::move(*other.modify_settings));
+    }
+
+    if (other.drop_settings)
+    {
+        if (!drop_settings)
+            drop_settings = std::make_shared<ASTSettingsProfileElements>();
+        drop_settings->add(std::move(*other.drop_settings));
+    }
 }
 
 }
