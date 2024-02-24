@@ -320,7 +320,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     ReplicaState & state = getReplicaForReading();
     current_connection = state.connection;
     if (current_connection == nullptr)
-        throw Exception(ErrorCodes::NO_AVAILABLE_REPLICA, "No available replica");
+        throw Exception(ErrorCodes::NO_AVAILABLE_REPLICA, "Logical error: no available replica");
 
     Packet packet;
     try
