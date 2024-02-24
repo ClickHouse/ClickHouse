@@ -216,7 +216,8 @@ template <typename TColumn>
 ColumnWithTypeAndName ParquetLeafColReader<TColumn>::readBatch(UInt64 rows_num, const String & name)
 {
     reading_rows_num = rows_num;
-    auto readPageIfEmpty = [&]() {
+    auto readPageIfEmpty = [&]()
+    {
         while (!cur_page_values) readPage();
     };
 
@@ -245,7 +246,8 @@ void ParquetLeafColReader<ColumnString>::resetColumn(UInt64 rows_num)
     if (reading_low_cardinality)
     {
         assert(dictionary);
-        visitColStrIndexType(dictionary->size(), [&]<typename TColVec>(TColVec *) {
+        visitColStrIndexType(dictionary->size(), [&]<typename TColVec>(TColVec *)
+        {
             column = TColVec::create();
         });
 
@@ -289,7 +291,8 @@ void ParquetLeafColReader<TColumn>::degradeDictionary()
     ColumnString & col_dest = *static_cast<ColumnString *>(column.get());
     const ColumnString & col_dict_str = *static_cast<const ColumnString *>(dictionary.get());
 
-    visitColStrIndexType(dictionary->size(), [&]<typename TColVec>(TColVec *) {
+    visitColStrIndexType(dictionary->size(), [&]<typename TColVec>(TColVec *)
+    {
         const TColVec & col_src = *static_cast<const TColVec *>(col_existing.get());
         reserveColumnStrRows(column, reading_rows_num);
 
@@ -411,7 +414,8 @@ void ParquetLeafColReader<TColumn>::readPageV1(const parquet::DataPageV1 & page)
 
     assert(col_descriptor.max_definition_level() >= 0);
     std::unique_ptr<RleValuesReader> def_level_reader;
-    if (col_descriptor.max_definition_level() > 0) {
+    if (col_descriptor.max_definition_level() > 0)
+    {
         auto bit_width = arrow::bit_util::Log2(col_descriptor.max_definition_level() + 1);
         auto num_bytes = ::arrow::util::SafeLoadAs<int32_t>(buffer);
         auto bit_reader = std::make_unique<arrow::bit_util::BitReader>(buffer + 4, num_bytes);
@@ -435,7 +439,8 @@ void ParquetLeafColReader<TColumn>::readPageV1(const parquet::DataPageV1 & page)
                 degradeDictionary();
             }
 
-            ParquetDataBuffer parquet_buffer = [&]() {
+            ParquetDataBuffer parquet_buffer = [&]()
+            {
                 if constexpr (!std::is_same_v<ColumnDecimal<DateTime64>, TColumn>)
                     return ParquetDataBuffer(buffer, max_size);
 
@@ -485,7 +490,8 @@ std::unique_ptr<ParquetDataValuesReader> ParquetLeafColReader<TColumn>::createDi
     if (reading_low_cardinality && std::same_as<TColumn, ColumnString>)
     {
         std::unique_ptr<ParquetDataValuesReader> res;
-        visitColStrIndexType(dictionary->size(), [&]<typename TCol>(TCol *) {
+        visitColStrIndexType(dictionary->size(), [&]<typename TCol>(TCol *)
+        {
             res = std::make_unique<ParquetRleLCReader<TCol>>(
                 col_descriptor.max_definition_level(),
                 std::move(def_level_reader),

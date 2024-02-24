@@ -27,7 +27,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int PARQUET_EXCEPTION;
 }
 
@@ -142,7 +141,7 @@ std::unique_ptr<ParquetColumnReader> createColReader(
     }
 }
 
-} // anonymouse namespace
+} // anonymous namespace
 
 ParquetRecordReader::ParquetRecordReader(
     Block header_,

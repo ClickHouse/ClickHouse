@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int PARQUET_EXCEPTION;
+}
+
 template <typename T> struct ToArrowDecimal;
 
 template <> struct ToArrowDecimal<Decimal<wide::integer<128, signed>>>
@@ -27,8 +32,8 @@ class ParquetDataBuffer
 private:
 
 public:
-    ParquetDataBuffer(const uint8_t * data_, UInt64 avaible_, UInt8 datetime64_scale_ = DataTypeDateTime64::default_scale)
-        : data(reinterpret_cast<const Int8 *>(data_)), avaible(avaible_), datetime64_scale(datetime64_scale_) {}
+    ParquetDataBuffer(const uint8_t * data_, UInt64 available_, UInt8 datetime64_scale_ = DataTypeDateTime64::default_scale)
+        : data(reinterpret_cast<const Int8 *>(data_)), available(available_), datetime64_scale(datetime64_scale_) {}
 
     template <typename TValue>
     void ALWAYS_INLINE readValue(TValue & dst)
@@ -84,7 +89,7 @@ public:
         auto value_len = ::arrow::util::SafeLoadAs<Int32>(getArrowData());
         if (unlikely(value_len < 0 || value_len > INT32_MAX - 4))
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid or corrupted value_len '{}'", value_len);
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Invalid or corrupted value_len '{}'", value_len);
         }
         consume(4);
         checkAvaible(value_len);
@@ -110,7 +115,7 @@ public:
         auto status = TArrowDecimal::FromBigEndian(getArrowData(), elem_bytes_num);
         if (unlikely(!status.ok()))
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Read parquet decimal failed: {}", status.status().ToString());
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Read parquet decimal failed: {}", status.status().ToString());
         }
         status.ValueUnsafe().ToBytes(reinterpret_cast<uint8_t *>(out));
         consume(elem_bytes_num);
@@ -118,14 +123,14 @@ public:
 
 private:
     const Int8 * data;
-    UInt64 avaible;
+    UInt64 available;
     const UInt8 datetime64_scale;
 
     void ALWAYS_INLINE checkAvaible(UInt64 num)
     {
-        if (unlikely(avaible < num))
+        if (unlikely(available < num))
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Consuming {} bytes while {} avaible", num, avaible);
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Consuming {} bytes while {} available", num, available);
         }
     }
 
@@ -134,7 +139,7 @@ private:
     void ALWAYS_INLINE consume(UInt64 num)
     {
         data += num;
-        avaible -= num;
+        available -= num;
     }
 };
 
