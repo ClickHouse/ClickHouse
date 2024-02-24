@@ -103,11 +103,12 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
         prewhere_info = std::make_shared<PrewhereInfo>();
 
     prewhere_info->need_filter = true;
+    prewhere_info->remove_prewhere_column = optimize_result.fully_moved_to_prewhere && filter_step->removesFilterColumn();
 
     auto filter_expression = filter_step->getExpression();
     const auto & filter_column_name = filter_step->getFilterColumnName();
 
-    if (optimize_result.fully_moved_to_prewhere && filter_step->removesFilterColumn())
+    if (prewhere_info->remove_prewhere_column)
     {
         removeFromOutput(*filter_expression, filter_column_name);
         auto & outputs = filter_expression->getOutputs();
@@ -157,7 +158,8 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (conditions.size() == 1)
     {
         prewhere_info->prewhere_column_name = conditions.front()->result_name;
-        prewhere_info->prewhere_actions->getOutputs().push_back(conditions.front());
+        if (prewhere_info->remove_prewhere_column)
+            prewhere_info->prewhere_actions->getOutputs().push_back(conditions.front());
     }
     else
     {
