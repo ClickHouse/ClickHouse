@@ -97,7 +97,7 @@ public:
      * @tparam ValueGetter A callback with signature: TValue(Int32 val)
      */
     template <typename TValue, typename ValueGetter>
-    void setValues(TValue * column_data, UInt32 num_values, ValueGetter && val_getter);
+    void setValues(TValue * res_values, UInt32 num_values, ValueGetter && val_getter);
 
     /**
      * @brief Set the value by valid_index_steps generated in visitNullableBySteps.
@@ -106,7 +106,7 @@ public:
      */
     template <typename TValue, typename ValueGetter>
     void setValueBySteps(
-        TValue * column_data,
+        TValue * res_values,
         const std::vector<UInt8> & col_data_steps,
         ValueGetter && val_getter);
 

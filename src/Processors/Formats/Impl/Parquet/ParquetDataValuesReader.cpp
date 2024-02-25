@@ -306,7 +306,7 @@ void ParquetPlainValuesReader<ColumnDecimal<DateTime64>>::readBatch(
         },
         /* repeated_visitor */ [&](size_t nest_cursor, UInt32 count)
         {
-            auto col_data_pos = column_data + nest_cursor;
+            auto * col_data_pos = column_data + nest_cursor;
             for (UInt32 i = 0; i < count; i++)
             {
                 plain_data_buffer.readDateTime64(col_data_pos[i]);

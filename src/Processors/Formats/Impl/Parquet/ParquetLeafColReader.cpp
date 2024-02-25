@@ -113,7 +113,7 @@ ColumnPtr readDictPage<ColumnDecimal<DateTime64>>(
     const parquet::ColumnDescriptor & /* col_des */,
     const DataTypePtr & data_type)
 {
-    auto & datetime_type = assert_cast<const DataTypeDateTime64 &>(*data_type);
+    const auto & datetime_type = assert_cast<const DataTypeDateTime64 &>(*data_type);
     auto dict_col = ColumnDecimal<DateTime64>::create(page.num_values(), datetime_type.getScale());
     auto * col_data = dict_col->getData().data();
     ParquetDataBuffer buffer(page.data(), page.size(), datetime_type.getScale());
@@ -282,7 +282,7 @@ void ParquetLeafColReader<TColumn>::degradeDictionary()
         dictionary = nullptr;
         return;
     }
-    assert(dictionary && column->size());
+    assert(dictionary && !column->empty());
 
     null_map = std::make_unique<LazyNullMap>(reading_rows_num);
     auto col_existing = std::move(column);
@@ -372,7 +372,7 @@ void ParquetLeafColReader<TColumn>::readPage()
                 dict_page.encoding() != parquet::Encoding::PLAIN_DICTIONARY
                 && dict_page.encoding() != parquet::Encoding::PLAIN))
             {
-                throw new Exception(
+                throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED, "Unsupported dictionary page encoding {}", dict_page.encoding());
             }
             LOG_DEBUG(log, "{} values in dictionary page of column {}", dict_page.num_values(), col_descriptor.name());

@@ -38,15 +38,13 @@ public:
     template <typename TValue>
     void ALWAYS_INLINE readValue(TValue & dst)
     {
-        checkAvaible(sizeof(TValue));
-        dst = *(reinterpret_cast<const TValue *>(data));
-        consume(sizeof(TValue));
+        readBytes(&dst, sizeof(TValue));
     }
 
     void ALWAYS_INLINE readBytes(void * dst, size_t bytes)
     {
         checkAvaible(bytes);
-        memcpy(dst, data, bytes);
+        std::copy(data, data + bytes, reinterpret_cast<Int8 *>(dst));
         consume(bytes);
     }
 
@@ -68,13 +66,12 @@ public:
                100000000 * spd,
                1000000000 * spd};
 
-        checkAvaible(sizeof(parquet::Int96));
-        auto decoded = parquet::DecodeInt96Timestamp(*reinterpret_cast<const parquet::Int96 *>(data));
+        parquet::Int96 tmp;
+        readValue(tmp);
+        auto decoded = parquet::DecodeInt96Timestamp(tmp);
 
         uint64_t scaled_nano = decoded.nanoseconds / pow10[datetime64_scale];
         dst = static_cast<Int64>(decoded.days_since_epoch * scaled_day[datetime64_scale] + scaled_nano);
-
-        consume(sizeof(parquet::Int96));
     }
 
     /**
