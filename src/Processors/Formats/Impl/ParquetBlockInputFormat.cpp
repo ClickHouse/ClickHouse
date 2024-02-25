@@ -484,6 +484,14 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
 
     if (format_settings.parquet.use_native_reader)
     {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
+        if constexpr (std::endian::native != std::endian::little)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "parquet native reader only supports little endian system currently");
+#pragma clang diagnostic pop
+
         row_group_batch.native_record_reader = std::make_shared<ParquetRecordReader>(
             getPort().getHeader(),
             std::move(properties),

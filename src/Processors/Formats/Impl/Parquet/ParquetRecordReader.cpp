@@ -156,9 +156,6 @@ ParquetRecordReader::ParquetRecordReader(
     , row_groups_indices(std::move(row_groups_indices_))
     , left_rows(getTotalRows(*file_reader->metadata()))
 {
-    // Only little endian system is supported currently
-    static_assert(std::endian::native == std::endian::little);
-
     log = &Poco::Logger::get("ParquetRecordReader");
 
     parquet_col_indice.reserve(header.columns());
@@ -230,9 +227,9 @@ void ParquetRecordReader::loadNextRowGroup()
 Int64 ParquetRecordReader::getTotalRows(const parquet::FileMetaData & meta_data)
 {
     Int64 res = 0;
-    for (size_t i = 0; i < row_groups_indices.size(); i++)
+    for (auto idx : row_groups_indices)
     {
-        res += meta_data.RowGroup(row_groups_indices[i])->num_rows();
+        res += meta_data.RowGroup(idx)->num_rows();
     }
     return res;
 }

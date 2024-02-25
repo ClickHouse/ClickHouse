@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -201,8 +202,8 @@ CH_SCHEMA="\
     plain_encoding_str Nullable(String), \
     mix_encoding_str Nullable(String), \
     dict_encoding_str LowCardinality(Nullable(String)), \
-    plain_encoding_dt64 Nullable(DateTime64(9)), \
-    dict_encoding_dt64 Nullable(DateTime64(9)), \
+    plain_encoding_dt64 Nullable(DateTime64(9, \\'UTC\\')), \
+    dict_encoding_dt64 Nullable(DateTime64(9, \\'UTC\\')), \
     plain_encoding_decimal128 Nullable(Decimal(38, 3))"
 QUERY="SELECT * from file('$PAR_PATH', 'Parquet', '$CH_SCHEMA')"
 
