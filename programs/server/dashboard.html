@@ -85,11 +85,10 @@
             gap: 1rem;
         }
         .chart {
-            flex: 1 40%;
-            min-width: 20rem;
+            flex: 1 1 40rem;
             min-height: 16rem;
             background: var(--chart-background);
-            box-shadow: 0 0 1rem var(--shadow-color);
+            box-shadow: 1px 1px 0 var(--shadow-color);
             overflow: hidden;
             position: relative;
         }
@@ -195,7 +194,7 @@
         }
 
         .inputs input {
-            box-shadow: 0 0 1rem var(--shadow-color);
+            box-shadow: 1px 1px 0 var(--shadow-color);
             padding: 0.25rem;
         }
 
@@ -298,7 +297,7 @@
             background: var(--param-background-color);
             color: var(--param-text-color);
             display: inline-block;
-            box-shadow: 0 0 1rem var(--shadow-color);
+            box-shadow: 1px 1px 0 var(--shadow-color);
             margin-bottom: 1rem;
         }
 
@@ -491,17 +490,10 @@
   * - if a query returned something unusual, display the table;
   */
 
-let host = 'https://play.clickhouse.com/';
-let user = 'explorer';
+let host = location.protocol != 'file:' ? location.origin : 'http://localhost:8123/';
+let user = 'default';
 let password = '';
-let add_http_cors_header = true;
-
-/// If it is hosted on server, assume that it is the address of ClickHouse.
-if (location.protocol != 'file:') {
-    host = location.origin;
-    user = 'default';
-    add_http_cors_header = false;
-}
+let add_http_cors_header = (location.protocol != 'file:');
 
 const errorCodeMessageMap = {
     516: 'Error authenticating with database. Please check your connection params and try again.'
