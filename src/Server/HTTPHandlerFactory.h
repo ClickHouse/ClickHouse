@@ -57,6 +57,8 @@ public:
                 continue;
             else if (filter_type == "url")
                 addFilter(urlFilter(config, prefix + ".url"));
+            else if (filter_type == "empty_query_string")
+                addFilter(emptyQueryStringFilter());
             else if (filter_type == "headers")
                 addFilter(headersFilter(config, prefix + ".headers"));
             else if (filter_type == "methods")
