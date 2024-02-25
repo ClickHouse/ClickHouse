@@ -114,6 +114,7 @@ def main():
         "report.html": workspace_path / "report.html",
         "core.zst": workspace_path / "core.zst",
         "dmesg.log": workspace_path / "dmesg.log",
+        "fatal.log": workspace_path / "fatal.log",
     }
 
     compressed_server_log_path = workspace_path / "server.log.zst"
