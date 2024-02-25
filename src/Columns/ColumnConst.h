@@ -20,10 +20,10 @@ namespace ErrorCodes
 /** ColumnConst contains another column with single element,
   *  but looks like a column with arbitrary amount of same elements.
   */
-class ColumnConst final : public COWHelper<IColumn, ColumnConst>
+class ColumnConst final : public COWHelper<IColumnHelper<ColumnConst>, ColumnConst>
 {
 private:
-    friend class COWHelper<IColumn, ColumnConst>;
+    friend class COWHelper<IColumnHelper<ColumnConst>, ColumnConst>;
 
     WrappedPtr data;
     size_t s;
@@ -160,9 +160,14 @@ public:
         s -= n;
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const UInt8 *) const override
+    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin) const override
     {
         return data->serializeValueIntoArena(0, arena, begin);
+    }
+
+    void serializeValueIntoMemory(size_t, char *& memory) const override
+    {
+        return data->serializeValueIntoMemory(0, memory);
     }
 
     const char * deserializeAndInsertFromArena(const char * pos) override

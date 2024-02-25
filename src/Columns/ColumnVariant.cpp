@@ -643,7 +643,7 @@ void ColumnVariant::popBack(size_t n)
     offsets->popBack(n);
 }
 
-StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
+StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     /// During any serialization/deserialization we should always use global discriminators.
     Discriminator global_discr = globalDiscriminatorAt(n);
@@ -1304,7 +1304,14 @@ UInt64 ColumnVariant::getNumberOfDefaultRows() const
 
 void ColumnVariant::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
 {
-    return getIndicesOfNonDefaultRowsImpl<ColumnVariant>(indices, from, limit);
+    size_t to = limit && from + limit < size() ? from + limit : size();
+    indices.reserve(indices.size() + to - from);
+
+    for (size_t i = from; i < to; ++i)
+    {
+        if (!isDefaultAt(i))
+            indices.push_back(i);
+    }
 }
 
 void ColumnVariant::finalize()

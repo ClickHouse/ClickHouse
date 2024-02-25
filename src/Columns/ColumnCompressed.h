@@ -30,7 +30,7 @@ namespace ErrorCodes
   *
   * Also in-memory compression allows to keep more data in RAM.
   */
-class ColumnCompressed : public COWHelper<IColumn, ColumnCompressed>
+class ColumnCompressed : public COWHelper<IColumnHelper<ColumnCompressed>, ColumnCompressed>
 {
 public:
     using Lazy = std::function<ColumnPtr()>;
@@ -89,7 +89,8 @@ public:
     void insertData(const char *, size_t) override { throwMustBeDecompressed(); }
     void insertDefault() override { throwMustBeDecompressed(); }
     void popBack(size_t) override { throwMustBeDecompressed(); }
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&, const UInt8 *) const override { throwMustBeDecompressed(); }
+    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwMustBeDecompressed(); }
+    void serializeValueIntoMemory(size_t, char *&) const override { throwMustBeDecompressed(); }
     const char * deserializeAndInsertFromArena(const char *) override { throwMustBeDecompressed(); }
     const char * skipSerializedInArena(const char *) const override { throwMustBeDecompressed(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeDecompressed(); }

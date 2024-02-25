@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/IColumnUnique.h>
-#include <Columns/IColumnImpl.h>
 #include <Columns/ReverseIndex.h>
 
 #include <Columns/ColumnVector.h>
@@ -80,7 +79,9 @@ public:
     Float32 getFloat32(size_t n) const override { return getNestedColumn()->getFloat32(n); }
     bool getBool(size_t n) const override { return getNestedColumn()->getBool(n); }
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const override;
+    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    void serializeValueIntoMemory(size_t n, char *& memory) const override;
     const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash_func) const override
     {
@@ -394,7 +395,21 @@ size_t ColumnUnique<ColumnType>::uniqueInsertData(const char * pos, size_t lengt
 }
 
 template <typename ColumnType>
-StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
+void ColumnUnique<ColumnType>::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
+{
+    /// nullable is handled internally.
+    chassert(is_null == nullptr);
+    if (IColumn::empty())
+        return;
+
+    if (is_nullable)
+        column_holder->collectSerializedValueSizes(sizes, assert_cast<const ColumnUInt8 &>(*nested_null_mask).getData().data());
+    else
+        column_holder->collectSerializedValueSizes(sizes, nullptr);
+}
+
+template <typename ColumnType>
+StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     if (is_nullable)
     {
@@ -415,6 +430,22 @@ StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & ar
 
 
     return column_holder->serializeValueIntoArena(n, arena, begin);
+}
+
+template <typename ColumnType>
+void ColumnUnique<ColumnType>::serializeValueIntoMemory(size_t n, char *& memory) const
+{
+    if (is_nullable)
+    {
+        UInt8 flag = (n == getNullValueIndex() ? 1 : 0);
+        unalignedStore<UInt8>(memory, flag);
+        ++memory;
+
+        if (n == getNullValueIndex())
+            return;
+    }
+
+    column_holder->serializeValueIntoMemory(n, memory);
 }
 
 template <typename ColumnType>

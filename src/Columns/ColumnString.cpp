@@ -4,7 +4,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/WeakHash.h>
@@ -27,7 +26,7 @@ namespace ErrorCodes
 
 
 ColumnString::ColumnString(const ColumnString & src)
-    : COWHelper<IColumn, ColumnString>(src),
+    : COWHelper<IColumnHelper<ColumnString>, ColumnString>(src),
     offsets(src.offsets.begin(), src.offsets.end()),
     chars(src.chars.begin(), src.chars.end())
 {
@@ -213,32 +212,66 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
 }
 
 
-StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const
+void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
 {
-    size_t string_size = sizeAt(n);
-    size_t offset = offsetAt(n);
-    constexpr size_t null_bit_size = sizeof(UInt8);
-    StringRef res;
-    char * pos;
-    if (null_bit)
+    if (empty())
+        return;
+
+    size_t rows = size();
+    if (sizes.empty())
+        sizes.resize_fill(rows);
+    else if (sizes.size() != rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
+
+    if (is_null)
     {
-        res.size = * null_bit ? null_bit_size : null_bit_size + sizeof(string_size) + string_size;
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-        memcpy(pos, null_bit, null_bit_size);
-        if (*null_bit) return res;
-        pos += null_bit_size;
+        for (size_t i = 0; i < rows; ++i)
+        {
+            if (is_null[i])
+            {
+                ++sizes[i];
+            }
+            else
+            {
+                size_t string_size = sizeAt(i);
+                sizes[i] += sizeof(string_size) + string_size + 1 /* null byte */;
+            }
+        }
     }
     else
     {
-        res.size = sizeof(string_size) + string_size;
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
+        for (size_t i = 0; i < rows; ++i)
+        {
+            size_t string_size = sizeAt(i);
+            sizes[i] += sizeof(string_size) + string_size;
+        }
     }
+}
+
+
+StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    size_t string_size = sizeAt(n);
+    size_t offset = offsetAt(n);
+
+    StringRef res;
+    res.size = sizeof(string_size) + string_size;
+    char * pos = arena.allocContinue(res.size, begin);
     memcpy(pos, &string_size, sizeof(string_size));
     memcpy(pos + sizeof(string_size), &chars[offset], string_size);
+    res.data = pos;
 
     return res;
+}
+
+void ColumnString::serializeValueIntoMemory(size_t n, char *& memory) const
+{
+    size_t string_size = sizeAt(n);
+    size_t offset = offsetAt(n);
+
+    memcpy(memory, &string_size, sizeof(string_size));
+    memcpy(memory + sizeof(string_size), &chars[offset], string_size);
+    memory += sizeof(string_size) + string_size;
 }
 
 const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
@@ -301,20 +334,6 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     }
 
     return res;
-}
-
-void ColumnString::compareColumn(
-    const IColumn & rhs, size_t rhs_row_num,
-    PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-    int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnString>(assert_cast<const ColumnString &>(rhs), rhs_row_num, row_indexes,
-                                         compare_results, direction, nan_direction_hint);
-}
-
-bool ColumnString::hasEqualValues() const
-{
-    return hasEqualValuesImpl<ColumnString>();
 }
 
 struct ColumnString::ComparatorBase
@@ -481,13 +500,6 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 
     return res;
 }
-
-
-void ColumnString::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
-}
-
 
 void ColumnString::reserve(size_t n)
 {
