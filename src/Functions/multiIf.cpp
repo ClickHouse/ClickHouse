@@ -3,12 +3,20 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/MaskOperations.h>
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/getLeastSupertype.h>
 
@@ -242,8 +250,9 @@ public:
 
         const auto & settings = context->getSettingsRef();
         const WhichDataType which(removeNullable(result_type));
-        bool execute_multiif_columnar
-            = settings.allow_execute_multiif_columnar && !contains_short && (which.isInt() || which.isUInt() || which.isFloat());
+        bool execute_multiif_columnar = settings.allow_execute_multiif_columnar && !contains_short && instructions.size() <= std::numeric_limits<UInt8>::max()
+            && (which.isInt() || which.isUInt() || which.isFloat() || which.isDecimal() || which.isDateOrDate32OrDateTimeOrDateTime64()
+                || which.isEnum() || which.isIPv4() || which.isIPv6());
 
         size_t rows = input_rows_count;
         if (!execute_multiif_columnar)
@@ -253,36 +262,58 @@ public:
             return std::move(res);
         }
 
-#define EXECUTE_INSTRUCTIONS_COLUMNAR(TYPE, INDEX) \
+#define EXECUTE_INSTRUCTIONS_COLUMNAR(TYPE, FIELD, INDEX) \
     if (which.is##TYPE()) \
     { \
-        MutableColumnPtr res = ColumnVector<TYPE>::create(rows); \
-        MutableColumnPtr null_map = result_type->isNullable() ? ColumnUInt8::create(rows) : nullptr; \
-        executeInstructionsColumnar<TYPE, INDEX>(instructions, rows, res, null_map, result_type->isNullable()); \
-        if (!result_type->isNullable()) \
-            return std::move(res); \
+        MutableColumnPtr res = result_type->createColumn(); \
+        res->reserve(rows); \
+        if (result_type->isNullable()) \
+        { \
+            auto & res_nullable = assert_cast<ColumnNullable &>(*res); \
+            auto & res_data = assert_cast<ColumnVectorOrDecimal<FIELD> &>(res_nullable.getNestedColumn()).getData(); \
+            auto & res_null_map = res_nullable.getNullMapData(); \
+            executeInstructionsColumnar<FIELD, INDEX>(instructions, rows, res_data, &res_null_map); \
+        } \
         else \
-            return ColumnNullable::create(std::move(res), std::move(null_map)); \
+        { \
+            auto & res_data = assert_cast<ColumnVectorOrDecimal<FIELD> &>(*res).getData(); \
+            executeInstructionsColumnar<FIELD, INDEX>(instructions, rows, res_data, nullptr); \
+        } \
+        return std::move(res); \
     }
 
 #define ENUMERATE_NUMERIC_TYPES(M, INDEX) \
-    M(UInt8, INDEX) \
-    M(UInt16, INDEX) \
-    M(UInt32, INDEX) \
-    M(UInt64, INDEX) \
-    M(Int8, INDEX) \
-    M(Int16, INDEX) \
-    M(Int32, INDEX) \
-    M(Int64, INDEX) \
-    M(UInt128, INDEX) \
-    M(UInt256, INDEX) \
-    M(Int128, INDEX) \
-    M(Int256, INDEX) \
-    M(Float32, INDEX) \
-    M(Float64, INDEX) \
+    M(UInt8, UInt8, INDEX) \
+    M(UInt16, UInt16, INDEX) \
+    M(UInt32, UInt32, INDEX) \
+    M(UInt64, UInt64, INDEX) \
+    M(Int8, Int8, INDEX) \
+    M(Int16, Int16, INDEX) \
+    M(Int32, Int32, INDEX) \
+    M(Int64, Int64, INDEX) \
+    M(Float32, Float32, INDEX) \
+    M(Float64, Float64, INDEX) \
+    M(UInt128, UInt128, INDEX) \
+    M(UInt256, UInt256, INDEX) \
+    M(Int128, Int128, INDEX) \
+    M(Int256, Int256, INDEX) \
+    M(Decimal32, Decimal32, INDEX) \
+    M(Decimal64, Decimal64, INDEX) \
+    M(Decimal128, Decimal128, INDEX) \
+    M(Decimal256, Decimal256, INDEX) \
+    M(Date, UInt16, INDEX) \
+    M(Date32, Int32, INDEX) \
+    M(DateTime, UInt32, INDEX) \
+    M(DateTime64, DateTime64, INDEX) \
+    M(Enum8, Int8, INDEX) \
+    M(Enum16, Int16, INDEX) \
+    M(IPv4, IPv4, INDEX) \
+    M(IPv6, IPv6, INDEX) \
     throw Exception( \
         ErrorCodes::NOT_IMPLEMENTED, "Columnar execution of function {} not implemented for type {}", getName(), result_type->getName());
 
+        ENUMERATE_NUMERIC_TYPES(EXECUTE_INSTRUCTIONS_COLUMNAR, UInt8)
+        /*
         size_t num_instructions = instructions.size();
         if (num_instructions <= std::numeric_limits<Int16>::max())
         {
@@ -299,7 +330,10 @@ public:
         else
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Instruction size({}) of function {} is out of range", getName(), result_type->getName());
+        */
     }
+#undef ENUMERATE_NUMERIC_TYPES
+#undef EXECUTE_INSTRUCTIONS_COLUMNAR
 
 private:
 
@@ -382,13 +416,16 @@ private:
     }
 
     template <typename T, typename S>
-    static void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res, const MutableColumnPtr & null_map, bool nullable)
+    static void executeInstructionsColumnar(
+        std::vector<Instruction> & instructions,
+        size_t rows,
+        PaddedPODArray<T> & res_data,
+        PaddedPODArray<UInt8> * res_null_map = nullptr)
     {
         PaddedPODArray<S> inserts(rows, static_cast<S>(instructions.size()));
         calculateInserts(instructions, rows, inserts);
 
-        PaddedPODArray<T> & res_data = assert_cast<ColumnVector<T> &>(*res).getData();
-        if (!nullable)
+        if (!res_null_map)
         {
             for (size_t row_i = 0; row_i < rows; ++row_i)
             {
@@ -399,10 +436,9 @@ private:
         }
         else
         {
-            PaddedPODArray<UInt8> & null_map_data = assert_cast<ColumnUInt8 &>(*null_map).getData();
-            std::vector<const T*> data_cols(instructions.size());
+            std::vector<const T *> data_cols(instructions.size());
             std::vector<const UInt8 *> null_map_cols(instructions.size());
-            ColumnPtr shared_null_map_col = nullptr;
+            PaddedPODArray<UInt8> shared_null_map(rows, 0);
             for (size_t i = 0; i < instructions.size(); ++i)
             {
                 if (instructions[i].source->isNullable())
@@ -416,24 +452,21 @@ private:
                         nullable_col = assert_cast<const ColumnNullable *>(data_column.get());
                     }
                     null_map_cols[i] = assert_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumnPtr()).getData().data();
-                    data_cols[i] = assert_cast<const ColumnVector<T> &>(*nullable_col->getNestedColumnPtr()).getData().data();
+                    data_cols[i] = assert_cast<const ColumnVectorOrDecimal<T> &>(*nullable_col->getNestedColumnPtr()).getData().data();
                 }
                 else
                 {
-                    if (!shared_null_map_col)
-                    {
-                        shared_null_map_col = ColumnUInt8::create(rows, 0);
-                    }
-                    null_map_cols[i] = assert_cast<const ColumnUInt8 &>(*shared_null_map_col).getData().data();
-                    data_cols[i] = assert_cast<const ColumnVector<T> &>(*instructions[i].source).getData().data();
+                    null_map_cols[i] = shared_null_map.data();
+                    data_cols[i] = assert_cast<const ColumnVectorOrDecimal<T> &>(*instructions[i].source).getData().data();
                 }
             }
             for (size_t row_i = 0; row_i < rows; ++row_i)
             {
-                auto & instruction = instructions[inserts[row_i]];
+                S insert = inserts[row_i];
+                auto & instruction = instructions[insert];
                 size_t index = instruction.source_is_constant ? 0 : row_i;
-                res_data[row_i] = *(data_cols[inserts[row_i]] + index);
-                null_map_data[row_i] = *(null_map_cols[inserts[row_i]] + index);
+                res_data[row_i] = *(data_cols[insert] + index);
+                (*res_null_map)[row_i] = *(null_map_cols[insert] + index);
             }
         }
     }
