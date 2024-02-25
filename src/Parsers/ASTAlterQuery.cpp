@@ -617,9 +617,6 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
         case AlterObjectType::DATABASE:
             settings.ostr << "ALTER DATABASE ";
             break;
-        case AlterObjectType::LIVE_VIEW:
-            settings.ostr << "ALTER LIVE VIEW ";
-            break;
         default:
             break;
     }

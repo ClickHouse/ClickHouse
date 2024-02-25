@@ -60,8 +60,7 @@ BlockIO InterpreterAlterQuery::execute()
     {
         return executeToDatabase(alter);
     }
-    else if (alter.alter_object == ASTAlterQuery::AlterObjectType::TABLE
-            || alter.alter_object == ASTAlterQuery::AlterObjectType::LIVE_VIEW)
+    else if (alter.alter_object == ASTAlterQuery::AlterObjectType::TABLE)
     {
         return executeToTable(alter);
     }
