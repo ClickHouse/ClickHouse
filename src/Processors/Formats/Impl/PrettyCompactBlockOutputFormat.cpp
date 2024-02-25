@@ -173,7 +173,8 @@ void PrettyCompactBlockOutputFormat::writeRow(
     }
 
     writeCString(grid_symbols.bar, out);
-    if (single_numeric_value) {
+    if (single_numeric_value)
+    {
         auto value = columns[0]->getFloat64(0);
         if (value > 1'000'000)
             writeReadableNumberTip(value);
