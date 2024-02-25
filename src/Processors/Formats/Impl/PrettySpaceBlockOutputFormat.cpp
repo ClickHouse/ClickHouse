@@ -1,8 +1,8 @@
-#include <Common/PODArray.h>
+#include <Formats/FormatFactory.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/PrettySpaceBlockOutputFormat.h>
+#include <Common/PODArray.h>
 
 
 namespace DB
@@ -23,6 +23,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     size_t num_columns = chunk.getNumColumns();
     const auto & header = getPort(port_kind).getHeader();
     const auto & columns = chunk.getColumns();
+    auto single_number_value = num_rows == 1 && num_columns == 1 && WhichDataType(columns[0]->getDataType()).isNumber();
 
     WidthsPerColumn widths;
     Widths max_widths;
@@ -30,9 +31,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     calculateWidths(header, chunk, widths, max_widths, name_widths);
 
     if (format_settings.pretty.output_format_pretty_row_numbers)
-    {
         writeString(String(row_number_width, ' '), out);
-    }
     /// Names
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -75,9 +74,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
             // Write row number;
             auto row_num_string = std::to_string(row + 1 + total_rows) + ". ";
             for (size_t i = 0; i < row_number_width - row_num_string.size(); ++i)
-            {
                 writeCString(" ", out);
-            }
             writeString(row_num_string, out);
         }
         for (size_t column = 0; column < num_columns; ++column)
@@ -87,10 +84,16 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
 
             const auto & type = *header.getByPosition(column).type;
             auto & cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
-            writeValueWithPadding(*columns[column], *serializations[column],
-                row, cur_width, max_widths[column], type.shouldAlignRightInPrettyFormats());
+            writeValueWithPadding(
+                *columns[column], *serializations[column], row, cur_width, max_widths[column], type.shouldAlignRightInPrettyFormats());
         }
 
+        if (single_number_value)
+        {
+            auto value = columns[0]->getFloat64(0);
+            if (value > 1'000'000)
+                writeReadableNumberTip(value);
+        }
         writeChar('\n', out);
     }
 

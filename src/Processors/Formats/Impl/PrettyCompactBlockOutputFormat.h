@@ -24,7 +24,8 @@ private:
         const Block & header,
         const Columns & columns,
         const WidthsPerColumn & widths,
-        const Widths & max_widths);
+        const Widths & max_widths,
+        bool single_numeric_value);
 
     void writeChunk(const Chunk & chunk, PortKind port_kind) override;
 };

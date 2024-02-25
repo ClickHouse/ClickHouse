@@ -6,6 +6,7 @@
 #include <IO/Operators.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/PODArray.h>
+#include <Common/formatReadable.h>
 
 
 namespace DB
@@ -161,6 +162,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     auto num_columns = chunk.getNumColumns();
     const auto & columns = chunk.getColumns();
     const auto & header = getPort(port_kind).getHeader();
+    auto single_numeric_value = num_rows == 1 && num_columns == 1 && WhichDataType(columns[0]->getDataType()).isNumber();
 
     WidthsPerColumn widths;
     Widths max_widths;
@@ -305,6 +307,11 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         }
 
         writeCString(grid_symbols.bar, out);
+        if (single_numeric_value) {
+            auto value = columns[0]->getFloat64(0);
+            if (value > 1'000'000)
+                writeReadableNumberTip(value);
+        }
         writeCString("\n", out);
     }
 
@@ -408,6 +415,13 @@ void PrettyBlockOutputFormat::writeSuffix()
         writeIntText(format_settings.pretty.max_rows, out);
         writeCString(".\n", out);
     }
+}
+
+void PrettyBlockOutputFormat::writeReadableNumberTip(double value)
+{
+    writeCString("\033[90m -- ", out);
+    formatReadableQuantity(value, out, 2);
+    writeCString(" \033[0m", out);
 }
 
 void registerOutputFormatPretty(FormatFactory & factory)

@@ -38,6 +38,7 @@ protected:
     virtual void writeChunk(const Chunk & chunk, PortKind port_kind);
     void writeMonoChunkIfNeeded();
     void writeSuffix() override;
+    void writeReadableNumberTip(double number);
 
     void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
 
