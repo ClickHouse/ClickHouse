@@ -6,6 +6,7 @@
 #include <chrono>
 #include <mutex>
 #include <string>
+#include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
@@ -119,22 +120,20 @@ KeeperServer::KeeperServer(
     KeeperSnapshotManagerS3 & snapshot_manager_s3,
     KeeperStateMachine::CommitCallback commit_callback)
     : server_id(configuration_and_settings_->server_id)
-    , coordination_settings(configuration_and_settings_->coordination_settings)
     , log(getLogger("KeeperServer"))
     , is_recovering(config.getBool("keeper_server.force_recovery", false))
     , keeper_context{std::move(keeper_context_)}
     , create_snapshot_on_exit(config.getBool("keeper_server.create_snapshot_on_exit", true))
     , enable_reconfiguration(config.getBool("keeper_server.enable_reconfiguration", false))
 {
-    if (coordination_settings->quorum_reads)
+    if (keeper_context->getCoordinationSettings()->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 
     state_machine = nuraft::cs_new<KeeperStateMachine>(
         responses_queue_,
         snapshots_queue_,
-        coordination_settings,
         keeper_context,
-        config.getBool("keeper_server.upload_snapshot_on_exit", true) ? &snapshot_manager_s3 : nullptr,
+        config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
         commit_callback,
         checkAndGetSuperdigest(configuration_and_settings_->super_digest));
 
@@ -143,7 +142,6 @@ KeeperServer::KeeperServer(
         "keeper_server",
         "state",
         config,
-        coordination_settings,
         keeper_context);
 }
 
@@ -226,7 +224,7 @@ void KeeperServer::loadLatestConfig()
 {
     auto latest_snapshot_config = state_machine->getClusterConfig();
     auto latest_log_store_config = state_manager->getLatestConfigFromLogStore();
-    auto async_replication = coordination_settings->async_replication;
+    auto async_replication = keeper_context->getCoordinationSettings()->async_replication;
 
     if (latest_snapshot_config && latest_log_store_config)
     {
@@ -293,6 +291,8 @@ void KeeperServer::forceRecovery()
 
 void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
 {
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
+
     nuraft::raft_params params;
     params.parallel_log_appending_ = true;
     params.heart_beat_interval_
@@ -332,7 +332,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     params.auto_forwarding_req_timeout_
         = getValueOrMaxInt32AndLogWarning(coordination_settings->operation_timeout_ms.totalMilliseconds() * 2, "operation_timeout_ms", log);
     params.max_append_size_
-        = getValueOrMaxInt32AndLogWarning(coordination_settings->max_requests_batch_size, "max_requests_batch_size", log);
+        = getValueOrMaxInt32AndLogWarning(coordination_settings->max_requests_append_size, "max_requests_append_size", log);
 
     params.return_method_ = nuraft::raft_params::async_handler;
 
@@ -427,6 +427,10 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 {
     state_machine->init();
 
+    keeper_context->setLastCommitIndex(state_machine->last_commit_index());
+
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
+
     state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings->reserved_log_items);
 
     auto log_store = state_manager->load_log_store();
@@ -446,7 +450,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
 void KeeperServer::shutdownRaftServer()
 {
-    size_t timeout = coordination_settings->shutdown_timeout.totalSeconds();
+    size_t timeout = keeper_context->getCoordinationSettings()->shutdown_timeout.totalSeconds();
 
     if (!raft_instance)
     {
@@ -870,7 +874,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 /// Node first became leader, and after that some other node became leader.
                 /// BecameFresh for this node will not be called because it was already fresh
                 /// when it was leader.
-                if (leader_index < our_index + coordination_settings->fresh_log_gap)
+                if (leader_index < our_index + keeper_context->getCoordinationSettings()->fresh_log_gap)
                     set_initialized();
             }
             return nuraft::cb_func::ReturnCode::Ok;
@@ -905,7 +909,7 @@ void KeeperServer::waitInit()
 {
     std::unique_lock lock(initialized_mutex);
 
-    int64_t timeout = coordination_settings->startup_timeout.totalMilliseconds();
+    int64_t timeout = keeper_context->getCoordinationSettings()->startup_timeout.totalMilliseconds();
     if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag.load(); }))
         LOG_WARNING(log, "Failed to wait for RAFT initialization in {}ms, will continue in background", timeout);
 }
@@ -977,6 +981,7 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
 
 ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config)
 {
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
     auto diff = state_manager->getRaftConfigurationDiff(config, coordination_settings);
 
     if (!diff.empty())
@@ -1004,6 +1009,7 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
         std::this_thread::sleep_for(sleep_time * (i + 1));
     };
 
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
     if (const auto * add = std::get_if<AddRaftServer>(&action))
     {
         for (size_t i = 0; i < coordination_settings->configuration_change_tries_count && !is_recovering; ++i)
@@ -1059,6 +1065,7 @@ bool KeeperServer::waitForConfigUpdateWithReconfigDisabled(const ClusterUpdateAc
     auto became_leader = [&] { LOG_INFO(log, "Became leader, aborting"); return false; };
     auto backoff = [&](size_t i) { std::this_thread::sleep_for(sleep_time * (i + 1)); };
 
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
     if (const auto* add = std::get_if<AddRaftServer>(&action))
     {
         for (size_t i = 0; i < coordination_settings->configuration_change_tries_count && !is_recovering; ++i)
@@ -1125,14 +1132,12 @@ KeeperLogInfo KeeperServer::getKeeperLogInfo()
     auto log_store = state_manager->load_log_store();
     if (log_store)
     {
-        log_info.first_log_idx = log_store->start_index();
-        log_info.first_log_term = log_store->term_at(log_info.first_log_idx);
+        const auto & keeper_log_storage = static_cast<const KeeperLogStore &>(*log_store);
+        keeper_log_storage.getKeeperLogInfo(log_info);
     }
 
     if (raft_instance)
     {
-        log_info.last_log_idx = raft_instance->get_last_log_idx();
-        log_info.last_log_term = raft_instance->get_last_log_term();
         log_info.last_committed_log_idx = raft_instance->get_committed_log_idx();
         log_info.leader_committed_log_idx = raft_instance->get_leader_committed_log_idx();
         log_info.target_committed_log_idx = raft_instance->get_target_committed_log_idx();

@@ -2586,15 +2586,11 @@ BackupsWorker & Context::getBackupsWorker() const
 {
     callOnce(shared->backups_worker_initialized, [&] {
         const auto & config = getConfigRef();
-        const bool allow_concurrent_backups = config.getBool("backups.allow_concurrent_backups", true);
-        const bool allow_concurrent_restores = config.getBool("backups.allow_concurrent_restores", true);
-        const bool test_inject_sleep = config.getBool("backups.test_inject_sleep", false);
-
         const auto & settings_ref = getSettingsRef();
         UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref.backup_threads);
         UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref.restore_threads);
 
-        shared->backups_worker.emplace(getGlobalContext(), backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores, test_inject_sleep);
+        shared->backups_worker.emplace(getGlobalContext(), backup_threads, restore_threads);
     });
 
     return *shared->backups_worker;
@@ -3152,7 +3148,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
-        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
+        shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
     else if (shared->zookeeper->hasReachedDeadline())
         shared->zookeeper->finalize("ZooKeeper session has reached its deadline");
 
@@ -3364,7 +3360,7 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
                 name);
 
         zookeeper = shared->auxiliary_zookeepers.emplace(name,
-                        std::make_shared<zkutil::ZooKeeper>(config, "auxiliary_zookeepers." + name, getZooKeeperLog())).first;
+                        zkutil::ZooKeeper::create(config, "auxiliary_zookeepers." + name, getZooKeeperLog())).first;
     }
     else if (zookeeper->second->expired())
         zookeeper->second = zookeeper->second->startNewSession();
@@ -3397,7 +3393,7 @@ static void reloadZooKeeperIfChangedImpl(
         if (zk)
             zk->finalize("Config changed");
 
-        zk = std::make_shared<zkutil::ZooKeeper>(*config, config_name, std::move(zk_log));
+        zk = zkutil::ZooKeeper::create(*config, config_name, std::move(zk_log));
         if (server_started)
             zk->setServerCompletelyStarted();
     }

@@ -33,7 +33,7 @@ int main(int argc, char ** argv)
 
         bool dump_ctime = options.count("ctime");
 
-        zkutil::ZooKeeperPtr zookeeper = std::make_shared<zkutil::ZooKeeper>(options.at("address").as<std::string>());
+        zkutil::ZooKeeperPtr zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(options.at("address").as<std::string>());
 
         std::string initial_path = options.at("path").as<std::string>();
 

@@ -5,6 +5,7 @@
 #include <mutex>
 #include <atomic>
 #include <Common/Fiber.h>
+#include <Common/FiberStack.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/Epoll.h>
 #include <Common/AsyncTaskExecutor.h>
