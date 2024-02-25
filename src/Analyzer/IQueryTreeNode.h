@@ -251,6 +251,11 @@ public:
         return children;
     }
 
+    void setMasked(bool masked = true)
+    {
+        is_masked = masked;
+    }
+
 protected:
     /** Construct query tree node.
       * Resize children to children size.
@@ -281,6 +286,7 @@ protected:
 
     QueryTreeNodes children;
     QueryTreeWeakNodes weak_pointers;
+    bool is_masked;
 
 private:
     String alias;

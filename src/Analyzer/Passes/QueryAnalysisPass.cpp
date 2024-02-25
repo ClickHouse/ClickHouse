@@ -3,6 +3,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/NamePrompter.h>
 #include <Common/ProfileEvents.h>
+#include <Parsers/FunctionSecretArgumentsFinder.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -1373,7 +1374,7 @@ private:
 
     ProjectionNames resolveExpressionNode(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression);
 
-    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression);
+    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, const std::pair<size_t, size_t> & secrets = std::pair<size_t, size_t>());
 
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 
@@ -5111,22 +5112,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     /// Resolve function arguments
-
+    FunctionSecretArgumentsFinder::Result secret_arguments = FunctionSecretArgumentsFinder{function_node_ptr->toAST()->as<ASTFunction &>()}.getResult();
     bool allow_table_expressions = is_special_function_in;
     auto arguments_projection_names = resolveExpressionNodeList(function_node_ptr->getArgumentsNode(),
         scope,
         true /*allow_lambda_expression*/,
-        allow_table_expressions /*allow_table_expression*/);
+        allow_table_expressions /*allow_table_expression*/,
+        {secret_arguments.start, secret_arguments.count});
 
-    if (function_node_ptr->toAST()->hasSecretParts())
-    {
-        for (auto & argument : arguments_projection_names)
-        {
-            SipHash hash;
-            hash.update(argument);
-            argument = getHexUIntLowercase(hash.get128());
-        }
-    }
+    for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
+        arguments_projection_names[n] = "[HIDDEN]";
+
     auto & function_node = *function_node_ptr;
 
     /// Replace right IN function argument if it is table or table function with subquery that read ordinary columns
@@ -6111,7 +6107,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
   * Example: CREATE TABLE test_table (id UInt64, value UInt64) ENGINE=TinyLog; SELECT plus(*) FROM test_table;
   * Example: SELECT *** FROM system.one;
   */
-ProjectionNames QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression)
+ProjectionNames QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, const std::pair<size_t, size_t> & secrets)
 {
     auto & node_list_typed = node_list->as<ListNode &>();
     size_t node_list_size = node_list_typed.getNodes().size();
@@ -6121,10 +6117,13 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node
 
     ProjectionNames result_projection_names;
 
+    size_t n = 0;
     for (auto & node : node_list_typed.getNodes())
     {
         auto node_to_resolve = node;
         auto expression_node_projection_names = resolveExpressionNode(node_to_resolve, scope, allow_lambda_expression, allow_table_expression);
+        if (n >= secrets.first && n < secrets.first + secrets.second)
+            node_to_resolve->setMasked();
 
         size_t expected_projection_names_size = 1;
         if (auto * expression_list = node_to_resolve->as<ListNode>())
@@ -6146,6 +6145,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node
 
         result_projection_names.insert(result_projection_names.end(), expression_node_projection_names.begin(), expression_node_projection_names.end());
         expression_node_projection_names.clear();
+
+        ++n;
     }
 
     node_list_typed.getNodes() = std::move(result_nodes);

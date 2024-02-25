@@ -45,10 +45,10 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     if (hasAlias())
         buffer << ", alias: " << getAlias();
 
-    buffer << ", constant_value: " << constant_value->getValue().dump();
+    buffer << ", constant_value: " << (is_masked ? "[HIDDEN]" : constant_value->getValue().dump());
     buffer << ", constant_value_type: " << constant_value->getType()->getName();
 
-    if (getSourceExpression())
+    if (!is_masked && getSourceExpression())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION" << '\n';
         getSourceExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
