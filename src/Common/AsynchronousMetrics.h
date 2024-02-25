@@ -3,6 +3,7 @@
 #include <Common/MemoryStatisticsOS.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
+#include <Core/Field.h>
 #include <IO/ReadBufferFromFile.h>
 
 #include <condition_variable>
@@ -25,18 +26,11 @@ namespace DB
 
 class ReadBuffer;
 
-struct AsynchronousMetricValue
-{
-    double value;
-    const char * documentation;
-
-    template <typename T>
-    AsynchronousMetricValue(T value_, const char * documentation_)
-        : value(static_cast<double>(value_)), documentation(documentation_) {}
-    AsynchronousMetricValue() = default; /// For std::unordered_map::operator[].
-};
-
-using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
+/// The value can be UInt or Float (a single metric)
+/// or Array (metrics for numbered list of elements, such as per CPU)
+/// or Map (metrics for named elements, such as disk names).
+using AsynchronousMetricValue = Field;
+using AsynchronousMetricValues = std::vector<AsynchronousMetricValue>;
 
 struct ProtocolServerMetrics
 {
@@ -78,6 +72,15 @@ public:
 
     /// Returns copy of all values.
     AsynchronousMetricValues getValues() const;
+
+    struct Description
+    {
+        const char * name;
+        const char * type;
+        const char * doc;
+    };
+    using Descriptions = std::vector<Description>;
+    static Descriptions getDescriptions();
 
 protected:
     const Duration update_period;

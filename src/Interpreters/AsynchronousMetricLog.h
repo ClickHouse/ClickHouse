@@ -22,8 +22,7 @@ struct AsynchronousMetricLogElement
 {
     UInt16 event_date;
     time_t event_time;
-    std::string metric_name;
-    double value;
+    AsynchronousMetricValues values;
 
     static std::string name() { return "AsynchronousMetricLog"; }
     static ColumnsDescription getColumnsDescription();
@@ -37,9 +36,6 @@ public:
     using SystemLog<AsynchronousMetricLogElement>::SystemLog;
 
     void addValues(const AsynchronousMetricValues &);
-
-    /// This table is usually queried for fixed metric name.
-    static const char * getDefaultOrderBy() { return "metric, event_date, event_time"; }
 };
 
 }
