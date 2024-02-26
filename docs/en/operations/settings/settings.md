@@ -755,7 +755,7 @@ By default: 1,000,000. It only works when reading from MergeTree engines.
 
 ## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
 
-The maximum number of simultaneously processed queries related to MergeTree table per user.
+The maximum number of simultaneously processed queries per user.
 
 Possible values:
 
