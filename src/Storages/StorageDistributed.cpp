@@ -321,7 +321,7 @@ StorageDistributed::StorageDistributed(
     const String & storage_policy_name_,
     const String & relative_data_path_,
     const DistributedSettings & distributed_settings_,
-    bool attach_,
+    LoadingStrictnessLevel mode,
     ClusterPtr owned_cluster_,
     ASTPtr remote_table_function_ptr_)
     : IStorage(id_)
@@ -372,7 +372,7 @@ StorageDistributed::StorageDistributed(
     }
 
     /// Sanity check. Skip check if the table is already created to allow the server to start.
-    if (!attach_)
+    if (mode <= LoadingStrictnessLevel::CREATE)
     {
         if (remote_database.empty() && !remote_table_function_ptr && !getCluster()->maybeCrossReplication())
             LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
@@ -397,7 +397,7 @@ StorageDistributed::StorageDistributed(
     const String & storage_policy_name_,
     const String & relative_data_path_,
     const DistributedSettings & distributed_settings_,
-    bool attach,
+    LoadingStrictnessLevel mode,
     ClusterPtr owned_cluster_)
     : StorageDistributed(
         id_,
@@ -412,7 +412,7 @@ StorageDistributed::StorageDistributed(
         storage_policy_name_,
         relative_data_path_,
         distributed_settings_,
-        attach,
+        mode,
         std::move(owned_cluster_),
         remote_table_function_ptr_)
 {
@@ -1955,7 +1955,7 @@ void registerStorageDistributed(StorageFactory & factory)
             storage_policy,
             args.relative_data_path,
             distributed_settings,
-            args.attach);
+            args.mode);
     },
     {
         .supports_settings = true,
