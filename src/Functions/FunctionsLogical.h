@@ -4,7 +4,9 @@
 #include <Core/Defines.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/DynamicShortCircuitExecutionOrder.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <type_traits>
 #include <Interpreters/Context_fwd.h>
@@ -154,7 +156,15 @@ class FunctionAnyArityLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionAnyArityLogical>(); }
+
+    FunctionAnyArityLogical() = default;
+    explicit FunctionAnyArityLogical(ContextPtr context_)
+        : context(context_)
+    {
+        if (context->getSettingsRef().enable_adaptive_reorder_short_circuit_arguments)
+            short_circuit_execution_order = std::make_unique<DynamicShortCircuitExecutionOrder>(context, Name::name == NameOr::name);
+    }
+    static FunctionPtr create(ContextPtr context_){ return std::make_shared<FunctionAnyArityLogical>(context_); }
 
     String getName() const override
     {
@@ -164,11 +174,14 @@ public:
     bool isVariadic() const override { return true; }
     bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
     {
-        settings.enable_lazy_execution_for_first_argument = false;
+        bool is_and_or = name == NameAnd::name || name == NameOr::name;
+        settings.enable_lazy_execution_for_first_argument
+            = context && context->getSettingsRef().enable_adaptive_reorder_short_circuit_arguments && is_and_or;
         settings.enable_lazy_execution_for_common_descendants_of_arguments = true;
         settings.force_enable_lazy_execution = false;
-        return name == NameAnd::name || name == NameOr::name;
+        return is_and_or;
     }
+
     ColumnPtr executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const;
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -227,6 +240,13 @@ public:
         return phi;
     }
 #endif
+private:
+    // It will return null when could not run in dynamic execution order short circuit mode.
+    ColumnPtr safeExecuteDynamicOrderShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_typ) const;
+    ColumnPtr executeDynamicOrderShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_typ) const;
+    ContextPtr context = nullptr;
+    mutable std::atomic<bool> has_exception_in_dynamic_order_short_circuit = false;
+    mutable std::unique_ptr<DynamicShortCircuitExecutionOrder> short_circuit_execution_order = nullptr;
 };
 
 

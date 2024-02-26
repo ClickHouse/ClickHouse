@@ -162,6 +162,7 @@ bool extractMaskNumeric(
         ones_count = extractMaskNumericImpl<inverted, false>(mask, data, null_value, null_bytemap, nulls);
 
     mask_info.has_ones = ones_count > 0;
+    mask_info.ones_count = ones_count;
     mask_info.has_zeros = ones_count != mask.size();
     return true;
 }

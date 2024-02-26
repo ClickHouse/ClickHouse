@@ -570,6 +570,89 @@ static void applyTernaryLogic(const IColumn::Filter & mask, IColumn::Filter & nu
         applyTernaryLogicImpl<false>(mask, null_bytemap);
 }
 
+// Change the execution orders of arguments may cause some exceptions, since some invalid rows which are filtered out in the former
+// execution order may be used in the new execution order. In this case we give up to adjust the execution order and return nullptr.
+template <typename Impl, typename Name>
+ColumnPtr FunctionAnyArityLogical<Impl, Name>::safeExecuteDynamicOrderShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+{
+    if (has_exception_in_dynamic_order_short_circuit)
+        return nullptr;
+    ColumnPtr result_col = nullptr;
+    auto copied_arguments = arguments;
+    try
+    {
+        result_col = executeDynamicOrderShortCircuit(arguments, result_type);
+    }
+    catch (...)
+    {
+        has_exception_in_dynamic_order_short_circuit = true;
+        result_col = nullptr;
+        arguments = copied_arguments;
+    }
+    return result_col;
+}
+
+template <typename Impl, typename Name>
+ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeDynamicOrderShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+{
+    if (!short_circuit_execution_order || (name != NameAnd::name && name != NameOr::name))
+        return {};
+    auto adjusted_order = short_circuit_execution_order->getAdjustedExecutionOrder(arguments);
+    if (!adjusted_order)
+        return {};
+    auto rows = arguments[0].column->size();
+
+     bool inverted = Name::name != NameAnd::name;
+    UInt8 null_value = static_cast<UInt8>(name == NameAnd::name);
+    IColumn::Filter mask(arguments[0].column->size(), 1);
+    auto mask_info = MaskInfo{.has_ones = true, .has_zeros = false, .ones_count= arguments[0].column->size()};
+
+    std::unique_ptr<IColumn::Filter> nulls;
+    if (result_type->isNullable())
+        nulls = std::make_unique<IColumn::Filter>(arguments[0].column->size(), 0);
+
+    Stopwatch watch;
+    DynamicShortCircuitExecutionOrder::ProfileData profile_data;
+    for (auto & arg_index : *adjusted_order)
+    {
+        auto & argument = arguments[arg_index];
+        auto col_name = argument.name;
+        watch.start();
+        maskedExecute(argument, mask, mask_info);
+        profile_data.elapsed_ns = watch.elapsedNanoseconds();
+        profile_data.seen_rows = mask_info.ones_count;
+        if (inverted)
+        {
+            mask_info = extractInvertedMask(mask, argument.column, nulls.get(), null_value);
+            profile_data.selected_rows = profile_data.seen_rows - mask_info.ones_count;
+        }
+        else
+        {
+            mask_info = extractMask(mask, argument.column, nulls.get(), null_value);
+            profile_data.selected_rows = mask_info.ones_count;
+        }
+
+        short_circuit_execution_order->addProfileData(arg_index, profile_data);
+
+        if (!mask_info.has_ones)
+            break;
+    }
+    short_circuit_execution_order->readjustExecutionOrder(rows);
+    if (inverted)
+        inverseMask(mask, mask_info);
+
+    if (nulls)
+        applyTernaryLogic<Name>(mask, *nulls);
+
+    auto res = ColumnUInt8::create();
+    res->getData() = std::move(mask);
+    if (!nulls)
+        return res;
+    auto bytemap = ColumnUInt8::create();
+    bytemap->getData() = std::move(*nulls);
+    return ColumnNullable::create(std::move(res), std::move(bytemap));
+}
+
 template <typename Impl, typename Name>
 ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
 {
@@ -647,6 +730,9 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     ColumnsWithTypeAndName arguments = args;
+
+    if (auto result_col = safeExecuteDynamicOrderShortCircuit(arguments, result_type))
+        return result_col;
 
     /// Special implementation for short-circuit arguments.
     if (checkShortCircuitArguments(arguments) != -1)

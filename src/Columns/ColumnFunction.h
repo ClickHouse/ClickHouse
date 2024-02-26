@@ -36,6 +36,9 @@ public:
     const char * getFamilyName() const override { return "Function"; }
     TypeIndex getDataType() const override { return TypeIndex::Function; }
 
+    const IFunctionBase & getFunction() const { return *function; }
+    const ColumnsWithTypeAndName & getCapturedColumns() const { return captured_columns; }
+
     MutableColumnPtr cloneResized(size_t size) const override;
 
     size_t size() const override { return elements_size; }

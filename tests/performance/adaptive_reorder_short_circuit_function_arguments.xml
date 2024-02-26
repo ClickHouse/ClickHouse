@@ -1,0 +1,62 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>json_selected</name>
+            <values>
+                <value>'{"kx": "1", "kb": 1, "kz": "hola", "kw": "see you, bye, bye"}'</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>json_other</name>
+            <values>
+                <value>'{"kx": "2", "kb": 1, "kz": "hola", "kw": "see you, bye, bye"}'</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE IF NOT EXISTS test_adaptive_reorder_function_arguments (s1 String, s2 String, i UInt32) ENGINE=Memory;
+    </create_query>
+    <fill_query>
+        INSERT INTO test_adaptive_reorder_function_arguments
+        SELECT
+            if (number % 2 = 0, {json_selected}, {json_other}) as s1,
+            if (number % 10 = 0, {json_selected}, {json_other}) as s2,
+            number % 2 as i
+        FROM numbers(10000000)
+    </fill_query>
+
+    <query>
+        SELECT * FROM test_adaptive_reorder_function_arguments WHERE JSONExtractString(s1, 'kx') = '1' and i = 1 Format Null settings short_circuit_function_evaluation='force_enable'
+    </query>
+
+    <query>
+        SELECT * FROM test_adaptive_reorder_function_arguments WHERE i = 1 and JSONExtractString(s1, 'kx') = '1' Format Null settings short_circuit_function_evaluation='force_enable'
+    </query>
+
+    <query>
+        SELECT * FROM test_adaptive_reorder_function_arguments WHERE JSONExtractString(s1, 'kx') = '1' and JSONExtractString(s2, 'kx') = '1' Format Null settings short_circuit_function_evaluation='force_enable'
+    </query>
+
+    <query>
+        SELECT * FROM test_adaptive_reorder_function_arguments WHERE JSONExtractString(s2, 'kx') = '1' and JSONExtractString(s1, 'kx') = '1' Format Null settings short_circuit_function_evaluation='force_enable'
+    </query>
+
+    <query>
+        SELECT * FROM test_adaptive_reorder_function_arguments WHERE JSONExtractString(s1, 'kx') = '1' or i = 1 Format Null settings short_circuit_function_evaluation='force_enable'
+    </query>
+
+    <query>
+        SELECT * FROM test_adaptive_reorder_function_arguments WHERE i = 1 or JSONExtractString(s1, 'kx') = '1' Format Null settings short_circuit_function_evaluation='force_enable'
+    </query>
+
+    <query>
+        SELECT * FROM test_adaptive_reorder_function_arguments WHERE JSONExtractString(s1, 'kx') = '1' or JSONExtractString(s2, 'kx') = '1' Format Null settings short_circuit_function_evaluation='force_enable'
+    </query>
+
+    <query>
+        SELECT * FROM test_adaptive_reorder_function_arguments WHERE JSONExtractString(s2, 'kx') = '1' or JSONExtractString(s1, 'kx') = '1' Format Null settings short_circuit_function_evaluation='force_enable'
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS test_adaptive_reorder_function_arguments</drop_query>
+</test>

@@ -177,6 +177,25 @@ If `enable_optimize_predicate_expression = 1`, then the execution time of these 
 
 If `enable_optimize_predicate_expression = 0`, then the execution time of the second query is much longer because the `WHERE` clause applies to all the data after the subquery finishes.
 
+## enable_adaptive_reorder_short_circuit_arguments
+
+Enable runtime profiling and reorder a short-circuit functions arguments automatically. `or` and `and` are supported at current. Default is true.
+
+For example, we have the following dataset.
+```sql
+INSERT INTO test_adaptive_reorder_function_arguments SELECT number % 10 as s , rand() % 20000 as i  FROM numbers(100000000)
+```
+
+```sql
+-- q1
+SELECT * FROM test_adaptive_reorder_function_arguments WHERE s = 1 and i = 1
+
+-- q2
+SELECT * FROM test_adaptive_reorder_function_arguments WHERE i = 1 and s = 1
+```
+
+`q2` should be more efficient then `q1` with short circuit execution, because `i = 1` filter more data and less `s = 1` is executed, reduce total execution cost. With `enable_adaptive_reorder_short_circuit_arguments = true`, `q2` will be changed into `q1` automatically.
+
 ## fallback_to_stale_replicas_for_distributed_queries {#fallback_to_stale_replicas_for_distributed_queries}
 
 Forces a query to an out-of-date replica if updated data is not available. See [Replication](../../engines/table-engines/mergetree-family/replication.md).

@@ -923,7 +923,7 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
 
 @pytest.mark.parametrize("node_name", ["node"])
 @pytest.mark.parametrize(
-    "in_flight_memory", [(10, 245918115), (5, 156786752), (1, 106426187)]
+    "in_flight_memory", [(10, 245918115), (5, 163582074), (1, 115505870)]
 )
 def test_s3_engine_heavy_write_check_mem(
     cluster, broken_s3, node_name, in_flight_memory

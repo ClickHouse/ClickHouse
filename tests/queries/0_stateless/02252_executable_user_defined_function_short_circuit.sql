@@ -1,3 +1,4 @@
+SET enable_adaptive_reorder_short_circuit_arguments=0;
 SELECT number FROM numbers(10) WHERE number > 15 and test_function(number, number) == 4;
 
 SYSTEM FLUSH LOGS;
