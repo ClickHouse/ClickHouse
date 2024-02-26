@@ -772,6 +772,7 @@ ReferenceKeyed
 Refreshable
 RegexpTree
 RemoteRead
+SharedMergeTree
 ReplacingMergeTree
 ReplicasMaxAbsoluteDelay
 ReplicasMaxInsertsInQueue
@@ -1266,6 +1267,8 @@ centroid
 certificateFile
 cetera
 cfg
+cgroup
+cgroups
 chadmin
 changelog
 changelogs
