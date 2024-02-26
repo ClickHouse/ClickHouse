@@ -603,6 +603,9 @@ void logExceptionBeforeStart(
     if (auto txn = context->getCurrentTransaction())
         elem.tid = txn->tid;
 
+    if (settings.log_query_settings)
+        elem.query_settings = std::make_shared<Settings>(context->getSettingsRef());
+
     if (settings.calculate_text_stack_trace)
         setExceptionStackTrace(elem);
     logException(context, elem);

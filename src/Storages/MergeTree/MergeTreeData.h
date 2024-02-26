@@ -1088,10 +1088,7 @@ public:
     /// It is used to make a decision whether to enable parallel replicas (distributed processing) or not and how
     /// many to replicas to use
     UInt64 estimateNumberOfRowsToRead(
-        ContextPtr query_context,
-        const StorageSnapshotPtr & storage_snapshot,
-        const SelectQueryInfo & query_info,
-        const ActionDAGNodes & added_filter_nodes) const;
+        ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const;
 
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 

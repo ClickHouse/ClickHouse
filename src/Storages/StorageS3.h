@@ -151,9 +151,9 @@ public:
 
     String getName() const override;
 
-    void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override
+    void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override
     {
-        setKeyConditionImpl(nodes, context_, sample_block);
+        setKeyConditionImpl(filter_actions_dag, context_, sample_block);
     }
 
     Chunk generate() override;
