@@ -526,6 +526,19 @@ INSERT INTO TABLE source VALUES ('broccoli');
 ALTER TABLE destination ATTACH PARTITION ID '4589453b7ee96ce9de1265bd57674496' from source; -- { serverError 36 }
 ALTER TABLE destination ATTACH PARTITION 'br' from source; -- { serverError 36 }
 
+-- Should not be allowed, non monotonically increasing on specific range
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+
+CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toMonth(timestamp);
+CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toQuarter(timestamp);
+
+INSERT INTO source VALUES ('2010-01-01'), ('2011-01-01');
+
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
+ALTER TABLE destination ATTACH PARTITION ID '1' FROM source; -- { serverError 36 }
+
 -- Empty/ non-existent partition, same partition expression. Nothing should happen
 DROP TABLE IF EXISTS source;
 DROP TABLE IF EXISTS destination;

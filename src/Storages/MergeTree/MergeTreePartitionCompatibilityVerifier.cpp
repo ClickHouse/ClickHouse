@@ -15,21 +15,22 @@ extern const int BAD_ARGUMENTS;
 
 namespace
 {
-bool isDestinationPartitionExpressionMonotonicallyIncreasing(
-    const std::vector<Range> & hyperrectangle, const MergeTreeData & destination_storage)
-{
-    auto destination_table_metadata = destination_storage.getInMemoryMetadataPtr();
 
-    auto key_description = destination_table_metadata->getPartitionKey();
+bool verifyPartitionExpressionIsMonotonicallyIncreasingOnRange(
+    const MergeTreeData & storage, const std::vector<Range> & hyperrectangle)
+{
+    auto table_metadata = storage.getInMemoryMetadataPtr();
+
+    auto key_description = table_metadata->getPartitionKey();
     auto definition_ast = key_description.definition_ast->clone();
 
-    auto table_identifier = std::make_shared<ASTIdentifier>(destination_storage.getStorageID().getTableName());
+    auto table_identifier = std::make_shared<ASTIdentifier>(storage.getStorageID().getTableName());
     auto table_with_columns
-        = TableWithColumnNamesAndTypes{DatabaseAndTableWithAlias(table_identifier), destination_table_metadata->getColumns().getOrdinary()};
+        = TableWithColumnNamesAndTypes{DatabaseAndTableWithAlias(table_identifier), table_metadata->getColumns().getOrdinary()};
 
     auto expression_list = extractKeyExpressionList(definition_ast);
 
-    MonotonicityCheckVisitor::Data data{{table_with_columns}, destination_storage.getContext(), /*group_by_function_hashes*/ {}};
+    MonotonicityCheckVisitor::Data data{{table_with_columns}, storage.getContext(), /*group_by_function_hashes*/ {}};
 
     for (auto i = 0u; i < expression_list->children.size(); i++)
     {
@@ -38,7 +39,25 @@ bool isDestinationPartitionExpressionMonotonicallyIncreasing(
         MonotonicityCheckVisitor(data).visit(expression_list->children[i]);
 
         if (!data.monotonicity.is_monotonic || !data.monotonicity.is_positive)
-            return false;
+        {
+            const auto expression_name = expression_list->children[i]->getColumnName();
+
+            if (data.error_code == MonotonicityCheckMatcher::Data::ErrorCode::WRONG_NUMBER_OF_ARGUMENTS)
+            {
+                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Monotonicity check is implemented for functions of one or two arguments only. If two, one must be a constant. {}",
+                                    expression_name);
+            }
+
+            if (data.error_code == MonotonicityCheckMatcher::Data::ErrorCode::NO_MONOTONICITY_INFO)
+            {
+                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Monotonicity check not implemented or not available for partition expression {}", expression_name);
+            }
+
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Partition expression {} is not monotonically increasing on the given range", expression_name);
+        }
     }
 
     return true;
@@ -98,8 +117,7 @@ MergeTreePartition verifyCompatibilityAndCreatePartitionImpl(
 
     assert(!src_global_min_max_indexes.hyperrectangle.empty());
 
-    if (!isDestinationPartitionExpressionMonotonicallyIncreasing(src_global_min_max_indexes.hyperrectangle, destination_storage))
-        throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Destination table partition expression is not monotonically increasing");
+    verifyPartitionExpressionIsMonotonicallyIncreasingOnRange(destination_storage, src_global_min_max_indexes.hyperrectangle);
 
     partition.createAndValidateMinMaxPartitionIds(
         destination_storage.getInMemoryMetadataPtr(),

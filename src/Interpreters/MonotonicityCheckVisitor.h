@@ -39,7 +39,21 @@ public:
 
         Range range = Range::createWholeUniverse();
 
-        void reject() { monotonicity.is_monotonic = false; }
+        enum class ErrorCode
+        {
+            NO_ERROR,
+            WRONG_NUMBER_OF_ARGUMENTS,
+            NO_MONOTONICITY_INFO
+        };
+
+        ErrorCode error_code = ErrorCode::NO_ERROR;
+
+        void reject(ErrorCode error_code_)
+        {
+            monotonicity.is_monotonic = false;
+            error_code = error_code_;
+        }
+
         bool isRejected() const { return !monotonicity.is_monotonic; }
 
         bool canOptimize(const ASTFunction & ast_function) const
@@ -106,7 +120,7 @@ public:
         /// Monotonicity check only works for functions that contain at most two arguments and one of them must be a constant.
         if (!ast_function.arguments)
         {
-            data.reject();
+            data.reject(Data::ErrorCode::WRONG_NUMBER_OF_ARGUMENTS);
             return;
         }
 
@@ -114,7 +128,7 @@ public:
 
         if (arguments_size == 0 || arguments_size > 2)
         {
-            data.reject();
+            data.reject(Data::ErrorCode::WRONG_NUMBER_OF_ARGUMENTS);
             return;
         }
         else if (arguments_size == 2)
@@ -122,28 +136,28 @@ public:
             /// If the function has two arguments, then one of them must be a constant.
             if (!ast_function.arguments->children[0]->as<ASTLiteral>() && !ast_function.arguments->children[1]->as<ASTLiteral>())
             {
-                data.reject();
+                data.reject(Data::ErrorCode::WRONG_NUMBER_OF_ARGUMENTS);
                 return;
             }
         }
 
         if (!data.canOptimize(ast_function))
         {
-            data.reject();
+            data.reject(Data::ErrorCode::NO_MONOTONICITY_INFO);
             return;
         }
 
         const auto & function = FunctionFactory::instance().tryGet(ast_function.name, data.context);
         if (!function)
         {
-            data.reject();
+            data.reject(Data::ErrorCode::NO_MONOTONICITY_INFO);
             return;
         }
 
         /// First time extract the most enclosed identifier and its data type
         if (!data.arg_data_type && !data.extractIdentifierAndType(ast_function))
         {
-            data.reject();
+            data.reject(Data::ErrorCode::NO_MONOTONICITY_INFO);
             return;
         }
 
@@ -180,7 +194,9 @@ public:
             data.arg_data_type = function_base->getResultType();
         }
         else
-            data.reject();
+        {
+            data.reject(Data::ErrorCode::NO_MONOTONICITY_INFO);
+        }
     }
 
     static bool needChildVisit(const ASTPtr & parent, const ASTPtr &)
