@@ -7,10 +7,10 @@
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
-#include <Functions/formatString.h>
 #include <IO/WriteHelpers.h>
 #include <base/map.h>
 
+#include "formatString.h"
 
 namespace DB
 {
@@ -80,21 +80,21 @@ private:
         const ColumnConst * c0_const_string = checkAndGetColumnConst<ColumnString>(c0);
         const ColumnConst * c1_const_string = checkAndGetColumnConst<ColumnString>(c1);
 
-        auto col_res = ColumnString::create();
+        auto c_res = ColumnString::create();
 
         if (c0_string && c1_string)
-            concat(StringSource(*c0_string), StringSource(*c1_string), StringSink(*col_res, c0->size()));
+            concat(StringSource(*c0_string), StringSource(*c1_string), StringSink(*c_res, c0->size()));
         else if (c0_string && c1_const_string)
-            concat(StringSource(*c0_string), ConstSource<StringSource>(*c1_const_string), StringSink(*col_res, c0->size()));
+            concat(StringSource(*c0_string), ConstSource<StringSource>(*c1_const_string), StringSink(*c_res, c0->size()));
         else if (c0_const_string && c1_string)
-            concat(ConstSource<StringSource>(*c0_const_string), StringSource(*c1_string), StringSink(*col_res, c0->size()));
+            concat(ConstSource<StringSource>(*c0_const_string), StringSource(*c1_string), StringSink(*c_res, c0->size()));
         else
         {
             /// Fallback: use generic implementation for not very important cases.
             return executeFormatImpl(arguments, input_rows_count);
         }
 
-        return col_res;
+        return c_res;
     }
 
     ColumnPtr executeFormatImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
@@ -102,7 +102,7 @@ private:
         const size_t num_arguments = arguments.size();
         assert(num_arguments >= 2);
 
-        auto col_res = ColumnString::create();
+        auto c_res = ColumnString::create();
         std::vector<const ColumnString::Chars *> data(num_arguments);
         std::vector<const ColumnString::Offsets *> offsets(num_arguments);
         std::vector<size_t> fixed_string_sizes(num_arguments);
@@ -145,13 +145,13 @@ private:
                 }
                 write_helper.finalize();
 
-                /// Keep the pointer alive
-                converted_col_ptrs[i] = std::move(converted_col_str);
-
                 /// Same as the normal `ColumnString` branch
                 has_column_string = true;
-                data[i] = &converted_col_ptrs[i]->getChars();
-                offsets[i] = &converted_col_ptrs[i]->getOffsets();
+                data[i] = &converted_col_str->getChars();
+                offsets[i] = &converted_col_str->getOffsets();
+
+                /// Keep the pointer alive
+                converted_col_ptrs[i] = std::move(converted_col_str);
             }
         }
 
@@ -169,11 +169,11 @@ private:
             offsets,
             fixed_string_sizes,
             constant_strings,
-            col_res->getChars(),
-            col_res->getOffsets(),
+            c_res->getChars(),
+            c_res->getOffsets(),
             input_rows_count);
 
-        return col_res;
+        return c_res;
     }
 };
 

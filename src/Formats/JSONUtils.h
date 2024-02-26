@@ -112,7 +112,6 @@ namespace JSONUtils
 
     void skipColon(ReadBuffer & in);
     void skipComma(ReadBuffer & in);
-    bool checkAndSkipComma(ReadBuffer & in);
 
     String readFieldName(ReadBuffer & in);
 
@@ -123,11 +122,9 @@ namespace JSONUtils
 
     void skipObjectStart(ReadBuffer & in);
     void skipObjectEnd(ReadBuffer & in);
-    bool checkAndSkipObjectStart(ReadBuffer & in);
     bool checkAndSkipObjectEnd(ReadBuffer & in);
 
     NamesAndTypesList readMetadata(ReadBuffer & in);
-    bool tryReadMetadata(ReadBuffer & in, NamesAndTypesList & names_and_types);
     NamesAndTypesList readMetadataAndValidateHeader(ReadBuffer & in, const Block & header);
     void validateMetadataByHeader(const NamesAndTypesList & names_and_types_from_metadata, const Block & header);
 

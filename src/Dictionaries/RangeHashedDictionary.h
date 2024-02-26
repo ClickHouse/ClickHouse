@@ -85,14 +85,14 @@ public:
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    size_t getQueryCount() const override { return query_count.load(); }
+    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
     double getFoundRate() const override
     {
-        size_t queries = query_count.load();
+        size_t queries = query_count.load(std::memory_order_relaxed);
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
     }
 
     double getHitRate() const override { return 1.0; }
@@ -683,7 +683,7 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
 
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
-            "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
+            "{}: dictionary source is empty and 'require_nonempty' property is set.");
 }
 
 template <DictionaryKeyType dictionary_key_type>

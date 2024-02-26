@@ -32,7 +32,7 @@ public:
     StorageEmbeddedRocksDB(const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata,
-        LoadingStrictnessLevel mode,
+        bool attach,
         ContextPtr context_,
         const String & primary_key_,
         Int32 ttl_ = 0,
@@ -69,6 +69,12 @@ public:
         ContextPtr context) override;
 
     bool supportsParallelInsert() const override { return true; }
+    bool supportsIndexForIn() const override { return true; }
+    bool mayBenefitFromIndexForIn(
+        const ASTPtr & node, ContextPtr /*query_context*/, const StorageMetadataPtr & /*metadata_snapshot*/) const override
+    {
+        return node->getColumnName() == primary_key;
+    }
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {rocksdb_dir}; }

@@ -17,7 +17,7 @@ cxx-build = "1.0.83"
 crate-type = ["staticlib"]
 
 [profile.release]
-debug = false
+debug = true
 
 [profile.release-thinlto]
 inherits = "release"

@@ -1,4 +1,3 @@
-#include <Common/formatReadable.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
@@ -9,8 +8,6 @@
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
 #include <base/errnoToString.h>
-#include <base/getPageSize.h>
-#include <sys/resource.h>
 #include <chrono>
 
 #include "config.h"
@@ -58,7 +55,7 @@ AsynchronousMetrics::AsynchronousMetrics(
     int update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : update_period(update_period_seconds)
-    , log(getLogger("AsynchronousMetrics"))
+    , log(&Poco::Logger::get("AsynchronousMetrics"))
     , protocol_server_metrics_func(protocol_server_metrics_func_)
 {
 #if defined(OS_LINUX)
@@ -98,7 +95,7 @@ AsynchronousMetrics::AsynchronousMetrics(
 }
 
 #if defined(OS_LINUX)
-void AsynchronousMetrics::openSensors() TSA_REQUIRES(data_mutex)
+void AsynchronousMetrics::openSensors()
 {
     LOG_TRACE(log, "Scanning /sys/class/thermal");
 
@@ -125,7 +122,7 @@ void AsynchronousMetrics::openSensors() TSA_REQUIRES(data_mutex)
         catch (const ErrnoException & e)
         {
             LOG_WARNING(
-                getLogger("AsynchronousMetrics"),
+                &Poco::Logger::get("AsynchronousMetrics"),
                 "Thermal monitor '{}' exists but could not be read: {}.",
                 thermal_device_index,
                 errnoToString(e.getErrno()));
@@ -136,7 +133,7 @@ void AsynchronousMetrics::openSensors() TSA_REQUIRES(data_mutex)
     }
 }
 
-void AsynchronousMetrics::openBlockDevices() TSA_REQUIRES(data_mutex)
+void AsynchronousMetrics::openBlockDevices()
 {
     LOG_TRACE(log, "Scanning /sys/block");
 
@@ -163,7 +160,7 @@ void AsynchronousMetrics::openBlockDevices() TSA_REQUIRES(data_mutex)
     }
 }
 
-void AsynchronousMetrics::openEDAC() TSA_REQUIRES(data_mutex)
+void AsynchronousMetrics::openEDAC()
 {
     LOG_TRACE(log, "Scanning /sys/devices/system/edac");
 
@@ -194,7 +191,7 @@ void AsynchronousMetrics::openEDAC() TSA_REQUIRES(data_mutex)
     }
 }
 
-void AsynchronousMetrics::openSensorsChips() TSA_REQUIRES(data_mutex)
+void AsynchronousMetrics::openSensorsChips()
 {
     LOG_TRACE(log, "Scanning /sys/class/hwmon");
 
@@ -254,7 +251,7 @@ void AsynchronousMetrics::openSensorsChips() TSA_REQUIRES(data_mutex)
             catch (const ErrnoException & e)
             {
                 LOG_WARNING(
-                    getLogger("AsynchronousMetrics"),
+                    &Poco::Logger::get("AsynchronousMetrics"),
                     "Hardware monitor '{}', sensor '{}' exists but could not be read: {}.",
                     hwmon_name,
                     sensor_index,
@@ -281,7 +278,7 @@ void AsynchronousMetrics::stop()
     try
     {
         {
-            std::lock_guard lock(thread_mutex);
+            std::lock_guard lock{mutex};
             quit = true;
         }
 
@@ -306,14 +303,11 @@ AsynchronousMetrics::~AsynchronousMetrics()
 
 AsynchronousMetricValues AsynchronousMetrics::getValues() const
 {
-    std::lock_guard lock(data_mutex);
+    std::lock_guard lock{mutex};
     return values;
 }
 
-namespace
-{
-
-auto get_next_update_time(std::chrono::seconds update_period)
+static auto get_next_update_time(std::chrono::seconds update_period)
 {
     using namespace std::chrono;
 
@@ -337,8 +331,6 @@ auto get_next_update_time(std::chrono::seconds update_period)
     return time_next;
 }
 
-}
-
 void AsynchronousMetrics::run()
 {
     setThreadName("AsyncMetrics");
@@ -349,9 +341,9 @@ void AsynchronousMetrics::run()
 
         {
             // Wait first, so that the first metric collection is also on even time.
-            std::unique_lock lock(thread_mutex);
+            std::unique_lock lock{mutex};
             if (wait_cond.wait_until(lock, next_update_time,
-                [this] TSA_REQUIRES(thread_mutex) { return quit; }))
+                [this] { return quit; }))
             {
                 break;
             }
@@ -369,9 +361,6 @@ void AsynchronousMetrics::run()
 }
 
 #if USE_JEMALLOC
-namespace
-{
-
 uint64_t updateJemallocEpoch()
 {
     uint64_t value = 0;
@@ -381,7 +370,7 @@ uint64_t updateJemallocEpoch()
 }
 
 template <typename Value>
-Value saveJemallocMetricImpl(
+static Value saveJemallocMetricImpl(
     AsynchronousMetricValues & values,
     const std::string & jemalloc_full_name,
     const std::string & clickhouse_full_name)
@@ -394,7 +383,7 @@ Value saveJemallocMetricImpl(
 }
 
 template<typename Value>
-Value saveJemallocMetric(AsynchronousMetricValues & values,
+static Value saveJemallocMetric(AsynchronousMetricValues & values,
     const std::string & metric_name)
 {
     return saveJemallocMetricImpl<Value>(values,
@@ -403,14 +392,12 @@ Value saveJemallocMetric(AsynchronousMetricValues & values,
 }
 
 template<typename Value>
-Value saveAllArenasMetric(AsynchronousMetricValues & values,
+static Value saveAllArenasMetric(AsynchronousMetricValues & values,
     const std::string & metric_name)
 {
     return saveJemallocMetricImpl<Value>(values,
         fmt::format("stats.arenas.{}.{}", MALLCTL_ARENAS_ALL, metric_name),
         fmt::format("jemalloc.arenas.all.{}", metric_name));
-}
-
 }
 #endif
 
@@ -557,23 +544,21 @@ AsynchronousMetrics::NetworkInterfaceStatValues::operator-(const AsynchronousMet
 #endif
 
 
-void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
+void AsynchronousMetrics::update(TimePoint update_time)
 {
     Stopwatch watch;
 
     AsynchronousMetricValues new_values;
 
-    std::lock_guard lock(data_mutex);
-
     auto current_time = std::chrono::system_clock::now();
-    auto time_since_previous_update = current_time - previous_update_time;
+    auto time_after_previous_update = current_time - previous_update_time;
     previous_update_time = update_time;
 
     double update_interval = 0.;
     if (first_run)
         update_interval = update_period.count();
     else
-        update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_since_previous_update).count() / 1e6;
+        update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_after_previous_update).count() / 1e6;
     new_values["AsynchronousMetricsUpdateInterval"] = { update_interval, "Metrics update interval" };
 
     /// This is also a good indicator of system responsiveness.
@@ -668,19 +653,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                     ReadableSize(difference));
 
             total_memory_tracker.setRSS(rss, free_memory_in_allocator_arenas);
-        }
-    }
-
-    {
-        struct rusage rusage{};
-        if (!getrusage(RUSAGE_SELF, &rusage))
-        {
-            new_values["MemoryResidentMax"] = { rusage.ru_maxrss * 1024 /* KiB -> bytes */,
-                "Maximum amount of physical memory used by the server process, in bytes." };
-        }
-        else
-        {
-            LOG_ERROR(log, "Cannot obtain resource usage: {}", errnoToString(errno));
         }
     }
 #endif
@@ -825,9 +797,9 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
             int64_t hz = sysconf(_SC_CLK_TCK);
             if (-1 == hz)
-                throw ErrnoException(ErrorCodes::CANNOT_SYSCONF, "Cannot call 'sysconf' to obtain system HZ");
+                throwFromErrno("Cannot call 'sysconf' to obtain system HZ", ErrorCodes::CANNOT_SYSCONF);
 
-            double multiplier = 1.0 / hz / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_since_previous_update).count() / 1e9);
+            double multiplier = 1.0 / hz / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_after_previous_update).count() / 1e9);
             size_t num_cpus = 0;
 
             ProcStatValuesOther current_other_values{};
@@ -1584,7 +1556,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
     /// Add more metrics as you wish.
 
-    updateImpl(update_time, current_time, force_update, first_run, new_values);
+    updateImpl(new_values, update_time, current_time);
 
     new_values["AsynchronousMetricsCalculationTimeSpent"] = { watch.elapsedSeconds(), "Time in seconds spent for calculation of asynchronous metrics (this is the overhead of asynchronous metrics)." };
 
@@ -1593,6 +1565,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     first_run = false;
 
     // Finally, update the current metrics.
+    std::lock_guard lock(mutex);
     values = new_values;
 }
 

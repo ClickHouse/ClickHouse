@@ -37,11 +37,12 @@ public:
         const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata,
-        LoadingStrictnessLevel mode,
+        bool attach,
         ContextMutablePtr context_,
         const String & date_column_name,
         const MergingParams & merging_params_,
-        std::unique_ptr<MergeTreeSettings> settings_);
+        std::unique_ptr<MergeTreeSettings> settings_,
+        bool has_force_restore_data_flag);
 
     void startup() override;
     void shutdown(bool is_drop) override;
@@ -51,6 +52,8 @@ public:
     std::string getName() const override { return merging_params.getModeName() + "MergeTree"; }
 
     bool supportsParallelInsert() const override { return true; }
+
+    bool supportsIndexForIn() const override { return true; }
 
     bool supportsTransactions() const override { return true; }
 
@@ -65,9 +68,8 @@ public:
         size_t num_streams) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override;
-    std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr) const override;
+    std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
-    std::optional<UInt64> totalBytesUncompressed(const Settings &) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
@@ -272,8 +274,6 @@ private:
 
     PreparedSetsCachePtr getPreparedSetsCache(Int64 mutation_id);
 
-    void assertNotReadonly() const;
-
     friend class MergeTreeSink;
     friend class MergeTreeData;
     friend class MergePlainMergeTreeTask;
@@ -307,7 +307,7 @@ private:
     };
 
 protected:
-    MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+    std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 };
 
 }

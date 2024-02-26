@@ -6,7 +6,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-#include <Storages/ColumnsDescription.h>
 
 #include <vector>
 #include <atomic>
@@ -26,7 +25,7 @@ struct AsynchronousMetricLogElement
     double value;
 
     static std::string name() { return "AsynchronousMetricLog"; }
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
 

@@ -16,11 +16,9 @@ namespace DB
 {
 
 
-ColumnsDescription StorageSystemPartMovesBetweenShards::getColumnsDescription()
+NamesAndTypesList StorageSystemPartMovesBetweenShards::getNamesAndTypes()
 {
-    /// TODO: Fill in all the comments
-    return ColumnsDescription
-    {
+    return {
         /// Table properties.
         { "database",                std::make_shared<DataTypeString>() },
         { "table",                   std::make_shared<DataTypeString>() },

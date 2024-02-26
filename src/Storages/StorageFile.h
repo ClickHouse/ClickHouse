@@ -53,8 +53,7 @@ public:
 
     std::string getName() const override { return "File"; }
 
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -84,7 +83,7 @@ public:
 
     static Names getVirtualColumnNames();
 
-    static Strings getPathsList(const String & table_path, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read);
+    static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
 
     /// Check if the format supports reading only some subset of columns.
     /// Is is useful because such formats could effectively skip unknown columns
@@ -112,19 +111,14 @@ public:
         }
     };
 
+    ColumnsDescription getTableStructureFromFileDescriptor(ContextPtr context);
+
     static ColumnsDescription getTableStructureFromFile(
         const String & format,
         const std::vector<String> & paths,
         const String & compression_method,
         const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context,
-        const std::optional<ArchiveInfo> & archive_info = std::nullopt);
-
-    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromFile(
-        const std::vector<String> & paths,
-        const String & compression_method,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context,
+        ContextPtr context,
         const std::optional<ArchiveInfo> & archive_info = std::nullopt);
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
@@ -135,7 +129,7 @@ public:
         const std::string & path_to_archive,
         const std::string & file_in_archive,
         const std::string & user_files_path,
-        const ContextPtr & context,
+        ContextPtr context,
         size_t & total_bytes_to_read);
 
     bool supportsTrivialCountOptimization() const override { return true; }
@@ -143,20 +137,19 @@ public:
 protected:
     friend class StorageFileSource;
     friend class StorageFileSink;
-    friend class ReadFromFile;
 
 private:
-    std::pair<ColumnsDescription, String> getTableStructureAndFormatFromFileDescriptor(std::optional<String> format, const ContextPtr & context);
-
-    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromFileImpl(
-        std::optional<String> format,
-        const std::vector<String> & paths,
-        const String & compression_method,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context,
-        const std::optional<ArchiveInfo> & archive_info = std::nullopt);
-
     void setStorageMetadata(CommonArguments args);
+
+    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
+        const Strings & paths, const String & format_name, const std::optional<FormatSettings> & format_settings, ContextPtr context);
+
+    static void addColumnsToCache(
+        const Strings & paths,
+        const ColumnsDescription & columns,
+        const String & format_name,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & context);
 
     std::string format_name;
     // We use format settings from global context + CREATE query for File table
@@ -178,7 +171,7 @@ private:
 
     mutable std::shared_timed_mutex rwlock;
 
-    LoggerPtr log = getLogger("StorageFile");
+    Poco::Logger * log = &Poco::Logger::get("StorageFile");
 
     /// Total number of bytes to read (sums for multiple files in case of globs). Needed for progress bar.
     size_t total_bytes_to_read = 0;
@@ -202,18 +195,18 @@ private:
     bool distributed_processing = false;
 };
 
-class StorageFileSource : public SourceWithKeyCondition, WithContext
+class StorageFileSource : public SourceWithKeyCondition
 {
 public:
-    class FilesIterator : WithContext
+    class FilesIterator
     {
     public:
         explicit FilesIterator(
             const Strings & files_,
             std::optional<StorageFile::ArchiveInfo> archive_info_,
-            const ActionsDAG::Node * predicate,
+            ASTPtr query,
             const NamesAndTypesList & virtual_columns,
-            const ContextPtr & context_,
+            ContextPtr context_,
             bool distributed_processing_ = false);
 
         String next();
@@ -242,6 +235,8 @@ private:
         std::atomic<size_t> index = 0;
 
         bool distributed_processing;
+
+        ContextPtr context;
     };
 
     using FilesIteratorPtr = std::shared_ptr<FilesIterator>;
@@ -249,7 +244,9 @@ private:
     StorageFileSource(
         const ReadFromFormatInfo & info,
         std::shared_ptr<StorageFile> storage_,
-        const ContextPtr & context_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        ContextPtr context_,
+        const SelectQueryInfo & query_info_,
         UInt64 max_block_size_,
         FilesIteratorPtr files_iterator_,
         std::unique_ptr<ReadBuffer> read_buf_,
@@ -269,6 +266,8 @@ private:
         return storage->getName();
     }
 
+    void setKeyCondition(const SelectQueryInfo & query_info_, ContextPtr context_) override;
+
     void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override;
 
     bool tryGetCountFromCache(const struct stat & file_stat);
@@ -280,6 +279,7 @@ private:
     std::optional<size_t> tryGetNumRowsFromCache(const String & path, time_t last_mod_time) const;
 
     std::shared_ptr<StorageFile> storage;
+    StorageSnapshotPtr storage_snapshot;
     FilesIteratorPtr files_iterator;
     String current_path;
     std::optional<size_t> current_file_size;
@@ -299,6 +299,8 @@ private:
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
 
+    ContextPtr context;    /// TODO Untangle potential issues with context lifetime.
+    SelectQueryInfo query_info;
     UInt64 max_block_size;
 
     bool finished_generate = false;

@@ -43,9 +43,6 @@ public:
     bool canBePromoted() const override { return nested_data_type->canBePromoted(); }
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
-
-    void forEachChild(const ChildCallback & callback) const override;
-
 private:
     SerializationPtr doGetDefaultSerialization() const override;
 
@@ -57,8 +54,5 @@ DataTypePtr makeNullable(const DataTypePtr & type);
 DataTypePtr makeNullableSafe(const DataTypePtr & type);
 DataTypePtr removeNullable(const DataTypePtr & type);
 DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type);
-DataTypePtr makeNullableOrLowCardinalityNullableSafe(const DataTypePtr & type);
-/// Nullable(T) -> T, LowCardinality(Nullable(T)) -> T
-DataTypePtr removeNullableOrLowCardinalityNullable(const DataTypePtr & type);
 
 }

@@ -15,13 +15,19 @@
 #endif
 #include <xxhash.h>
 
+#if USE_BLAKE3
+#    include <blake3.h>
+#endif
+
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/safe_cast.h>
 #include <Common/HashTable/Hash.h>
 
 #if USE_SSL
+#    include <openssl/md4.h>
 #    include <openssl/md5.h>
+#    include <openssl/sha.h>
 #endif
 
 #include <bit>
@@ -62,6 +68,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace impl
@@ -179,40 +186,6 @@ T combineHashesFunc(T t1, T t2)
 }
 
 
-struct SipHash64Impl
-{
-    static constexpr auto name = "sipHash64";
-    using ReturnType = UInt64;
-
-    static UInt64 apply(const char * begin, size_t size) { return sipHash64(begin, size); }
-    static UInt64 combineHashes(UInt64 h1, UInt64 h2) { return combineHashesFunc<UInt64, SipHash64Impl>(h1, h2); }
-
-    static constexpr bool use_int_hash_for_pods = false;
-};
-
-struct SipHash64KeyedImpl
-{
-    static constexpr auto name = "sipHash64Keyed";
-    using ReturnType = UInt64;
-    using Key = impl::SipHashKey;
-    using KeyColumns = impl::SipHashKeyColumns;
-
-    static KeyColumns parseKeyColumns(const ColumnWithTypeAndName & key) { return impl::parseSipHashKeyColumns(key); }
-    static Key getKey(const KeyColumns & key, size_t i) { return key.getKey(i); }
-
-    static UInt64 applyKeyed(const Key & key, const char * begin, size_t size) { return sipHash64Keyed(key.key0, key.key1, begin, size); }
-
-    static UInt64 combineHashesKeyed(const Key & key, UInt64 h1, UInt64 h2)
-    {
-        transformEndianness<std::endian::little>(h1);
-        transformEndianness<std::endian::little>(h2);
-        const UInt64 hashes[]{h1, h2};
-        return applyKeyed(key, reinterpret_cast<const char *>(hashes), sizeof(hashes));
-    }
-
-    static constexpr bool use_int_hash_for_pods = false;
-};
-
 #if USE_SSL
 struct HalfMD5Impl
 {
@@ -247,7 +220,139 @@ struct HalfMD5Impl
 
     static constexpr bool use_int_hash_for_pods = false;
 };
+
+struct MD4Impl
+{
+    static constexpr auto name = "MD4";
+    enum { length = MD4_DIGEST_LENGTH };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        MD4_CTX ctx;
+        MD4_Init(&ctx);
+        MD4_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        MD4_Final(out_char_data, &ctx);
+    }
+};
+
+struct MD5Impl
+{
+    static constexpr auto name = "MD5";
+    enum { length = MD5_DIGEST_LENGTH };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        MD5_CTX ctx;
+        MD5_Init(&ctx);
+        MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        MD5_Final(out_char_data, &ctx);
+    }
+};
+
+struct SHA1Impl
+{
+    static constexpr auto name = "SHA1";
+    enum { length = SHA_DIGEST_LENGTH };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        SHA_CTX ctx;
+        SHA1_Init(&ctx);
+        SHA1_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        SHA1_Final(out_char_data, &ctx);
+    }
+};
+
+struct SHA224Impl
+{
+    static constexpr auto name = "SHA224";
+    enum { length = SHA224_DIGEST_LENGTH };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        SHA256_CTX ctx;
+        SHA224_Init(&ctx);
+        SHA224_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        SHA224_Final(out_char_data, &ctx);
+    }
+};
+
+struct SHA256Impl
+{
+    static constexpr auto name = "SHA256";
+    enum { length = SHA256_DIGEST_LENGTH };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        SHA256_CTX ctx;
+        SHA256_Init(&ctx);
+        SHA256_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        SHA256_Final(out_char_data, &ctx);
+    }
+};
+
+struct SHA384Impl
+{
+    static constexpr auto name = "SHA384";
+    enum { length = SHA384_DIGEST_LENGTH };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        SHA512_CTX ctx;
+        SHA384_Init(&ctx);
+        SHA384_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        SHA384_Final(out_char_data, &ctx);
+    }
+};
+
+struct SHA512Impl
+{
+    static constexpr auto name = "SHA512";
+    enum { length = 64 };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        SHA512_CTX ctx;
+        SHA512_Init(&ctx);
+        SHA512_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        SHA512_Final(out_char_data, &ctx);
+    }
+};
 #endif
+
+struct SipHash64Impl
+{
+    static constexpr auto name = "sipHash64";
+    using ReturnType = UInt64;
+
+    static UInt64 apply(const char * begin, size_t size) { return sipHash64(begin, size); }
+    static UInt64 combineHashes(UInt64 h1, UInt64 h2) { return combineHashesFunc<UInt64, SipHash64Impl>(h1, h2); }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+struct SipHash64KeyedImpl
+{
+    static constexpr auto name = "sipHash64Keyed";
+    using ReturnType = UInt64;
+    using Key = impl::SipHashKey;
+    using KeyColumns = impl::SipHashKeyColumns;
+
+    static KeyColumns parseKeyColumns(const ColumnWithTypeAndName & key) { return impl::parseSipHashKeyColumns(key); }
+    static Key getKey(const KeyColumns & key, size_t i) { return key.getKey(i); }
+
+    static UInt64 applyKeyed(const Key & key, const char * begin, size_t size) { return sipHash64Keyed(key.key0, key.key1, begin, size); }
+
+    static UInt64 combineHashesKeyed(const Key & key, UInt64 h1, UInt64 h2)
+    {
+        transformEndianness<std::endian::little>(h1);
+        transformEndianness<std::endian::little>(h2);
+        const UInt64 hashes[]{h1, h2};
+        return applyKeyed(key, reinterpret_cast<const char *>(hashes), sizeof(hashes));
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
 
 struct SipHash128Impl
 {
@@ -690,6 +795,121 @@ struct ImplXXH3
 
     static constexpr bool use_int_hash_for_pods = false;
 };
+
+struct ImplBLAKE3
+{
+    static constexpr auto name = "BLAKE3";
+    enum { length = 32 };
+
+#if !USE_BLAKE3
+    [[noreturn]] static void apply(const char * /*begin*/, const size_t /*size*/, unsigned char * /*out_char_data*/)
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "BLAKE3 is not available. Rust code or BLAKE3 itself may be disabled.");
+    }
+#else
+    static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
+    {
+        auto err_msg = blake3_apply_shim(begin, safe_cast<uint32_t>(size), out_char_data);
+        if (err_msg != nullptr)
+        {
+            auto err_st = std::string(err_msg);
+            blake3_free_char_pointer(err_msg);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function returned error message: {}", err_st);
+        }
+    }
+#endif
+};
+
+template <typename Impl>
+class FunctionStringHashFixedString : public IFunction
+{
+public:
+    static constexpr auto name = Impl::name;
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStringHashFixedString>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!isStringOrFixedString(arguments[0]) && !isIPv6(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
+
+        return std::make_shared<DataTypeFixedString>(Impl::length);
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    {
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
+        {
+            auto col_to = ColumnFixedString::create(Impl::length);
+
+            const typename ColumnString::Chars & data = col_from->getChars();
+            const typename ColumnString::Offsets & offsets = col_from->getOffsets();
+            auto & chars_to = col_to->getChars();
+            const auto size = offsets.size();
+            chars_to.resize(size * Impl::length);
+
+            ColumnString::Offset current_offset = 0;
+            for (size_t i = 0; i < size; ++i)
+            {
+                Impl::apply(
+                    reinterpret_cast<const char *>(&data[current_offset]),
+                    offsets[i] - current_offset - 1,
+                    reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
+
+                current_offset = offsets[i];
+            }
+
+            return col_to;
+        }
+        else if (
+            const ColumnFixedString * col_from_fix = checkAndGetColumn<ColumnFixedString>(arguments[0].column.get()))
+        {
+            auto col_to = ColumnFixedString::create(Impl::length);
+            const typename ColumnFixedString::Chars & data = col_from_fix->getChars();
+            const auto size = col_from_fix->size();
+            auto & chars_to = col_to->getChars();
+            const auto length = col_from_fix->getN();
+            chars_to.resize(size * Impl::length);
+            for (size_t i = 0; i < size; ++i)
+            {
+                Impl::apply(
+                    reinterpret_cast<const char *>(&data[i * length]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
+            }
+            return col_to;
+        }
+        else if (
+            const ColumnIPv6 * col_from_ip = checkAndGetColumn<ColumnIPv6>(arguments[0].column.get()))
+        {
+            auto col_to = ColumnFixedString::create(Impl::length);
+            const typename ColumnIPv6::Container & data = col_from_ip->getData();
+            const auto size = col_from_ip->size();
+            auto & chars_to = col_to->getChars();
+            const auto length = IPV6_BINARY_LENGTH;
+            chars_to.resize(size * Impl::length);
+            for (size_t i = 0; i < size; ++i)
+            {
+                Impl::apply(
+                    reinterpret_cast<const char *>(&data[i * length]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
+            }
+            return col_to;
+        }
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(), getName());
+    }
+};
+
 
 DECLARE_MULTITARGET_CODE(
 
@@ -1573,7 +1793,14 @@ using FunctionSipHash64Keyed = FunctionAnyHash<SipHash64KeyedImpl, true, SipHash
 using FunctionIntHash32 = FunctionIntHash<IntHash32Impl, NameIntHash32>;
 using FunctionIntHash64 = FunctionIntHash<IntHash64Impl, NameIntHash64>;
 #if USE_SSL
+using FunctionMD4 = FunctionStringHashFixedString<MD4Impl>;
 using FunctionHalfMD5 = FunctionAnyHash<HalfMD5Impl>;
+using FunctionMD5 = FunctionStringHashFixedString<MD5Impl>;
+using FunctionSHA1 = FunctionStringHashFixedString<SHA1Impl>;
+using FunctionSHA224 = FunctionStringHashFixedString<SHA224Impl>;
+using FunctionSHA256 = FunctionStringHashFixedString<SHA256Impl>;
+using FunctionSHA384 = FunctionStringHashFixedString<SHA384Impl>;
+using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
 #endif
 using FunctionSipHash128 = FunctionAnyHash<SipHash128Impl>;
 using FunctionSipHash128Keyed = FunctionAnyHash<SipHash128KeyedImpl, true, SipHash128KeyedImpl::Key, SipHash128KeyedImpl::KeyColumns>;
@@ -1602,6 +1829,7 @@ using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
 using FunctionXXH3 = FunctionAnyHash<ImplXXH3>;
 
 using FunctionWyHash64 = FunctionAnyHash<ImplWyHash64>;
+using FunctionBLAKE3 = FunctionStringHashFixedString<ImplBLAKE3>;
 }
 
 #ifdef __clang__

@@ -6,7 +6,7 @@
 
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromS3.h>
-#include <Common/Scheduler/ResourceGuard.h>
+#include <IO/ResourceGuard.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Requests.h>
 
@@ -196,7 +196,7 @@ bool ReadBufferFromS3::nextImpl()
             next_result = impl->next();
             break;
         }
-        catch (Poco::Exception & e)
+        catch (Exception & e)
         {
             if (!processException(e, getPosition(), attempt) || last_attempt)
                 throw;
@@ -515,9 +515,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     // We do not know in advance how many bytes we are going to consume, to avoid blocking estimated it from below
     constexpr ResourceCost estimated_cost = 1;
     ResourceGuard rlock(read_settings.resource_link, estimated_cost);
-
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
-
     rlock.unlock();
 
     if (outcome.IsSuccess())

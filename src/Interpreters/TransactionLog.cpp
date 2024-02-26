@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
-static void tryWriteEventToSystemLog(LoggerPtr log, ContextPtr context,
+static void tryWriteEventToSystemLog(Poco::Logger * log, ContextPtr context,
                                      TransactionsInfoLogElement::Type type, const TransactionID & tid, CSN csn = Tx::UnknownCSN)
 try
 {
@@ -44,7 +44,7 @@ catch (...)
 
 TransactionLog::TransactionLog()
     : global_context(Context::getGlobalContextInstance())
-    , log(getLogger("TransactionLog"))
+    , log(&Poco::Logger::get("TransactionLog"))
     , zookeeper_path(global_context->getConfigRef().getString("transaction_log.zookeeper_path", "/clickhouse/txn"))
     , zookeeper_path_log(zookeeper_path + "/log")
     , fault_probability_before_commit(global_context->getConfigRef().getDouble("transaction_log.fault_probability_before_commit", 0))
@@ -407,13 +407,8 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
         {
             Coordination::SimpleFaultInjection fault(fault_probability_before_commit, fault_probability_after_commit, "commit");
 
-            Coordination::Requests requests;
-            requests.push_back(zkutil::makeCreateRequest(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential));
-
             /// Commit point
-            auto res = current_zookeeper->multi(requests, /* check_session_valid */ true);
-
-            csn_path_created = dynamic_cast<const Coordination::CreateResponse *>(res.back().get())->path_created;
+            csn_path_created = current_zookeeper->create(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential);
         }
         catch (const Coordination::Exception & e)
         {

@@ -153,7 +153,7 @@ private:
     const String disk_path;
     const String disk_checker_path = ".disk_checker_file";
     std::atomic<UInt64> keep_free_space_bytes;
-    LoggerPtr logger;
+    Poco::Logger * logger;
     DataSourceDescription data_source_description;
 
     UInt64 reserved_bytes = 0;

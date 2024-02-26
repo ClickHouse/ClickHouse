@@ -34,7 +34,6 @@
 #include <type_traits>
 #include <vector>
 
-#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -376,8 +375,7 @@ void TableJoin::addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, boo
              * For `JOIN ON expr1 == expr2` we will infer common type later in makeTableJoin,
              *   when part of plan built and types of expression will be known.
              */
-            bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
-            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage(), require_strict_keys_match);
+            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage(), isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE));
 
             if (auto it = left_type_map.find(col.name); it != left_type_map.end())
             {
@@ -560,10 +558,7 @@ TableJoin::createConvertingActions(
       */
     NameToNameMap left_column_rename;
     NameToNameMap right_column_rename;
-
-    /// FullSortingMerge join algorithm doesn't support joining keys with different types (e.g. String and Nullable(String))
-    bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
-    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), require_strict_keys_match);
+    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE));
     if (!left_type_map.empty() || !right_type_map.empty())
     {
         left_dag = applyKeyConvertToTable(left_sample_columns, left_type_map, JoinTableSide::Left, left_column_rename);
@@ -617,7 +612,7 @@ TableJoin::createConvertingActions(
 }
 
 template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
-void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right, bool require_strict_keys_match)
+void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right, bool strict)
 {
     if (!left_type_map.empty() || !right_type_map.empty())
         return;
@@ -650,7 +645,7 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
         const auto & ltype = ltypeit->second;
         const auto & rtype = rtypeit->second;
 
-        bool type_equals = require_strict_keys_match ? ltype->equals(*rtype) : JoinCommon::typesEqualUpToNullability(ltype, rtype);
+        bool type_equals = strict ? ltype->equals(*rtype) : JoinCommon::typesEqualUpToNullability(ltype, rtype);
         if (type_equals)
             return true;
 
@@ -683,7 +678,7 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
     if (!left_type_map.empty() || !right_type_map.empty())
     {
         LOG_TRACE(
-            getLogger("TableJoin"),
+            &Poco::Logger::get("TableJoin"),
             "Infer supertype for joined columns. Left: [{}], Right: [{}]",
             formatTypeMap(left_type_map, left_types),
             formatTypeMap(right_type_map, right_types));
@@ -876,7 +871,7 @@ static void addJoinConditionWithAnd(ASTPtr & current_cond, const ASTPtr & new_co
 void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
 {
     auto & cond_ast = is_left ? clauses.back().on_filter_condition_left : clauses.back().on_filter_condition_right;
-    LOG_TRACE(getLogger("TableJoin"), "Adding join condition for {} table: {} -> {}",
+    LOG_TRACE(&Poco::Logger::get("TableJoin"), "Adding join condition for {} table: {} -> {}",
               (is_left ? "left" : "right"), ast ? queryToString(ast) : "NULL", cond_ast ? queryToString(cond_ast) : "NULL");
     addJoinConditionWithAnd(cond_ast, ast);
 }

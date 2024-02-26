@@ -248,10 +248,10 @@ Field generateRandomFixedValue(const StorageFuzzJSON::Configuration & config, pc
     return f;
 }
 
-String fuzzString(UInt64 min_length, UInt64 max_length, pcg64 & rnd, const String & source, std::function<char(pcg64 &)> charGen)
+String fuzzJSONKey(const StorageFuzzJSON::Configuration & config, pcg64 & rnd, const String & source)
 {
     String result;
-    result.reserve(max_length);
+    result.reserve(config.max_key_length);
 
     using FA = FuzzAction;
     auto get_action = [&]() -> FuzzAction
@@ -261,7 +261,7 @@ String fuzzString(UInt64 min_length, UInt64 max_length, pcg64 & rnd, const Strin
     };
 
     size_t i = 0;
-    while (i < source.size() && result.size() < max_length)
+    while (i < source.size() && result.size() < config.max_key_length)
     {
         auto action = get_action();
         switch (action)
@@ -271,12 +271,12 @@ String fuzzString(UInt64 min_length, UInt64 max_length, pcg64 & rnd, const Strin
             }
             break;
             case FA::Edit: {
-                result.push_back(charGen(rnd));
+                result.push_back(generateRandomKeyCharacter(rnd));
                 ++i;
             }
             break;
             case FA::Add: {
-                result.push_back(charGen(rnd));
+                result.push_back(generateRandomKeyCharacter(rnd));
             }
             break;
             default:
@@ -284,22 +284,10 @@ String fuzzString(UInt64 min_length, UInt64 max_length, pcg64 & rnd, const Strin
         }
     }
 
-    while (result.size() < min_length)
-        result.push_back(charGen(rnd));
+    while (result.size() < config.min_key_length)
+        result.push_back(generateRandomKeyCharacter(rnd));
 
     return result;
-}
-
-String fuzzJSONKey(const StorageFuzzJSON::Configuration & config, pcg64 & rnd, const String & key)
-{
-    return fuzzString(config.min_key_length, config.max_key_length, rnd, key, generateRandomKeyCharacter);
-}
-
-// Randomly modify structural characters (e.g. '{', '}', '[', ']', ':', '"') to generate output that cannot be parsed as JSON.
-String fuzzJSONStructure(const StorageFuzzJSON::Configuration & config, pcg64 & rnd, const String & s)
-{
-    return config.should_malform_output ? fuzzString(/*min_length*/ 0, /*max_length*/ s.size(), rnd, s, generateRandomStringValueCharacter)
-                                        : s;
 }
 
 std::shared_ptr<JSONNode>
@@ -409,7 +397,7 @@ void fuzzJSONObject(
     if (next_node->key)
     {
         writeDoubleQuoted(*next_node->key, out);
-        out << fuzzJSONStructure(config, rnd, ":");
+        out << ":";
     }
 
     auto & val = next_node->value;
@@ -417,11 +405,7 @@ void fuzzJSONObject(
     if (val.fixed)
     {
         if (val.fixed->getType() == Field::Types::Which::String)
-        {
-            out << fuzzJSONStructure(config, rnd, "\"");
-            writeText(val.fixed->get<String>(), out);
-            out << fuzzJSONStructure(config, rnd, "\"");
-        }
+            writeDoubleQuoted(val.fixed->get<String>(), out);
         else
             writeFieldText(*val.fixed, out);
     }
@@ -430,9 +414,9 @@ void fuzzJSONObject(
         if (!val.array && !val.object)
             return;
 
-        const auto & [op, cl, node_list] = val.array ? std::make_tuple("[", "]", *val.array) : std::make_tuple("{", "}", *val.object);
+        const auto & [op, cl, node_list] = val.array ? std::make_tuple('[', ']', *val.array) : std::make_tuple('{', '}', *val.object);
 
-        out << fuzzJSONStructure(config, rnd, op);
+        out << op;
 
         bool first = true;
         for (const auto & ptr : node_list)
@@ -442,7 +426,7 @@ void fuzzJSONObject(
 
             WriteBufferFromOwnString child_out;
             if (!first)
-                child_out << fuzzJSONStructure(config, rnd, ", ");
+                child_out << ", ";
             first = false;
 
             fuzzJSONObject(ptr, child_out, config, rnd, depth + 1, node_count);
@@ -451,7 +435,7 @@ void fuzzJSONObject(
                 break;
             out << child_out.str();
         }
-        out << fuzzJSONStructure(config, rnd, cl);
+        out << cl;
     }
 }
 
@@ -481,11 +465,7 @@ protected:
     {
         Columns columns;
         columns.reserve(block_header.columns());
-        for (const auto & col : block_header)
-        {
-            chassert(col.type->getTypeId() == TypeIndex::String);
-            columns.emplace_back(createColumn());
-        }
+        columns.emplace_back(createColumn());
 
         return {std::move(columns), block_size};
     }
@@ -574,11 +554,10 @@ Pipe StorageFuzzJSON::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-static constexpr std::array<std::string_view, 14> optional_configuration_keys
+static constexpr std::array<std::string_view, 13> optional_configuration_keys
     = {"json_str",
        "random_seed",
        "reuse_output",
-       "malform_output",
        "probability",
        "max_output_length",
        "max_nesting_level",
@@ -603,9 +582,6 @@ void StorageFuzzJSON::processNamedCollectionResult(Configuration & configuration
 
     if (collection.has("reuse_output"))
         configuration.should_reuse_output = static_cast<bool>(collection.get<UInt64>("reuse_output"));
-
-    if (collection.has("malform_output"))
-        configuration.should_malform_output = static_cast<bool>(collection.get<UInt64>("malform_output"));
 
     if (collection.has("probability"))
     {
@@ -723,11 +699,6 @@ void registerStorageFuzzJSON(StorageFactory & factory)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage FuzzJSON must have arguments.");
 
             StorageFuzzJSON::Configuration configuration = StorageFuzzJSON::getConfiguration(engine_args, args.getLocalContext());
-
-            for (const auto& col : args.columns)
-                if (col.type->getTypeId() != TypeIndex::String)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "'StorageFuzzJSON' supports only columns of String type, got {}.", col.type->getName());
-
             return std::make_shared<StorageFuzzJSON>(args.table_id, args.columns, args.comment, configuration);
         });
 }

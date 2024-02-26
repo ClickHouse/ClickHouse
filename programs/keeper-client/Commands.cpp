@@ -115,7 +115,7 @@ bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
     else if (ParserKeyword{"PERSISTENT SEQUENTIAL"}.ignore(pos, expected))
         mode = zkutil::CreateMode::PersistentSequential;
 
-    node->args.push_back(std::move(mode));
+    node->args.push_back(mode);
 
     return true;
 }
@@ -413,13 +413,13 @@ void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient
     switch (operation)
     {
         case static_cast<UInt8>(ReconfigCommand::Operation::ADD):
-            joining = query->args[1].safeGet<String>();
+            joining = query->args[1].safeGet<DB::String>();
             break;
         case static_cast<UInt8>(ReconfigCommand::Operation::REMOVE):
-            leaving = query->args[1].safeGet<String>();
+            leaving = query->args[1].safeGet<DB::String>();
             break;
         case static_cast<UInt8>(ReconfigCommand::Operation::SET):
-            new_members = query->args[1].safeGet<String>();
+            new_members = query->args[1].safeGet<DB::String>();
             break;
         default:
             UNREACHABLE();

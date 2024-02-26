@@ -184,32 +184,6 @@ def test_backup_to_disk(storage_policy, to_disk):
     check_backup_and_restore(storage_policy, backup_destination)
 
 
-@pytest.mark.parametrize(
-    "storage_policy, to_disk",
-    [
-        pytest.param(
-            "policy_s3",
-            "disk_s3_other_bucket",
-            id="from_s3_to_s3",
-        ),
-        pytest.param(
-            "policy_s3_other_bucket",
-            "disk_s3",
-            id="from_s3_to_s3_other_bucket",
-        ),
-    ],
-)
-def test_backup_from_s3_to_s3_disk_native_copy(storage_policy, to_disk):
-    backup_name = new_backup_name()
-    backup_destination = f"Disk('{to_disk}', '{backup_name}')"
-    (backup_events, restore_events) = check_backup_and_restore(
-        storage_policy, backup_destination
-    )
-
-    assert backup_events["S3CopyObject"] > 0
-    assert restore_events["S3CopyObject"] > 0
-
-
 def test_backup_to_s3():
     storage_policy = "default"
     backup_name = new_backup_name()
@@ -445,64 +419,3 @@ def test_backup_with_fs_cache(
     # see MergeTreeData::initializeDirectoriesAndFormatVersion()
     if "CachedWriteBufferCacheWriteBytes" in restore_events:
         assert restore_events["CachedWriteBufferCacheWriteBytes"] <= 1
-
-
-def test_backup_to_zip():
-    storage_policy = "default"
-    backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', 'minio123')"
-    check_backup_and_restore(storage_policy, backup_destination)
-
-
-def test_user_specific_auth(start_cluster):
-    def create_user(user):
-        node.query(f"CREATE USER {user}")
-        node.query(f"GRANT CURRENT GRANTS ON *.* TO {user}")
-
-    create_user("superuser1")
-    create_user("superuser2")
-    create_user("regularuser")
-
-    node.query("CREATE TABLE specific_auth (col UInt64) ENGINE=Memory")
-
-    assert "Access" in node.query_and_get_error(
-        "BACKUP TABLE specific_auth TO S3('http://minio1:9001/root/data/backups/limited/backup1.zip')"
-    )
-    assert "Access" in node.query_and_get_error(
-        "BACKUP TABLE specific_auth TO S3('http://minio1:9001/root/data/backups/limited/backup1.zip')",
-        user="regularuser",
-    )
-
-    node.query(
-        "BACKUP TABLE specific_auth TO S3('http://minio1:9001/root/data/backups/limited/backup1.zip')",
-        user="superuser1",
-    )
-    node.query(
-        "RESTORE TABLE specific_auth FROM S3('http://minio1:9001/root/data/backups/limited/backup1.zip')",
-        user="superuser1",
-    )
-
-    node.query(
-        "BACKUP TABLE specific_auth TO S3('http://minio1:9001/root/data/backups/limited/backup2.zip')",
-        user="superuser2",
-    )
-    node.query(
-        "RESTORE TABLE specific_auth FROM S3('http://minio1:9001/root/data/backups/limited/backup2.zip')",
-        user="superuser2",
-    )
-
-    assert "Access" in node.query_and_get_error(
-        "RESTORE TABLE specific_auth FROM S3('http://minio1:9001/root/data/backups/limited/backup1.zip')",
-        user="regularuser",
-    )
-
-    assert "HTTP response code: 403" in node.query_and_get_error(
-        "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup1.zip', 'RawBLOB')",
-        user="regularuser",
-    )
-    node.query(
-        "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup1.zip', 'RawBLOB')",
-        user="superuser1",
-    )
-
-    node.query("DROP TABLE IF EXISTS test.specific_auth")

@@ -1,41 +1,40 @@
-#include <Interpreters/InterpreterInsertQuery.h>
+#include <boost/range/algorithm_ext/erase.hpp>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/addMissingDefaults.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/getColumnFromBlock.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Storages/StorageBuffer.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/ISource.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
+#include <base/getThreadId.h>
+#include <base/range.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/ReverseTransform.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/Transforms/ReverseTransform.h>
-#include <Storages/AlterCommands.h>
-#include <Storages/StorageBuffer.h>
-#include <Storages/StorageFactory.h>
-#include <Storages/checkAndGetLiteralArgument.h>
-#include <base/getThreadId.h>
-#include <base/range.h>
-#include <boost/range/algorithm_ext/erase.hpp>
-#include <Common/CurrentMetrics.h>
-#include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/ProfileEvents.h>
-#include <Common/logger_useful.h>
-#include <Common/quoteString.h>
-#include <Common/threadPoolCallbackRunner.h>
-#include <Common/typeid_cast.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 
 
 namespace ProfileEvents
@@ -57,9 +56,6 @@ namespace CurrentMetrics
 {
     extern const Metric StorageBufferRows;
     extern const Metric StorageBufferBytes;
-    extern const Metric StorageBufferFlushThreads;
-    extern const Metric StorageBufferFlushThreadsActive;
-    extern const Metric StorageBufferFlushThreadsScheduled;
 }
 
 
@@ -141,7 +137,7 @@ StorageBuffer::StorageBuffer(
     , flush_thresholds(flush_thresholds_)
     , destination_id(destination_id_)
     , allow_materialized(allow_materialized_)
-    , log(getLogger("StorageBuffer (" + table_id_.getFullTableName() + ")"))
+    , log(&Poco::Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
     , bg_pool(getContext()->getBufferFlushSchedulePool())
 {
     StorageInMemoryMetadata storage_metadata;
@@ -157,12 +153,6 @@ StorageBuffer::StorageBuffer(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
-    if (num_shards > 1)
-    {
-        flush_pool = std::make_unique<ThreadPool>(
-            CurrentMetrics::StorageBufferFlushThreads, CurrentMetrics::StorageBufferFlushThreadsActive, CurrentMetrics::StorageBufferFlushThreadsScheduled,
-            num_shards, 0, num_shards);
-    }
     flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
 }
 
@@ -222,6 +212,8 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
 {
     if (auto destination = getDestinationTable())
     {
+        /// TODO: Find a way to support projections for StorageBuffer
+        query_info.ignore_projections = true;
         const auto & destination_metadata = destination->getInMemoryMetadataPtr();
         return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
     }
@@ -345,12 +337,12 @@ void StorageBuffer::read(
             pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, storage_snapshot));
 
         pipe_from_buffers = Pipe::unitePipes(std::move(pipes_from_buffers));
-        if (query_info.input_order_info)
+        if (query_info.getInputOrderInfo())
         {
             /// Each buffer has one block, and it not guaranteed that rows in each block are sorted by order keys
             pipe_from_buffers.addSimpleTransform([&](const Block & header)
             {
-                return std::make_shared<PartialSortingTransform>(header, query_info.input_order_info->sort_description_for_merging, 0);
+                return std::make_shared<PartialSortingTransform>(header, query_info.getInputOrderInfo()->sort_description_for_merging, 0);
             });
         }
     }
@@ -368,7 +360,7 @@ void StorageBuffer::read(
         /// TODO: Find a way to support projections for StorageBuffer
         auto interpreter = InterpreterSelectQuery(
                 query_info.query, local_context, std::move(pipe_from_buffers),
-                SelectQueryOptions(processed_stage));
+                SelectQueryOptions(processed_stage).ignoreProjections());
         interpreter.addStorageLimits(*query_info.storage_limits);
         interpreter.buildQueryPlan(buffers_plan);
     }
@@ -443,7 +435,7 @@ void StorageBuffer::read(
 }
 
 
-static void appendBlock(LoggerPtr log, const Block & from, Block & to)
+static void appendBlock(Poco::Logger * log, const Block & from, Block & to)
 {
     size_t rows = from.rows();
     size_t old_rows = to.rows();
@@ -673,6 +665,15 @@ SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMet
 }
 
 
+bool StorageBuffer::mayBenefitFromIndexForIn(
+    const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
+{
+    if (auto destination = getDestinationTable())
+        return destination->mayBenefitFromIndexForIn(left_in_operand, query_context, destination->getInMemoryMetadataPtr());
+    return false;
+}
+
+
 void StorageBuffer::startup()
 {
     if (getContext()->getSettingsRef().readonly)
@@ -812,22 +813,7 @@ bool StorageBuffer::checkThresholdsImpl(bool direct, size_t rows, size_t bytes, 
 void StorageBuffer::flushAllBuffers(bool check_thresholds)
 {
     for (auto & buf : buffers)
-    {
-        if (flush_pool)
-        {
-            scheduleFromThreadPool<void>([&] ()
-            {
-                flushBuffer(buf, check_thresholds, false);
-            }, *flush_pool, "BufferFlush");
-        }
-        else
-        {
-            flushBuffer(buf, check_thresholds, false);
-        }
-    }
-
-    if (flush_pool)
-        flush_pool->wait();
+        flushBuffer(buf, check_thresholds, false);
 }
 
 

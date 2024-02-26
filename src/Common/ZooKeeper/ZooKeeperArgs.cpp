@@ -132,8 +132,6 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
 
 void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
 {
-    zookeeper_name = config_name;
-
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_name, keys);
 
@@ -194,10 +192,6 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         else if (key == "root")
         {
             chroot = config.getString(config_name + "." + key);
-        }
-        else if (key == "sessions_path")
-        {
-            sessions_path = config.getString(config_name + "." + key);
         }
         else if (key == "implementation")
         {
