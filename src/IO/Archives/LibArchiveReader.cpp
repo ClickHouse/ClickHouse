@@ -197,13 +197,18 @@ private:
             archive_read_support_filter_xz(archive);
             archive_read_support_filter_lz4(archive);
             archive_read_support_filter_zstd(archive);
+            archive_read_support_filter_lzma(archive);
             // Support tar, 7zip and zip
             archive_read_support_format_tar(archive);
             archive_read_support_format_7zip(archive);
             archive_read_support_format_zip(archive);
 
-            if (archive_read_open_filename(archive, path_to_archive.c_str(), 10240) != ARCHIVE_OK)
-                throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't open archive {}: {}", quoteString(path_to_archive), archive_error_string(archive));
+            if (archive_read_open(archive, read_stream_, nullptr, StreamInfo::read, nullptr) != ARCHIVE_OK)
+                throw Exception(
+                    ErrorCodes::CANNOT_UNPACK_ARCHIVE,
+                    "Couldn't open archive {}: {}",
+                    quoteString(path_to_archive),
+                    archive_error_string(archive));
         }
         catch (...)
         {
@@ -219,8 +224,17 @@ private:
         auto * archive = archive_read_new();
         try
         {
-            archive_read_support_filter_all(archive);
-            archive_read_support_format_all(archive);
+            // Support for bzip2, gzip, lzip, xz, zstd and lz4
+            archive_read_support_filter_bzip2(archive);
+            archive_read_support_filter_gzip(archive);
+            archive_read_support_filter_xz(archive);
+            archive_read_support_filter_lz4(archive);
+            archive_read_support_filter_zstd(archive);
+            archive_read_support_filter_lzma(archive);
+            // Support tar, 7zip and zip
+            archive_read_support_format_tar(archive);
+            archive_read_support_format_7zip(archive);
+            archive_read_support_format_zip(archive);
             if (archive_read_open_filename(archive, path_to_archive_.c_str(), 10240) != ARCHIVE_OK)
                 throw Exception(
                     ErrorCodes::CANNOT_UNPACK_ARCHIVE,
