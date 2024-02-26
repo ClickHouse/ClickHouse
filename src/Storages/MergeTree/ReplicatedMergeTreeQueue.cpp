@@ -13,6 +13,7 @@
 #include <base/sort.h>
 
 #include <ranges>
+#include <Poco/Timestamp.h>
 
 namespace DB
 {
@@ -682,7 +683,7 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
                 ops.emplace_back(zkutil::makeSetRequest(
                     fs::path(replica_path) / "min_unprocessed_insert_time", toString(*min_unprocessed_insert_time_changed), -1));
 
-            auto responses = zookeeper->multi(ops);
+            auto responses = zookeeper->multi(ops, /* check_session_valid */ true);
 
             /// Now we have successfully updated the queue in ZooKeeper. Update it in RAM.
 
@@ -1353,9 +1354,17 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     sum_parts_size_in_bytes += part_in_memory->block.bytes();
                 else
                     sum_parts_size_in_bytes += part->getBytesOnDisk();
+
+                if (entry.type == LogEntry::MUTATE_PART && !storage.mutation_backoff_policy.partCanBeMutated(part->name))
+                {
+                        constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} "
+                           "because recently it has failed. According to exponential backoff policy, put aside this log entry.";
+
+                        LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name);
+                        return false;
+                }
             }
         }
-
         if (merger_mutator.merges_blocker.isCancelled())
         {
             constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} because merges and mutations are cancelled now.";
