@@ -19,7 +19,6 @@ from env_helper import (
     GITHUB_SERVER_URL,
 )
 
-FORCE_TESTS_LABEL = "force tests"
 SKIP_MERGEABLE_CHECK_LABEL = "skip mergeable check"
 NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
 
@@ -287,7 +286,10 @@ class PRInfo:
             self.fetch_changed_files()
 
     def is_master(self) -> bool:
-        return self.number == 0 and self.base_ref == "master"
+        return self.number == 0 and self.head_ref == "master"
+
+    def is_release_branch(self) -> bool:
+        return self.number == 0
 
     def is_scheduled(self):
         return self.event_type == EventType.SCHEDULE
@@ -366,6 +368,7 @@ class PRInfo:
                 (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs)
                 or "docker/docs" in f
                 or "docs_check.py" in f
+                or "aspell-dict.txt" in f
                 or ext == ".md"
             ):
                 return False

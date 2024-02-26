@@ -189,6 +189,13 @@ private:
 
     using Aliases = std::vector<AliasData>;
 
+    SelectQueryInfo getModifiedQueryInfo(const ContextPtr & modified_context,
+        const StorageWithLockAndName & storage_with_lock_and_name,
+        const StorageSnapshotPtr & storage_snapshot,
+        Names required_column_names,
+        Names & column_names_as_aliases,
+        Aliases & aliases) const;
+
     /// An object of this helper class is created
     ///  when processing a Merge table data source (subordinary table)
     ///  that has row policies
@@ -261,17 +268,13 @@ private:
         ContextMutablePtr modified_context,
         bool concat_streams = false) const;
 
-    static SelectQueryInfo getModifiedQueryInfo(const SelectQueryInfo & query_info,
-        const ContextPtr & modified_context,
-        const StorageWithLockAndName & storage_with_lock_and_name,
-        const StorageSnapshotPtr & storage_snapshot);
-
     static void convertAndFilterSourceStream(
         const Block & header,
-        const StorageMetadataPtr & metadata_snapshot,
+        SelectQueryInfo & modified_query_info,
+        const StorageSnapshotPtr & snapshot,
         const Aliases & aliases,
         const RowPolicyDataOpt & row_policy_data_opt,
-        ContextPtr context,
+        ContextMutablePtr context,
         QueryPipelineBuilder & builder,
         QueryProcessingStage::Enum processed_stage);
 

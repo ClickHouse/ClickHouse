@@ -12,6 +12,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Functions/logical.h>
 
 #include <Common/logger_useful.h>
 
@@ -256,7 +257,7 @@ private:
         for (const auto & node : nodes)
             function_node->getArguments().getNodes().push_back(node);
 
-        const auto & function = FunctionFactory::instance().get("and", getContext());
+        const auto & function = createInternalFunctionAndOverloadResolver();
         function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
         return function_node;
     }
@@ -264,7 +265,7 @@ private:
 
 }
 
-void CrossToInnerJoinPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void CrossToInnerJoinPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     CrossToInnerJoinVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

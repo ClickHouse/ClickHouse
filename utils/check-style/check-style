@@ -76,6 +76,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::getProfileEvents
     ProfileEvents::ThreadIdToCountersSnapshot
     ProfileEvents::LOCAL_NAME
+    ProfileEvents::keeper_profile_events
     ProfileEvents::CountersIncrement
 
     CurrentMetrics::add
@@ -87,6 +88,7 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::Metric
     CurrentMetrics::values
     CurrentMetrics::Value
+    CurrentMetrics::keeper_metrics
 
     ErrorCodes::ErrorCode
     ErrorCodes::getName
@@ -106,7 +108,7 @@ for extern_type in ${!EXTERN_TYPES[@]}; do
     find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
         # NOTE: the check is pretty dumb and distinguish only by the type_of_extern,
         # and this matches with zkutil::CreateMode
-        grep -v 'src/Common/ZooKeeper/Types.h'
+        grep -v -e 'src/Common/ZooKeeper/Types.h' -e 'src/Coordination/KeeperConstants.cpp'
     } | {
         grep -vP $EXCLUDE_DIRS | xargs grep -l -P "extern const $type_of_extern $allowed_chars"
     } | while read file; do
@@ -274,6 +276,11 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
     xargs grep -F '!!!' | grep -P '.' && echo "Too many exclamation marks (looks dirty, unconfident)."
 
+# Exclamation mark in a message
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -F '!",' | grep -P '.' && echo "No need for an exclamation mark (looks dirty, unconfident)."
+
 # Trailing whitespaces
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
@@ -435,3 +442,9 @@ ls -1d $ROOT_PATH/contrib/*-cmake | xargs -I@ find @ -name 'CMakeLists.txt' -or 
 
 # DOS/Windows newlines
 find $ROOT_PATH/{base,src,programs,utils,docs} -name '*.md' -or -name '*.h' -or -name '*.cpp' -or -name '*.js' -or -name '*.py' -or -name '*.html' | xargs grep -l -P '\r$' && echo "^ Files contain DOS/Windows newlines (\r\n instead of \n)."
+
+# Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -P 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -P 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3' &&
+    echo "Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
