@@ -16,8 +16,10 @@
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 #include <Disks/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/ObjectStorages/PlainObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
 #endif
+#include <Disks/ObjectStorages/MetadataStorageFactory.h>
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
 
@@ -30,6 +32,28 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+    template <typename BaseObjectStorage, class ...Args>
+    ObjectStoragePtr createObjectStorage(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        Args && ...args)
+    {
+        auto compatibility_hint = MetadataStorageFactory::getCompatibilityMetadataTypeHint(ObjectStorageType::S3);
+        auto metadata_type = MetadataStorageFactory::getMetadataType(config, config_prefix, compatibility_hint);
+
+        if (metadataTypeFromString(metadata_type) == MetadataStorageType::Plain)
+        {
+            return std::make_shared<PlainObjectStorage<BaseObjectStorage>>(std::forward<Args>(args)...);
+        }
+        else
+        {
+            return std::make_shared<BaseObjectStorage>(std::forward<Args>(args)...);
+        }
+    }
 }
 
 ObjectStorageFactory & ObjectStorageFactory::instance()
@@ -129,12 +153,12 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
         auto client = getClient(config, config_prefix, context, *settings);
         auto key_generator = getKeyGenerator(disk_type, uri, config, config_prefix);
 
-        auto object_storage = std::make_shared<S3ObjectStorage>(
-            std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
+        auto object_storage = createObjectStorage<S3ObjectStorage>(
+            config, config_prefix, std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
 
         /// NOTE: should we still perform this check for clickhouse-disks?
         if (!skip_access_check)
-            checkS3Capabilities(*object_storage, s3_capabilities, name, uri.key);
+            checkS3Capabilities(*dynamic_cast<S3ObjectStorage *>(object_storage.get()), s3_capabilities, name, uri.key);
 
         return object_storage;
     });
@@ -165,12 +189,12 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         auto client = getClient(config, config_prefix, context, *settings);
         auto key_generator = getKeyGenerator(disk_type, uri, config, config_prefix);
 
-        auto object_storage = std::make_shared<S3PlainObjectStorage>(
+        auto object_storage = std::make_shared<PlainObjectStorage<S3ObjectStorage>>(
             std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
 
         /// NOTE: should we still perform this check for clickhouse-disks?
         if (!skip_access_check)
-            checkS3Capabilities(*object_storage, s3_capabilities, name, uri.key);
+            checkS3Capabilities(*dynamic_cast<S3ObjectStorage *>(object_storage.get()), s3_capabilities, name, uri.key);
 
         return object_storage;
     });
@@ -198,7 +222,7 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
             context->getSettingsRef().hdfs_replication
         );
 
-        return std::make_unique<HDFSObjectStorage>(uri, std::move(settings), config);
+        return createObjectStorage<HDFSObjectStorage>(config, config_prefix, uri, std::move(settings), config);
     });
 }
 #endif
@@ -214,7 +238,8 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
         String container_name = config.getString(config_prefix + ".container_name", "default-container");
-        return std::make_unique<AzureObjectStorage>(
+        return createObjectStorage<AzureObjectStorage>(
+            config, config_prefix,
             name,
             getAzureBlobContainerClient(config, config_prefix),
             getAzureBlobStorageSettings(config, config_prefix, context),
@@ -248,7 +273,7 @@ void registerWebObjectStorage(ObjectStorageFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS, "Bad URI: `{}`. Error: {}", uri, e.what());
         }
 
-        return std::make_shared<WebObjectStorage>(uri, context);
+        return createObjectStorage<WebObjectStorage>(config, config_prefix, uri, context);
     });
 }
 
@@ -266,7 +291,7 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
         loadDiskLocalConfig(name, config, config_prefix, context, object_key_prefix, keep_free_space_bytes);
         /// keys are mapped to the fs, object_key_prefix is a directory also
         fs::create_directories(object_key_prefix);
-        return std::make_shared<LocalObjectStorage>(object_key_prefix);
+        return createObjectStorage<LocalObjectStorage>(config, config_prefix, object_key_prefix);
     });
 }
 #endif
