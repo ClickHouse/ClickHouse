@@ -397,7 +397,7 @@ class CiCache:
                 status.dump_to_file(record_file)
             elif record_type == self.RecordType.PENDING:
                 assert isinstance(status, PendingState)
-                with open(record_file, "w") as json_file:
+                with open(record_file, "w", encoding="utf-8") as json_file:
                     json.dump(asdict(status), json_file)
             else:
                 assert False
@@ -1005,7 +1005,7 @@ def _mark_success_action(
 
 def _print_results(result: Any, outfile: Optional[str], pretty: bool = False) -> None:
     if outfile:
-        with open(outfile, "w") as f:
+        with open(outfile, "w", encoding="utf-8") as f:
             if isinstance(result, str):
                 print(result, file=f)
             elif isinstance(result, dict):
@@ -1125,8 +1125,7 @@ def _configure_jobs(
     jobs_to_wait: Dict[str, Dict[str, Any]] = {}
     randomization_buckets = {}  # type: Dict[str, Set[str]]
 
-    for job in digests:
-        digest = digests[job]
+    for job, digest in digests.items():
         job_config = CI_CONFIG.get_job_config(job)
         num_batches: int = job_config.num_batches
         batches_to_do: List[int] = []
@@ -1612,11 +1611,11 @@ def main() -> int:
 
     indata: Optional[Dict[str, Any]] = None
     if args.infile:
-        indata = (
-            json.loads(args.infile)
-            if not os.path.isfile(args.infile)
-            else json.load(open(args.infile))
-        )
+        if os.path.isfile(args.infile):
+            with open(args.infile, encoding="utf-8") as jfd:
+                indata = json.load(jfd)
+        else:
+            indata = json.loads(args.infile)
         assert indata and isinstance(indata, dict), "Invalid --infile json"
 
     result: Dict[str, Any] = {}

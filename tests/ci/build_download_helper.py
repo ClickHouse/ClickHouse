@@ -8,9 +8,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable, List, Union
 
-import requests  # type: ignore
-
 import get_robot_token as grt  # we need an updated ROBOT_TOKEN
+import requests  # type: ignore
 from ci_config import CI_CONFIG
 
 DOWNLOAD_RETRIES_COUNT = 5
@@ -30,9 +29,10 @@ def get_with_retries(
         "Getting URL with %i tries and sleep %i in between: %s", retries, sleep, url
     )
     exc = Exception("A placeholder to satisfy typing and avoid nesting")
+    timeout = kwargs.pop("timeout", 30)
     for i in range(retries):
         try:
-            response = requests.get(url, **kwargs)
+            response = requests.get(url, timeout=timeout, **kwargs)
             response.raise_for_status()
             return response
         except Exception as e:
@@ -74,10 +74,11 @@ def get_gh_api(
     token_is_set = "Authorization" in kwargs.get("headers", {})
     exc = Exception("A placeholder to satisfy typing and avoid nesting")
     try_cnt = 0
+    timeout = kwargs.pop("timeout", 30)
     while try_cnt < retries:
         try_cnt += 1
         try:
-            response = requests.get(url, **kwargs)
+            response = requests.get(url, timeout=timeout, **kwargs)
             response.raise_for_status()
             return response
         except requests.HTTPError as e:

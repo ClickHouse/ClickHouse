@@ -570,8 +570,7 @@ class CIConfig:
             self.builds_report_config,
             self.test_configs,
         ):
-            for check_name in config:  # type: ignore
-                yield check_name
+            yield from config  # type: ignore
 
     def get_builds_for_report(
         self, report_name: str, release: bool = False, backport: bool = False
@@ -698,17 +697,15 @@ CI_CONFIG = CIConfig(
                 job
                 for job in JobNames
                 if not any(
-                    [
-                        nogo in job
-                        for nogo in (
-                            "asan",
-                            "tsan",
-                            "msan",
-                            "ubsan",
-                            # skip build report jobs as not all builds will be done
-                            "build check",
-                        )
-                    ]
+                    nogo in job
+                    for nogo in (
+                        "asan",
+                        "tsan",
+                        "msan",
+                        "ubsan",
+                        # skip build report jobs as not all builds will be done
+                        "build check",
+                    )
                 )
             ]
         ),
