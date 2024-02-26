@@ -40,11 +40,11 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED;
 }
 
-static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_progress_callback)
+static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_progress_callback, bool trace_processors)
 {
     try
     {
-        node->processor->work();
+        node->processor->process(trace_processors);
 
         /// Update read progress only for source nodes.
         bool is_source = node->back_edges.empty();
@@ -92,7 +92,7 @@ bool ExecutionThreadContext::executeTask()
 
     try
     {
-        executeJob(node, read_progress_callback);
+        executeJob(node, read_progress_callback, this->trace_processors);
         ++node->num_executed_jobs;
     }
     catch (...)
@@ -104,13 +104,9 @@ bool ExecutionThreadContext::executeTask()
     {
         UInt64 elapsed_microseconds =  execution_time_watch->elapsedMicroseconds();
         node->processor->elapsed_us += elapsed_microseconds;
-        if (trace_processors)
-            span->addAttribute("execution_time_ms", elapsed_microseconds);
     }
 #ifndef NDEBUG
     execution_time_ns += execution_time_watch->elapsed();
-    if (trace_processors)
-        span->addAttribute("execution_time_ns", execution_time_watch->elapsed());
 #endif
     return node->exception == nullptr;
 }

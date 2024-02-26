@@ -187,7 +187,14 @@ struct SpanHolder : public Span
     /// Finish a span explicitly if needed.
     /// It's safe to call it multiple times
     void finish() noexcept;
+
+    /// Attach current span to current thread as parent span of upcoming spans.
+    /// Usually we don't need to call this function explicitly, because the ctor of this object already do this.
+    void attach() noexcept;
+    void detach() noexcept;
 };
+
+using SpanHolderPtr = std::unique_ptr<SpanHolder>;
 
 }
 

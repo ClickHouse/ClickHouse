@@ -141,6 +141,17 @@ SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind)
     current_trace_context->span_id = this->span_id;
 }
 
+void SpanHolder::attach() noexcept
+{
+    current_thread_trace_context.span_id = this->span_id;
+}
+
+void SpanHolder::detach() noexcept
+{
+    assert(current_thread_trace_context.span_id == span_id);
+    current_thread_trace_context.span_id = parent_span_id;
+}
+
 void SpanHolder::finish() noexcept
 {
     if (!this->isTraceEnabled())

@@ -192,15 +192,14 @@ public:
     /// Optimization for prepare in case we know ports were updated.
     virtual Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) { return prepare(); }
 
-    /** You may call this method if 'prepare' returned Ready.
+    /** This method is a delegate to 'work' method.
+      *
+      * You may call this method if 'prepare' returned Ready.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
       *
-      * Method work can be executed in parallel for different processors.
+      * Method process can be executed in parallel for different processors.
       */
-    virtual void work()
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'work' is not implemented for {} processor", getName());
-    }
+    virtual void process(bool trace_processors);
 
     /** Executor must call this method when 'prepare' returned Async.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
@@ -362,12 +361,35 @@ public:
     /// You should zero internal counters in the call, in order to make in idempotent.
     virtual std::optional<ReadProgress> getReadProgress() { return std::nullopt; }
 
+    /// A hook around 'work' method.
+    /// It allows us to inject some code around 'work' method without any modification to existing IProcessor implementations.
+    struct WorkHook
+    {
+        virtual ~WorkHook() = default;
+        virtual void onEnter() noexcept {}
+        virtual void onLeave() noexcept {}
+    };
+    void setWorkHook(const std::shared_ptr<WorkHook> & workHook_)
+    {
+        this->workHook = workHook_;
+    }
+    
     /// Set rows_before_limit counter for current processor.
     /// This counter is used to calculate the number of rows right before any filtration of LimitTransform.
     virtual void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr /* counter */) {}
 
 protected:
     virtual void onCancel() {}
+
+    /** You may call this method if 'prepare' returned Ready.
+      * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
+      *
+      * Method work can be executed in parallel for different processors.
+      */
+    virtual void work()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'work' is not implemented for {} processor", getName());
+    }
 
 private:
     /// For:
@@ -393,6 +415,8 @@ private:
 
     IQueryPlanStep * query_plan_step = nullptr;
     size_t query_plan_step_group = 0;
+
+    std::shared_ptr<WorkHook> workHook;
 };
 
 

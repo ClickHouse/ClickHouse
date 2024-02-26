@@ -32,6 +32,8 @@ namespace ProfileEvents
 {
     extern const Event SelectedBytes;
     extern const Event SelectedRows;
+    extern const Event InsertedCompactParts;
+    extern const Event InsertedWideParts;
 }
 
 namespace DB
@@ -102,6 +104,7 @@ private:
 };
 
 /// For source chunk, execute view query over it.
+/// It also prepares right OpenTelemetry context on current thread before its successive processors are executed.
 class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransform
 {
 public:
@@ -109,11 +112,58 @@ public:
 
     String getName() const override { return "ExecutingInnerQueryFromView"; }
 
+    Status prepare() override
+    {
+        auto status = ExceptionKeepingTransform::prepare();
+
+        if (!is_tracing_enabled || view.span == nullptr)
+            return status;
+
+        if (status == Status::NeedData)
+        {
+            view.span->detach();
+        }
+        else if (status == Status::Finished)
+        {
+            view.span->attach();
+        }
+        /// else, for READY status, span is attached in work function
+
+        return status;
+    }
+
+    void process(bool trace_processors) override
+    {
+        if (is_tracing_enabled)
+        {
+            if (view.span == nullptr)
+            {
+                view.span = std::make_shared<OpenTelemetry::SpanHolder>("MaterializedView");
+                view.span->addAttribute("clickhouse.view", view.table_id.getFullTableName());
+                view.span->addAttribute("clickhouse.source", views_data->source_storage_id.getFullTableName());
+                view.span->addAttribute("clickhouse.target", view.runtime_stats->target_name);
+            }
+            else
+            {
+                view.span->attach();
+            }
+        }
+
+        ExceptionKeepingTransform::process(trace_processors);
+    }
+
 protected:
+    void onException() override
+    {
+        if (view.span)
+            view.span->addAttribute(std::current_exception());
+    }
+
     void onConsume(Chunk chunk) override;
     GenerateResult onGenerate() override;
 
 private:
+    bool is_tracing_enabled;
     ViewsDataPtr views_data;
     ViewRuntimeData & view;
 
@@ -188,6 +238,122 @@ private:
     std::exception_ptr any_exception;
 };
 
+/// Finalize OpenTelemetry span for one Materialized View when the view finishes.
+/// It should only be used when the OpenTelemetry tracing is enabled for current MV.
+class FinalizeOneMaterializedViewTransform final : public IProcessor
+{
+protected:
+    ViewRuntimeData& view;
+
+public:
+    FinalizeOneMaterializedViewTransform(const Block & header, ViewRuntimeData & _view) : IProcessor({header}, {header}), view(_view)
+    {
+    }
+
+    String getName() const override { return "FinalizeOneMaterializedViewTransform"; }
+
+    Status prepare() override
+    {
+        auto & input = inputs.front();
+        auto & output = outputs.front();
+
+        if (output.isFinished())
+        {
+            this->onFinish(nullptr);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finalize views because output port is finished");
+        }
+
+        if (!output.canPush())
+            return Status::PortFull;
+
+        if (input.isFinished())
+        {
+            output.finish();
+            this->onFinish(nullptr);
+            return Status::Finished;
+        }
+
+        input.setNeeded();
+        if (input.hasData())
+        {
+            auto data = input.pullData();
+            if (data.exception)
+            {
+                output.pushData(std::move(data));
+                this->onFinish(data.exception);
+                return Status::PortFull;
+            }
+        }
+
+        if (input.isFinished())
+        {
+            output.finish();
+            this->onFinish(nullptr);
+            return Status::Finished;
+        }
+
+        return Status::NeedData;
+    }
+
+    void onFinish(std::exception_ptr exception)
+    {
+        if (view.span == nullptr)
+            return;
+
+        if (view.runtime_stats->thread_status)
+        {
+            auto & progress_in = view.runtime_stats->thread_status->progress_in;
+            view.span->addAttributeIfNotZero("clickhouse.read_bytes", progress_in.read_bytes.load(std::memory_order_relaxed));
+            view.span->addAttributeIfNotZero("clickhouse.read_rows", progress_in.read_rows.load(std::memory_order_relaxed));
+
+            auto & progress_out = view.runtime_stats->thread_status->progress_out;
+            view.span->addAttributeIfNotZero("clickhouse.written_rows", progress_out.written_rows.load(std::memory_order_relaxed));
+            view.span->addAttributeIfNotZero("clickhouse.written_bytes", progress_out.written_bytes.load(std::memory_order_relaxed));
+
+            auto events = std::make_shared<ProfileEvents::Counters::Snapshot>(view.runtime_stats->thread_status->performance_counters.getPartiallyAtomicSnapshot());
+            view.span->addAttributeIfNotZero("clickhouse.parts", events->operator[](ProfileEvents::InsertedWideParts) + events->operator[](ProfileEvents::InsertedCompactParts));
+        }
+
+        view.span->addAttribute("clickhouse.duration", view.runtime_stats->elapsed_ms);
+        view.span->addAttribute(exception);
+        view.span->finish();
+    }
+};
+
+/// Setup a virtual OpenTelemetry span for processors to ensure they're under that given span.
+///
+/// Why we need this?
+/// 1st, for MV(Materialized View), a 'virtual' span is created so that span logs of all processors for one MV are under that virtual span.
+/// This makes the span log very clear and meaningful.
+///
+/// 2nd, processors of one MV are not executed sequentially, especially if there're two or more MVs for one source table.
+/// Processors of the 2nd MV might be scheduled before the MergeTreeSink processor of the first MV is executed.
+/// This is how current processors scheduling is designed.
+///
+/// So, for all processors of one MV, we need a 'context' to keep the span information(which is stored in ViewRuntimeData),
+/// and we set up the tracing context as the given span before a processor is scheduled to work.
+class ViewSpanAttacher : public IProcessor::WorkHook
+{
+public:
+    ViewSpanAttacher(ViewRuntimeData & view_) : view(view_)
+    {
+    }
+
+    void onEnter() noexcept override
+    {
+        if (view.span)
+            view.span->attach();
+    }
+
+    void onLeave() noexcept override
+    {
+        if (view.span)
+            view.span->detach();
+    }
+
+private:
+    ViewRuntimeData & view;
+};
 
 Chain buildPushingToViewsChain(
     const StoragePtr & storage,
@@ -462,10 +628,28 @@ Chain buildPushingToViewsChain(
             out.getInputHeader(),
             view_id,
             nullptr,
-            std::move(runtime_stats)});
+            std::move(runtime_stats),
+            nullptr
+        });
 
         if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
         {
+            if (OpenTelemetry::CurrentContext().isTraceEnabled())
+            {
+                ViewRuntimeData & view = views_data->views.back();
+
+                /// Attach hook to all processors of this Materialized View
+                auto attacher = std::make_shared<ViewSpanAttacher>(view);
+                auto & processors = out.getProcessors();
+                for (auto & processor : processors)
+                {
+                    processor->setWorkHook(attacher);
+                }
+
+                /// Add a sink at the end of processor chain to close OpenTelemetry span
+                out.addSink(std::make_shared<FinalizeOneMaterializedViewTransform>(out.getOutputHeader(), view));
+            }
+
             auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
                 storage_header, views_data->views.back(), views_data);
             executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
@@ -706,12 +890,13 @@ ExecutingInnerQueryFromViewTransform::ExecutingInnerQueryFromViewTransform(
     , views_data(std::move(views_data_))
     , view(view_)
 {
+    is_tracing_enabled = OpenTelemetry::CurrentContext().isTraceEnabled();
 }
 
 void ExecutingInnerQueryFromViewTransform::onConsume(Chunk chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-    state.emplace(process(block, view, *views_data));
+    state.emplace(DB::process(block, view, *views_data));
 }
 
 
