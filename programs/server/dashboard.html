@@ -255,8 +255,6 @@
             font-weight: bold;
             user-select: none;
             cursor: pointer;
-            padding-left: 0.5rem;
-            padding-right: 0.5rem;
             background: var(--new-chart-background-color);
             color: var(--new-chart-text-color);
             float: right;
@@ -274,7 +272,6 @@
             float: right;
             width: 36%;
         }
-
 
         #global-error {
             align-self: center;
@@ -1273,8 +1270,11 @@ function hideError() {
 }
 
 let firstLoad = true;
-
+let is_drawing = false; // Prevent race condition leading to duplicate/dangling charts.
 async function drawAll() {
+    if (is_drawing) return;
+    is_drawing = true;
+
     let params = getParamsForURL();
     const chartsArray = document.getElementsByClassName('chart');
 
@@ -1301,12 +1301,12 @@ async function drawAll() {
             document.getElementById('edit').style.display = 'inline-block';
             document.getElementById('search-span').style.display = '';
             hideError();
-        }
-        else {
-            const charts = document.getElementById('charts')
-            charts.style.height = '0px';
+        } else {
+            document.getElementById('charts').style.height = '0px';
         }
     });
+
+    is_drawing = false;
 }
 
 function resize() {
