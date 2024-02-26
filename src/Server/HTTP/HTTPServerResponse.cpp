@@ -125,15 +125,15 @@ void HTTPServerResponse::requireAuthentication(const std::string & realm)
 
 void HTTPServerResponse::redirect(const std::string & uri, HTTPStatus status)
 {
-	poco_assert(!stream);
+    poco_assert(!stream);
 
-	setContentLength(0);
-	setChunkedTransferEncoding(false);
+    setContentLength(0);
+    setChunkedTransferEncoding(false);
 
-	setStatusAndReason(status);
-	set("Location", uri);
+    setStatusAndReason(status);
+    set("Location", uri);
 
-	// Send header
+    // Send header
     Poco::Net::HTTPHeaderOutputStream hs(session);
     write(hs);
     hs.flush();
