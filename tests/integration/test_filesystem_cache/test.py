@@ -42,9 +42,9 @@ def cluster():
             "node_force_read_through_cache_on_merge",
             main_configs=[
                 "config.d/storage_conf.xml",
+                "config.d/force_read_through_cache_for_merges.xml",
             ],
             user_configs=[
-                "users.d/force_read_through_cache_on_merge.xml",
                 "users.d/cache_on_write_operations.xml",
             ],
             stay_alive=True,

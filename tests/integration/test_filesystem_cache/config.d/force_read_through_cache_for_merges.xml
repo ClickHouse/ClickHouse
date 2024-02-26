@@ -1,0 +1,3 @@
+<clickhouse>
+    <force_read_through_cache_for_merges>1</force_read_through_cache_for_merges>
+</clickhouse>

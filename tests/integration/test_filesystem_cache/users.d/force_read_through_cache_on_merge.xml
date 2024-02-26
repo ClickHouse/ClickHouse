@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <force_read_through_cache_for_merges>1</force_read_through_cache_for_merges>
-        </default>
-    </profiles>
-</clickhouse>
