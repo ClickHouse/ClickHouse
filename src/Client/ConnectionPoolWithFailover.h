@@ -49,8 +49,6 @@ public:
               const Settings & settings,
               bool force_connected) override; /// From IConnectionPool
 
-    Priority getPriority() const override; /// From IConnectionPool
-
     /** Allocates up to the specified number of connections to work.
       * Connections provide access to different replicas of one shard.
       */
@@ -83,15 +81,15 @@ public:
     struct NestedPoolStatus
     {
         const Base::NestedPoolPtr pool;
-        size_t error_count;
-        size_t slowdown_count;
+        size_t error_count = 0;
+        size_t slowdown_count = 0;
         std::chrono::seconds estimated_recovery_time;
     };
 
     using Status = std::vector<NestedPoolStatus>;
     Status getStatus() const;
 
-    std::vector<Base::ShuffledPool> getShuffledPools(const Settings & settings, GetPriorityFunc priority_func = {});
+    std::vector<Base::ShuffledPool> getShuffledPools(const Settings & settings, GetPriorityFunc priority_func = {}, bool use_slowdown_count = false);
 
     size_t getMaxErrorCup() const { return Base::max_error_cap; }
 

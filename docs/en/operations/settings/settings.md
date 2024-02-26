@@ -4285,7 +4285,7 @@ Result:
 
 ## enable_order_by_all {#enable-order-by-all}
 
-Enables or disables sorting by `ALL` columns, i.e. [ORDER BY](../../sql-reference/statements/select/order-by.md)
+Enables or disables sorting with `ORDER BY ALL` syntax, see [ORDER BY](../../sql-reference/statements/select/order-by.md).
 
 Possible values:
 
@@ -4305,7 +4305,7 @@ INSERT INTO TAB VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
 
 SELECT * FROM TAB ORDER BY ALL; -- returns an error that ALL is ambiguous
 
-SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all;
+SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 ```
 
 Result:
