@@ -69,6 +69,7 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
     }
     # commit_logs_cache_size_threshold setting doesn't exist on some older versions
     remove_keeper_config "commit_logs_cache_size_threshold" "[[:digit:]]\+"
+    remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
 fi
 
 # For flaky check we also enable thread fuzzer
