@@ -28,12 +28,17 @@ def q(query):
 
 
 def check_convert_system_db_to_atomic():
-    node.query("CREATE DATABASE default2 ENGINE=Ordinary", settings={"allow_deprecated_database_ordinary": 1})
+    node.query(
+        "CREATE DATABASE default2 ENGINE=Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
     q(
         "CREATE TABLE default2.t(date Date, id UInt32) ENGINE = MergeTree PARTITION BY toYYYYMM(date) ORDER BY id"
     )
     q("INSERT INTO default2.t VALUES (today(), 1)")
-    q("INSERT INTO default2.t SELECT number % 1000, number FROM system.numbers LIMIT 1000000")
+    q(
+        "INSERT INTO default2.t SELECT number % 1000, number FROM system.numbers LIMIT 1000000"
+    )
 
     assert "1000001\n" == q("SELECT count() FROM default2.t")
     assert "499999500001\n" == q("SELECT sum(id) FROM default2.t")
@@ -63,8 +68,9 @@ def check_convert_system_db_to_atomic():
     assert "1970-01-01\t1000\t499500000\n1970-01-02\t1000\t499501000\n" == node.query(
         "SELECT date, count(), sum(id) FROM default2.t GROUP BY date ORDER BY date LIMIT 2"
     )
-    assert "INFORMATION_SCHEMA\ndefault\ndefault2\ninformation_schema\nsystem\n" == node.query(
-        "SELECT name FROM system.databases ORDER BY name"
+    assert (
+        "INFORMATION_SCHEMA\ndefault\ndefault2\ninformation_schema\nsystem\n"
+        == node.query("SELECT name FROM system.databases ORDER BY name")
     )
 
     errors_count = node.count_in_log("<Error>")
