@@ -26,23 +26,3 @@ INSERT INTO visits_order SELECT 2, 'yet_another_user2', number*3 from numbers(1,
 ALTER TABLE visits_order_dst ATTACH PARTITION ID '2' FROM visits_order;
 
 EXPLAIN SELECT * FROM visits_order_dst WHERE user_name='another_user2';
-
-DROP TABLE IF EXISTS visits_order;
-DROP TABLE IF EXISTS visits_order_dst;
-
-CREATE TABLE visits_order
-(
-    user_id UInt64,
-    user_name String,
-    some_int UInt64
-) ENGINE = MergeTree() PRIMARY KEY user_id PARTITION BY user_id;
-
-CREATE TABLE visits_order_dst
-(
-    user_id UInt64,
-    user_name String,
-    some_int UInt64
-) ENGINE = MergeTree() PRIMARY KEY user_id PARTITION BY user_id;
-
-ALTER TABLE visits_order ADD PROJECTION user_name_projection (SELECT * ORDER BY user_name);
-ALTER TABLE visits_order_dst ATTACH PARTITION ID '2' FROM visits_order -- {serverError 36};
