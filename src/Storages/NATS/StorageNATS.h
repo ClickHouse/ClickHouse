@@ -24,7 +24,7 @@ public:
         ContextPtr context_,
         const ColumnsDescription & columns_,
         std::unique_ptr<NATSSettings> nats_settings_,
-        bool is_attach_);
+        LoadingStrictnessLevel mode);
 
     std::string getName() const override { return "NATS"; }
 
@@ -117,7 +117,7 @@ private:
     std::mutex loop_mutex;
 
     mutable bool drop_table = false;
-    bool is_attach;
+    bool throw_on_startup_failure;
 
     NATSConsumerPtr createConsumer();
 

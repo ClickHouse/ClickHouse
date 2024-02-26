@@ -50,6 +50,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/GinFilter.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <Access/Common/AccessRightsElement.h>
 
@@ -99,7 +100,6 @@ namespace ErrorCodes
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int BAD_ARGUMENTS;
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
-    extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_INDEX;
@@ -276,7 +276,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
     bool need_lock_uuid = internal || need_write_metadata;
-    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag);
+    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ false);
 
     /// Lock uuid, so we will known it's already in use.
     /// We do it when attaching databases on server startup (internal) and on CREATE query (!create.attach);
@@ -911,66 +911,13 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
     const auto & settings = getContext()->getSettingsRef();
 
-    /// Check low cardinality types in creating table if it was not allowed in setting
-    if (!create.attach && !settings.allow_suspicious_low_cardinality_types && !create.is_materialized_view)
+    /// If it's not attach and not materialized view to existing table,
+    /// we need to validate data types (check for experimental or suspicious types).
+    if (!create.attach && !create.is_materialized_view)
     {
+        DataTypeValidationSettings validation_settings(settings);
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
-        {
-            if (const auto * current_type_ptr = typeid_cast<const DataTypeLowCardinality *>(name_and_type_pair.type.get()))
-            {
-                if (!isStringOrFixedString(*removeNullable(current_type_ptr->getDictionaryType())))
-                    throw Exception(ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY,
-                                    "Creating columns of type {} is prohibited by default "
-                                    "due to expected negative impact on performance. "
-                                    "It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting.",
-                                    current_type_ptr->getName());
-            }
-        }
-    }
-
-    if (!create.attach && !settings.allow_experimental_object_type)
-    {
-        for (const auto & [name, type] : properties.columns.getAllPhysical())
-        {
-            if (type->hasDynamicSubcolumns())
-            {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create table with column '{}' which type is '{}' "
-                    "because experimental Object type is not allowed. "
-                    "Set setting allow_experimental_object_type = 1 in order to allow it",
-                    name, type->getName());
-            }
-        }
-    }
-    if (!create.attach && !settings.allow_suspicious_fixed_string_types)
-    {
-        for (const auto & [name, type] : properties.columns.getAllPhysical())
-        {
-            auto basic_type = removeLowCardinalityAndNullable(type);
-            if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(basic_type.get()))
-            {
-                if (fixed_string->getN() > MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS)
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                        "Cannot create table with column '{}' which type is '{}' "
-                        "because fixed string with size > {} is suspicious. "
-                        "Set setting allow_suspicious_fixed_string_types = 1 in order to allow it",
-                        name, type->getName(), MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
-            }
-        }
-    }
-    if (!create.attach && !settings.allow_experimental_variant_type)
-    {
-        for (const auto & [name, type] : properties.columns.getAllPhysical())
-        {
-            if (isVariant(type))
-            {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                        "Cannot create table with column '{}' which type is '{}' "
-                        "because experimental Variant type is not allowed. "
-                        "Set setting allow_experimental_variant_type = 1 in order to allow it",
-                        name, type->getName());
-            }
-        }
+            validateDataType(name_and_type_pair.type, validation_settings);
     }
 }
 
@@ -1380,6 +1327,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
                                            DDLGuardPtr & ddl_guard)
 {
+    bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
+    auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query);
+
     if (create.temporary)
     {
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
@@ -1396,7 +1346,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 getContext()->getGlobalContext(),
                 properties.columns,
                 properties.constraints,
-                false);
+                mode);
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
 
@@ -1544,7 +1494,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             getContext()->getGlobalContext(),
             properties.columns,
             properties.constraints,
-            false);
+            mode);
 
         /// If schema wes inferred while storage creation, add columns description to create query.
         addColumnsDescriptionToCreateQueryIfNecessary(query_ptr->as<ASTCreateQuery &>(), res);

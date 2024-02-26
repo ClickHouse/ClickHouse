@@ -48,9 +48,17 @@ class FunctionMultiIf final : public FunctionIfBase
 {
 public:
     static constexpr auto name = "multiIf";
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionMultiIf>(context_); }
+    static FunctionPtr create(ContextPtr context_)
+    {
+        const auto & settings = context_->getSettingsRef();
+        return std::make_shared<FunctionMultiIf>(settings.allow_execute_multiif_columnar, settings.allow_experimental_variant_type, settings.use_variant_as_common_type);
+    }
 
-    explicit FunctionMultiIf(ContextPtr context_) : context(context_) { }
+    explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool allow_experimental_variant_type_, bool use_variant_as_common_type_)
+        : allow_execute_multiif_columnar(allow_execute_multiif_columnar_)
+        , allow_experimental_variant_type(allow_experimental_variant_type_)
+        , use_variant_as_common_type(use_variant_as_common_type_)
+    {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -126,7 +134,7 @@ public:
             types_of_branches.emplace_back(arg);
         });
 
-        if (context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type)
+        if (allow_experimental_variant_type && use_variant_as_common_type)
             return getLeastSupertypeOrVariant(types_of_branches);
 
         return getLeastSupertype(types_of_branches);
@@ -248,9 +256,9 @@ public:
             }
         }
 
-        const auto & settings = context->getSettingsRef();
         const WhichDataType which(removeNullable(result_type));
-        bool execute_multiif_columnar = settings.allow_execute_multiif_columnar && !contains_short && instructions.size() <= std::numeric_limits<UInt8>::max()
+        bool execute_multiif_columnar = settings.allow_execute_multiif_columnar && !contains_short
+            && instructions.size() <= std::numeric_limits<UInt8>::max()
             && (which.isInt() || which.isUInt() || which.isFloat() || which.isDecimal() || which.isDateOrDate32OrDateTimeOrDateTime64()
                 || which.isEnum() || which.isIPv4() || which.isIPv6());
 
@@ -313,24 +321,6 @@ public:
         ErrorCodes::NOT_IMPLEMENTED, "Columnar execution of function {} not implemented for type {}", getName(), result_type->getName());
 
         ENUMERATE_NUMERIC_TYPES(EXECUTE_INSTRUCTIONS_COLUMNAR, UInt8)
-        /*
-        size_t num_instructions = instructions.size();
-        if (num_instructions <= std::numeric_limits<Int16>::max())
-        {
-            ENUMERATE_NUMERIC_TYPES(EXECUTE_INSTRUCTIONS_COLUMNAR, Int16)
-        }
-        else if (num_instructions <= std::numeric_limits<Int32>::max())
-        {
-            ENUMERATE_NUMERIC_TYPES(EXECUTE_INSTRUCTIONS_COLUMNAR, Int32)
-        }
-        else if (num_instructions <= std::numeric_limits<Int64>::max())
-        {
-            ENUMERATE_NUMERIC_TYPES(EXECUTE_INSTRUCTIONS_COLUMNAR, Int64)
-        }
-        else
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Instruction size({}) of function {} is out of range", getName(), result_type->getName());
-        */
     }
 #undef ENUMERATE_NUMERIC_TYPES
 #undef EXECUTE_INSTRUCTIONS_COLUMNAR
@@ -540,7 +530,9 @@ private:
             executeColumnIfNeeded(arguments[i], true);
     }
 
-    ContextPtr context;
+    const bool allow_execute_multiif_columnar;
+    const bool allow_experimental_variant_type;
+    const bool use_variant_as_common_type;
 };
 
 }
@@ -552,6 +544,11 @@ REGISTER_FUNCTION(MultiIf)
     /// These are obsolete function names.
     factory.registerFunction<FunctionMultiIf>("caseWithoutExpr");
     factory.registerFunction<FunctionMultiIf>("caseWithoutExpression");
+}
+
+FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool allow_experimental_variant_type, bool use_variant_as_common_type)
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, allow_experimental_variant_type, use_variant_as_common_type));
 }
 
 }
