@@ -971,6 +971,9 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
 
         HashedArrayDictionaryStorageConfiguration configuration{require_nonempty, dict_lifetime, static_cast<size_t>(shards)};
 
+        if (source_ptr->hasUpdateField() && shards > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: SHARDS parameter does not supports for updatable source (UPDATE_FIELD)", full_name);
+
         ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
         const auto & settings = context->getSettingsRef();
 
