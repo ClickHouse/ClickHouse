@@ -1170,6 +1170,7 @@ private:
 template<> void AddedColumns<false>::buildOutput()
 {
 }
+
 template<>
 void AddedColumns<true>::buildOutput()
 {
@@ -1330,8 +1331,6 @@ void AddedColumns<true>::appendDefaultRow()
         lazy_output.row_nums.emplace_back(0);
     }
 }
-
-
 
 template <JoinKind KIND, JoinStrictness STRICTNESS>
 struct JoinFeatures
