@@ -1,114 +1,38 @@
 optimize_move_to_prewhere_if_final = 1
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-PREWHERE x > 100
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-FINAL
-PREWHERE x > 100
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-PREWHERE y > 100
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-FINAL
-PREWHERE y > 100
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-PREWHERE (x + y) > 100
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-FINAL
-PREWHERE (x + y) > 100
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-FINAL
-WHERE z > 400
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-FINAL
-PREWHERE y > 100
-WHERE (y > 100) AND (z > 400)
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-FINAL
-PREWHERE x > 50
-WHERE (x > 50) AND (z > 400)
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-FINAL
-PREWHERE (x + y) > 50
-WHERE ((x + y) > 50) AND (z > 400)
-
+    Prewhere info
+      Prewhere filter
+      Prewhere filter column: greater(x, 100) (removed)
+    Prewhere info
+      Prewhere filter
+      Prewhere filter column: greater(x, 100) (removed)
+    Prewhere info
+      Prewhere filter
+      Prewhere filter column: greater(y, 100) (removed)
+    Prewhere info
+      Prewhere filter
+      Prewhere filter column: greater(y, 100) (removed)
+    Prewhere info
+      Prewhere filter
+      Prewhere filter column: greater(plus(x, y), 100) (removed)
+    Prewhere info
+      Prewhere filter
+      Prewhere filter column: greater(plus(x, y), 100) (removed)
+  Filter
+  Filter column: and(greater(y, 100), greater(z, 400)) (removed)
+    Prewhere info
+      Prewhere filter
+      Prewhere filter column: greater(y, 100)
+  Filter
+  Filter column: and(greater(x, 50), greater(z, 400)) (removed)
+    Prewhere info
+      Prewhere filter
+      Prewhere filter column: greater(x, 50)
+  Filter
+  Filter column: and(greater(plus(x, y), 50), greater(z, 400)) (removed)
+    Prewhere info
+      Prewhere filter
+      Prewhere filter column: greater(plus(x, y), 50)
 optimize_move_to_prewhere_if_final = 0
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-PREWHERE y > 100
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-FINAL
-WHERE y > 100
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-FINAL
-WHERE z > 400
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-FINAL
-WHERE (y > 100) AND (z > 400)
+    Prewhere info
+      Prewhere filter
+      Prewhere filter column: greater(y, 100) (removed)

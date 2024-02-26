@@ -868,13 +868,11 @@ class IColumn;
     M(Bool, print_pretty_type_names, true, "Print pretty type names in DESCRIBE query and toTypeName() function", 0) \
     M(Bool, create_table_empty_primary_key_by_default, false, "Allow to create *MergeTree tables with empty primary key when ORDER BY and PRIMARY KEY not specified", 0) \
     M(Bool, allow_named_collection_override_by_default, true, "Allow named collections' fields override by default.", 0)\
-    M(SQLSecurityType, default_normal_view_sql_security, SQLSecurityType::INVOKER, "Allows to set a default value for SQL SECURITY option when creating a normal view.", 0) \
-    M(SQLSecurityType, default_materialized_view_sql_security, SQLSecurityType::DEFINER, "Allows to set a default value for SQL SECURITY option when creating a materialized view.", 0) \
-    M(String, default_view_definer, "CURRENT_USER", "Allows to set a default value for DEFINER option when creating view.", 0) \
     M(Bool, allow_experimental_shared_merge_tree, false, "Only available in ClickHouse Cloud", 0) \
     M(UInt64, cache_warmer_threads, 4, "Only available in ClickHouse Cloud", 0) \
     M(Int64, ignore_cold_parts_seconds, 0, "Only available in ClickHouse Cloud", 0) \
     M(Int64, prefer_warmed_unmerged_parts_seconds, 0, "Only available in ClickHouse Cloud", 0) \
+    M(Bool, enable_order_by_all, true, "Enable sorting expression ORDER BY ALL.", 0) \
     M(Bool, iceberg_engine_ignore_schema_evolution, false, "Ignore schema evolution in Iceberg table engine and read all data using latest schema saved on table creation. Note that it can lead to incorrect result", 0) \
 
 // End of COMMON_SETTINGS
@@ -942,7 +940,6 @@ class IColumn;
     MAKE_OBSOLETE(M, Bool, allow_experimental_undrop_table_query, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_s3queue, true) \
     MAKE_OBSOLETE(M, Bool, query_plan_optimize_primary_key, true) \
-    MAKE_OBSOLETE(M, Bool, enable_order_by_all, true) \
 
     /** The section above is for obsolete settings. Do not add anything there. */
 

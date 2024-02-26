@@ -5,7 +5,6 @@
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTTableOverrides.h>
-#include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTRefreshStrategy.h>
 #include <Interpreters/StorageID.h>
 
@@ -15,7 +14,6 @@ namespace DB
 class ASTFunction;
 class ASTSetQuery;
 class ASTSelectWithUnionQuery;
-
 
 class ASTStorage : public IAST
 {
@@ -113,7 +111,6 @@ public:
     IAST * as_table_function = nullptr;
     ASTSelectWithUnionQuery * select = nullptr;
     IAST * comment = nullptr;
-    ASTPtr sql_security = nullptr;
 
     ASTTableOverrideList * table_overrides = nullptr; /// For CREATE DATABASE with engines that automatically create tables
 
