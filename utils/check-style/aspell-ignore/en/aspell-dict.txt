@@ -1892,7 +1892,6 @@ mdadm
 meanZTest
 meanztest
 mebibytes
-mergeTreeIndex
 mergeable
 mergetree
 messageID
@@ -2420,7 +2419,6 @@ subranges
 subreddits
 subseconds
 subsequence
-substreams
 substring
 substringIndex
 substringIndexUTF
