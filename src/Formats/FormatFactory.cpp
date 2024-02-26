@@ -54,7 +54,6 @@ FormatFactory::Creators & FormatFactory::getOrCreateCreators(const String & name
     auto & creators = dict[lower_case];
     creators.name = name;
     return creators;
-    }
 }
 
 FormatSettings getFormatSettings(const ContextPtr & context)
