@@ -149,7 +149,8 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
     }
     else if (current_grants)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " CURRENT GRANTS" << (settings.hilite ? hilite_none : "");
-    else
+
+    if (!access_rights_elements.empty())
         formatElementsWithoutOptions(access_rights_elements, settings);
 
     settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (is_revoke ? " FROM " : " TO ")
