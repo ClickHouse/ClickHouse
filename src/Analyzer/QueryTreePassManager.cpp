@@ -165,7 +165,6 @@ private:
 
 /** ClickHouse query tree pass manager.
   *
-  * TODO: Support setting optimize_aggregators_of_group_by_keys.
   * TODO: Support setting optimize_monotonous_functions_in_order_by.
   * TODO: Add optimizations based on function semantics. Example: SELECT * FROM test_table WHERE id != id. (id is not nullable column).
   */
