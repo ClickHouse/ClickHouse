@@ -229,7 +229,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
                     settings.ostr << ' ';
 
                     bool first = true;
-                    for (auto & src : src_replicas)
+                    for (const auto & src : src_replicas)
                     {
                         if (!first)
                             settings.ostr << ", ";
