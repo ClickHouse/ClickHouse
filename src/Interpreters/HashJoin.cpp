@@ -1054,16 +1054,16 @@ public:
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
+        if (is_asof_join)
+            ++num_columns_to_add;
 
         if constexpr (lazy)
         {
-            has_columns_to_add = block_with_columns_to_add.columns() > 0;
+            has_columns_to_add = num_columns_to_add > 0;
             lazy_output.blocks.reserve(rows_to_add);
             lazy_output.row_nums.reserve(rows_to_add);
         }
 
-        if (is_asof_join)
-            ++num_columns_to_add;
         columns.reserve(num_columns_to_add);
         type_name.reserve(num_columns_to_add);
         right_indexes.reserve(num_columns_to_add);
@@ -1114,16 +1114,7 @@ public:
 
     void appendDefaultRow();
 
-
-    void applyLazyDefaults()
-    {
-        if (lazy_defaults_count)
-        {
-            for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
-                JoinCommon::addDefaultValues(*columns[j], type_name[j].type, lazy_defaults_count);
-            lazy_defaults_count = 0;
-        }
-    }
+    void applyLazyDefaults();
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
 
@@ -1220,6 +1211,22 @@ void AddedColumns<true>::buildOutput()
     }
 }
 
+template<>
+void AddedColumns<false>::applyLazyDefaults()
+{
+    if (lazy_defaults_count)
+    {
+        for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
+            JoinCommon::addDefaultValues(*columns[j], type_name[j].type, lazy_defaults_count);
+        lazy_defaults_count = 0;
+    }
+}
+
+template<>
+void AddedColumns<true>::applyLazyDefaults()
+{
+}
+
 template <>
 void AddedColumns<false>::appendFromBlock(const Block & block, size_t row_num,const bool has_defaults)
 {
@@ -1309,13 +1316,13 @@ void AddedColumns<true>::appendFromBlock(const Block & block, size_t row_num, bo
     }
 }
 template<>
-void  AddedColumns<false>::appendDefaultRow()
+void AddedColumns<false>::appendDefaultRow()
 {
     ++lazy_defaults_count;
 }
 
 template<>
-void  AddedColumns<true>::appendDefaultRow()
+void AddedColumns<true>::appendDefaultRow()
 {
     if (has_columns_to_add)
     {
@@ -1323,6 +1330,8 @@ void  AddedColumns<true>::appendDefaultRow()
         lazy_output.row_nums.emplace_back(0);
     }
 }
+
+
 
 template <JoinKind KIND, JoinStrictness STRICTNESS>
 struct JoinFeatures
