@@ -7909,9 +7909,21 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     const auto my_partition_expression = metadata_snapshot->getPartitionKeyAST();
     const auto src_partition_expression = source_metadata_snapshot->getPartitionKeyAST();
 
-    const auto is_partition_exp_the_same =
-        queryToStringWithEmptyTupleNormalization(my_partition_expression)
-        == queryToStringWithEmptyTupleNormalization(src_partition_expression);
+    bool attach_empty_partition = !replace && src_all_parts.empty();
+    if (attach_empty_partition)
+    {
+        return;
+    }
+
+    auto [destination_partition, destination_partition_id] = MergeTreePartitionCompatibilityVerifier::getDestinationPartitionAndPartitionId(
+        src_partition_expression,
+        my_partition_expression,
+        src_data,
+        *this,
+        src_all_parts,
+        source_partition_id);
+
+    const auto is_partition_exp_the_same = source_partition_id == destination_partition_id;
 
     if (replace && !is_partition_exp_the_same)
     {
@@ -7920,19 +7932,6 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                         "There is no way to calculate the destination partition id",
                         source_partition_id);
     }
-
-    bool attach_empty_partition = !replace && src_all_parts.empty();
-    if (attach_empty_partition)
-    {
-        return;
-    }
-
-    auto [destination_partition, destination_partition_id] = MergeTreePartitionCompatibilityVerifier::getDestinationPartitionAndPartitionId(
-        is_partition_exp_the_same,
-        src_data,
-        *this,
-        src_all_parts,
-        source_partition_id);
 
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
@@ -8215,10 +8214,6 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
     const auto dst_partition_expression = dest_metadata_snapshot->getPartitionKeyAST();
     const auto src_partition_expression = metadata_snapshot->getPartitionKeyAST();
 
-    const auto is_partition_exp_the_same =
-        queryToStringWithEmptyTupleNormalization(dst_partition_expression)
-        == queryToStringWithEmptyTupleNormalization(src_partition_expression);
-
     /// A range for log entry to remove parts from the source table (myself).
     auto zookeeper = getZooKeeper();
     /// Retry if alter_partition_version changes
@@ -8251,13 +8246,15 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got part {} covering drop range {}, it's a bug",
                             covering_part->name, source_drop_range_fake_part_name);
 
-        // TODO fix below
         auto [destination_partition, destination_partition_id] = MergeTreePartitionCompatibilityVerifier::getDestinationPartitionAndPartitionId(
-            is_partition_exp_the_same,
+            src_partition_expression,
+            dst_partition_expression,
             src_data,
             *dest_table_storage,
             src_all_parts,
             source_partition_id);
+
+        const auto is_partition_exp_the_same = source_partition_id == destination_partition_id;
 
         /// After allocating block number for drop_range we must ensure that it does not intersect block numbers
         /// allocated by concurrent REPLACE query.

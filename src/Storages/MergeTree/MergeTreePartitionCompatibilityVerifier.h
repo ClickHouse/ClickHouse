@@ -24,7 +24,8 @@ public:
     using DataPartsVector = std::vector<DataPartPtr>;
 
     static std::pair<MergeTreePartition, std::string> getDestinationPartitionAndPartitionId(
-        bool is_partition_exp_the_same,
+        const ASTPtr & source_partition_exp,
+        const ASTPtr & destination_partition_exp,
         const MergeTreeData & source_data,
         const MergeTreeData & dst_data,
         const DataPartsVector & src_parts,
