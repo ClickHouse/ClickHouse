@@ -132,6 +132,7 @@ private:
 
     struct Creators
     {
+        String name;
         InputCreator input_creator;
         RandomAccessInputCreator random_access_input_creator;
         OutputCreator output_creator;
@@ -263,12 +264,14 @@ public:
 
     /// Check that format with specified name exists and throw an exception otherwise.
     void checkFormatName(const String & name) const;
+    bool exists(const String & name) const;
 
 private:
     FormatsDictionary dict;
-    FileExtensionFormats file_extension_formats;    // Also used as a case-insensitive format_name mapping.
+    FileExtensionFormats file_extension_formats;
 
     const Creators & getCreators(const String & name) const;
+    Creators & getOrCreateCreators(const String & name);
 
     // Creates a ReadBuffer to give to an input format. Returns nullptr if we should use `buf` directly.
     std::unique_ptr<ReadBuffer> wrapReadBufferIfNeeded(
@@ -279,9 +282,6 @@ private:
         const Settings & settings,
         bool is_remote_fs,
         size_t max_download_threads) const;
-
-    // Mapping case-insensitive format_name to a key in FormatsDictionary if exists.
-    String getOriginalFormatNameIfExists(const String & name) const;
 };
 
 }
