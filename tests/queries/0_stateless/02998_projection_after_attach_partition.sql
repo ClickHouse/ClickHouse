@@ -1,3 +1,4 @@
+-- { echoOn }
 DROP TABLE IF EXISTS visits_order;
 DROP TABLE IF EXISTS visits_order_dst;
 
