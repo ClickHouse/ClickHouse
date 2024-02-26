@@ -152,17 +152,8 @@ private:
         auto * archive = archive_read_new();
         try
         {
-            // Support for bzip2, gzip, lzip, xz, zstd and lz4
-            archive_read_support_filter_bzip2(archive);
-            archive_read_support_filter_gzip(archive);
-            archive_read_support_filter_xz(archive);
-            archive_read_support_filter_lz4(archive);
-            archive_read_support_filter_zstd(archive);
-            // Support tar, 7zip and zip
-            archive_read_support_format_tar(archive);
-            archive_read_support_format_7zip(archive);
-            archive_read_support_format_zip(archive);
-
+            archive_read_support_filter_all(archive);
+            archive_read_support_format_all(archive);
             if (archive_read_open_filename(archive, path_to_archive.c_str(), 10240) != ARCHIVE_OK)
                 throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't open archive {}: {}", quoteString(path_to_archive), archive_error_string(archive));
         }
@@ -232,8 +223,6 @@ public:
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Seek is not supported when reading from archive");
     }
-
-    bool checkIfActuallySeekable() override { return false; }
 
     off_t getPosition() override
     {
@@ -341,15 +330,6 @@ std::unique_ptr<LibArchiveReader::FileEnumerator> LibArchiveReader::nextFile(std
     auto handle = std::move(*read_buffer_from_libarchive).releaseHandle();
     if (!handle.nextFile())
         return nullptr;
-    return std::make_unique<FileEnumeratorImpl>(std::move(handle));
-}
-
-std::unique_ptr<LibArchiveReader::FileEnumerator> LibArchiveReader::currentFile(std::unique_ptr<ReadBuffer> read_buffer)
-{
-    if (!dynamic_cast<ReadBufferFromLibArchive *>(read_buffer.get()))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong ReadBuffer passed to nextFile()");
-    auto read_buffer_from_libarchive = std::unique_ptr<ReadBufferFromLibArchive>(static_cast<ReadBufferFromLibArchive *>(read_buffer.release()));
-    auto handle = std::move(*read_buffer_from_libarchive).releaseHandle();
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
 }
 

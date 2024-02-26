@@ -172,7 +172,7 @@ private:
 StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata_,
-        LoadingStrictnessLevel mode,
+        bool attach,
         ContextPtr context_,
         const String & primary_key_,
         Int32 ttl_,
@@ -190,7 +190,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
     {
         rocksdb_dir = context_->getPath() + relative_data_path_;
     }
-    if (mode < LoadingStrictnessLevel::ATTACH)
+    if (!attach)
     {
         fs::create_directories(rocksdb_dir);
     }
@@ -630,7 +630,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB must require one column in primary key");
     }
-    return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.mode, args.getContext(), primary_key_names[0], ttl, std::move(rocksdb_dir), read_only);
+    return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0], ttl, std::move(rocksdb_dir), read_only);
 }
 
 std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistics() const

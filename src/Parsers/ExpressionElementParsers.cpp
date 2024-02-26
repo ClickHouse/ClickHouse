@@ -123,7 +123,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have a table function or table override");
 
         /// Replace subquery `(EXPLAIN <kind> <explain_settings> SELECT ...)`
-        /// with `(SELECT * FROM viewExplain('<kind>', '<explain_settings>', (SELECT ...)))`
+        /// with `(SELECT * FROM viewExplain("<kind>", "<explain_settings>", SELECT ...))`
 
         String kind_str = ASTExplainQuery::toString(explain_query.getKind());
 
@@ -141,7 +141,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             auto view_explain = makeASTFunction("viewExplain",
                 std::make_shared<ASTLiteral>(kind_str),
                 std::make_shared<ASTLiteral>(settings_str),
-                std::make_shared<ASTSubquery>(explained_ast));
+                explained_ast);
             result_node = buildSelectFromTableFunction(view_explain);
         }
         else
@@ -161,7 +161,8 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
-    node = std::make_shared<ASTSubquery>(std::move(result_node));
+    node = std::make_shared<ASTSubquery>();
+    node->children.push_back(result_node);
     return true;
 }
 
@@ -249,7 +250,7 @@ bool ParserTableAsStringLiteralIdentifier::parseImpl(Pos & pos, ASTPtr & node, E
     ReadBufferFromMemory in(pos->begin, pos->size());
     String s;
 
-    if (!tryReadQuotedString(s, in))
+    if (!tryReadQuotedStringInto(s, in))
     {
         expected.add(pos, "string literal");
         return false;
@@ -1450,7 +1451,6 @@ const char * ParserAlias::restricted_keywords[] =
     "ASOF",
     "BETWEEN",
     "CROSS",
-    "PASTE",
     "FINAL",
     "FORMAT",
     "FROM",

@@ -6,7 +6,6 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <Common/callOnce.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Poco/UUIDGenerator.h>
@@ -616,7 +615,7 @@ UUID IAccessStorage::generateRandomID()
 }
 
 
-void IAccessStorage::clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, const LoggerPtr log_)
+void IAccessStorage::clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, const Poco::Logger * log_)
 {
     std::unordered_map<UUID, size_t> positions_by_id;
     std::unordered_map<std::string_view, size_t> positions_by_type_and_name[static_cast<size_t>(AccessEntityType::MAX)];
@@ -672,13 +671,12 @@ void IAccessStorage::clearConflictsInEntitiesList(std::vector<std::pair<UUID, Ac
 }
 
 
-LoggerPtr IAccessStorage::getLogger() const
+Poco::Logger * IAccessStorage::getLogger() const
 {
-    callOnce(log_initialized, [&] {
-        log = ::getLogger("Access(" + storage_name + ")");
-    });
-
-    return log;
+    Poco::Logger * ptr = log.load();
+    if (!ptr)
+        log.store(ptr = &Poco::Logger::get("Access(" + storage_name + ")"), std::memory_order_relaxed);
+    return ptr;
 }
 
 

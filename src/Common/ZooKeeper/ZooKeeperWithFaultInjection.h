@@ -62,7 +62,7 @@ class ZooKeeperWithFaultInjection
 
     std::unique_ptr<RandomFaultInjection> fault_policy;
     std::string name;
-    LoggerPtr logger = nullptr;
+    Poco::Logger * logger = nullptr;
     const UInt64 seed = 0;
 
     std::vector<std::string> session_ephemeral_nodes;
@@ -87,7 +87,7 @@ public:
         double fault_injection_probability,
         UInt64 fault_injection_seed,
         std::string name_,
-        LoggerPtr logger_);
+        Poco::Logger * logger_);
 
     explicit ZooKeeperWithFaultInjection(zkutil::ZooKeeper::Ptr const & keeper_) : keeper(keeper_) { }
     static ZooKeeperWithFaultInjection::Ptr createInstance(
@@ -95,7 +95,7 @@ public:
         UInt64 fault_injection_seed,
         zkutil::ZooKeeper::Ptr const & zookeeper,
         std::string name,
-        LoggerPtr logger)
+        Poco::Logger * logger)
     {
         /// validate all parameters here, constructor just accept everything
         if (fault_injection_probability < 0.0)

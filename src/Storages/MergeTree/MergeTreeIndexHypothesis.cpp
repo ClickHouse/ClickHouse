@@ -79,7 +79,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexHypothesis::createIndexAggregator(cons
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexHypothesis::createIndexCondition(
-    const ActionsDAGPtr &, ContextPtr) const
+    const SelectQueryInfo &, ContextPtr) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not supported");
 }

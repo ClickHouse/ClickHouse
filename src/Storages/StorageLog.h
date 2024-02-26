@@ -40,7 +40,7 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        LoadingStrictnessLevel mode,
+        bool attach,
         ContextMutablePtr context_);
 
     ~StorageLog() override;
@@ -132,9 +132,6 @@ private:
     std::vector<DataFile> data_files;
     size_t num_data_files = 0;
     std::map<String, DataFile *> data_files_by_names;
-
-    /// The same as metadata->columns but after call of Nested::collect().
-    ColumnsDescription columns_with_collected_nested;
 
     /// The Log engine uses the marks file, and the TinyLog engine doesn't.
     const bool use_marks_file;

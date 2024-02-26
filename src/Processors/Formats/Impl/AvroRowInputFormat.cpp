@@ -186,7 +186,7 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
             tmp = decoder.decodeBytes();
 
         if (tmp.size() > field_type_size || tmp.empty())
-            throw Exception(
+            throw ParsingException(
                 ErrorCodes::CANNOT_PARSE_UUID,
                 "Cannot parse type {}, expected non-empty binary data with size equal to or less than {}, got {}",
                 target_type->getName(),
@@ -212,7 +212,7 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
     };
 }
 
-static std::string nodeToJSON(avro::NodePtr root_node)
+static std::string nodeToJson(avro::NodePtr root_node)
 {
     std::ostringstream ss;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     ss.exceptions(std::ios::failbit);
@@ -274,7 +274,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 {
                     decoder.decodeString(tmp);
                     if (tmp.length() != 36)
-                        throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", tmp);
+                        throw ParsingException(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", tmp);
 
                     const UUID uuid = parseUUID({reinterpret_cast<const UInt8 *>(tmp.data()), tmp.length()});
                     assert_cast<DataTypeUUID::ColumnType &>(column).insertValue(uuid);
@@ -530,7 +530,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 {
                     decoder.decodeFixed(fixed_size, tmp);
                     if (tmp.size() != 36)
-                        throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse UUID from type Fixed, because it's size ({}) is not equal to the size of UUID (36)", fixed_size);
+                        throw ParsingException(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse UUID from type Fixed, because it's size ({}) is not equal to the size of UUID (36)", fixed_size);
 
                     const UUID uuid = parseUUID({reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size()});
                     assert_cast<DataTypeUUID::ColumnType &>(column).insertValue(uuid);
@@ -641,7 +641,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
 
     throw Exception(ErrorCodes::ILLEGAL_COLUMN,
         "Type {} is not compatible with Avro {}:\n{}",
-        target_type->getName(), avro::toString(root_node->type()), nodeToJSON(root_node));
+        target_type->getName(), avro::toString(root_node->type()), nodeToJson(root_node));
 }
 
 AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & root_node)
@@ -984,13 +984,10 @@ private:
             try
             {
                 Poco::URI url(base_url, base_url.getPath() + "/schemas/ids/" + std::to_string(id));
-                LOG_TRACE((getLogger("AvroConfluentRowInputFormat")), "Fetching schema id = {} from url {}", id, url.toString());
+                LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Fetching schema id = {} from url {}", id, url.toString());
 
                 /// One second for connect/send/receive. Just in case.
-                auto timeouts = ConnectionTimeouts()
-                    .withConnectionTimeout(1)
-                    .withSendTimeout(1)
-                    .withReceiveTimeout(1);
+                ConnectionTimeouts timeouts({1, 0}, {1, 0}, {1, 0});
 
                 Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
                 request.setHost(url.getHost());
@@ -1029,7 +1026,7 @@ private:
                 markSessionForReuse(session);
 
                 auto schema = json_body->getValue<std::string>("schema");
-                LOG_TRACE((getLogger("AvroConfluentRowInputFormat")), "Successfully fetched schema id = {}\n{}", id, schema);
+                LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Successfully fetched schema id = {}\n{}", id, schema);
                 return avro::compileJsonSchemaFromString(schema);
             }
             catch (const Exception &)

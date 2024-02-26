@@ -4,12 +4,11 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemAggregateFunctionCombinators::getColumnsDescription()
+NamesAndTypesList StorageSystemAggregateFunctionCombinators::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"name", std::make_shared<DataTypeString>(), "The name of the combinator."},
-        {"is_internal", std::make_shared<DataTypeUInt8>(), "Whether this combinator is for internal usage only."},
+    return {
+        {"name", std::make_shared<DataTypeString>()},
+        {"is_internal", std::make_shared<DataTypeUInt8>()},
     };
 }
 

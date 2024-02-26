@@ -33,7 +33,7 @@ KafkaSource::KafkaSource(
     const StorageSnapshotPtr & storage_snapshot_,
     const ContextPtr & context_,
     const Names & columns,
-    LoggerPtr log_,
+    Poco::Logger * log_,
     size_t max_block_size_,
     bool commit_in_suffix_)
     : ISource(storage_snapshot_->getSampleBlockForColumns(columns))

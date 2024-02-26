@@ -71,8 +71,8 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
         /// Empty strings are just zero terminating bytes.
 
         res->chars.resize_fill(res->chars.size() + to_size - from_size);
-        res->offsets.resize_exact(to_size);
 
+        res->offsets.resize(to_size);
         for (size_t i = from_size; i < to_size; ++i)
         {
             ++offset;
@@ -494,11 +494,6 @@ void ColumnString::reserve(size_t n)
     offsets.reserve(n);
 }
 
-void ColumnString::shrinkToFit()
-{
-    chars.shrink_to_fit();
-    offsets.shrink_to_fit();
-}
 
 void ColumnString::getExtremes(Field & min, Field & max) const
 {

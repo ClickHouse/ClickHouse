@@ -1,4 +1,5 @@
 #include <numeric>
+#include <regex>
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -53,7 +54,6 @@
 #include <Common/ProfileEvents.h>
 #include <base/sleep.h>
 #include <Common/logger_useful.h>
-#include <boost/algorithm/string/replace.hpp>
 
 #include <Storages/LiveView/StorageBlocks.h>
 
@@ -62,7 +62,6 @@
 
 #include <QueryPipeline/printPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-
 
 namespace DB
 {
@@ -418,7 +417,8 @@ ASTPtr StorageWindowView::getCleanupQuery()
 
     auto alter_command = std::make_shared<ASTAlterCommand>();
     alter_command->type = ASTAlterCommand::DELETE;
-    alter_command->predicate = alter_command->children.emplace_back(function_less).get();
+    alter_command->predicate = function_less;
+    alter_command->children.push_back(alter_command->predicate);
     alter_query->command_list->children.push_back(alter_command);
     return alter_query;
 }
@@ -1157,10 +1157,10 @@ StorageWindowView::StorageWindowView(
     ContextPtr context_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
-    LoadingStrictnessLevel mode)
+    bool attach_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , log(getLogger(fmt::format("StorageWindowView({}.{})", table_id_.database_name, table_id_.table_name)))
+    , log(&Poco::Logger::get(fmt::format("StorageWindowView({}.{})", table_id_.database_name, table_id_.table_name)))
     , fire_signal_timeout_s(context_->getSettingsRef().wait_for_window_view_fire_signal_timeout.totalSeconds())
     , clean_interval_usec(context_->getSettingsRef().window_view_clean_interval.totalMicroseconds())
 {
@@ -1203,7 +1203,7 @@ StorageWindowView::StorageWindowView(
         next_fire_signal = getWindowUpperBound(now());
 
     std::exchange(has_inner_table, true);
-    if (mode < LoadingStrictnessLevel::ATTACH)
+    if (!attach_)
     {
         auto inner_create_query = getInnerTableCreateQuery(inner_query, inner_table_id);
         auto create_context = Context::createCopy(context_);
@@ -1268,7 +1268,7 @@ ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr contex
     if (is_time_column_func_now)
         window_id_name = func_now_data.window_id_name;
 
-    window_column_name = boost::replace_all_copy(window_id_name, "windowID", is_tumble ? "tumble" : "hop");
+    window_column_name = std::regex_replace(window_id_name, std::regex("windowID"), is_tumble ? "tumble" : "hop");
 
     /// Parse final query (same as mergeable query but has tumble/hop instead of windowID)
     final_query = mergeable_query->clone();
@@ -1672,12 +1672,12 @@ void registerStorageWindowView(StorageFactory & factory)
 {
     factory.registerStorage("WindowView", [](const StorageFactory::Arguments & args)
     {
-        if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef().allow_experimental_window_view)
+        if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_window_view)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Experimental WINDOW VIEW feature "
                             "is not enabled (the setting 'allow_experimental_window_view')");
 
-        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.mode);
+        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.attach);
     });
 }
 

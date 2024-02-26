@@ -29,11 +29,11 @@ Transactionally inconsistent caching is traditionally provided by client tools o
 the same caching logic and configuration is often duplicated. With ClickHouse's query cache, the caching logic moves to the server side.
 This reduces maintenance effort and avoids redundancy.
 
-## Configuration Settings and Usage
-
 :::note
-In ClickHouse Cloud, you must use [query level settings](/en/operations/settings/query-level) to edit query cache settings. Editing [config level settings](/en/operations/configuration-files) is currently not supported.
+Security consideration: The cached query result is tied to the user executing it. Authorization checks are performed when the query is executed. This means that if there are any alterations to the user's role or permissions between the time the query is cached and when the cache is accessed, the result will not reflect these changes. We recommend using different users to distinguish between different levels of access, instead of actively toggling roles for a single user between queries, as this practice may lead to unexpected query results.
 :::
+
+## Configuration Settings and Usage
 
 Setting [use_query_cache](settings/settings.md#use-query-cache) can be used to control whether a specific query or all queries of the
 current session should utilize the query cache. For example, the first execution of query

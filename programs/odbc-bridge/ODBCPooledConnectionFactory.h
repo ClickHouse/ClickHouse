@@ -97,7 +97,7 @@ T execute(nanodbc::ConnectionHolderPtr connection_holder, std::function<T(nanodb
         /// https://docs.microsoft.com/ru-ru/sql/odbc/reference/appendixes/appendix-a-odbc-error-codes?view=sql-server-ver15
         bool is_retriable = e.state().starts_with("08") || e.state().starts_with("24") || e.state().starts_with("25");
         LOG_ERROR(
-            getLogger("ODBCConnection"),
+            &Poco::Logger::get("ODBCConnection"),
             "ODBC query failed with error: {}, state: {}, native code: {}{}",
             e.what(), e.state(), e.native(), is_retriable ? ", will retry" : "");
 

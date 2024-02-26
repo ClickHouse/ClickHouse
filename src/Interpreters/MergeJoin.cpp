@@ -492,7 +492,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
     , max_files_to_merge(table_join->maxFilesToMerge())
-    , log(getLogger("MergeJoin"))
+    , log(&Poco::Logger::get("MergeJoin"))
 {
     switch (table_join->strictness())
     {
@@ -1124,7 +1124,7 @@ IBlocksStreamPtr MergeJoin::getNonJoinedBlocks(
     if (table_join->strictness() == JoinStrictness::All && (is_right || is_full))
     {
         size_t left_columns_count = left_sample_block.columns();
-        chassert(left_columns_count == result_sample_block.columns() - right_columns_to_add.columns());
+        assert(left_columns_count == result_sample_block.columns() - right_columns_to_add.columns());
         auto non_joined = std::make_unique<NotJoinedMerge>(*this, max_block_size);
         return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
     }

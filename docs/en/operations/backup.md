@@ -80,7 +80,6 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
 - ASYNC: backup or restore asynchronously
 - PARTITIONS: a list of partitions to restore
 - SETTINGS:
-    - `id`: id of backup or restore operation, randomly generated UUID is used, if not specified manually. If there is already running operation with the same `id` exception is thrown.
     - [`compression_method`](/docs/en/sql-reference/statements/create/table.md/#column-compression-codecs) and compression_level
     - `password` for the file on disk
     - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
@@ -207,7 +206,7 @@ end_time:          2022-08-30 09:21:46
 1 row in set. Elapsed: 0.002 sec.
 ```
 
-Along with `system.backups` table, all backup and restore operations are also tracked in the system log table [backup_log](../operations/system-tables/backup_log.md):
+Along with `system.backups` table, all backup and restore operations are also tracked in the system log table [backup_log](../operations/system-tables/backup_log.md): 
 ```
 SELECT *
 FROM system.backup_log
@@ -223,7 +222,7 @@ event_time_microseconds: 2023-08-18 11:13:43.097414
 id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
 name:                    Disk('backups', '1.zip')
 status:                  CREATING_BACKUP
-error:
+error:                   
 start_time:              2023-08-18 11:13:43
 end_time:                1970-01-01 03:00:00
 num_files:               0
@@ -253,7 +252,7 @@ compressed_size:         0
 files_read:              0
 bytes_read:              0
 
-2 rows in set. Elapsed: 0.075 sec.
+2 rows in set. Elapsed: 0.075 sec. 
 ```
 
 ## Configuring BACKUP/RESTORE to use an S3 Endpoint
@@ -272,7 +271,7 @@ Creating an S3 bucket is covered in [Use S3 Object Storage as a ClickHouse disk]
 
 The destination for a backup will be specified like this:
 ```
-S3('<S3 endpoint>/<directory>', '<Access key ID>', '<Secret access key>')
+S3('<S3 endpoint>/<directory>', '<Access key ID>', '<Secret access key>)
 ```
 
 ```sql
@@ -452,24 +451,3 @@ To disallow concurrent backup/restore, you can use these settings respectively.
 
 The default value for both is true, so by default concurrent backup/restores are allowed.
 When these settings are false on a cluster, only 1 backup/restore is allowed to run on a cluster at a time.
-
-## Configuring BACKUP/RESTORE to use an AzureBlobStorage Endpoint
-
-To write backups to an AzureBlobStorage container you need the following pieces of information:
-- AzureBlobStorage endpoint connection string / url,
-- Container,
-- Path,
-- Account name (if url is specified)
-- Account Key (if url is specified)
-
-The destination for a backup will be specified like this:
-```
-AzureBlobStorage('<connection string>/<url>', '<container>', '<path>', '<account name>', '<account key>')
-```
-
-```sql
-BACKUP TABLE data TO AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
-    'test_container', 'data_backup');
-RESTORE TABLE data AS data_restored FROM AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
-    'test_container', 'data_backup');
-```

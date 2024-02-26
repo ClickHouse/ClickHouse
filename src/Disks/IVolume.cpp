@@ -46,7 +46,7 @@ IVolume::IVolume(
     }
 
     if (disks.empty())
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Volume {} must contain at least one disk", name);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Volume must contain at least one disk");
 }
 
 std::optional<UInt64> IVolume::getMaxUnreservedFreeSpace() const

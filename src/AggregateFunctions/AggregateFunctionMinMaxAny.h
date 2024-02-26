@@ -965,7 +965,6 @@ template <typename Data>
 struct AggregateFunctionMinData : Data
 {
     using Self = AggregateFunctionMinData;
-    using Impl = Data;
 
     bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)     { return this->changeIfLess(column, row_num, arena); }
     bool changeIfBetter(const Self & to, Arena * arena)                            { return this->changeIfLess(to, arena); }
@@ -994,7 +993,6 @@ template <typename Data>
 struct AggregateFunctionMaxData : Data
 {
     using Self = AggregateFunctionMaxData;
-    using Impl = Data;
 
     bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)     { return this->changeIfGreater(column, row_num, arena); }
     bool changeIfBetter(const Self & to, Arena * arena)                            { return this->changeIfGreater(to, arena); }

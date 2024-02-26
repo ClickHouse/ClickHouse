@@ -33,9 +33,6 @@
 #include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Interpreters/PreparedSets.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -436,7 +433,7 @@ MergeTask::StageRuntimeContextPtr MergeTask::VerticalMergeStage::getContextForNe
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
 {
     assert(subtasks_iterator != subtasks.end());
-    if ((this->**subtasks_iterator)())
+    if ((*subtasks_iterator)())
         return true;
 
     /// Move to the next subtask in an array of subtasks
@@ -573,7 +570,6 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
     {
         Pipe pipe = createMergeTreeSequentialSource(
-            MergeTreeSequentialSourceType::Merge,
             *global_ctx->data,
             global_ctx->storage_snapshot,
             global_ctx->future_part->parts[part_num],
@@ -591,15 +587,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
     ctx->rows_sources_read_buf->seek(0, 0);
-
-    const auto data_settings = global_ctx->data->getSettings();
-    auto transform = std::make_unique<ColumnGathererTransform>(
-        pipe.getHeader(),
-        pipe.numOutputPorts(),
-        *ctx->rows_sources_read_buf,
-        data_settings->merge_max_block_size,
-        data_settings->merge_max_block_size_bytes);
-
+    auto transform = std::make_unique<ColumnGathererTransform>(pipe.getHeader(), pipe.numOutputPorts(), *ctx->rows_sources_read_buf);
     pipe.addTransform(std::move(transform));
 
     ctx->column_parts_pipeline = QueryPipeline(std::move(pipe));
@@ -731,9 +719,8 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
         MergeTreeData::DataPartsVector projection_parts;
         for (const auto & part : global_ctx->future_part->parts)
         {
-            auto actual_projection_parts = part->getProjectionParts();
-            auto it = actual_projection_parts.find(projection.name);
-            if (it != actual_projection_parts.end() && !it->second->is_broken)
+            auto it = part->getProjectionParts().find(projection.name);
+            if (it != part->getProjectionParts().end())
                 projection_parts.push_back(it->second);
         }
         if (projection_parts.size() < global_ctx->future_part->parts.size())
@@ -827,7 +814,7 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
 bool MergeTask::VerticalMergeStage::execute()
 {
     assert(subtasks_iterator != subtasks.end());
-    if ((this->**subtasks_iterator)())
+    if ((*subtasks_iterator)())
         return true;
 
     /// Move to the next subtask in an array of subtasks
@@ -838,7 +825,7 @@ bool MergeTask::VerticalMergeStage::execute()
 bool MergeTask::MergeProjectionsStage::execute()
 {
     assert(subtasks_iterator != subtasks.end());
-    if ((this->**subtasks_iterator)())
+    if ((*subtasks_iterator)())
         return true;
 
     /// Move to the next subtask in an array of subtasks
@@ -938,7 +925,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     for (const auto & part : global_ctx->future_part->parts)
     {
         Pipe pipe = createMergeTreeSequentialSource(
-            MergeTreeSequentialSourceType::Merge,
             *global_ctx->data,
             global_ctx->storage_snapshot,
             part,
@@ -1059,14 +1045,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
             break;
     }
 
-    auto builder = std::make_unique<QueryPipelineBuilder>();
-    builder->init(Pipe::unitePipes(std::move(pipes)));
-    builder->addTransform(std::move(merged_transform));
+    auto res_pipe = Pipe::unitePipes(std::move(pipes));
+    res_pipe.addTransform(std::move(merged_transform));
 
 #ifndef NDEBUG
     if (!sort_description.empty())
     {
-        builder->addSimpleTransform([&](const Block & header_)
+        res_pipe.addSimpleTransform([&](const Block & header_)
         {
             auto transform = std::make_shared<CheckSortedTransform>(header_, sort_description);
             return transform;
@@ -1088,34 +1073,26 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
         }
 
         if (DistinctSortedTransform::isApplicable(header, sort_description, global_ctx->deduplicate_by_columns))
-            builder->addTransform(std::make_shared<DistinctSortedTransform>(
-                builder->getHeader(), sort_description, SizeLimits(), 0 /*limit_hint*/, global_ctx->deduplicate_by_columns));
+            res_pipe.addTransform(std::make_shared<DistinctSortedTransform>(
+                res_pipe.getHeader(), sort_description, SizeLimits(), 0 /*limit_hint*/, global_ctx->deduplicate_by_columns));
         else
-            builder->addTransform(std::make_shared<DistinctTransform>(
-                builder->getHeader(), SizeLimits(), 0 /*limit_hint*/, global_ctx->deduplicate_by_columns));
+            res_pipe.addTransform(std::make_shared<DistinctTransform>(
+                res_pipe.getHeader(), SizeLimits(), 0 /*limit_hint*/, global_ctx->deduplicate_by_columns));
     }
-
-    PreparedSets::Subqueries subqueries;
 
     if (ctx->need_remove_expired_values)
-    {
-        auto transform = std::make_shared<TTLTransform>(global_ctx->context, builder->getHeader(), *global_ctx->data, global_ctx->metadata_snapshot, global_ctx->new_data_part, global_ctx->time_of_merge, ctx->force_ttl);
-        subqueries = transform->getSubqueries();
-        builder->addTransform(std::move(transform));
-    }
+        res_pipe.addTransform(std::make_shared<TTLTransform>(
+            res_pipe.getHeader(), *global_ctx->data, global_ctx->metadata_snapshot, global_ctx->new_data_part, global_ctx->time_of_merge, ctx->force_ttl));
 
     if (global_ctx->metadata_snapshot->hasSecondaryIndices())
     {
         const auto & indices = global_ctx->metadata_snapshot->getSecondaryIndices();
-        builder->addTransform(std::make_shared<ExpressionTransform>(
-            builder->getHeader(), indices.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext())));
-        builder->addTransform(std::make_shared<MaterializingTransform>(builder->getHeader()));
+        res_pipe.addTransform(std::make_shared<ExpressionTransform>(
+            res_pipe.getHeader(), indices.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext())));
+        res_pipe.addTransform(std::make_shared<MaterializingTransform>(res_pipe.getHeader()));
     }
 
-    if (!subqueries.empty())
-        builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), global_ctx->context);
-
-    global_ctx->merged_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+    global_ctx->merged_pipeline = QueryPipeline(std::move(res_pipe));
     /// Dereference unique_ptr and pass horizontal_stage_progress by reference
     global_ctx->merged_pipeline.setProgressCallback(MergeProgressCallback(global_ctx->merge_list_element_ptr, global_ctx->watch_prev_elapsed, *global_ctx->horizontal_stage_progress));
     /// Is calculated inside MergeProgressCallback.

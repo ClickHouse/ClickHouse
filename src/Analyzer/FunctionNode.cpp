@@ -210,6 +210,18 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     function_ast->name = function_name;
     function_ast->nulls_action = nulls_action;
 
+    if (function_name == "nothing")
+    {
+        /** Inside AggregateFunctionCombinatorNull we may replace functions with `NULL` in arguments with `nothing`.
+          * Result type of `nothing` depends on `returns_default_when_only_null` property of nested function.
+          * If we convert `nothing` to AST, we will lose this information, so we use original function name instead.
+          */
+        const auto & original_ast = getOriginalAST();
+        const auto & original_function_ast = original_ast ? original_ast->as<ASTFunction>() : nullptr;
+        if (original_function_ast)
+            function_ast->name = original_function_ast->name;
+    }
+
     if (isWindowFunction())
     {
         function_ast->is_window_function = true;
@@ -224,7 +236,7 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
         new_options.add_cast_for_constants = false;
 
     /// Avoid cast for `IN tuple(...)` expression.
-    /// Tuples could be quite big, and adding a type may significantly increase query size.
+    /// Tuples colud be quite big, and adding a type may significantly increase query size.
     /// It should be safe because set type for `column IN tuple` is deduced from `column` type.
     if (isNameOfInFunction(function_name) && argument_nodes.size() > 1 &&  argument_nodes[1]->getNodeType() == QueryTreeNodeType::CONSTANT)
         new_options.add_cast_for_constants = false;
