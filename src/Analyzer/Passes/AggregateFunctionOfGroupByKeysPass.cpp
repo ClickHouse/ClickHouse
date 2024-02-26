@@ -1,4 +1,4 @@
-#include "AggregateFunctionOfGroupByKeysPass.h"
+#include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -15,77 +15,6 @@ namespace DB
 namespace
 {
 
-/// Check whether we should keep aggregator.
-class KeepEliminateFunctionVisitor : public ConstInDepthQueryTreeVisitor<KeepEliminateFunctionVisitor>
-{
-public:
-    using Base = ConstInDepthQueryTreeVisitor<KeepEliminateFunctionVisitor>;
-    using Base::Base;
-
-    explicit KeepEliminateFunctionVisitor(const QueryTreeNodes & group_by_keys_, bool & keep_aggregator_)
-        : group_by_keys(group_by_keys_), keep_aggregator(keep_aggregator_)
-    {
-    }
-
-    static bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType & child [[maybe_unused]])
-    {
-        return parent->as<ListNode>();
-    }
-
-    void visitFunction(const FunctionNode * function_node)
-    {
-        if (function_node->getArguments().getNodes().empty())
-        {
-            keep_aggregator = true;
-            return;
-        }
-        auto it = std::find_if(
-            group_by_keys.begin(),
-            group_by_keys.end(),
-            [function_node](const QueryTreeNodePtr & group_by_ele) { return function_node->isEqual(*group_by_ele); });
-
-        if (it == group_by_keys.end())
-        {
-            KeepEliminateFunctionVisitor visitor(group_by_keys, keep_aggregator);
-            visitor.visit(function_node->getArgumentsNode());
-        }
-    }
-
-    void visitColumn(const ColumnNode * column)
-    {
-        /// if variable of a function is not in GROUP BY keys, this function should not be deleted
-        auto it = std::find_if(
-            group_by_keys.begin(),
-            group_by_keys.end(),
-            [column](const QueryTreeNodePtr & group_by_ele) { return column->isEqual(*group_by_ele); });
-
-        if (it == group_by_keys.end())
-            keep_aggregator = true;
-    }
-
-    void visitImpl(const QueryTreeNodePtr & node)
-    {
-        if (keep_aggregator)
-            return;
-
-        if (node->as<ListNode>())
-            return;
-
-        if (auto * function_node = node->as<FunctionNode>())
-        {
-            visitFunction(function_node);
-        }
-        else if (auto * column = node->as<ColumnNode>())
-        {
-            visitColumn(column);
-        }
-    }
-
-private :
-    const QueryTreeNodes & group_by_keys;
-    bool & keep_aggregator;
-};
-
 /// Try to eliminate min/max/any/anyLast.
 class EliminateFunctionVisitor : public InDepthQueryTreeVisitorWithContext<EliminateFunctionVisitor>
 {
@@ -93,65 +22,50 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<EliminateFunctionVisitor>;
     using Base::Base;
 
-    using GroupByKeysStack = std::vector<QueryTreeNodes>;
+    using GroupByKeysStack = std::vector<QueryTreeNodePtrWithHashSet>;
 
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_aggregators_of_group_by_keys)
             return;
 
-        /// (1) collect group by keys
-        if (auto * query_node = node->as<QueryNode>())
+        /// Collect group by keys.
+        auto * query_node = node->as<QueryNode>();
+        if (!query_node)
+            return;
+
+        if (!query_node->hasGroupBy())
         {
-            if (!query_node->hasGroupBy())
+            group_by_keys_stack.push_back({});
+        }
+        else if (query_node->isGroupByWithTotals() || query_node->isGroupByWithCube() || query_node->isGroupByWithRollup())
+        {
+            /// Keep aggregator if group by is with totals/cube/rollup.
+            group_by_keys_stack.push_back({});
+        }
+        else
+        {
+            QueryTreeNodePtrWithHashSet group_by_keys;
+            for (auto & group_key : query_node->getGroupBy().getNodes())
             {
-                group_by_keys_stack.push_back({});
-            }
-            else if (query_node->isGroupByWithTotals() || query_node->isGroupByWithCube() || query_node->isGroupByWithRollup())
-            {
-                /// Keep aggregator if group by is with totals/cube/rollup.
-                group_by_keys_stack.push_back({});
-            }
-            else
-            {
-                QueryTreeNodes group_by_keys;
-                for (auto & group_key : query_node->getGroupBy().getNodes())
+                /// For grouping sets case collect only keys that are presented in every set.
+                if (auto * list = group_key->as<ListNode>())
                 {
-                    /// for grouping sets case
-                    if (auto * list = group_key->as<ListNode>())
+                    QueryTreeNodePtrWithHashSet common_keys_set;
+                    for (auto & group_elem : list->getNodes())
                     {
-                        for (auto & group_elem : list->getNodes())
-                            group_by_keys.push_back(group_elem);
+                        if (group_by_keys.contains(group_elem))
+                            common_keys_set.insert(group_elem);
                     }
-                    else
-                    {
-                        group_by_keys.push_back(group_key);
-                    }
+                    group_by_keys = std::move(common_keys_set);
                 }
-                group_by_keys_stack.push_back(std::move(group_by_keys));
+                else
+                {
+                    group_by_keys.insert(group_key);
+                }
             }
+            group_by_keys_stack.push_back(std::move(group_by_keys));
         }
-        /// (2) Try to eliminate any/min/max
-        else if (auto * function_node = node->as<FunctionNode>())
-        {
-            if (!function_node
-                || !(function_node->getFunctionName() == "min" || function_node->getFunctionName() == "max"
-                     || function_node->getFunctionName() == "any" || function_node->getFunctionName() == "anyLast"))
-                return;
-
-            if (!function_node->getArguments().getNodes().empty())
-            {
-                bool keep_aggregator = false;
-
-                KeepEliminateFunctionVisitor visitor(group_by_keys_stack.back(), keep_aggregator);
-                visitor.visit(function_node->getArgumentsNode());
-
-                /// Place argument of an aggregate function instead of function
-                if (!keep_aggregator)
-                    node = function_node->getArguments().getNodes()[0];
-            }
-        }
-
     }
 
     /// Now we visit all nodes in QueryNode, we should remove group_by_keys from stack.
@@ -159,6 +73,9 @@ public:
     {
         if (!getSettings().optimize_aggregators_of_group_by_keys)
             return;
+
+        if (aggregationCanBeEliminated(node, group_by_keys_stack.back()))
+            node = node->as<FunctionNode>()->getArguments().getNodes()[0];
 
         if (auto * query_node = node->as<QueryNode>())
             group_by_keys_stack.pop_back();
@@ -171,8 +88,81 @@ public:
     }
 
 private:
-    GroupByKeysStack group_by_keys_stack;
 
+    struct NodeWithInfo
+    {
+        QueryTreeNodePtr node;
+        bool parents_are_only_deterministic = false;
+    };
+
+    bool aggregationCanBeEliminated(QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & group_by_keys)
+    {
+        if (group_by_keys.empty())
+            return false;
+
+        auto * function = node->as<FunctionNode>();
+        if (!function || !function->isAggregateFunction())
+            return false;
+
+        if (!(function->getFunctionName() == "min"
+                || function->getFunctionName() == "max"
+                || function->getFunctionName() == "any"
+                || function->getFunctionName() == "anyLast"))
+            return false;
+
+        std::vector<NodeWithInfo> candidates;
+        auto & function_arguments = function->getArguments().getNodes();
+        if (function_arguments.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a single argument of function '{}' but received {}", function->getFunctionName(), function_arguments.size());
+
+        if (!function->getResultType()->equals(*function_arguments[0]->getResultType()))
+            return false;
+
+        candidates.push_back({ function_arguments[0], true });
+
+        /// Using DFS we traverse function tree and try to find if it uses other keys as function arguments.
+        while (!candidates.empty())
+        {
+            auto [candidate, parents_are_only_deterministic] = candidates.back();
+            candidates.pop_back();
+
+            bool found = group_by_keys.contains(candidate);
+
+            switch (candidate->getNodeType())
+            {
+                case QueryTreeNodeType::FUNCTION:
+                {
+                    auto * func = candidate->as<FunctionNode>();
+                    auto & arguments = func->getArguments().getNodes();
+                    if (arguments.empty())
+                        return false;
+
+                    if (!found)
+                    {
+                        bool is_deterministic_function = parents_are_only_deterministic &&
+                            func->getFunctionOrThrow()->isDeterministicInScopeOfQuery();
+                        for (auto it = arguments.rbegin(); it != arguments.rend(); ++it)
+                            candidates.push_back({ *it, is_deterministic_function });
+                    }
+                    break;
+                }
+                case QueryTreeNodeType::COLUMN:
+                    if (!found)
+                        return false;
+                    break;
+                case QueryTreeNodeType::CONSTANT:
+                    if (!parents_are_only_deterministic)
+                        return false;
+                    break;
+                default:
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    GroupByKeysStack group_by_keys_stack;
 };
 
 }

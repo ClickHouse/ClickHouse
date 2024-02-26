@@ -65,7 +65,7 @@ QUERY id: 0
             COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
             CONSTANT id: 9, constant_value: UInt64_3, constant_value_type: UInt8
   JOIN TREE
-    TABLE_FUNCTION id: 5, table_function_name: numbers
+    TABLE_FUNCTION id: 5, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 10, nodes: 1
           CONSTANT id: 11, constant_value: UInt64_10000000, constant_value_type: UInt32
@@ -114,7 +114,7 @@ QUERY id: 0
             COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
             CONSTANT id: 9, constant_value: UInt64_3, constant_value_type: UInt8
   JOIN TREE
-    TABLE_FUNCTION id: 5, table_function_name: numbers
+    TABLE_FUNCTION id: 5, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 10, nodes: 1
           CONSTANT id: 11, constant_value: UInt64_10000000, constant_value_type: UInt32
@@ -165,7 +165,7 @@ QUERY id: 0
                   COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
                   CONSTANT id: 11, constant_value: UInt64_7, constant_value_type: UInt8
   JOIN TREE
-    TABLE_FUNCTION id: 7, table_function_name: numbers
+    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 12, nodes: 1
           CONSTANT id: 13, constant_value: UInt64_10000000, constant_value_type: UInt32
@@ -205,20 +205,46 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: foo, result_type: UInt64, source_id: 3
   JOIN TREE
-    QUERY id: 3, is_subquery: 1
+    QUERY id: 3, alias: __table1, is_subquery: 1
       PROJECTION COLUMNS
         foo UInt64
       PROJECTION
         LIST id: 4, nodes: 1
           COLUMN id: 5, column_name: number, result_type: UInt64, source_id: 6
       JOIN TREE
-        TABLE_FUNCTION id: 6, table_function_name: numbers
+        TABLE_FUNCTION id: 6, alias: __table2, table_function_name: numbers
           ARGUMENTS
             LIST id: 7, nodes: 1
               CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt8
       GROUP BY
         LIST id: 9, nodes: 1
           COLUMN id: 5, column_name: number, result_type: UInt64, source_id: 6
+QUERY id: 0
+  PROJECTION COLUMNS
+    min(number) OVER (PARTITION BY modulo(number, 2)) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: min, function_type: window, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+        WINDOW
+          WINDOW id: 6, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
+            PARTITION BY
+              LIST id: 7, nodes: 1
+                FUNCTION id: 8, function_name: modulo, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 9, nodes: 2
+                      COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+                      CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 5, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 11, nodes: 1
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+  GROUP BY
+    LIST id: 13, nodes: 1
+      COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
 set optimize_aggregators_of_group_by_keys = 0
 0	0
 0	1
@@ -291,7 +317,7 @@ QUERY id: 0
                   COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
                   CONSTANT id: 13, constant_value: UInt64_3, constant_value_type: UInt8
   JOIN TREE
-    TABLE_FUNCTION id: 7, table_function_name: numbers
+    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 14, nodes: 1
           CONSTANT id: 15, constant_value: UInt64_10000000, constant_value_type: UInt32
@@ -352,7 +378,7 @@ QUERY id: 0
                   COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
                   CONSTANT id: 13, constant_value: UInt64_3, constant_value_type: UInt8
   JOIN TREE
-    TABLE_FUNCTION id: 7, table_function_name: numbers
+    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 14, nodes: 1
           CONSTANT id: 15, constant_value: UInt64_10000000, constant_value_type: UInt32
@@ -412,7 +438,7 @@ QUERY id: 0
                         COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
                         CONSTANT id: 13, constant_value: UInt64_7, constant_value_type: UInt8
   JOIN TREE
-    TABLE_FUNCTION id: 9, table_function_name: numbers
+    TABLE_FUNCTION id: 9, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 14, nodes: 1
           CONSTANT id: 15, constant_value: UInt64_10000000, constant_value_type: UInt32
@@ -455,7 +481,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: foo, result_type: UInt64, source_id: 3
   JOIN TREE
-    QUERY id: 3, is_subquery: 1
+    QUERY id: 3, alias: __table1, is_subquery: 1
       PROJECTION COLUMNS
         foo UInt64
       PROJECTION
@@ -465,10 +491,36 @@ QUERY id: 0
               LIST id: 6, nodes: 1
                 COLUMN id: 7, column_name: number, result_type: UInt64, source_id: 8
       JOIN TREE
-        TABLE_FUNCTION id: 8, table_function_name: numbers
+        TABLE_FUNCTION id: 8, alias: __table2, table_function_name: numbers
           ARGUMENTS
             LIST id: 9, nodes: 1
               CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
       GROUP BY
         LIST id: 11, nodes: 1
           COLUMN id: 7, column_name: number, result_type: UInt64, source_id: 8
+QUERY id: 0
+  PROJECTION COLUMNS
+    min(number) OVER (PARTITION BY modulo(number, 2)) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: min, function_type: window, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+        WINDOW
+          WINDOW id: 6, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
+            PARTITION BY
+              LIST id: 7, nodes: 1
+                FUNCTION id: 8, function_name: modulo, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 9, nodes: 2
+                      COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+                      CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 5, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 11, nodes: 1
+          CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
+  GROUP BY
+    LIST id: 13, nodes: 1
+      COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
