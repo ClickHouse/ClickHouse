@@ -1,8 +1,5 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
-#include <Access/AccessControl.h>
-#include <Access/User.h>
-
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/quoteString.h>
@@ -10,7 +7,6 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
@@ -27,7 +23,6 @@ namespace ErrorCodes
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int TYPE_MISMATCH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
-    extern const int LOGICAL_ERROR;
 }
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
@@ -46,8 +41,6 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
     , select(other.select)
     , refresh(other.refresh ? other.refresh->clone() : nullptr)
-    , definer(other.definer)
-    , sql_security_type(other.sql_security_type)
     , comment(other.comment)
     , metadata_version(other.metadata_version)
 {
@@ -78,8 +71,6 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
         settings_changes.reset();
     select = other.select;
     refresh = other.refresh ? other.refresh->clone() : nullptr;
-    definer = other.definer;
-    sql_security_type = other.sql_security_type;
     comment = other.comment;
     metadata_version = other.metadata_version;
     return *this;
@@ -88,69 +79,6 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
 void StorageInMemoryMetadata::setComment(const String & comment_)
 {
     comment = comment_;
-}
-
-void StorageInMemoryMetadata::setDefiner(const ASTSQLSecurity & sql_security)
-{
-    if (sql_security.definer)
-        definer = sql_security.definer->toString();
-
-    sql_security_type = sql_security.type;
-}
-
-UUID StorageInMemoryMetadata::getDefinerID(DB::ContextPtr context) const
-{
-    if (!definer)
-    {
-        if (const auto definer_id = context->getUserID())
-            return *definer_id;
-
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No user in context for sub query execution.");
-    }
-
-    const auto & access_control = context->getAccessControl();
-    return access_control.getID<User>(*definer);
-}
-
-ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context) const
-{
-    if (!sql_security_type.has_value())
-        return Context::createCopy(context);
-
-    if (sql_security_type == SQLSecurityType::INVOKER)
-        return Context::createCopy(context);
-
-    auto new_context = Context::createCopy(context->getGlobalContext());
-    new_context->setClientInfo(context->getClientInfo());
-    new_context->makeQueryContext();
-
-    const auto & database = context->getCurrentDatabase();
-    if (!database.empty())
-        new_context->setCurrentDatabase(database);
-
-    new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames());
-    new_context->setProgressCallback(context->getProgressCallback());
-    new_context->setProcessListElement(context->getProcessListElement());
-
-    if (context->getCurrentTransaction())
-        new_context->setCurrentTransaction(context->getCurrentTransaction());
-
-    if (context->getZooKeeperMetadataTransaction())
-        new_context->initZooKeeperMetadataTransaction(context->getZooKeeperMetadataTransaction());
-
-    if (sql_security_type == SQLSecurityType::NONE)
-    {
-        new_context->applySettingsChanges(context->getSettingsRef().changes());
-        return new_context;
-    }
-
-    new_context->setUser(getDefinerID(context));
-
-    auto changed_settings = context->getSettingsRef().changes();
-    new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
-    new_context->applySettingsChanges(changed_settings);
-
-    return new_context;
 }
 
 void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
