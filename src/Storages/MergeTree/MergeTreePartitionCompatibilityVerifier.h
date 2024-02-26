@@ -14,7 +14,7 @@ namespace DB
  * the source global min_max idx range is the same.
  *
  * If so, creates a new partition and calculates new partition id. (If the partition expression is the same,
- * the source partition id is used as the new partition id)
+ * the source partition id is used as the new partition id and the new partition is default constructed (not used))
  *
  * If not, an exception is thrown.
  * */
@@ -26,7 +26,7 @@ public:
     using DataPartPtr = std::shared_ptr<const DataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
 
-    static std::pair<MergeTreePartition, std::string> getDestinationPartitionAndPartitionId(
+    static std::pair<MergeTreePartition, std::string> verifyCompatibilityAndCreatePartition(
         const ASTPtr & source_partition_exp,
         const ASTPtr & destination_partition_exp,
         const MergeTreeData & source_data,

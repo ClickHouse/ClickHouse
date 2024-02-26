@@ -7915,13 +7915,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         return;
     }
 
-    auto [destination_partition, destination_partition_id] = MergeTreePartitionCompatibilityVerifier::getDestinationPartitionAndPartitionId(
-        src_partition_expression,
-        my_partition_expression,
-        src_data,
-        *this,
-        src_all_parts,
-        source_partition_id);
+    auto [destination_partition, destination_partition_id] = MergeTreePartitionCompatibilityVerifier::verifyCompatibilityAndCreatePartition(
+        src_partition_expression, my_partition_expression, src_data, *this, src_all_parts, source_partition_id);
 
     const auto is_partition_exp_the_same = source_partition_id == destination_partition_id;
 
@@ -8246,13 +8241,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got part {} covering drop range {}, it's a bug",
                             covering_part->name, source_drop_range_fake_part_name);
 
-        auto [destination_partition, destination_partition_id] = MergeTreePartitionCompatibilityVerifier::getDestinationPartitionAndPartitionId(
-            src_partition_expression,
-            dst_partition_expression,
-            src_data,
-            *dest_table_storage,
-            src_all_parts,
-            source_partition_id);
+        auto [destination_partition, destination_partition_id] = MergeTreePartitionCompatibilityVerifier::verifyCompatibilityAndCreatePartition(
+                src_partition_expression, dst_partition_expression, src_data, *dest_table_storage, src_all_parts, source_partition_id);
 
         const auto is_partition_exp_the_same = source_partition_id == destination_partition_id;
 

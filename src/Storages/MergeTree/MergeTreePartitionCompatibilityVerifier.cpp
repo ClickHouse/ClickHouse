@@ -62,7 +62,7 @@ bool isExpressionDirectSubsetOf(const ASTPtr source, const ASTPtr destination)
 }
 }
 
-MergeTreePartition verifyCompatibilityAndCreatePartition(
+MergeTreePartition verifyCompatibilityAndCreatePartitionImpl(
     const MergeTreeData & source_storage,
     const MergeTreeData & destination_storage,
     const MergeTreePartitionCompatibilityVerifier::DataPartsVector & source_parts)
@@ -109,7 +109,7 @@ MergeTreePartition verifyCompatibilityAndCreatePartition(
     return partition;
 }
 
-std::pair<MergeTreePartition, std::string> MergeTreePartitionCompatibilityVerifier::getDestinationPartitionAndPartitionId(
+std::pair<MergeTreePartition, std::string> MergeTreePartitionCompatibilityVerifier::verifyCompatibilityAndCreatePartition(
     const ASTPtr & source_partition_exp,
     const ASTPtr & destination_partition_exp,
     const MergeTreeData & source_data,
@@ -130,7 +130,7 @@ std::pair<MergeTreePartition, std::string> MergeTreePartitionCompatibilityVerifi
         return std::make_pair(MergeTreePartition(), source_partition_id);
     }
 
-    auto dst_partition = verifyCompatibilityAndCreatePartition(
+    auto dst_partition = verifyCompatibilityAndCreatePartitionImpl(
         source_data,
         dst_data,
         src_parts);
