@@ -26,6 +26,8 @@
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/PeekableReadBuffer.h>
+#include <IO/AsynchronousReadBufferFromFile.h>
+#include <Disks/IO/IOUringReader.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -92,6 +94,7 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int CANNOT_DETECT_FORMAT;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -275,6 +278,22 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
             res = std::make_unique<ReadBufferFromFilePRead>(current_path, context->getSettingsRef().max_read_buffer_size);
 
         ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
+    }
+    else if (read_method == LocalFSReadMethod::io_uring && !use_table_fd)
+    {
+#if USE_LIBURING
+        auto & reader = context->getIOURingReader();
+        if (!reader.isSupported())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "io_uring is not supported by this system");
+
+        res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
+            reader,
+            Priority{},
+            current_path,
+            context->getSettingsRef().max_read_buffer_size);
+#else
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Read method io_uring is only supported in Linux");
+#endif
     }
     else
     {

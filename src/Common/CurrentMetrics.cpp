@@ -262,6 +262,9 @@
     M(ActiveTimersInQueryProfiler, "Number of Active thread local timers in QueryProfiler") \
     M(RefreshableViews, "Number materialized views with periodic refreshing (REFRESH)") \
     M(RefreshingViews, "Number of materialized views currently executing a refresh") \
+    M(StorageBufferFlushThreads, "Number of threads for background flushes in StorageBuffer") \
+    M(StorageBufferFlushThreadsActive, "Number of threads for background flushes in StorageBuffer running a task") \
+    M(StorageBufferFlushThreadsScheduled, "Number of queued or active threads for background flushes in StorageBuffer")
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

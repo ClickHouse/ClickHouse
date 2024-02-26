@@ -14,7 +14,7 @@ jobs:
     # The task for having a preserved ENV and event.json for later investigation
     uses: ./.github/workflows/debug.yml
   RunConfig:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, style-checker-aarch64]
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:

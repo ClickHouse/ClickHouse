@@ -60,6 +60,8 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
+#include <boost/algorithm/string.hpp>
+
 namespace DB
 {
 
@@ -776,7 +778,7 @@ void expandGroupByAll(ASTSelectQuery * select_query)
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_expression_list);
 }
 
-void expandOrderByAll(ASTSelectQuery * select_query)
+void expandOrderByAll(ASTSelectQuery * select_query, [[maybe_unused]] const TablesWithColumns & tables_with_columns)
 {
     auto * all_elem = select_query->orderBy()->children[0]->as<ASTOrderByElement>();
     if (!all_elem)
@@ -786,15 +788,31 @@ void expandOrderByAll(ASTSelectQuery * select_query)
 
     for (const auto & expr : select_query->select()->children)
     {
+        /// Detect and reject ambiguous statements:
+        /// E.g. for a table with columns "all", "a", "b":
+        /// - SELECT all, a, b ORDER BY all;        -- should we sort by all columns in SELECT or by column "all"?
+        /// - SELECT a, b AS all ORDER BY all;      -- like before but "all" as alias
+        /// - SELECT func(...) AS all ORDER BY all; -- like before but "all" as function
+        /// - SELECT a, b ORDER BY all;             -- tricky in other way: does the user want to sort by columns in SELECT clause or by not SELECTed column "all"?
+
+        static const String all = "all";
         if (auto * identifier = expr->as<ASTIdentifier>(); identifier != nullptr)
-            if (Poco::toUpper(identifier->name()) == "ALL" || Poco::toUpper(identifier->alias) == "ALL")
+            if (boost::iequals(identifier->name(), all) || boost::iequals(identifier->alias, all))
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
                                 "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
 
         if (auto * function = expr->as<ASTFunction>(); function != nullptr)
-            if (Poco::toUpper(function->alias) == "ALL")
+            if (boost::iequals(function->alias, all))
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
                                 "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
+
+        for (const auto & table_with_columns : tables_with_columns)
+        {
+            const auto & columns = table_with_columns.columns;
+            if (columns.containsCaseInsensitive(all))
+                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
+                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
+        }
 
         auto elem = std::make_shared<ASTOrderByElement>();
         elem->direction = all_elem->direction;
@@ -1324,7 +1342,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     // expand ORDER BY ALL
     if (settings.enable_order_by_all && select_query->order_by_all)
-        expandOrderByAll(select_query);
+        expandOrderByAll(select_query, tables_with_columns);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
