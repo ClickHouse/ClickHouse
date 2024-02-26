@@ -49,14 +49,11 @@ FormatFactory::Creators & FormatFactory::getOrCreateCreators(const String & name
     String lower_case = boost::to_lower_copy(name);
     auto it = dict.find(lower_case);
     if (dict.end() != it)
-    {
         return it->second;
-    }
-    else
-    {
-        auto & creators = dict[lower_case];
-        creators.name = name;
-        return creators;
+
+    auto & creators = dict[lower_case];
+    creators.name = name;
+    return creators;
     }
 }
 
