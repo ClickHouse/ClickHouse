@@ -780,7 +780,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         result_header = getSampleBlockImpl();
     };
 
-    analyze(shouldMoveToPrewhere());
+    /// Conditionally support AST-based PREWHERE optimization.
+    analyze(shouldMoveToPrewhere() && (!settings.query_plan_optimize_prewhere || !settings.query_plan_enable_optimizations));
 
     bool need_analyze_again = false;
     bool can_analyze_again = false;
@@ -2077,9 +2078,7 @@ bool InterpreterSelectQuery::shouldMoveToPrewhere() const
 {
     const Settings & settings = context->getSettingsRef();
     const ASTSelectQuery & query = query_ptr->as<const ASTSelectQuery &>();
-    return settings.optimize_move_to_prewhere
-        && (!settings.query_plan_optimize_prewhere || !settings.query_plan_enable_optimizations)
-        && (!query.final() || settings.optimize_move_to_prewhere_if_final);
+    return settings.optimize_move_to_prewhere && (!query.final() || settings.optimize_move_to_prewhere_if_final);
 }
 
 /// Note that this is const and accepts the analysis ref to be able to use it to do analysis for parallel replicas
@@ -2527,7 +2526,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
     else if (storage)
     {
-        if (shouldMoveToPrewhere() && typeid_cast<const StorageMerge *>(storage.get()))
+        if (shouldMoveToPrewhere() && settings.query_plan_optimize_prewhere && settings.query_plan_enable_optimizations
+            && typeid_cast<const StorageMerge *>(storage.get()))
             collectFiltersForAnalysis(query_ptr, context, storage_snapshot, options, query_info);
 
         /// Table.
