@@ -317,10 +317,7 @@ public:
     }
     bool checkIfActuallySeekable() override { return false; }
 
-    off_t getPosition() override
-    {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getPosition not supported when reading from archive");
-    }
+    off_t getPosition() override { throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getPosition not supported when reading from archive"); }
     String getFileName() const override { return handle.getFileName(); }
 
     size_t getFileSize() override { return handle.getFileInfo().uncompressed_size; }
@@ -456,7 +453,8 @@ std::unique_ptr<LibArchiveReader::FileEnumerator> LibArchiveReader::currentFile(
 {
     if (!dynamic_cast<ReadBufferFromLibArchive *>(read_buffer.get()))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong ReadBuffer passed to nextFile()");
-    auto read_buffer_from_libarchive = std::unique_ptr<ReadBufferFromLibArchive>(static_cast<ReadBufferFromLibArchive *>(read_buffer.release()));
+    auto read_buffer_from_libarchive
+        = std::unique_ptr<ReadBufferFromLibArchive>(static_cast<ReadBufferFromLibArchive *>(read_buffer.release()));
     auto handle = std::move(*read_buffer_from_libarchive).releaseHandle();
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
 }
