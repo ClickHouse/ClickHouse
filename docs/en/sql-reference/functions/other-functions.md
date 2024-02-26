@@ -782,8 +782,13 @@ If executed in the context of a distributed table, this function generates a nor
 
 Returns the current version of ClickHouse as a string in the form of:
 
+- Major version
+- Minor version
+- Patch version
+- Number of commits since the previous stable release.
+
 ```plaintext
-major version`.minor version.patch version.the number of commits since the previous stable release
+major_version.minor_version.patch_version.number_of_commits_since_the_previous_stable_release
 ```
 
 If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
