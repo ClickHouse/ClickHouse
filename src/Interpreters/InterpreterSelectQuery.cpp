@@ -486,7 +486,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             LOG_DEBUG(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
             context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
         }
-        else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+        else if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
         }
@@ -501,7 +501,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             LOG_DEBUG(log, "To use parallel replicas with plain MergeTree tables please enable setting `parallel_replicas_for_non_replicated_merge_tree`. For now query will be executed without using them.");
             context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
         }
-        else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+        else if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "To use parallel replicas with plain MergeTree tables please enable setting `parallel_replicas_for_non_replicated_merge_tree`");
         }
@@ -864,38 +864,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     ASTSelectQuery & query = getSelectQuery();
 
     /// While only_analyze we don't know anything about parts, so any decision about how many parallel replicas to use would be wrong
-    if (!storage || !context->canUseParallelReplicasOnInitiator())
-        return false;
-
-    /// check if IN operator with subquery is present in the query
-    /// if so, disable parallel replicas
-    if (query_analyzer->getPreparedSets()->hasSubqueries())
-    {
-        bool in_subqueries = false;
-        const auto & sets = query_analyzer->getPreparedSets();
-        const auto subqueries = sets->getSubqueries();
-        for (const auto & subquery : subqueries)
-        {
-            if (subquery->isINSubquery())
-            {
-                in_subqueries = true;
-                break;
-            }
-        }
-
-        if (in_subqueries)
-        {
-            if (settings.allow_experimental_parallel_reading_from_replicas == 2)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");
-
-            context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            context->setSetting("max_parallel_replicas", UInt64{0});
-            LOG_DEBUG(log, "Disabling parallel replicas to execute a query with IN with subquery");
-            return true;
-        }
-    }
-
-    if (options.only_analyze)
+    if (!storage || options.only_analyze || !context->canUseParallelReplicasOnInitiator())
         return false;
 
     if (getTrivialCount(0).has_value())

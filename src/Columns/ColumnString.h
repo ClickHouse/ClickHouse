@@ -259,6 +259,7 @@ public:
     ColumnPtr compress() const override;
 
     void reserve(size_t n) override;
+    void shrinkToFit() override;
 
     void getExtremes(Field & min, Field & max) const override;
 
