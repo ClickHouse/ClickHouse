@@ -37,6 +37,19 @@ public:
 
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const override;
+
+    bool deserializeBinaryBulkWithMultipleStreamsSilently(
+        ColumnPtr & /* column */,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & /*state */) const override
+    {
+        if (ReadBuffer * istr = settings.getter(settings.path))
+        {
+            istr->ignore(sizeof(IPv) * limit);
+        }
+        return true;
+    }
 };
 
 using SerializationIPv4 = SerializationIP<IPv4>;

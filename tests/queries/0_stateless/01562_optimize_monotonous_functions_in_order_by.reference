@@ -6,9 +6,10 @@ ORDER BY timestamp ASC
 LIMIT 10
 Expression (Project names)
   Limit (preliminary LIMIT (without OFFSET))
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-        ReadFromMergeTree (default.test_order_by)
+    LazilyRead (Lazily Read)
+      Sorting (Sorting for ORDER BY)
+        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+          ReadFromMergeTree (default.test_order_by)
 SELECT
     timestamp,
     key

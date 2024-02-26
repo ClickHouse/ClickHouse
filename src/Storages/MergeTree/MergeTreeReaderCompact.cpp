@@ -190,7 +190,7 @@ void MergeTreeReaderCompact::fillColumnPositions()
 }
 
 size_t MergeTreeReaderCompact::readRows(
-    size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
+    size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read, size_t offset, Columns & res_columns)
 {
     if (!initialized)
     {
@@ -215,6 +215,13 @@ size_t MergeTreeReaderCompact::readRows(
     while (read_rows < max_rows_to_read)
     {
         size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
+        if (rows_to_read <= offset)
+        {
+            offset -= rows_to_read;
+            ++from_mark;
+            continue;
+        }
+        rows_to_read -= offset;
 
         /// If we need to read multiple subcolumns from a single column in storage,
         /// we will read it this column only once and then reuse to extract all subcolumns.
@@ -230,7 +237,8 @@ size_t MergeTreeReaderCompact::readRows(
                 auto & column = res_columns[pos];
                 size_t column_size_before_reading = column->size();
 
-                readData(columns_to_read[pos], column, from_mark, current_task_last_mark, *column_positions[pos], rows_to_read, columns_for_offsets[pos], columns_cache_for_subcolumns);
+                readData(columns_to_read[pos], column, from_mark, current_task_last_mark, *column_positions[pos],
+                         rows_to_read, offset, columns_for_offsets[pos], columns_cache_for_subcolumns);
 
                 size_t read_rows_in_column = column->size() - column_size_before_reading;
                 if (read_rows_in_column != rows_to_read)
@@ -250,7 +258,7 @@ size_t MergeTreeReaderCompact::readRows(
                 }
                 catch (Exception & e)
                 {
-                    e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
+                    e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read, offset));
                 }
 
                 throw;
@@ -259,6 +267,7 @@ size_t MergeTreeReaderCompact::readRows(
 
         ++from_mark;
         read_rows += rows_to_read;
+        offset = 0;
     }
 
     next_mark = from_mark;
@@ -269,7 +278,7 @@ size_t MergeTreeReaderCompact::readRows(
 void MergeTreeReaderCompact::readData(
     const NameAndTypePair & name_and_type, ColumnPtr & column,
     size_t from_mark, size_t current_task_last_mark, size_t column_position, size_t rows_to_read,
-    ColumnNameLevel name_level_for_offsets, std::unordered_map<String, ColumnPtr> & columns_cache_for_subcolumns)
+    size_t offset, ColumnNameLevel name_level_for_offsets, std::unordered_map<String, ColumnPtr> & columns_cache_for_subcolumns)
 {
     const auto & [name, type] = name_and_type;
     std::optional<NameAndTypePair> column_for_offsets;
@@ -366,7 +375,19 @@ void MergeTreeReaderCompact::readData(
 
             deserialize_settings.getter = buffer_getter;
             serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
-            serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
+            if (offset > 0)
+            {
+                if (serialization->deserializeBinaryBulkWithMultipleStreamsSilently(temp_column, offset, deserialize_settings, state))
+                    serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
+                else
+                {
+                    serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, offset + rows_to_read, deserialize_settings, state, nullptr);
+                    if (!temp_column->empty())
+                        temp_column = temp_column->cut(offset, temp_column->size() - offset);
+                }
+            }
+            else
+                serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
 
             if (!column_for_offsets)
                 columns_cache_for_subcolumns[name_type_in_storage.name] = temp_column;
@@ -395,7 +416,19 @@ void MergeTreeReaderCompact::readData(
 
         deserialize_settings.getter = buffer_getter;
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
-        serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state, nullptr);
+        if (offset > 0)
+        {
+            if (serialization->deserializeBinaryBulkWithMultipleStreamsSilently(column, offset, deserialize_settings, state))
+                serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state, nullptr);
+            else
+            {
+                serialization->deserializeBinaryBulkWithMultipleStreams(column, offset + rows_to_read, deserialize_settings, state, nullptr);
+                if (!column->empty())
+                    column = column->cut(offset, column->size() - offset);
+            }
+        }
+        else
+            serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state, nullptr);
     }
 
     /// The buffer is left in inconsistent state after reading single offsets or using columns cache during subcolumns reading.

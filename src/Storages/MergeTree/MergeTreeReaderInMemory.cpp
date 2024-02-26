@@ -50,7 +50,7 @@ MergeTreeReaderInMemory::MergeTreeReaderInMemory(
 }
 
 size_t MergeTreeReaderInMemory::readRows(
-    size_t from_mark, size_t /* current_task_last_mark */, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
+    size_t from_mark, size_t /* current_task_last_mark */, bool continue_reading, size_t max_rows_to_read, size_t offset, Columns & res_columns)
 {
     if (!continue_reading)
         total_rows_read = 0;
@@ -68,7 +68,7 @@ size_t MergeTreeReaderInMemory::readRows(
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data in MergeTreeReaderInMemory. "
             "Rows already read: {}. Rows in part: {}", total_rows_read, part_rows);
 
-    size_t rows_to_read = std::min(max_rows_to_read, part_rows - total_rows_read);
+    size_t rows_to_read = std::min(offset + max_rows_to_read, part_rows - total_rows_read);
     for (size_t i = 0; i < num_columns; ++i)
     {
         const auto & column_to_read = columns_to_read[i];
@@ -86,7 +86,7 @@ size_t MergeTreeReaderInMemory::readRows(
             auto mutable_column = res_columns[i]->assumeMutable();
             auto & res_offstes = assert_cast<ColumnArray &>(*mutable_column).getOffsets();
             size_t start_offset = total_rows_read ? source_offsets[total_rows_read - 1] : 0;
-            for (size_t row = 0; row < rows_to_read; ++row)
+            for (size_t row = offset; row < rows_to_read; ++row)
                 res_offstes.push_back(source_offsets[total_rows_read + row] - start_offset);
 
             res_columns[i] = std::move(mutable_column);
@@ -94,7 +94,7 @@ size_t MergeTreeReaderInMemory::readRows(
         else if (part_in_memory->hasColumnFiles(column_to_read))
         {
             auto block_column = getColumnFromBlock(part_in_memory->block, column_to_read);
-            if (rows_to_read == part_rows)
+            if (offset == 0 && rows_to_read == part_rows)
             {
                 res_columns[i] = block_column;
             }
@@ -104,7 +104,7 @@ size_t MergeTreeReaderInMemory::readRows(
                     res_columns[i] = column_to_read.type->createColumn();
 
                 auto mutable_column = res_columns[i]->assumeMutable();
-                mutable_column->insertRangeFrom(*block_column, total_rows_read, rows_to_read);
+                mutable_column->insertRangeFrom(*block_column, total_rows_read + offset, rows_to_read);
                 res_columns[i] = std::move(mutable_column);
             }
         }

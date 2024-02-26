@@ -151,6 +151,15 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
+bool ISerialization::deserializeBinaryBulkWithMultipleStreamsSilently(
+    ColumnPtr &,
+    size_t,
+    DeserializeBinaryBulkSettings &,
+    DeserializeBinaryBulkStatePtr &) const
+{
+    return false;
+}
+
 namespace
 {
 

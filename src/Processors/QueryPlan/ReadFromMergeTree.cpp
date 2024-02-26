@@ -280,6 +280,8 @@ ReadFromMergeTree::ReadFromMergeTree(
     bool enable_parallel_reading)
     : SourceStepWithFilter(DataStream{.header = MergeTreeSelectProcessor::transformHeader(
         storage_snapshot_->getSampleBlockForColumns(real_column_names_),
+        {},
+        {},
         query_info_.prewhere_info,
         data_.getPartitionValueType(),
         virt_column_names_)})
@@ -394,7 +396,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
 
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
-            pool, std::move(algorithm), data, prewhere_info,
+            pool, std::move(algorithm), data, storage_snapshot, prewhere_info, lazily_read_info,
             actions_settings, block_size_copy, reader_settings, virt_column_names);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor));
@@ -493,7 +495,7 @@ Pipe ReadFromMergeTree::readFromPool(
         auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
 
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
-            pool, std::move(algorithm), data, prewhere_info,
+            pool, std::move(algorithm), data, storage_snapshot, prewhere_info, lazily_read_info,
             actions_settings, block_size_copy, reader_settings, virt_column_names);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor));
@@ -599,7 +601,7 @@ Pipe ReadFromMergeTree::readInOrder(
             algorithm = std::make_unique<MergeTreeInOrderSelectAlgorithm>(i);
 
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
-            pool, std::move(algorithm), data, prewhere_info,
+            pool, std::move(algorithm), data, storage_snapshot, prewhere_info, lazily_read_info,
             actions_settings, block_size, reader_settings, virt_column_names);
 
         processor->addPartLevelToChunk(isQueryWithFinal());
@@ -1723,8 +1725,14 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
     query_info.prewhere_info = prewhere_info_value;
     prewhere_info = prewhere_info_value;
 
+    Block lazily_read_header;
+    if (lazily_read_info)
+        lazily_read_header = storage_snapshot->getSampleBlockForColumns(lazily_read_info->lazily_read_columns_names);
+
     output_stream = DataStream{.header = MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(real_column_names),
+        lazily_read_header,
+        lazily_read_info,
         prewhere_info_value,
         data.getPartitionValueType(),
         virt_column_names)};
@@ -1736,6 +1744,33 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
         query_info.input_order_info,
         prewhere_info,
         enable_vertical_final);
+}
+
+void ReadFromMergeTree::updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value)
+{
+    lazily_read_info = lazily_read_info_value;
+
+    NameSet names_set(lazily_read_info->lazily_read_columns_names.begin(),
+                      lazily_read_info->lazily_read_columns_names.end());
+    std::erase_if(real_column_names, [&names_set] (const String & column_name)
+    {
+        return names_set.contains(column_name);
+    });
+
+    if (std::find_if(virt_column_names.begin(), virt_column_names.end(), [] (const String & column_name)
+        { return column_name == "_part_offset"; }) == virt_column_names.end())
+    {
+        lazily_read_info->do_remove_column = true;
+        virt_column_names.emplace_back("_part_offset");
+    }
+
+    output_stream = DataStream{.header = MergeTreeSelectProcessor::transformHeader(
+        storage_snapshot->getSampleBlockForColumns(real_column_names),
+        storage_snapshot->getSampleBlockForColumns(lazily_read_info->lazily_read_columns_names),
+        lazily_read_info,
+        prewhere_info,
+        data.getPartitionValueType(),
+        virt_column_names)};
 }
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
@@ -1968,6 +2003,21 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// of some extra expressions, and to allow execute the same expressions later.
     /// NOTE: It may lead to double computation of expressions.
     ActionsDAGPtr result_projection;
+
+    if (lazily_read_info)
+    {
+        lazily_read_info->data_parts_info = std::make_unique<DataPartsInfo>();
+        for (auto & ranges_in_data_part : result.parts_with_ranges)
+        {
+            lazily_read_info->data_parts_info->emplace(
+                ranges_in_data_part.part_index_in_query,
+                DataPartInfo
+                {
+                    .data_part = ranges_in_data_part.data_part,
+                    .alter_conversions = ranges_in_data_part.alter_conversions
+                });
+        }
+    }
 
     Pipe pipe = output_each_partition_through_separate_port
         ? groupStreamsByPartition(result, result_projection)

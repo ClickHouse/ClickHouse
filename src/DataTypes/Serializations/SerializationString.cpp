@@ -481,4 +481,22 @@ void SerializationString::serializeTextMarkdown(
         serializeTextEscaped(column, row_num, ostr, settings);
 }
 
+bool SerializationString::deserializeBinaryBulkWithMultipleStreamsSilently(
+    ColumnPtr & /* column */,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & /* state */) const
+{
+    if (ReadBuffer * istr = settings.getter(settings.path))
+    {
+        for (size_t i = 0; i < limit; ++i)
+        {
+            UInt64 size;
+            readVarUInt(size, *istr);
+            istr->ignore(size);
+        }
+    }
+    return true;
+}
+
 }

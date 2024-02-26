@@ -39,6 +39,12 @@ public:
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
     void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+
+    bool deserializeBinaryBulkWithMultipleStreamsSilently(
+        ColumnPtr & column,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state) const override;
 };
 
 }

@@ -193,6 +193,11 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             }
         }
 
+        if (optimization_settings.optimize_lazy_materialization)
+        {
+            optimizeLazyMaterialization(stack, nodes, optimization_settings.max_limit_for_lazy_materialization);
+        }
+
         enableMemoryBoundMerging(*stack.back().node, nodes);
 
         stack.pop_back();

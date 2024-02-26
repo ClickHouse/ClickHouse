@@ -179,12 +179,14 @@ public:
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
     const PrewhereInfoPtr & getPrewhereInfo() const { return prewhere_info; }
+    const LazilyReadInfoPtr & getLazilyReadInfo() const { return lazily_read_info; }
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
     bool readsInOrder() const;
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value);
+    void updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value);
     bool isQueryWithFinal() const;
     bool isQueryWithSampling() const;
 
@@ -239,6 +241,7 @@ private:
     const MergeTreeData & data;
     SelectQueryInfo query_info;
     PrewhereInfoPtr prewhere_info;
+    LazilyReadInfoPtr lazily_read_info;
     ExpressionActionsSettings actions_settings;
 
     StorageSnapshotPtr storage_snapshot;
