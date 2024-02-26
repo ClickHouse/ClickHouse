@@ -871,7 +871,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     {
         /// The query could use trivial count if it didn't use parallel replicas, so let's disable it and reanalyze
         context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-        context->setSetting("max_parallel_replicas", UInt64{0});
+        context->setSetting("max_parallel_replicas", UInt64{1});
         LOG_DEBUG(log, "Disabling parallel replicas to be able to use a trivial count optimization");
         return true;
     }
@@ -909,7 +909,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     if (number_of_replicas_to_use <= 1)
     {
         context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-        context->setSetting("max_parallel_replicas", UInt64{0});
+        context->setSetting("max_parallel_replicas", UInt64{1});
         LOG_DEBUG(log, "Disabling parallel replicas because there aren't enough rows to read");
         return true;
     }
