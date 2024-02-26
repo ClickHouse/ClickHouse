@@ -32,6 +32,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_FORMAT;
 }
 
 namespace
@@ -80,7 +81,7 @@ void TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const
         configuration.blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
 
         auto is_format_arg
-            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().getAllFormats().contains(s); };
+            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().checkFormatName(s); };
 
         if (engine_args.size() == 4)
         {
@@ -207,7 +208,7 @@ void TableFunctionAzureBlobStorage::updateStructureAndFormatArgumentsIfNeeded(AS
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
         auto is_format_arg
-            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().getAllFormats().contains(s); };
+            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().checkFormatName(s); };
 
         /// (connection_string, container_name, blobpath)
         if (args.size() == 3)

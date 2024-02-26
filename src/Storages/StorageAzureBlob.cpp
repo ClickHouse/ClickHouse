@@ -68,7 +68,7 @@ namespace ErrorCodes
     extern const int CANNOT_DETECT_FORMAT;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-
+    extern const int UNKNOWN_FORMAT;
 }
 
 namespace
@@ -167,7 +167,7 @@ StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine
 
     auto is_format_arg = [] (const std::string & s) -> bool
     {
-        return s == "auto" || FormatFactory::instance().getAllFormats().contains(s);
+        return s == "auto" || FormatFactory::instance().checkFormatName(s);
     };
 
     if (engine_args.size() == 4)
@@ -200,7 +200,7 @@ StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine
     else if (engine_args.size() == 6)
     {
         auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-        if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+        if (fourth_arg == "auto" || FormatFactory::instance().checkFormatName(fourth_arg))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
         }
@@ -218,7 +218,7 @@ StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine
     else if (engine_args.size() == 7)
     {
         auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-        if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+        if (fourth_arg == "auto" || FormatFactory::instance().checkFormatName(fourth_arg))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
         }
