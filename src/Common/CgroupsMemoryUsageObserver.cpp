@@ -218,7 +218,6 @@ uint64_t CgroupsMemoryUsageObserver::File::readMemoryUsage() const
             {
                 readStringUntilWhitespace(key, buf);
                 if (key != "rss")
-                    continue;
                 assertChar(' ', buf);
                 readIntText(mem_usage, buf);
                 assertChar('\n', buf);
