@@ -22,10 +22,9 @@ private:
     void writeRow(
         size_t row_num,
         const Block & header,
-        const Columns & columns,
+        const Chunk & columns,
         const WidthsPerColumn & widths,
-        const Widths & max_widths,
-        bool single_numeric_value);
+        const Widths & max_widths);
 
     void writeChunk(const Chunk & chunk, PortKind port_kind) override;
 };

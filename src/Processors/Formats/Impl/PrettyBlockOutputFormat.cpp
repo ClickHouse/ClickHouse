@@ -162,7 +162,6 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     auto num_columns = chunk.getNumColumns();
     const auto & columns = chunk.getColumns();
     const auto & header = getPort(port_kind).getHeader();
-    auto single_numeric_value = num_rows == 1 && num_columns == 1 && WhichDataType(columns[0]->getDataType()).isNumber();
 
     WidthsPerColumn widths;
     Widths max_widths;
@@ -307,12 +306,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         }
 
         writeCString(grid_symbols.bar, out);
-        if (single_numeric_value)
-        {
-            auto value = columns[0]->getFloat64(0);
-            if (value > 1'000'000)
-                writeReadableNumberTip(value);
-        }
+        writeReadableNumberTip(chunk);
         writeCString("\n", out);
     }
 
@@ -418,11 +412,22 @@ void PrettyBlockOutputFormat::writeSuffix()
     }
 }
 
-void PrettyBlockOutputFormat::writeReadableNumberTip(double value)
+void PrettyBlockOutputFormat::writeReadableNumberTip(const Chunk & chunk)
 {
-    writeCString("\033[90m -- ", out);
+    auto columns = chunk.getColumns();
+    auto is_single_number = chunk.getNumRows() == 1 && chunk.getNumColumns() == 1 && WhichDataType(columns[0]->getDataType()).isNumber();
+    if (!is_single_number)
+        return;
+    auto value = columns[0]->getFloat64(0);
+    auto threshold = format_settings.pretty.output_format_pretty_single_large_number_tip_threshold;
+    if (threshold == 0 || value <= threshold)
+        return;
+    if (color)
+        writeCString("\033[90m", out);
+    writeCString(" -- ", out);
     formatReadableQuantity(value, out, 2);
-    writeCString(" \033[0m", out);
+    if (color)
+        writeCString("\033[0m", out);
 }
 
 void registerOutputFormatPretty(FormatFactory & factory)

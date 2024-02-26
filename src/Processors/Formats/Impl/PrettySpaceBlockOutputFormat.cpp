@@ -23,7 +23,6 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     size_t num_columns = chunk.getNumColumns();
     const auto & header = getPort(port_kind).getHeader();
     const auto & columns = chunk.getColumns();
-    auto single_number_value = num_rows == 1 && num_columns == 1 && WhichDataType(columns[0]->getDataType()).isNumber();
 
     WidthsPerColumn widths;
     Widths max_widths;
@@ -88,12 +87,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
                 *columns[column], *serializations[column], row, cur_width, max_widths[column], type.shouldAlignRightInPrettyFormats());
         }
 
-        if (single_number_value)
-        {
-            auto value = columns[0]->getFloat64(0);
-            if (value > 1'000'000)
-                writeReadableNumberTip(value);
-        }
+        writeReadableNumberTip(chunk);
         writeChar('\n', out);
     }
 

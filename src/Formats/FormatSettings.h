@@ -277,6 +277,7 @@ struct FormatSettings
         SettingFieldUInt64Auto color{"auto"};
 
         bool output_format_pretty_row_numbers = false;
+        UInt64 output_format_pretty_single_large_number_tip_threshold = 1'000'000;
 
         enum class Charset
         {

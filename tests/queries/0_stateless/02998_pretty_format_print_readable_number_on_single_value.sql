@@ -11,6 +11,20 @@ SELECT 1_000_000 as a FORMAT PrettySpaceNoEscapes;
 SELECT 1_000_000 as a FORMAT PrettySpaceMonoBlock;
 SELECT 1_000_000 as a FORMAT PrettySpaceNoEscapesMonoBlock;
 
+
+SELECT 1_000_000 as a SETTINGS output_format_pretty_single_large_number_tip_threshold = 1000 FORMAT Pretty;
+SELECT 1_000_000 as a SETTINGS output_format_pretty_single_large_number_tip_threshold = 1000 FORMAT PrettyNoEscapes;
+SELECT 1_000_000 as a SETTINGS output_format_pretty_single_large_number_tip_threshold = 1000 FORMAT PrettyMonoBlock;
+SELECT 1_000_000 as a SETTINGS output_format_pretty_single_large_number_tip_threshold = 1000 FORMAT PrettyNoEscapesMonoBlock;
+SELECT 1_000_000 as a SETTINGS output_format_pretty_single_large_number_tip_threshold = 1000 FORMAT PrettyCompact;
+SELECT 1_000_000 as a SETTINGS output_format_pretty_single_large_number_tip_threshold = 1000 FORMAT PrettyCompactNoEscapes;
+SELECT 1_000_000 as a SETTINGS output_format_pretty_single_large_number_tip_threshold = 1000 FORMAT PrettyCompactMonoBlock;
+SELECT 1_000_000 as a SETTINGS output_format_pretty_single_large_number_tip_threshold = 1000 FORMAT PrettyCompactNoEscapesMonoBlock;
+SELECT 1_000_000 as a SETTINGS output_format_pretty_single_large_number_tip_threshold = 1000 FORMAT PrettySpace;
+SELECT 1_000_000 as a SETTINGS output_format_pretty_single_large_number_tip_threshold = 1000 FORMAT PrettySpaceNoEscapes;
+SELECT 1_000_000 as a SETTINGS output_format_pretty_single_large_number_tip_threshold = 1000 FORMAT PrettySpaceMonoBlock;
+SELECT 1_000_000 as a SETTINGS output_format_pretty_single_large_number_tip_threshold = 1000 FORMAT PrettySpaceNoEscapesMonoBlock;
+
 SELECT 1_000_001 as a FORMAT Pretty;
 SELECT 1_000_001 as a FORMAT PrettyNoEscapes;
 SELECT 1_000_001 as a FORMAT PrettyMonoBlock;

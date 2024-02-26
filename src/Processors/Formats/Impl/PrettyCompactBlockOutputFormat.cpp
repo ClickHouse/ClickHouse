@@ -138,10 +138,9 @@ void PrettyCompactBlockOutputFormat::writeBottom(const Widths & max_widths)
 void PrettyCompactBlockOutputFormat::writeRow(
     size_t row_num,
     const Block & header,
-    const Columns & columns,
+    const Chunk & chunk,
     const WidthsPerColumn & widths,
-    const Widths & max_widths,
-    bool single_numeric_value)
+    const Widths & max_widths)
 {
     if (format_settings.pretty.output_format_pretty_row_numbers)
     {
@@ -159,6 +158,7 @@ void PrettyCompactBlockOutputFormat::writeRow(
                                        ascii_grid_symbols;
 
     size_t num_columns = max_widths.size();
+    const auto & columns = chunk.getColumns();
 
     writeCString(grid_symbols.bar, out);
 
@@ -173,12 +173,7 @@ void PrettyCompactBlockOutputFormat::writeRow(
     }
 
     writeCString(grid_symbols.bar, out);
-    if (single_numeric_value)
-    {
-        auto value = columns[0]->getFloat64(0);
-        if (value > 1'000'000)
-            writeReadableNumberTip(value);
-    }
+    writeReadableNumberTip(chunk);
     writeCString("\n", out);
 }
 
@@ -187,10 +182,7 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
     UInt64 max_rows = format_settings.pretty.max_rows;
 
     size_t num_rows = chunk.getNumRows();
-    size_t num_columns = chunk.getNumColumns();
     const auto & header = getPort(port_kind).getHeader();
-    const auto & columns = chunk.getColumns();
-    auto single_numeric_value = num_rows == 1 && num_columns == 1 && WhichDataType(columns[0]->getDataType()).isNumber();
 
     WidthsPerColumn widths;
     Widths max_widths;
@@ -200,7 +192,7 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
     writeHeader(header, max_widths, name_widths);
 
     for (size_t i = 0; i < num_rows && total_rows + i < max_rows; ++i)
-        writeRow(i, header, columns, widths, max_widths, single_numeric_value);
+        writeRow(i, header, chunk, widths, max_widths);
 
 
     writeBottom(max_widths);
