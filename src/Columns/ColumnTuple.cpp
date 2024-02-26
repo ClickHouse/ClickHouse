@@ -38,7 +38,6 @@ void ColumnTuple::checkElementsSizesConsistency() const
     }
 }
 
-
 std::string ColumnTuple::getName() const
 {
     WriteBufferFromOwnString res;
