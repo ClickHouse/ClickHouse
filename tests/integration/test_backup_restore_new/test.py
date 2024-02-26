@@ -963,7 +963,7 @@ def test_system_users():
     instance.query("GRANT r1 TO r2 WITH ADMIN OPTION")
     instance.query("GRANT r2 TO u1")
 
-    instance.query("CREATE SETTINGS PROFILE prof1 SETTINGS custom_b=2 TO u1")
+    instance.query("CREATE SETTINGS PROFILE `prof1` SETTINGS custom_b=2 TO u1")
     instance.query("CREATE ROW POLICY rowpol1 ON test.table USING x<50 TO u1")
     instance.query("CREATE QUOTA q1 TO r1")
 
@@ -998,7 +998,7 @@ def test_system_users():
 
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE prof1")
-        == "CREATE SETTINGS PROFILE prof1 SETTINGS custom_b = 2 TO u1\n"
+        == "CREATE SETTINGS PROFILE `prof1` SETTINGS custom_b = 2 TO u1\n"
     )
     assert (
         instance.query("SHOW CREATE ROW POLICY rowpol1")
