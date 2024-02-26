@@ -13,6 +13,9 @@ namespace DB
  * 2. Destination partition expression is monotonic on the source global min_max idx Range AND the computer partition id for
  * the source global min_max idx range is the same.
  *
+ * If so, creates a new partition and calculates new partition id. (If the partition expression is the same,
+ * the source partition id is used as the new partition id)
+ *
  * If not, an exception is thrown.
  * */
 
