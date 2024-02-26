@@ -1,0 +1,3 @@
+Expression ((Projection + Before ORDER BY))
+  Filter
+    ReadFromMergeTree (user_name_projection)
