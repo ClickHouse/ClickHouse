@@ -2527,7 +2527,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
     else if (storage)
     {
-        if (typeid_cast<const StorageMerge *>(storage.get()))
+        if (shouldMoveToPrewhere() && typeid_cast<const StorageMerge *>(storage.get()))
             collectFiltersForAnalysis(query_ptr, context, storage_snapshot, options, query_info);
 
         /// Table.
