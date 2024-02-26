@@ -85,6 +85,7 @@ namespace SettingsChangesHistory
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
     {"24.2", {
+              {"input_format_avro_skip_columns_with_unsupported_types_in_schema_inference", false, false, "Allow to ignore nodes with unsupported types in Avro schema inference"},
               {"output_format_values_escape_quote_with_quote", false, false, "If true escape ' with '', otherwise quoted with \\'"},
               {"input_format_try_infer_exponent_floats", true, false, "Don't infer floats in exponential notation by default"},
               {"async_insert_max_data_size", 1000000, 10485760, "The previous value appeared to be too small."},
