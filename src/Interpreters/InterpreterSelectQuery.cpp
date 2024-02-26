@@ -778,6 +778,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     };
 
     /// This is a hack to make sure we reanalyze if GlobalSubqueriesVisitor changed allow_experimental_parallel_reading_from_replicas
+    /// inside the query context (because it doesn't have write access to the main context)
     UInt64 parallel_replicas_before_analysis
         = context->hasQueryContext() ? context->getQueryContext()->getSettingsRef().allow_experimental_parallel_reading_from_replicas : 0;
     analyze(shouldMoveToPrewhere());
@@ -787,7 +788,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (context->hasQueryContext())
     {
-        /// No buts or ifs, if the analysis changed this setting we must reanalyze without parallel replicas
+        /// As this query can't be executed with parallel replicas, we must reanalyze it
         if (context->getQueryContext()->getSettingsRef().allow_experimental_parallel_reading_from_replicas
             != parallel_replicas_before_analysis)
         {
