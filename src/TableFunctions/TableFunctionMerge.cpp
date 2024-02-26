@@ -88,7 +88,7 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
     if (args_func.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Table function 'merge' from 1 to 2 parameters: "
+                        "Table function 'merge' requires from 1 to 2 parameters: "
                         "merge(['db_name',] 'tables_regexp')");
 
     ASTs & args = args_func.at(0)->children;
@@ -117,7 +117,7 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
     else
     {
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Table function 'merge' from 1 to 2 parameters: "
+                        "Table function 'merge' requires from 1 to 2 parameters: "
                         "merge(['db_name',] 'tables_regexp')");
     }
 }
