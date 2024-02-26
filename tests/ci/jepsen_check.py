@@ -46,7 +46,7 @@ FAILED_TESTS_ANCHOR = "# Failed tests"
 def _parse_jepsen_output(path: Path) -> TestResults:
     test_results = []  # type: TestResults
     current_type = ""
-    with open(path, "r") as f:
+    with open(path, "r", encoding="utf-8") as f:
         for line in f:
             if SUCCESSFUL_TESTS_ANCHOR in line:
                 current_type = "OK"
@@ -101,7 +101,7 @@ def prepare_autoscaling_group_and_get_hostnames(count):
         instances = get_autoscaling_group_instances_ids(asg_client, JEPSEN_GROUP_NAME)
         counter += 1
         if counter > 30:
-            raise Exception("Cannot wait autoscaling group")
+            raise RuntimeError("Cannot wait autoscaling group")
 
     ec2_client = boto3.client("ec2", region_name="us-east-1")
     return get_instances_addresses(ec2_client, instances)
@@ -119,12 +119,12 @@ def clear_autoscaling_group():
         instances = get_autoscaling_group_instances_ids(asg_client, JEPSEN_GROUP_NAME)
         counter += 1
         if counter > 30:
-            raise Exception("Cannot wait autoscaling group")
+            raise RuntimeError("Cannot wait autoscaling group")
 
 
 def save_nodes_to_file(instances: List[Any], temp_path: Path) -> Path:
     nodes_path = temp_path / "nodes.txt"
-    with open(nodes_path, "w") as f:
+    with open(nodes_path, "w", encoding="utf-8") as f:
         f.write("\n".join(instances))
         f.flush()
     return nodes_path
@@ -159,7 +159,7 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.program != "server" and args.program != "keeper":
+    if args.program not in ("server", "keeper"):
         logging.warning("Invalid argument '%s'", args.program)
         sys.exit(0)
 
@@ -220,7 +220,7 @@ def main():
             f"{S3_URL}/{S3_BUILDS_BUCKET}/{version}/{sha}/binary_release/clickhouse"
         )
         print(f"Clickhouse version: [{version_full}], sha: [{sha}], url: [{build_url}]")
-        head = requests.head(build_url)
+        head = requests.head(build_url, timeout=60)
         assert head.status_code == 200, f"Clickhouse binary not found: {build_url}"
     else:
         build_name = get_build_name_for_check(check_name)
