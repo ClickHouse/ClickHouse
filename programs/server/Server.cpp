@@ -44,6 +44,7 @@
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
 #include <Common/FailPoint.h>
+#include <Common/CPUID.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Core/ServerUUID.h>
@@ -97,6 +98,7 @@
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperReadinessHandler.h>
 #include <Server/HTTP/HTTPServer.h>
+#include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Core/ServerSettings.h>
 #include <filesystem>
@@ -557,7 +559,7 @@ static void sanityChecks(Server & server)
     {
         const char * filename = "/proc/sys/kernel/task_delayacct";
         if (readNumber(filename) == 0)
-            server.context()->addWarningMessage("Delay accounting is not enabled, OSIOWaitMicroseconds will not be gathered. Check " + String(filename));
+            server.context()->addWarningMessage("Delay accounting is not enabled, OSIOWaitMicroseconds will not be gathered. You can enable it using `echo 1 > " + String(filename) + "` or by using sysctl.");
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -620,6 +622,8 @@ try
 
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
+
+    ASTAlterCommand::setFormatAlterCommandsWithParentheses(server_settings.format_alter_operations_with_parentheses);
 
     StackTrace::setShowAddresses(server_settings.show_addresses_in_stack_traces);
 
@@ -710,6 +714,22 @@ try
         formatReadableSizeWithBinarySuffix(physical_server_memory),
         getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
         std::thread::hardware_concurrency());
+
+#if defined(__x86_64__)
+    String cpu_info;
+#define COLLECT_FLAG(X) \
+    if (CPU::have##X()) \
+    {                   \
+        if (!cpu_info.empty()) \
+            cpu_info += ", ";  \
+        cpu_info += #X; \
+    }
+
+    CPU_ID_ENUMERATE(COLLECT_FLAG)
+#undef COLLECT_FLAG
+
+    LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info);
+#endif
 
     sanityChecks(*this);
 
@@ -1274,7 +1294,7 @@ try
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
-        config().getString("path", ""),
+        config().getString("path", DBMS_DEFAULT_PATH),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
         [&](ConfigurationPtr config, bool initial_loading)
@@ -1373,7 +1393,7 @@ try
             global_context->setMaxDatabaseNumToWarn(new_server_settings.max_database_num_to_warn);
             global_context->setMaxPartNumToWarn(new_server_settings.max_part_num_to_warn);
 
-            ConcurrencyControl::SlotCount concurrent_threads_soft_limit = ConcurrencyControl::Unlimited;
+            SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
             if (new_server_settings.concurrent_threads_soft_limit_num > 0 && new_server_settings.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)
                 concurrent_threads_soft_limit = new_server_settings.concurrent_threads_soft_limit_num;
             if (new_server_settings.concurrent_threads_soft_limit_ratio_to_cores > 0)
@@ -1958,6 +1978,11 @@ try
                                                                      "distributed_ddl", "DDLWorker",
                                                                      &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID),
                                          load_metadata_tasks);
+        }
+
+        if (config().has(DB::PlacementInfo::PLACEMENT_CONFIG_PREFIX))
+        {
+            PlacementInfo::PlacementInfo::instance().initialize(config());
         }
 
         /// Do not keep tasks in server, they should be kept inside databases. Used here to make dependent tasks only.
