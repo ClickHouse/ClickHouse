@@ -15,6 +15,7 @@
 #include <Parsers/Kusto/KustoFunctions/KQLTimeSeriesFunctions.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSetQuery.h>
 #include "Poco/String.h"
 namespace DB::ErrorCodes
@@ -522,7 +523,7 @@ bool MakeTimeSpan::convertImpl(String & out, IParser::Pos & pos)
     String second;
     int arg_count = 0;
     std::vector<String> args;
-    while (!pos->isEnd() && pos->type != TokenType::ClosingRoundBracket)
+    while (isValidKQLPos(pos) && pos->type != TokenType::ClosingRoundBracket)
     {
         String arg = getConvertedArgument(fn_name, pos);
         args.insert(args.begin(), arg);
@@ -589,7 +590,7 @@ bool MakeDateTime::convertImpl(String & out, IParser::Pos & pos)
     String arguments;
     int arg_count = 0;
 
-    while (!pos->isEnd() && pos->type != TokenType::ClosingRoundBracket)
+    while (isValidKQLPos(pos) && pos->type != TokenType::ClosingRoundBracket)
     {
         String arg = getConvertedArgument(fn_name, pos);
         if (pos->type == TokenType::Comma)
