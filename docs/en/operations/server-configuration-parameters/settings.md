@@ -205,7 +205,7 @@ Default: 0
 Internal DNS cache max size in bytes.
 
 :::note
-We also have reverse cache, so actually memory usage could be twice as much.
+ClickHouse also has a reverse cache, so the actual memory usage could be twice as much.
 :::
 
 Type: UInt64
