@@ -79,8 +79,9 @@ namespace DB
     M(Double, index_mark_cache_size_ratio, DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO, "The size of the protected queue in the secondary index mark cache relative to the cache's total size.", 0) \
     M(UInt64, mmap_cache_size, DEFAULT_MMAP_CACHE_MAX_SIZE, "A cache for mmapped files.", 0) \
     \
-    M(Bool, disable_internal_dns_cache, false, "Disable internal DNS caching at all.", 0) \
-    M(Int32, dns_cache_update_period, 15, "Internal DNS cache update period in seconds.", 0) \
+    M(Bool,   disable_internal_dns_cache, false, "Disable internal DNS caching at all.", 0) \
+    M(UInt64, dns_cache_max_size, 1024, "Internal DNS cache max size in bytes.", 0) \
+    M(Int32,  dns_cache_update_period, 15, "Internal DNS cache update period in seconds.", 0) \
     M(UInt32, dns_max_consecutive_failures, 10, "Max DNS resolve failures of a hostname before dropping the hostname from ClickHouse DNS cache.", 0) \
     \
     M(UInt64, max_table_size_to_drop, 50000000000lu, "If size of a table is greater than this value (in bytes) than table could not be dropped with any DROP query.", 0) \
