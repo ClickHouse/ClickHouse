@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 
 uuids = []
 
@@ -38,7 +38,7 @@ def cluster():
             stay_alive=True,
             with_installed_binary=True,
             image="clickhouse/clickhouse-server",
-            tag="22.6",
+            tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
             allow_analyzer=False,
         )
 

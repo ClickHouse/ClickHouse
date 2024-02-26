@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 
 cluster = ClickHouseCluster(__file__)
@@ -11,8 +11,8 @@ node1 = cluster.add_instance("node1", stay_alive=True)
 node2 = cluster.add_instance(
     "node2",
     with_zookeeper=True,
-    image="yandex/clickhouse-server",
-    tag="20.8.11.17",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     stay_alive=True,
     allow_analyzer=False,
@@ -22,32 +22,32 @@ node2 = cluster.add_instance(
 # it will be with latest version, but shouldn't, order of tests in CI is shuffled.
 node3 = cluster.add_instance(
     "node3",
-    image="yandex/clickhouse-server",
-    tag="21.6",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     stay_alive=True,
     allow_analyzer=False,
 )
 node4 = cluster.add_instance(
     "node4",
-    image="yandex/clickhouse-server",
-    tag="21.6",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     stay_alive=True,
     allow_analyzer=False,
 )
 node5 = cluster.add_instance(
     "node5",
-    image="yandex/clickhouse-server",
-    tag="21.6",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     stay_alive=True,
     allow_analyzer=False,
 )
 node6 = cluster.add_instance(
     "node6",
-    image="yandex/clickhouse-server",
-    tag="21.6",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     stay_alive=True,
     allow_analyzer=False,
