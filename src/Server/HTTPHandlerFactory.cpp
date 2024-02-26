@@ -35,7 +35,7 @@ private:
     std::string url;
 
 public:
-    RedirectRequestHandler(std::string url_)
+    explicit RedirectRequestHandler(std::string url_)
         : url(std::move(url_))
     {
     }
@@ -53,7 +53,7 @@ HTTPRequestHandlerFactoryPtr createRedirectHandlerFactory(
     std::string url = config.getString(config_prefix + ".handler.location");
 
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<RedirectRequestHandler>>(
-        [my_url = std::move(url)]{ return std::make_unique<RedirectRequestHandler>(std::move(my_url)); });
+        [my_url = std::move(url)]() mutable { return std::make_unique<RedirectRequestHandler>(std::move(my_url)); });
 
     factory->addFiltersFromConfig(config, config_prefix);
     return factory;
