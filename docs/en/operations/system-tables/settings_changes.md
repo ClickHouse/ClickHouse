@@ -8,7 +8,7 @@ Contains information about setting changes in previous ClickHouse versions.
 Columns:
 
 - `version` ([String](../../sql-reference/data-types/string.md)) — The ClickHouse version in which settings were changed
-- `changes` ([Array](../../sql-reference/data-types/string.md) of [Tuple](../../sql-reference/data-types/tuple.md)) — A description of the setting changes: (setting name, previous value, new value, reason for the change)
+- `changes` ([Array](../../sql-reference/data-types/array.md) of [Tuple](../../sql-reference/data-types/tuple.md)) — A description of the setting changes: (setting name, previous value, new value, reason for the change)
 
 **Example**
 
