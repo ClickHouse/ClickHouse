@@ -47,6 +47,7 @@ void moveFileBetweenDisks(
     const std::string & path_from,
     DiskPtr disk_to,
     const std::string & path_to,
+    std::function<void()> before_file_remove_op,
     LoggerPtr logger,
     const KeeperContextPtr & keeper_context)
 {
@@ -111,6 +112,9 @@ void moveFileBetweenDisks(
 
     if (!run_with_retries([&] { disk_to->removeFileIfExists(tmp_file_name); }, "removing temporary file"))
         return;
+
+    if (before_file_remove_op)
+        before_file_remove_op();
 
     if (!run_with_retries([&] { disk_from->removeFileIfExists(path_from); }, "removing file from source disk"))
         return;

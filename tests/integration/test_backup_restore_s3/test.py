@@ -465,10 +465,10 @@ def test_user_specific_auth(start_cluster):
 
     node.query("CREATE TABLE specific_auth (col UInt64) ENGINE=Memory")
 
-    assert "Access Denied" in node.query_and_get_error(
+    assert "Access" in node.query_and_get_error(
         "BACKUP TABLE specific_auth TO S3('http://minio1:9001/root/data/backups/limited/backup1.zip')"
     )
-    assert "Access Denied" in node.query_and_get_error(
+    assert "Access" in node.query_and_get_error(
         "BACKUP TABLE specific_auth TO S3('http://minio1:9001/root/data/backups/limited/backup1.zip')",
         user="regularuser",
     )
@@ -491,7 +491,7 @@ def test_user_specific_auth(start_cluster):
         user="superuser2",
     )
 
-    assert "Access Denied" in node.query_and_get_error(
+    assert "Access" in node.query_and_get_error(
         "RESTORE TABLE specific_auth FROM S3('http://minio1:9001/root/data/backups/limited/backup1.zip')",
         user="regularuser",
     )

@@ -387,6 +387,11 @@ if [ -f core.zst ]; then
 fi
 
 rg --text -F '<Fatal>' server.log > fatal.log ||:
+FATAL_LINK=''
+if [ -s fatal.log ]; then
+    FATAL_LINK='<a href="fatal.log">fatal.log</a>'
+fi
+
 dmesg -T > dmesg.log ||:
 
 zstd --threads=0 --rm server.log
@@ -419,6 +424,7 @@ p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-s
   <a href="main.log">main.log</a>
   <a href="dmesg.log">dmesg.log</a>
   ${CORE_LINK}
+  ${FATAL_LINK}
 </p>
 <table>
 <tr>
