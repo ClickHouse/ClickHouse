@@ -99,13 +99,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache'; do
 
     $CLICKHOUSE_CLIENT --echo --query "SYSTEM START MERGES test_02241"
 
-    $CLICKHOUSE_CLIENT --echo --query "SELECT value FROM system.events WHERE name = 'CachedWriteBufferCacheWriteBytes'"
-    $CLICKHOUSE_CLIENT --echo --query "SELECT value FROM system.events WHERE name = 'CachedReadBufferCacheWriteBytes'"
-
     $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "OPTIMIZE TABLE test_02241 FINAL"
-
-    $CLICKHOUSE_CLIENT --echo --query "SELECT value FROM system.events WHERE name = 'CachedWriteBufferCacheWriteBytes'"
-    $CLICKHOUSE_CLIENT --echo --query "SELECT value FROM system.events WHERE name = 'CachedReadBufferCacheWriteBytes'"
 
     $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache"
 
