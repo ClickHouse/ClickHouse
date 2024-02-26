@@ -772,6 +772,7 @@ ReferenceKeyed
 Refreshable
 RegexpTree
 RemoteRead
+SharedMergeTree
 ReplacingMergeTree
 ReplicasMaxAbsoluteDelay
 ReplicasMaxInsertsInQueue
@@ -1266,6 +1267,8 @@ centroid
 certificateFile
 cetera
 cfg
+cgroup
+cgroups
 chadmin
 changelog
 changelogs
@@ -1889,6 +1892,7 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+mergeTreeIndex
 mergeable
 mergetree
 messageID
@@ -2416,6 +2420,7 @@ subranges
 subreddits
 subseconds
 subsequence
+substreams
 substring
 substringIndex
 substringIndexUTF
