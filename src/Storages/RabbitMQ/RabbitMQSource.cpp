@@ -196,7 +196,7 @@ Chunk RabbitMQSource::generateImpl()
             }
             else
             {
-                chassert(commit_info.delivery_tag < message.delivery_tag);
+                chassert(!commit_info.delivery_tag || commit_info.delivery_tag < message.delivery_tag);
                 commit_info.delivery_tag = message.delivery_tag;
             }
 
