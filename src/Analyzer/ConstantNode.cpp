@@ -100,12 +100,6 @@ bool ConstantNode::receivedFromInitiatorServer() const
     auto * cast_function = getSourceExpression()->as<FunctionNode>();
     if (!cast_function || cast_function->getFunctionName() != "_CAST")
         return false;
-    for (auto const & argument : cast_function->getArguments())
-    {
-        auto * constant_arg = argument->as<ConstantNode>();
-        if (!constant_arg || constant_arg->hasSourceExpression())
-            return false;
-    }
     return true;
 }
 
