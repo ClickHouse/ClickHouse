@@ -693,7 +693,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
         FunctionSecretArgumentsFinder::Result secret_arguments;
         if (!settings.show_secrets)
-            secret_arguments = FunctionSecretArgumentsFinder{*this}.getResult();
+            secret_arguments = FunctionSecretArgumentsFinder::find(*this);
 
         for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
         {
@@ -757,7 +757,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
 bool ASTFunction::hasSecretParts() const
 {
-    return (FunctionSecretArgumentsFinder{*this}.getResult().hasSecrets()) || childrenHaveSecretParts();
+    return (FunctionSecretArgumentsFinder::find(*this).hasSecrets()) || childrenHaveSecretParts();
 }
 
 String getFunctionName(const IAST * ast)
