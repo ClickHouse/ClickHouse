@@ -55,7 +55,6 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
         return createReadBufferFromFileBase(file_path, modified_settings, read_hint, file_size);
     };
 
-    LOG_TEST(log, "Read object: {}", objects[0].remote_path);
     switch (read_settings.remote_fs_method)
     {
         case RemoteFSReadMethod::read:
@@ -109,10 +108,8 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    const auto & path = object.remote_path;
-
     if (!file_size)
-        file_size = tryGetSizeFromFilePath(path);
+        file_size = tryGetSizeFromFilePath(object.remote_path);
 
     LOG_TEST(log, "Read object: {}", object.remote_path);
     return createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint, file_size);
