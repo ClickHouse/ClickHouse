@@ -5135,9 +5135,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             {
                 if (auto * constant = argument_nodes[n]->as<ConstantNode>())
                 {
-                    auto [mask, _] = scope.projection_mask_map->insert( {constant->getTreeHash(), scope.projection_mask_map->size() + 1} );
-                    constant->setMaskId(mask->second);
-                    arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(mask->second) + "]";
+                    auto mask = scope.projection_mask_map->insert( {constant->getTreeHash(), scope.projection_mask_map->size() + 1} ).first->second;
+                    constant->setMaskId(mask);
+                    arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(mask) + "]";
                 }
             }
         }
