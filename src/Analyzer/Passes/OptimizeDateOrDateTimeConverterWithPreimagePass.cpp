@@ -56,6 +56,9 @@ public:
             {"greaterOrEquals", "lessOrEquals"},
         };
 
+        if (!getSettings().optimize_time_filter_with_preimage)
+            return;
+
         const auto * function = node->as<FunctionNode>();
 
         if (!function || !swap_relations.contains(function->getFunctionName()))
@@ -67,8 +70,13 @@ public:
         size_t func_id = function->getArguments().getNodes().size();
 
         for (size_t i = 0; i < function->getArguments().getNodes().size(); i++)
+        {
             if (const auto * func = function->getArguments().getNodes()[i]->as<FunctionNode>())
+            {
                 func_id = i;
+                break;
+            }
+        }
 
         if (func_id == function->getArguments().getNodes().size())
             return;

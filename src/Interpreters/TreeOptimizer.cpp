@@ -755,7 +755,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
         rewriteSumFunctionWithSumAndCount(query, tables_with_columns);
 
     /// Rewrite date filters to avoid the calls of converters such as toYear, toYYYYMM, etc.
-    optimizeDateFilters(select_query, tables_with_columns, context);
+    if (!settings.optimize_time_filter_with_preimage)
+        optimizeDateFilters(select_query, tables_with_columns, context);
 
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, context);
