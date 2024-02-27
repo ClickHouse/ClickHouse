@@ -14,7 +14,7 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
-            .returns_single_stream = true,
+            .returns_single_stream = false,
             .preserves_number_of_streams = false,
             .preserves_sorting = false,
         },
@@ -74,6 +74,8 @@ void CubeStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQue
         auto transform_params = std::make_shared<AggregatingTransformParams>(header, std::move(params), final);
         return std::make_shared<CubeTransform>(header, std::move(transform_params), use_nulls);
     });
+
+    pipeline.resize(params.max_threads, false /* force */);
 }
 
 const Aggregator::Params & CubeStep::getParams() const
