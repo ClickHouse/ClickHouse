@@ -1380,7 +1380,7 @@ private:
 
     ProjectionNames resolveExpressionNode(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression);
 
-    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, const std::pair<size_t, size_t> & secrets = std::pair<size_t, size_t>());
+    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression);
 
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 
@@ -5118,13 +5118,30 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     /// Resolve function arguments
-    FunctionSecretArgumentsFinder::Result secret_arguments = FunctionSecretArgumentsFinder{function_node_ptr->toAST()->as<ASTFunction &>()}.getResult();
     bool allow_table_expressions = is_special_function_in;
     auto arguments_projection_names = resolveExpressionNodeList(function_node_ptr->getArgumentsNode(),
         scope,
         true /*allow_lambda_expression*/,
-        allow_table_expressions /*allow_table_expression*/,
-        {secret_arguments.start, secret_arguments.count});
+        allow_table_expressions /*allow_table_expression*/);
+
+    /// Mask arguments if needed
+    if (!scope.context->getSettingsRef().format_display_secrets_in_show_and_select)
+    {
+        if (FunctionSecretArgumentsFinder::Result secret_arguments = FunctionSecretArgumentsFinder{function_node_ptr->toAST()->as<ASTFunction &>()}.getResult(); secret_arguments.count)
+        {
+            auto & argument_nodes = function_node_ptr->getArgumentsNode()->as<ListNode &>().getNodes();
+
+            for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
+            {
+                if (auto * constant = argument_nodes[n]->as<ConstantNode>())
+                {
+                    auto [mask, _] = scope.projection_mask_map->insert( {constant->getTreeHash(), scope.projection_mask_map->size() + 1} );
+                    constant->setMaskId(mask->second);
+                    arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(mask->second) + "]";
+                }
+            }
+        }
+    }
 
     auto & function_node = *function_node_ptr;
 
@@ -6110,7 +6127,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
   * Example: CREATE TABLE test_table (id UInt64, value UInt64) ENGINE=TinyLog; SELECT plus(*) FROM test_table;
   * Example: SELECT *** FROM system.one;
   */
-ProjectionNames QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, const std::pair<size_t, size_t> & secrets)
+ProjectionNames QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression)
 {
     auto & node_list_typed = node_list->as<ListNode &>();
     size_t node_list_size = node_list_typed.getNodes().size();
@@ -6120,7 +6137,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node
 
     ProjectionNames result_projection_names;
 
-    size_t n = 0;
     for (auto & node : node_list_typed.getNodes())
     {
         auto node_to_resolve = node;
@@ -6135,16 +6151,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node
         }
         else
         {
-            if (n >= secrets.first && n < secrets.first + secrets.second && !scope.context->getSettingsRef().format_display_secrets_in_show_and_select)
-            {
-                if (auto * constant = node_to_resolve->as<ConstantNode>())
-                {
-                    auto [mask, _] = scope.projection_mask_map->insert( {node->getTreeHash(), scope.projection_mask_map->size() + 1} );
-
-                    constant->setMaskId(mask->second);
-                    expression_node_projection_names[0] = "[HIDDEN id: " + std::to_string(mask->second) + "]";
-                }
-            }
             result_nodes.push_back(std::move(node_to_resolve));
         }
 
@@ -6156,8 +6162,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node
 
         result_projection_names.insert(result_projection_names.end(), expression_node_projection_names.begin(), expression_node_projection_names.end());
         expression_node_projection_names.clear();
-
-        ++n;
     }
 
     node_list_typed.getNodes() = std::move(result_nodes);
