@@ -31,6 +31,8 @@ LocalObjectStorage::LocalObjectStorage(String key_prefix_)
         description = *block_device_id;
     else
         description = "/";
+
+    fs::create_directories(getCommonKeyPrefix());
 }
 
 bool LocalObjectStorage::exists(const StoredObject & object) const
@@ -53,6 +55,7 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
         return createReadBufferFromFileBase(file_path, modified_settings, read_hint, file_size);
     };
 
+    LOG_TEST(log, "Read object: {}", objects[0].remote_path);
     switch (read_settings.remote_fs_method)
     {
         case RemoteFSReadMethod::read:
@@ -111,8 +114,8 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     if (!file_size)
         file_size = tryGetSizeFromFilePath(path);
 
-    LOG_TEST(log, "Read object: {}", path);
-    return createReadBufferFromFileBase(path, patchSettings(read_settings), read_hint, file_size);
+    LOG_TEST(log, "Read object: {}", object.remote_path);
+    return createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NOLINT
@@ -126,6 +129,7 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "LocalObjectStorage doesn't support append to files");
 
     LOG_TEST(log, "Write object: {}", object.remote_path);
+    fs::create_directories(fs::path(object.remote_path).parent_path());
     return std::make_unique<WriteBufferFromFile>(object.remote_path, buf_size);
 }
 
@@ -157,9 +161,34 @@ void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
         removeObjectIfExists(object);
 }
 
-ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & /* path */) const
+ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for LocalObjectStorage");
+    ObjectMetadata object_metadata;
+    LOG_TEST(log, "Getting metadata for path: {}", path);
+    object_metadata.size_bytes = fs::file_size(path);
+    object_metadata.last_modified = Poco::Timestamp::fromEpochTime(
+        std::chrono::duration_cast<std::chrono::seconds>(fs::last_write_time(path).time_since_epoch()).count());
+    return object_metadata;
+}
+
+void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int /* max_keys */) const
+{
+    for (const auto & entry : fs::directory_iterator(path))
+    {
+        if (entry.is_directory())
+        {
+            listObjects(entry.path(), children, 0);
+            continue;
+        }
+
+        auto metadata = getObjectMetadata(entry.path());
+        children.emplace_back(entry.path(), std::move(metadata));
+    }
+}
+
+bool LocalObjectStorage::existsOrHasAnyChild(const std::string & path) const
+{
+    return exists(StoredObject(path));
 }
 
 void LocalObjectStorage::copyObject( // NOLINT

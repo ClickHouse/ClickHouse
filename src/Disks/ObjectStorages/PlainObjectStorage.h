@@ -1,5 +1,6 @@
 #pragma once
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Common/ObjectStorageKeyGenerator.h>
 
 namespace DB
 {
@@ -24,6 +25,11 @@ public:
     bool isWriteOnce() const override { return true; }
 
     bool isPlain() const override { return true; }
+
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override
+    {
+        return ObjectStorageKey::createAsRelative(BaseObjectStorage::getCommonKeyPrefix(), path);
+    }
 };
 
 }

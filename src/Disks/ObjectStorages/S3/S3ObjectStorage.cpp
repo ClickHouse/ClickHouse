@@ -561,6 +561,8 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
 
 ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path) const
 {
+    if (!key_generator)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
     return key_generator->generate(path);
 }
 
