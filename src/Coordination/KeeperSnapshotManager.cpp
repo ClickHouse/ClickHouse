@@ -1,24 +1,24 @@
+#include <filesystem>
+#include <memory>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperConstants.h>
+#include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
-#include <Coordination/CoordinationSettings.h>
+#include <Core/Field.h>
+#include <Disks/DiskLocal.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <Common/ZooKeeper/ZooKeeperIO.h>
-#include <filesystem>
-#include <memory>
-#include <Common/logger_useful.h>
-#include <Coordination/KeeperContext.h>
-#include <Coordination/KeeperCommon.h>
-#include <Coordination/KeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Core/Field.h>
-#include <Disks/DiskLocal.h>
+#include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -569,7 +569,8 @@ KeeperSnapshotManager::KeeperSnapshotManager(
     bool compress_snapshots_zstd_,
     const std::string & superdigest_,
     size_t storage_tick_time_)
-    : snapshots_to_keep(snapshots_to_keep_)
+    : snapshots_detached_dir("detached")
+    , snapshots_to_keep(snapshots_to_keep_)
     , compress_snapshots_zstd(compress_snapshots_zstd_)
     , superdigest(superdigest_)
     , storage_tick_time(storage_tick_time_)
@@ -779,7 +780,7 @@ DiskPtr KeeperSnapshotManager::getLatestSnapshotDisk() const
 void KeeperSnapshotManager::removeOutdatedSnapshotsIfNeeded()
 {
     while (existing_snapshots.size() > snapshots_to_keep)
-        removeSnapshot(existing_snapshots.begin()->first);
+        removeSnapshot(existing_snapshots.begin()->first, /*detach=*/false);
 }
 
 void KeeperSnapshotManager::moveSnapshotsIfNeeded()
@@ -812,13 +813,50 @@ void KeeperSnapshotManager::moveSnapshotsIfNeeded()
 
 }
 
-void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx)
+void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx, bool detach)
 {
     auto itr = existing_snapshots.find(log_idx);
     if (itr == existing_snapshots.end())
         throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
-    const auto & [path, disk] = itr->second;
-    disk->removeFileIfExists(path);
+
+    const auto & [path_string, snapshot_disk] = itr->second;
+    std::filesystem::path path(path_string);
+
+    if (!detach)
+    {
+        snapshot_disk->removeFileIfExists(path);
+        existing_snapshots.erase(itr);
+        return;
+    }
+
+    auto disk = getDisk();
+
+    const auto timestamp_folder = (fs::path(snapshots_detached_dir) / getCurrentTimestampFolder()).generic_string();
+
+    if (!disk->exists(timestamp_folder))
+    {
+        LOG_WARNING(log, "Moving broken snapshot to {}", timestamp_folder);
+        disk->createDirectories(timestamp_folder);
+    }
+
+    LOG_WARNING(log, "Removing snapshot {}", path);
+    const auto new_path = timestamp_folder / path.filename();
+
+    if (snapshot_disk == disk)
+    {
+        try
+        {
+            disk->moveFile(path.generic_string(), new_path.generic_string());
+        }
+        catch (const DB::Exception & e)
+        {
+            if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED)
+                moveSnapshotBetweenDisks(snapshot_disk, path, disk, new_path, keeper_context);
+        }
+    }
+    else
+        moveSnapshotBetweenDisks(snapshot_disk, path, disk, new_path, keeper_context);
+
     existing_snapshots.erase(itr);
 }
 
@@ -860,6 +898,31 @@ SnapshotFileInfo KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperStor
     }
 
     return {snapshot_file_name, disk};
+}
+
+size_t KeeperSnapshotManager::getLatestSnapshotIndex() const
+{
+    if (!existing_snapshots.empty())
+        return existing_snapshots.rbegin()->first;
+    return 0;
+}
+
+SnapshotFileInfo KeeperSnapshotManager::getLatestSnapshotInfo() const
+{
+    if (!existing_snapshots.empty())
+    {
+        const auto & [path, disk] = existing_snapshots.at(getLatestSnapshotIndex());
+
+        try
+        {
+            if (disk->exists(path))
+                return {path, disk};
+        }
+        catch (...)
+        {
+        }
+    }
+    return {"", nullptr};
 }
 
 }

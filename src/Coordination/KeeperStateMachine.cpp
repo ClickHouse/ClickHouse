@@ -109,7 +109,7 @@ void KeeperStateMachine::init()
                 "Failed to load from snapshot with index {}, with error {}, will remove it from disk",
                 latest_log_index,
                 ex.displayText());
-            snapshot_manager.removeSnapshot(latest_log_index);
+            snapshot_manager.removeSnapshot(latest_log_index, /*detach=*/true);
         }
     }
 

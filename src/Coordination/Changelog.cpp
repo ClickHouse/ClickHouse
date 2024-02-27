@@ -1843,24 +1843,6 @@ void Changelog::initWriter(ChangelogFileDescriptionPtr description)
     current_writer->setFile(std::move(description), WriteMode::Append);
 }
 
-namespace
-{
-
-    std::string getCurrentTimestampFolder()
-    {
-        const auto timestamp = LocalDateTime{std::time(nullptr)};
-        return fmt::format(
-            "{:02}{:02}{:02}T{:02}{:02}{:02}",
-            timestamp.year(),
-            timestamp.month(),
-            timestamp.day(),
-            timestamp.hour(),
-            timestamp.minute(),
-            timestamp.second());
-    }
-
-}
-
 DiskPtr Changelog::getDisk() const
 {
     return keeper_context->getLogDisk();

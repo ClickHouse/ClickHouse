@@ -119,4 +119,18 @@ void moveFileBetweenDisks(
     if (!run_with_retries([&] { disk_from->removeFileIfExists(path_from); }, "removing file from source disk"))
         return;
 }
+
+std::string getCurrentTimestampFolder()
+{
+    const auto timestamp = LocalDateTime{std::time(nullptr)};
+    return fmt::format(
+        "{:02}{:02}{:02}T{:02}{:02}{:02}",
+        timestamp.year(),
+        timestamp.month(),
+        timestamp.day(),
+        timestamp.hour(),
+        timestamp.minute(),
+        timestamp.second());
+}
+
 }

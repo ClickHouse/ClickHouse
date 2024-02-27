@@ -949,12 +949,12 @@ TEST_P(CoordinationTest, ChangelogTestStartNewLogAfterRead)
 
 namespace
 {
-void assertBrokenLogRemoved(const fs::path & log_folder, const fs::path & filename)
+void assertBrokenFileRemoved(const fs::path & directory, const fs::path & filename)
 {
-    EXPECT_FALSE(fs::exists(log_folder / filename));
-    // broken logs are sent to the detached/{timestamp} folder
+    EXPECT_FALSE(fs::exists(directory / filename));
+    // broken files are sent to the detached/{timestamp} folder
     // we don't know timestamp so we iterate all of them
-    for (const auto & dir_entry : fs::recursive_directory_iterator(log_folder / "detached"))
+    for (const auto & dir_entry : fs::recursive_directory_iterator(directory / "detached"))
     {
         if (dir_entry.path().filename() == filename)
             return;
@@ -1014,10 +1014,10 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
 
-    assertBrokenLogRemoved(log_folder, "changelog_16_20.bin" + params.extension);
-    assertBrokenLogRemoved(log_folder, "changelog_21_25.bin" + params.extension);
-    assertBrokenLogRemoved(log_folder, "changelog_26_30.bin" + params.extension);
-    assertBrokenLogRemoved(log_folder, "changelog_31_35.bin" + params.extension);
+    assertBrokenFileRemoved(log_folder, "changelog_16_20.bin" + params.extension);
+    assertBrokenFileRemoved(log_folder, "changelog_21_25.bin" + params.extension);
+    assertBrokenFileRemoved(log_folder, "changelog_26_30.bin" + params.extension);
+    assertBrokenFileRemoved(log_folder, "changelog_31_35.bin" + params.extension);
 
     auto entry = getLogEntry("h", 7777);
     changelog_reader.append(entry);
@@ -1031,10 +1031,10 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
 
-    assertBrokenLogRemoved(log_folder, "changelog_16_20.bin" + params.extension);
-    assertBrokenLogRemoved(log_folder, "changelog_21_25.bin" + params.extension);
-    assertBrokenLogRemoved(log_folder, "changelog_26_30.bin" + params.extension);
-    assertBrokenLogRemoved(log_folder, "changelog_31_35.bin" + params.extension);
+    assertBrokenFileRemoved(log_folder, "changelog_16_20.bin" + params.extension);
+    assertBrokenFileRemoved(log_folder, "changelog_21_25.bin" + params.extension);
+    assertBrokenFileRemoved(log_folder, "changelog_26_30.bin" + params.extension);
+    assertBrokenFileRemoved(log_folder, "changelog_31_35.bin" + params.extension);
 
     DB::KeeperLogStore changelog_reader2(
         DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5},
@@ -1081,7 +1081,7 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
 
     EXPECT_EQ(changelog_reader.size(), 0);
     EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin" + params.extension));
-    assertBrokenLogRemoved("./logs", "changelog_21_40.bin" + params.extension);
+    assertBrokenFileRemoved("./logs", "changelog_21_40.bin" + params.extension);
     auto entry = getLogEntry("hello_world", 7777);
     changelog_reader.append(entry);
     changelog_reader.end_of_append_batch(0, 0);
@@ -1138,7 +1138,7 @@ TEST_F(CoordinationTest, ChangelogTestReadAfterBrokenTruncate3)
 
     EXPECT_EQ(changelog_reader.size(), 19);
     EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin"));
-    assertBrokenLogRemoved("./logs", "changelog_21_40.bin");
+    assertBrokenFileRemoved("./logs", "changelog_21_40.bin");
     EXPECT_TRUE(fs::exists("./logs/changelog_20_39.bin"));
     auto entry = getLogEntry("hello_world", 7777);
     changelog_reader.append(entry);
@@ -1277,7 +1277,7 @@ TEST_P(CoordinationTest, ChangelogTestLostFiles)
         keeper_context);
     /// It should print error message, but still able to start
     changelog_reader.init(5, 0);
-    assertBrokenLogRemoved("./logs", "changelog_21_40.bin" + params.extension);
+    assertBrokenFileRemoved("./logs", "changelog_21_40.bin" + params.extension);
 }
 
 TEST_P(CoordinationTest, ChangelogTestLostFiles2)
@@ -1318,7 +1318,7 @@ TEST_P(CoordinationTest, ChangelogTestLostFiles2)
     EXPECT_TRUE(fs::exists("./logs/changelog_1_10.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_11_20.bin" + params.extension));
 
-    assertBrokenLogRemoved("./logs", "changelog_31_40.bin" + params.extension);
+    assertBrokenFileRemoved("./logs", "changelog_31_40.bin" + params.extension);
 }
 struct IntNode
 {
@@ -1789,6 +1789,8 @@ void testLogAndStateMachine(
         DB::FlushSettings(),
         keeper_context);
     changelog.init(state_machine->last_commit_index() + 1, settings->reserved_log_items);
+
+    std::optional<SnapshotFileInfo> latest_snapshot;
     for (size_t i = 1; i < total_logs + 1; ++i)
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
@@ -1817,7 +1819,7 @@ void testLogAndStateMachine(
             bool pop_result = snapshots_queue.pop(snapshot_task);
             EXPECT_TRUE(pop_result);
 
-            snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
+            latest_snapshot = snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
         }
 
         if (snapshot_created && changelog.size() > settings->reserved_log_items)
@@ -1859,6 +1861,20 @@ void testLogAndStateMachine(
     {
         auto path = "/hello_" + std::to_string(i);
         EXPECT_EQ(source_storage.container.getValue(path).getData(), restored_storage.container.getValue(path).getData());
+    }
+
+    if (latest_snapshot.has_value())
+    {
+        const auto & [path, disk] = *latest_snapshot;
+        EXPECT_TRUE(disk->exists(path));
+        DB::WriteBufferFromFile plain_buf(
+            fs::path("./snapshots") / path, DB::DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        plain_buf.truncate(0);
+        SnapshotsQueue snapshots_queue2{1};
+        keeper_context = get_keeper_context();
+        auto invalid_snapshot_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue2, keeper_context, nullptr);
+        invalid_snapshot_machine->init();
+        assertBrokenFileRemoved("./snapshots", fs::path(path).filename());
     }
 }
 
