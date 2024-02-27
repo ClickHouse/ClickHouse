@@ -2,12 +2,13 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
-#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
-#include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/UnionNode.h>
 
 namespace DB
 {
@@ -79,11 +80,15 @@ public:
         if (!getSettings().optimize_aggregators_of_group_by_keys)
             return;
 
-        if (aggregationCanBeEliminated(node, group_by_keys_stack.back()))
-            node = node->as<FunctionNode>()->getArguments().getNodes()[0];
-
-        if (auto * query_node = node->as<QueryNode>())
+        if (node->getNodeType() == QueryTreeNodeType::FUNCTION)
+        {
+            if (aggregationCanBeEliminated(node, group_by_keys_stack.back()))
+                node = node->as<FunctionNode>()->getArguments().getNodes()[0];
+        }
+        else if (node->getNodeType() == QueryTreeNodeType::QUERY)
+        {
             group_by_keys_stack.pop_back();
+        }
     }
 
     static bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child)
