@@ -7,6 +7,7 @@
 #include <IO/Operators.h>
 
 #include <Common/assert_cast.h>
+#include "Columns/IColumn.h"
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
@@ -602,6 +603,22 @@ Block Block::shrinkToFit() const
     Columns new_columns(data.size(), nullptr);
     for (size_t i = 0; i < data.size(); ++i)
         new_columns[i] = data[i].column->shrinkToFit();
+    return cloneWithColumns(new_columns);
+}
+
+Block Block::compress() const
+{
+    Columns new_columns(data.size(), nullptr);
+    for (size_t i = 0; i < data.size(); ++i)
+        new_columns[i] = data[i].column->compress();
+    return cloneWithColumns(new_columns);
+}
+
+Block Block::decompress() const
+{
+    Columns new_columns(data.size(), nullptr);
+    for (size_t i = 0; i < data.size(); ++i)
+        new_columns[i] = data[i].column->decompress();
     return cloneWithColumns(new_columns);
 }
 
