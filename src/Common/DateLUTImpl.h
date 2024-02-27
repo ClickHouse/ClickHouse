@@ -604,7 +604,6 @@ public:
 
         if (time >= lut[index].time_at_offset_change())
             time += lut[index].amount_of_offset_change();
-        
         return (time%60)*1000;
     }
 
