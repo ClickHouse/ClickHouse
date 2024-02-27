@@ -256,7 +256,10 @@ def test_introspection():
     )
     assert instance.query("SHOW GRANTS FOR R1") == ""
     assert instance.query("SHOW GRANTS FOR R2") == TSV(
-        ["GRANT SELECT ON test.`table` TO R2", "REVOKE SELECT(x) ON test.`table` FROM R2"]
+        [
+            "GRANT SELECT ON test.`table` TO R2",
+            "REVOKE SELECT(x) ON test.`table` FROM R2",
+        ]
     )
 
     assert instance.query("SHOW GRANTS", user="A") == TSV(
