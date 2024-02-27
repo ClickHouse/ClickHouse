@@ -2837,7 +2837,7 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     if (modificator == Modificator::ROLLUP)
         step = std::make_unique<RollupStep>(query_plan.getCurrentDataStream(), std::move(params), final, settings.group_by_use_nulls);
     else if (modificator == Modificator::CUBE)
-        step = std::make_unique<CubeStep>(query_plan.getCurrentDataStream(), std::move(params), final, settings.group_by_use_nulls);
+        step = std::make_unique<CubeStep>(query_plan.getCurrentDataStream(), std::move(params), final, settings.group_by_use_nulls, settings.parallelize_execution_after_rollup_or_cube);
 
     query_plan.addStep(std::move(step));
 }

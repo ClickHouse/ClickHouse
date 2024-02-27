@@ -24,12 +24,19 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-CubeStep::CubeStep(const DataStream & input_stream_, Aggregator::Params params_, bool final_, bool use_nulls_)
-    : ITransformingStep(input_stream_, generateOutputHeader(params_.getHeader(input_stream_.header, final_), params_.keys, use_nulls_), getTraits())
+CubeStep::CubeStep(
+    const DataStream & input_stream_,
+    Aggregator::Params params_,
+    bool final_,
+    bool use_nulls_,
+    bool parallelize_execution_after_rollup_or_cube_)
+    : ITransformingStep(
+        input_stream_, generateOutputHeader(params_.getHeader(input_stream_.header, final_), params_.keys, use_nulls_), getTraits())
     , keys_size(params_.keys_size)
     , params(std::move(params_))
     , final(final_)
     , use_nulls(use_nulls_)
+    , parallelize_execution_after_rollup_or_cube(parallelize_execution_after_rollup_or_cube_)
 {
 }
 
@@ -75,7 +82,8 @@ void CubeStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQue
         return std::make_shared<CubeTransform>(header, std::move(transform_params), use_nulls);
     });
 
-    pipeline.resize(params.max_threads, false /* force */);
+    if (parallelize_execution_after_rollup_or_cube)
+        pipeline.resize(params.max_threads, false /* force */);
 }
 
 const Aggregator::Params & CubeStep::getParams() const

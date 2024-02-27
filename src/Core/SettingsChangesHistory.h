@@ -86,6 +86,7 @@ namespace SettingsChangesHistory
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
     {"24.2", {
+              {"parallelize_execution_after_rollup_or_cube", true, true, "Enables better pipeline parallelism for calculations done after ROLLUP/CUBE"},
               {"output_format_values_escape_quote_with_quote", false, false, "If true escape ' with '', otherwise quoted with \\'"},
               {"input_format_try_infer_exponent_floats", true, false, "Don't infer floats in exponential notation by default"},
               {"query_plan_optimize_prewhere", true, true, "Allow to push down filter to PREWHERE expression for supported storages"},
