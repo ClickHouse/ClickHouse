@@ -1,6 +1,7 @@
-#include <iomanip>
-#include <IO/Operators.h>
 #include <Parsers/ASTAlterQuery.h>
+
+#include <Core/ServerSettings.h>
+#include <IO/Operators.h>
 #include <Common/quoteString.h>
 
 
@@ -69,6 +70,9 @@ ASTPtr ASTAlterCommand::clone() const
 
 void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    if (format_alter_commands_with_parentheses)
+        settings.ostr << "(";
+
     if (type == ASTAlterCommand::ADD_COLUMN)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD COLUMN " << (if_not_exists ? "IF NOT EXISTS " : "")
@@ -103,6 +107,16 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
         if (!remove_property.empty())
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " REMOVE " << remove_property;
+        }
+        else if (settings_changes)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " MODIFY SETTING " << (settings.hilite ? hilite_none : "");
+            settings_changes->formatImpl(settings, state, frame);
+        }
+        else if (settings_resets)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " RESET SETTING " << (settings.hilite ? hilite_none : "");
+            settings_resets->formatImpl(settings, state, frame);
         }
         else
         {
@@ -271,6 +285,12 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     else if (type == ASTAlterCommand::DROP_DETACHED_PARTITION)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "DROP DETACHED" << (part ? " PART " : " PARTITION ")
+                      << (settings.hilite ? hilite_none : "");
+        partition->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::FORGET_PARTITION)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "FORGET PARTITION "
                       << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
     }
@@ -446,10 +466,6 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
                       << (settings.hilite ? hilite_none : "");
         refresh->formatImpl(settings, state, frame);
     }
-    else if (type == ASTAlterCommand::LIVE_VIEW_REFRESH)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "REFRESH " << (settings.hilite ? hilite_none : "");
-    }
     else if (type == ASTAlterCommand::RENAME_COLUMN)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "RENAME COLUMN " << (if_exists ? "IF EXISTS " : "")
@@ -471,6 +487,9 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     }
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
+
+    if (format_alter_commands_with_parentheses)
+        settings.ostr << ")";
 }
 
 void ASTAlterCommand::forEachPointerToChild(std::function<void(void**)> f)
@@ -597,9 +616,6 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
             break;
         case AlterObjectType::DATABASE:
             settings.ostr << "ALTER DATABASE ";
-            break;
-        case AlterObjectType::LIVE_VIEW:
-            settings.ostr << "ALTER LIVE VIEW ";
             break;
         default:
             break;

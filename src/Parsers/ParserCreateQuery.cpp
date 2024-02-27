@@ -684,6 +684,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->database = table_id->getDatabase();
         query->table = table_id->getTable();
         query->uuid = table_id->uuid;
+        query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
 
         if (query->database)
             query->children.push_back(query->database);
@@ -783,6 +784,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->database = table_id->getDatabase();
     query->table = table_id->getTable();
     query->uuid = table_id->uuid;
+    query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
     query->cluster = cluster_str;
 
     if (query->database)
@@ -888,7 +890,7 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         if (ParserKeyword{"REFRESH"}.ignore(pos, expected) || ParserKeyword{"PERIODIC REFRESH"}.ignore(pos, expected))
         {
             if (!ParserNumber{}.parse(pos, live_view_periodic_refresh, expected))
-                live_view_periodic_refresh = std::make_shared<ASTLiteral>(static_cast<UInt64>(DEFAULT_PERIODIC_LIVE_VIEW_REFRESH_SEC));
+                live_view_periodic_refresh = std::make_shared<ASTLiteral>(static_cast<UInt64>(60));
 
             with_periodic_refresh = true;
         }

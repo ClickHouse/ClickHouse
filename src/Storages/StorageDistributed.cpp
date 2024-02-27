@@ -321,7 +321,7 @@ StorageDistributed::StorageDistributed(
     const String & storage_policy_name_,
     const String & relative_data_path_,
     const DistributedSettings & distributed_settings_,
-    bool attach_,
+    LoadingStrictnessLevel mode,
     ClusterPtr owned_cluster_,
     ASTPtr remote_table_function_ptr_)
     : IStorage(id_)
@@ -372,7 +372,7 @@ StorageDistributed::StorageDistributed(
     }
 
     /// Sanity check. Skip check if the table is already created to allow the server to start.
-    if (!attach_)
+    if (mode <= LoadingStrictnessLevel::CREATE)
     {
         if (remote_database.empty() && !remote_table_function_ptr && !getCluster()->maybeCrossReplication())
             LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
@@ -397,7 +397,7 @@ StorageDistributed::StorageDistributed(
     const String & storage_policy_name_,
     const String & relative_data_path_,
     const DistributedSettings & distributed_settings_,
-    bool attach,
+    LoadingStrictnessLevel mode,
     ClusterPtr owned_cluster_)
     : StorageDistributed(
         id_,
@@ -412,7 +412,7 @@ StorageDistributed::StorageDistributed(
         storage_policy_name_,
         relative_data_path_,
         distributed_settings_,
-        attach,
+        mode,
         std::move(owned_cluster_),
         remote_table_function_ptr_)
 {
@@ -773,7 +773,8 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
             table_function_node->setTableExpressionModifiers(*table_expression_modifiers);
 
         QueryAnalysisPass query_analysis_pass;
-        query_analysis_pass.run(table_function_node, query_context);
+        QueryTreeNodePtr node = table_function_node;
+        query_analysis_pass.run(node, query_context);
 
         replacement_table_expression = std::move(table_function_node);
     }
@@ -796,7 +797,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
 
-    return buildQueryTreeForShard(query_info, query_tree_to_modify);
+    return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify);
 }
 
 }
@@ -830,7 +831,7 @@ void StorageDistributed::read(
           */
         for (auto & column : header)
             column.column = column.column->convertToFullColumnIfConst();
-        query_ast = queryNodeToSelectQuery(query_tree_distributed);
+        query_ast = queryNodeToDistributedSelectQuery(query_tree_distributed);
     }
     else
     {
@@ -975,8 +976,10 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         new_query->select = select_with_union_query;
     }
 
-    const Cluster::AddressesWithFailover & src_addresses = src_distributed.getCluster()->getShardsAddresses();
-    const Cluster::AddressesWithFailover & dst_addresses = getCluster()->getShardsAddresses();
+    const auto src_cluster = src_distributed.getCluster();
+    const auto dst_cluster = getCluster();
+    const Cluster::AddressesWithFailover & src_addresses = src_cluster->getShardsAddresses();
+    const Cluster::AddressesWithFailover & dst_addresses = dst_cluster->getShardsAddresses();
     /// Compare addresses instead of cluster name, to handle remote()/cluster().
     /// (since for remote()/cluster() the getClusterName() is empty string)
     if (src_addresses != dst_addresses)
@@ -1005,8 +1008,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         new_query->table_function.reset();
     }
 
-    const auto & cluster = getCluster();
-    const auto & shards_info = cluster->getShardsInfo();
+    const auto & shards_info = dst_cluster->getShardsInfo();
 
     String new_query_str;
     {
@@ -1095,7 +1097,7 @@ static ActionsDAGPtr getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
     if (!source)
         return nullptr;
 
-    return ActionsDAG::buildFilterActionsDAG(source->getFilterNodes().nodes);
+    return source->getFilterActionsDAG();
 }
 
 
@@ -1137,7 +1139,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
-    for (const auto & replicas : getCluster()->getShardsInfo())
+    const auto cluster = getCluster();
+    for (const auto & replicas : cluster->getShardsInfo())
     {
         /// Skip unavailable hosts if necessary
         auto try_results = replicas.pool->getMany(timeouts, current_settings, PoolMode::GET_MANY, /*async_callback*/ {}, /*skip_unavailable_endpoints*/ true);
@@ -1533,10 +1536,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
 IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
 {
     const auto & slot_to_shard = cluster->getSlotToShard();
-
     const IColumn * column = result.column.get();
-    if (const auto * col_const = typeid_cast<const ColumnConst *>(column))
-        column = &col_const->getDataColumn();
 
 // If result.type is DataTypeLowCardinality, do shard according to its dictionaryType
 #define CREATE_FOR_TYPE(TYPE)                                                                                       \
@@ -1566,31 +1566,8 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
     [[maybe_unused]] const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
-
-    ActionsDAG::NodeRawConstPtrs nodes;
-
-    const auto & prewhere_info = query_info.prewhere_info;
-    if (prewhere_info)
-    {
-        {
-            const auto & node = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
-            nodes.push_back(&node);
-        }
-
-        if (prewhere_info->row_level_filter)
-        {
-            const auto & node = prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name);
-            nodes.push_back(&node);
-        }
-    }
-
-    if (query_info.filter_actions_dag)
-        nodes.push_back(query_info.filter_actions_dag->getOutputs().at(0));
-
-    if (nodes.empty())
+    if (!query_info.filter_actions_dag)
         return nullptr;
-
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes);
 
     size_t limit = local_context->getSettingsRef().optimize_skip_unused_shards_limit;
     if (!limit || limit > SSIZE_MAX)
@@ -1605,7 +1582,7 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
             ErrorCodes::LOGICAL_ERROR, "Cannot find sharding key column {} in expression {}",
             sharding_key_column_name, sharding_key_dag.dumpDAG());
 
-    const auto * predicate = filter_actions_dag->getOutputs().at(0);
+    const auto * predicate = query_info.filter_actions_dag->getOutputs().at(0);
     const auto variants = evaluateExpressionOverConstantCondition(predicate, {expr_node}, local_context, limit);
 
     // Can't get a definite answer if we can skip any shards
@@ -1915,7 +1892,7 @@ void registerStorageDistributed(StorageFactory & factory)
         }
 
         /// TODO: move some arguments from the arguments to the SETTINGS.
-        DistributedSettings distributed_settings;
+        DistributedSettings distributed_settings = context->getDistributedSettings();
         if (args.storage_def->settings)
         {
             distributed_settings.loadFromQuery(*args.storage_def);
@@ -1955,7 +1932,7 @@ void registerStorageDistributed(StorageFactory & factory)
             storage_policy,
             args.relative_data_path,
             distributed_settings,
-            args.attach);
+            args.mode);
     },
     {
         .supports_settings = true,

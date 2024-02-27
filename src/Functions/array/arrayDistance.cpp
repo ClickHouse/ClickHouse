@@ -1,6 +1,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
+#include <Common/TargetSpecific.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
@@ -8,6 +9,10 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <base/range.h>
+
+#if USE_MULTITARGET_CODE
+#include <immintrin.h>
+#endif
 
 namespace DB
 {
@@ -74,6 +79,51 @@ struct L2Distance
     {
         state.sum += other_state.sum;
     }
+
+#if USE_MULTITARGET_CODE
+    template <typename ResultType>
+    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
+        const ResultType * __restrict data_x,
+        const ResultType * __restrict data_y,
+        size_t i_max,
+        size_t & i_x,
+        size_t & i_y,
+        State<ResultType> & state)
+    {
+        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
+
+        __m512 sums;
+        if constexpr (is_float32)
+            sums = _mm512_setzero_ps();
+        else
+            sums = _mm512_setzero_pd();
+
+        constexpr size_t n = is_float32 ? 16 : 8;
+
+        for (; i_x + n < i_max; i_x += n, i_y += n)
+        {
+            if constexpr (is_float32)
+            {
+                __m512 x = _mm512_loadu_ps(data_x + i_x);
+                __m512 y = _mm512_loadu_ps(data_y + i_y);
+                __m512 differences = _mm512_sub_ps(x, y);
+                sums = _mm512_fmadd_ps(differences, differences, sums);
+            }
+            else
+            {
+                __m512 x = _mm512_loadu_pd(data_x + i_x);
+                __m512 y = _mm512_loadu_pd(data_y + i_y);
+                __m512 differences = _mm512_sub_pd(x, y);
+                sums = _mm512_fmadd_pd(differences, differences, sums);
+            }
+        }
+
+        if constexpr (is_float32)
+            state.sum = _mm512_reduce_add_ps(sums);
+        else
+            state.sum = _mm512_reduce_add_pd(sums);
+    }
+#endif
 
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
@@ -189,6 +239,72 @@ struct CosineDistance
         state.y_squared += other_state.y_squared;
     }
 
+#if USE_MULTITARGET_CODE
+    template <typename ResultType>
+    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
+        const ResultType * __restrict data_x,
+        const ResultType * __restrict data_y,
+        size_t i_max,
+        size_t & i_x,
+        size_t & i_y,
+        State<ResultType> & state)
+    {
+        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
+
+        __m512 dot_products;
+        __m512 x_squareds;
+        __m512 y_squareds;
+
+        if constexpr (is_float32)
+        {
+            dot_products = _mm512_setzero_ps();
+            x_squareds = _mm512_setzero_ps();
+            y_squareds = _mm512_setzero_ps();
+        }
+        else
+        {
+            dot_products = _mm512_setzero_pd();
+            x_squareds = _mm512_setzero_pd();
+            y_squareds = _mm512_setzero_pd();
+        }
+
+        constexpr size_t n = is_float32 ? 16 : 8;
+
+        for (; i_x + n < i_max; i_x += n, i_y += n)
+        {
+            if constexpr (is_float32)
+            {
+                __m512 x = _mm512_loadu_ps(data_x + i_x);
+                __m512 y = _mm512_loadu_ps(data_y + i_y);
+                dot_products = _mm512_fmadd_ps(x, y, dot_products);
+                x_squareds = _mm512_fmadd_ps(x, x, x_squareds);
+                y_squareds = _mm512_fmadd_ps(y, y, y_squareds);
+            }
+            else
+            {
+                __m512 x = _mm512_loadu_pd(data_x + i_x);
+                __m512 y = _mm512_loadu_pd(data_y + i_y);
+                dot_products = _mm512_fmadd_pd(x, y, dot_products);
+                x_squareds = _mm512_fmadd_pd(x, x, x_squareds);
+                y_squareds = _mm512_fmadd_pd(y, y, y_squareds);
+            }
+        }
+
+        if constexpr (is_float32)
+        {
+            state.dot_prod = _mm512_reduce_add_ps(dot_products);
+            state.x_squared = _mm512_reduce_add_ps(x_squareds);
+            state.y_squared = _mm512_reduce_add_ps(y_squareds);
+        }
+        else
+        {
+            state.dot_prod = _mm512_reduce_add_pd(dot_products);
+            state.x_squared = _mm512_reduce_add_pd(x_squareds);
+            state.y_squared = _mm512_reduce_add_pd(y_squareds);
+        }
+    }
+#endif
+
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
     {
@@ -200,7 +316,11 @@ template <class Kernel>
 class FunctionArrayDistance : public IFunction
 {
 public:
-    String getName() const override { static auto name = String("array") + Kernel::name + "Distance"; return name; }
+    String getName() const override
+    {
+        static auto name = String("array") + Kernel::name + "Distance";
+        return name;
+    }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayDistance<Kernel>>(); }
     size_t getNumberOfArguments() const override { return 2; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
@@ -352,7 +472,7 @@ private:
         /// Check that arrays in both columns are the sames size
         for (size_t row = 0; row < offsets_x.size(); ++row)
         {
-            if (unlikely(offsets_x[row] != offsets_y[row]))
+            if (offsets_x[row] != offsets_y[row]) [[unlikely]]
             {
                 ColumnArray::Offset prev_offset = row > 0 ? offsets_x[row] : 0;
                 throw Exception(
@@ -420,7 +540,7 @@ private:
         ColumnArray::Offset prev_offset = 0;
         for (size_t row : collections::range(0, offsets_y.size()))
         {
-            if (unlikely(offsets_x[0] != offsets_y[row] - prev_offset))
+            if (offsets_x[0] != offsets_y[row] - prev_offset) [[unlikely]]
             {
                 throw Exception(
                     ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
@@ -438,14 +558,35 @@ private:
         auto & result_data = result->getData();
 
         /// Do the actual computation
-        ColumnArray::Offset prev = 0;
+        size_t prev = 0;
         size_t row = 0;
+
         for (auto off : offsets_y)
         {
+            size_t i = 0;
+            typename Kernel::template State<ResultType> state;
+
+            /// SIMD optimization: process multiple elements in both input arrays at once.
+            /// To avoid combinatorial explosion of SIMD kernels, focus on
+            /// - the two most common input/output types (Float32 x Float32) --> Float32 and (Float64 x Float64) --> Float64 instead of 10 x
+            ///   10 input types x 2 output types,
+            /// - const/non-const inputs instead of non-const/non-const inputs
+            /// - the two most common metrics L2 and cosine distance,
+            /// - the most powerful SIMD instruction set (AVX-512F).
+#if USE_MULTITARGET_CODE
+            if constexpr (std::is_same_v<ResultType, FirstArgType> && std::is_same_v<ResultType, SecondArgType>) /// ResultType is Float32 or Float64
+            {
+                if constexpr (std::is_same_v<Kernel, L2Distance>
+                           || std::is_same_v<Kernel, CosineDistance>)
+                {
+                    if (isArchSupported(TargetArch::AVX512F))
+                        Kernel::template accumulateCombine<ResultType>(data_x.data(), data_y.data(), i + offsets_x[0], i, prev, state);
+                }
+            }
+#else
             /// Process chunks in vectorized manner
             static constexpr size_t VEC_SIZE = 4;
             typename Kernel::template State<ResultType> states[VEC_SIZE];
-            size_t i = 0;
             for (; prev + VEC_SIZE < off; i += VEC_SIZE, prev += VEC_SIZE)
             {
                 for (size_t s = 0; s < VEC_SIZE; ++s)
@@ -453,10 +594,9 @@ private:
                         states[s], static_cast<ResultType>(data_x[i + s]), static_cast<ResultType>(data_y[prev + s]), kernel_params);
             }
 
-            typename Kernel::template State<ResultType> state;
             for (const auto & other_state : states)
                 Kernel::template combine<ResultType>(state, other_state, kernel_params);
-
+#endif
             /// Process the tail
             for (; prev < off; ++i, ++prev)
             {
@@ -466,6 +606,7 @@ private:
             result_data[row] = Kernel::finalize(state, kernel_params);
             row++;
         }
+
         return result;
     }
 
