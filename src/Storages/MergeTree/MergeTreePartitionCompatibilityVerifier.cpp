@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreePartitionCompatibilityVerifier.h>
 #include <Storages/MergeTree/MergeTreePartitionGlobalMinMaxIdxCalculator.h>
-#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -128,17 +127,12 @@ MergeTreePartition verifyCompatibilityAndCreatePartitionImpl(
 }
 
 std::pair<MergeTreePartition, std::string> MergeTreePartitionCompatibilityVerifier::verifyCompatibilityAndCreatePartition(
-    const ASTPtr & source_partition_exp,
-    const ASTPtr & destination_partition_exp,
+    bool is_partition_exp_the_same,
     const MergeTreeData & source_data,
     const MergeTreeData & dst_data,
     const DataPartsVector & src_parts,
     const String & source_partition_id)
 {
-    const auto is_partition_exp_the_same =
-        queryToStringWithEmptyTupleNormalization(source_partition_exp)
-        == queryToStringWithEmptyTupleNormalization(destination_partition_exp);
-
     /*
      * If the partition expression is the same, there is no need to create a new partition (it is not used)
      * and the source partition id can be used as the destination partition id.

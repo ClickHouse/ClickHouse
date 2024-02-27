@@ -2101,10 +2101,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         return;
     }
 
-    auto [destination_partition, destination_partition_id] = MergeTreePartitionCompatibilityVerifier::verifyCompatibilityAndCreatePartition(
-        src_partition_expression, my_partition_expression, src_data, *this, src_parts, source_partition_id);
-
-    const auto is_partition_exp_the_same = source_partition_id == destination_partition_id;
+    const auto is_partition_exp_the_same =
+        queryToStringWithEmptyTupleNormalization(my_partition_expression)
+        == queryToStringWithEmptyTupleNormalization(src_partition_expression);
 
     if (replace && !is_partition_exp_the_same)
     {
@@ -2113,6 +2112,13 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                         "There is no way to calculate the destination partition id",
                         source_partition_id);
     }
+
+    auto [destination_partition, destination_partition_id] = MergeTreePartitionCompatibilityVerifier::verifyCompatibilityAndCreatePartition(
+        is_partition_exp_the_same,
+        src_data,
+        *this,
+        src_parts,
+        source_partition_id);
 
     for (DataPartPtr & src_part : src_parts)
     {
@@ -2249,10 +2255,16 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     const auto dst_partition_expression = dest_metadata_snapshot->getPartitionKeyAST();
     const auto src_partition_expression = metadata_snapshot->getPartitionKeyAST();
 
-    auto [destination_partition, destination_partition_id] = MergeTreePartitionCompatibilityVerifier::verifyCompatibilityAndCreatePartition(
-        src_partition_expression, dst_partition_expression, src_data, *dest_table_storage, src_parts, source_partition_id);
+    const auto is_partition_exp_the_same =
+        queryToStringWithEmptyTupleNormalization(dst_partition_expression)
+        == queryToStringWithEmptyTupleNormalization(src_partition_expression);
 
-    const auto is_partition_exp_the_same = source_partition_id == destination_partition_id;
+    auto [destination_partition, destination_partition_id] = MergeTreePartitionCompatibilityVerifier::verifyCompatibilityAndCreatePartition(
+        is_partition_exp_the_same,
+        src_data,
+        *dest_table_storage,
+        src_parts,
+        source_partition_id);
 
     for (const DataPartPtr & src_part : src_parts)
     {
