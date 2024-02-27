@@ -5,6 +5,12 @@
 #include <Parsers/ASTIdentifier.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
+#include "Analyzer/ColumnNode.h"
+#include "Analyzer/ConstantNode.h"
+#include "Analyzer/FunctionNode.h"
+#include "Analyzer/IQueryTreeNode.h"
+#include "Analyzer/InDepthQueryTreeVisitor.h"
+#include "DataTypes/IDataType.h"
 
 namespace
 {
@@ -118,5 +124,43 @@ void OptimizeShardingKeyRewriteInMatcher::visit(ASTFunction & function, Data & d
         });
     }
 }
+
+
+class OptimizeShardingKeyRewriteIn : InDepthQueryTreeVisitorWithContext<OptimizeShardingKeyRewriteIn>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<OptimizeShardingKeyRewriteIn>;
+    using Base::Base;
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
+        auto * function_node = node->as<FunctionNode>();
+        if (!function_node || function_node->getFunctionName() != "in")
+            return;
+
+        auto & arguments = function_node->getArguments().getNodes();
+        auto * column = arguments[0]->as<ColumnNode>();
+        if (!column)
+            return;
+
+        if (!data.sharding_key_expr->getRequiredColumnsWithTypes().contains(column->getColumnName()))
+            return;
+
+        if (auto * constant = arguments[1]->as<ConstantNode>())
+        {
+            if (isTuple(constant->getResultType()))
+            {
+                auto & tuple = constant->getValue().get<Tuple &>();
+                std::erase_if(tuple, [&](auto & child)
+                {
+                    return tuple.size() > 1 && !shardContains(child, name, data);
+                });
+            }
+        }
+    }
+
+    OptimizeShardingKeyRewriteInMatcher::Data data;
+};
+
 
 }
