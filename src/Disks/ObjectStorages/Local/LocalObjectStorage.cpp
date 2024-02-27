@@ -189,7 +189,7 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
 bool LocalObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
-    /// Unlike real object storage, existance of a prefix path can be checked by
+    /// Unlike real object storage, existence of a prefix path can be checked by
     /// just checking existence of this prefix directly, so simple exists is enough here.
     return exists(StoredObject(path));
 }
