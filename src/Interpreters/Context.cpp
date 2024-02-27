@@ -382,8 +382,8 @@ struct ContextSharedPart : boost::noncopyable
     /// The global pool of HTTP sessions for background fetches.
     PooledSessionFactoryPtr fetches_session_factory TSA_GUARDED_BY(background_executors_mutex);
 
-    RemoteHostFilter remote_host_filter TSA_GUARDED_BY(mutex);                    /// Allowed URL from config.xml
-    HTTPHeaderFilter http_header_filter TSA_GUARDED_BY(mutex);                    /// Forbidden HTTP headers from config.xml
+    RemoteHostFilter remote_host_filter;                    /// Allowed URL from config.xml
+    HTTPHeaderFilter http_header_filter;                    /// Forbidden HTTP headers from config.xml
 
     /// No lock required for trace_collector modified only during initialization
     std::optional<TraceCollector> trace_collector;          /// Thread collecting traces from threads executing queries
@@ -3303,7 +3303,7 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
 }
 
 #if USE_NURAFT
-std::shared_ptr<KeeperDispatcher> & Context::getKeeperDispatcher() const
+std::shared_ptr<KeeperDispatcher> Context::getKeeperDispatcher() const
 {
     std::lock_guard lock(shared->keeper_dispatcher_mutex);
     if (!shared->keeper_dispatcher)
@@ -3312,7 +3312,7 @@ std::shared_ptr<KeeperDispatcher> & Context::getKeeperDispatcher() const
     return shared->keeper_dispatcher;
 }
 
-std::shared_ptr<KeeperDispatcher> & Context::tryGetKeeperDispatcher() const
+std::shared_ptr<KeeperDispatcher> Context::tryGetKeeperDispatcher() const
 {
     std::lock_guard lock(shared->keeper_dispatcher_mutex);
     return shared->keeper_dispatcher;
@@ -3489,25 +3489,21 @@ String Context::getInterserverScheme() const
 
 void Context::setRemoteHostFilter(const Poco::Util::AbstractConfiguration & config)
 {
-    std::lock_guard lock(shared->mutex);
     shared->remote_host_filter.setValuesFromConfig(config);
 }
 
 const RemoteHostFilter & Context::getRemoteHostFilter() const
 {
-    SharedLockGuard lock(shared->mutex);
     return shared->remote_host_filter;
 }
 
 void Context::setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config)
 {
-    std::lock_guard lock(shared->mutex);
     shared->http_header_filter.setValuesFromConfig(config);
 }
 
 const HTTPHeaderFilter & Context::getHTTPHeaderFilter() const
 {
-    SharedLockGuard lock(shared->mutex);
     return shared->http_header_filter;
 }
 
