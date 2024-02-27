@@ -128,7 +128,7 @@ public:
         auto res = ColumnFloat64::create();
         auto & res_data = res->getData();
 
-        ColumnArray::ColumnOffsets::MutablePtr res_col_offsets = ColumnArray::ColumnOffsets::create();
+        auto res_col_offsets = ColumnArray::ColumnOffsets::create();
         auto & res_col_offsets_data = res_col_offsets->getData();
 
         auto root_offsets = ColumnArray::ColumnOffsets::create();
@@ -142,7 +142,7 @@ public:
 
             auto residuals = ColumnFloat32::create();
             auto & residuals_data = residuals->getData();
-            ColumnArray::ColumnOffsets::MutablePtr residuals_col_offsets = ColumnArray::ColumnOffsets::create();
+            auto residuals_col_offsets = ColumnArray::ColumnOffsets::create();
             auto & residuals_col_offsets_data = residuals_col_offsets->getData();
 
             residuals_data.insertByOffsets(decompose_data, residual_start_offset, residual_end_offset);

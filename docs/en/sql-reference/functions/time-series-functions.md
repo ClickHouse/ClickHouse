@@ -66,8 +66,7 @@ Result:
 
 ## seriesPeriodDetectFFT
 
-Finds the period of the given series data data using FFT
-FFT - [Fast Fourier transform](https://en.wikipedia.org/wiki/Fast_Fourier_transform)
+Finds the period of the given series data using FFT - [Fast Fourier transform](https://en.wikipedia.org/wiki/Fast_Fourier_transform)
 
 **Syntax**
 
@@ -198,8 +197,7 @@ The number of data points in `series` should be at least twice the value of `per
 
 **Returned value**
 
-- An array of three arrays where the first array includes a ternary series containing (+1,-1,0) marking up/down/no anomaly respectively, the second array - anomaly score,
-the third array - baseline(seasonal + trend) component.
+- An array of three arrays where the first array includes a ternary series containing (+1,-1,0) marking up/down/no anomaly respectively, the second array - anomaly score, the third array - baseline(seasonal + trend) component.
 
 Type: [Array](../../sql-reference/data-types/array.md).
 
@@ -224,7 +222,7 @@ Result:
     ],
     [
         3.999999761581421, 3, 2, 4, 3, 2, 4, 2.999999761581421, 1.9999998807907104, 4, 3, 2, 4,
-        3,1.9999996423721313, 4, 3, 2, 4, 3.000000238418579, 2]
-    ]                                                                                                                   │
+        3,1.9999996423721313, 4, 3, 2, 4, 3.000000238418579, 2
+    ]]                                                                                                                   │
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```

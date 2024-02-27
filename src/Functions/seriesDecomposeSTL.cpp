@@ -101,7 +101,7 @@ public:
                 if (isnan(period_val) || !std::isfinite(period_val) || period_val < 0.0)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument for function {} should be a positive number", getName());
 
-                period = static_cast<int>(std::round(period_val));
+                period = static_cast<UInt64>(std::round(period_val));
             }
             else
                 throw Exception(
