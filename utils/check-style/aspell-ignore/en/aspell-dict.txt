@@ -1615,6 +1615,8 @@ greaterorequals
 greenspace
 groupArray
 groupArrayInsertAt
+grouparrayintersect
+groupArrayIntersect
 groupArrayLast
 groupArrayMovingAvg
 groupArrayMovingSum
@@ -1742,6 +1744,7 @@ isValidJSON
 isValidUTF
 isZeroOrNull
 iteratively
+iTerm
 jaccard
 jaccardIndex
 jaroSimilarity
@@ -2314,6 +2317,7 @@ shardNum
 sharded
 sharding
 shortcircuit
+Shortkeys
 shortkeys
 shoutout
 simdjson
@@ -2718,6 +2722,7 @@ wordShingleSimHashCaseInsensitive
 wordShingleSimHashCaseInsensitiveUTF
 wordShingleSimHashUTF
 wordshingleMinHash
+writability
 wrt
 xcode
 xeus

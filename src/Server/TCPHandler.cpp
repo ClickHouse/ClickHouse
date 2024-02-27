@@ -1,5 +1,4 @@
 #include "Interpreters/AsynchronousInsertQueue.h"
-#include "Interpreters/Context_fwd.h"
 #include "Interpreters/SquashingTransform.h"
 #include "Parsers/ASTInsertQuery.h"
 #include <algorithm>
