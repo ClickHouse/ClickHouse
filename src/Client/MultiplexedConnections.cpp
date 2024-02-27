@@ -126,6 +126,9 @@ void MultiplexedConnections::sendQuery(
 
     Settings modified_settings = settings;
 
+    /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
+    modified_settings.dialect.resetValueToDefault();
+
     for (auto & replica : replica_states)
     {
         if (!replica.connection)
