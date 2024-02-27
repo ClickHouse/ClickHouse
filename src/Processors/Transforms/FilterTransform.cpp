@@ -340,6 +340,7 @@ void FilterTransform::doTransform(Chunk & chunk)
             break;
         }
     }
+    (void)min_size_in_memory; /// Suppress error of clang-analyzer-deadcode.DeadStores
 
     size_t num_filtered_rows = 0;
     if (first_non_constant_column != num_columns)
