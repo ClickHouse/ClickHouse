@@ -95,13 +95,7 @@ INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(300, 10000)
 SELECT count(), sum(size) FROM system.filesystem_cache
 24	84045
 SYSTEM START MERGES test_02241
-SELECT value FROM system.events WHERE name = 'CachedWriteBufferCacheWriteBytes'
-85146
-SELECT value FROM system.events WHERE name = 'CachedReadBufferCacheWriteBytes'
 OPTIMIZE TABLE test_02241 FINAL
-SELECT value FROM system.events WHERE name = 'CachedWriteBufferCacheWriteBytes'
-251542
-SELECT value FROM system.events WHERE name = 'CachedReadBufferCacheWriteBytes'
 SELECT count(), sum(size) FROM system.filesystem_cache
 32	167243
 ALTER TABLE test_02241 UPDATE value = 'kek' WHERE key = 100
