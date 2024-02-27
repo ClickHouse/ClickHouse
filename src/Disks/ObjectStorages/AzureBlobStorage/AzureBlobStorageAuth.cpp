@@ -20,41 +20,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-struct AzureBlobStorageEndpoint
-{
-    const String storage_account_url;
-    const String account_name;
-    const String container_name;
-    const String prefix;
-    const std::optional<bool> container_already_exists;
-
-    String getEndpoint()
-    {
-        String url = storage_account_url;
-
-        if (!account_name.empty())
-            url += "/" + account_name;
-
-        if (!container_name.empty())
-            url += "/" + container_name;
-
-        if (!prefix.empty())
-            url += "/" + prefix;
-
-        return url;
-    }
-
-    String getEndpointWithoutContainer()
-    {
-        String url = storage_account_url;
-
-        if (!account_name.empty())
-            url += "/" + account_name;
-
-        return url;
-    }
-};
-
 
 void validateStorageAccountUrl(const String & storage_account_url)
 {
