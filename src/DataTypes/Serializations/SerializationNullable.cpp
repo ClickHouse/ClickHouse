@@ -322,20 +322,10 @@ ReturnType  deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr
         auto check_for_null = [&null_representation, &settings](ReadBuffer & buf)
         {
             auto * pos = buf.position();
-            if (settings.tsv.crlf_end_of_line_input)
-            {
-                if (checkString(null_representation, buf) && (*buf.position() == '\t' || *buf.position() == '\n'|| *buf.position() == '\r'))
-                    return true;
-                buf.position() = pos;
-                return false;
-            }
-            else
-            {
-                if (checkString(null_representation, buf) && (*buf.position() == '\t' || *buf.position() == '\n'))
-                    return true;
-                buf.position() = pos;
-                return false;
-            }
+            if (checkString(null_representation, buf) && (*buf.position() == '\t' || *buf.position() == '\n' || (settings.tsv.crlf_end_of_line_input && *buf.position() == '\r')))
+                return true;
+            buf.position() = pos;
+            return false;
         };
         return deserializeImpl<ReturnType>(column, istr, check_for_null, deserialize_nested, is_null);
     }
