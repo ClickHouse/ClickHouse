@@ -598,7 +598,7 @@ public:
     {
         if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
             return (t%60)*1000;
-        
+
         LUTIndex index = findIndex(t);
         Time time = t - lut[index].date;
 
