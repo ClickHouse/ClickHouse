@@ -175,6 +175,15 @@ SerializationPtr DataTypeVariant::doGetDefaultSerialization() const
     return std::make_shared<SerializationVariant>(std::move(serializations), std::move(variant_names), SerializationVariant::getVariantsDeserializeTextOrder(variants), getName());
 }
 
+void DataTypeVariant::forEachChild(const DB::IDataType::ChildCallback & callback) const
+{
+    for (const auto & variant : variants)
+    {
+        callback(*variant);
+        variant->forEachChild(callback);
+    }
+}
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())
