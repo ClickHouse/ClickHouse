@@ -499,7 +499,13 @@ BlockIO InterpreterInsertQuery::execute()
 
             if (settings.max_insert_threads > 1)
             {
-                pre_streams_size = std::min(static_cast<size_t>(settings.max_insert_threads), pipeline.getNumStreams());
+                auto table_id = table->getStorageID();
+                auto views = DatabaseCatalog::instance().getDependentViews(table_id);
+
+                /// It breaks some views-related tests and we have dedicated `parallel_view_processing` for views, so let's just skip them.
+                const bool resize_to_max_insert_threads = !table->isView() && views.empty();
+                pre_streams_size = resize_to_max_insert_threads ? settings.max_insert_threads
+                                                                : std::min<size_t>(settings.max_insert_threads, pipeline.getNumStreams());
                 if (table->supportsParallelInsert())
                     sink_streams_size = pre_streams_size;
             }
