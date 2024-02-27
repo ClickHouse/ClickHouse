@@ -1776,7 +1776,7 @@ Default value: 0 (no restriction).
 ## insert_quorum {#insert_quorum}
 
 :::note
-`insert_quorum` does not apply when using the [`SharedMergeTree` table engine](/en/cloud/reference/shared-merge-tree) in ClickHouse Cloud as all inserts are quorum inserted.
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information. 
 :::
 
 Enables the quorum writes.
@@ -1819,7 +1819,7 @@ See also:
 ## insert_quorum_parallel {#insert_quorum_parallel}
 
 :::note
-`insert_quorum_parallel` does not apply when using the [`SharedMergeTree` table engine](/en/cloud/reference/shared-merge-tree) in ClickHouse Cloud as all inserts are quorum inserted.
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information. 
 :::
 
 Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
@@ -1838,6 +1838,10 @@ See also:
 - [select_sequential_consistency](#select_sequential_consistency)
 
 ## select_sequential_consistency {#select_sequential_consistency}
+
+:::note
+This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree. 
+:::
 
 Enables or disables sequential consistency for `SELECT` queries. Requires `insert_quorum_parallel` to be disabled (enabled by default).
 
@@ -2037,7 +2041,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 
-Default value: 1.
+Default value: 0.
 
 By default, async inserts are inserted into replicated tables by the `INSERT` statement enabling [async_insert](#async-insert) are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
 For the replicated tables, by default, only 10000 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window_for_async_inserts](merge-tree-settings.md/#replicated-deduplication-window-async-inserts), [replicated_deduplication_window_seconds_for_async_inserts](merge-tree-settings.md/#replicated-deduplication-window-seconds-async-inserts)).
@@ -3445,7 +3449,7 @@ Has an effect only when the connection is made through the MySQL wire protocol.
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
 
-Default value: `0`.
+Default value: `1`.
 
 ## mysql_map_fixed_string_to_text_in_show_columns {#mysql_map_fixed_string_to_text_in_show_columns}
 
@@ -3456,7 +3460,7 @@ Has an effect only when the connection is made through the MySQL wire protocol.
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
 
-Default value: `0`.
+Default value: `1`.
 
 ## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
 
@@ -3706,7 +3710,7 @@ Default value: `0`.
 
 ## allow_experimental_live_view {#allow-experimental-live-view}
 
-Allows creation of experimental [live views](../../sql-reference/statements/create/view.md/#live-view).
+Allows creation of a deprecated LIVE VIEW.
 
 Possible values:
 
@@ -3717,21 +3721,15 @@ Default value: `0`.
 
 ## live_view_heartbeat_interval {#live-view-heartbeat-interval}
 
-Sets the heartbeat interval in seconds to indicate [live view](../../sql-reference/statements/create/view.md/#live-view) is alive .
-
-Default value: `15`.
+Deprecated.
 
 ## max_live_view_insert_blocks_before_refresh {#max-live-view-insert-blocks-before-refresh}
 
-Sets the maximum number of inserted blocks after which mergeable blocks are dropped and query for [live view](../../sql-reference/statements/create/view.md/#live-view) is re-executed.
-
-Default value: `64`.
+Deprecated.
 
 ## periodic_live_view_refresh {#periodic-live-view-refresh}
 
-Sets the interval in seconds after which periodically refreshed [live view](../../sql-reference/statements/create/view.md/#live-view) is forced to refresh.
-
-Default value: `60`.
+Deprecated.
 
 ## http_connection_timeout {#http_connection_timeout}
 
