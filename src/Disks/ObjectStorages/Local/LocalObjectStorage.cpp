@@ -126,7 +126,11 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "LocalObjectStorage doesn't support append to files");
 
     LOG_TEST(log, "Write object: {}", object.remote_path);
+
+    /// Unlike real blob storage, in local fs we cannot create a file with non-existing prefix.
+    /// So let's create it.
     fs::create_directories(fs::path(object.remote_path).parent_path());
+
     return std::make_unique<WriteBufferFromFile>(object.remote_path, buf_size);
 }
 
@@ -185,6 +189,8 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
 bool LocalObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
+    /// Unlike real object storage, existance of a prefix path can be checked by
+    /// just checking existence of this prefix directly, so simple exists is enough here.
     return exists(StoredObject(path));
 }
 
