@@ -1524,11 +1524,11 @@ struct ToMillisecondImpl
 
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toSecond(t)*1000;
+        return time_zone.toMillisecond(t);
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toSecond(t)*1000;
+        return time_zone.toMillisecond(t);
     }
     static UInt16 execute(Int32, const DateLUTImpl &)
     {
