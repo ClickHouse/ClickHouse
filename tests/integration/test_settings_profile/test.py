@@ -128,7 +128,7 @@ def test_smoke():
     instance.query("ALTER USER robin SETTINGS PROFILE xyz")
     assert (
         instance.query("SHOW CREATE USER robin")
-        == "CREATE USER robin SETTINGS PROFILE xyz\n"
+        == "CREATE USER robin SETTINGS PROFILE `xyz`\n"
     )
     assert (
         instance.query(
@@ -178,7 +178,7 @@ def test_settings_from_granted_role():
     )
     assert (
         instance.query("SHOW CREATE ROLE worker")
-        == "CREATE ROLE worker SETTINGS PROFILE xyz\n"
+        == "CREATE ROLE worker SETTINGS PROFILE `xyz`\n"
     )
     assert (
         instance.query(
