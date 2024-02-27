@@ -350,16 +350,8 @@ ReturnType  deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr
         buf.setCheckpoint();
         SCOPE_EXIT(buf.dropCheckpoint());
 
-        if (settings.tsv.crlf_end_of_line_input)
-        {
-            if (checkString(null_representation, buf) && (buf.eof() || *buf.position() == '\t' || *buf.position() == '\n' || *buf.position() == '\r'))
-                return true;
-        }
-        else
-        {
-            if (checkString(null_representation, buf) && (buf.eof() || *buf.position() == '\t' || *buf.position() == '\n'))
-                return true;
-        }
+        if (checkString(null_representation, buf) && (buf.eof() || *buf.position() == '\t' || *buf.position() == '\n' || (settings.tsv.crlf_end_of_line_input && *buf.position() == '\r')))
+            return true;
         buf.rollbackToCheckpoint();
         return false;
     };
