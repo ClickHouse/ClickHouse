@@ -1142,20 +1142,48 @@ public:
             column->reserve(reserve_size);
     }
 
-protected:
+private:
+
+    void checkBlock(const Block & block)
+    {
+        for (size_t j = 0; j < right_indexes.size(); ++j)
+        {
+            const auto * column_from_block = block.getByPosition(right_indexes[j]).column.get();
+            const auto * dest_column = columns[j].get();
+            if (auto * nullable_col = nullable_column_ptrs[j])
+            {
+                if (!is_join_get)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                    "Columns {} and {} can have different nullability only in joinGetOrNull",
+                                    dest_column->getName(), column_from_block->getName());
+                dest_column = nullable_col->getNestedColumnPtr().get();
+            }
+            /** Using dest_column->structureEquals(*column_from_block) will not work for low cardinality columns,
+              * because dictionaries can be different, while calling insertFrom on them is safe, for example:
+              * ColumnLowCardinality(size = 0, UInt8(size = 0), ColumnUnique(size = 1, String(size = 1)))
+              * and
+              * ColumnLowCardinality(size = 0, UInt16(size = 0), ColumnUnique(size = 1, String(size = 1)))
+              */
+            if (typeid(*dest_column) != typeid(*column_from_block))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns {} and {} have different types {} and {}",
+                                dest_column->getName(), column_from_block->getName(),
+                                demangle(typeid(*dest_column).name()), demangle(typeid(*column_from_block).name()));
+        }
+    }
+
     MutableColumns columns;
     bool is_join_get;
     std::vector<size_t> right_indexes;
     std::vector<TypeAndName> type_name;
     std::vector<ColumnNullable *> nullable_column_ptrs;
+    size_t lazy_defaults_count = 0;
 
+    /// for lazy
     // The default row is represented by an empty RowRef, so that fixed-size blocks can be generated sequentially,
     // default_count cannot represent the position of the row
     LazyOutput lazy_output;
     bool has_columns_to_add;
 
-private:
-    size_t lazy_defaults_count = 0;
     /// for ASOF
     const IColumn * left_asof_key = nullptr;
 
@@ -1235,29 +1263,7 @@ void AddedColumns<false>::appendFromBlock(const Block & block, size_t row_num,co
         applyLazyDefaults();
 
 #ifndef NDEBUG
-    for (size_t j = 0; j < right_indexes.size(); ++j)
-    {
-        const auto * column_from_block = block.getByPosition(right_indexes[j]).column.get();
-        const auto * dest_column = columns[j].get();
-        if (auto * nullable_col = nullable_column_ptrs[j])
-        {
-            if (!is_join_get)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Columns {} and {} can have different nullability only in joinGetOrNull",
-                                dest_column->getName(), column_from_block->getName());
-            dest_column = nullable_col->getNestedColumnPtr().get();
-        }
-        /** Using dest_column->structureEquals(*column_from_block) will not work for low cardinality columns,
-              * because dictionaries can be different, while calling insertFrom on them is safe, for example:
-              * ColumnLowCardinality(size = 0, UInt8(size = 0), ColumnUnique(size = 1, String(size = 1)))
-              * and
-              * ColumnLowCardinality(size = 0, UInt16(size = 0), ColumnUnique(size = 1, String(size = 1)))
-              */
-        if (typeid(*dest_column) != typeid(*column_from_block))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns {} and {} have different types {} and {}",
-                            dest_column->getName(), column_from_block->getName(),
-                            demangle(typeid(*dest_column).name()), demangle(typeid(*column_from_block).name()));
-    }
+    checkBlock(block);
 #endif
     if (is_join_get)
     {
@@ -1286,29 +1292,7 @@ template <>
 void AddedColumns<true>::appendFromBlock(const Block & block, size_t row_num, bool)
 {
 #ifndef NDEBUG
-    for (size_t j = 0; j < right_indexes.size(); ++j)
-    {
-        const auto * column_from_block = block.getByPosition(right_indexes[j]).column.get();
-        const auto * dest_column = columns[j].get();
-        if (auto * nullable_col = nullable_column_ptrs[j])
-        {
-            if (!is_join_get)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Columns {} and {} can have different nullability only in joinGetOrNull",
-                                dest_column->getName(), column_from_block->getName());
-            dest_column = nullable_col->getNestedColumnPtr().get();
-        }
-        /** Using dest_column->structureEquals(*column_from_block) will not work for low cardinality columns,
-              * because dictionaries can be different, while calling insertFrom on them is safe, for example:
-              * ColumnLowCardinality(size = 0, UInt8(size = 0), ColumnUnique(size = 1, String(size = 1)))
-              * and
-              * ColumnLowCardinality(size = 0, UInt16(size = 0), ColumnUnique(size = 1, String(size = 1)))
-              */
-        if (typeid(*dest_column) != typeid(*column_from_block))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns {} and {} have different types {} and {}",
-                            dest_column->getName(), column_from_block->getName(),
-                            demangle(typeid(*dest_column).name()), demangle(typeid(*column_from_block).name()));
-    }
+    checkBlock(block);
 #endif
     if (has_columns_to_add)
     {
