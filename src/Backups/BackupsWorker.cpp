@@ -1004,7 +1004,7 @@ void BackupsWorker::doRestore(
     {
         restore_query->setCurrentDatabase(current_database);
 
-        auto after_each_task_callback = [&]
+        auto after_task_callback = [&]
         {
             maybeSleepForTesting();
             setNumFilesAndSize(restore_id, backup->getNumFiles(), backup->getTotalSize(), backup->getNumEntries(),
@@ -1013,7 +1013,7 @@ void BackupsWorker::doRestore(
 
         /// Restore from the backup.
         RestorerFromBackup restorer{restore_query->elements, restore_settings, restore_coordination,
-                                    backup, context, getThreadPool(ThreadPoolId::RESTORE), after_each_task_callback};
+                                    backup, context, getThreadPool(ThreadPoolId::RESTORE), after_task_callback};
         restorer.run(RestorerFromBackup::RESTORE);
     }
 

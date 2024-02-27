@@ -37,7 +37,7 @@ public:
         const BackupPtr & backup_,
         const ContextMutablePtr & context_,
         ThreadPool & thread_pool_,
-        const std::function<void()> & after_each_task_callback_);
+        const std::function<void()> & after_task_callback_);
 
     ~RestorerFromBackup();
 
@@ -80,7 +80,7 @@ private:
     BackupPtr backup;
     ContextMutablePtr context;
     QueryStatusPtr process_list_element;
-    std::function<void()> after_each_task_callback;
+    std::function<void()> after_task_callback;
     std::chrono::milliseconds on_cluster_first_sync_timeout;
     std::chrono::milliseconds create_table_timeout;
     LoggerPtr log;

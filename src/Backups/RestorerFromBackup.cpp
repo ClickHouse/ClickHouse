@@ -83,14 +83,14 @@ RestorerFromBackup::RestorerFromBackup(
     const BackupPtr & backup_,
     const ContextMutablePtr & context_,
     ThreadPool & thread_pool_,
-    const std::function<void()> & after_each_task_callback_)
+    const std::function<void()> & after_task_callback_)
     : restore_query_elements(restore_query_elements_)
     , restore_settings(restore_settings_)
     , restore_coordination(restore_coordination_)
     , backup(backup_)
     , context(context_)
     , process_list_element(context->getProcessListElement())
-    , after_each_task_callback(after_each_task_callback_)
+    , after_task_callback(after_task_callback_)
     , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
     , create_table_timeout(context->getConfigRef().getUInt64("backups.create_table_timeout", 300000))
     , log(getLogger("RestorerFromBackup"))
@@ -238,8 +238,8 @@ void RestorerFromBackup::schedule(std::function<void()> && task_, const char * t
 
             std::move(task)();
 
-            if (after_each_task_callback)
-                after_each_task_callback();
+            if (after_task_callback)
+                after_task_callback();
         },
         thread_pool,
         thread_name_);
