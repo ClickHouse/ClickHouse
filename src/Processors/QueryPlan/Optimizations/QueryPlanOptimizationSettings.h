@@ -61,6 +61,8 @@ struct QueryPlanOptimizationSettings
     /// If remove-redundant-distinct-steps optimization is enabled.
     bool remove_redundant_distinct = true;
 
+    bool optimize_prewhere = true;
+
     /// If reading from projection can be applied
     bool optimize_projection = false;
     bool force_use_projection = false;

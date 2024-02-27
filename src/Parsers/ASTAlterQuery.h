@@ -17,8 +17,6 @@ namespace DB
  *      MODIFY COLUMN col_name type,
  *      DROP PARTITION partition,
  *      COMMENT_COLUMN col_name 'comment',
- *  ALTER LIVE VIEW [db.]name_type
- *      REFRESH
  */
 
 class ASTAlterCommand : public IAST
@@ -78,8 +76,6 @@ public:
         APPLY_DELETED_MASK,
 
         NO_TYPE,
-
-        LIVE_VIEW_REFRESH,
 
         MODIFY_DATABASE_SETTING,
 
@@ -246,7 +242,6 @@ public:
     {
         TABLE,
         DATABASE,
-        LIVE_VIEW,
         UNKNOWN,
     };
 

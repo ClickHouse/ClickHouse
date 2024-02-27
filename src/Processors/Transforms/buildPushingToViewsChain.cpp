@@ -572,7 +572,6 @@ Chain buildPushingToViewsChain(
         result_chain.addSource(std::move(sink));
     }
 
-    /// TODO: add pushing to live view
     if (result_chain.empty())
         result_chain.addSink(std::make_shared<NullSinkToStorage>(storage_header));
 
