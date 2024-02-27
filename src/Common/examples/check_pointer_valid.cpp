@@ -24,6 +24,7 @@ bool isPointerValid(const void * ptr)
         char res;
         memcpy(&res, ptr, 1);
         __asm__ __volatile__("" :: "r"(res) : "memory");
+        checking_pointer = false;
         return true;
     }
     else
