@@ -8,7 +8,7 @@
 
 #include <memory>
 
-#include <boost/algorithm/string.hpp>
+#include <boost/algorithm/string/split.hpp>
 
 #include <Poco/URI.h>
 
