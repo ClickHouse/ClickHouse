@@ -3449,7 +3449,7 @@ Has an effect only when the connection is made through the MySQL wire protocol.
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
 
-Default value: `0`.
+Default value: `1`.
 
 ## mysql_map_fixed_string_to_text_in_show_columns {#mysql_map_fixed_string_to_text_in_show_columns}
 
@@ -3460,7 +3460,7 @@ Has an effect only when the connection is made through the MySQL wire protocol.
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
 
-Default value: `0`.
+Default value: `1`.
 
 ## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
 
