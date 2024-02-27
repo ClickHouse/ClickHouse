@@ -139,7 +139,9 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     const auto & query_info = reading->getQueryInfo();
     MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
 
-    auto ordinary_reading_select_result = reading->selectRangesToRead();
+    auto ordinary_reading_select_result = reading->getAnalyzedResult();
+    if (!ordinary_reading_select_result)
+        ordinary_reading_select_result = reading->selectRangesToRead();
     size_t ordinary_reading_marks = ordinary_reading_select_result->selected_marks;
 
     /// Nothing to read. Ignore projections.
