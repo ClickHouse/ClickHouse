@@ -93,7 +93,7 @@ select count(), * from dist_01247 group by number with totals;
 select 'GROUP BY WITH ROLLUP';
 select count(), * from dist_01247 group by number with rollup;
 select 'GROUP BY WITH CUBE';
-select count(), * from dist_01247 group by number with cube;
+select count(), * from dist_01247 group by number with cube order by all;
 
 select 'GROUP BY WITH TOTALS ORDER BY';
 select count(), * from dist_01247 group by number with totals order by number;
