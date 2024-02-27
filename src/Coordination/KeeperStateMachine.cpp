@@ -78,53 +78,41 @@ void KeeperStateMachine::init()
 {
     /// Do everything without mutexes, no other threads exist.
     LOG_DEBUG(log, "Totally have {} snapshots", snapshot_manager.totalSnapshots());
-    bool loaded = false;
     bool has_snapshots = snapshot_manager.totalSnapshots() != 0;
     /// Deserialize latest snapshot from disk
-    while (snapshot_manager.totalSnapshots() != 0)
+    uint64_t latest_log_index = snapshot_manager.getLatestSnapshotIndex();
+    LOG_DEBUG(log, "Trying to load state machine from snapshot up to log index {}", latest_log_index);
+
+    try
     {
-        uint64_t latest_log_index = snapshot_manager.getLatestSnapshotIndex();
-        LOG_DEBUG(log, "Trying to load state machine from snapshot up to log index {}", latest_log_index);
+        latest_snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
+        auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
+        latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
 
-        try
-        {
-            latest_snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
-            auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
-            latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
+        if (isLocalDisk(*latest_snapshot_info.disk))
+            latest_snapshot_buf = nullptr;
 
-            if (isLocalDisk(*latest_snapshot_info.disk))
-                latest_snapshot_buf = nullptr;
-
-            storage = std::move(snapshot_deserialization_result.storage);
-            latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
-            cluster_config = snapshot_deserialization_result.cluster_config;
-            keeper_context->setLastCommitIndex(latest_snapshot_meta->get_last_log_idx());
-            loaded = true;
-            break;
-        }
-        catch (const DB::Exception & ex)
-        {
-            LOG_WARNING(
-                log,
-                "Failed to load from snapshot with index {}, with error {}, will remove it from disk",
-                latest_log_index,
-                ex.displayText());
-            snapshot_manager.removeSnapshot(latest_log_index, /*detach=*/true);
-        }
+        storage = std::move(snapshot_deserialization_result.storage);
+        latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
+        cluster_config = snapshot_deserialization_result.cluster_config;
+        keeper_context->setLastCommitIndex(latest_snapshot_meta->get_last_log_idx());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            log,
+            fmt::format(
+                "Aborting because of failure to load from latest snapshot with index {}. Problematic snapshot can be removed but it will "
+                "lead to data loss",
+                latest_log_index));
+        std::abort();
     }
 
     auto last_committed_idx = keeper_context->lastCommittedIndex();
     if (has_snapshots)
-    {
-        if (loaded)
-            LOG_DEBUG(log, "Loaded snapshot with last committed log index {}", last_committed_idx);
-        else
-            LOG_WARNING(log, "All snapshots broken, last committed log index {}", last_committed_idx);
-    }
+        LOG_DEBUG(log, "Loaded snapshot with last committed log index {}", last_committed_idx);
     else
-    {
         LOG_DEBUG(log, "No existing snapshots, last committed log index {}", last_committed_idx);
-    }
 
     if (!storage)
         storage = std::make_unique<KeeperStorage>(
