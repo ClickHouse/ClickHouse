@@ -504,7 +504,7 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
     }
 
     if (id)
-        return AuthResult{ .user_id = *id };
+        return AuthResult{ .user_id = *id, .settings = {} };
     return std::nullopt;
 }
 
