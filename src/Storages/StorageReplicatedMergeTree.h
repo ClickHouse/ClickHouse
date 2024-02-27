@@ -99,7 +99,7 @@ public:
     StorageReplicatedMergeTree(
         const String & zookeeper_path_,
         const String & replica_name_,
-        bool attach,
+        LoadingStrictnessLevel mode,
         const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata_,
@@ -107,7 +107,6 @@ public:
         const String & date_column_name,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
-        bool has_force_restore_data_flag,
         RenamingRestrictions renaming_restrictions_,
         bool need_check_structure);
 
@@ -142,9 +141,6 @@ public:
     void shutdown(bool is_drop) override;
 
     ~StorageReplicatedMergeTree() override;
-
-    static String getDefaultZooKeeperPath(const Poco::Util::AbstractConfiguration & config);
-    static String getDefaultReplicaName(const Poco::Util::AbstractConfiguration & config);
 
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
 
@@ -912,6 +908,8 @@ private:
         const String & from,
         bool fetch_part,
         ContextPtr query_context) override;
+    void forgetPartition(const ASTPtr & partition, ContextPtr query_context) override;
+
 
     /// NOTE: there are no guarantees for concurrent merges. Dropping part can
     /// be concurrently merged into some covering part and dropPart will do
@@ -941,7 +939,7 @@ private:
     void waitMutationToFinishOnReplicas(
         const Strings & replicas, const String & mutation_id) const;
 
-    std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+    MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
     void startBackgroundMovesIfNeeded() override;
 

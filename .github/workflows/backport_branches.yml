@@ -11,7 +11,7 @@ on: # yamllint disable-line rule:truthy
       - 'backport/**'
 jobs:
   RunConfig:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, style-checker-aarch64]
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:

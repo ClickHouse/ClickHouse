@@ -243,7 +243,7 @@ If no database is specified, the `default` database will be used.
 
 If the user name, password or database was specified in the connection string, it cannot be specified using `--user`, `--password` or `--database` (and vice versa).
 
-The host component can either be an a host name and IP address. Put an IPv6 address in square brackets to specify it:
+The host component can either be a host name and IP address. Put an IPv6 address in square brackets to specify it:
 
 ```text
 clickhouse://[2001:db8::1234]
