@@ -319,7 +319,7 @@ ReturnType  deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr
     /// Check if we have enough data in buffer to check if it's a null.
     if (istr.available() > null_representation.size())
     {
-        auto check_for_null = [&null_representation, settings](ReadBuffer & buf)
+        auto check_for_null = [&null_representation, &settings](ReadBuffer & buf)
         {
             auto * pos = buf.position();
             if (settings.tsv.crlf_end_of_line_input)
