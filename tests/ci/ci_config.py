@@ -398,6 +398,10 @@ bugfix_validate_check = DigestConfig(
     ],
 )
 # common test params
+compatibility_test_common_params = {
+    "digest": compatibility_check_digest,
+    "run_command": "compatibility_check.py",
+}
 statless_test_common_params = {
     "digest": stateless_check_digest,
     "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
@@ -1038,13 +1042,13 @@ CI_CONFIG = CIConfig(
         JobNames.COMPATIBILITY_TEST: TestConfig(
             Build.PACKAGE_RELEASE,
             job_config=JobConfig(
-                required_on_release_branch=True, digest=compatibility_check_digest
+                required_on_release_branch=True, **compatibility_test_common_params  # type: ignore
             ),
         ),
         JobNames.COMPATIBILITY_TEST_ARM: TestConfig(
             Build.PACKAGE_AARCH64,
             job_config=JobConfig(
-                required_on_release_branch=True, digest=compatibility_check_digest
+                required_on_release_branch=True, **compatibility_test_common_params  # type: ignore
             ),
         ),
         JobNames.UNIT_TEST: TestConfig(
