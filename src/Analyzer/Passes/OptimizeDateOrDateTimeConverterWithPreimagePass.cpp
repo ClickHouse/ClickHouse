@@ -84,7 +84,7 @@ public:
         size_t literal_id = 1 - func_id;
         const auto * literal = function->getArguments().getNodes()[literal_id]->as<ConstantNode>();
 
-        if (!literal || literal->getValue().getType() != Field::Types::UInt64)
+        if (!literal || !literal->getResultType()->isValueRepresentedByUnsignedInteger())
             return;
 
         String comparator = literal_id > func_id ? function->getFunctionName() : swap_relations.at(function->getFunctionName());
