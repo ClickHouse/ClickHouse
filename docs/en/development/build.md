@@ -67,8 +67,8 @@ to see what version you have installed before setting this environment variable.
 :::
 
 ``` bash
-export CC=clang-17
-export CXX=clang++-17
+export CC=clang-18
+export CXX=clang++-18
 ```
 
 ### Checkout ClickHouse Sources {#checkout-clickhouse-sources}
@@ -105,7 +105,7 @@ The build requires the following components:
 
 - Git (used to checkout the sources, not needed for the build)
 - CMake 3.20 or newer
-- Compiler: clang-17 or newer
+- Compiler: clang-18 or newer
 - Linker: lld-17 or newer
 - Ninja
 - Yasm

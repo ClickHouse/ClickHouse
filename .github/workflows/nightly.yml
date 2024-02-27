@@ -51,8 +51,8 @@ jobs:
       SONAR_SCANNER_VERSION: 4.8.0.2856
       SONAR_SERVER_URL: "https://sonarcloud.io"
       BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory # Directory where build-wrapper output will be placed
-      CC: clang-17
-      CXX: clang++-17
+      CC: clang-18
+      CXX: clang++-18
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
