@@ -9,7 +9,7 @@
 #    include <IO/SeekableReadBuffer.h>
 #    include <IO/SplittableBzip2ReadBuffer.h>
 #    include <IO/WriteBufferFromString.h>
-#    include <Interpreters/threadPoolCallbackRunner.h>
+#    include <Common/threadPoolCallbackRunner.h>
 
 namespace DB
 {
