@@ -308,7 +308,7 @@ def test_inheritance():
     )
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE alpha")
-        == "CREATE SETTINGS PROFILE `alpha` SETTINGS INHERIT xyz TO robin\n"
+        == "CREATE SETTINGS PROFILE `alpha` SETTINGS INHERIT `xyz` TO robin\n"
     )
     assert (
         instance.query(
@@ -456,8 +456,8 @@ def test_show_profiles():
     assert instance.query("SHOW CREATE PROFILE xyz") == "CREATE SETTINGS PROFILE `xyz`\n"
 
     query_possible_response = [
-        "CREATE SETTINGS PROFILE default\n",
-        "CREATE SETTINGS PROFILE default SETTINGS allow_experimental_analyzer = true\n",
+        "CREATE SETTINGS PROFILE `default`\n",
+        "CREATE SETTINGS PROFILE `default` SETTINGS allow_experimental_analyzer = true\n",
     ]
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE default")

@@ -73,7 +73,7 @@ def test_create():
         )
         assert (
             instance.query("SHOW CREATE SETTINGS PROFILE s2")
-            == "CREATE SETTINGS PROFILE `s2` SETTINGS INHERIT s1 TO u2\n"
+            == "CREATE SETTINGS PROFILE `s2` SETTINGS INHERIT `s1` TO u2\n"
         )
 
     check()
@@ -112,7 +112,7 @@ def test_alter():
         assert instance.query("SHOW GRANTS FOR u2") == "GRANT rx, ry TO u2\n"
         assert (
             instance.query("SHOW CREATE ROLE rx")
-            == "CREATE ROLE rx SETTINGS PROFILE s2\n"
+            == "CREATE ROLE rx SETTINGS PROFILE `s2`\n"
         )
         assert instance.query("SHOW CREATE ROLE ry") == "CREATE ROLE ry\n"
         assert (
@@ -128,7 +128,7 @@ def test_alter():
         )
         assert (
             instance.query("SHOW CREATE SETTINGS PROFILE s2")
-            == "CREATE SETTINGS PROFILE `s2` SETTINGS INHERIT s1 TO u2\n"
+            == "CREATE SETTINGS PROFILE `s2` SETTINGS INHERIT `s1` TO u2\n"
         )
 
     check()
