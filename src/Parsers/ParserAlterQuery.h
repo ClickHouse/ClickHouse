@@ -28,8 +28,6 @@ namespace DB
   *     [DROP INDEX [IF EXISTS] index_name]
   *     [CLEAR INDEX [IF EXISTS] index_name IN PARTITION partition]
   *     [MATERIALIZE INDEX [IF EXISTS] index_name [IN PARTITION partition]]
-  * ALTER LIVE VIEW [db.name]
-  *     [REFRESH]
   */
 
 class ParserAlterQuery : public IParserBase
