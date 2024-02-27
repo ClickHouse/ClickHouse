@@ -61,10 +61,15 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:
+    bool with_round_bracket;
     ASTAlterQuery::AlterObjectType alter_object;
 
-    ParserAlterCommand(ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE)
-        : alter_object(alter_object_) {}
+
+    explicit ParserAlterCommand(
+        bool with_round_bracket_, ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE)
+        : with_round_bracket(with_round_bracket_), alter_object(alter_object_)
+    {
+    }
 };
 
 

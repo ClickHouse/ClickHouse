@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 
-from distutils.version import StrictVersion
-from pathlib import Path
-from typing import List, Tuple
 import argparse
 import logging
 import subprocess
 import sys
+from distutils.version import StrictVersion
+from pathlib import Path
+from typing import List, Tuple
 
 from build_download_helper import download_builds_filter
 from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import TEMP_PATH, REPORT_PATH
-from report import JobReport, TestResults, TestResult
+from env_helper import REPORT_PATH, TEMP_PATH
+from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 
 IMAGE_UBUNTU = "clickhouse/test-old-ubuntu"
@@ -55,19 +55,19 @@ def process_result(
     glibc_log_path = result_directory / "glibc.log"
     test_results = process_glibc_check(glibc_log_path, max_glibc_version)
 
-    status = "success"
+    status = SUCCESS
     description = "Compatibility check passed"
 
     if check_glibc:
         if len(test_results) > 1 or test_results[0].status != "OK":
-            status = "failure"
+            status = FAILURE
             description = "glibc check failed"
 
-    if status == "success" and check_distributions:
+    if status == SUCCESS and check_distributions:
         for operating_system in ("ubuntu:12.04", "centos:5"):
             test_result = process_os_check(result_directory / operating_system)
             if test_result.status != "OK":
-                status = "failure"
+                status = FAILURE
                 description = f"Old {operating_system} failed"
                 test_results += [test_result]
                 break
@@ -178,14 +178,14 @@ def main():
         )
         run_commands.extend(check_distributions_commands)
 
-    state = "success"
+    state = SUCCESS
     for run_command in run_commands:
         try:
             logging.info("Running command %s", run_command)
             subprocess.check_call(run_command, shell=True)
         except subprocess.CalledProcessError as ex:
             logging.info("Exception calling command %s", ex)
-            state = "failure"
+            state = FAILURE
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
@@ -215,7 +215,7 @@ def main():
         additional_files=additional_logs,
     ).dump()
 
-    if state == "failure":
+    if state == FAILURE:
         sys.exit(1)
 
 

@@ -83,7 +83,7 @@ void AggregateFunctionsSingleValueMin<Data>::addBatchSinglePlace(
         return Parent::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
     }
 
-    constexpr int nan_direction_hint = 1;
+    constexpr int nan_null_direction_hint = 1;
     auto const & column = *columns[0];
     if (if_argument_pos >= 0)
     {
@@ -96,7 +96,7 @@ void AggregateFunctionsSingleValueMin<Data>::addBatchSinglePlace(
 
         for (size_t i = index + 1; i < row_end; i++)
         {
-            if ((if_flags[i] != 0) && (column.compareAt(i, index, column, nan_direction_hint) < 0))
+            if ((if_flags[i] != 0) && (column.compareAt(i, index, column, nan_null_direction_hint) < 0))
                 index = i;
         }
         this->data(place).changeIfLess(column, index, arena);
@@ -112,7 +112,7 @@ void AggregateFunctionsSingleValueMin<Data>::addBatchSinglePlace(
             size_t index = row_begin;
             for (size_t i = index + 1; i < row_end; i++)
             {
-                if (column.compareAt(i, index, column, nan_direction_hint) < 0)
+                if (column.compareAt(i, index, column, nan_null_direction_hint) < 0)
                     index = i;
             }
             this->data(place).changeIfLess(column, index, arena);
@@ -123,7 +123,7 @@ void AggregateFunctionsSingleValueMin<Data>::addBatchSinglePlace(
             constexpr IColumn::PermutationSortStability stability = IColumn::PermutationSortStability::Unstable;
             IColumn::Permutation permutation;
             constexpr UInt64 limit = 1;
-            column.getPermutation(direction, stability, limit, nan_direction_hint, permutation);
+            column.getPermutation(direction, stability, limit, nan_null_direction_hint, permutation);
             this->data(place).changeIfLess(column, permutation[0], arena);
         }
     }
@@ -178,7 +178,7 @@ void AggregateFunctionsSingleValueMin<Data>::addBatchSinglePlaceNotNull(
         return Parent::addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
     }
 
-    constexpr int nan_direction_hint = 1;
+    constexpr int nan_null_direction_hint = 1;
     auto const & column = *columns[0];
     if (if_argument_pos >= 0)
     {
@@ -191,7 +191,7 @@ void AggregateFunctionsSingleValueMin<Data>::addBatchSinglePlaceNotNull(
 
         for (size_t i = index + 1; i < row_end; i++)
         {
-            if ((if_flags[i] != 0) && (null_map[index] == 0) && (column.compareAt(i, index, column, nan_direction_hint) < 0))
+            if ((if_flags[i] != 0) && (null_map[index] == 0) && (column.compareAt(i, index, column, nan_null_direction_hint) < 0))
                 index = i;
         }
         this->data(place).changeIfLess(column, index, arena);
@@ -206,7 +206,7 @@ void AggregateFunctionsSingleValueMin<Data>::addBatchSinglePlaceNotNull(
 
         for (size_t i = index + 1; i < row_end; i++)
         {
-            if ((null_map[i] == 0) && (column.compareAt(i, index, column, nan_direction_hint) < 0))
+            if ((null_map[i] == 0) && (column.compareAt(i, index, column, nan_null_direction_hint) < 0))
                 index = i;
         }
         this->data(place).changeIfLess(column, index, arena);

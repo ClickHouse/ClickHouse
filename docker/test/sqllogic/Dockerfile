@@ -15,7 +15,8 @@ RUN apt-get update --yes \
             unixodbc-dev \
             odbcinst \
             sudo \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 RUN pip3 install \
     numpy \

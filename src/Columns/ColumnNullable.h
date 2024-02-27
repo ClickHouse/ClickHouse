@@ -168,7 +168,7 @@ public:
         getIndicesOfNonDefaultRowsImpl<ColumnNullable>(indices, from, limit);
     }
 
-    ColumnPtr createWithOffsets(const Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const override;
+    ColumnPtr createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
 
     bool isNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return false; }
@@ -232,5 +232,6 @@ private:
 ColumnPtr makeNullable(const ColumnPtr & column);
 ColumnPtr makeNullableSafe(const ColumnPtr & column);
 ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column);
+ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column);
 
 }

@@ -71,8 +71,7 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
             }
             else
             {
-                auto sub_query = std::make_shared<ASTSubquery>();
-                sub_query->children.push_back(*it);
+                auto sub_query = std::make_shared<ASTSubquery>(*it);
                 sub_query->formatImpl(settings, state, frame);
             }
         }
