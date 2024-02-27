@@ -20,6 +20,7 @@
 namespace DB
 {
 
+static Int64 Int64_max_value = std::numeric_limits<Int64>::max();
 static constexpr auto microsecond_multiplier = 1000000;
 static constexpr auto millisecond_multiplier = 1000;
 
@@ -487,7 +488,7 @@ struct ToStartOfInterval<IntervalKind::Nanosecond>
     {
         throwDateTimeIsNotSupported(TO_START_OF_INTERVAL_NAME);
     }
-    static Int64 execute(Int64 t, Int64 nanoseconds, const DateLUTImpl &, Int64 scale_multiplier)
+    static Int64 execute(Int64 t, Int64 nanoseconds, const DateLUTImpl &, Int64 scale_multiplier, Int64 /*origin*/ = 0)
     {
         if (scale_multiplier < 1000000000)
         {
@@ -522,7 +523,7 @@ struct ToStartOfInterval<IntervalKind::Microsecond>
     {
         throwDateTimeIsNotSupported(TO_START_OF_INTERVAL_NAME);
     }
-    static Int64 execute(Int64 t, Int64 microseconds, const DateLUTImpl &, Int64 scale_multiplier)
+    static Int64 execute(Int64 t, Int64 microseconds, const DateLUTImpl &, Int64 scale_multiplier, Int64 /*origin*/ = 0)
     {
         if (scale_multiplier < 1000000)
         {
@@ -565,7 +566,7 @@ struct ToStartOfInterval<IntervalKind::Millisecond>
     {
         throwDateTimeIsNotSupported(TO_START_OF_INTERVAL_NAME);
     }
-    static Int64 execute(Int64 t, Int64 milliseconds, const DateLUTImpl &, Int64 scale_multiplier)
+    static Int64 execute(Int64 t, Int64 milliseconds, const DateLUTImpl &, Int64 scale_multiplier, Int64 /*origin*/ = 0)
     {
         if (scale_multiplier < 1000)
         {
@@ -608,7 +609,7 @@ struct ToStartOfInterval<IntervalKind::Second>
     {
         return time_zone.toStartOfSecondInterval(t, seconds);
     }
-    static Int64 execute(Int64 t, Int64 seconds, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    static Int64 execute(Int64 t, Int64 seconds, const DateLUTImpl & time_zone, Int64 scale_multiplier, Int64 /*origin*/ = 0)
     {
         return time_zone.toStartOfSecondInterval(t / scale_multiplier, seconds);
     }
@@ -629,7 +630,7 @@ struct ToStartOfInterval<IntervalKind::Minute>
     {
         return time_zone.toStartOfMinuteInterval(t, minutes);
     }
-    static Int64 execute(Int64 t, Int64 minutes, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    static Int64 execute(Int64 t, Int64 minutes, const DateLUTImpl & time_zone, Int64 scale_multiplier, Int64 /*origin*/ = 0)
     {
         return time_zone.toStartOfMinuteInterval(t / scale_multiplier, minutes);
     }
@@ -650,7 +651,7 @@ struct ToStartOfInterval<IntervalKind::Hour>
     {
         return time_zone.toStartOfHourInterval(t, hours);
     }
-    static Int64 execute(Int64 t, Int64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    static Int64 execute(Int64 t, Int64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier, Int64 /*origin*/ = 0)
     {
         return time_zone.toStartOfHourInterval(t / scale_multiplier, hours);
     }
@@ -671,7 +672,7 @@ struct ToStartOfInterval<IntervalKind::Day>
     {
         return static_cast<UInt32>(time_zone.toStartOfDayInterval(time_zone.toDayNum(t), days));
     }
-    static Int64 execute(Int64 t, Int64 days, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    static Int64 execute(Int64 t, Int64 days, const DateLUTImpl & time_zone, Int64 scale_multiplier, Int64 /*origin*/ = 0)
     {
         return time_zone.toStartOfDayInterval(time_zone.toDayNum(t / scale_multiplier), days);
     }
@@ -692,9 +693,17 @@ struct ToStartOfInterval<IntervalKind::Week>
     {
         return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t), weeks);
     }
-    static UInt16 execute(Int64 t, Int64 weeks, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    static Int64 execute(Int64 t, Int64 weeks, const DateLUTImpl & time_zone, Int64 scale_multiplier, Int64 origin = 0)
     {
-        return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
+        if (origin == 0)
+            return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
+        else
+        {
+            if (weeks < Int64_max_value / 7) // Check if multiplication doesn't overflow Int64 value
+                return ToStartOfInterval<IntervalKind::Day>::execute(t, weeks * 7, time_zone, scale_multiplier, origin);
+            else
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} * 7 is out of bounds for type Int64", weeks);
+        }
     }
 };
 
@@ -713,9 +722,21 @@ struct ToStartOfInterval<IntervalKind::Month>
     {
         return time_zone.toStartOfMonthInterval(time_zone.toDayNum(t), months);
     }
-    static UInt16 execute(Int64 t, Int64 months, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    static Int64 execute(Int64 t, Int64 months, const DateLUTImpl & time_zone, Int64 scale_multiplier, Int64 origin = 0)
     {
-        return time_zone.toStartOfMonthInterval(time_zone.toDayNum(t / scale_multiplier), months);
+        if (origin == 0)
+            return time_zone.toStartOfMonthInterval(time_zone.toDayNum(t / scale_multiplier), months);
+        else
+        {
+            Int64 days = time_zone.toDayOfMonth(t / scale_multiplier + origin) - time_zone.toDayOfMonth(origin);
+            Int64 months_to_add = time_zone.toMonth(t / scale_multiplier + origin) - time_zone.toMonth(origin);
+            Int64 years = time_zone.toYear(t / scale_multiplier + origin) - time_zone.toYear(origin);
+            months_to_add = days < 0 ? months_to_add - 1 : months_to_add;
+            months_to_add += years * 12;
+            Int64 month_multiplier = (months_to_add / months) * months;
+
+            return time_zone.addMonths(time_zone.toDate(origin), month_multiplier) - time_zone.toDate(origin);
+        }
     }
 };
 
@@ -734,9 +755,17 @@ struct ToStartOfInterval<IntervalKind::Quarter>
     {
         return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t), quarters);
     }
-    static UInt16 execute(Int64 t, Int64 quarters, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    static Int64 execute(Int64 t, Int64 quarters, const DateLUTImpl & time_zone, Int64 scale_multiplier, Int64 origin = 0)
     {
-        return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t / scale_multiplier), quarters);
+        if (origin == 0)
+            return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t / scale_multiplier), quarters);
+        else
+        {
+            if (quarters < Int64_max_value / 3) // Check if multiplication doesn't overflow Int64 value
+               return ToStartOfInterval<IntervalKind::Month>::execute(t, quarters * 3, time_zone, scale_multiplier, origin);
+            else
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} * 3 is out of bounds for type Int64", quarters);
+        }
     }
 };
 
@@ -755,9 +784,17 @@ struct ToStartOfInterval<IntervalKind::Year>
     {
         return time_zone.toStartOfYearInterval(time_zone.toDayNum(t), years);
     }
-    static UInt16 execute(Int64 t, Int64 years, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    static Int64 execute(Int64 t, Int64 years, const DateLUTImpl & time_zone, Int64 scale_multiplier, Int64 origin = 0)
     {
-        return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
+        if (origin == 0)
+            return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
+        else
+        {
+            if (years < Int64_max_value / 12) // Check if multiplication doesn't overflow Int64 value
+                return ToStartOfInterval<IntervalKind::Month>::execute(t, years * 12, time_zone, scale_multiplier, origin);
+            else
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} * 12 is out of bounds for type Int64", years);
+        }
     }
 };
 
