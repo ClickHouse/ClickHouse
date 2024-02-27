@@ -79,7 +79,7 @@ StorageMaterializedView::StorageMaterializedView(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     if (query.sql_security)
-        storage_metadata.setDefiner(query.sql_security->as<ASTSQLSecurity &>());
+        storage_metadata.setSQLSecurity(query.sql_security->as<ASTSQLSecurity &>());
 
     if (storage_metadata.sql_security_type == SQLSecurityType::INVOKER)
         throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "SQL SECURITY INVOKER can't be specified for MATERIALIZED VIEW");

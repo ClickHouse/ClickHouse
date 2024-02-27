@@ -115,8 +115,8 @@ struct StorageInMemoryMetadata
     /// Get copy of current metadata with metadata_version_
     StorageInMemoryMetadata withMetadataVersion(int32_t metadata_version_) const;
 
-    /// Sets a definer for the storage.
-    void setDefiner(const ASTSQLSecurity & sql_security);
+    /// Sets SQL security for the storage.
+    void setSQLSecurity(const ASTSQLSecurity & sql_security);
     UUID getDefinerID(ContextPtr context) const;
 
     /// Returns a copy of the context with the correct user from SQL security options.
