@@ -164,7 +164,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
     const SerializationPtr & serialization, bool is_last_file_column, const String & /*column_name*/)
 {
     const bool at_delimiter = !is_last_file_column && !buf->eof() && *buf->position() == '\t';
-    const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n');
+    const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n' || (format_settings.tsv.crlf_end_of_line_input && *buf->position() == '\r'));
 
     if (format_settings.tsv.empty_as_default && (at_delimiter || at_last_column_line_end))
     {
@@ -229,7 +229,10 @@ bool TabSeparatedFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
 
     try
     {
-        assertChar('\n', *buf);
+        if (!format_settings.tsv.crlf_end_of_line_input)
+            assertChar('\n', *buf);
+        else
+            assertChar('\r', *buf);
     }
     catch (const DB::Exception &)
     {
@@ -242,7 +245,10 @@ bool TabSeparatedFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
         else if (*buf->position() == '\r')
         {
             out << "ERROR: Carriage return found where line feed is expected."
-                   " It's like your file has DOS/Windows style line separators, that is illegal in TabSeparated format.\n";
+                   " It's like your file has DOS/Windows style line separators. \n"
+                   "You must transform your file to Unix format. \n"
+                   "But if you really need carriage return at end of string value of last column, you need to escape it as \\r \n"
+                   "or else enable setting 'input_format_tsv_crlf_end_of_line'";
         }
         else
         {
@@ -357,7 +363,7 @@ void TabSeparatedFormatReader::skipRow()
 
 bool TabSeparatedFormatReader::checkForEndOfRow()
 {
-    return buf->eof() || *buf->position() == '\n';
+    return buf->eof() || *buf->position() == '\n' || (format_settings.tsv.crlf_end_of_line_input && *buf->position() == '\r');
 }
 
 TabSeparatedSchemaReader::TabSeparatedSchemaReader(
