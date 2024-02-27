@@ -704,7 +704,10 @@ struct IdentifierResolveScope
         {
             subquery_depth = parent_scope->subquery_depth;
             context = parent_scope->context;
+            projection_mask_map = parent_scope->projection_mask_map;
         }
+        else
+            projection_mask_map = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>();
 
         if (auto * union_node = scope_node->as<UnionNode>())
         {
@@ -781,6 +784,9 @@ struct IdentifierResolveScope
       * Valid only during analysis construction for single expression.
       */
     QueryTreeNodePtr expression_join_tree_node;
+
+    /// Node hash to mask id map
+    std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
 
     [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const
     {
@@ -5120,9 +5126,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         allow_table_expressions /*allow_table_expression*/,
         {secret_arguments.start, secret_arguments.count});
 
-    for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
-        arguments_projection_names[n] = "[HIDDEN]";
-
     auto & function_node = *function_node_ptr;
 
     /// Replace right IN function argument if it is table or table function with subquery that read ordinary columns
@@ -6122,8 +6125,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node
     {
         auto node_to_resolve = node;
         auto expression_node_projection_names = resolveExpressionNode(node_to_resolve, scope, allow_lambda_expression, allow_table_expression);
-        if (n >= secrets.first && n < secrets.first + secrets.second)
-            node_to_resolve->setMasked();
 
         size_t expected_projection_names_size = 1;
         if (auto * expression_list = node_to_resolve->as<ListNode>())
@@ -6134,6 +6135,16 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node
         }
         else
         {
+            if (n >= secrets.first && n < secrets.first + secrets.second && !scope.context->getSettingsRef().format_display_secrets_in_show_and_select)
+            {
+                if (auto * constant = node_to_resolve->as<ConstantNode>())
+                {
+                    auto [mask, _] = scope.projection_mask_map->insert( {node->getTreeHash(), scope.projection_mask_map->size() + 1} );
+
+                    constant->setMaskId(mask->second);
+                    expression_node_projection_names[0] = "[HIDDEN id: " + std::to_string(mask->second) + "]";
+                }
+            }
             result_nodes.push_back(std::move(node_to_resolve));
         }
 

@@ -45,14 +45,12 @@ const char * toString(QueryTreeNodeType type)
 }
 
 IQueryTreeNode::IQueryTreeNode(size_t children_size, size_t weak_pointers_size)
-    : is_masked(false)
 {
     children.resize(children_size);
     weak_pointers.resize(weak_pointers_size);
 }
 
 IQueryTreeNode::IQueryTreeNode(size_t children_size)
-    : is_masked(false)
 {
     children.resize(children_size);
 }
