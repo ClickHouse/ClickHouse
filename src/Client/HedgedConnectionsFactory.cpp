@@ -86,7 +86,7 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
             if (max_parallel_replicas == 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of the setting max_parallel_replicas must be greater than 0");
 
-            max_entries = max_parallel_replicas;
+            max_entries = std::min(max_parallel_replicas, shuffled_pools.size());
             break;
         }
     }
