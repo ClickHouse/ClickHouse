@@ -941,7 +941,6 @@ class IColumn;
     MAKE_OBSOLETE(M, Bool, allow_experimental_undrop_table_query, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_s3queue, true) \
     MAKE_OBSOLETE(M, Bool, query_plan_optimize_primary_key, true) \
-    MAKE_OBSOLETE(M, Bool, enable_order_by_all, true) \
 
     /** The section above is for obsolete settings. Do not add anything there. */
 
