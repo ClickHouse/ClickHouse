@@ -119,8 +119,7 @@ public:
 
         const ColumnArray * decompose_data_array = checkAndGetColumn<ColumnArray>(root_decompose_data);
         const IColumn::Offsets & nested_decompose_offsets = decompose_data_array->getOffsets();
-        const IColumn & src_data = decompose_data_array->getData();
-        const ColumnVector<Float32> * src_data_concrete = checkAndGetColumn<ColumnVector<Float32>>(src_data);
+        const ColumnVector<Float32> * src_data_concrete = checkAndGetColumn<ColumnVector<Float32>>(decompose_data_array->getData());
         const PaddedPODArray<Float32> & decompose_data = src_data_concrete->getData();
 
         ColumnArray::Offset prev_decompose_offset = 0;
