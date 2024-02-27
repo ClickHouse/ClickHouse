@@ -218,7 +218,7 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
             name,
             getAzureBlobContainerClient(config, config_prefix),
             getAzureBlobStorageSettings(config, config_prefix, context),
-            endpoint.prefix.empty() ? endpoint.container : endpoint.container_name + "/" + endpoint.prefix);
+            endpoint.prefix.empty() ? endpoint.container_name : endpoint.container_name + "/" + endpoint.prefix);
 
     });
 }
