@@ -453,7 +453,9 @@ def test_show_profiles():
     assert instance.query("SHOW SETTINGS PROFILES") == "default\nreadonly\nxyz\n"
     assert instance.query("SHOW PROFILES") == "default\nreadonly\nxyz\n"
 
-    assert instance.query("SHOW CREATE PROFILE xyz") == "CREATE SETTINGS PROFILE `xyz`\n"
+    assert (
+        instance.query("SHOW CREATE PROFILE xyz") == "CREATE SETTINGS PROFILE `xyz`\n"
+    )
 
     query_possible_response = [
         "CREATE SETTINGS PROFILE default\n",
