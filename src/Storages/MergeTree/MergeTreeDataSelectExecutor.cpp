@@ -92,16 +92,10 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 
     for (const auto & part : parts)
     {
-        MarkRanges ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, settings, log);
-
-        /** In order to get a lower bound on the number of rows that match the condition on PK,
-          *  consider only guaranteed full marks.
-          * That is, do not take into account the first and last marks, which may be incomplete.
-          */
-        for (const auto & range : ranges)
-            if (range.end - range.begin > 2)
-                rows_count += part->index_granularity.getRowsCountInRange({range.begin + 1, range.end - 1});
-
+        MarkRanges exact_ranges;
+        markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, &exact_ranges, settings, log);
+        for (const auto & range : exact_ranges)
+            rows_count += part->index_granularity.getRowsCountInRange(range);
     }
 
     return rows_count;
@@ -593,7 +587,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     LoggerPtr log,
     size_t num_streams,
     ReadFromMergeTree::IndexStats & index_stats,
-    bool use_skip_indexes)
+    bool use_skip_indexes,
+    bool find_exact_ranges)
 {
     chassert(alter_conversions.empty() || parts.size() == alter_conversions.size());
 
@@ -663,9 +658,20 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             size_t total_marks_count = part->index_granularity.getMarksCountWithoutFinal();
 
             if (metadata_snapshot->hasPrimaryKey() || part_offset_condition)
-                ranges.ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, part_offset_condition, settings, log);
+            {
+                ranges.ranges = markRangesFromPKRange(
+                    part,
+                    metadata_snapshot,
+                    key_condition,
+                    part_offset_condition,
+                    find_exact_ranges ? &ranges.exact_ranges : nullptr,
+                    settings,
+                    log);
+            }
             else if (total_marks_count)
+            {
                 ranges.ranges = MarkRanges{{MarkRange{0, total_marks_count}}};
+            }
 
             sum_marks_pk.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
 
@@ -957,7 +963,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     /// 1. estimate the number of rows to read; 2. projection reading, which doesn't have alter_conversions.
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
-        /*alter_conversions=*/ {},
+        /*alter_conversions=*/{},
         metadata_snapshot,
         query_info,
         context,
@@ -967,7 +973,8 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         real_column_names,
         sample_factor_column_queried,
         log,
-        indexes);
+        indexes,
+        /*find_exact_ranges*/false);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
@@ -1069,11 +1076,13 @@ size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
 
 /// Calculates a set of mark ranges, that could possibly contain keys, required by condition.
 /// In other words, it removes subranges from whole range, that definitely could not contain required keys.
+/// If @exact_ranges is not null, fill it with ranges containing marks of fully matched records.
 MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const MergeTreeData::DataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,
     const KeyCondition & key_condition,
     const std::optional<KeyCondition> & part_offset_condition,
+    MarkRanges * exact_ranges,
     const Settings & settings,
     LoggerPtr log)
 {
@@ -1086,8 +1095,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
     bool has_final_mark = part->index_granularity.hasFinalMark();
 
+    bool key_condition_useful = !key_condition.alwaysUnknownOrTrue();
+    bool part_offset_condition_useful = part_offset_condition && !part_offset_condition->alwaysUnknownOrTrue();
+
     /// If index is not used.
-    if (key_condition.alwaysUnknownOrTrue() && (!part_offset_condition || part_offset_condition->alwaysUnknownOrTrue()))
+    if (!key_condition_useful && !part_offset_condition_useful)
     {
         if (has_final_mark)
             res.push_back(MarkRange(0, marks_count - 1));
@@ -1143,12 +1155,15 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     std::vector<FieldRef> part_offset_left(2);
     std::vector<FieldRef> part_offset_right(2);
 
-    auto may_be_true_in_range = [&](MarkRange & range)
+    auto check_in_range = [&](const MarkRange & range, bool check_can_be_false_for_single_mark = false)
     {
-        bool key_condition_maybe_true = true;
-        if (!key_condition.alwaysUnknownOrTrue())
+        BoolMask initial_mask
+            = range.end == range.begin + 1 && check_can_be_false_for_single_mark ? BoolMask() : BoolMask::consider_only_can_be_true;
+
+        BoolMask key_condition_check_result;
+        if (key_condition_useful)
         {
-            if (range.end == marks_count && !has_final_mark)
+            if (range.end == marks_count)
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
@@ -1158,28 +1173,25 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             }
             else
             {
-                if (has_final_mark && range.end == marks_count)
-                    range.end -= 1; /// Remove final empty mark. It's useful only for primary key condition.
-
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
                     create_field_ref(range.begin, i, index_left[i]);
                     create_field_ref(range.end, i, index_right[i]);
                 }
             }
-            key_condition_maybe_true = key_condition.mayBeTrueInRange(used_key_size, index_left.data(), index_right.data(), key_types);
+            key_condition_check_result
+                = key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask);
         }
 
-        bool part_offset_condition_maybe_true = true;
-
-        if (part_offset_condition && !part_offset_condition->alwaysUnknownOrTrue())
+        BoolMask part_offset_condition_check_result;
+        if (part_offset_condition_useful)
         {
             auto begin = part->index_granularity.getMarkStartingRow(range.begin);
             auto end = part->index_granularity.getMarkStartingRow(range.end) - 1;
             if (begin > end)
             {
                 /// Empty mark (final mark)
-                part_offset_condition_maybe_true = false;
+                part_offset_condition_check_result = {false, true};
             }
             else
             {
@@ -1188,16 +1200,23 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 part_offset_left[1] = part->name;
                 part_offset_right[1] = part->name;
 
-                part_offset_condition_maybe_true
-                    = part_offset_condition->mayBeTrueInRange(2, part_offset_left.data(), part_offset_right.data(), part_offset_types);
+                part_offset_condition_check_result = part_offset_condition->checkInRange(
+                    2, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
             }
         }
-        return key_condition_maybe_true && part_offset_condition_maybe_true;
+
+        if (key_condition_useful && part_offset_condition_useful)
+            return key_condition_check_result & part_offset_condition_check_result;
+        else if (key_condition_useful)
+            return key_condition_check_result;
+        else if (part_offset_condition_useful)
+            return part_offset_condition_check_result;
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Condition is useless but check_in_range still gets called. It is a bug");
     };
 
-    bool key_condition_exact_range = key_condition.alwaysUnknownOrTrue() || key_condition.matchesExactContinuousRange();
-    bool part_offset_condition_exact_range
-        = !part_offset_condition || part_offset_condition->alwaysUnknownOrTrue() || part_offset_condition->matchesExactContinuousRange();
+    bool key_condition_exact_range = !key_condition_useful || key_condition.matchesExactContinuousRange();
+    bool part_offset_condition_exact_range = !part_offset_condition_useful || part_offset_condition->matchesExactContinuousRange();
     const String & part_name = part->isProjectionPart() ? fmt::format("{}.{}", part->name, part->getParentPart()->name) : part->name;
     if (!key_condition_exact_range || !part_offset_condition_exact_range)
     {
@@ -1217,7 +1236,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         * If fits, split it into smaller ones and put them on the stack. If not, discard it.
         * If the segment is already of one mark length, add it to response and discard it.
         */
-        std::vector<MarkRange> ranges_stack = { {0, marks_count} };
+        std::vector<MarkRange> ranges_stack = { {0, marks_count - (has_final_mark ? 1 : 0)} };
 
         size_t steps = 0;
 
@@ -1228,7 +1247,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
             steps++;
 
-            if (!may_be_true_in_range(range))
+            auto result = check_in_range(range, exact_ranges);
+            if (!result.can_be_true)
                 continue;
 
             if (range.end == range.begin + 1)
@@ -1238,6 +1258,14 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     res.push_back(range);
                 else
                     res.back().end = range.end;
+
+                if (exact_ranges && !result.can_be_false)
+                {
+                    if (exact_ranges->empty() || range.begin - exact_ranges->back().end > min_marks_for_seek)
+                        exact_ranges->push_back(range);
+                    else
+                        exact_ranges->back().end = range.end;
+                }
             }
             else
             {
@@ -1252,7 +1280,12 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             }
         }
 
-        LOG_TRACE(log, "Used generic exclusion search over index for part {} with {} steps", part_name, steps);
+        LOG_TRACE(
+            log,
+            "Used generic exclusion search {}over index for part {} with {} steps",
+            exact_ranges ? "with exact ranges " : "",
+            part_name,
+            steps);
     }
     else
     {
@@ -1266,40 +1299,80 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         MarkRange result_range;
 
+        size_t last_mark = marks_count - (has_final_mark ? 1 : 0);
         size_t searched_left = 0;
-        size_t searched_right = marks_count;
+        size_t searched_right = last_mark;
 
+        bool check_left = false;
+        bool check_right = false;
         while (searched_left + 1 < searched_right)
         {
             const size_t middle = (searched_left + searched_right) / 2;
             MarkRange range(0, middle);
-            if (may_be_true_in_range(range))
+            if (check_in_range(range).can_be_true)
                 searched_right = middle;
             else
                 searched_left = middle;
             ++steps;
+            check_left = true;
         }
         result_range.begin = searched_left;
         LOG_TRACE(log, "Found (LEFT) boundary mark: {}", searched_left);
 
-        searched_right = marks_count;
+        searched_right = last_mark;
         while (searched_left + 1 < searched_right)
         {
             const size_t middle = (searched_left + searched_right) / 2;
-            MarkRange range(middle, marks_count);
-            if (may_be_true_in_range(range))
+            MarkRange range(middle, last_mark);
+            if (check_in_range(range).can_be_true)
                 searched_left = middle;
             else
                 searched_right = middle;
             ++steps;
+            check_right = true;
         }
         result_range.end = searched_right;
         LOG_TRACE(log, "Found (RIGHT) boundary mark: {}", searched_right);
 
-        if (result_range.begin < result_range.end && may_be_true_in_range(result_range))
-            res.emplace_back(std::move(result_range));
+        if (result_range.begin < result_range.end)
+        {
+            if (exact_ranges)
+            {
+                if (result_range.begin + 1 == result_range.end)
+                {
+                    auto check_result = check_in_range(result_range, exact_ranges);
+                    if (check_result.can_be_true)
+                    {
+                        if (!check_result.can_be_false)
+                            exact_ranges->emplace_back(result_range);
+                        res.emplace_back(std::move(result_range));
+                    }
+                }
+                else
+                {
+                    /// Candidate range with size > 1 is already can_be_true
+                    auto result_exact_range = result_range;
+                    if (check_in_range({result_range.begin, result_range.begin + 1}, exact_ranges).can_be_false)
+                        ++result_exact_range.begin;
+                    if (check_in_range({result_range.end - 1, result_range.end}, exact_ranges).can_be_false)
+                        --result_exact_range.end;
 
-        LOG_TRACE(log, "Found {} range in {} steps", res.empty() ? "empty" : "continuous", steps);
+                    if (result_exact_range.begin < result_exact_range.end)
+                        exact_ranges->emplace_back(std::move(result_exact_range));
+
+                    res.emplace_back(std::move(result_range));
+                }
+            }
+            else
+            {
+                /// Candidate range with both ends checked is already can_be_true
+                if ((check_left && check_right) || check_in_range(result_range).can_be_true)
+                    res.emplace_back(std::move(result_range));
+            }
+        }
+
+        LOG_TRACE(
+            log, "Found {} range {}in {} steps", res.empty() ? "empty" : "continuous", exact_ranges ? "with exact range " : "", steps);
     }
 
     return res;

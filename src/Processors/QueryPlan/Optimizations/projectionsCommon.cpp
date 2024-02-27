@@ -25,8 +25,8 @@ namespace QueryPlanOptimizations
 
 bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
 {
-    /// Probably some projection already was applied.
-    if (reading->hasAnalyzedResult())
+    /// Some projection already was applied.
+    if (reading->hasProjection())
         return false;
 
     if (reading->isQueryWithFinal())

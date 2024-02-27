@@ -167,11 +167,11 @@ public:
         const Names & real_column_names,
         bool sample_factor_column_queried,
         LoggerPtr log,
-        std::optional<Indexes> & indexes);
+        std::optional<Indexes> & indexes,
+        bool find_exact_ranges);
 
     AnalysisResultPtr selectRangesToRead(
-        MergeTreeData::DataPartsVector parts,
-        std::vector<AlterConversionsPtr> alter_conversions) const;
+        MergeTreeData::DataPartsVector parts, std::vector<AlterConversionsPtr> alter_conversions, bool find_exact_ranges = false) const;
 
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
 
@@ -186,8 +186,12 @@ public:
     bool requestOutputEachPartitionThroughSeparatePort();
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
+    AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     bool hasAnalyzedResult() const { return analyzed_result_ptr != nullptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
+
+    bool hasProjection() const { return has_projection; }
+    void setProjection() { has_projection = true; }
 
     const MergeTreeData::DataPartsVector & getParts() const { return prepared_parts; }
     const std::vector<AlterConversionsPtr> & getAlterConvertionsForParts() const { return alter_conversions_for_parts; }
@@ -200,20 +204,6 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
 private:
-    static AnalysisResultPtr selectRangesToReadImpl(
-        MergeTreeData::DataPartsVector parts,
-        std::vector<AlterConversionsPtr> alter_conversions,
-        const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo & query_info,
-        ContextPtr context,
-        size_t num_streams,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
-        const MergeTreeData & data,
-        const Names & real_column_names,
-        bool sample_factor_column_queried,
-        LoggerPtr log,
-        std::optional<Indexes> & indexes);
-
     int getSortDirection() const
     {
         if (query_info.input_order_info)
@@ -281,6 +271,7 @@ private:
 
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
     AnalysisResultPtr analyzed_result_ptr;
+    bool has_projection = false; /// Make sure only one projection is used.
 
     bool is_parallel_reading_from_replicas;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;

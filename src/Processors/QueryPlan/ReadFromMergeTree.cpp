@@ -1289,8 +1289,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 }
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
-    MergeTreeData::DataPartsVector parts,
-    std::vector<AlterConversionsPtr> alter_conversions) const
+    MergeTreeData::DataPartsVector parts, std::vector<AlterConversionsPtr> alter_conversions, bool find_exact_ranges) const
 {
     return selectRangesToRead(
         std::move(parts),
@@ -1304,7 +1303,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         real_column_names,
         sample_factor_column_queried,
         log,
-        indexes);
+        indexes,
+        find_exact_ranges);
 }
 
 static void buildIndexes(
@@ -1472,36 +1472,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const Names & real_column_names,
     bool sample_factor_column_queried,
     LoggerPtr log,
-    std::optional<Indexes> & indexes)
-{
-    return selectRangesToReadImpl(
-        std::move(parts),
-        std::move(alter_conversions),
-        metadata_snapshot,
-        query_info_,
-        context_,
-        num_streams,
-        max_block_numbers_to_read,
-        data,
-        real_column_names,
-        sample_factor_column_queried,
-        log,
-        indexes);
-}
-
-ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
-    MergeTreeData::DataPartsVector parts,
-    std::vector<AlterConversionsPtr> alter_conversions,
-    const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info_,
-    ContextPtr context_,
-    size_t num_streams,
-    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
-    const MergeTreeData & data,
-    const Names & real_column_names,
-    bool sample_factor_column_queried,
-    LoggerPtr log,
-    std::optional<Indexes> & indexes)
+    std::optional<Indexes> & indexes,
+    bool find_exact_ranges)
 {
     AnalysisResult result;
     const auto & settings = context_->getSettingsRef();
@@ -1590,7 +1562,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
             log,
             num_streams,
             result.index_stats,
-            indexes->use_skip_indexes);
+            indexes->use_skip_indexes,
+            find_exact_ranges);
     }
 
     size_t sum_marks_pk = total_marks_pk;
