@@ -137,10 +137,18 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
 
 static std::atomic_flag fatal_error_printed;
 
+/// Special handling for a function isPointerReadable.
+thread_local bool checking_pointer = false;
+thread_local jmp_buf signal_jump_buffer;
+
 /** Handler for "fault" or diagnostic signals. Send data about fault to separate thread to write into log.
   */
 static void signalHandler(int sig, siginfo_t * info, void * context)
 {
+    /// Special handling for a function isPointerReadable.
+    if (checking_pointer && sig == SIGSEGV)
+        siglongjmp(signal_jump_buffer, 1);
+
     DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
@@ -180,6 +188,26 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     }
 
     errno = saved_errno;
+}
+
+/// This function can be used from other translation units,
+/// For example, from libunwind while parsing debug info, which is unsafe.
+/// Note: we are checking only the first byte, which is ok for aligned words.
+extern "C" bool isPointerReadable(const void * ptr)
+{
+    checking_pointer = true;
+    if (0 == sigsetjmp(signal_jump_buffer, 1))
+    {
+        char res;
+        memcpy(&res, ptr, 1);
+        __asm__ __volatile__("" :: "r"(res) : "memory");
+        return true;
+    }
+    else
+    {
+        checking_pointer = false;
+        return false;
+    }
 }
 
 static bool getenvBool(const char * name)
