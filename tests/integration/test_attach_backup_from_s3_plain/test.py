@@ -20,27 +20,57 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+
 s3_disk_def = """disk(type=s3_plain,
     endpoint='http://minio1:9001/root/data/disks/disk_s3_plain/{}/',
     access_key_id='minio',
     secret_access_key='minio123');"""
 
-local_disk_def = "disk(type=object_storage, object_storage_type = 'local_blob_storage', metadata_type = 'plain', path = '/local_plain/{}/')"
+local_disk_def = (
+    "disk(type=object_storage, object_storage_type = 'local', metadata_type = 'plain', path = '/local_plain/{}/'"
+)
 
 @pytest.mark.parametrize(
     "table_name,backup_name,storage_policy,disk_def,min_bytes_for_wide_part",
     [
         pytest.param(
-            "compact", "backup_compact_s3", "backup_disk_s3_plain", s3_disk_def, int(1e9), id="compact"
+            "compact",
+            "backup_compact_s3",
+            "backup_disk_s3_plain",
+            s3_disk_def,
+            int(1e9),
+            id="compact",
         ),
-        pytest.param("wide", "backup_wide_s3", "backup_disk_s3_plain", s3_disk_def, int(0), id="wide"),
         pytest.param(
-            "compact", "backup_compact_local", "backup_disk_local_plain", local_disk_def, int(1e9), id="compact"
+            "wide",
+            "backup_wide_s3",
+            "backup_disk_s3_plain",
+            s3_disk_def,
+            int(0),
+            id="wide",
         ),
-        pytest.param("wide", "backup_wide_local", "backup_disk_local_plain", local_disk_def, int(0), id="wide"),
+        pytest.param(
+            "compact",
+            "backup_compact_local",
+            "backup_disk_local_plain",
+            local_disk_def,
+            int(1e9),
+            id="compact",
+        ),
+        pytest.param(
+            "wide",
+            "backup_wide_local",
+            "backup_disk_local_plain",
+            local_disk_def,
+            int(0),
+            id="wide",
+        ),
     ],
 )
-def test_attach_part(table_name, backup_name, storage_policy, disk_def, min_bytes_for_wide_part):
+
+def test_attach_part(
+    table_name, backup_name, storage_policy, disk_def, min_bytes_for_wide_part
+):
     disk_definition = disk_def.format(backup_name)
     node.query(
         f"""
