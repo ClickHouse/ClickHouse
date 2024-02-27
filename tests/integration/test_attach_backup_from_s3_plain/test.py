@@ -26,9 +26,8 @@ s3_disk_def = """disk(type=s3_plain,
     access_key_id='minio',
     secret_access_key='minio123');"""
 
-local_disk_def = (
-    "disk(type=object_storage, object_storage_type = 'local', metadata_type = 'plain', path = '/local_plain/{}/'"
-)
+local_disk_def = "disk(type=object_storage, object_storage_type = 'local_blob_storage', metadata_type = 'plain', path = '/local_plain/{}/');"
+
 
 @pytest.mark.parametrize(
     "table_name,backup_name,storage_policy,disk_def,min_bytes_for_wide_part",
@@ -67,7 +66,6 @@ local_disk_def = (
         ),
     ],
 )
-
 def test_attach_part(
     table_name, backup_name, storage_policy, disk_def, min_bytes_for_wide_part
 ):
