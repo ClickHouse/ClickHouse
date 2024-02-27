@@ -344,7 +344,7 @@ ReturnType  deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr
     /// Use PeekableReadBuffer to make a checkpoint before checking null
     /// representation and rollback if check was failed.
     PeekableReadBuffer peekable_buf(istr, true);
-    auto check_for_null = [&null_representation, settings](ReadBuffer & buf_)
+    auto check_for_null = [&null_representation, &settings](ReadBuffer & buf_)
     {
         auto & buf = assert_cast<PeekableReadBuffer &>(buf_);
         buf.setCheckpoint();
