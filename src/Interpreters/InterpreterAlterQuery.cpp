@@ -60,8 +60,7 @@ BlockIO InterpreterAlterQuery::execute()
     {
         return executeToDatabase(alter);
     }
-    else if (alter.alter_object == ASTAlterQuery::AlterObjectType::TABLE
-            || alter.alter_object == ASTAlterQuery::AlterObjectType::LIVE_VIEW)
+    else if (alter.alter_object == ASTAlterQuery::AlterObjectType::TABLE)
     {
         return executeToTable(alter);
     }
@@ -465,11 +464,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::MODIFY_REFRESH:
         {
             required_access.emplace_back(AccessType::ALTER_VIEW_MODIFY_REFRESH, database, table);
-            break;
-        }
-        case ASTAlterCommand::LIVE_VIEW_REFRESH:
-        {
-            required_access.emplace_back(AccessType::ALTER_VIEW_REFRESH, database, table);
             break;
         }
         case ASTAlterCommand::RENAME_COLUMN:
