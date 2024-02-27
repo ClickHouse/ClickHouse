@@ -1100,7 +1100,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (!create.sql_security && !getContext()->getServerSettings().ignore_empty_sql_security_in_create_view_query)
         create.sql_security = std::make_shared<ASTSQLSecurity>();
-    
+
     if (create.sql_security)
         processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.attach, create.is_materialized_view);
 
