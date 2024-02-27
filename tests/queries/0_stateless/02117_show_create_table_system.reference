@@ -686,6 +686,9 @@ CREATE TABLE system.projection_parts
     `rows_where_ttl_info.expression` Array(String),
     `rows_where_ttl_info.min` Array(DateTime),
     `rows_where_ttl_info.max` Array(DateTime),
+    `is_broken` UInt8,
+    `exception_code` Int32,
+    `exception` String,
     `bytes` UInt64 ALIAS bytes_on_disk,
     `marks_size` UInt64 ALIAS marks_bytes,
     `part_name` String ALIAS name
