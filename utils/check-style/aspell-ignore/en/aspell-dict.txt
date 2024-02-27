@@ -190,6 +190,7 @@ CustomSeparatedWithNamesAndTypes
 DBAs
 DBMSs
 DBeaver
+DD
 DDLWORKER
 DDLWorker
 DDLWorkerThreads
@@ -215,7 +216,6 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
-DD
 Decrypted
 Deduplicate
 Deduplication
@@ -772,6 +772,7 @@ ReferenceKeyed
 Refreshable
 RegexpTree
 RemoteRead
+SharedMergeTree
 ReplacingMergeTree
 ReplicasMaxAbsoluteDelay
 ReplicasMaxInsertsInQueue
@@ -840,6 +841,7 @@ Sematext
 SendExternalTables
 SendScalars
 ShareAlike
+Shortkeys
 SimHash
 Simhash
 SimpleAggregateFunction
@@ -952,6 +954,7 @@ TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
 Transactional
+Tukey
 TwoColumnList
 UBSan
 UDFs
@@ -989,6 +992,7 @@ VIEWs
 Vadim
 Valgrind
 Vectorized
+VersionBadge
 VersionInteger
 VersionedCollapsingMergeTree
 VideoContainer
@@ -1263,6 +1267,8 @@ centroid
 certificateFile
 cetera
 cfg
+cgroup
+cgroups
 chadmin
 changelog
 changelogs
@@ -1324,6 +1330,7 @@ cosineDistance
 countDigits
 countEqual
 countMatches
+countMatchesCaseInsensitive
 countSubstrings
 covarPop
 covarSamp
@@ -1348,6 +1355,7 @@ cryptographic
 csv
 csvwithnames
 csvwithnamesandtypes
+ctukey
 curdate
 currentDatabase
 currentProfiles
@@ -1686,6 +1694,7 @@ hudi
 hyperscan
 hypot
 hyvor
+iTerm
 icosahedron
 icudata
 idempotency
@@ -2130,6 +2139,7 @@ py
 qryn
 quantile
 quantileBFloat
+quantileDD
 quantileDeterministic
 quantileExact
 quantileExactExclusive
@@ -2144,6 +2154,7 @@ quantileTDigestWeighted
 quantileTiming
 quantileTimingWeighted
 quantilebfloat
+quantileddsketch
 quantiledeterministic
 quantileexact
 quantileexactweighted
@@ -2156,8 +2167,6 @@ quantiletdigest
 quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
-quantileddsketch
-quantileDD
 quartile
 queryID
 queryString
@@ -2291,6 +2300,7 @@ sequenceCount
 sequenceMatch
 sequenceNextNode
 seriesDecomposeSTL
+seriesOutliersDetectTukey
 seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
@@ -2304,6 +2314,7 @@ shardNum
 sharded
 sharding
 shortcircuit
+shortkeys
 shoutout
 simdjson
 simpleLinearRegression
@@ -2583,6 +2594,7 @@ tryPunycodeDecode
 tskv
 tsv
 tui
+tukey
 tumbleEnd
 tumbleStart
 tupleConcat
@@ -2726,6 +2738,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-iTerm
-shortkeys
-Shortkeys

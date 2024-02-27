@@ -1,8 +1,6 @@
 #include <chrono>
 #include <gtest/gtest.h>
-#include "Common/ZooKeeper/IKeeper.h"
 
-#include "Core/Defines.h"
 #include "config.h"
 
 #if USE_NURAFT
@@ -22,7 +20,7 @@
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/SummingStateMachine.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
-#include <Coordination/pathUtils.h>
+#include <Coordination/KeeperCommon.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <libnuraft/nuraft.hxx>
@@ -65,7 +63,7 @@ struct CompressionParam
 class CoordinationTest : public ::testing::TestWithParam<CompressionParam>
 {
 protected:
-    DB::KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true);
+    DB::KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true, std::make_shared<DB::CoordinationSettings>());
     LoggerPtr log{getLogger("CoordinationTest")};
 
     void SetUp() override
@@ -558,6 +556,7 @@ TEST_P(CoordinationTest, ChangelogTestCompaction)
 
     EXPECT_EQ(changelog.size(), 3);
 
+    keeper_context->setLastCommitIndex(2);
     changelog.compact(2);
 
     EXPECT_EQ(changelog.size(), 1);
@@ -582,6 +581,7 @@ TEST_P(CoordinationTest, ChangelogTestCompaction)
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
 
+    keeper_context->setLastCommitIndex(6);
     changelog.compact(6);
     std::this_thread::sleep_for(std::chrono::microseconds(1000));
 
@@ -1508,7 +1508,7 @@ void addNode(DB::KeeperStorage & storage, const std::string & path, const std::s
     using Node = DB::KeeperStorage::Node;
     Node node{};
     node.setData(data);
-    node.stat.ephemeralOwner = ephemeral_owner;
+    node.setEphemeralOwner(ephemeral_owner);
     storage.container.insertOrReplace(path, node);
     auto child_it = storage.container.find(path);
     auto child_path = DB::getBaseNodeName(child_it->key);
@@ -1517,7 +1517,7 @@ void addNode(DB::KeeperStorage & storage, const std::string & path, const std::s
         [&](auto & parent)
         {
             parent.addChild(child_path);
-            parent.stat.numChildren++;
+            parent.increaseNumChildren();
         });
 }
 
@@ -1530,12 +1530,12 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
     DB::KeeperSnapshotManager manager(3, keeper_context, params.enable_compression);
 
     DB::KeeperStorage storage(500, "", keeper_context);
-    addNode(storage, "/hello", "world", 1);
-    addNode(storage, "/hello/somepath", "somedata", 3);
+    addNode(storage, "/hello1", "world", 1);
+    addNode(storage, "/hello2", "somedata", 3);
     storage.session_id_counter = 5;
     storage.zxid = 2;
-    storage.ephemerals[3] = {"/hello"};
-    storage.ephemerals[1] = {"/hello/somepath"};
+    storage.ephemerals[3] = {"/hello2"};
+    storage.ephemerals[1] = {"/hello1"};
     storage.getSessionID(130);
     storage.getSessionID(130);
 
@@ -1556,13 +1556,13 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
     auto [restored_storage, snapshot_meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 6);
-    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 2);
-    EXPECT_EQ(restored_storage->container.getValue("/hello").getChildren().size(), 1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getChildren().size(), 0);
+    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 3);
+    EXPECT_EQ(restored_storage->container.getValue("/hello1").getChildren().size(), 0);
+    EXPECT_EQ(restored_storage->container.getValue("/hello2").getChildren().size(), 0);
 
     EXPECT_EQ(restored_storage->container.getValue("/").getData(), "");
-    EXPECT_EQ(restored_storage->container.getValue("/hello").getData(), "world");
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getData(), "somedata");
+    EXPECT_EQ(restored_storage->container.getValue("/hello1").getData(), "world");
+    EXPECT_EQ(restored_storage->container.getValue("/hello2").getData(), "somedata");
     EXPECT_EQ(restored_storage->session_id_counter, 7);
     EXPECT_EQ(restored_storage->zxid, 2);
     EXPECT_EQ(restored_storage->ephemerals.size(), 2);
@@ -1758,22 +1758,30 @@ getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Co
 }
 
 void testLogAndStateMachine(
-    Coordination::CoordinationSettingsPtr settings,
+    DB::CoordinationSettingsPtr settings,
     uint64_t total_logs,
-    bool enable_compression,
-    Coordination::KeeperContextPtr keeper_context)
+    bool enable_compression)
 {
     using namespace Coordination;
     using namespace DB;
 
     ChangelogDirTest snapshots("./snapshots");
-    keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("SnapshotDisk", "./snapshots"));
     ChangelogDirTest logs("./logs");
-    keeper_context->setLogDisk(std::make_shared<DiskLocal>("LogDisk", "./logs"));
+
+    auto get_keeper_context = [&]
+    {
+        auto local_keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+        local_keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("SnapshotDisk", "./snapshots"));
+        local_keeper_context->setLogDisk(std::make_shared<DiskLocal>("LogDisk", "./logs"));
+        return local_keeper_context;
+    };
 
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
+
+    auto keeper_context = get_keeper_context();
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, keeper_context, nullptr);
+
     state_machine->init();
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{
@@ -1811,12 +1819,14 @@ void testLogAndStateMachine(
 
             snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
         }
+
         if (snapshot_created && changelog.size() > settings->reserved_log_items)
             changelog.compact(i - settings->reserved_log_items);
     }
 
     SnapshotsQueue snapshots_queue1{1};
-    auto restore_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue1, settings, keeper_context, nullptr);
+    keeper_context = get_keeper_context();
+    auto restore_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue1, keeper_context, nullptr);
     restore_machine->init();
     EXPECT_EQ(restore_machine->last_commit_index(), total_logs - total_logs % settings->snapshot_distance);
 
@@ -1863,63 +1873,64 @@ TEST_P(CoordinationTest, TestStateMachineAndLogStore)
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 10;
         settings->rotate_log_storage_interval = 10;
-        testLogAndStateMachine(settings, 37, params.enable_compression, keeper_context);
+
+        testLogAndStateMachine(settings, 37, params.enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 10;
         settings->rotate_log_storage_interval = 10;
-        testLogAndStateMachine(settings, 11, params.enable_compression, keeper_context);
+        testLogAndStateMachine(settings, 11, params.enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 10;
         settings->rotate_log_storage_interval = 10;
-        testLogAndStateMachine(settings, 40, params.enable_compression, keeper_context);
+        testLogAndStateMachine(settings, 40, params.enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 20;
         settings->rotate_log_storage_interval = 30;
-        testLogAndStateMachine(settings, 40, params.enable_compression, keeper_context);
+        testLogAndStateMachine(settings, 40, params.enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 0;
         settings->rotate_log_storage_interval = 10;
-        testLogAndStateMachine(settings, 40, params.enable_compression, keeper_context);
+        testLogAndStateMachine(settings, 40, params.enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 1;
         settings->reserved_log_items = 1;
         settings->rotate_log_storage_interval = 32;
-        testLogAndStateMachine(settings, 32, params.enable_compression, keeper_context);
+        testLogAndStateMachine(settings, 32, params.enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 7;
         settings->rotate_log_storage_interval = 1;
-        testLogAndStateMachine(settings, 33, params.enable_compression, keeper_context);
+        testLogAndStateMachine(settings, 33, params.enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 37;
         settings->reserved_log_items = 1000;
         settings->rotate_log_storage_interval = 5000;
-        testLogAndStateMachine(settings, 33, params.enable_compression, keeper_context);
+        testLogAndStateMachine(settings, 33, params.enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 37;
         settings->reserved_log_items = 1000;
         settings->rotate_log_storage_interval = 5000;
-        testLogAndStateMachine(settings, 45, params.enable_compression, keeper_context);
+        testLogAndStateMachine(settings, 45, params.enable_compression);
     }
 }
 
@@ -1931,11 +1942,10 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     ChangelogDirTest snapshots("./snapshots");
     setSnapshotDirectory("./snapshots");
 
-    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
+
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, keeper_context, nullptr);
     state_machine->init();
 
     std::shared_ptr<ZooKeeperCreateRequest> request_c = std::make_shared<ZooKeeperCreateRequest>();
@@ -1965,11 +1975,10 @@ TEST_P(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecommitte
 
     ChangelogDirTest snapshots("./snapshots");
     setSnapshotDirectory("./snapshots");
-    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
 
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, keeper_context, nullptr);
     state_machine->init();
 
     String user_auth_data = "test_user:test_password";
@@ -2017,11 +2026,10 @@ TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
     ChangelogDirTest snapshots("./snapshots");
     setSnapshotDirectory("./snapshots");
 
-    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
 
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, keeper_context, nullptr);
     state_machine->init();
 
     String user_auth_data = "test_user:test_password";
@@ -2132,6 +2140,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
 
     waitDurableLogs(changelog_2);
 
+    keeper_context->setLastCommitIndex(105);
     changelog_2.compact(105);
     std::this_thread::sleep_for(std::chrono::microseconds(1000));
 
@@ -2157,6 +2166,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
 
     waitDurableLogs(changelog_3);
 
+    keeper_context->setLastCommitIndex(125);
     changelog_3.compact(125);
     std::this_thread::sleep_for(std::chrono::microseconds(1000));
     assertFileDeleted("./logs/changelog_101_110.bin" + params.extension);
@@ -2251,12 +2261,12 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     DB::KeeperSnapshotManager manager(3, keeper_context, params.enable_compression);
 
     DB::KeeperStorage storage(500, "", keeper_context);
-    addNode(storage, "/hello", "world", 1);
-    addNode(storage, "/hello/somepath", "somedata", 3);
+    addNode(storage, "/hello1", "world", 1);
+    addNode(storage, "/hello2", "somedata", 3);
     storage.session_id_counter = 5;
     storage.zxid = 2;
-    storage.ephemerals[3] = {"/hello"};
-    storage.ephemerals[1] = {"/hello/somepath"};
+    storage.ephemerals[3] = {"/hello2"};
+    storage.ephemerals[1] = {"/hello1"};
     storage.getSessionID(130);
     storage.getSessionID(130);
 
@@ -2273,13 +2283,13 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     auto [restored_storage, snapshot_meta, _] = new_manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 6);
-    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 2);
-    EXPECT_EQ(restored_storage->container.getValue("/hello").getChildren().size(), 1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getChildren().size(), 0);
+    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 3);
+    EXPECT_EQ(restored_storage->container.getValue("/hello1").getChildren().size(), 0);
+    EXPECT_EQ(restored_storage->container.getValue("/hello2").getChildren().size(), 0);
 
     EXPECT_EQ(restored_storage->container.getValue("/").getData(), "");
-    EXPECT_EQ(restored_storage->container.getValue("/hello").getData(), "world");
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getData(), "somedata");
+    EXPECT_EQ(restored_storage->container.getValue("/hello1").getData(), "world");
+    EXPECT_EQ(restored_storage->container.getValue("/hello2").getData(), "somedata");
     EXPECT_EQ(restored_storage->session_id_counter, 7);
     EXPECT_EQ(restored_storage->zxid, 2);
     EXPECT_EQ(restored_storage->ephemerals.size(), 2);
@@ -2948,7 +2958,7 @@ TEST_P(CoordinationTest, TestCheckNotExistsRequest)
     create_path("/test_node");
     auto node_it = storage.container.find("/test_node");
     ASSERT_NE(node_it, storage.container.end());
-    auto node_version = node_it->value.stat.version;
+    auto node_version = node_it->value.version;
 
     {
         SCOPED_TRACE("CheckNotExists returns ZNODEEXISTS");
