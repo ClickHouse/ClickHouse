@@ -45,7 +45,7 @@ String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
     String content;
     for (const auto & [header_name, header_value] : message_header)
     {
-        if (boost::algorithm::starts_with(header_name, "x-amz-server-side-encryption"))
+        if (header_name.starts_with("x-amz-server-side-encryption"))
         {
             content += header_name + ": " + header_value + "\n";
         }
@@ -55,7 +55,7 @@ String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
             boost::split(parts, header_value, [](char c){ return c == ' '; });
             for (const auto & part : parts)
             {
-                if (boost::algorithm::starts_with(part, "SignedHeaders="))
+                if (part.starts_with("SignedHeaders="))
                     content += header_name + ": ... " + part + " ...\n";
             }
         }

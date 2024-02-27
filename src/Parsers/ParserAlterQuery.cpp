@@ -63,9 +63,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserKeyword s_add("ADD");
     ParserKeyword s_drop("DROP");
-    ParserKeyword s_suspend("SUSPEND");
-    ParserKeyword s_resume("RESUME");
-    ParserKeyword s_refresh("REFRESH");
     ParserKeyword s_modify("MODIFY");
 
     ParserKeyword s_attach_partition("ATTACH PARTITION");
@@ -175,16 +172,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     switch (alter_object)
     {
-        case ASTAlterQuery::AlterObjectType::LIVE_VIEW:
-        {
-            if (s_refresh.ignore(pos, expected))
-            {
-                command->type = ASTAlterCommand::LIVE_VIEW_REFRESH;
-            }
-            else
-                return false;
-            break;
-        }
         case ASTAlterQuery::AlterObjectType::DATABASE:
         {
             if (s_modify_setting.ignore(pos, expected))
@@ -986,7 +973,6 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ParserKeyword s_alter_table("ALTER TABLE");
     ParserKeyword s_alter_temporary_table("ALTER TEMPORARY TABLE");
-    ParserKeyword s_alter_live_view("ALTER LIVE VIEW");
     ParserKeyword s_alter_database("ALTER DATABASE");
 
     ASTAlterQuery::AlterObjectType alter_object_type;
@@ -994,10 +980,6 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (s_alter_table.ignore(pos, expected) || s_alter_temporary_table.ignore(pos, expected))
     {
         alter_object_type = ASTAlterQuery::AlterObjectType::TABLE;
-    }
-    else if (s_alter_live_view.ignore(pos, expected))
-    {
-        alter_object_type = ASTAlterQuery::AlterObjectType::LIVE_VIEW;
     }
     else if (s_alter_database.ignore(pos, expected))
     {
