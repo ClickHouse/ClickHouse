@@ -211,12 +211,12 @@ void StorageView::read(
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)
 {
     if (!select_query.tables() || select_query.tables()->children.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No table expression in view select AST");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no table expression in view select AST");
 
     auto * select_element = select_query.tables()->children[0]->as<ASTTablesInSelectQueryElement>();
 
     if (!select_element->table_expression)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect table expression");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: incorrect table expression");
 
     return select_element->table_expression->as<ASTTableExpression>();
 }
@@ -247,7 +247,7 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
 
         }
         if (!table_expression->database_and_table_name)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect table expression");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: incorrect table expression");
     }
 
     DatabaseAndTableWithAlias db_table(table_expression->database_and_table_name);
@@ -274,7 +274,7 @@ ASTPtr StorageView::restoreViewName(ASTSelectQuery & select_query, const ASTPtr 
     ASTTableExpression * table_expression = getFirstTableExpression(select_query);
 
     if (!table_expression->subquery)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect table expression");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: incorrect table expression");
 
     ASTPtr subquery = table_expression->subquery;
     table_expression->subquery = {};

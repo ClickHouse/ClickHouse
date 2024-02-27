@@ -75,6 +75,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_detach_part("DETACH PART");
     ParserKeyword s_drop_partition("DROP PARTITION");
     ParserKeyword s_drop_part("DROP PART");
+    ParserKeyword s_forget_partition("FORGET PARTITION");
     ParserKeyword s_move_partition("MOVE PARTITION");
     ParserKeyword s_move_part("MOVE PART");
     ParserKeyword s_drop_detached_partition("DROP DETACHED PARTITION");
@@ -117,6 +118,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_remove_ttl("REMOVE TTL");
     ParserKeyword s_remove_sample_by("REMOVE SAMPLE BY");
     ParserKeyword s_apply_deleted_mask("APPLY DELETED MASK");
+
+    ParserToken parser_opening_round_bracket(TokenType::OpeningRoundBracket);
+    ParserToken parser_closing_round_bracket(TokenType::ClosingRoundBracket);
 
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
@@ -165,6 +169,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr command_values;
     ASTPtr command_rename_to;
     ASTPtr command_sql_security;
+
+    if (with_round_bracket)
+    {
+        if (!parser_opening_round_bracket.ignore(pos, expected))
+            return false;
+    }
 
     switch (alter_object)
     {
@@ -256,6 +266,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 command->type = ASTAlterCommand::DROP_PARTITION;
                 command->part = true;
+            }
+            else if (s_forget_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command_partition, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::FORGET_PARTITION;
             }
             else if (s_drop_detached_partition.ignore(pos, expected))
             {
@@ -896,6 +913,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
     }
 
+    if (with_round_bracket)
+    {
+        if (!parser_closing_round_bracket.ignore(pos, expected))
+            return false;
+    }
+
     if (command_col_decl)
         command->col_decl = command->children.emplace_back(std::move(command_col_decl)).get();
     if (command_column)
@@ -951,7 +974,10 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     node = command_list;
 
     ParserToken s_comma(TokenType::Comma);
-    ParserAlterCommand p_command(alter_object);
+
+    const auto with_round_bracket = pos->type == TokenType::OpeningRoundBracket;
+
+    ParserAlterCommand p_command(with_round_bracket, alter_object);
 
     do
     {
