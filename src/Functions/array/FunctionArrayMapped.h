@@ -338,8 +338,8 @@ public:
                             "Arrays passed to {} must have equal size. Argument {} has size {}, but expected {}",
                             getName(),
                             i,
-                            column_array->getOffsets().size(),
-                            typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData().size());
+                            column_array->getOffsets().back(),  /// By the way, PODArray supports addressing -1th element.
+                            typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData().back());
                 }
 
                 const auto * column_tuple = checkAndGetColumn<ColumnTuple>(&column_array->getData());
