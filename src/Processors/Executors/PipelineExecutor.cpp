@@ -399,7 +399,18 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
 
     if (num_threads > 1)
     {
-        spawnThreads(); // start at least one thread
+        try
+        {
+            spawnThreads(); // start at least one thread
+        }
+        catch (...)
+        {
+            /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
+            /// We should cancel execution properly before rethrow.
+            cancel();
+            throw;
+        }
+        
         tasks.processAsyncTasks();
         pool->wait();
     }
