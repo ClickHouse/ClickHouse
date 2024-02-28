@@ -6,4 +6,4 @@ EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|memcpy/|c
 # Double whitespaces
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
     grep -vP $EXCLUDE_DIRS |
-    parallel -m "${ROOT_PATH}/utils/check-style/double-whitespaces.pl"
+    parallel -X "${ROOT_PATH}/utils/check-style/double-whitespaces.pl"
