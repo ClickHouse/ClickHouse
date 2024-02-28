@@ -16,10 +16,10 @@
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 #include <Disks/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
-#include <Disks/ObjectStorages/PlainObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
 #endif
 #include <Disks/ObjectStorages/MetadataStorageFactory.h>
+#include <Disks/ObjectStorages/PlainObjectStorage.h>
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
 
