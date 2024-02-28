@@ -56,15 +56,12 @@ def started_cluster():
 
 
 @pytest.mark.parametrize(
-    ("node, found_in_log"),
+    ("node"),
     [
-        (
-            node_with_backoff,
-            True,
-        ),
+        (node_with_backoff),
     ],
 )
-def test_exponential_backoff_with_merge_tree(started_cluster, node, found_in_log):
+def test_exponential_backoff_with_merge_tree(started_cluster, node):
     prepare_cluster(False)
 
     # Executing incorrect mutation.
