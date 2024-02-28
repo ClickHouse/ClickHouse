@@ -132,7 +132,7 @@ SELECT substring(s, l, r) FROM t;
 
 DROP table if exists t;
 
-SELECT '-- UBSAN bug';l
+SELECT '-- UBSAN bug';
 
 /** NOTE: The behaviour of substring and substringUTF8 is inconsistent when negative offset is greater than string size:
   * substring:
