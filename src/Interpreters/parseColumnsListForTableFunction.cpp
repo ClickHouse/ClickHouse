@@ -76,7 +76,8 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
     };
 
     validate_callback(*type_to_check);
-    type_to_check->forEachChild(validate_callback);
+    if (settings.validate_nested_types)
+        type_to_check->forEachChild(validate_callback);
 }
 
 ColumnsDescription parseColumnsListFromString(const std::string & structure, const ContextPtr & context)
