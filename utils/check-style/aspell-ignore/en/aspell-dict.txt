@@ -1895,6 +1895,7 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+mergeTreeIndex
 mergeable
 mergetree
 messageID
@@ -2423,6 +2424,7 @@ subranges
 subreddits
 subseconds
 subsequence
+substreams
 substring
 substringIndex
 substringIndexUTF
@@ -2722,6 +2724,7 @@ wordShingleSimHashCaseInsensitive
 wordShingleSimHashCaseInsensitiveUTF
 wordShingleSimHashUTF
 wordshingleMinHash
+writability
 wrt
 xcode
 xeus
