@@ -16,7 +16,9 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 # Stress tests and upgrade check uses similar code that was placed
 # in a separate bash library. See tests/ci/stress_tests.lib
+# shellcheck source=../stateless/attach_gdb.lib
 source /attach_gdb.lib
+# shellcheck source=../stateless/stress_tests.lib
 source /stress_tests.lib
 
 install_packages package_folder
@@ -55,6 +57,7 @@ azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
+# shellcheck disable=SC2119
 start
 
 setup_logs_replication
@@ -65,6 +68,7 @@ clickhouse-client --query "SHOW TABLES FROM datasets"
 
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
 
+# shellcheck disable=SC2119
 stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
 
@@ -85,6 +89,7 @@ if [ "$cache_policy" = "SLRU" ]; then
     mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
 fi
 
+# shellcheck disable=SC2119
 start
 
 clickhouse-client --query "SHOW TABLES FROM datasets"
@@ -188,6 +193,7 @@ clickhouse-client --query "SHOW TABLES FROM test"
 
 clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
 
+# shellcheck disable=SC2119
 stop
 
 # Let's enable S3 storage by default
@@ -222,6 +228,7 @@ if [ $(( $(date +%-d) % 2 )) -eq 1 ]; then
         > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
 fi
 
+# shellcheck disable=SC2119
 start
 
 stress --hung-check --drop-databases --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 \
@@ -232,6 +239,7 @@ stress --hung-check --drop-databases --output-folder test_output --skip-func-tes
 rg -Fa "No queries hung" /test_output/test_results.tsv | grep -Fa "OK" \
   || echo -e "Hung check failed, possible deadlock found (see hung_check.log)$FAIL$(head_escaped /test_output/hung_check.log)" >> /test_output/test_results.tsv
 
+# shellcheck disable=SC2119
 stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
 
@@ -239,10 +247,12 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 # In debug build it can take a lot of time.
 unset "${!THREAD_@}"
 
+# shellcheck disable=SC2119
 start
 
 check_server_start
 
+# shellcheck disable=SC2119
 stop
 
 [ -f /var/log/clickhouse-server/clickhouse-server.log ] || echo -e "Server log does not exist\tFAIL"
@@ -272,7 +282,7 @@ clickhouse-local --structure "test String, res String, time Nullable(Float32), d
 (test like '%Signal 9%') DESC,
 (test like '%Fatal message%') DESC,
 rowNumberInAllBlocks()
-LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
+LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo -e "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
 # But OOMs in stress test are allowed

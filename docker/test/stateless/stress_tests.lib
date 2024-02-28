@@ -19,7 +19,7 @@ function escaped()
 
 function head_escaped()
 {
-    head -n $FAILURE_CONTEXT_LINES $1 | escaped
+    head -n "$FAILURE_CONTEXT_LINES" "$1" | escaped
 }
 
 function unts()
@@ -29,15 +29,15 @@ function unts()
 
 function trim_server_logs()
 {
-    head -n $FAILURE_CONTEXT_LINES "/test_output/$1" | grep -Eo " \[ [0-9]+ \] \{.*" | escaped
+    head -n :$FAILURE_CONTEXT_LINES "/test_output/$1" | grep -Eo " \[ [0-9]+ \] \{.*" | escaped
 }
 
 function install_packages()
 {
-    dpkg -i $1/clickhouse-common-static_*.deb
-    dpkg -i $1/clickhouse-common-static-dbg_*.deb
-    dpkg -i $1/clickhouse-server_*.deb
-    dpkg -i $1/clickhouse-client_*.deb
+    dpkg -i "$1"/clickhouse-common-static_*.deb
+    dpkg -i "$1"/clickhouse-common-static-dbg_*.deb
+    dpkg -i "$1"/clickhouse-server_*.deb
+    dpkg -i "$1"/clickhouse-client_*.deb
 }
 
 function configure()
@@ -54,11 +54,11 @@ function configure()
     sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
 
     function randomize_config_boolean_value {
-        value=$(($RANDOM % 2))
-        sudo cat /etc/clickhouse-server/config.d/$2.xml \
+        value=$((RANDOM % 2))
+        sudo cat "/etc/clickhouse-server/config.d/$2.xml" \
         | sed "s|<$1>[01]</$1>|<$1>$value</$1>|" \
-        > /etc/clickhouse-server/config.d/$2.xml.tmp
-        sudo mv /etc/clickhouse-server/config.d/$2.xml.tmp /etc/clickhouse-server/config.d/$2.xml
+        > "/etc/clickhouse-server/config.d/$2.xml.tmp"
+        sudo mv "/etc/clickhouse-server/config.d/$2.xml.tmp" "/etc/clickhouse-server/config.d/$2.xml"
     }
 
     if [[ -n "$RANDOMIZE_KEEPER_FEATURE_FLAGS" ]] && [[ "$RANDOMIZE_KEEPER_FEATURE_FLAGS" -eq 1 ]]; then
@@ -156,7 +156,7 @@ function stop()
 
     clickhouse stop --max-tries "$max_tries" --do-not-kill && return
 
-    if [ $check_hang == true ]
+    if [ "$check_hang" == true ]
     then
       # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
       # Add a special status just in case, so it will be possible to find in the CI DB
@@ -165,7 +165,7 @@ function stop()
       sleep 5
 
       # The server could finally stop while we were terminating gdb, let's recheck if it's still running
-      kill -s 0 $pid || return
+      kill -s 0 "$pid" || return
       echo -e "Possible deadlock on shutdown (see gdb.log)$FAIL" >> /test_output/test_results.tsv
       echo "thread apply all backtrace (on stop)" >> /test_output/gdb.log
       timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$pid" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
@@ -181,7 +181,7 @@ function start()
     counter=0
     until clickhouse-client --query "SELECT 1"
     do
-        if [ "$counter" -gt ${1:-120} ]
+        if [ "$counter" -gt "${1:-120}" ]
         then
             echo "Cannot start clickhouse-server"
             rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt ||:
@@ -286,9 +286,9 @@ function collect_query_and_trace_logs()
 
 function collect_core_dumps()
 {
-  find . -type f -maxdepth 1 -name 'core.*' | while read core; do
-      zstd --threads=0 $core
-      mv $core.zst /test_output/
+  find . -type f -maxdepth 1 -name 'core.*' | while read -r core; do
+      zstd --threads=0 "$core"
+      mv "$core.zst" /test_output/
   done
 }
 
