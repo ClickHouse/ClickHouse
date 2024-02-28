@@ -1392,11 +1392,25 @@
         <!-- <host_name>replica</host_name> -->
     </distributed_ddl>
 
-    <!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
+    <!-- Settings to fine-tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
     <!--
     <merge_tree>
         <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
     </merge_tree>
+    -->
+
+    <!-- Settings to fine-tune ReplicatedMergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
+    <!--
+    <replicated_merge_tree>
+        <max_replicated_fetches_network_bandwidth>1000000000</max_replicated_fetches_network_bandwidth>
+    </replicated_merge_tree>
+    -->
+
+    <!-- Settings to fine-tune Distributed tables. See documentation in source code, in DistributedSettings.h -->
+    <!--
+    <distributed>
+        <flush_on_detach>false</flush_on_detach>
+    </distributed>
     -->
 
     <!-- Protection from accidental DROP.
