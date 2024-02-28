@@ -76,9 +76,6 @@ private:
         size_t num_read_bytes = 0;
     };
 
-    /// Used for filling header with no rows as well as block with data
-    static Block applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info);
-
     /// Sets up range readers corresponding to data readers
     void initializeRangeReaders();
 

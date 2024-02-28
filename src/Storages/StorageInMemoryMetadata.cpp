@@ -349,7 +349,7 @@ Block StorageInMemoryMetadata::getSampleBlockNonMaterialized() const
     return res;
 }
 
-Block StorageInMemoryMetadata::getSampleBlockwithVirtuals(const NamesAndTypesList & virtuals) const
+Block StorageInMemoryMetadata::getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const
 {
     auto res = getSampleBlock();
 

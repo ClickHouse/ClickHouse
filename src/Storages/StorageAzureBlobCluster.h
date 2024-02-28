@@ -27,12 +27,9 @@ public:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        ContextPtr context_,
-        bool structure_argument_was_provided_);
+        const ContextPtr & context);
 
     std::string getName() const override { return "AzureBlobStorageCluster"; }
-
-    NamesAndTypesList getVirtuals() const override;
 
     RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
 
@@ -43,10 +40,9 @@ public:
 private:
     void updateBeforeRead(const ContextPtr & /*context*/) override {}
 
-    void addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context) override;
+    void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;
 
     StorageAzureBlob::Configuration configuration;
-    NamesAndTypesList virtual_columns;
     std::unique_ptr<AzureObjectStorage> object_storage;
 };
 

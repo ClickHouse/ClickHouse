@@ -44,7 +44,7 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        ContextPtr context_,
+        const ContextPtr & context_,
         const String & compression_method_ = "",
         bool distributed_processing_ = false,
         ASTPtr partition_by = nullptr);
@@ -69,7 +69,6 @@ public:
         ContextPtr local_context,
         TableExclusiveLockHolder &) override;
 
-    NamesAndTypesList getVirtuals() const override;
     static Names getVirtualColumnNames();
 
     bool supportsPartitionBy() const override { return true; }
@@ -86,7 +85,12 @@ public:
         const String & format,
         const String & uri,
         const String & compression_method,
-        ContextPtr ctx);
+        const ContextPtr & ctx);
+
+    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromData(
+        const String & uri,
+        const String & compression_method,
+        const ContextPtr & ctx);
 
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
@@ -97,13 +101,18 @@ protected:
     friend class ReadFromHDFS;
 
 private:
+    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromDataImpl(
+        std::optional<String> format,
+        const String & uri,
+        const String & compression_method,
+        const ContextPtr & ctx);
+
     std::vector<String> uris;
     String format_name;
     String compression_method;
     const bool distributed_processing;
     ASTPtr partition_by;
     bool is_path_with_globs;
-    NamesAndTypesList virtual_columns;
 
     LoggerPtr log = getLogger("StorageHDFS");
 };
@@ -141,7 +150,7 @@ public:
     HDFSSource(
         const ReadFromFormatInfo & info,
         StorageHDFSPtr storage_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         UInt64 max_block_size_,
         std::shared_ptr<IteratorWrapper> file_iterator_,
         bool need_only_count_);

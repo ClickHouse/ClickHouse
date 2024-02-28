@@ -216,6 +216,10 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
+    void setVirtuals(const VirtualColumnsDescription & virtuals_)
+    {
+        virtuals.set(std::make_unique<VirtualColumnsDescription>(virtuals_));
+    }
 
     /// Return list of virtual columns (like _part, _table, etc). In the vast
     /// majority of cases virtual columns are static constant part of Storage
@@ -227,9 +231,9 @@ public:
     /// virtual column will be overridden and inaccessible.
     ///
     /// By default return empty list of columns.
-    virtual VirtualColumnsDescription getVirtualsDescription() const;
-    virtual NamesAndTypesList getVirtuals() const; /// TODO: make non virtual.
-    Block getVirtualsHeader() const;
+    VirtualsDescriptionPtr getVirtualsDescription() const { return virtuals.get(); }
+    virtual NamesAndTypesList getVirtuals() const { return virtuals.get()->getNamesAndTypesList(); }
+    Block getVirtualsHeader() const { return virtuals.get()->getSampleBlock(); }
 
     Names getAllRegisteredNames() const override;
 
@@ -266,14 +270,15 @@ public:
     virtual bool supportsTrivialCountOptimization() const { return false; }
 
 private:
-
     StorageID storage_id;
 
     mutable std::mutex id_mutex;
 
-    /// Multiversion storage metadata. Allows to read/write storage metadata
-    /// without locks.
+    /// Multiversion storage metadata. Allows to read/write storage metadata without locks.
     MultiVersionStorageMetadataPtr metadata;
+
+    /// TODO:
+    MultiVersionVirtualsDescriptionPtr virtuals;
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(

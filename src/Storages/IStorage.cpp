@@ -1,6 +1,7 @@
 #include <Storages/IStorage.h>
 
 #include <Common/StringUtils/StringUtils.h>
+#include "Storages/VirtualColumnsDescription.h"
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -235,21 +236,6 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
 {
     std::lock_guard lock(id_mutex);
     storage_id = new_table_id;
-}
-
-VirtualColumnsDescription IStorage::getVirtualsDescription() const
-{
-    return {};
-}
-
-NamesAndTypesList IStorage::getVirtuals() const
-{
-    return getVirtualsDescription().getNamesAndTypesList();
-}
-
-Block IStorage::getVirtualsHeader() const
-{
-    return getVirtualsDescription().getSampleBlock();
 }
 
 Names IStorage::getAllRegisteredNames() const

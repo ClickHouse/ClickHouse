@@ -133,7 +133,7 @@ Block InterpreterInsertQuery::getSampleBlock(
         if (auto * window_view = dynamic_cast<StorageWindowView *>(table.get()))
             return window_view->getInputHeader();
         else if (no_destination)
-            return metadata_snapshot->getSampleBlockwithVirtuals(table->getVirtuals());
+            return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtuals());
         else
             return metadata_snapshot->getSampleBlockNonMaterialized();
     }

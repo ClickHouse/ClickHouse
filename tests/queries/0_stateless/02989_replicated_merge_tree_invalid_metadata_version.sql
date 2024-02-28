@@ -10,7 +10,7 @@ CREATE TABLE test_table_replicated
 ALTER TABLE test_table_replicated ADD COLUMN insert_time DateTime;
 
 SELECT name, version FROM system.zookeeper
-WHERE path = '/clickhouse/tables/' || currentDatabase() ||'/test_table_replicated/'
+WHERE path = (SELECT zookeeper_path FROM system.replicas WHERE database = currentDatabase() AND table = 'test_table_replicated')
 AND name = 'metadata' FORMAT Vertical;
 
 DROP TABLE IF EXISTS test_table_replicated_second;
@@ -26,7 +26,7 @@ DROP TABLE test_table_replicated;
 SELECT '--';
 
 SELECT name, value FROM system.zookeeper
-WHERE path = '/clickhouse/tables/' || currentDatabase() ||'/test_table_replicated/replicas/2_replica'
+WHERE path = (SELECT replica_path FROM system.replicas WHERE database = currentDatabase() AND table = 'test_table_replicated_second')
 AND name = 'metadata_version' FORMAT Vertical;
 
 SYSTEM RESTART REPLICA test_table_replicated_second;

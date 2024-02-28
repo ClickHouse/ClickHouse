@@ -1,5 +1,6 @@
 #pragma once
 #include <Storages/ColumnsDescription.h>
+#include <Common/MultiVersion.h>
 
 namespace DB
 {
@@ -64,5 +65,8 @@ public:
 private:
     Container container;
 };
+
+using VirtualsDescriptionPtr = std::shared_ptr<const VirtualColumnsDescription>;
+using MultiVersionVirtualsDescriptionPtr = MultiVersion<VirtualColumnsDescription>;
 
 }
