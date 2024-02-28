@@ -841,7 +841,7 @@ void LocalServer::addOptions(OptionsDescription & options_description)
 
         /// If structure argument is omitted then initial query is not generated
         ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
-        ("file,f", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
+        ("file", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
 
         ("input-format", po::value<std::string>(), "input format of the initial table data")
         ("output-format", po::value<std::string>(), "default output format")
