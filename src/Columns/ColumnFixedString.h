@@ -186,7 +186,7 @@ public:
 
     void reserve(size_t size) override
     {
-        chars.reserve(n * size);
+        chars.reserve_exact(n * size);
     }
 
     void shrinkToFit() override

@@ -1,7 +1,5 @@
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
-#include <Common/NaNUtils.h>
-#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Columns/ColumnDecimal.h>
@@ -28,7 +26,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
-    extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -845,8 +842,7 @@ void ColumnNullable::applyNullMap(const ColumnNullable & other)
 void ColumnNullable::checkConsistency() const
 {
     if (null_map->size() != getNestedColumn().size())
-        throw Exception(ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT,
-                        "Logical error: Sizes of nested column and null map of Nullable column are not equal");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of nested column and null map of Nullable column are not equal");
 }
 
 ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
