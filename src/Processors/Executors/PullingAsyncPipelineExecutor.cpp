@@ -67,7 +67,8 @@ const Block & PullingAsyncPipelineExecutor::getHeader() const
     return lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader();
 }
 
-static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads)
+static void threadFunction(
+    PullingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
@@ -80,7 +81,7 @@ static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGrou
         if (thread_group)
             CurrentThread::attachToGroup(thread_group);
 
-        data.executor->execute(num_threads);
+        data.executor->execute(num_threads, concurrency_control);
     }
     catch (...)
     {
@@ -108,7 +109,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
 
         auto func = [&, thread_group = CurrentThread::getGroup()]()
         {
-            threadFunction(*data, thread_group, pipeline.getNumThreads());
+            threadFunction(*data, thread_group, pipeline.getNumThreads(), pipeline.getConcurrencyControl());
         };
 
         data->thread = ThreadFromGlobalPool(std::move(func));

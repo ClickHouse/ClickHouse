@@ -6,7 +6,9 @@
 namespace DB
 {
 
-WriteBuffer NullOutputFormat::empty_buffer(nullptr, 0);
+WriteBufferFromPointer NullOutputFormat::empty_buffer(nullptr, 0);
+
+NullOutputFormat::NullOutputFormat(const Block & header) : IOutputFormat(header, empty_buffer) {}
 
 void registerOutputFormatNull(FormatFactory & factory)
 {

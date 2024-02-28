@@ -28,7 +28,7 @@ public:
         return true;
     }
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_redundant_functions_in_order_by)
             return;
@@ -124,7 +124,7 @@ private:
 
 }
 
-void OptimizeRedundantFunctionsInOrderByPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void OptimizeRedundantFunctionsInOrderByPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     OptimizeRedundantFunctionsInOrderByVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

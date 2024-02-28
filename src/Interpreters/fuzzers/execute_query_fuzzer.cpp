@@ -1,7 +1,9 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/registerInterpreters.h>
 #include "Processors/Executors/PullingPipelineExecutor.h"
 
+#include <Functions/registerDatabases.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -13,43 +15,46 @@
 using namespace DB;
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
-try
 {
-    std::string input = std::string(reinterpret_cast<const char*>(data), size);
-
-    static SharedContextHolder shared_context;
-    static ContextMutablePtr context;
-
-    auto initialize = [&]() mutable
+    try
     {
-        shared_context = Context::createShared();
-        context = Context::createGlobal(shared_context.get());
-        context->makeGlobalContext();
-        context->setApplicationType(Context::ApplicationType::LOCAL);
+        std::string input = std::string(reinterpret_cast<const char*>(data), size);
 
-        registerFunctions();
-        registerAggregateFunctions();
-        registerTableFunctions();
-        registerStorages();
-        registerDictionaries();
-        registerDisks(/* global_skip_access_check= */ true);
-        registerFormats();
+        static SharedContextHolder shared_context;
+        static ContextMutablePtr context;
 
-        return true;
-    };
+        auto initialize = [&]() mutable
+        {
+            shared_context = Context::createShared();
+            context = Context::createGlobal(shared_context.get());
+            context->makeGlobalContext();
+            context->setApplicationType(Context::ApplicationType::LOCAL);
 
-    static bool initialized = initialize();
-    (void) initialized;
+            registerInterpreters();
+            registerFunctions();
+            registerAggregateFunctions();
+            registerTableFunctions();
+            registerDatabases();
+            registerStorages();
+            registerDictionaries();
+            registerDisks(/* global_skip_access_check= */ true);
+            registerFormats();
 
-    auto io = DB::executeQuery(input, context, true, QueryProcessingStage::Complete);
+            return true;
+        };
 
-    PullingPipelineExecutor executor(io.pipeline);
-    Block res;
-    while (!res && executor.pull(res));
+        static bool initialized = initialize();
+        (void) initialized;
+
+        auto io = DB::executeQuery(input, context, QueryFlags{ .internal = true }, QueryProcessingStage::Complete).second;
+
+        PullingPipelineExecutor executor(io.pipeline);
+        Block res;
+        while (!res && executor.pull(res));
+    }
+    catch (...)
+    {
+    }
 
     return 0;
-}
-catch (...)
-{
-    return 1;
 }

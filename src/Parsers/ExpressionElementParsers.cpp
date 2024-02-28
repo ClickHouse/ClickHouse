@@ -43,7 +43,6 @@
 
 #include <Interpreters/StorageID.h>
 
-
 namespace DB
 {
 
@@ -124,7 +123,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have a table function or table override");
 
         /// Replace subquery `(EXPLAIN <kind> <explain_settings> SELECT ...)`
-        /// with `(SELECT * FROM viewExplain("<kind>", "<explain_settings>", SELECT ...))`
+        /// with `(SELECT * FROM viewExplain('<kind>', '<explain_settings>', (SELECT ...)))`
 
         String kind_str = ASTExplainQuery::toString(explain_query.getKind());
 
@@ -142,7 +141,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             auto view_explain = makeASTFunction("viewExplain",
                 std::make_shared<ASTLiteral>(kind_str),
                 std::make_shared<ASTLiteral>(settings_str),
-                explained_ast);
+                std::make_shared<ASTSubquery>(explained_ast));
             result_node = buildSelectFromTableFunction(view_explain);
         }
         else
@@ -162,8 +161,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
-    node = std::make_shared<ASTSubquery>();
-    node->children.push_back(result_node);
+    node = std::make_shared<ASTSubquery>(std::move(result_node));
     return true;
 }
 
@@ -240,6 +238,38 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return true;
     }
     return false;
+}
+
+
+bool ParserTableAsStringLiteralIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (pos->type != TokenType::StringLiteral)
+        return false;
+
+    ReadBufferFromMemory in(pos->begin, pos->size());
+    String s;
+
+    if (!tryReadQuotedString(s, in))
+    {
+        expected.add(pos, "string literal");
+        return false;
+    }
+
+    if (in.count() != pos->size())
+    {
+        expected.add(pos, "string literal");
+        return false;
+    }
+
+    if (s.empty())
+    {
+        expected.add(pos, "non-empty string literal");
+        return false;
+    }
+
+    node = std::make_shared<ASTTableIdentifier>(s);
+    ++pos;
+    return true;
 }
 
 
@@ -653,6 +683,33 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
+bool ParserStatisticType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserList stat_type_parser(std::make_unique<ParserIdentifierWithOptionalParameters>(),
+        std::make_unique<ParserToken>(TokenType::Comma), false);
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ASTPtr stat_type;
+
+    ++pos;
+
+    if (!stat_type_parser.parse(pos, stat_type, expected))
+        return false;
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+    auto function_node = std::make_shared<ASTFunction>();
+    function_node->name = "STATISTIC";
+    function_node->arguments = stat_type;
+    function_node->children.push_back(function_node->arguments);
+
+    node = function_node;
+    return true;
+}
+
 bool ParserCollation::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr collation;
@@ -687,66 +744,70 @@ static bool isOneOf(TokenType token)
 
 bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    using enum TokenType;
+
     /// Parse numbers (including decimals), strings, arrays and tuples of them.
 
     const char * data_begin = pos->begin;
     const char * data_end = pos->end;
-    bool is_string_literal = pos->type == TokenType::StringLiteral;
+    bool is_string_literal = pos->type == StringLiteral;
 
-    if (pos->type == TokenType::Minus)
+    if (pos->type == Minus)
     {
         ++pos;
-        if (pos->type != TokenType::Number)
+        if (pos->type != Number)
             return false;
 
         data_end = pos->end;
         ++pos;
     }
-    else if (pos->type == TokenType::Number || is_string_literal)
+    else if (pos->type == Number || is_string_literal)
     {
         ++pos;
     }
-    else if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket>(pos->type))
+    else if (isOneOf<OpeningSquareBracket, OpeningRoundBracket>(pos->type))
     {
-        TokenType last_token = TokenType::OpeningSquareBracket;
+        TokenType last_token = OpeningSquareBracket;
         std::vector<TokenType> stack;
         while (pos.isValid())
         {
-            if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket>(pos->type))
+            if (isOneOf<OpeningSquareBracket, OpeningRoundBracket>(pos->type))
             {
                 stack.push_back(pos->type);
-                if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma>(last_token))
+                if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
                     return false;
             }
-            else if (pos->type == TokenType::ClosingSquareBracket)
+            else if (pos->type == ClosingSquareBracket)
             {
-                if (isOneOf<TokenType::Comma, TokenType::OpeningRoundBracket, TokenType::Minus>(last_token))
+                if (isOneOf<Comma, OpeningRoundBracket, Minus>(last_token))
                     return false;
-                if (stack.empty() || stack.back() != TokenType::OpeningSquareBracket)
+                if (stack.empty() || stack.back() != OpeningSquareBracket)
                     return false;
                 stack.pop_back();
             }
-            else if (pos->type == TokenType::ClosingRoundBracket)
+            else if (pos->type == ClosingRoundBracket)
             {
-                if (isOneOf<TokenType::Comma, TokenType::OpeningSquareBracket, TokenType::Minus>(last_token))
+                if (isOneOf<Comma, OpeningSquareBracket, Minus>(last_token))
                     return false;
-                if (stack.empty() || stack.back() != TokenType::OpeningRoundBracket)
+                if (stack.empty() || stack.back() != OpeningRoundBracket)
                     return false;
                 stack.pop_back();
             }
-            else if (pos->type == TokenType::Comma)
+            else if (pos->type == Comma)
             {
-                if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma, TokenType::Minus>(last_token))
+                if (isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma, Minus>(last_token))
+                    return false;
+                if (stack.empty())
+                    break;
+            }
+            else if (pos->type == Number)
+            {
+                if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma, Minus>(last_token))
                     return false;
             }
-            else if (pos->type == TokenType::Number)
+            else if (isOneOf<StringLiteral, Minus>(pos->type))
             {
-                if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma, TokenType::Minus>(last_token))
-                    return false;
-            }
-            else if (isOneOf<TokenType::StringLiteral, TokenType::Minus>(pos->type))
-            {
-                if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma>(last_token))
+                if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
                     return false;
             }
             else
@@ -768,7 +829,7 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         return false;
 
     ASTPtr type_ast;
-    if (ParserToken(TokenType::DoubleColon).ignore(pos, expected)
+    if (ParserToken(DoubleColon).ignore(pos, expected)
         && ParserDataType().parse(pos, type_ast, expected))
     {
         String s;
@@ -829,7 +890,11 @@ static bool parseNumber(char * buffer, size_t size, bool negative, int base, Fie
 
     if (pos_integer == buffer + size && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
     {
-        if (negative)
+        /// -0 should be still parsed as UInt instead of Int,
+        /// because otherwise it is not preserved during formatting-parsing roundtrip
+        /// (the signedness is lost during formatting)
+
+        if (negative && uint_value != 0)
             res = static_cast<Int64>(-uint_value);
         else
             res = uint_value;
@@ -1385,6 +1450,7 @@ const char * ParserAlias::restricted_keywords[] =
     "ASOF",
     "BETWEEN",
     "CROSS",
+    "PASTE",
     "FINAL",
     "FORMAT",
     "FROM",
@@ -1429,10 +1495,12 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!allow_alias_without_as_keyword && !has_as_word)
         return false;
 
+    bool is_quoted = pos->type == TokenType::QuotedIdentifier;
+
     if (!id_p.parse(pos, node, expected))
         return false;
 
-    if (!has_as_word)
+    if (!has_as_word && !is_quoted)
     {
         /** In this case, the alias can not match the keyword -
           *  so that in the query "SELECT x FROM t", the word FROM was not considered an alias,

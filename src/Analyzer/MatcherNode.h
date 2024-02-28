@@ -1,12 +1,10 @@
 #pragma once
 
-#include <re2/re2.h>
-
 #include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ColumnTransformers.h>
 #include <Parsers/ASTAsterisk.h>
-
+#include <Common/re2.h>
 
 namespace DB
 {

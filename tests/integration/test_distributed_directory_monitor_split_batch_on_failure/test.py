@@ -4,13 +4,13 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-# node1 -- distributed_directory_monitor_split_batch_on_failure=on
+# node1 -- distributed_background_insert_split_batch_on_failure=on
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/remote_servers.xml"],
     user_configs=["configs/overrides_1.xml"],
 )
-# node2 -- distributed_directory_monitor_split_batch_on_failure=off
+# node2 -- distributed_background_insert_split_batch_on_failure=off
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/remote_servers.xml"],
@@ -19,7 +19,7 @@ node2 = cluster.add_instance(
 
 
 def get_test_settings():
-    settings = {"monitor_batch_inserts": [0, 1]}
+    settings = {"background_insert_batch": [0, 1]}
     return [(k, v) for k, values in settings.items() for v in values]
 
 
@@ -58,7 +58,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_distributed_directory_monitor_split_batch_on_failure_OFF(started_cluster):
+def test_distributed_background_insert_split_batch_on_failure_OFF(started_cluster):
     for setting, setting_value in get_test_settings():
         create_tables(**{setting: setting_value})
         for i in range(0, 100):
@@ -68,12 +68,12 @@ def test_distributed_directory_monitor_split_batch_on_failure_OFF(started_cluste
                 settings={
                     # max_memory_usage is the limit for the batch on the remote node
                     # (local query should not be affected since 30MB is enough for 100K rows)
-                    "max_memory_usage": "30Mi",
+                    "max_memory_usage": "20Mi",
                     "max_untracked_memory": "0",
                 },
             )
         # "Received from" is mandatory, since the exception should be thrown on the remote node.
-        if setting == "monitor_batch_inserts" and setting_value == 1:
+        if setting == "background_insert_batch" and setting_value == 1:
             with pytest.raises(
                 QueryRuntimeException,
                 match=r"DB::Exception: Received from.*Memory limit \(for query\) exceeded: .*while pushing to view default\.mv",
@@ -85,7 +85,7 @@ def test_distributed_directory_monitor_split_batch_on_failure_OFF(started_cluste
         assert int(node2.query("select count() from dist_data")) == 100000
 
 
-def test_distributed_directory_monitor_split_batch_on_failure_ON(started_cluster):
+def test_distributed_background_insert_split_batch_on_failure_ON(started_cluster):
     for setting, setting_value in get_test_settings():
         create_tables(**{setting: setting_value})
         for i in range(0, 100):

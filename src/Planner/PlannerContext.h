@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/HashTable/Hash.h>
-
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
@@ -20,10 +18,31 @@ namespace DB
   *
   * 1. Column identifiers.
   */
+
+class QueryNode;
+class TableNode;
+
+struct FiltersForTableExpression
+{
+    ActionsDAGPtr filter_actions;
+    PrewhereInfoPtr prewhere_info;
+};
+
+using FiltersForTableExpressionMap = std::map<QueryTreeNodePtr, FiltersForTableExpression>;
+
+
 class GlobalPlannerContext
 {
 public:
-    GlobalPlannerContext() = default;
+    GlobalPlannerContext(
+        const QueryNode * parallel_replicas_node_,
+        const TableNode * parallel_replicas_table_,
+        FiltersForTableExpressionMap filters_for_table_expressions_)
+        : parallel_replicas_node(parallel_replicas_node_)
+        , parallel_replicas_table(parallel_replicas_table_)
+        , filters_for_table_expressions(std::move(filters_for_table_expressions_))
+    {
+    }
 
     /** Create column identifier for column node.
       *
@@ -40,57 +59,20 @@ public:
     /// Check if context has column identifier
     bool hasColumnIdentifier(const ColumnIdentifier & column_identifier);
 
+    /// The query which will be executed with parallel replicas.
+    /// In case if only the most inner subquery can be executed with parallel replicas, node is nullptr.
+    const QueryNode * const parallel_replicas_node = nullptr;
+    /// Table which is used with parallel replicas reading. Now, only one table is supported by the protocol.
+    /// It is the left-most table of the query (in JOINs, UNIONs and subqueries).
+    const TableNode * const parallel_replicas_table = nullptr;
+
+    const FiltersForTableExpressionMap filters_for_table_expressions;
+
 private:
     std::unordered_set<ColumnIdentifier> column_identifiers;
 };
 
 using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
-
-/** PlannerSet is wrapper around Set that is used during query planning.
-  *
-  * If subquery node is null, such set is already prepared for execution.
-  *
-  * If subquery node is not null, then set must be build from the result of the subquery.
-  * If subquery node is not null, it must have QUERY or UNION type.
-  */
-class PlannerSet
-{
-public:
-    /// Construct planner set that is ready for execution
-    explicit PlannerSet(FutureSet set_)
-        : set(std::move(set_))
-    {}
-
-    /// Construct planner set with set and subquery node
-    explicit PlannerSet(QueryTreeNodePtr subquery_node_)
-        : set(promise_to_build_set.get_future())
-        , subquery_node(std::move(subquery_node_))
-    {}
-
-    /// Get a reference to a set that might be not built yet
-    const FutureSet & getSet() const
-    {
-        return set;
-    }
-
-    /// Get subquery node
-    const QueryTreeNodePtr & getSubqueryNode() const
-    {
-        return subquery_node;
-    }
-
-    /// This promise will be fulfilled when set is built and all FutureSet objects will become ready
-    std::promise<SetPtr> extractPromiseToBuildSet()
-    {
-        return std::move(promise_to_build_set);
-    }
-
-private:
-    std::promise<SetPtr> promise_to_build_set;
-    FutureSet set;
-
-    QueryTreeNodePtr subquery_node;
-};
 
 class PlannerContext
 {
@@ -179,29 +161,10 @@ public:
 
     using SetKey = std::string;
 
-    using SetKeyToSet = std::unordered_map<String, PlannerSet>;
-
     /// Create set key for set source node
-    static SetKey createSetKey(const QueryTreeNodePtr & set_source_node);
+    static SetKey createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node);
 
-    /// Register set for set key
-    void registerSet(const SetKey & key, PlannerSet planner_set);
-
-    /// Returns true if set is registered for key, false otherwise
-    bool hasSet(const SetKey & key) const;
-
-    /// Get set for key, if no set is registered logical exception is thrown
-    const PlannerSet & getSetOrThrow(const SetKey & key) const;
-
-    /// Get set for key, if no set is registered null is returned
-    PlannerSet * getSetOrNull(const SetKey & key);
-
-    /// Get registered sets
-    const SetKeyToSet & getRegisteredSets() const
-    {
-        return set_key_to_set;
-    }
-
+    PreparedSets & getPreparedSets() { return prepared_sets; }
 private:
     /// Query context
     ContextMutablePtr query_context;
@@ -216,8 +179,7 @@ private:
     std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
 
     /// Set key to set
-    SetKeyToSet set_key_to_set;
-
+    PreparedSets prepared_sets;
 };
 
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;

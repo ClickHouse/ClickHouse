@@ -1,0 +1,61 @@
+Test 1: check double quotes
+1	abc	123	abacaba
+2	def	456	bacabaa
+3	story	78912	acabaab
+4	history	21321321	cabaaba
+Test 1a: check double quotes no parsing overflow
+1
+Test 1b: check double quotes empty
+1
+Test 2: check back quotes
+1	abc	123	abacaba
+2	def	456	bacabaa
+3	story	78912	acabaab
+4	history	21321321	cabaaba
+Test 2a: check back quotes no parsing overflow
+1
+Test 2b: check back quotes empty
+1
+Test 3: check literal
+1	abc	123	abacaba
+2	def	456	bacabaa
+3	story	78912	acabaab
+4	history	21321321	cabaaba
+Test 3a: check literal no parsing overflow
+1
+Test 3b: check literal empty
+1
+Test 4: select using * wildcard
+30
+30
+30
+30
+30
+10
+30
+10
+Test 4b: select using ? wildcard
+20
+10
+20
+10
+20
+Test 4c: select using '{' + '}'  wildcards
+20
+20
+1
+Test 4d: select using ? and * wildcards
+30
+30
+30
+1
+30
+30
+Test 4e: select using ?, * and '{' + '}' wildcards
+10
+20
+20
+20
+Test 4f: recursive search
+2
+1

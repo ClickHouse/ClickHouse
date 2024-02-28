@@ -1,0 +1,1 @@
+CREATE TABLE test (pill DateTime('UTC'), tart DateTime('Europe/Amsterdam')) ENGINE = ReplicatedVersionedCollapsingMergeTree ORDER BY pill SETTINGS index_granularity = 15414;

@@ -18,19 +18,19 @@ $CLICKHOUSE_CLIENT --query "
     PARTITION BY date
 "
 
-$CLICKHOUSE_CLIENT --query "INSERT INTO replicated_mutation_table SELECT toDate('2019-10-02'), number, '42' FROM numbers(4)"
+$CLICKHOUSE_CLIENT --query "INSERT INTO replicated_mutation_table SELECT toDate('2019-10-02'), number, '42' FROM numbers(10)"
 
-$CLICKHOUSE_CLIENT --query "INSERT INTO replicated_mutation_table SELECT toDate('2019-10-02'), number, 'Hello' FROM numbers(4)"
+$CLICKHOUSE_CLIENT --query "INSERT INTO replicated_mutation_table SELECT toDate('2019-10-02'), number, 'Hello' FROM numbers(10)"
 
-$CLICKHOUSE_CLIENT --query "ALTER TABLE replicated_mutation_table UPDATE key = key + 1 WHERE sleepEachRow(1) == 0 SETTINGS mutations_sync = 2" 2>&1 | grep -o 'Mutation 0000000000 was killed' | head -n 1 &
+$CLICKHOUSE_CLIENT --query "ALTER TABLE replicated_mutation_table UPDATE key = key + 1 WHERE sleepEachRow(3) == 0 SETTINGS mutations_sync = 2, function_sleep_max_microseconds_per_block=100000000" 2>&1 | grep -o 'Mutation 0000000000 was killed' | head -n 1 &
 
 check_query="SELECT count() FROM system.mutations WHERE table='replicated_mutation_table' and database='$CLICKHOUSE_DATABASE' and mutation_id='0000000000'"
 
-query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
+query_result=$(curl $CLICKHOUSE_URL --silent --fail --data "$check_query")
 
 while [ "$query_result" != "1" ]
 do
-    query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
+    query_result=$(curl $CLICKHOUSE_URL --silent --fail --data "$check_query")
     sleep 0.1
 done
 
@@ -38,7 +38,7 @@ $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE table='replicated_mutation_table
 
 while [ "$query_result" != "0" ]
 do
-    query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
+    query_result=$(curl $CLICKHOUSE_URL --silent --fail --data "$check_query")
     sleep 0.5
 done
 
@@ -49,11 +49,11 @@ $CLICKHOUSE_CLIENT --query "ALTER TABLE replicated_mutation_table MODIFY COLUMN 
 
 check_query="SELECT type = 'UInt64' FROM system.columns WHERE table='replicated_mutation_table' and database='$CLICKHOUSE_DATABASE' and name='value'"
 
-query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
+query_result=$(curl $CLICKHOUSE_URL --silent --fail --data "$check_query")
 
 while [ "$query_result" != "1" ]
 do
-    query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
+    query_result=$(curl $CLICKHOUSE_URL --silent --fail --data "$check_query")
     sleep 0.5
 done
 
@@ -66,7 +66,7 @@ $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE table='replicated_mutation_table
 
 while [ "$query_result" != "0" ]
 do
-    query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
+    query_result=$(curl $CLICKHOUSE_URL --silent --fail --data "$check_query")
     sleep 0.5
 done
 

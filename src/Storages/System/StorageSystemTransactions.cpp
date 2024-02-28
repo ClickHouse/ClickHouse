@@ -21,9 +21,11 @@ static DataTypePtr getStateEnumType()
         });
 }
 
-NamesAndTypesList StorageSystemTransactions::getNamesAndTypes()
+ColumnsDescription StorageSystemTransactions::getColumnsDescription()
 {
-    return {
+    /// TODO: Fill in all the comments.
+    return ColumnsDescription
+    {
         {"tid", getTransactionIDDataType()},
         {"tid_hash", std::make_shared<DataTypeUInt64>()},
         {"elapsed", std::make_shared<DataTypeFloat64>()},

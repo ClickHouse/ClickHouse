@@ -43,7 +43,7 @@ Parameters:
 - `config` — The path to the `keeper.xml` file with the parameters for the connection to ClickHouse Keeper.
 - `task-path` — The path to the ClickHouse Keeper node. This node is used for syncing `clickhouse-copier` processes and storing tasks. Tasks are stored in `$task-path/description`.
 - `task-file` — Optional path to file with task configuration for initial upload to ClickHouse Keeper.
-- `task-upload-force` — Force upload `task-file` even if node already exists.
+- `task-upload-force` — Force upload `task-file` even if node already exists. Default is false.
 - `base-dir` — The path to logs and auxiliary files. When it starts, `clickhouse-copier` creates `clickhouse-copier_YYYYMMHHSS_<PID>` subdirectories in `$base-dir`. If this parameter is omitted, the directories are created in the directory where `clickhouse-copier` was launched.
 
 ## Format of keeper.xml {#format-of-zookeeper-xml}
@@ -115,7 +115,7 @@ Parameters:
     <settings>
         <connect_timeout>3</connect_timeout>
         <!-- Sync insert is set forcibly, leave it here just in case. -->
-        <insert_distributed_sync>1</insert_distributed_sync>
+        <distributed_foreground_insert>1</distributed_foreground_insert>
     </settings>
 
     <!-- Copying tasks description.

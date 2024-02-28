@@ -2,6 +2,7 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterOptimizeQuery.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
@@ -34,7 +35,7 @@ BlockIO InterpreterOptimizeQuery::execute()
 
     getContext()->checkAccess(getRequiredAccess());
 
-    auto table_id = getContext()->resolveStorageID(ast, Context::ResolveOrdinary);
+    auto table_id = getContext()->resolveStorageID(ast);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
@@ -93,4 +94,12 @@ AccessRightsElements InterpreterOptimizeQuery::getRequiredAccess() const
     return required_access;
 }
 
+void registerInterpreterOptimizeQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterOptimizeQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterOptimizeQuery", create_fn);
+}
 }

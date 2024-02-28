@@ -1,9 +1,9 @@
 #include "config.h"
+#include <Common/re2.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemCertificates.h>
-#include <re2/re2.h>
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
 #include <base/scope_guard.h>
@@ -17,9 +17,10 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemCertificates::getNamesAndTypes()
+ColumnsDescription StorageSystemCertificates::getColumnsDescription()
 {
-    return
+    /// TODO: Fill in all the comments.
+    return ColumnsDescription
     {
         {"version",         std::make_shared<DataTypeNumber<Int32>>()},
         {"serial_number",   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},

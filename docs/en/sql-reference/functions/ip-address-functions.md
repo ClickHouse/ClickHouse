@@ -248,7 +248,7 @@ SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
 
 ## toIPv4(string)
 
-An alias to `IPv4StringToNum()` that takes a string form of IPv4 address and returns value of [IPv4](../../sql-reference/data-types/domains/ipv4.md) type, which is binary equal to value returned by `IPv4StringToNum()`.
+An alias to `IPv4StringToNum()` that takes a string form of IPv4 address and returns value of [IPv4](../../sql-reference/data-types/ipv4.md) type, which is binary equal to value returned by `IPv4StringToNum()`.
 
 ``` sql
 WITH
@@ -296,7 +296,7 @@ Same as `toIPv6`, but if the IPv6 address has an invalid format, it returns null
 
 ## toIPv6
 
-Converts a string form of IPv6 address to [IPv6](../../sql-reference/data-types/domains/ipv6.md) type. If the IPv6 address has an invalid format, returns an empty value.
+Converts a string form of IPv6 address to [IPv6](../../sql-reference/data-types/ipv6.md) type. If the IPv6 address has an invalid format, returns an empty value.
 Similar to [IPv6StringToNum](#ipv6stringtonums) function, which converts IPv6 address to binary format.
 
 If the input string contains a valid IPv4 address, then the IPv6 equivalent of the IPv4 address is returned.
@@ -315,7 +315,7 @@ toIPv6(string)
 
 - IP address.
 
-Type: [IPv6](../../sql-reference/data-types/domains/ipv6.md).
+Type: [IPv6](../../sql-reference/data-types/ipv6.md).
 
 **Examples**
 
@@ -500,42 +500,4 @@ Result:
 ┌─isIPAddressInRange('::ffff:192.168.0.1', '::ffff:192.168.0.4/128')─┐
 │                                                                  0 │
 └────────────────────────────────────────────────────────────────────┘
-```
-
-## reverseDNSQuery
-
-Performs a reverse DNS query to get the PTR records associated with the IP address.
-
-**Syntax**
-
-``` sql
-reverseDNSQuery(address)
-```
-
-This function performs reverse DNS resolutions on both IPv4 and IPv6.
-
-**Arguments**
-
-- `address` — An IPv4 or IPv6 address. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
-- Associated domains (PTR records).
-
-Type: Type: [Array(String)](../../sql-reference/data-types/array.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT reverseDNSQuery('192.168.0.2');
-```
-
-Result:
-
-``` text
-┌─reverseDNSQuery('192.168.0.2')────────────┐
-│ ['test2.example.com','test3.example.com'] │
-└───────────────────────────────────────────┘
 ```

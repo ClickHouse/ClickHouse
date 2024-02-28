@@ -16,6 +16,11 @@ For more information and documentation see https://clickhouse.com/.
 - The tag `head` is built from the latest commit to the default branch.
 - Each tag has optional `-alpine` suffix to reflect that it's built on top of `alpine`.
 
+### Compatibility
+
+- The amd64 image requires support for [SSE3 instructions](https://en.wikipedia.org/wiki/SSE3). Virtually all x86 CPUs after 2005 support SSE3.
+- The arm64 image requires support for the [ARMv8.2-A architecture](https://en.wikipedia.org/wiki/AArch64#ARMv8.2-A) and additionally the Load-Acquire RCpc register. The register is optional in version ARMv8.2-A and mandatory in [ARMv8.3-A](https://en.wikipedia.org/wiki/AArch64#ARMv8.3-A). Supported in Graviton >=2, Azure and GCP instances. Examples for unsupported devices are Raspberry Pi 4 (ARMv8.0-A) and Jetson AGX Xavier/Orin (ARMv8.2-A).
+
 ## How to use this image
 
 ### start server instance
@@ -92,8 +97,8 @@ docker run -d \
 
 You may also want to mount:
 
-* `/etc/clickhouse-server/config.d/*.xml` - files with server configuration adjustmenets
-* `/etc/clickhouse-server/users.d/*.xml` - files with user settings adjustmenets
+* `/etc/clickhouse-server/config.d/*.xml` - files with server configuration adjustments
+* `/etc/clickhouse-server/users.d/*.xml` - files with user settings adjustments
 * `/docker-entrypoint-initdb.d/` - folder with database initialization scripts (see below).
 
 ### Linux capabilities

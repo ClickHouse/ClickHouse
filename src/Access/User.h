@@ -2,7 +2,7 @@
 
 #include <Access/IAccessEntity.h>
 #include <Access/AccessRights.h>
-#include <Access/Common/AuthenticationData.h>
+#include <Access/AuthenticationData.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Access/GrantedRoles.h>
 #include <Access/RolesOrUsersSet.h>
@@ -23,6 +23,7 @@ struct User : public IAccessEntity
     SettingsProfileElements settings;
     RolesOrUsersSet grantees = RolesOrUsersSet::AllTag{};
     String default_database;
+    time_t valid_until = 0;
 
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<User>(); }

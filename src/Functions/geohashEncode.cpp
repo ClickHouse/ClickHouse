@@ -4,6 +4,7 @@
 
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <string>
 
@@ -16,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int ILLEGAL_COLUMN;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
@@ -37,7 +37,6 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -58,14 +57,25 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    template <typename LonType, typename LatType>
-    bool tryExecute(const IColumn * lon_column, const IColumn * lat_column, UInt64 precision_value, ColumnPtr & result) const
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const ColumnVector<LonType> * longitude = checkAndGetColumn<ColumnVector<LonType>>(lon_column);
-        const ColumnVector<LatType> * latitude = checkAndGetColumn<ColumnVector<LatType>>(lat_column);
-        if (!latitude || !longitude)
-            return false;
+        const IColumn * longitude = arguments[0].column.get();
+        const IColumn * latitude = arguments[1].column.get();
 
+        ColumnPtr precision;
+        if (arguments.size() < 3)
+            precision = DataTypeUInt8().createColumnConst(longitude->size(), GEOHASH_MAX_TEXT_LENGTH);
+        else
+            precision = arguments[2].column;
+
+        ColumnPtr res_column;
+        vector(longitude, latitude, precision.get(), res_column);
+        return res_column;
+    }
+
+private:
+    void vector(const IColumn * lon_column, const IColumn * lat_column, const IColumn * precision_column, ColumnPtr & result) const
+    {
         auto col_str = ColumnString::create();
         ColumnString::Chars & out_vec = col_str->getChars();
         ColumnString::Offsets & out_offsets = col_str->getOffsets();
@@ -80,8 +90,9 @@ public:
 
         for (size_t i = 0; i < size; ++i)
         {
-            const Float64 longitude_value = longitude->getElement(i);
-            const Float64 latitude_value = latitude->getElement(i);
+            const Float64 longitude_value = lon_column->getFloat64(i);
+            const Float64 latitude_value = lat_column->getFloat64(i);
+            const UInt64 precision_value = std::min<UInt64>(precision_column->get64(i), GEOHASH_MAX_TEXT_LENGTH);
 
             const size_t encoded_size = geohashEncode(longitude_value, latitude_value, precision_value, pos);
 
@@ -95,37 +106,6 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column size mismatch (internal logical error)");
 
         result = std::move(col_str);
-
-        return true;
-
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
-    {
-        const IColumn * longitude = arguments[0].column.get();
-        const IColumn * latitude = arguments[1].column.get();
-
-        const UInt64 precision_value = std::min<UInt64>(GEOHASH_MAX_TEXT_LENGTH,
-                arguments.size() == 3 ? arguments[2].column->get64(0) : GEOHASH_MAX_TEXT_LENGTH);
-
-        ColumnPtr res_column;
-
-        if (tryExecute<Float32, Float32>(longitude, latitude, precision_value, res_column) ||
-            tryExecute<Float64, Float32>(longitude, latitude, precision_value, res_column) ||
-            tryExecute<Float32, Float64>(longitude, latitude, precision_value, res_column) ||
-            tryExecute<Float64, Float64>(longitude, latitude, precision_value, res_column))
-            return res_column;
-
-        std::string arguments_description;
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            if (i != 0)
-                arguments_description += ", ";
-            arguments_description += arguments[i].column->getName();
-        }
-
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unsupported argument types: {} for function {}",
-                        arguments_description, getName());
     }
 };
 

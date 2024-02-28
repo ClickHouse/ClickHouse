@@ -9,6 +9,7 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/TableJoin.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -30,6 +31,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int WRONG_GLOBAL_SUBQUERY;
+    extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 class GlobalSubqueriesMatcher
@@ -43,6 +46,7 @@ public:
         TemporaryTablesMapping & external_tables;
         PreparedSetsPtr prepared_sets;
         bool & has_global_subqueries;
+        TableJoin * table_join;
 
         Data(
             ContextPtr context_,
@@ -51,7 +55,8 @@ public:
             bool is_explain_,
             TemporaryTablesMapping & tables,
             PreparedSetsPtr prepared_sets_,
-            bool & has_global_subqueries_)
+            bool & has_global_subqueries_,
+            TableJoin * table_join_)
             : WithContext(context_)
             , subquery_depth(subquery_depth_)
             , is_remote(is_remote_)
@@ -59,10 +64,11 @@ public:
             , external_tables(tables)
             , prepared_sets(prepared_sets_)
             , has_global_subqueries(has_global_subqueries_)
+            , table_join(table_join_)
         {
         }
 
-        void addExternalStorage(ASTPtr & ast, bool set_alias = false)
+        void addExternalStorage(ASTPtr & ast, const Names & required_columns, bool set_alias = false)
         {
             /// With nondistributed queries, creating temporary tables does not make sense.
             if (!is_remote)
@@ -109,8 +115,8 @@ public:
             String external_table_name;
             if (alias.empty())
             {
-                auto hash = subquery_or_table_name->getTreeHash();
-                external_table_name = fmt::format("_data_{}_{}", hash.first, hash.second);
+                auto hash = subquery_or_table_name->getTreeHash(/*ignore_aliases=*/ true);
+                external_table_name = fmt::format("_data_{}", toString(hash));
             }
             else
                 external_table_name = alias;
@@ -145,7 +151,7 @@ public:
             if (external_tables.contains(external_table_name))
                 return;
 
-            auto interpreter = interpretSubquery(subquery_or_table_name, getContext(), subquery_depth, {});
+            auto interpreter = interpretSubquery(subquery_or_table_name, getContext(), subquery_depth, required_columns);
 
             Block sample = interpreter->getSampleBlock();
             NamesAndTypesList columns = sample.getNamesAndTypesList();
@@ -157,30 +163,20 @@ public:
                 nullptr,
                 /*create_for_global_subquery*/ true);
             StoragePtr external_storage = external_storage_holder->getTable();
-
             external_tables.emplace(external_table_name, external_storage_holder);
 
-            /// We need to materialize external tables immediately because reading from distributed
-            /// tables might generate local plans which can refer to external tables during index
-            /// analysis. It's too late to populate the external table via CreatingSetsTransform.
-            if (is_explain)
+            auto set_key = database_and_table_name->getTreeHash(/*ignore_aliases=*/ true);
+
+            if (!prepared_sets->findSubquery(set_key))
             {
-                /// Do not materialize external tables if it's explain statement.
-            }
-            else if (getContext()->getSettingsRef().use_index_for_in_with_subqueries)
-            {
-                auto external_table = external_storage_holder->getTable();
-                auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
-                auto io = interpreter->execute();
-                io.pipeline.complete(std::move(table_out));
-                CompletedPipelineExecutor executor(io.pipeline);
-                executor.execute();
+                std::unique_ptr<QueryPlan> source = std::make_unique<QueryPlan>();
+                interpreter->buildQueryPlan(*source);
+
+                auto future_set = prepared_sets->addFromSubquery(set_key, std::move(source), std::move(external_storage), nullptr, getContext()->getSettingsRef());
+                external_storage_holder->future_set = std::move(future_set);
             }
             else
-            {
-                auto & subquery_for_set = prepared_sets->getSubquery(external_table_name);
-                subquery_for_set.createSource(*interpreter, external_storage);
-            }
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Set is already created for GLOBAL IN");
 
             /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,
             *  then a new temporary table will be created (for example, _data1),
@@ -208,11 +204,30 @@ private:
     /// GLOBAL IN
     static void visit(ASTFunction & func, ASTPtr &, Data & data)
     {
-        if ((data.getContext()->getSettingsRef().prefer_global_in_and_join
+        const Settings & settings = data.getContext()->getSettingsRef();
+        const bool prefer_global = settings.prefer_global_in_and_join;
+        const bool enable_parallel_processing_of_joins = data.getContext()->canUseParallelReplicasOnInitiator();
+
+        if (((prefer_global || enable_parallel_processing_of_joins)
              && (func.name == "in" || func.name == "notIn" || func.name == "nullIn" || func.name == "notNullIn"))
             || func.name == "globalIn" || func.name == "globalNotIn" || func.name == "globalNullIn" || func.name == "globalNotNullIn")
         {
             ASTPtr & ast = func.arguments->children[1];
+            if (enable_parallel_processing_of_joins)
+            {
+                /// We don't enable parallel replicas for IN (subquery)
+                if (ast->as<ASTSubquery>())
+                {
+                    if (settings.allow_experimental_parallel_reading_from_replicas == 1)
+                    {
+                        LOG_DEBUG(getLogger("GlobalSubqueriesMatcher"), "IN with subquery is not supported with parallel replicas");
+                        data.getContext()->getQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                        return;
+                    }
+                    else if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");
+                }
+            }
 
             /// Literal or function can use regular IN.
             /// NOTE: We don't support passing table functions to IN.
@@ -229,7 +244,7 @@ private:
                 return;
             }
 
-            data.addExternalStorage(ast);
+            data.addExternalStorage(ast, {});
             data.has_global_subqueries = true;
         }
     }
@@ -237,11 +252,56 @@ private:
     /// GLOBAL JOIN
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
+        const Settings & settings = data.getContext()->getSettingsRef();
+        const bool prefer_global = settings.prefer_global_in_and_join;
+        const bool enable_parallel_processing_of_joins = data.getContext()->canUseParallelReplicasOnInitiator();
+
         if (table_elem.table_join
-            && (table_elem.table_join->as<ASTTableJoin &>().locality == JoinLocality::Global
-                || data.getContext()->getSettingsRef().prefer_global_in_and_join))
+            && (table_elem.table_join->as<ASTTableJoin &>().locality == JoinLocality::Global || prefer_global
+                || enable_parallel_processing_of_joins))
         {
-            data.addExternalStorage(table_elem.table_expression, true);
+            if (enable_parallel_processing_of_joins)
+            {
+                /// For parallel replicas we currently only support JOIN with subqueries
+                /// Note that tableA join tableB is previously converted into tableA JOIN (Select * FROM tableB) so that's ok
+                /// We don't support WITH cte as (subquery) Select table JOIN cte because we don't do conversion in AST
+                bool is_subquery = false;
+                if (const auto * ast_table_expr = table_elem.table_expression->as<ASTTableExpression>())
+                {
+                    is_subquery = ast_table_expr->subquery && ast_table_expr->subquery->as<ASTSubquery>() != nullptr
+                        && ast_table_expr->subquery->as<ASTSubquery>()->cte_name.empty();
+                }
+                else if (table_elem.table_expression->as<ASTSubquery>())
+                    is_subquery = true;
+
+                if (!is_subquery)
+                {
+                    if (settings.allow_experimental_parallel_reading_from_replicas == 1)
+                    {
+                        LOG_DEBUG(getLogger("GlobalSubqueriesMatcher"), "JOIN with parallel replicas is only supported with subqueries");
+                        data.getContext()->getQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                        return;
+                    }
+                    else if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOIN with parallel replicas is only supported with subqueries");
+                }
+            }
+
+            Names required_columns;
+
+            /// Fill required columns for GLOBAL JOIN.
+            /// This code is partial copy-paste from ExpressionAnalyzer.
+            if (data.table_join)
+            {
+                auto joined_block_actions = data.table_join->createJoinedBlockActions(data.getContext());
+                NamesWithAliases required_columns_with_aliases = data.table_join->getRequiredColumns(
+                    Block(joined_block_actions->getResultColumns()), joined_block_actions->getRequiredColumns().getNames());
+
+                for (auto & pr : required_columns_with_aliases)
+                    required_columns.push_back(pr.first);
+            }
+
+            data.addExternalStorage(table_elem.table_expression, required_columns, true);
             data.has_global_subqueries = true;
         }
     }

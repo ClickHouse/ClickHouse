@@ -5,6 +5,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/multiIf.h>
 
 namespace DB
 {
@@ -23,7 +24,7 @@ public:
         , multi_if_function_ptr(std::move(multi_if_function_ptr_))
     {}
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_if_chain_to_multiif)
             return;
@@ -73,9 +74,10 @@ private:
 
 }
 
-void IfChainToMultiIfPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void IfChainToMultiIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    auto multi_if_function_ptr = FunctionFactory::instance().get("multiIf", context);
+    const auto & settings = context->getSettingsRef();
+    auto multi_if_function_ptr = createInternalMultiIfOverloadResolver(settings.allow_execute_multiif_columnar, settings.allow_experimental_variant_type, settings.use_variant_as_common_type);
     IfChainToMultiIfPassVisitor visitor(std::move(multi_if_function_ptr), std::move(context));
     visitor.visit(query_tree_node);
 }

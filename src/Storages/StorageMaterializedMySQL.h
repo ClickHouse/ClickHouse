@@ -32,7 +32,7 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size, size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr) override { throwNotAllowed(); }
+    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, bool) override { throwNotAllowed(); }
 
     NamesAndTypesList getVirtuals() const override;
     ColumnSizeByName getColumnSizes() const override;
@@ -40,6 +40,13 @@ public:
     StoragePtr getNested() const override { return nested_storage; }
 
     void drop() override { nested_storage->drop(); }
+
+    bool supportsTrivialCountOptimization() const override { return false; }
+
+    IndexSizeByName getSecondaryIndexSizes() const override
+    {
+        return nested_storage->getSecondaryIndexSizes();
+    }
 
 private:
     [[noreturn]] static void throwNotAllowed()

@@ -6,8 +6,10 @@ rules:
         level: warning
         indent-sequences: consistent
     line-length:
-        # there are some bash -c "", so this is OK
-        max: 300
+        # there are:
+        # - bash -c "", so this is OK
+        # - yaml in tests
+        max: 1000
         level: warning
     comments:
         min-spaces-from-content: 1

@@ -9,11 +9,13 @@
 #include <Common/ConcurrencyControl.h>
 #include <Common/randomSeed.h>
 
+using namespace DB;
+
 struct ConcurrencyControlTest
 {
     ConcurrencyControl cc;
 
-    explicit ConcurrencyControlTest(ConcurrencyControl::SlotCount limit = ConcurrencyControl::Unlimited)
+    explicit ConcurrencyControlTest(SlotCount limit = UnlimitedSlots)
     {
         cc.setMaxConcurrency(limit);
     }
@@ -23,7 +25,7 @@ TEST(ConcurrencyControl, Unlimited)
 {
     ConcurrencyControlTest t; // unlimited number of slots
     auto slots = t.cc.allocate(0, 100500);
-    std::vector<ConcurrencyControl::SlotPtr> acquired;
+    std::vector<AcquiredSlotPtr> acquired;
     while (auto slot = slots->tryAcquire())
         acquired.emplace_back(std::move(slot));
     ASSERT_TRUE(acquired.size() == 100500);
@@ -32,14 +34,14 @@ TEST(ConcurrencyControl, Unlimited)
 TEST(ConcurrencyControl, Fifo)
 {
     ConcurrencyControlTest t(1); // use single slot
-    std::vector<ConcurrencyControl::AllocationPtr> allocations;
+    std::vector<SlotAllocationPtr> allocations;
     constexpr int count = 42;
     allocations.reserve(count);
     for (int i = 0; i < count; i++)
         allocations.emplace_back(t.cc.allocate(0, 1));
     for (int i = 0; i < count; i++)
     {
-        ConcurrencyControl::SlotPtr holder;
+        AcquiredSlotPtr holder;
         for (int j = 0; j < count; j++)
         {
             auto slot = allocations[j]->tryAcquire();
@@ -58,11 +60,11 @@ TEST(ConcurrencyControl, Fifo)
 TEST(ConcurrencyControl, Oversubscription)
 {
     ConcurrencyControlTest t(10);
-    std::vector<ConcurrencyControl::AllocationPtr> allocations;
+    std::vector<SlotAllocationPtr> allocations;
     allocations.reserve(10);
     for (int i = 0; i < 10; i++)
         allocations.emplace_back(t.cc.allocate(1, 2));
-    std::vector<ConcurrencyControl::SlotPtr> slots;
+    std::vector<AcquiredSlotPtr> slots;
     // Normal allocation using maximum amount of slots
     for (int i = 0; i < 5; i++)
     {
@@ -88,7 +90,7 @@ TEST(ConcurrencyControl, ReleaseUnacquiredSlots)
 {
     ConcurrencyControlTest t(10);
     {
-        std::vector<ConcurrencyControl::AllocationPtr> allocations;
+        std::vector<SlotAllocationPtr> allocations;
         allocations.reserve(10);
         for (int i = 0; i < 10; i++)
             allocations.emplace_back(t.cc.allocate(1, 2));
@@ -96,7 +98,7 @@ TEST(ConcurrencyControl, ReleaseUnacquiredSlots)
     }
     // Check that slots were actually released
     auto allocation = t.cc.allocate(0, 20);
-    std::vector<ConcurrencyControl::SlotPtr> acquired;
+    std::vector<AcquiredSlotPtr> acquired;
     while (auto slot = allocation->tryAcquire())
         acquired.emplace_back(std::move(slot));
     ASSERT_TRUE(acquired.size() == 10);
@@ -108,7 +110,7 @@ TEST(ConcurrencyControl, DestroyNotFullyAllocatedAllocation)
     for (int i = 0; i < 3; i++)
     {
         auto allocation = t.cc.allocate(5, 20);
-        std::vector<ConcurrencyControl::SlotPtr> acquired;
+        std::vector<AcquiredSlotPtr> acquired;
         while (auto slot = allocation->tryAcquire())
             acquired.emplace_back(std::move(slot));
         ASSERT_TRUE(acquired.size() == 10);
@@ -120,7 +122,7 @@ TEST(ConcurrencyControl, DestroyAllocationBeforeSlots)
     ConcurrencyControlTest t(10);
     for (int i = 0; i < 3; i++)
     {
-        std::vector<ConcurrencyControl::SlotPtr> acquired;
+        std::vector<AcquiredSlotPtr> acquired;
         auto allocation = t.cc.allocate(5, 20);
         while (auto slot = allocation->tryAcquire())
             acquired.emplace_back(std::move(slot));
@@ -133,7 +135,7 @@ TEST(ConcurrencyControl, GrantReleasedToTheSameAllocation)
 {
     ConcurrencyControlTest t(3);
     auto allocation = t.cc.allocate(0, 10);
-    std::list<ConcurrencyControl::SlotPtr> acquired;
+    std::list<AcquiredSlotPtr> acquired;
     while (auto slot = allocation->tryAcquire())
         acquired.emplace_back(std::move(slot));
     ASSERT_TRUE(acquired.size() == 3); // 0 1 2
@@ -181,7 +183,7 @@ TEST(ConcurrencyControl, SetSlotCount)
 {
     ConcurrencyControlTest t(10);
     auto allocation = t.cc.allocate(5, 30);
-    std::vector<ConcurrencyControl::SlotPtr> acquired;
+    std::vector<AcquiredSlotPtr> acquired;
     while (auto slot = allocation->tryAcquire())
         acquired.emplace_back(std::move(slot));
     ASSERT_TRUE(acquired.size() == 10);
@@ -198,7 +200,7 @@ TEST(ConcurrencyControl, SetSlotCount)
     ASSERT_TRUE(acquired.size() == 5);
 
     // Check that newly added slots are equally distributed over waiting allocations
-    std::vector<ConcurrencyControl::SlotPtr> acquired2;
+    std::vector<AcquiredSlotPtr> acquired2;
     auto allocation2 = t.cc.allocate(0, 30);
     ASSERT_TRUE(!allocation->tryAcquire());
     t.cc.setMaxConcurrency(15); // 10 slots added: 5 to the first allocation and 5 to the second one
@@ -222,7 +224,7 @@ TEST(ConcurrencyControl, MultipleThreads)
 
     auto run_query = [&] (size_t max_threads)
     {
-        ConcurrencyControl::AllocationPtr slots = t.cc.allocate(1, max_threads);
+        SlotAllocationPtr slots = t.cc.allocate(1, max_threads);
         std::mutex threads_mutex;
         std::vector<std::thread> threads;
         threads.reserve(max_threads);
@@ -232,12 +234,12 @@ TEST(ConcurrencyControl, MultipleThreads)
             while (auto slot = slots->tryAcquire())
             {
                 std::unique_lock lock{threads_mutex};
-                threads.emplace_back([&, slot = std::move(slot)]
+                threads.emplace_back([&, my_slot = std::move(slot)]
                 {
                     pcg64 rng(randomSeed());
                     std::uniform_int_distribution<size_t> distribution(1, cfg_work_us);
                     size_t steps = distribution(rng);
-                    for (size_t step = 0; step < steps; step++)
+                    for (size_t step = 0; step < steps; ++step)
                     {
                         sleepForMicroseconds(distribution(rng)); // emulate work
                         spawn_threads(); // upscale
@@ -276,9 +278,9 @@ TEST(ConcurrencyControl, MultipleThreads)
             queries.emplace_back([&, max_threads = max_threads_distribution(rng)]
             {
                 run_query(max_threads);
-                finished++;
+                ++finished;
             });
-            started++;
+            ++started;
         }
         sleepForMicroseconds(5); // wait some queries to finish
         t.cc.setMaxConcurrency(cfg_max_concurrency - started % 3); // emulate configuration updates

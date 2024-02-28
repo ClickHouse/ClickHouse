@@ -3,13 +3,6 @@ slug: /zh/development/build
 ---
 # 如何构建 ClickHouse 发布包 {#ru-he-gou-jian-clickhouse-fa-bu-bao}
 
-## 安装 Git 和 Pbuilder {#an-zhuang-git-he-pbuilder}
-
-``` bash
-sudo apt-get update
-sudo apt-get install git pbuilder debhelper lsb-release fakeroot sudo debian-archive-keyring debian-keyring
-```
-
 ## 拉取 ClickHouse 源码 {#la-qu-clickhouse-yuan-ma}
 
 ``` bash

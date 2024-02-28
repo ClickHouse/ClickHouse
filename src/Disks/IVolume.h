@@ -74,7 +74,7 @@ public:
     virtual VolumeType getType() const = 0;
 
     /// Return biggest unreserved space across all disks
-    UInt64 getMaxUnreservedFreeSpace() const;
+    std::optional<UInt64> getMaxUnreservedFreeSpace() const;
 
     DiskPtr getDisk() const { return getDisk(0); }
     virtual DiskPtr getDisk(size_t i) const { return disks[i]; }
@@ -92,6 +92,8 @@ protected:
     const String name;
 
 public:
+    /// Volume priority. Maximum UInt64 value by default (lowest possible priority)
+    UInt64 volume_priority;
     /// Max size of reservation, zero means unlimited size
     UInt64 max_data_part_size = 0;
     /// Should a new data part be synchronously moved to a volume according to ttl on insert

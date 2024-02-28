@@ -180,14 +180,17 @@ static void setLazyExecutionInfo(
                     indexes.insert(i);
             }
 
-            if (!short_circuit_nodes.at(parent).enable_lazy_execution_for_first_argument && node == parent->children[0])
+            for (auto idx : short_circuit_nodes.at(parent).arguments_with_disabled_lazy_execution)
             {
-                /// We shouldn't add 0 index in node info in this case.
-                indexes.erase(0);
-                /// Disable lazy execution for current node only if it's disabled for short-circuit node,
-                /// because we can have nested short-circuit nodes.
-                if (!lazy_execution_infos[parent].can_be_lazy_executed)
-                    lazy_execution_info.can_be_lazy_executed = false;
+                if (idx < parent->children.size() && node == parent->children[idx])
+                {
+                    /// We shouldn't add this index in node info in this case.
+                    indexes.erase(idx);
+                    /// Disable lazy execution for current node only if it's disabled for short-circuit node,
+                    /// because we can have nested short-circuit nodes.
+                    if (!lazy_execution_infos[parent].can_be_lazy_executed)
+                        lazy_execution_info.can_be_lazy_executed = false;
+                }
             }
 
             lazy_execution_info.short_circuit_ancestors_info[parent].insert(indexes.begin(), indexes.end());
@@ -611,6 +614,13 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
                 res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
+                if (res_column.column->getDataType() != res_column.type->getColumnType())
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected return type from {}. Expected {}. Got {}",
+                        action.node->function->getName(),
+                        res_column.type->getColumnType(),
+                        res_column.column->getDataType());
             }
             break;
         }
@@ -936,14 +946,12 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
         for (const auto & action : actions)
         {
             if (action.node->type == ActionsDAG::ActionType::COLUMN && action.node->result_name == set_to_check)
-            {
                 // Constant ColumnSet cannot be empty, so we only need to check non-constant ones.
                 if (const auto * column_set = checkAndGetColumn<const ColumnSet>(action.node->column.get()))
-                {
-                    if (column_set->getData()->isCreated() && column_set->getData()->getTotalRowCount() == 0)
-                        return true;
-                }
-            }
+                    if (auto future_set = column_set->getData())
+                        if (auto set = future_set->get())
+                            if (set->getTotalRowCount() == 0)
+                                return true;
         }
     }
 

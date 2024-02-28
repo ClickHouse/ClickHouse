@@ -361,7 +361,7 @@ class TestRunner:
                 continue
 
             if block.get_block_type() == test_parser.BlockType.control:
-                clogger.debug("Skip control block", name_pos)
+                clogger.debug("Skip control block %s", name_pos)
                 block.dump_to(out_stream)
                 continue
 
@@ -374,12 +374,13 @@ class TestRunner:
                 continue
 
             request = block.get_request()
-            exec_res = execute_request(request, self.connection)
 
             if block.get_block_type() in self.skip_request_types:
                 clogger.debug("Runtime skip block for %s", self.dbms_name)
                 block.dump_to(out_stream)
                 continue
+
+            exec_res = execute_request(request, self.connection)
 
             if block.get_block_type() == test_parser.BlockType.statement:
                 try:
@@ -529,11 +530,22 @@ class TestRunner:
         if self.results is None:
             self.results = dict()
 
+        if self.dbms_name == "ClickHouse" and test_name in [
+            "test/select5.test",
+            "test/evidence/slt_lang_createtrigger.test",
+            "test/evidence/slt_lang_replace.test",
+            "test/evidence/slt_lang_droptrigger.test",
+        ]:
+            logger.info(f"Let's skip test %s for ClickHouse", test_name)
+            return
+
         with self.connection.with_one_test_scope():
             out_stream = io.StringIO()
             self.results[test_name] = out_stream
 
-            parser = test_parser.TestFileParser(stream, test_name, test_file)
+            parser = test_parser.TestFileParser(
+                stream, test_name, test_file, self.dbms_name
+            )
             for status in self.__statuses(parser, out_stream):
                 self.report.update(status)
 

@@ -4,7 +4,7 @@ sidebar_position: 63
 sidebar_label: User Settings
 ---
 
-# User Settings
+# Users and Roles Settings
 
 The `users` section of the `user.xml` configuration file contains user settings.
 
@@ -38,6 +38,10 @@ Structure of the `users` section:
                 </table_name>
             </database_name>
         </databases>
+        
+        <grants>
+            <query>GRANT SELECT ON system.*</query>
+        </grants>
     </user_name>
     <!-- Other users settings -->
 </users>
@@ -85,6 +89,28 @@ Possible values:
 - 1 — Enabled.
 
 Default value: 0.
+
+### grants {#grants-user-setting}
+
+This setting allows to grant any rights to selected user.
+Each element of the list should be `GRANT` query without any grantees specified.
+
+Example:
+
+```xml
+<user1>
+    <grants>
+        <query>GRANT SHOW ON *.*</query>
+        <query>GRANT CREATE ON *.* WITH GRANT OPTION</query>
+        <query>GRANT SELECT ON system.*</query>
+    </grants>
+</user1>
+```
+
+This setting can't be specified at the same time with
+`dictionaries`, `access_management`, `named_collection_control`, `show_named_collections_secrets`
+and `allow_databases` settings.
+
 
 ### user_name/networks {#user-namenetworks}
 
@@ -161,3 +187,34 @@ The following configuration forces that user `user1` can only see the rows of `t
 ```
 
 The `filter` can be any expression resulting in a [UInt8](../../sql-reference/data-types/int-uint.md)-type value. It usually contains comparisons and logical operators. Rows from `database_name.table1` where filter results to 0 are not returned for this user. The filtering is incompatible with `PREWHERE` operations and disables `WHERE→PREWHERE` optimization.
+
+## Roles
+
+You can create any predefined roles using the `roles` section of the `user.xml` configuration file.
+
+Structure of the `roles` section:
+
+```xml
+<roles>
+    <test_role>
+        <grants>
+            <query>GRANT SHOW ON *.*</query>
+            <query>REVOKE SHOW ON system.*</query>
+            <query>GRANT CREATE ON *.* WITH GRANT OPTION</query>
+        </grants>
+    </test_role>
+</roles>
+```
+
+These roles can also be granted to users from the `users` section:
+
+```xml
+<users>
+    <user_name>
+        ...
+        <grants>
+            <query>GRANT test_role</query>
+        </grants>
+    </user_name>
+<users>
+```

@@ -26,7 +26,7 @@ public:
         return !child->as<FunctionNode>();
     }
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_group_by_function_keys)
             return;
@@ -36,6 +36,9 @@ public:
             return;
 
         if (!query->hasGroupBy())
+            return;
+
+        if (query->isGroupByWithCube() || query->isGroupByWithRollup())
             return;
 
         auto & group_by = query->getGroupBy().getNodes();
@@ -127,7 +130,7 @@ private:
     }
 };
 
-void OptimizeGroupByFunctionKeysPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void OptimizeGroupByFunctionKeysPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     OptimizeGroupByFunctionKeysVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

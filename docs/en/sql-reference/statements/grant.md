@@ -9,7 +9,7 @@ sidebar_label: GRANT
 - Grants [privileges](#grant-privileges) to ClickHouse user accounts or roles.
 - Assigns roles to user accounts or to the other roles.
 
-To revoke privileges, use the [REVOKE](../../sql-reference/statements/revoke.md) statement. Also you can list granted privileges with the [SHOW GRANTS](../../sql-reference/statements/show.md#show-grants-statement) statement.
+To revoke privileges, use the [REVOKE](../../sql-reference/statements/revoke.md) statement. Also you can list granted privileges with the [SHOW GRANTS](../../sql-reference/statements/show.md#show-grants) statement.
 
 ## Granting Privilege Syntax
 
@@ -35,6 +35,18 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 
 The `WITH ADMIN OPTION` clause grants [ADMIN OPTION](#admin-option-privilege) privilege to `user` or `role`.
 The `WITH REPLACE OPTION` clause replace old roles by new role for the `user` or `role`, if is not specified it appends roles.
+
+## Grant Current Grants Syntax
+``` sql
+GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*}) | ON {db.table|db.*|*.*|table|*}} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
+```
+
+-   `privilege` — Type of privilege.
+-   `role` — ClickHouse user role.
+-   `user` — ClickHouse user account.
+
+Using the `CURRENT GRANTS` statement allows you to give all specified privileges to the given user or role.
+If none of the privileges were specified, then the given user or role will receive all available privileges for `CURRENT_USER`.
 
 ## Usage
 
@@ -102,6 +114,7 @@ Hierarchy of privileges:
     - `ALTER VIEW`
         - `ALTER VIEW REFRESH`
         - `ALTER VIEW MODIFY QUERY`
+        - `ALTER VIEW MODIFY SQL SECURITY`
 - [CREATE](#grant-create)
     - `CREATE DATABASE`
     - `CREATE TABLE`
@@ -188,6 +201,7 @@ Hierarchy of privileges:
     - `HDFS`
     - `S3`
 - [dictGet](#grant-dictget)
+- [displaySecretsInShowAndSelect](#grant-display-secrets)
 
 Examples of how this hierarchy is treated:
 
@@ -294,6 +308,7 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
     - `ALTER VIEW` Level: `GROUP`
         - `ALTER VIEW REFRESH`. Level: `VIEW`. Aliases: `ALTER LIVE VIEW REFRESH`, `REFRESH VIEW`
         - `ALTER VIEW MODIFY QUERY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY QUERY`
+        - `ALTER VIEW MODIFY SQL SECURITY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY SQL SECURITY`
 
 Examples of how this hierarchy is treated:
 
@@ -396,6 +411,7 @@ Allows a user to execute queries that manage users, roles and row policies.
         - `SHOW_ROW_POLICIES`. Level: `GLOBAL`. Aliases: `SHOW POLICIES`, `SHOW CREATE ROW POLICY`, `SHOW CREATE POLICY`
         - `SHOW_QUOTAS`. Level: `GLOBAL`. Aliases: `SHOW CREATE QUOTA`
         - `SHOW_SETTINGS_PROFILES`. Level: `GLOBAL`. Aliases: `SHOW PROFILES`, `SHOW CREATE SETTINGS PROFILE`, `SHOW CREATE PROFILE`
+    - `ALLOW SQL SECURITY NONE`. Level: `GLOBAL`. Aliases: `CREATE SQL SECURITY NONE`, `SQL SECURITY NONE`, `SECURITY NONE`
 
 The `ROLE ADMIN` privilege allows a user to assign and revoke any roles including those which are not assigned to the user with the admin option.
 
@@ -472,6 +488,15 @@ Privilege level: `DICTIONARY`.
 
 - `GRANT dictGet ON mydb.mydictionary TO john`
 - `GRANT dictGet ON mydictionary TO john`
+
+
+### displaySecretsInShowAndSelect {#grant-display-secrets}
+
+Allows a user to view secrets in `SHOW` and `SELECT` queries if both
+[`display_secrets_in_show_and_select` server setting](../../operations/server-configuration-parameters/settings#display_secrets_in_show_and_select)
+and
+[`format_display_secrets_in_show_and_select` format setting](../../operations/settings/formats#format_display_secrets_in_show_and_select)
+are turned on.
 
 ### ALL
 

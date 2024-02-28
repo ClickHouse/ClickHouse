@@ -47,6 +47,8 @@ public:
 
 private:
 
+    void finalizeImpl() override;
+
     WriteBuffer * setNextBuffer();
 
     WriteBufferPtrs prepared_sources;

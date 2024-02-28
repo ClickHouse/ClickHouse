@@ -42,7 +42,7 @@ void ReadBufferFromFileBase::setProgressCallback(ContextPtr context)
 
     setProfileCallback([file_progress_callback](const ProfileInfo & progress)
     {
-       file_progress_callback(FileProgress(progress.bytes_read, 0));
+       file_progress_callback(FileProgress(progress.bytes_read));
     });
 }
 

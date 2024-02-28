@@ -4,7 +4,7 @@
 #if USE_AWS_S3
 
 #include <Storages/DataLakes/StorageDeltaLake.h>
-#include <Storages/DataLakes/StorageIceberg.h>
+#include <Storages/DataLakes/Iceberg/StorageIceberg.h>
 #include <Storages/DataLakes/StorageHudi.h>
 
 
@@ -31,10 +31,14 @@ void registerStorageDeltaLake(StorageFactory & factory)
 }
 #endif
 
+#if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
+
 void registerStorageIceberg(StorageFactory & factory)
 {
-    REGISTER_DATA_LAKE_STORAGE(StorageIcebergS3, StorageIcebergName::name)
+    REGISTER_DATA_LAKE_STORAGE(StorageIceberg, StorageIceberg::name)
 }
+
+#endif
 
 void registerStorageHudi(StorageFactory & factory)
 {

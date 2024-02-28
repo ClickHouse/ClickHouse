@@ -39,7 +39,7 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
     if (size > 0)
     {
         auto & new_col = assert_cast<ColumnFixedString &>(*new_col_holder);
-        new_col.chars.resize(size * n);
+        new_col.chars.resize_exact(size * n);
 
         size_t count = std::min(this->size(), size);
         memcpy(new_col.chars.data(), chars.data(), count * n * sizeof(chars[0]));
@@ -60,13 +60,7 @@ bool ColumnFixedString::isDefaultAt(size_t index) const
 void ColumnFixedString::insert(const Field & x)
 {
     const String & s = x.get<const String &>();
-
-    if (s.size() > n)
-        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string '{}' for FixedString column", s);
-
-    size_t old_size = chars.size();
-    chars.resize_fill(old_size + n);
-    memcpy(chars.data() + old_size, s.data(), s.size());
+    insertData(s.data(), s.size());
 }
 
 void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
@@ -87,15 +81,33 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string for FixedString column");
 
     size_t old_size = chars.size();
-    chars.resize_fill(old_size + n);
+    chars.resize(old_size + n);
     memcpy(chars.data() + old_size, pos, length);
+    memset(chars.data() + old_size + length, 0, n - length);
 }
 
-StringRef ColumnFixedString::serializeValueIntoArena(size_t index, Arena & arena, char const *& begin) const
+StringRef ColumnFixedString::serializeValueIntoArena(size_t index, Arena & arena, char const *& begin, const UInt8 * null_bit) const
 {
-    auto * pos = arena.allocContinue(n, begin);
+    constexpr size_t null_bit_size = sizeof(UInt8);
+    StringRef res;
+    char * pos;
+    if (null_bit)
+    {
+        res.size = * null_bit ? null_bit_size : null_bit_size + n;
+        pos = arena.allocContinue(res.size, begin);
+        res.data = pos;
+        memcpy(pos, null_bit, null_bit_size);
+        if (*null_bit) return res;
+        pos += null_bit_size;
+    }
+    else
+    {
+        res.size = n;
+        pos = arena.allocContinue(res.size, begin);
+        res.data = pos;
+    }
     memcpy(pos, &chars[n * index], n);
-    return StringRef(pos, n);
+    return res;
 }
 
 const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
@@ -191,6 +203,7 @@ void ColumnFixedString::updatePermutation(IColumn::PermutationSortDirection dire
 void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
+    chassert(this->n == src_concrete.n);
 
     if (start + length > src_concrete.size())
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound "
@@ -278,7 +291,7 @@ void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
 
     ssize_t index = mask.size() - 1;
     ssize_t from = size() - 1;
-    chars.resize_fill(mask.size() * n, 0);
+    chars.resize_fill(mask.size() * n);
     while (index >= 0)
     {
         if (!!mask[index] ^ inverted)
@@ -398,13 +411,13 @@ ColumnPtr ColumnFixedString::compress() const
     const size_t column_size = size();
     const size_t compressed_size = compressed->size();
     return ColumnCompressed::create(column_size, compressed_size,
-        [compressed = std::move(compressed), column_size, n = n]
+        [my_compressed = std::move(compressed), column_size, my_n = n]
         {
-            size_t chars_size = n * column_size;
-            auto res = ColumnFixedString::create(n);
+            size_t chars_size = my_n * column_size;
+            auto res = ColumnFixedString::create(my_n);
             res->getChars().resize(chars_size);
             ColumnCompressed::decompressBuffer(
-                compressed->data(), res->getChars().data(), compressed->size(), chars_size);
+                my_compressed->data(), res->getChars().data(), my_compressed->size(), chars_size);
             return res;
         });
 }

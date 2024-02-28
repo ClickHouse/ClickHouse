@@ -17,6 +17,6 @@ public:
         return "SystemFormats";
     }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 };
 }

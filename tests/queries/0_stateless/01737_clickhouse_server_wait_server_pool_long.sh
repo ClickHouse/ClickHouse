@@ -54,7 +54,7 @@ if ! $CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" --format Null 
 fi
 
 query_id="$CLICKHOUSE_DATABASE-$SECONDS"
-$CLICKHOUSE_CLIENT_BINARY --query_id "$query_id" --host 127.1 --port "$server_port" --format Null -q 'select sleepEachRow(1) from numbers(10)' 2>/dev/null &
+$CLICKHOUSE_CLIENT_BINARY --query_id "$query_id" --host 127.1 --port "$server_port" --format Null --function_sleep_max_microseconds_per_block 0 -q 'select sleepEachRow(1) from numbers(10)' 2>/dev/null &
 client_pid=$!
 
 # wait until the query will appear in processlist (max 10 second)

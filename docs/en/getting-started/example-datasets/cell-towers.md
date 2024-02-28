@@ -29,7 +29,7 @@ Here is a preview of the dashboard created in this guide:
 
 This dataset is from [OpenCelliD](https://www.opencellid.org/) - The world's largest Open Database of Cell Towers.
 
-As of 2021, it contains more than 40 million records about cell towers (GSM, LTE, UMTS, etc.) around the world with their geographical coordinates and metadata (country code, network, etc).
+As of 2021, it contains more than 40 million records about cell towers (GSM, LTE, UMTS, etc.) around the world with their geographical coordinates and metadata (country code, network, etc.).
 
 OpenCelliD Project is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License, and we redistribute a snapshot of this dataset under the terms of the same license. The up-to-date version of the dataset is available to download after sign in.
 
@@ -308,7 +308,7 @@ To build a Superset dashboard using the OpenCelliD dataset you should:
   ![Choose clickhouse connect as database type](@site/docs/en/getting-started/example-datasets/images/superset-choose-a-database.png)
 
 :::note
-  If **ClickHouse Connect** is not one of your options, then you will need to install it.  The comand is `pip install clickhouse-connect`, and more info is [available here](https://pypi.org/project/clickhouse-connect/).
+  If **ClickHouse Connect** is not one of your options, then you will need to install it. The command is `pip install clickhouse-connect`, and more info is [available here](https://pypi.org/project/clickhouse-connect/).
 :::
 
 #### Add your connection details:
@@ -317,7 +317,7 @@ To build a Superset dashboard using the OpenCelliD dataset you should:
   Make sure that you set **SSL** on when connecting to ClickHouse Cloud or other ClickHouse systems that enforce the use of SSL.
 :::
 
-  ![Add ClickHouse as a Superset datasource](@site/docs/en/getting-started/example-datasets/images/superset-connect-a-database.png)
+  ![Add ClickHouse as a Superset data source](@site/docs/en/getting-started/example-datasets/images/superset-connect-a-database.png)
 
 ### Add the table **cell_towers** as a Superset **dataset**
 
@@ -355,7 +355,7 @@ Click on **UPDATE CHART** to render the visualization.
 
 ### Add the charts to a **dashboard**
 
-This screenshot shows cell tower locations with LTE, UMTS, and GSM radios.  The charts are all created in the same way and they are added to a dashboard.
+This screenshot shows cell tower locations with LTE, UMTS, and GSM radios.  The charts are all created in the same way, and they are added to a dashboard.
 
   ![Dashboard of cell towers by radio type in mcc 204](@site/docs/en/getting-started/example-datasets/images/superset-cell-tower-dashboard.png)
 
@@ -364,5 +364,5 @@ The data is also available for interactive queries in the [Playground](https://p
 
 This [example](https://play.clickhouse.com/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=) will populate the username and even the query for you.
 
-Although you cannot create tables in the Playground, you can run all of the queries and even use Superset (adjust the hostname and port number).
+Although you cannot create tables in the Playground, you can run all of the queries and even use Superset (adjust the host name and port number).
 :::

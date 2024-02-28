@@ -1,5 +1,8 @@
+#include "Storages/ColumnsDescription.h"
+#include <base/getFQDNOrHostName.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeMap.h>
@@ -26,20 +29,24 @@ static String typeToString(FilesystemCacheLogElement::CacheType type)
     UNREACHABLE();
 }
 
-NamesAndTypesList FilesystemCacheLogElement::getNamesAndTypes()
+ColumnsDescription FilesystemCacheLogElement::getColumnsDescription()
 {
     DataTypes types{
         std::make_shared<DataTypeNumber<UInt64>>(),
         std::make_shared<DataTypeNumber<UInt64>>(),
     };
 
-    return {
+    return ColumnsDescription
+    {
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"query_id", std::make_shared<DataTypeString>()},
         {"source_file_path", std::make_shared<DataTypeString>()},
         {"file_segment_range", std::make_shared<DataTypeTuple>(types)},
         {"total_requested_range", std::make_shared<DataTypeTuple>(types)},
+        {"key", std::make_shared<DataTypeString>()},
+        {"offset", std::make_shared<DataTypeUInt64>()},
         {"size", std::make_shared<DataTypeUInt64>()},
         {"read_type", std::make_shared<DataTypeString>()},
         {"read_from_cache_attempted", std::make_shared<DataTypeUInt8>()},
@@ -52,6 +59,7 @@ void FilesystemCacheLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
+    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
 
@@ -60,6 +68,8 @@ void FilesystemCacheLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(source_file_path);
     columns[i++]->insert(Tuple{file_segment_range.first, file_segment_range.second});
     columns[i++]->insert(Tuple{requested_range.first, requested_range.second});
+    columns[i++]->insert(file_segment_key);
+    columns[i++]->insert(file_segment_offset);
     columns[i++]->insert(file_segment_size);
     columns[i++]->insert(typeToString(cache_type));
     columns[i++]->insert(read_from_cache_attempted);

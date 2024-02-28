@@ -20,7 +20,6 @@ using DiskPtr = std::shared_ptr<IDisk>;
 /// - PartMetadataManagerOrdinary: manage metadata from disk directly. deleteAll/assertAllDeleted/updateAll/check
 ///   are all empty implementations because they are not needed for PartMetadataManagerOrdinary(those operations
 ///   are done implicitly when removing or renaming part directory).
-/// - PartMetadataManagerWithCache: manage metadata from RocksDB cache and disk.
 class IPartMetadataManager
 {
 public:

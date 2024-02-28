@@ -39,14 +39,14 @@ namespace
             else
                 ss << value;
 
-            LOG_DEBUG(&Poco::Logger::get("redundantDistinct"), "{}{}{}", key, separator, ss.str());
+            LOG_DEBUG(getLogger("redundantDistinct"), "{}{}{}", key, separator, ss.str());
         }
     }
 
     void logActionsDAG(const String & prefix, const ActionsDAGPtr & actions)
     {
         if constexpr (debug_logging_enabled)
-            LOG_DEBUG(&Poco::Logger::get("redundantDistinct"), "{} :\n{}", prefix, actions->dumpDAG());
+            LOG_DEBUG(getLogger("redundantDistinct"), "{} :\n{}", prefix, actions->dumpDAG());
     }
 
     using DistinctColumns = std::set<std::string_view>;

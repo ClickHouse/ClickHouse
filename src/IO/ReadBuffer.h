@@ -6,6 +6,7 @@
 #include <memory>
 
 #include <Common/Exception.h>
+#include <Common/Priority.h>
 #include <IO/BufferBase.h>
 #include <IO/AsynchronousReader.h>
 
@@ -17,10 +18,9 @@ namespace ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int NOT_IMPLEMENTED;
 }
 
-static constexpr auto DEFAULT_PREFETCH_PRIORITY = 0;
+static constexpr auto DEFAULT_PREFETCH_PRIORITY = Priority{0};
 
 /** A simple abstract class for buffered data reading (char sequences) from somewhere.
   * Unlike std::istream, it provides access to the internal buffer,
@@ -208,10 +208,10 @@ public:
 
     /** Do something to allow faster subsequent call to 'nextImpl' if possible.
       * It's used for asynchronous readers with double-buffering.
-      * `priority` is the Threadpool priority, with which the prefetch task will be schedules.
-      * Smaller is more priority.
+      * `priority` is the `ThreadPool` priority, with which the prefetch task will be scheduled.
+      * Lower value means higher priority.
       */
-    virtual void prefetch(int64_t /* priority */) {}
+    virtual void prefetch(Priority) {}
 
     /**
      * Set upper bound for read range [..., position).
@@ -234,14 +234,6 @@ public:
     virtual void setReadUntilPosition(size_t /* position */) {}
 
     virtual void setReadUntilEnd() {}
-
-    /// Read at most `size` bytes into data at specified offset `offset`. First ignore `ignore` bytes if `ignore` > 0.
-    /// Notice: this function only need to be implemented in synchronous read buffers to be wrapped in asynchronous read.
-    /// Such as ReadBufferFromRemoteFSGather and AsynchronousReadIndirectBufferFromRemoteFS.
-    virtual IAsynchronousReader::Result readInto(char * /*data*/, size_t /*size*/, size_t /*offset*/, size_t /*ignore*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "readInto not implemented");
-    }
 
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`

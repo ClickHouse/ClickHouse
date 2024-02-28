@@ -33,6 +33,13 @@
 //
 
 
+#if defined(_WIN32) && defined(POCO_DLL)
+#    if defined(MongoDB_EXPORTS)
+#        define MongoDB_API __declspec(dllexport)
+#    else
+#        define MongoDB_API __declspec(dllimport)
+#    endif
+#endif
 
 
 #if !defined(MongoDB_API)
@@ -47,6 +54,11 @@
 //
 // Automatically link MongoDB library.
 //
+#if defined(_MSC_VER)
+#    if !defined(POCO_NO_AUTOMATIC_LIBS) && !defined(MongoDB_EXPORTS)
+#        pragma comment(lib, "PocoMongoDB" POCO_LIB_SUFFIX)
+#    endif
+#endif
 
 
 #endif // MongoDBMongoDB_INCLUDED

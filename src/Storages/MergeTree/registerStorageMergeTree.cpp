@@ -23,6 +23,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/DDLTask.h>
 
 
 namespace DB
@@ -79,6 +80,7 @@ ORDER BY expr
 [SAMPLE BY expr]
 [TTL expr [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'], ...]
 [SETTINGS name=value, ...]
+[COMMENT 'comment']
 
 See details in documentation: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/. Other engines of the family support different syntax, see details in the corresponding documentation topics.
 
@@ -192,7 +194,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     auto add_optional_param = [&](const char * desc)
     {
         ++max_num_params;
-        needed_params += needed_params.empty() ? "\n" : ",\n[";
+        needed_params += needed_params.empty() ? "\n[" : ",\n[";
         needed_params += desc;
         needed_params += "]";
     };
@@ -296,7 +298,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                             arg_idx, e.message(), verbose_help_message);
         }
     }
-    else if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_deprecated_syntax_for_merge_tree)
+    else if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef().allow_deprecated_syntax_for_merge_tree)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "This syntax for *MergeTree engine is deprecated. "
                                                    "Use extended storage definition syntax with ORDER BY/PRIMARY KEY clause. "
@@ -313,12 +315,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
 
     /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
-    bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
+    /// and if UUID was explicitly passed in CREATE TABLE (like for ATTACH)
+    bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach || args.query.has_uuid;
 
     auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name)
     {
         /// Unfold {database} and {table} macro on table creation, so table can be renamed.
-        if (!args.attach)
+        if (args.mode < LoadingStrictnessLevel::ATTACH)
         {
             Macros::MacroExpansionInfo info;
             /// NOTE: it's not recursive
@@ -402,10 +405,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             /// Try use default values if arguments are not specified.
             /// Note: {uuid} macro works for ON CLUSTER queries when database engine is Atomic.
-            const auto & config = args.getContext()->getConfigRef();
-            zookeeper_path = StorageReplicatedMergeTree::getDefaultZooKeeperPath(config);
+            const auto & server_settings = args.getContext()->getServerSettings();
+            zookeeper_path = server_settings.default_replica_path;
             /// TODO maybe use hostname if {replica} is not defined?
-            replica_name = StorageReplicatedMergeTree::getDefaultReplicaName(config);
+            replica_name = server_settings.default_replica_name;
 
             /// Modify query, so default values will be written to metadata
             assert(arg_num == 0);
@@ -533,9 +536,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
 
         if (!args.storage_def->order_by)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "You must provide an ORDER BY or PRIMARY KEY expression in the table definition. "
-                            "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY tuple()");
+        {
+            if (args.getLocalContext()->getSettingsRef().create_table_empty_primary_key_by_default)
+            {
+                args.storage_def->set(args.storage_def->order_by, makeASTFunction("tuple"));
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "You must provide an ORDER BY or PRIMARY KEY expression in the table definition. "
+                                "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY (). "
+                                "Otherwise, you can use the setting 'create_table_empty_primary_key_by_default' to "
+                                "automatically add an empty primary key to the table definition");
+            }
+        }
 
         /// Get sorting key from engine arguments.
         ///
@@ -568,10 +582,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, context);
 
+        bool allow_suspicious_ttl = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode || args.getLocalContext()->getSettingsRef().allow_suspicious_ttl_expressions;
+
         if (args.storage_def->ttl_table)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key);
+                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, allow_suspicious_ttl);
         }
 
         if (args.query.columns_list && args.query.columns_list->indices)
@@ -585,28 +601,47 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 metadata.projections.add(std::move(projection));
             }
 
-        auto constraints = metadata.constraints.getConstraints();
-        if (args.query.columns_list && args.query.columns_list->constraints)
-            for (auto & constraint : args.query.columns_list->constraints->children)
-                constraints.push_back(constraint);
-        metadata.constraints = ConstraintsDescription(constraints);
 
         auto column_ttl_asts = columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)
         {
-            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key);
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, allow_suspicious_ttl);
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 
-        storage_settings->loadFromQuery(*args.storage_def, context);
+        storage_settings->loadFromQuery(*args.storage_def, context, LoadingStrictnessLevel::ATTACH <= args.mode);
 
         // updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
         {
-            if (!args.attach)
+            if (args.mode <= LoadingStrictnessLevel::CREATE)
                 args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
             metadata.settings_changes = args.storage_def->settings->ptr();
         }
+
+        auto constraints = metadata.constraints.getConstraints();
+        if (args.query.columns_list && args.query.columns_list->constraints)
+            for (auto & constraint : args.query.columns_list->constraints->children)
+                constraints.push_back(constraint);
+        if ((merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
+            merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing) &&
+            storage_settings->add_implicit_sign_column_constraint_for_collapsing_engine)
+        {
+            auto sign_column_check_constraint = std::make_unique<ASTConstraintDeclaration>();
+            sign_column_check_constraint->name = "check_sign_column";
+            sign_column_check_constraint->type = ASTConstraintDeclaration::Type::CHECK;
+
+            Array valid_values_array;
+            valid_values_array.emplace_back(-1);
+            valid_values_array.emplace_back(1);
+
+            auto valid_values_ast = std::make_unique<ASTLiteral>(std::move(valid_values_array));
+            auto sign_column_ast = std::make_unique<ASTIdentifier>(merging_params.sign_column);
+            sign_column_check_constraint->set(sign_column_check_constraint->expr, makeASTFunction("in", std::move(sign_column_ast), std::move(valid_values_ast)));
+
+            constraints.push_back(std::move(sign_column_check_constraint));
+        }
+        metadata.constraints = ConstraintsDescription(constraints);
     }
     else
     {
@@ -655,7 +690,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (ast && ast->value.getType() == Field::Types::UInt64)
         {
             storage_settings->index_granularity = ast->value.safeGet<UInt64>();
-            if (!args.attach)
+            if (args.mode <= LoadingStrictnessLevel::CREATE)
             {
                 SettingsChanges changes;
                 changes.emplace_back("index_granularity", Field(storage_settings->index_granularity));
@@ -666,12 +701,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index granularity must be a positive integer{}", verbose_help_message);
         ++arg_num;
 
-        if (args.storage_def->ttl_table && !args.attach)
+        if (args.storage_def->ttl_table && args.mode <= LoadingStrictnessLevel::CREATE)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table TTL is not allowed for MergeTree in old syntax");
     }
 
     DataTypes data_types = metadata.partition_key.data_types;
-    if (!args.attach && !storage_settings->allow_floating_point_partition_key)
+    if (args.mode <= LoadingStrictnessLevel::CREATE && !storage_settings->allow_floating_point_partition_key)
     {
         for (size_t i = 0; i < data_types.size(); ++i)
             if (isFloat(data_types[i]))
@@ -684,10 +719,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
+        bool need_check_table_structure = true;
+        if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
+            need_check_table_structure = txn->isInitialQuery();
+
         return std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_path,
             replica_name,
-            args.attach,
+            args.mode,
             args.table_id,
             args.relative_data_path,
             metadata,
@@ -695,20 +734,19 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             date_column_name,
             merging_params,
             std::move(storage_settings),
-            args.has_force_restore_data_flag,
-            renaming_restrictions);
+            renaming_restrictions,
+            need_check_table_structure);
     }
     else
         return std::make_shared<StorageMergeTree>(
             args.table_id,
             args.relative_data_path,
             metadata,
-            args.attach,
+            args.mode,
             context,
             date_column_name,
             merging_params,
-            std::move(storage_settings),
-            args.has_force_restore_data_flag);
+            std::move(storage_settings));
 }
 
 

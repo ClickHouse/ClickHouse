@@ -28,6 +28,8 @@ public:
 
     String getName() const override { return "PostgreSQL"; }
 
+    ~PostgreSQLSource() override;
+
 protected:
     PostgreSQLSource(
         std::shared_ptr<T> tx_,
@@ -54,6 +56,7 @@ private:
     ExternalResultDescription description;
 
     bool started = false;
+    bool is_completed = false;
 
     postgres::ConnectionHolderPtr connection_holder;
 

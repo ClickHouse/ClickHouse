@@ -39,7 +39,6 @@ void ConvertingTransform::onConsume(Chunk chunk)
     expression->execute(block, num_rows);
 
     chunk.setColumns(block.getColumns(), num_rows);
-    chunk.setChunkInfo(chunk.getChunkInfo());
     cur_chunk = std::move(chunk);
 }
 

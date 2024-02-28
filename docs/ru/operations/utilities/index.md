@@ -13,3 +13,4 @@ sidebar_position: 56
 -   [ClickHouse obfuscator](../../operations/utilities/clickhouse-obfuscator.md) — обфусцирует данные.
 -   [ClickHouse compressor](../../operations/utilities/clickhouse-compressor.md) — упаковывает и распаковывает данные.
 -   [clickhouse-odbc-bridge](../../operations/utilities/odbc-bridge.md) — прокси-сервер для ODBC.
+-   [clickhouse_backupview](../../operations/utilities/backupview.md) — модуль на Питоне для анализа бэкапов ClickHouse.

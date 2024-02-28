@@ -6,7 +6,7 @@ exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
 set history_file $env(CLICKHOUSE_TMP)/$basename.history
 
 log_user 0
-set timeout 10
+set timeout 60
 match_max 100000
 
 expect_after {

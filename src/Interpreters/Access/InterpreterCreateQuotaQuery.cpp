@@ -1,19 +1,27 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateQuotaQuery.h>
-#include <Parsers/Access/ASTCreateQuotaQuery.h>
-#include <Parsers/Access/ASTRolesOrUsersSet.h>
+
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/Quota.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <Parsers/Access/ASTCreateQuotaQuery.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <base/range.h>
 #include <boost/range/algorithm/find_if.hpp>
-#include <boost/range/algorithm/upper_bound.hpp>
 #include <boost/range/algorithm/sort.hpp>
-
+#include <boost/range/algorithm/upper_bound.hpp>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ACCESS_ENTITY_ALREADY_EXISTS;
+}
+
 namespace
 {
     void updateQuotaFromQueryImpl(
@@ -76,19 +84,30 @@ namespace
 
 BlockIO InterpreterCreateQuotaQuery::execute()
 {
-    auto & query = query_ptr->as<ASTCreateQuotaQuery &>();
+    const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
+    auto & query = updated_query_ptr->as<ASTCreateQuotaQuery &>();
+
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(query.alter ? AccessType::ALTER_QUOTA : AccessType::CREATE_QUOTA);
 
     if (!query.cluster.empty())
     {
         query.replaceCurrentUserTag(getContext()->getUserName());
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
     }
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)
         roles_from_query = RolesOrUsersSet{*query.roles, access_control, getContext()->getUserID()};
+
+    IAccessStorage * storage = &access_control;
+    MultipleAccessStorage::StoragePtr storage_ptr;
+
+    if (!query.storage_name.empty())
+    {
+        storage_ptr = access_control.getStorageByName(query.storage_name);
+        storage = storage_ptr.get();
+    }
 
     if (query.alter)
     {
@@ -100,11 +119,11 @@ BlockIO InterpreterCreateQuotaQuery::execute()
         };
         if (query.if_exists)
         {
-            auto ids = access_control.find<Quota>(query.names);
-            access_control.tryUpdate(ids, update_func);
+            auto ids = storage->find<Quota>(query.names);
+            storage->tryUpdate(ids, update_func);
         }
         else
-            access_control.update(access_control.getIDs<Quota>(query.names), update_func);
+            storage->update(storage->getIDs<Quota>(query.names), update_func);
     }
     else
     {
@@ -116,12 +135,21 @@ BlockIO InterpreterCreateQuotaQuery::execute()
             new_quotas.emplace_back(std::move(new_quota));
         }
 
+        if (!query.storage_name.empty())
+        {
+            for (const auto & name : query.names)
+            {
+                if (auto another_storage_ptr = access_control.findExcludingStorage(AccessEntityType::QUOTA, name, storage_ptr))
+                    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "Quota {} already exists in storage {}", name, another_storage_ptr->getStorageName());
+            }
+        }
+
         if (query.if_not_exists)
-            access_control.tryInsert(new_quotas);
+            storage->tryInsert(new_quotas);
         else if (query.or_replace)
-            access_control.insertOrReplace(new_quotas);
+            storage->insertOrReplace(new_quotas);
         else
-            access_control.insert(new_quotas);
+            storage->insert(new_quotas);
     }
 
     return {};
@@ -131,6 +159,15 @@ BlockIO InterpreterCreateQuotaQuery::execute()
 void InterpreterCreateQuotaQuery::updateQuotaFromQuery(Quota & quota, const ASTCreateQuotaQuery & query)
 {
     updateQuotaFromQueryImpl(quota, query, {}, {});
+}
+
+void registerInterpreterCreateQuotaQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterCreateQuotaQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterCreateQuotaQuery", create_fn);
 }
 
 }

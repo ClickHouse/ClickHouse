@@ -44,21 +44,25 @@ public:
     using Entry = IConnectionPool::Entry;
 
     /** Allocates connection to work. */
+    Entry get(const ConnectionTimeouts & timeouts) override;
     Entry get(const ConnectionTimeouts & timeouts,
-              const Settings * settings,
+              const Settings & settings,
               bool force_connected) override; /// From IConnectionPool
-
-    Int64 getPriority() const override; /// From IConnectionPool
 
     /** Allocates up to the specified number of connections to work.
       * Connections provide access to different replicas of one shard.
       */
-    std::vector<Entry> getMany(const ConnectionTimeouts & timeouts,
-                               const Settings * settings, PoolMode pool_mode);
+    std::vector<Entry> getMany(
+        const ConnectionTimeouts & timeouts,
+        const Settings & settings,
+        PoolMode pool_mode,
+        AsyncCallback async_callback = {},
+        std::optional<bool> skip_unavailable_endpoints = std::nullopt,
+        GetPriorityForLoadBalancing::Func priority_func = {});
 
     /// The same as getMany(), but return std::vector<TryResult>.
     std::vector<TryResult> getManyForTableFunction(const ConnectionTimeouts & timeouts,
-                                                   const Settings * settings, PoolMode pool_mode);
+                                                   const Settings & settings, PoolMode pool_mode);
 
     using Base = PoolWithFailoverBase<IConnectionPool>;
     using TryResult = Base::TryResult;
@@ -66,23 +70,26 @@ public:
     /// The same as getMany(), but check that replication delay for table_to_check is acceptable.
     /// Delay threshold is taken from settings.
     std::vector<TryResult> getManyChecked(
-            const ConnectionTimeouts & timeouts,
-            const Settings * settings,
-            PoolMode pool_mode,
-            const QualifiedTableName & table_to_check);
+        const ConnectionTimeouts & timeouts,
+        const Settings & settings,
+        PoolMode pool_mode,
+        const QualifiedTableName & table_to_check,
+        AsyncCallback async_callback = {},
+        std::optional<bool> skip_unavailable_endpoints = std::nullopt,
+        GetPriorityForLoadBalancing::Func priority_func = {});
 
     struct NestedPoolStatus
     {
         const Base::NestedPoolPtr pool;
-        size_t error_count;
-        size_t slowdown_count;
+        size_t error_count = 0;
+        size_t slowdown_count = 0;
         std::chrono::seconds estimated_recovery_time;
     };
 
     using Status = std::vector<NestedPoolStatus>;
     Status getStatus() const;
 
-    std::vector<Base::ShuffledPool> getShuffledPools(const Settings * settings);
+    std::vector<Base::ShuffledPool> getShuffledPools(const Settings & settings, GetPriorityFunc priority_func = {}, bool use_slowdown_count = false);
 
     size_t getMaxErrorCup() const { return Base::max_error_cap; }
 
@@ -91,24 +98,29 @@ public:
         Base::updateSharedErrorCounts(shuffled_pools);
     }
 
+    size_t getPoolSize() const { return Base::getPoolSize(); }
+
 private:
     /// Get the values of relevant settings and call Base::getMany()
     std::vector<TryResult> getManyImpl(
-            const Settings * settings,
-            PoolMode pool_mode,
-            const TryGetEntryFunc & try_get_entry);
+        const Settings & settings,
+        PoolMode pool_mode,
+        const TryGetEntryFunc & try_get_entry,
+        std::optional<bool> skip_unavailable_endpoints = std::nullopt,
+        GetPriorityForLoadBalancing::Func priority_func = {});
 
     /// Try to get a connection from the pool and check that it is good.
     /// If table_to_check is not null and the check is enabled in settings, check that replication delay
     /// for this table is not too large.
     TryResult tryGetEntry(
-            IConnectionPool & pool,
+            const ConnectionPoolPtr & pool,
             const ConnectionTimeouts & timeouts,
             std::string & fail_message,
-            const Settings * settings,
-            const QualifiedTableName * table_to_check = nullptr);
+            const Settings & settings,
+            const QualifiedTableName * table_to_check = nullptr,
+            AsyncCallback async_callback = {});
 
-    GetPriorityFunc makeGetPriorityFunc(const Settings * settings);
+    GetPriorityForLoadBalancing::Func makeGetPriorityFunc(const Settings & settings);
 
     GetPriorityForLoadBalancing get_priority_load_balancing;
 };

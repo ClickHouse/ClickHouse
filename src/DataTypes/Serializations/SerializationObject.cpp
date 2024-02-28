@@ -514,6 +514,22 @@ void SerializationObject<Parser>::serializeTextCSV(const IColumn & column, size_
 }
 
 template <typename Parser>
+void SerializationObject<Parser>::serializeTextMarkdown(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    if (settings.markdown.escape_special_characters)
+    {
+        WriteBufferFromOwnString ostr_str;
+        serializeTextImpl(column, row_num, ostr_str, settings);
+        writeMarkdownEscapedString(ostr_str.str(), ostr);
+    }
+    else
+    {
+        serializeTextEscaped(column, row_num, ostr, settings);
+    }
+}
+
+template <typename Parser>
 void SerializationObject<Parser>::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
 {
     const auto & column_object = assert_cast<const ColumnObject &>(column);

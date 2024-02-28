@@ -7,6 +7,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Common/assert_cast.h>
+#include <Common/iota.h>
 #include <Common/randomSeed.h>
 #include <Common/shuffle.h>
 #include <Common/typeid_cast.h>
@@ -15,6 +16,7 @@
 
 #include <algorithm>
 #include <numeric>
+
 
 namespace DB
 {
@@ -149,7 +151,7 @@ ColumnPtr FunctionArrayShuffleImpl<Traits>::executeGeneric(const ColumnArray & a
     size_t size = offsets.size();
     size_t nested_size = array.getData().size();
     IColumn::Permutation permutation(nested_size);
-    std::iota(std::begin(permutation), std::end(permutation), 0);
+    iota(permutation.data(), permutation.size(), IColumn::Permutation::value_type(0));
 
     ColumnArray::Offset current_offset = 0;
     for (size_t i = 0; i < size; ++i)
@@ -175,8 +177,8 @@ ColumnPtr FunctionArrayShuffleImpl<Traits>::executeGeneric(const ColumnArray & a
 REGISTER_FUNCTION(ArrayShuffle)
 {
     factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayShuffleTraits>>(
-        {
-            R"(
+        FunctionDocumentation{
+            .description=R"(
 Returns an array of the same size as the original array containing the elements in shuffled order.
 Elements are being reordered in such a way that each possible permutation of those elements has equal probability of appearance.
 
@@ -189,15 +191,16 @@ If no seed is provided a random one will be used:
 It is possible to override the seed to produce stable results:
 [example:explicit_seed]
 )",
-            Documentation::Examples{
-                {"random_seed", "SELECT arrayShuffle([1, 2, 3, 4])"},
-                {"explicit_seed", "SELECT arrayShuffle([1, 2, 3, 4], 41)"},
-                {"materialize", "SELECT arrayShuffle(materialize([1, 2, 3]), 42), arrayShuffle([1, 2, 3], 42) FROM numbers(10)"}},
-            Documentation::Categories{"Array"}},
+            .examples{
+                {"random_seed", "SELECT arrayShuffle([1, 2, 3, 4])", ""},
+                {"explicit_seed", "SELECT arrayShuffle([1, 2, 3, 4], 41)", ""},
+                {"materialize", "SELECT arrayShuffle(materialize([1, 2, 3]), 42), arrayShuffle([1, 2, 3], 42) FROM numbers(10)", ""}},
+            .categories{"Array"}},
         FunctionFactory::CaseInsensitive);
+
     factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayPartialShuffleTraits>>(
-        {
-            R"(
+        FunctionDocumentation{
+            .description=R"(
 Returns an array of the same size as the original array where elements in range [1..limit] are a random
 subset of the original array. Remaining (limit..n] shall contain the elements not in [1..limit] range in undefined order.
 Value of limit shall be in range [1..n]. Values outside of that range are equivalent to performing full arrayShuffle:
@@ -213,14 +216,14 @@ If no seed is provided a random one will be used:
 It is possible to override the seed to produce stable results:
 [example:explicit_seed]
 )",
-            Documentation::Examples{
-                {"no_limit1", "SELECT arrayPartialShuffle([1, 2, 3, 4], 0)"},
-                {"no_limit2", "SELECT arrayPartialShuffle([1, 2, 3, 4])"},
-                {"random_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2)"},
-                {"explicit_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)"},
+            .examples{
+                {"no_limit1", "SELECT arrayPartialShuffle([1, 2, 3, 4], 0)", ""},
+                {"no_limit2", "SELECT arrayPartialShuffle([1, 2, 3, 4])", ""},
+                {"random_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2)", ""},
+                {"explicit_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)", ""},
                 {"materialize",
-                 "SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffle([1, 2, 3], 2, 42) FROM numbers(10)"}},
-            Documentation::Categories{"Array"}},
+                 "SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffle([1, 2, 3], 2, 42) FROM numbers(10)", ""}},
+            .categories{"Array"}},
         FunctionFactory::CaseInsensitive);
 }
 

@@ -6,6 +6,7 @@
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserSampleRatio.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
+#include <Core/Joins.h>
 
 
 namespace DB
@@ -24,6 +25,8 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!ParserWithOptionalAlias(std::make_unique<ParserSubquery>(), allow_alias_without_as_keyword).parse(pos, res->subquery, expected)
         && !ParserWithOptionalAlias(std::make_unique<ParserFunction>(false, true), allow_alias_without_as_keyword).parse(pos, res->table_function, expected)
         && !ParserWithOptionalAlias(std::make_unique<ParserCompoundIdentifier>(true, true), allow_alias_without_as_keyword)
+                .parse(pos, res->database_and_table_name, expected)
+        && !ParserWithOptionalAlias(std::make_unique<ParserTableAsStringLiteralIdentifier>(), allow_alias_without_as_keyword)
                 .parse(pos, res->database_and_table_name, expected))
         return false;
 
@@ -164,6 +167,8 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 table_join->kind = JoinKind::Full;
             else if (ParserKeyword("CROSS").ignore(pos))
                 table_join->kind = JoinKind::Cross;
+            else if (ParserKeyword("PASTE").ignore(pos))
+                table_join->kind = JoinKind::Paste;
             else
                 no_kind = true;
 
@@ -189,8 +194,8 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
             }
 
             if (table_join->strictness != JoinStrictness::Unspecified
-                && table_join->kind == JoinKind::Cross)
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "You must not specify ANY or ALL for CROSS JOIN.");
+                && (table_join->kind == JoinKind::Cross || table_join->kind == JoinKind::Paste))
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "You must not specify ANY or ALL for {} JOIN.", toString(table_join->kind));
 
             if ((table_join->strictness == JoinStrictness::Semi || table_join->strictness == JoinStrictness::Anti) &&
                 (table_join->kind != JoinKind::Left && table_join->kind != JoinKind::Right))
@@ -204,7 +209,7 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
             return false;
 
         if (table_join->kind != JoinKind::Comma
-            && table_join->kind != JoinKind::Cross)
+            && table_join->kind != JoinKind::Cross && table_join->kind != JoinKind::Paste)
         {
             if (ParserKeyword("USING").ignore(pos, expected))
             {

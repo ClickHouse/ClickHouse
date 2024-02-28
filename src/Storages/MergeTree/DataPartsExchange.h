@@ -55,7 +55,7 @@ private:
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
     /// so Service will never access dangling reference to storage
     StorageReplicatedMergeTree & data;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 /** Client for getting the parts from the table *MergeTree.
@@ -66,10 +66,11 @@ public:
     explicit Fetcher(StorageReplicatedMergeTree & data_);
 
     /// Downloads a part to tmp_directory. If to_detached - downloads to the `detached` directory.
-    MergeTreeData::MutableDataPartPtr fetchSelectedPart(
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> fetchSelectedPart(
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         const String & part_name,
+        const String & zookeeper_name,
         const String & replica_path,
         const String & host,
         int port,
@@ -136,7 +137,7 @@ private:
        ThrottlerPtr throttler);
 
     StorageReplicatedMergeTree & data;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

@@ -87,6 +87,7 @@ public:
     bool group_by_with_cube = false;
     bool group_by_with_constant_keys = false;
     bool group_by_with_grouping_sets = false;
+    bool order_by_all = false;
     bool limit_with_ties = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
@@ -137,7 +138,7 @@ public:
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);
     void replaceDatabaseAndTable(const StorageID & table_id);
     void addTableFunction(ASTPtr & table_function_ptr);
-    void updateTreeHashImpl(SipHash & hash_state) const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     void setFinal();
 

@@ -44,7 +44,7 @@ class FunctionWidthBucket : public IFunction
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Logical error in function {}: argument {} has unexpected type or size!",
+                "Logical error in function {}: argument {} has unexpected type or size.",
                 getName(),
                 argument_index);
         }
@@ -157,7 +157,7 @@ class FunctionWidthBucket : public IFunction
         if (are_all_const_cols)
         {
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Logical error in function {}: unexpected combination of argument types!", getName());
+                ErrorCodes::LOGICAL_ERROR, "Logical error in function {}: unexpected combination of argument types.", getName());
         }
 
         auto result_column = ColumnVector<ResultType>::create();
@@ -252,8 +252,8 @@ public:
 
 REGISTER_FUNCTION(WidthBucket)
 {
-    factory.registerFunction<FunctionWidthBucket>({
-        R"(
+    factory.registerFunction<FunctionWidthBucket>(FunctionDocumentation{
+        .description=R"(
 Returns the number of the bucket in which `operand` falls in a histogram having `count` equal-width buckets spanning the range `low` to `high`. Returns `0` if `operand < low`, and returns `count+1` if `operand >= high`.
 
 `operand`, `low`, `high` can be any native number type. `count` can only be unsigned native integer and its value cannot be zero.
@@ -279,10 +279,10 @@ Result:
 └──────────────────────────────────┘
 ```
 )",
-        Documentation::Examples{
-            {"simple", "SELECT widthBucket(10.15, -8.6, 23, 18)"},
+        .examples{
+            {"simple", "SELECT widthBucket(10.15, -8.6, 23, 18)", ""},
         },
-        Documentation::Categories{"Mathematical"},
+        .categories{"Mathematical"},
     });
 
     factory.registerAlias("width_bucket", "widthBucket", FunctionFactory::CaseInsensitive);

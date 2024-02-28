@@ -20,17 +20,15 @@ public:
         return name;
     }
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
-    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
-    {
-        return {"_path", "_file"};
-    }
+    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override;
 
 protected:
     int fd = -1;
+    String path_to_archive;
     void parseFirstArguments(const ASTPtr & arg, const ContextPtr & context) override;
-    String getFormatFromFirstArgument() override;
+    std::optional<String> tryGetFormatFromFirstArgument() override;
 
 private:
     StoragePtr getStorage(

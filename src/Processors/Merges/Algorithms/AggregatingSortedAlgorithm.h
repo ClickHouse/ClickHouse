@@ -18,9 +18,13 @@ class AggregatingSortedAlgorithm final : public IMergingAlgorithmWithDelayedChun
 {
 public:
     AggregatingSortedAlgorithm(
-        const Block & header, size_t num_inputs,
-        SortDescription description_, size_t max_block_size);
+        const Block & header,
+        size_t num_inputs,
+        SortDescription description_,
+        size_t max_block_size_rows_,
+        size_t max_block_size_bytes_);
 
+    const char * getName() const override { return "AggregatingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
@@ -96,7 +100,11 @@ private:
         using MergedData::insertRow;
 
     public:
-        AggregatingMergedData(MutableColumns columns_, UInt64 max_block_size_, ColumnsDefinition & def_);
+        AggregatingMergedData(
+            MutableColumns columns_,
+            UInt64 max_block_size_rows_,
+            UInt64 max_block_size_bytes_,
+            ColumnsDefinition & def_);
 
         /// Group is a group of rows with the same sorting key. It represents single row in result.
         /// Algorithm is: start group, add several rows, finish group.

@@ -132,7 +132,7 @@ FROM covid19;
 └────────────────────────────────────────────┘
 ```
 
-7. You will notice the data has a lot of 0's for dates - either weekends or days where numbers were not reported each day. We can use a window function to smooth out the daily averages of new cases:
+7. You will notice the data has a lot of 0's for dates - either weekends or days when numbers were not reported each day. We can use a window function to smooth out the daily averages of new cases:
 
 ```sql
 SELECT
@@ -261,5 +261,5 @@ The results look like
 ```
 
 :::note
-As mentioned in the [GitHub repo](https://github.com/GoogleCloudPlatform/covid-19-open-data), the datset is no longer updated as of September 15, 2022.
+As mentioned in the [GitHub repo](https://github.com/GoogleCloudPlatform/covid-19-open-data), the dataset is no longer updated as of September 15, 2022.
 :::

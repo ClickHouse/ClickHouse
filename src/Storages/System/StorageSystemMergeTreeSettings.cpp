@@ -10,17 +10,23 @@ namespace DB
 {
 
 template <bool replicated>
-NamesAndTypesList SystemMergeTreeSettings<replicated>::getNamesAndTypes()
+ColumnsDescription SystemMergeTreeSettings<replicated>::getColumnsDescription()
 {
-    return {
-        {"name",        std::make_shared<DataTypeString>()},
-        {"value",       std::make_shared<DataTypeString>()},
-        {"changed",     std::make_shared<DataTypeUInt8>()},
-        {"description", std::make_shared<DataTypeString>()},
-        {"min",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"max",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"readonly",    std::make_shared<DataTypeUInt8>()},
-        {"type",        std::make_shared<DataTypeString>()},
+    return ColumnsDescription
+    {
+        {"name",        std::make_shared<DataTypeString>(), "Setting name."},
+        {"value",       std::make_shared<DataTypeString>(), "Setting value."},
+        {"changed",     std::make_shared<DataTypeUInt8>(), "1 if the setting was explicitly defined in the config or explicitly changed."},
+        {"description", std::make_shared<DataTypeString>(), "Setting description."},
+        {"min",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Minimum value of the setting, if any is set via constraints. If the setting has no minimum value, contains NULL."},
+        {"max",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Maximum value of the setting, if any is set via constraints. If the setting has no maximum value, contains NULL."},
+        {"readonly",    std::make_shared<DataTypeUInt8>(),
+            "Shows whether the current user can change the setting: "
+            "0 — Current user can change the setting, "
+            "1 — Current user can't change the setting."
+        },
+        {"type",        std::make_shared<DataTypeString>(), "Setting type (implementation specific string value)."},
+        {"is_obsolete", std::make_shared<DataTypeUInt8>(), "Shows whether a setting is obsolete."},
     };
 }
 
@@ -52,6 +58,7 @@ void SystemMergeTreeSettings<replicated>::fillData(MutableColumns & res_columns,
         res_columns[5]->insert(max);
         res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
         res_columns[7]->insert(setting.getTypeName());
+        res_columns[8]->insert(setting.isObsolete());
     }
 }
 

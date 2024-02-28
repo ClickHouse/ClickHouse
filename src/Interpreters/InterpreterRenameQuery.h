@@ -10,7 +10,7 @@ namespace DB
 class AccessRightsElements;
 class DDLGuard;
 
-/// To avoid deadlocks, we must acquire locks for tables in same order in any different RENAMES.
+/// To avoid deadlocks, we must acquire locks for tables in same order in any different RENAMEs.
 struct UniqueTableName
 {
     String database_name;

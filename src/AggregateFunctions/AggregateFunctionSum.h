@@ -142,12 +142,11 @@ struct AggregateFunctionSumData
     ), addManyConditionalInternalImpl, MULTITARGET_FUNCTION_BODY((const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end) /// NOLINT
     {
         ptr += start;
+        condition_map += start;
         size_t count = end - start;
         const auto * end_ptr = ptr + count;
 
-        if constexpr (
-            (is_integer<T> && !is_big_int_v<T>)
-            || (is_decimal<T> && !std::is_same_v<T, Decimal256> && !std::is_same_v<T, Decimal128>))
+        if constexpr ((is_integer<T> || is_decimal<T>) && !is_over_big_int<T>)
         {
             /// For integers we can vectorize the operation if we replace the null check using a multiplication (by 0 for null, 1 for not null)
             /// https://quick-bench.com/q/MLTnfTvwC2qZFVeWHfOBR3U7a8I
@@ -162,8 +161,39 @@ struct AggregateFunctionSumData
             Impl::add(sum, local_sum);
             return;
         }
+        else if constexpr (is_over_big_int<T>)
+        {
+            /// Use a mask to discard or keep the value to reduce branch miss.
+            /// Notice that for (U)Int128 or Decimal128, MaskType is Int8 instead of Int64, otherwise extra branches will be introduced by compiler (for unknown reason) and performance will be worse.
+            using MaskType = std::conditional_t<sizeof(T) == 16, Int8, Int64>;
+            alignas(64) const MaskType masks[2] = {0, -1};
+            T local_sum{};
+            while (ptr < end_ptr)
+            {
+                Value v = *ptr;
+                if constexpr (!add_if_zero)
+                {
+                    if constexpr (is_integer<T>)
+                        v &= masks[!!*condition_map];
+                    else
+                        v.value &= masks[!!*condition_map];
+                }
+                else
+                {
+                    if constexpr (is_integer<T>)
+                        v &= masks[!*condition_map];
+                    else
+                        v.value &= masks[!*condition_map];
+                }
 
-        if constexpr (std::is_floating_point_v<T>)
+                Impl::add(local_sum, v);
+                ++ptr;
+                ++condition_map;
+            }
+            Impl::add(sum, local_sum);
+            return;
+        }
+        else if constexpr (std::is_floating_point_v<T>)
         {
             /// For floating point we use a similar trick as above, except that now we  reinterpret the floating point number as an unsigned
             /// integer of the same size and use a mask instead (0 to discard, 0xFF..FF to keep)
@@ -258,12 +288,12 @@ struct AggregateFunctionSumData
 
     void write(WriteBuffer & buf) const
     {
-        writeBinary(sum, buf);
+        writeBinaryLittleEndian(sum, buf);
     }
 
     void read(ReadBuffer & buf)
     {
-        readBinary(sum, buf);
+        readBinaryLittleEndian(sum, buf);
     }
 
     T get() const
@@ -503,7 +533,7 @@ public:
             const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
             auto final_flags = std::make_unique<UInt8[]>(row_end);
             for (size_t i = row_begin; i < row_end; ++i)
-                final_flags[i] = (!null_map[i]) & if_flags[i];
+                final_flags[i] = (!null_map[i]) & !!if_flags[i];
 
             this->data(place).addManyConditional(column.getData().data(), final_flags.get(), row_begin, row_end);
         }
@@ -588,7 +618,7 @@ public:
         b.CreateStore(llvm::Constant::getNullValue(return_type), aggregate_sum_ptr);
     }
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
@@ -597,10 +627,7 @@ public:
         auto * sum_value_ptr = aggregate_data_ptr;
         auto * sum_value = b.CreateLoad(return_type, sum_value_ptr);
 
-        const auto & argument_type = arguments_types[0];
-        const auto & argument_value = argument_values[0];
-
-        auto * value_cast_to_result = nativeCast(b, argument_type, argument_value, return_type);
+        auto * value_cast_to_result = nativeCast(b, arguments[0], this->getResultType());
         auto * sum_result_value = sum_value->getType()->isIntegerTy() ? b.CreateAdd(sum_value, value_cast_to_result) : b.CreateFAdd(sum_value, value_cast_to_result);
 
         b.CreateStore(sum_result_value, sum_value_ptr);

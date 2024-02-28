@@ -35,11 +35,13 @@ struct MergeInfo
     Array source_part_names;
     Array source_part_paths;
     std::string partition_id;
+    std::string partition;
     bool is_mutation;
     Float64 elapsed;
     Float64 progress;
     UInt64 num_parts;
     UInt64 total_size_bytes_compressed;
+    UInt64 total_size_bytes_uncompressed;
     UInt64 total_size_marks;
     UInt64 total_rows_count;
     UInt64 bytes_read_uncompressed;
@@ -66,6 +68,7 @@ struct MergeListElement : boost::noncopyable
 {
     const StorageID table_id;
     std::string partition_id;
+    std::string partition;
 
     const std::string result_part_name;
     const std::string result_part_path;
@@ -82,6 +85,7 @@ struct MergeListElement : boost::noncopyable
     std::atomic<bool> is_cancelled{};
 
     UInt64 total_size_bytes_compressed{};
+    UInt64 total_size_bytes_uncompressed{};
     UInt64 total_size_marks{};
     UInt64 total_rows_count{};
     std::atomic<UInt64> bytes_read_uncompressed{};
@@ -113,6 +117,8 @@ struct MergeListElement : boost::noncopyable
     MergeListElement * ptr() { return this; }
 
     MergeListElement & ref() { return *this; }
+
+    ~MergeListElement();
 };
 
 /** Maintains a list of currently running merges.

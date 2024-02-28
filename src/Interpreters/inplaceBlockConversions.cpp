@@ -20,6 +20,7 @@
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/BlockNumberColumn.h>
 
 
 namespace DB
@@ -103,7 +104,7 @@ void addDefaultRequiredExpressionsRecursively(
         /// and this identifier will be in required columns. If such column is not in ColumnsDescription we ignore it.
 
         /// This column is required, but doesn't have default expression, so lets use "default default"
-        auto column = columns.get(required_column_name);
+        const auto & column = columns.get(required_column_name);
         auto default_value = column.type->getDefault();
         ASTPtr expr = std::make_shared<ASTLiteral>(default_value);
         if (is_column_in_query && convert_null_to_default)
@@ -236,17 +237,36 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
             {
                 auto & offsets_column = offsets_columns[stream_name];
                 if (!offsets_column)
+                {
                     offsets_column = current_offsets_column;
+                }
+                else
+                {
+                    /// If we are inside Variant element, it may happen that
+                    /// offsets are different, because when we read Variant
+                    /// element as a subcolumn, we expand this column according
+                    /// to the discriminators, so, offsets column can be changed.
+                    /// In this case we should select the original offsets column
+                    /// of this stream, which is the smallest one.
+                    bool inside_variant_element = false;
+                    for (const auto & elem : subpath)
+                        inside_variant_element |= elem.type == ISerialization::Substream::VariantElement;
 
-            #ifndef NDEBUG
-                const auto & offsets_data = assert_cast<const ColumnUInt64 &>(*offsets_column).getData();
-                const auto & current_offsets_data = assert_cast<const ColumnUInt64 &>(*current_offsets_column).getData();
+                    if (offsets_column->size() != current_offsets_column->size() && inside_variant_element)
+                        offsets_column = offsets_column->size() < current_offsets_column->size() ? offsets_column : current_offsets_column;
+#ifndef NDEBUG
+                    else
+                    {
+                        const auto & offsets_data = assert_cast<const ColumnUInt64 &>(*offsets_column).getData();
+                        const auto & current_offsets_data = assert_cast<const ColumnUInt64 &>(*current_offsets_column).getData();
 
-                if (offsets_data != current_offsets_data)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Found non-equal columns with offsets (sizes: {} and {}) for stream {}",
-                        offsets_data.size(), current_offsets_data.size(), stream_name);
-            #endif
+                        if (offsets_data != current_offsets_data)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                            "Found non-equal columns with offsets (sizes: {} and {}) for stream {}",
+                                            offsets_data.size(), current_offsets_data.size(), stream_name);
+                    }
+#endif
+                }
             }
         }, available_column->type, res_columns[i]);
     }
@@ -260,7 +280,7 @@ void fillMissingColumns(
     const NamesAndTypesList & requested_columns,
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
-    StorageMetadataPtr metadata_snapshot)
+    StorageMetadataPtr metadata_snapshot, size_t block_number)
 {
     size_t num_columns = requested_columns.size();
     if (num_columns != res_columns.size())
@@ -306,7 +326,9 @@ void fillMissingColumns(
                     return;
 
                 size_t level = ISerialization::getArrayLevel(subpath);
-                assert(level < num_dimensions);
+                /// It can happen if element of Array is Map.
+                if (level >= num_dimensions)
+                    return;
 
                 auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath);
                 auto it = offsets_columns.find(stream_name);
@@ -337,9 +359,14 @@ void fillMissingColumns(
         }
         else
         {
-            /// We must turn a constant column into a full column because the interpreter could infer
-            /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
-            res_columns[i] = type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
+            if (requested_column->name == BlockNumberColumn::name)
+                res_columns[i] = type->createColumnConst(num_rows, block_number)->convertToFullColumnIfConst();
+            else
+                /// We must turn a constant column into a full column because the interpreter could infer
+                /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
+                res_columns[i] = type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
+
+
         }
     }
 }

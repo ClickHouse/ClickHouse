@@ -12,9 +12,9 @@ services:
             timeout: 5s
             retries: 5
         networks:
-          default:
-            aliases:
-                - postgre-sql.local
+            default:
+                aliases:
+                    - postgre-sql.local
         environment:
             POSTGRES_HOST_AUTH_METHOD: "trust"
             POSTGRES_PASSWORD: mysecretpassword

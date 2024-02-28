@@ -37,7 +37,7 @@ DictionaryTypedSpecialAttribute makeDictionaryTypedSpecialAttribute(
     auto expression = config.getString(config_prefix + ".expression", "");
 
     if (name.empty() && !expression.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {}.name is empty");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {}.name is empty", config_prefix);
 
     const auto type_name = config.getString(config_prefix + ".type", default_type);
     return DictionaryTypedSpecialAttribute{std::move(name), std::move(expression), DataTypeFactory::instance().get(type_name)};
@@ -159,12 +159,12 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
         const auto & expected_type = key_attributes_types[i];
         const auto & actual_type = key_types[i];
 
-        if (!areTypesEqual(expected_type, actual_type))
+        if (!expected_type->equals(*actual_type))
             throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Key type for complex key at position {} does not match, expected {}, found {}",
-            i,
-            expected_type->getName(),
-            actual_type->getName());
+                "Key type for complex key at position {} does not match, expected {}, found {}",
+                i,
+                expected_type->getName(),
+                actual_type->getName());
     }
 }
 
@@ -198,7 +198,7 @@ const DictionaryAttribute & DictionaryStructure::getAttribute(const std::string 
 {
     const auto & attribute = getAttribute(attribute_name);
 
-    if (!areTypesEqual(attribute.type, type))
+    if (!attribute.type->equals(*type))
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "Attribute type does not match, expected {}, found {}",
             attribute.type->getName(),

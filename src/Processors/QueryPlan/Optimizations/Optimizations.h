@@ -14,6 +14,9 @@ namespace QueryPlanOptimizations
 void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 /// Second pass is used to apply read-in-order and attach a predicate to PK.
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+/// Third pass is used to apply filters such as key conditions and skip indexes to the storages that support them.
+/// After that it add CreateSetsStep for the subqueries that has not be used in the filters.
+void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
 /// Optimization (first pass) is a function applied to QueryPlan::Node.
 /// It can read and update subtree of specified node.
@@ -64,7 +67,7 @@ void tryRemoveRedundantSorting(QueryPlan::Node * root);
 /// Remove redundant distinct steps
 size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
-/// Put some steps under union, so that plan optimisation could be applied to union parts separately.
+/// Put some steps under union, so that plan optimization could be applied to union parts separately.
 /// For example, the plan can be rewritten like:
 ///                      - Something -                    - Expression - Something -
 /// - Expression - Union - Something -     =>     - Union - Expression - Something -
@@ -76,19 +79,15 @@ size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::No
 inline const auto & getOptimizations()
 {
     static const std::array<Optimization, 10> optimizations = {{
-        {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::optimize_plan},
-        {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::optimize_plan},
-        {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::optimize_plan},
-        {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::optimize_plan},
+        {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
+        {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
+        {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
+        {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::merge_expressions},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
-        {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::optimize_plan},
-        {tryReuseStorageOrderingForWindowFunctions,
-         "reuseStorageOrderingForWindowFunctions",
-         &QueryPlanOptimizationSettings::optimize_plan},
-        {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::optimize_plan},
-        {tryAggregatePartitionsIndependently,
-         "aggregatePartitionsIndependently",
-         &QueryPlanOptimizationSettings::aggregate_partitions_independently},
+        {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::execute_functions_after_sorting},
+        {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::reuse_storage_ordering_for_window_functions},
+        {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::lift_up_union},
+        {tryAggregatePartitionsIndependently, "aggregatePartitionsIndependently", &QueryPlanOptimizationSettings::aggregate_partitions_independently},
         {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct},
     }};
 
@@ -108,8 +107,9 @@ void optimizePrimaryKeyCondition(const Stack & stack);
 void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
-bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
+bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections);
 bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes);
+bool addPlansForSets(QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 
 /// Enable memory bound merging of aggregation states for remote queries
 /// in case it was enabled for local plan

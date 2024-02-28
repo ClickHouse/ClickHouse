@@ -1,4 +1,5 @@
 #!/bin/bash
+
 set -exu
 trap "exit" INT TERM
 
@@ -74,6 +75,20 @@ function run_tests()
         cat /test_output/statements-test/check_status.tsv >> /test_output/check_status.tsv
         cat /test_output/statements-test/test_results.tsv >> /test_output/test_results.tsv
         tar -zcvf statements-check.tar.gz statements-test 1>/dev/null
+
+        mkdir -p /test_output/complete-test
+        /clickhouse-tests/sqllogic/runner.py \
+        --log-file /test_output/runner-complete-test.log \
+        --log-level info \
+            complete-test \
+            --input-dir /sqllogictest \
+            --out-dir /test_output/complete-test \
+            2>&1 \
+            | ts '%Y-%m-%d %H:%M:%S'
+
+        cat /test_output/complete-test/check_status.tsv >> /test_output/check_status.tsv
+        cat /test_output/complete-test/test_results.tsv >> /test_output/test_results.tsv
+        tar -zcvf complete-check.tar.gz complete-test 1>/dev/null
     fi
 }
 
@@ -92,9 +107,8 @@ sudo clickhouse stop ||:
 
 for _ in $(seq 1 60); do if [[ $(wget --timeout=1 -q 'localhost:8123' -O-) == 'Ok.' ]]; then sleep 1 ; else break; fi ; done
 
-grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
-pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz &
+rg -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
+zstd < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.zst &
 
 # Compressed (FIXME: remove once only github actions will be left)
-rm /var/log/clickhouse-server/clickhouse-server.log
 mv /var/log/clickhouse-server/stderr.log /test_output/ ||:

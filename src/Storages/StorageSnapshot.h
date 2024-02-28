@@ -30,30 +30,37 @@ struct StorageSnapshot
 
     StorageSnapshot(
         const IStorage & storage_,
-        const StorageMetadataPtr & metadata_)
-        : storage(storage_), metadata(metadata_)
+        StorageMetadataPtr metadata_)
+        : storage(storage_), metadata(std::move(metadata_))
     {
         init();
     }
 
     StorageSnapshot(
         const IStorage & storage_,
-        const StorageMetadataPtr & metadata_,
-        const ColumnsDescription & object_columns_)
-        : storage(storage_), metadata(metadata_), object_columns(object_columns_)
+        StorageMetadataPtr metadata_,
+        ColumnsDescription object_columns_)
+        : storage(storage_)
+        , metadata(std::move(metadata_))
+        , object_columns(std::move(object_columns_))
     {
         init();
     }
 
     StorageSnapshot(
         const IStorage & storage_,
-        const StorageMetadataPtr & metadata_,
-        const ColumnsDescription & object_columns_,
+        StorageMetadataPtr metadata_,
+        ColumnsDescription object_columns_,
         DataPtr data_)
-        : storage(storage_), metadata(metadata_), object_columns(object_columns_), data(std::move(data_))
+        : storage(storage_)
+        , metadata(std::move(metadata_))
+        , object_columns(std::move(object_columns_))
+        , data(std::move(data_))
     {
         init();
     }
+
+    std::shared_ptr<StorageSnapshot> clone(DataPtr data_) const;
 
     /// Get all available columns with types according to options.
     NamesAndTypesList getColumns(const GetColumnsOptions & options) const;
@@ -66,7 +73,7 @@ struct StorageSnapshot
     NameAndTypePair getColumn(const GetColumnsOptions & options, const String & column_name) const;
 
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
-    Block getSampleBlockForColumns(const Names & column_names, const NameToNameMap & parameter_values = {}) const;
+    Block getSampleBlockForColumns(const Names & column_names) const;
 
     ColumnsDescription getDescriptionForColumns(const Names & column_names) const;
 

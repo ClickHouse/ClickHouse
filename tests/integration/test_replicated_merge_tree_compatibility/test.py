@@ -6,17 +6,19 @@ node1 = cluster.add_instance(
     "node1",
     with_zookeeper=True,
     image="yandex/clickhouse-server",
-    tag="20.12.4.5",
+    tag="20.8.11.17",
     stay_alive=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 node2 = cluster.add_instance(
     "node2",
     with_zookeeper=True,
     image="yandex/clickhouse-server",
-    tag="20.12.4.5",
+    tag="20.8.11.17",
     stay_alive=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 
 

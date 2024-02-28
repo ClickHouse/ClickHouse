@@ -1,5 +1,6 @@
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
+#include <Common/re2.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -10,7 +11,6 @@
 #include <Disks/IO/createReadBufferFromFileBase.h>
 
 #include <boost/program_options.hpp>
-#include <re2/re2.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;

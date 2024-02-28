@@ -1,5 +1,3 @@
--- Tags: no-ordinary-database, no-parallel
+-- Tags: no-ordinary-database, no-replicated-database
 
-create database if not exists test_00604;
-show create database test_00604;
-drop database test_00604;
+show create database {CLICKHOUSE_DATABASE:Identifier};

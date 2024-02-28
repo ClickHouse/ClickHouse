@@ -37,6 +37,8 @@ public:
 
     bool canBeUsedAsVersion() const override { return true; }
 
+    bool isSummable() const override { return false; }
+
 protected:
     SerializationPtr doGetDefaultSerialization() const override;
 };

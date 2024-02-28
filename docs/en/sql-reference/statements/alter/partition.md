@@ -9,6 +9,7 @@ The following operations with [partitions](/docs/en/engines/table-engines/merget
 
 - [DETACH PARTITION\|PART](#detach-partitionpart) — Moves a partition or part to the `detached` directory and forget it.
 - [DROP PARTITION\|PART](#drop-partitionpart) — Deletes a partition or part.
+- [FORGET PARTITION](#forget-partition) — Deletes a partition metadata from zookeeper if it's empty.
 - [ATTACH PARTITION\|PART](#attach-partitionpart) — Adds a partition or part from the `detached` directory to the table.
 - [ATTACH PARTITION FROM](#attach-partition-from) — Copies the data partition from one table to another and adds.
 - [REPLACE PARTITION](#replace-partition) — Copies the data partition from one table to another and replaces.
@@ -73,6 +74,22 @@ ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART partiti
 Removes the specified part or all parts of the specified partition from `detached`.
 Read more about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
 
+## FORGET PARTITION
+
+``` sql
+ALTER TABLE table_name FORGET PARTITION partition_expr
+```
+
+Removes all metadata about an empty partition from ZooKeeper. Query fails if partition is not empty or unknown. Make sure to execute only for partitions that will never be used again.
+
+Read about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
+
+Example:
+
+``` sql
+ALTER TABLE mt FORGET PARTITION '20201121';
+```
+
 ## ATTACH PARTITION\|PART
 
 ``` sql
@@ -103,13 +120,18 @@ ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM tab
 ```
 
 This query copies the data partition from `table1` to `table2`.
-Note that data will be deleted neither from `table1` nor from `table2`.
+
+Note that:
+
+- Data will be deleted neither from `table1` nor from `table2`.
+- `table1` may be a temporary table.
 
 For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key, the same order by key and the same primary key.
-- Both tables must have the same storage policy (a disk where the partition is stored should be available for both tables).
+- Both tables must have the same indices and projections.
+- Both tables must have the same storage policy.
 
 ## REPLACE PARTITION
 
@@ -117,13 +139,19 @@ For the query to run successfully, the following conditions must be met:
 ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1
 ```
 
-This query copies the data partition from the `table1` to `table2` and replaces existing partition in the `table2`. Note that data won’t be deleted from `table1`.
+This query copies the data partition from the `table1` to `table2` and replaces existing partition in the `table2`.
+
+Note that:
+
+- Data won’t be deleted from `table1`.
+- `table1` may be a temporary table.
 
 For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key, the same order by key and the same primary key.
-- Both tables must have the same storage policy (a disk where the partition is stored should be available for both tables).
+- Both tables must have the same indices and projections.
+- Both tables must have the same storage policy.
 
 ## MOVE PARTITION TO TABLE
 
@@ -137,7 +165,8 @@ For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key, the same order by key and the same primary key.
-- Both tables must have the same storage policy (a disk where the partition is stored should be available for both tables).
+- Both tables must have the same indices and projections.
+- Both tables must have the same storage policy.
 - Both tables must be the same engine family (replicated or non-replicated).
 
 ## CLEAR COLUMN IN PARTITION
@@ -275,13 +304,17 @@ Manipulates data in the specifies partition matching the specified filtering exp
 Syntax:
 
 ``` sql
-ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr
 ```
 
 ### Example
 
 ``` sql
+-- using partition name
 ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
+
+-- using partition id
+ALTER TABLE mt UPDATE x = x + 1 IN PARTITION ID '2' WHERE p = 2;
 ```
 
 ### See Also
@@ -295,13 +328,17 @@ Deletes data in the specifies partition matching the specified filtering express
 Syntax:
 
 ``` sql
-ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_id] WHERE filter_expr
+ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr] WHERE filter_expr
 ```
 
 ### Example
 
 ``` sql
+-- using partition name
 ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
+
+-- using partition id
+ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
 ```
 
 ### See Also

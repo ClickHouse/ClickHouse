@@ -1,6 +1,7 @@
 #include <Parsers/ASTRenameQuery.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -193,7 +194,7 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRename
             required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.to.getDatabase(), elem.to.getTable());
             if (rename.exchange)
             {
-                required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT , elem.from.getDatabase(), elem.from.getTable());
+                required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.from.getDatabase(), elem.from.getTable());
                 required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.to.getDatabase(), elem.to.getTable());
             }
         }
@@ -226,6 +227,15 @@ void InterpreterRenameQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
             elem.query_tables.insert(database + "." + backQuoteIfNeed(element.to.getTable()));
         }
     }
+}
+
+void registerInterpreterRenameQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterRenameQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterRenameQuery", create_fn);
 }
 
 }

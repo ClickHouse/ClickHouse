@@ -85,7 +85,7 @@ public:
         {
             auto default_value_type = arguments[2].type;
 
-            if (!areTypesEqual(result_type, default_value_type))
+            if (!result_type->equals(*default_value_type))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Default value type should be same as cast type. Expected {}. Actual {}",

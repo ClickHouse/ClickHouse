@@ -1,12 +1,13 @@
 #pragma once
 
 #include <Storages/System/IStorageSystemOneBlock.h>
+#include <Interpreters/Cache/FileCache_fwd_internal.h>
 
 namespace DB
 {
 
 /**
- * Usgae example. How to get mapping from local paths to remote paths:
+ * Usage example. How to get mapping from local paths to remote paths:
  * SELECT
  *     cache_path,
  *     cache_hits,
@@ -35,7 +36,7 @@ public:
 
     std::string getName() const override { return "SystemFilesystemCache"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;

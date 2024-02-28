@@ -37,26 +37,39 @@ public:
 
     StorageID getDatabaseTable() const;
 
+    /// Return explicitly specified column names to insert.
+    /// It not explicit names were specified, return nullopt.
+    std::optional<Names> getInsertColumnNames() const;
+
     Chain buildChain(
         const StoragePtr & table,
         const StorageMetadataPtr & metadata_snapshot,
         const Names & columns,
         ThreadStatusesHolderPtr thread_status_holder = {},
-        std::atomic_uint64_t * elapsed_counter_ms = nullptr);
+        std::atomic_uint64_t * elapsed_counter_ms = nullptr,
+        bool check_access = false);
 
     static void extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_);
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
 
     StoragePtr getTable(ASTInsertQuery & query);
-    Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
+    static Block getSampleBlock(
+        const ASTInsertQuery & query,
+        const StoragePtr & table,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context_,
+        bool no_destination = false,
+        bool allow_materialized = false);
 
     bool supportsTransactions() const override { return true; }
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.push_back(std::move(buffer)); }
 
+    bool shouldAddSquashingFroStorage(const StoragePtr & table) const;
+
 private:
-    Block getSampleBlock(const Names & names, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
+    static Block getSampleBlock(const Names & names, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, bool allow_materialized);
 
     ASTPtr query_ptr;
     const bool allow_materialized;
@@ -66,13 +79,18 @@ private:
 
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 
-    Chain buildChainImpl(
+    Chain buildSink(
         const StoragePtr & table,
         const StorageMetadataPtr & metadata_snapshot,
-        const Block & query_sample_block,
         ThreadStatusesHolderPtr thread_status_holder,
         ThreadGroupPtr running_group,
         std::atomic_uint64_t * elapsed_counter_ms);
+
+    Chain buildPreSinkChain(
+        const Block & subsequent_header,
+        const StoragePtr & table,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Block & query_sample_block);
 };
 
 

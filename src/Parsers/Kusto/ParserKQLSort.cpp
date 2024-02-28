@@ -1,17 +1,18 @@
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/IParserBase.h>
-#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLSort.h>
+#include <Parsers/Kusto/Utilities.h>
 
 namespace DB
 {
 
-bool ParserKQLSort :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLSort::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool has_dir = false;
-    std::vector <bool> has_directions;
+    std::vector<bool> has_directions;
     ParserOrderByExpressionList order_list;
     ASTPtr order_expression_list;
 
@@ -24,7 +25,7 @@ bool ParserKQLSort :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!order_list.parse(pos_backup, order_expression_list, expected))
         return false;
 
-    while (!new_pos->isEnd() && new_pos->type != TokenType::PipeMark && new_pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(new_pos) && new_pos->type != TokenType::PipeMark && new_pos->type != TokenType::Semicolon)
     {
         String tmp(new_pos->begin, new_pos->end);
         if (tmp == "desc" || tmp == "asc")
@@ -35,6 +36,7 @@ bool ParserKQLSort :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             has_directions.push_back(has_dir);
             has_dir = false;
         }
+
         ++new_pos;
     }
     has_directions.push_back(has_dir);
@@ -43,7 +45,7 @@ bool ParserKQLSort :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (!has_directions[i])
         {
-            auto *order_expr =  order_expression_list->children[i]->as<ASTOrderByElement>();
+            auto * order_expr = order_expression_list->children[i]->as<ASTOrderByElement>();
             order_expr->direction = -1; // default desc
             if (!order_expr->nulls_direction_was_explicitly_specified)
                 order_expr->nulls_direction = -1;
@@ -53,7 +55,6 @@ bool ParserKQLSort :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_expression_list));
-
     return true;
 }
 

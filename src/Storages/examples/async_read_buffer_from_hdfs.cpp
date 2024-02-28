@@ -6,6 +6,7 @@
 #include <IO/copyData.h>
 #include <IO/WriteBufferFromString.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/IO/getThreadPoolReader.h>
 #include <Interpreters/Context.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Storages/HDFS/AsynchronousReadBufferFromHDFS.h>
@@ -25,7 +26,7 @@ int main()
     String path = "/path/to/hdfs/file";
     ReadSettings settings = {};
     auto in = std::make_unique<ReadBufferFromHDFS>(hdfs_namenode_url, path, *config, settings);
-    auto & reader = IObjectStorage::getThreadPoolReader();
+    auto & reader = getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
     AsynchronousReadBufferFromHDFS buf(reader, {}, std::move(in));
 
     String output;

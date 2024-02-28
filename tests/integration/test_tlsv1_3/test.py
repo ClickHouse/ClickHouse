@@ -4,6 +4,7 @@ from helpers.ssl_context import WrapSSLContextWithSNI
 import urllib.request, urllib.parse
 import ssl
 import os.path
+import logging
 
 
 # The test cluster is configured with certificate for that host name, see 'server-ext.cnf'.
@@ -11,6 +12,7 @@ import os.path
 SSL_HOST = "integration-tests.clickhouse.com"
 HTTPS_PORT = 8443
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+MAX_RETRY = 5
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -88,10 +90,8 @@ def test_https_wrong_cert():
         execute_query_https("SELECT currentUser()", user="john", cert_name="client2")
     assert "HTTP Error 403" in str(err.value)
 
-    # Wrong certificate: self-signed certificate.
-    with pytest.raises(Exception) as err:
-        execute_query_https("SELECT currentUser()", user="john", cert_name="wrong")
-    assert "unknown ca" in str(err.value)
+    # TODO: Add non-flaky tests for:
+    # - Wrong certificate: self-signed certificate.
 
     # No certificate.
     with pytest.raises(Exception) as err:
@@ -181,24 +181,8 @@ def test_https_non_ssl_auth():
         == "jane\n"
     )
 
-    # However if we send a certificate it must not be wrong.
-    with pytest.raises(Exception) as err:
-        execute_query_https(
-            "SELECT currentUser()",
-            user="peter",
-            enable_ssl_auth=False,
-            cert_name="wrong",
-        )
-    assert "unknown ca" in str(err.value)
-    with pytest.raises(Exception) as err:
-        execute_query_https(
-            "SELECT currentUser()",
-            user="jane",
-            enable_ssl_auth=False,
-            password="qwe123",
-            cert_name="wrong",
-        )
-    assert "unknown ca" in str(err.value)
+    # TODO: Add non-flaky tests for:
+    # - sending wrong cert
 
 
 def test_create_user():

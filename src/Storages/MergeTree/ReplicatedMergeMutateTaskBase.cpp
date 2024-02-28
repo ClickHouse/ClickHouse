@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/ReplicatedMergeMutateTaskBase.h>
 
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Common/ProfileEventsScope.h>
 
@@ -16,7 +17,7 @@ namespace ErrorCodes
     extern const int PART_IS_TEMPORARILY_LOCKED;
 }
 
-StorageID ReplicatedMergeMutateTaskBase::getStorageID()
+StorageID ReplicatedMergeMutateTaskBase::getStorageID() const
 {
     return storage.getStorageID();
 }
@@ -69,10 +70,9 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
             else
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-            /** This exception will be written to the queue element, and it can be looked up using `system.replication_queue` table.
-                 * The thread that performs this action will sleep a few seconds after the exception.
-                 * See `queue.processEntry` function.
-                 */
+            /// This exception will be written to the queue element, and it can be looked up using `system.replication_queue` table.
+            /// The thread that performs this action will sleep a few seconds after the exception.
+            /// See `queue.processEntry` function.
             throw;
         }
         catch (...)
@@ -111,16 +111,24 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
                 auto mutations_end_it = in_partition->second.upper_bound(result_data_version);
                 for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
                 {
+                    auto & src_part = log_entry->source_parts.at(0);
                     ReplicatedMergeTreeQueue::MutationStatus & status = *it->second;
-                    status.latest_failed_part = log_entry->source_parts.at(0);
+                    status.latest_failed_part = src_part;
                     status.latest_failed_part_info = source_part_info;
                     status.latest_fail_time = time(nullptr);
                     status.latest_fail_reason = getExceptionMessage(saved_exception, false);
+                    if (result_data_version == it->first)
+                        storage.mutation_backoff_policy.addPartMutationFailure(src_part, storage.getSettings()->max_postpone_time_for_failed_mutations_ms);
                 }
             }
         }
-
     }
+
+    if (retryable_error)
+        print_exception = false;
+
+    if (saved_exception)
+        std::rethrow_exception(saved_exception);
 
     return false;
 }
@@ -138,6 +146,12 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
         {
             storage.queue.removeProcessedEntry(storage.getZooKeeper(), selected_entry->log_entry);
             state = State::SUCCESS;
+
+            auto & log_entry = selected_entry->log_entry;
+            if (log_entry->type == ReplicatedMergeTreeLogEntryData::MUTATE_PART)
+            {
+                storage.mutation_backoff_policy.removePartFromFailed(log_entry->source_parts.at(0));
+            }
         }
         catch (...)
         {
@@ -172,7 +186,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 
             part_log_writer = prepare_result.part_log_writer;
 
-            /// Avoid resheduling, execute fetch here, in the same thread.
+            /// Avoid rescheduling, execute fetch here, in the same thread.
             if (!prepare_result.prepared_successfully)
                 return execute_fetch(prepare_result.need_to_check_missing_part_in_fetch);
 

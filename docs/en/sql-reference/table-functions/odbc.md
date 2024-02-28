@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/odbc
-sidebar_position: 44
+sidebar_position: 150
 sidebar_label: odbc
 ---
 

@@ -5,10 +5,11 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     image="yandex/clickhouse-server",
-    tag="19.17.8.54",
+    tag="19.16.9.37",
     stay_alive=True,
     with_zookeeper=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 
 

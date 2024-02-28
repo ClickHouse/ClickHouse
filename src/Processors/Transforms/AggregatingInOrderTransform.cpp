@@ -3,6 +3,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Core/SortCursor.h>
 #include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
 #include <Interpreters/sortBlock.h>
 #include <base/range.h>
 
@@ -159,14 +160,14 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
                 if (group_by_key)
                     params->aggregator.mergeOnBlockSmall(variants, key_begin, key_end, aggregate_columns_data, key_columns_raw);
                 else
-                    params->aggregator.mergeOnIntervalWithoutKeyImpl(variants, key_begin, key_end, aggregate_columns_data);
+                    params->aggregator.mergeOnIntervalWithoutKey(variants, key_begin, key_end, aggregate_columns_data);
             }
             else
             {
                 if (group_by_key)
                     params->aggregator.executeOnBlockSmall(variants, key_begin, key_end, key_columns_raw, aggregate_function_instructions.data());
                 else
-                    params->aggregator.executeOnIntervalWithoutKeyImpl(variants, key_begin, key_end, aggregate_function_instructions.data());
+                    params->aggregator.executeOnIntervalWithoutKey(variants, key_begin, key_end, aggregate_function_instructions.data());
             }
         }
 

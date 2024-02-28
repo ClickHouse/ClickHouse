@@ -1,7 +1,17 @@
 -- Tags: no-tsan, no-parallel
 
+-- Suppress "ReadWriteBufferFromHTTP: HTTP request to `{}` failed at try 1/10 with bytes read: 311149/378695. Error: DB::HTTPException: Received error from remote server {}. (Current backoff wait is 100/10000 ms)" errors
+SET send_logs_level='error';
+
 DROP TABLE IF EXISTS test.hits_1m;
-CREATE TABLE test.hits_1m as test.hits;
+
+CREATE TABLE test.hits_1m AS test.hits
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(EventDate)
+ORDER BY (CounterID, EventDate, intHash32(UserID))
+SAMPLE BY intHash32(UserID)
+SETTINGS storage_policy = 'default';
+
 INSERT INTO test.hits_1m SELECT * FROM test.hits LIMIT 1000000;
 
 CREATE DATABASE IF NOT EXISTS db_dict;

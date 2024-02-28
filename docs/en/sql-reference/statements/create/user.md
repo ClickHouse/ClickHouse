@@ -12,8 +12,10 @@ Syntax:
 ``` sql
 CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
         [, name2 [ON CLUSTER cluster_name2] ...]
-    [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name'}]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']}]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [VALID UNTIL datetime]
+    [IN access_storage_type]
     [DEFAULT ROLE role [,...]]
     [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
@@ -32,9 +34,40 @@ There are multiple ways of user identification:
 - `IDENTIFIED WITH sha256_hash BY 'hash'` or `IDENTIFIED WITH sha256_hash BY 'hash' SALT 'salt'`
 - `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
 - `IDENTIFIED WITH double_sha1_hash BY 'hash'`
+- `IDENTIFIED WITH bcrypt_password BY 'qwerty'`
+- `IDENTIFIED WITH bcrypt_hash BY 'hash'`
 - `IDENTIFIED WITH ldap SERVER 'server_name'`
 - `IDENTIFIED WITH kerberos` or `IDENTIFIED WITH kerberos REALM 'realm'`
 - `IDENTIFIED WITH ssl_certificate CN 'mysite.com:user'`
+- `IDENTIFIED WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa', KEY 'another_public_key' TYPE 'ssh-ed25519'`
+- `IDENTIFIED WITH http SERVER 'http_server'` or `IDENTIFIED WITH http SERVER 'http_server' SCHEME 'basic'`
+- `IDENTIFIED BY 'qwerty'`
+
+Password complexity requirements can be edited in [config.xml](/docs/en/operations/configuration-files). Below is an example configuration that requires passwords to be at least 12 characters long and contain 1 number. Each password complexity rule requires a regex to match against passwords and a description of the rule.
+
+```xml
+<clickhouse>
+    <password_complexity>
+        <rule>
+            <pattern>.{12}</pattern>
+            <message>be at least 12 characters long</message>
+        </rule>
+        <rule>
+            <pattern>\p{N}</pattern>
+            <message>contain at least 1 numeric character</message>
+        </rule>
+    </password_complexity>
+</clickhouse>
+```
+
+:::note
+In ClickHouse Cloud, by default, passwords must meet the following complexity requirements:
+- Be at least 12 characters long
+- Contain at least 1 numeric character
+- Contain at least 1 uppercase character
+- Contain at least 1 lowercase character
+- Contain at least 1 special character
+:::
 
 ## Examples
 
@@ -54,22 +87,13 @@ There are multiple ways of user identification:
     The password is stored in a SQL text file in `/var/lib/clickhouse/access`, so it's not a good idea to use `plaintext_password`. Try `sha256_password` instead, as demonstrated next...
     :::
 
-3. The best option is to use a password that is hashed using SHA-256. ClickHouse will hash the password for you when you specify `IDENTIFIED WITH sha256_password`. For example:
+3. The most common option is to use a password that is hashed using SHA-256. ClickHouse will hash the password for you when you specify `IDENTIFIED WITH sha256_password`. For example:
 
     ```sql
     CREATE USER name3 IDENTIFIED WITH sha256_password BY 'my_password'
     ```
 
-    Notice ClickHouse generates and runs the following command for you:
-
-    ```response
-    CREATE USER name3
-    IDENTIFIED WITH sha256_hash
-    BY '8B3404953FCAA509540617F082DB13B3E0734F90FF6365C19300CC6A6EA818D6'
-    SALT 'D6489D8B5692D82FF944EA6415785A8A8A1AF33825456AFC554487725A74A609'
-    ```
-
-    The `name3` user can now login using `my_password`, but the password is stored as the hashed value above. THe following SQL file was created in `/var/lib/clickhouse/access` and gets executed at server startup:
+    The `name3` user can now login using `my_password`, but the password is stored as the hashed value above. The following SQL file was created in `/var/lib/clickhouse/access` and gets executed at server startup:
 
     ```bash
     /var/lib/clickhouse/access $ cat 3843f510-6ebd-a52d-72ac-e021686d8a93.sql
@@ -92,6 +116,34 @@ There are multiple ways of user identification:
     CREATE USER name4 IDENTIFIED WITH double_sha1_hash BY 'CCD3A959D6A004B9C3807B728BC2E55B67E10518'
     ```
 
+5. The `bcrypt_password` is the most secure option for storing passwords. It uses the [bcrypt](https://en.wikipedia.org/wiki/Bcrypt) algorithm, which is resilient against brute force attacks even if the password hash is compromised.
+
+    ```sql
+    CREATE USER name5 IDENTIFIED WITH bcrypt_password BY 'my_password'
+    ```
+
+    The length of the password is limited to 72 characters with this method. The bcrypt work factor parameter, which defines the amount of computations and time needed to compute the hash and verify the password, can be modified in the server configuration:
+
+    ```xml
+    <bcrypt_workfactor>12</bcrypt_workfactor>
+    ```
+
+    The work factor must be between 4 and 31, with a default value of 12.
+
+6. The type of the password can also be omitted:
+
+    ```sql
+    CREATE USER name6 IDENTIFIED BY 'my_password'
+    ```
+
+    In this case, ClickHouse will use the default password type specified in the server configuration:
+
+    ```xml
+    <default_password_type>sha256_password</default_password_type>
+    ```
+
+    The available password types are: `plaintext_password`, `sha256_password`, `double_sha1_password`.
+
 ## User Host
 
 User host is a host from which a connection to ClickHouse server could be established. The host can be specified in the `HOST` query section in the following ways:
@@ -112,6 +164,16 @@ Another way of specifying host is to use `@` syntax following the username. Exam
 :::tip
 ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we do not recommend to do so.
 :::
+
+## VALID UNTIL Clause
+
+Allows you to specify the expiration date and, optionally, the time for user credentials. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime. By default, this parameter equals `'infinity'`.
+
+Examples:
+
+- `CREATE USER name1 VALID UNTIL '2025-01-01'`
+- `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
+- `CREATE USER name1 VALID UNTIL 'infinity'`
 
 ## GRANTEES Clause
 

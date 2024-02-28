@@ -16,7 +16,6 @@
 #include "Poco/TaskManager.h"
 #include "Poco/Exception.h"
 
-#include <iostream>
 #include <array>
 
 

@@ -44,7 +44,7 @@ AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFS(
     , prefetch_buffer(settings_.remote_fs_buffer_size)
     , read_until_position(impl->getFileSize())
     , use_prefetch(settings_.remote_fs_prefetch)
-    , log(&Poco::Logger::get("AsynchronousReadBufferFromHDFS"))
+    , log(getLogger("AsynchronousReadBufferFromHDFS"))
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
 }
@@ -64,19 +64,19 @@ bool AsynchronousReadBufferFromHDFS::hasPendingDataToRead()
     return true;
 }
 
-std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromHDFS::asyncReadInto(char * data, size_t size, int64_t priority)
+std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromHDFS::asyncReadInto(char * data, size_t size, Priority priority)
 {
     IAsynchronousReader::Request request;
-    request.descriptor = std::make_shared<RemoteFSFileDescriptor>(*impl);
+    request.descriptor = std::make_shared<RemoteFSFileDescriptor>(*impl, nullptr);
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;
-    request.priority = base_priority + priority;
+    request.priority = Priority{base_priority.value + priority.value};
     request.ignore = 0;
     return reader.submit(request);
 }
 
-void AsynchronousReadBufferFromHDFS::prefetch(int64_t priority)
+void AsynchronousReadBufferFromHDFS::prefetch(Priority priority)
 {
     interval_watch.restart();
 
