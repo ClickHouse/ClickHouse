@@ -10,7 +10,6 @@
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/DistributedCacheLog.h>
 #include <Interpreters/S3QueueLog.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
