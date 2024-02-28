@@ -22,6 +22,7 @@ namespace DB
 class StorageSystemKafkaConsumers;
 class ReadFromStorageKafka;
 
+template <typename TStorageKafka>
 struct StorageKafkaInterceptors;
 
 using KafkaConsumerPtr = std::shared_ptr<KafkaConsumer>;
@@ -32,7 +33,8 @@ using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
   */
 class StorageKafka final : public IStorage, WithContext
 {
-    friend struct StorageKafkaInterceptors;
+    using StorageKafkaInterceptors = StorageKafkaInterceptors<StorageKafka>;
+    friend StorageKafkaInterceptors;
 
 public:
     StorageKafka(
