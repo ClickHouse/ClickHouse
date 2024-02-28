@@ -180,15 +180,15 @@ def main():
         )
         print("::notice ::Cannot run")
         sys.exit(1)
-    else:
-        post_commit_status(
-            commit,
-            SUCCESS,
-            "",
-            "ok",
-            PR_CHECK,
-            pr_info,
-        )
+ 
+    post_commit_status(
+        commit,
+        SUCCESS,
+        "",
+        "ok",
+        PR_CHECK,
+        pr_info,
+    )
 
     ci_report_url = create_ci_report(pr_info, [])
     print("::notice ::Can run")
