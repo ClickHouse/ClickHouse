@@ -11,7 +11,7 @@ import sys
 from datetime import datetime
 from typing import Dict, List
 
-import requests  # type: ignore
+import requests
 import boto3  # type: ignore
 from botocore.exceptions import ClientError  # type: ignore
 

@@ -4,7 +4,7 @@ import argparse
 import sys
 
 import boto3  # type: ignore
-import requests  # type: ignore
+import requests
 
 from lambda_shared.token import get_cached_access_token, get_access_token_by_key_app
 

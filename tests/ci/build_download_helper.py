@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, List, Union
 
 # isort: off
-import requests  # type: ignore
+import requests
 
 # isort: on
 
@@ -90,7 +90,8 @@ def get_gh_api(
             ratelimit_exceeded = (
                 e.response.status_code == 403
                 and b"rate limit exceeded"
-                in e.response._content  # pylint:disable=protected-access
+                # pylint:disable-next=protected-access
+                in (e.response._content or b"")
             )
             try_auth = e.response.status_code == 404
             if (ratelimit_exceeded or try_auth) and not token_is_set:

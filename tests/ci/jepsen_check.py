@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, List
 
 import boto3  # type: ignore
-import requests  # type: ignore
+import requests
 from build_download_helper import (
     download_build_with_progress,
     get_build_name_for_check,

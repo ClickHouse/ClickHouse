@@ -4,7 +4,7 @@ import logging
 import re
 from typing import List, Optional, Tuple
 
-import requests  # type: ignore
+import requests
 
 CLICKHOUSE_TAGS_URL = "https://api.github.com/repos/ClickHouse/ClickHouse/tags"
 CLICKHOUSE_PACKAGE_URL = (

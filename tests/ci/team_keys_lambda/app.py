@@ -7,7 +7,7 @@ from datetime import datetime
 from queue import Queue
 from threading import Thread
 
-import requests  # type: ignore
+import requests
 import boto3  # type: ignore
 
 

@@ -9,7 +9,7 @@ from queue import Queue
 from threading import Thread
 from typing import Any, Dict, List, Optional, Tuple
 
-import requests  # type: ignore
+import requests
 from lambda_shared.pr import CATEGORY_TO_LABEL, check_pr_description
 from lambda_shared.token import get_cached_access_token
 

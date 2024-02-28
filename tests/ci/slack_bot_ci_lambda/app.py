@@ -17,12 +17,12 @@ It's deployed to slack-bot-ci-lambda in CI/CD account
 See also: https://aretestsgreenyet.com/
 """
 
-import os
-import json
 import base64
+import json
+import os
 import random
 
-import requests  # type: ignore
+import requests
 
 DRY_RUN_MARK = "<no url, dry run>"
 
@@ -139,13 +139,11 @@ def get_play_url(query):
 
 
 def run_clickhouse_query(query):
-    url = "https://play.clickhouse.com/?user=play&query=" + requests.utils.quote(query)
+    url = "https://play.clickhouse.com/?user=play&query=" + requests.compat.quote(query)
     res = requests.get(url)
     if res.status_code != 200:
         print("Failed to execute query: ", res.status_code, res.content)
-        raise Exception(
-            "Failed to execute query: {}: {}".format(res.status_code, res.content)
-        )
+        res.raise_for_status()
 
     lines = res.text.strip().splitlines()
     return [x.split("\t") for x in lines]
@@ -283,11 +281,7 @@ def send_to_slack_impl(message):
     res = requests.post(SLACK_URL, json.dumps(payload))
     if res.status_code != 200:
         print("Failed to send a message to Slack: ", res.status_code, res.content)
-        raise Exception(
-            "Failed to send a message to Slack: {}: {}".format(
-                res.status_code, res.content
-            )
-        )
+        res.raise_for_status()
 
 
 def send_to_slack(message):

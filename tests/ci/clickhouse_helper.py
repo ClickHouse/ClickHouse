@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-import requests  # type: ignore
+import requests
 from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 from report import TestResults

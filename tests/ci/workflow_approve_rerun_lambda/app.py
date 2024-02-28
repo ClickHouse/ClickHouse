@@ -6,7 +6,7 @@ import time
 from collections import namedtuple
 from urllib.parse import quote
 
-import requests  # type: ignore
+import requests
 from lambda_shared.pr import TRUSTED_CONTRIBUTORS
 from lambda_shared.token import get_cached_access_token
 
