@@ -141,6 +141,10 @@ enum class DefaultTableEngine
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
+DECLARE_SETTING_ENUM(DistributedCacheLogMode)
+
+DECLARE_SETTING_ENUM(DistributedCachePoolBehaviourOnLimit)
+
 enum class CleanDeletedRows
 {
     Never = 0, /// Disable.
