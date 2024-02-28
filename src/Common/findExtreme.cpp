@@ -90,6 +90,7 @@ MULTITARGET_FUNCTION_AVX2_SSE42(
                 }
                 else if constexpr (is_min)
                 {
+                    /// Double negation is necessary to help the compiler vectorize the operation
                     bool keep_number = add_if_cond_zero ? !condition_map[i] : !!condition_map[i];
                     /// If keep_number = ptr[i] * 1 + 0 * max = ptr[i]
                     /// If not keep_number = ptr[i] * 0 + 1 * max = max
@@ -99,6 +100,7 @@ MULTITARGET_FUNCTION_AVX2_SSE42(
                 else
                 {
                     static_assert(std::same_as<ComparatorClass, MaxComparator<T>>);
+                    /// Double negation is necessary to help the compiler vectorize the operation
                     bool keep_number = add_if_cond_zero ? !condition_map[i] : !!condition_map[i];
                     /// If keep_number = ptr[i] * 1 + 0 * lowest = ptr[i]
                     /// If not keep_number = ptr[i] * 0 + 1 * lowest = lowest

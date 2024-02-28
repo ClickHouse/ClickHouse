@@ -186,6 +186,7 @@ struct SingleValueDataNumeric final : public SingleValueDataBase
     using Base = SingleValueDataFixed<T>;
 
 private:
+    /// 32 bytes for types of 256 bits, + 8 bytes for the virtual table pointer.
     static constexpr size_t base_memory_reserved_size = 40;
     struct alignas(alignof(Base)) PrivateMemory
     {
@@ -269,10 +270,10 @@ struct SingleValueDataString final : public SingleValueDataBase
     static constexpr bool is_compilable = false;
     using Self = SingleValueDataString;
 
-    /// 0 size indicates that there is no value. Empty string must has terminating '\0' and, therefore, size of empty string is 1
+    /// 0 size indicates that there is no value. Empty string must have terminating '\0' and, therefore, size of empty string is 1
     UInt32 size = 0;
     UInt32 capacity = 0; /// power of two or zero
-    char * large_data;
+    char * large_data; /// Always allocated in an arena
 
     //// TODO: Maybe instead of a virtual class we need to go with a std::variant of the 3 to avoid reserving space for the vtable
     static constexpr UInt32 MAX_SMALL_STRING_SIZE

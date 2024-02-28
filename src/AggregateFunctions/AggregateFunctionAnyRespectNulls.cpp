@@ -19,7 +19,7 @@ namespace
 {
 struct AggregateFunctionAnyRespectNullsData
 {
-    enum Status : UInt8
+    enum class Status : UInt8
     {
         NotSet = 1,
         SetNull = 2,
@@ -142,17 +142,17 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         auto & d = this->data(place);
-        UInt8 k = d.status;
+        UInt8 k = static_cast<UInt8>(d.status);
 
         writeBinaryLittleEndian<UInt8>(k, buf);
-        if (k == Data::Status::SetOther)
+        if (d.status == Data::Status::SetOther)
             serialization->serializeBinary(d.value, buf, {});
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         auto & d = this->data(place);
-        UInt8 k = Data::Status::NotSet;
+        UInt8 k = 0;
         readBinaryLittleEndian<UInt8>(k, buf);
         d.status = static_cast<Data::Status>(k);
         if (d.status == Data::Status::NotSet)
@@ -164,9 +164,11 @@ public:
             return;
         }
         else if (d.status == Data::Status::SetOther)
+        {
             serialization->deserializeBinary(d.value, buf, {});
-        else
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect type ({}) in {}State", static_cast<Int8>(k), getName());
+            return;
+        }
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect type ({}) in {}State", static_cast<Int8>(k), getName());
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
