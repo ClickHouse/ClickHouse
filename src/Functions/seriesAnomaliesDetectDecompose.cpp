@@ -7,7 +7,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+
 #include <Common/NaNUtils.h>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -45,7 +47,7 @@ public:
                 arguments.size());
 
         FunctionArgumentDescriptors mandatory_args{
-            {"time_series", &isArray<IDataType>, nullptr, "Array"},
+            {"series", &isArray<IDataType>, nullptr, "Array"},
         };
 
         FunctionArgumentDescriptors optional_args{
