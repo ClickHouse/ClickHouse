@@ -81,7 +81,7 @@ public:
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    void serializeValueIntoMemory(size_t n, char *& memory) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory) const override;
     const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash_func) const override
     {
@@ -433,7 +433,7 @@ StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & ar
 }
 
 template <typename ColumnType>
-void ColumnUnique<ColumnType>::serializeValueIntoMemory(size_t n, char *& memory) const
+char * ColumnUnique<ColumnType>::serializeValueIntoMemory(size_t n, char * memory) const
 {
     if (is_nullable)
     {
@@ -442,10 +442,10 @@ void ColumnUnique<ColumnType>::serializeValueIntoMemory(size_t n, char *& memory
         ++memory;
 
         if (n == getNullValueIndex())
-            return;
+            return memory;
     }
 
-    column_holder->serializeValueIntoMemory(n, memory);
+    return column_holder->serializeValueIntoMemory(n, memory);
 }
 
 template <typename ColumnType>

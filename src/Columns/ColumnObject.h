@@ -239,7 +239,7 @@ public:
     bool isDefaultAt(size_t) const override { throwMustBeConcrete(); }
     void insertData(const char *, size_t) override { throwMustBeConcrete(); }
     StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwMustBeConcrete(); }
-    void serializeValueIntoMemory(size_t, char *&) const override { throwMustBeConcrete(); }
+    char * serializeValueIntoMemory(size_t, char *) const override { throwMustBeConcrete(); }
     const char * deserializeAndInsertFromArena(const char *) override { throwMustBeConcrete(); }
     const char * skipSerializedInArena(const char *) const override { throwMustBeConcrete(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeConcrete(); }

@@ -147,7 +147,7 @@ StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char 
     return StringRef(nested_ref.data - s, nested_ref.size + s);
 }
 
-void ColumnNullable::serializeValueIntoMemory(size_t n, char *& memory) const
+char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory) const
 {
     const auto & arr = getNullMapData();
     static constexpr auto s = sizeof(arr[0]);
@@ -156,9 +156,9 @@ void ColumnNullable::serializeValueIntoMemory(size_t n, char *& memory) const
     ++memory;
 
     if (arr[n])
-        return;
+        return memory;
 
-    getNestedColumn().serializeValueIntoMemory(n, memory);
+    return getNestedColumn().serializeValueIntoMemory(n, memory);
 }
 
 const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)

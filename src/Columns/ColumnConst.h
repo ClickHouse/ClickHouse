@@ -165,7 +165,7 @@ public:
         return data->serializeValueIntoArena(0, arena, begin);
     }
 
-    void serializeValueIntoMemory(size_t, char *& memory) const override
+    char * serializeValueIntoMemory(size_t, char * memory) const override
     {
         return data->serializeValueIntoMemory(0, memory);
     }

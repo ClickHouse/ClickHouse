@@ -182,7 +182,7 @@ public:
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    void serializeValueIntoMemory(size_t n, char *& memory) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 

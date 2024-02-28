@@ -736,9 +736,9 @@ struct HashMethodSerialized
             for (size_t j = 0; j < keys_size; ++j)
             {
                 if constexpr (nullable)
-                    key_columns[j]->serializeValueIntoMemoryWithNull(row, memory, null_maps[j]);
+                    memory = key_columns[j]->serializeValueIntoMemoryWithNull(row, memory, null_maps[j]);
                 else
-                    key_columns[j]->serializeValueIntoMemory(row, memory);
+                    memory = key_columns[j]->serializeValueIntoMemory(row, memory);
             }
 
             return SerializedKeyHolder{key, pool};

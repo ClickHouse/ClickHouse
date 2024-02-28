@@ -90,7 +90,7 @@ public:
     void popBack(size_t n) override { idx.popBack(n); }
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    void serializeValueIntoMemory(size_t n, char *& memory) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory) const override;
 
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
 

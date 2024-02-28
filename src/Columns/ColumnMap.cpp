@@ -123,7 +123,7 @@ StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const
     return nested->serializeValueIntoArena(n, arena, begin);
 }
 
-void ColumnMap::serializeValueIntoMemory(size_t n, char *& memory) const
+char * ColumnMap::serializeValueIntoMemory(size_t n, char * memory) const
 {
     return nested->serializeValueIntoMemory(n, memory);
 }

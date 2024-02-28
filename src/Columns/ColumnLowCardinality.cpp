@@ -271,7 +271,7 @@ StringRef ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena & arena,
     return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin);
 }
 
-void ColumnLowCardinality::serializeValueIntoMemory(size_t n, char *& memory) const
+char * ColumnLowCardinality::serializeValueIntoMemory(size_t n, char * memory) const
 {
     return getDictionary().serializeValueIntoMemory(getIndexes().getUInt(n), memory);
 }

@@ -225,7 +225,7 @@ StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char con
 }
 
 
-void ColumnArray::serializeValueIntoMemory(size_t n, char *& memory) const
+char * ColumnArray::serializeValueIntoMemory(size_t n, char * memory) const
 {
     size_t array_size = sizeAt(n);
     size_t offset = offsetAt(n);
@@ -233,7 +233,8 @@ void ColumnArray::serializeValueIntoMemory(size_t n, char *& memory) const
     memcpy(memory, &array_size, sizeof(array_size));
     memory += sizeof(array_size);
     for (size_t i = 0; i < array_size; ++i)
-        getData().serializeValueIntoMemory(offset + i, memory);
+        memory = getData().serializeValueIntoMemory(offset + i, memory);
+    return memory;
 }
 
 

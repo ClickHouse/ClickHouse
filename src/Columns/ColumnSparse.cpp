@@ -158,9 +158,9 @@ StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char co
     return values->serializeValueIntoArena(getValueIndex(n), arena, begin);
 }
 
-void ColumnSparse::serializeValueIntoMemory(size_t n, char *& memory) const
+char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory) const
 {
-    values->serializeValueIntoMemory(getValueIndex(n), memory);
+    return values->serializeValueIntoMemory(getValueIndex(n), memory);
 }
 
 const char * ColumnSparse::deserializeAndInsertFromArena(const char * pos)

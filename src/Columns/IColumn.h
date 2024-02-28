@@ -229,8 +229,8 @@ public:
     }
 
     /// Same as above but serialize into already allocated continuous memory.
-    /// When finished, `memory` will point to the end of the serialization data.
-    virtual void serializeValueIntoMemory(size_t /* n */, char * & /* memory */) const
+    /// Return pointer to the end of the serialization data.
+    virtual char * serializeValueIntoMemory(size_t /* n */, char * /* memory */) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemory is not supported for {}", getName());
     }
@@ -242,7 +242,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArenaWithNull is not supported for {}", getName());
     }
 
-    virtual void serializeValueIntoMemoryWithNull(size_t /* n */, char * & /* memory */, const UInt8 * /* is_null */) const
+    virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemoryWithNull is not supported for {}", getName());
     }
@@ -710,9 +710,9 @@ class IColumnHelper : public Parent
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
-    void serializeValueIntoMemoryWithNull(size_t n, char * & memory, const UInt8 * is_null) const override;
+    char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override;
     StringRef serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const override;
-    void serializeValueIntoMemory(size_t n, char * & memory) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory) const override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 };
 

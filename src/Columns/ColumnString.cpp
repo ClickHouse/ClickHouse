@@ -264,14 +264,15 @@ StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char co
     return res;
 }
 
-void ColumnString::serializeValueIntoMemory(size_t n, char *& memory) const
+char * ColumnString::serializeValueIntoMemory(size_t n, char * memory) const
 {
     size_t string_size = sizeAt(n);
     size_t offset = offsetAt(n);
 
     memcpy(memory, &string_size, sizeof(string_size));
-    memcpy(memory + sizeof(string_size), &chars[offset], string_size);
-    memory += sizeof(string_size) + string_size;
+    memory += sizeof(string_size);
+    memcpy(memory, &chars[offset], string_size);
+    return memory + string_size;
 }
 
 const char * ColumnString::deserializeAndInsertFromArena(const char * pos)

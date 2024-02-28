@@ -28,7 +28,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 String IColumn::dumpStructure() const
@@ -53,8 +52,12 @@ void IColumn::insertFrom(const IColumn & src, size_t n)
 ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
 {
     if (offsets.size() + shift != size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Incompatible sizes of offsets ({}), shift ({}) and size of column {}", offsets.size(), shift, size());
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Incompatible sizes of offsets ({}), shift ({}) and size of column {}",
+            offsets.size(),
+            shift,
+            size());
 
     auto res = cloneEmpty();
     res->reserve(total_rows);
@@ -116,8 +119,7 @@ MutableColumns IColumnHelper<Derived, Parent>::scatter(IColumn::ColumnIndex num_
     size_t num_rows = self.size();
 
     if (num_rows != selector.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector: {} doesn't match size of column: {}",
-                selector.size(), num_rows);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of selector: {} doesn't match size of column: {}", selector.size(), num_rows);
 
     MutableColumns columns(num_columns);
     for (auto & column : columns)
@@ -157,14 +159,13 @@ void compareImpl(
         compare_results.resize(num_rows);
     else if (compare_results.size() != num_rows)
         throw Exception(
-            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            ErrorCodes::LOGICAL_ERROR,
             "Size of compare_results: {} doesn't match rows_num: {}",
             compare_results.size(),
             num_rows);
 
-    for (size_t i = 0; i < num_rows; ++i)
+    for (size_t row = 0; row < num_rows; ++row)
     {
-        UInt64 row = i;
         int res = lhs.compareAt(row, rhs_row_num, rhs, nan_direction_hint);
         assert(res == 1 || res == -1 || res == 0);
         compare_results[row] = static_cast<Int8>(res);
@@ -188,17 +189,14 @@ void compareWithIndexImpl(
         compare_results.resize(num_rows);
     else if (compare_results.size() != num_rows)
         throw Exception(
-            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            ErrorCodes::LOGICAL_ERROR,
             "Size of compare_results: {} doesn't match rows_num: {}",
             compare_results.size(),
             num_rows);
 
-    UInt64 * indexes = row_indexes->data();
-    UInt64 * next_index = indexes;
-    size_t num_indexes = row_indexes->size();
-    for (size_t i = 0; i < num_indexes; ++i)
+    UInt64 * next_index = row_indexes->data();
+    for (auto row : *row_indexes)
     {
-        UInt64 row = indexes[i];
         int res = lhs.compareAt(row, rhs_row_num, rhs, nan_direction_hint);
         assert(res == 1 || res == -1 || res == 0);
         compare_results[row] = static_cast<Int8>(res);
@@ -252,7 +250,7 @@ bool IColumnHelper<Derived, Parent>::hasEqualValues() const
     size_t num_rows = self.size();
     for (size_t i = 1; i < num_rows; ++i)
     {
-        if (self.compareAt(i, 0, self, false) != 0)
+        if (self.compareAt(i, 0, self, 0) != 0)
             return false;
     }
     return true;
@@ -339,11 +337,9 @@ IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(size_t n, Arena 
 
         size_t sz = self.byteSizeAt(n) + 1 /* null byte */;
         memory = arena.allocContinue(sz, begin);
-        StringRef ret(memory, sz);
         *memory = 0;
-        ++memory;
-        self.serializeValueIntoMemory(n, memory);
-        return ret;
+        self.serializeValueIntoMemory(n, memory + 1);
+        return {memory, sz};
     }
     else
     {
@@ -361,28 +357,26 @@ StringRef IColumnHelper<Derived, Parent>::serializeValueIntoArena(size_t n, Aren
     size_t sz = self.byteSizeAt(n);
     char * memory = arena.allocContinue(sz, begin);
     self.serializeValueIntoMemory(n, memory);
-    return {memory - sz, sz};
+    return {memory, sz};
 }
 
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::serializeValueIntoMemoryWithNull(size_t n, char *& memory, const UInt8 * is_null) const
+char * IColumnHelper<Derived, Parent>::serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const
 {
     const auto & self = static_cast<const Derived &>(*this);
     if (is_null)
     {
         *memory = is_null[n];
         ++memory;
-        if (!is_null[n])
-            self.serializeValueIntoMemory(n, memory);
+        if (is_null[n])
+            return memory;
     }
-    else
-    {
-        self.serializeValueIntoMemory(n, memory);
-    }
+
+    return self.serializeValueIntoMemory(n, memory);
 }
 
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::serializeValueIntoMemory(size_t n, char *& memory) const
+char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(size_t n, char * memory) const
 {
     if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived>)
         return IColumn::serializeValueIntoMemory(n, memory);
@@ -390,7 +384,7 @@ void IColumnHelper<Derived, Parent>::serializeValueIntoMemory(size_t n, char *& 
     const auto & self = static_cast<const Derived &>(*this);
     auto raw_data = self.getDataAt(n);
     memcpy(memory, raw_data.data, raw_data.size);
-    memory += raw_data.size;
+    return memory + raw_data.size;
 }
 
 template <typename Derived, typename Parent>

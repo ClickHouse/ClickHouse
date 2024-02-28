@@ -210,10 +210,12 @@ StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char con
     return res;
 }
 
-void ColumnTuple::serializeValueIntoMemory(size_t n, char *& memory) const
+char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
 {
     for (const auto & column : columns)
-        column->serializeValueIntoMemory(n, memory);
+        memory = column->serializeValueIntoMemory(n, memory);
+
+    return memory;
 }
 
 const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
