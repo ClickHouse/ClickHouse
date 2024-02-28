@@ -180,7 +180,7 @@ def main():
         )
         print("::notice ::Cannot run")
         sys.exit(1)
- 
+
     post_commit_status(
         commit,
         SUCCESS,
