@@ -8,7 +8,7 @@ namespace DB
 StoragePtr StorageIceberg::create(
     const DB::StorageIceberg::Configuration & base_configuration,
     DB::ContextPtr context_,
-    bool attach,
+    LoadingStrictnessLevel mode,
     const DB::StorageID & table_id_,
     const DB::ColumnsDescription & columns_,
     const DB::ConstraintsDescription & constraints_,
@@ -27,7 +27,7 @@ StoragePtr StorageIceberg::create(
     }
     catch (...)
     {
-        if (!attach)
+        if (mode <= LoadingStrictnessLevel::CREATE)
             throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }

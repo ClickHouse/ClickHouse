@@ -863,7 +863,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             rename_visitor.visit(index.definition_ast);
     }
     else if (type == MODIFY_SQL_SECURITY)
-        metadata.setDefiner(sql_security->as<ASTSQLSecurity &>());
+        metadata.setSQLSecurity(sql_security->as<ASTSQLSecurity &>());
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
 }

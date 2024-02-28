@@ -125,7 +125,7 @@ StorageView::StorageView(
 
     storage_metadata.setComment(comment);
     if (query.sql_security)
-        storage_metadata.setDefiner(query.sql_security->as<ASTSQLSecurity &>());
+        storage_metadata.setSQLSecurity(query.sql_security->as<ASTSQLSecurity &>());
 
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());

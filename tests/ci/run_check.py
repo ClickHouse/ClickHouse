@@ -27,7 +27,7 @@ from lambda_shared_package.lambda_shared.pr import (
     check_pr_description,
 )
 from pr_info import PRInfo
-from report import FAILURE, PENDING
+from report import FAILURE, PENDING, SUCCESS
 
 TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
@@ -180,6 +180,15 @@ def main():
         )
         print("::notice ::Cannot run")
         sys.exit(1)
+ 
+    post_commit_status(
+        commit,
+        SUCCESS,
+        "",
+        "ok",
+        PR_CHECK,
+        pr_info,
+    )
 
     ci_report_url = create_ci_report(pr_info, [])
     print("::notice ::Can run")

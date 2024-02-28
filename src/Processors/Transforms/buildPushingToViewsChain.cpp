@@ -66,7 +66,6 @@ struct ViewsData
     StorageID source_storage_id;
     StorageMetadataPtr source_metadata_snapshot;
     StoragePtr source_storage;
-    /// This value is actually only for logs.
     size_t max_threads = 1;
 
     /// In case of exception happened while inserting into main table, it is pushed to pipeline.
@@ -572,7 +571,6 @@ Chain buildPushingToViewsChain(
         result_chain.addSource(std::move(sink));
     }
 
-    /// TODO: add pushing to live view
     if (result_chain.empty())
         result_chain.addSink(std::make_shared<NullSinkToStorage>(storage_header));
 
