@@ -32,14 +32,14 @@ drop table if exists page_cache_03055;
 create table page_cache_03055 (k Int64 CODEC(NONE)) engine MergeTree order by k settings storage_policy = 's3_cache';
 
 -- Write an 80 MiB file (40 x 2 MiB chunks), and a few small files.
-system stop merges;
+system stop merges page_cache_03055;
 insert into page_cache_03055 select * from numbers(10485760) settings max_block_size=100000000, preferred_block_size_bytes=1000000000;
 
 select * from events_diff;
 truncate table events_snapshot;
 insert into events_snapshot select * from system.events;
 
-system start merges;
+system start merges page_cache_03055;
 optimize table page_cache_03055 final;
 truncate table events_snapshot;
 insert into events_snapshot select * from system.events;
