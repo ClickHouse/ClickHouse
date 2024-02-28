@@ -874,6 +874,7 @@ class IColumn;
     M(Int64, prefer_warmed_unmerged_parts_seconds, 0, "Only available in ClickHouse Cloud", 0) \
     M(Bool, enable_order_by_all, true, "Enable sorting expression ORDER BY ALL.", 0) \
     M(Bool, iceberg_engine_ignore_schema_evolution, false, "Ignore schema evolution in Iceberg table engine and read all data using latest schema saved on table creation. Note that it can lead to incorrect result", 0) \
+    M(Bool, allow_short_circuit_default_implementation_for_nulls, false, "Setting for short-circuit default implementations for null in function with useDefaultImplementationForNulls() = true. If true, function will not actually evaluate for rows in which there are at least one argument with null value.", 0) \
 
 // End of COMMON_SETTINGS
 // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
