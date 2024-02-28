@@ -88,13 +88,14 @@ String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool req
     return fixed_prefix;
 }
 
-/// for "^prefix..." string it returns "prefix"
-static String extractFixedPrefixFromRegularExpression(const String & regexp)
+/// for "^prefix..." string it returns ("prefix", is inclusive)
+static std::pair<String, bool> extractFixedPrefixFromRegularExpression(const String & regexp)
 {
     if (regexp.size() <= 1 || regexp[0] != '^')
         return {};
 
     String fixed_prefix;
+    bool inclusive = true;
     const char * begin = regexp.data() + 1;
     const char * pos = begin;
     const char * end = regexp.data() + regexp.size();
@@ -104,6 +105,7 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
         switch (*pos)
         {
             case '\0':
+                inclusive = false;
                 pos = end;
                 break;
 
@@ -130,6 +132,7 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
                         break;
                     default:
                         /// all other escape sequences are not supported
+                        inclusive = false;
                         pos = end;
                         break;
                 }
@@ -148,6 +151,7 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
             case '$':
             case '.':
             case '+':
+                inclusive = false;
                 pos = end;
                 break;
 
@@ -158,6 +162,7 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
                 if (!fixed_prefix.empty())
                     fixed_prefix.pop_back();
 
+                inclusive = false;
                 pos = end;
                 break;
             default:
@@ -167,7 +172,7 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
         }
     }
 
-    return fixed_prefix;
+    return {fixed_prefix, inclusive};
 }
 
 
@@ -415,7 +420,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (expression.contains('|'))
                 return false;
 
-            String prefix = extractFixedPrefixFromRegularExpression(expression);
+            auto [prefix, inclusive] = extractFixedPrefixFromRegularExpression(expression);
             if (prefix.empty())
                 return false;
 
@@ -423,8 +428,8 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 
             out.function = RPNElement::FUNCTION_IN_RANGE;
             out.range = !right_bound.empty()
-                ? Range(prefix, true, right_bound, false)
-                : Range::createLeftBounded(prefix, true);
+                ? Range(prefix, inclusive, right_bound, false)
+                : Range::createLeftBounded(prefix, inclusive);
 
             return true;
         }
@@ -1797,6 +1802,8 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                     func_name = "lessOrEquals";
                 else if (func_name == "greater")
                     func_name = "greaterOrEquals";
+
+                relaxed = true;
             }
 
         }
@@ -3104,6 +3111,58 @@ bool KeyCondition::alwaysFalse() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::alwaysFalse");
 
     return rpn_stack[0] == 0;
+}
+
+bool KeyCondition::canBeFalseAlwaysUnknown() const
+{
+    std::vector<bool> rpn_stack;
+
+    for (const auto & element : rpn)
+    {
+        if (element.function == RPNElement::FUNCTION_UNKNOWN || element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
+        {
+            rpn_stack.push_back(true);
+        }
+        else if (
+            element.function == RPNElement::ALWAYS_TRUE || element.function == RPNElement::ALWAYS_FALSE
+            || element.function == RPNElement::FUNCTION_NOT_IN_RANGE || element.function == RPNElement::FUNCTION_IN_RANGE
+            || element.function == RPNElement::FUNCTION_IN_SET || element.function == RPNElement::FUNCTION_NOT_IN_SET
+            || element.function == RPNElement::FUNCTION_IS_NULL || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
+        {
+            rpn_stack.push_back(false);
+        }
+        else if (element.function == RPNElement::FUNCTION_NOT)
+        {
+            assert(!rpn_stack.empty());
+        }
+        else if (element.function == RPNElement::FUNCTION_AND)
+        {
+            assert(!rpn_stack.empty());
+
+            auto arg1 = rpn_stack.back();
+            rpn_stack.pop_back();
+            auto arg2 = rpn_stack.back();
+
+            rpn_stack.back() = arg1 || arg2;
+        }
+        else if (element.function == RPNElement::FUNCTION_OR)
+        {
+            assert(!rpn_stack.empty());
+
+            auto arg1 = rpn_stack.back();
+            rpn_stack.pop_back();
+            auto arg2 = rpn_stack.back();
+
+            rpn_stack.back() = arg1 && arg2;
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
+    }
+
+    if (rpn_stack.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::canBeFalseAlwaysUnknown");
+
+    return rpn_stack[0];
 }
 
 bool KeyCondition::hasMonotonicFunctionsChain() const

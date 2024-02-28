@@ -1109,6 +1109,14 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         return res;
     }
 
+    /// If conditions are relaxed, don't fill exact ranges.
+    if (key_condition.isRelaxed() || (part_offset_condition && part_offset_condition->isRelaxed()))
+        exact_ranges = nullptr;
+
+    /// If conditions are always unknown about whether a range can be false or not, don't fill exact ranges.
+    if (key_condition.canBeFalseAlwaysUnknown() || (part_offset_condition && part_offset_condition->canBeFalseAlwaysUnknown()))
+        exact_ranges = nullptr;
+
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
     const auto & key_indices = key_condition.getKeyIndices();
@@ -1157,11 +1165,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
     auto check_in_range = [&](const MarkRange & range, bool check_can_be_false_for_single_mark = false)
     {
-        BoolMask initial_mask
-            = range.end == range.begin + 1 && check_can_be_false_for_single_mark ? BoolMask() : BoolMask::consider_only_can_be_true;
+        BoolMask initial_mask = range.end == range.begin + 1 && check_can_be_false_for_single_mark ? BoolMask::consider_both
+                                                                                                   : BoolMask::consider_only_can_be_true;
 
-        BoolMask key_condition_check_result;
-        if (key_condition_useful)
+        auto check_key_condition = [&]()
         {
             if (range.end == marks_count)
             {
@@ -1179,19 +1186,17 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     create_field_ref(range.end, i, index_right[i]);
                 }
             }
-            key_condition_check_result
-                = key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask);
-        }
+            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask);
+        };
 
-        BoolMask part_offset_condition_check_result;
-        if (part_offset_condition_useful)
+        auto check_part_offset_condition = [&]()
         {
             auto begin = part->index_granularity.getMarkStartingRow(range.begin);
             auto end = part->index_granularity.getMarkStartingRow(range.end) - 1;
             if (begin > end)
             {
                 /// Empty mark (final mark)
-                part_offset_condition_check_result = {false, true};
+                return BoolMask(false, true);
             }
             else
             {
@@ -1200,17 +1205,17 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 part_offset_left[1] = part->name;
                 part_offset_right[1] = part->name;
 
-                part_offset_condition_check_result = part_offset_condition->checkInRange(
+                return part_offset_condition->checkInRange(
                     2, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
             }
-        }
+        };
 
         if (key_condition_useful && part_offset_condition_useful)
-            return key_condition_check_result & part_offset_condition_check_result;
+            return check_key_condition() & check_part_offset_condition();
         else if (key_condition_useful)
-            return key_condition_check_result;
+            return check_key_condition();
         else if (part_offset_condition_useful)
-            return part_offset_condition_check_result;
+            return check_part_offset_condition();
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Condition is useless but check_in_range still gets called. It is a bug");
     };
@@ -1354,11 +1359,15 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     auto result_exact_range = result_range;
                     if (check_in_range({result_range.begin, result_range.begin + 1}, exact_ranges).can_be_false)
                         ++result_exact_range.begin;
+
                     if (check_in_range({result_range.end - 1, result_range.end}, exact_ranges).can_be_false)
                         --result_exact_range.end;
 
                     if (result_exact_range.begin < result_exact_range.end)
+                    {
+                        chassert(check_in_range(result_exact_range, exact_ranges) == BoolMask(true, false));
                         exact_ranges->emplace_back(std::move(result_exact_range));
+                    }
 
                     res.emplace_back(std::move(result_range));
                 }
