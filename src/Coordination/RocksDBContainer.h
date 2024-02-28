@@ -2,8 +2,8 @@
 #include <base/StringRef.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
-#include <Coordination/pathUtils.h>
 #include <Common/SipHash.h>
+#include <Disks/DiskLocal.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 
@@ -19,6 +19,8 @@ namespace ErrorCodes
 {
     extern const int ROCKSDB_ERROR;
 }
+
+namespace fs = std::filesystem;
 
 /// The key-value format of rocks db will be
 /// - key: Int8 (depth of the path) + String (path)

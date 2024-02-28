@@ -42,6 +42,7 @@ public:
     ~S3QueueFilesMetadata();
 
     void setFileProcessed(ProcessingNodeHolderPtr holder);
+    void setFileProcessed(const std::string & path, size_t shard_id);
 
     void setFileFailed(ProcessingNodeHolderPtr holder, const std::string & exception_message);
 
@@ -140,6 +141,9 @@ private:
     void setFileProcessedForOrderedMode(ProcessingNodeHolderPtr holder);
     void setFileProcessedForUnorderedMode(ProcessingNodeHolderPtr holder);
     std::string getZooKeeperPathForShard(size_t shard_id) const;
+
+    void setFileProcessedForOrderedModeImpl(
+        const std::string & path, ProcessingNodeHolderPtr holder, const std::string & processed_node_path);
 
     enum class SetFileProcessingResult
     {

@@ -22,8 +22,6 @@ class KeeperServer
 private:
     const int server_id;
 
-    CoordinationSettingsPtr coordination_settings;
-
     nuraft::ptr<IKeeperStateMachine> state_machine;
 
     nuraft::ptr<KeeperStateManager> state_manager;

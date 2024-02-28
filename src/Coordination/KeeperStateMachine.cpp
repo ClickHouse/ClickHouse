@@ -11,6 +11,7 @@
 #include <base/errnoToString.h>
 #include <base/move_extend.h>
 #include <sys/mman.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
@@ -42,17 +43,14 @@ namespace ErrorCodes
 IKeeperStateMachine::IKeeperStateMachine(
     ResponsesQueue & responses_queue_,
     SnapshotsQueue & snapshots_queue_,
-    const CoordinationSettingsPtr & coordination_settings_,
     const KeeperContextPtr & keeper_context_,
     KeeperSnapshotManagerS3 * snapshot_manager_s3_,
     CommitCallback commit_callback_,
     const std::string & superdigest_)
     : commit_callback(commit_callback_)
-    , coordination_settings(coordination_settings_)
     , responses_queue(responses_queue_)
     , snapshots_queue(snapshots_queue_)
-    , min_request_size_to_cache(coordination_settings_->min_request_size_for_cache)
-    , last_committed_idx(0)
+    , min_request_size_to_cache(keeper_context_->getCoordinationSettings()->min_request_size_for_cache)
     , log(getLogger("KeeperStateMachine"))
     , superdigest(superdigest_)
     , keeper_context(keeper_context_)
@@ -64,7 +62,7 @@ template<typename Storage>
 KeeperStateMachine<Storage>::KeeperStateMachine(
     ResponsesQueue & responses_queue_,
     SnapshotsQueue & snapshots_queue_,
-    const CoordinationSettingsPtr & coordination_settings_,
+    // const CoordinationSettingsPtr & coordination_settings_,
     const KeeperContextPtr & keeper_context_,
     KeeperSnapshotManagerS3 * snapshot_manager_s3_,
     IKeeperStateMachine::CommitCallback commit_callback_,
@@ -72,17 +70,17 @@ KeeperStateMachine<Storage>::KeeperStateMachine(
     : IKeeperStateMachine(
         responses_queue_,
         snapshots_queue_,
-        coordination_settings_,
+        /// coordination_settings_,
         keeper_context_,
         snapshot_manager_s3_,
         commit_callback_,
         superdigest_),
         snapshot_manager(
-          coordination_settings->snapshots_to_keep,
+          keeper_context_->getCoordinationSettings()->snapshots_to_keep,
           keeper_context_,
-          coordination_settings->compress_snapshots_with_zstd_format,
+          keeper_context_->getCoordinationSettings()->compress_snapshots_with_zstd_format,
           superdigest_,
-          coordination_settings->dead_session_check_period_ms.totalMilliseconds())
+          keeper_context_->getCoordinationSettings()->dead_session_check_period_ms.totalMilliseconds())
 {
 }
 
@@ -121,7 +119,7 @@ void KeeperStateMachine<Storage>::init()
             storage = std::move(snapshot_deserialization_result.storage);
             latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
             cluster_config = snapshot_deserialization_result.cluster_config;
-            last_committed_idx = latest_snapshot_meta->get_last_log_idx();
+            keeper_context->setLastCommitIndex(latest_snapshot_meta->get_last_log_idx());
             loaded = true;
             break;
         }
@@ -136,6 +134,7 @@ void KeeperStateMachine<Storage>::init()
         }
     }
 
+    auto last_committed_idx = keeper_context->lastCommittedIndex();
     if (has_snapshots)
     {
         if (loaded)
@@ -150,7 +149,7 @@ void KeeperStateMachine<Storage>::init()
 
     if (!storage)
         storage = std::make_unique<Storage>(
-            coordination_settings->dead_session_check_period_ms.totalMilliseconds(), superdigest, keeper_context);
+            keeper_context->getCoordinationSettings()->dead_session_check_period_ms.totalMilliseconds(), superdigest, keeper_context);
 }
 
 namespace
@@ -160,16 +159,18 @@ void assertDigest(
     const KeeperStorageBase::Digest & expected,
     const KeeperStorageBase::Digest & actual,
     const Coordination::ZooKeeperRequest & request,
+    uint64_t log_idx,
     bool committing)
 {
     if (!KeeperStorageBase::checkDigest(expected, actual))
     {
         LOG_FATAL(
             getLogger("KeeperStateMachine"),
-            "Digest for nodes is not matching after {} request of type '{}'.\nExpected digest - {}, actual digest - {} (digest "
-            "{}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
+            "Digest for nodes is not matching after {} request of type '{}' at log index {}.\nExpected digest - {}, actual digest - {} "
+            "(digest {}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
             committing ? "committing" : "preprocessing",
             request.getOpNum(),
+            log_idx,
             expected.value,
             actual.value,
             expected.version,
@@ -319,12 +320,12 @@ bool KeeperStateMachine<Storage>::preprocess(const KeeperStorageBase::RequestFor
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__, "Failed to preprocess stored log, aborting to avoid inconsistent state");
+        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to preprocess stored log at index {}, aborting to avoid inconsistent state", request_for_session.log_idx));
         std::abort();
     }
 
     if (keeper_context->digestEnabled() && request_for_session.digest)
-        assertDigest(*request_for_session.digest, storage->getNodesDigest(false), *request_for_session.request, false);
+        assertDigest(*request_for_session.digest, storage->getNodesDigest(false), *request_for_session.request, request_for_session.log_idx, false);
 
     return true;
 }
@@ -434,48 +435,57 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
         }
     };
 
-    const auto op_num = request_for_session->request->getOpNum();
-    if (op_num == Coordination::OpNum::SessionID)
+    try
     {
-        const Coordination::ZooKeeperSessionIDRequest & session_id_request
-            = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session->request);
-        int64_t session_id;
-        std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::make_shared<Coordination::ZooKeeperSessionIDResponse>();
-        response->internal_id = session_id_request.internal_id;
-        response->server_id = session_id_request.server_id;
-        KeeperStorageBase::ResponseForSession response_for_session;
-        response_for_session.session_id = -1;
-        response_for_session.response = response;
-
-        std::lock_guard lock(storage_and_responses_lock);
-        session_id = storage->getSessionID(session_id_request.session_timeout_ms);
-        LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
-        response->session_id = session_id;
-        try_push(response_for_session);
-    }
-    else
-    {
-        if (op_num == Coordination::OpNum::Close)
+        const auto op_num = request_for_session->request->getOpNum();
+        if (op_num == Coordination::OpNum::SessionID)
         {
-            std::lock_guard lock(request_cache_mutex);
-            parsed_request_cache.erase(request_for_session->session_id);
+            const Coordination::ZooKeeperSessionIDRequest & session_id_request
+                = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session->request);
+            int64_t session_id;
+            std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::make_shared<Coordination::ZooKeeperSessionIDResponse>();
+            response->internal_id = session_id_request.internal_id;
+            response->server_id = session_id_request.server_id;
+            KeeperStorageBase::ResponseForSession response_for_session;
+            response_for_session.session_id = -1;
+            response_for_session.response = response;
+
+            std::lock_guard lock(storage_and_responses_lock);
+            session_id = storage->getSessionID(session_id_request.session_timeout_ms);
+            LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
+            response->session_id = session_id;
+            try_push(response_for_session);
+        }
+        else
+        {
+            if (op_num == Coordination::OpNum::Close)
+            {
+                std::lock_guard lock(request_cache_mutex);
+                parsed_request_cache.erase(request_for_session->session_id);
+            }
+
+            std::lock_guard lock(storage_and_responses_lock);
+            KeeperStorageBase::ResponsesForSessions responses_for_sessions
+                = storage->processRequest(request_for_session->request, request_for_session->session_id, request_for_session->zxid);
+            for (auto & response_for_session : responses_for_sessions)
+                try_push(response_for_session);
+
+            if (keeper_context->digestEnabled() && request_for_session->digest)
+                assertDigest(*request_for_session->digest, storage->getNodesDigest(true), *request_for_session->request, request_for_session->log_idx, true);
         }
 
-        std::lock_guard lock(storage_and_responses_lock);
-        KeeperStorageBase::ResponsesForSessions responses_for_sessions
-            = storage->processRequest(request_for_session->request, request_for_session->session_id, request_for_session->zxid);
-        for (auto & response_for_session : responses_for_sessions)
-            try_push(response_for_session);
+        ProfileEvents::increment(ProfileEvents::KeeperCommits);
+        keeper_context->setLastCommitIndex(log_idx);
 
-        if (keeper_context->digestEnabled() && request_for_session->digest)
-            assertDigest(*request_for_session->digest, storage->getNodesDigest(true), *request_for_session->request, true);
+        if (commit_callback)
+            commit_callback(log_idx, *request_for_session);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, fmt::format("Failed to commit stored log at index {}", log_idx));
+        throw;
     }
 
-    ProfileEvents::increment(ProfileEvents::KeeperCommits);
-    last_committed_idx = log_idx;
-
-    if (commit_callback)
-        commit_callback(log_idx, *request_for_session);
     return nullptr;
 }
 
@@ -523,7 +533,7 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
     }
 
     ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplys);
-    last_committed_idx = s.get_last_log_idx();
+    keeper_context->setLastCommitIndex(s.get_last_log_idx());
     return true;
 }
 
@@ -533,7 +543,7 @@ void IKeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nura
     std::lock_guard lock(cluster_config_lock);
     auto tmp = new_conf->serialize();
     cluster_config = ClusterConfig::deserialize(*tmp);
-    last_committed_idx = log_idx;
+    keeper_context->setLastCommitIndex(log_idx);
 }
 
 void IKeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)

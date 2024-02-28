@@ -23,7 +23,6 @@ public:
     IKeeperStateMachine(
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
-        const CoordinationSettingsPtr & coordination_settings_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
         CommitCallback commit_callback_,
@@ -59,7 +58,7 @@ public:
     // (can happen in case of exception during preprocessing)
     virtual void rollbackRequest(const KeeperStorageBase::RequestForSession & request_for_session, bool allow_missing) = 0;
 
-    uint64_t last_commit_index() override { return last_committed_idx; }
+    uint64_t last_commit_index() override { return keeper_context->lastCommittedIndex(); }
 
     nuraft::ptr<nuraft::snapshot> last_snapshot() override;
 
@@ -115,6 +114,8 @@ protected:
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
 
     CoordinationSettingsPtr coordination_settings;
+    /// Main state machine logic
+    /// KeeperStoragePtr storage TSA_PT_GUARDED_BY(storage_and_responses_lock);
 
     /// Save/Load and Serialize/Deserialize logic for snapshots.
     /// Put processed responses into this queue
@@ -139,9 +140,6 @@ protected:
     /// requests can be modified from anywhere without lock because a single request
     /// can be processed only in 1 thread at any point
     std::mutex request_cache_mutex;
-
-    /// Last committed Raft log number.
-    std::atomic<uint64_t> last_committed_idx;
 
     LoggerPtr log;
 
@@ -175,7 +173,7 @@ public:
     KeeperStateMachine(
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
-        const CoordinationSettingsPtr & coordination_settings_,
+        /// const CoordinationSettingsPtr & coordination_settings_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
         CommitCallback commit_callback_ = {},

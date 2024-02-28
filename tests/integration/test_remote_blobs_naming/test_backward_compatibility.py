@@ -288,7 +288,7 @@ def test_replicated_merge_tree(cluster, test_case):
                 WHERE
                     local_path LIKE '%{uuid}%'
                     AND local_path NOT LIKE '%format_version.txt%'
-                ORDER BY ALL
+                ORDER BY *
                 """
             ).strip()
 
@@ -329,7 +329,7 @@ def test_replicated_merge_tree(cluster, test_case):
                 WHERE
                     table = 'test_replicated_merge_tree'
                     AND active
-                ORDER BY ALL
+                ORDER BY *
                 """
             )
             .strip()
@@ -349,7 +349,7 @@ def test_replicated_merge_tree(cluster, test_case):
                     SELECT name
                     FROM system.zookeeper
                     WHERE path='/clickhouse/zero_copy/zero_copy_s3/{table_shared_uuid}/{part}'
-                    ORDER BY ALL
+                    ORDER BY *
                     """
                 )
                 .strip()
@@ -363,7 +363,7 @@ def test_replicated_merge_tree(cluster, test_case):
                         SELECT name
                         FROM system.zookeeper
                         WHERE path='/clickhouse/zero_copy/zero_copy_s3/{table_shared_uuid}/{part}/{blob}'
-                        ORDER BY ALL
+                        ORDER BY *
                         """
                     )
                     .strip()
