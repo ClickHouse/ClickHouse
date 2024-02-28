@@ -96,8 +96,6 @@
 #include <ranges>
 #include <set>
 #include <thread>
-#include <typeinfo>
-#include <typeindex>
 #include <unordered_set>
 #include <filesystem>
 
@@ -5313,7 +5311,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
         if (hold_table_lock && !table_lock)
             table_lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
-        if (backup_settings.check_projection_parts)
+        if (backup_settings.check_parts)
             part->checkConsistencyWithProjections(/* require_part_metadata= */ true);
 
         BackupEntries backup_entries_from_part;
@@ -5325,8 +5323,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
             read_settings,
             make_temporary_hard_links,
             backup_entries_from_part,
-            &temp_dirs,
-            false, false);
+            &temp_dirs);
 
         auto projection_parts = part->getProjectionParts();
         for (const auto & [projection_name, projection_part] : projection_parts)
@@ -5339,9 +5336,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
                 read_settings,
                 make_temporary_hard_links,
                 backup_entries_from_part,
-                &temp_dirs,
-                projection_part->is_broken,
-                backup_settings.allow_backup_broken_projections);
+                &temp_dirs);
         }
 
         if (hold_storage_and_part_ptrs)
@@ -6940,10 +6935,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
 
 
 UInt64 MergeTreeData::estimateNumberOfRowsToRead(
-    ContextPtr query_context,
-    const StorageSnapshotPtr & storage_snapshot,
-    const SelectQueryInfo & query_info,
-    const ActionDAGNodes & added_filter_nodes) const
+    ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
 {
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & parts = snapshot_data.parts;
@@ -6951,11 +6943,9 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
     MergeTreeDataSelectExecutor reader(*this);
     auto result_ptr = reader.estimateNumMarksToRead(
         parts,
-        query_info.prewhere_info,
         storage_snapshot->getMetadataForQuery()->getColumns().getAll().getNames(),
         storage_snapshot->metadata,
         query_info,
-        added_filter_nodes,
         query_context,
         query_context->getSettingsRef().max_threads);
 
@@ -7835,39 +7825,21 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
 
 bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, String & out_reason)
 {
-    auto remove_broken_parts_from_consideration = [](auto & parts)
-    {
-        std::set<String> broken_projection_parts;
-        for (const auto & [name, part] : parts)
-        {
-            if (part->is_broken)
-                broken_projection_parts.emplace(name);
-        }
-        for (const auto & name : broken_projection_parts)
-            parts.erase(name);
-    };
-
-    auto left_projection_parts = left->getProjectionParts();
-    auto right_projection_parts = right->getProjectionParts();
-
-    remove_broken_parts_from_consideration(left_projection_parts);
-    remove_broken_parts_from_consideration(right_projection_parts);
-
-    if (left_projection_parts.size() != right_projection_parts.size())
+    if (left->getProjectionParts().size() != right->getProjectionParts().size())
     {
         out_reason = fmt::format(
             "Parts have different number of projections: {} in part '{}' and {} in part '{}'",
-            left_projection_parts.size(),
+            left->getProjectionParts().size(),
             left->name,
-            right_projection_parts.size(),
+            right->getProjectionParts().size(),
             right->name
         );
         return false;
     }
 
-    for (const auto & [name, _] : left_projection_parts)
+    for (const auto & [name, _] : left->getProjectionParts())
     {
-        if (!right_projection_parts.contains(name))
+        if (!right->hasProjection(name))
         {
             out_reason = fmt::format(
                 "The part '{}' doesn't have projection '{}' while part '{}' does", right->name, name, left->name
