@@ -436,7 +436,7 @@ MergeTask::StageRuntimeContextPtr MergeTask::VerticalMergeStage::getContextForNe
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
 {
     assert(subtasks_iterator != subtasks.end());
-    if ((*subtasks_iterator)())
+    if ((this->**subtasks_iterator)())
         return true;
 
     /// Move to the next subtask in an array of subtasks
@@ -731,9 +731,8 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
         MergeTreeData::DataPartsVector projection_parts;
         for (const auto & part : global_ctx->future_part->parts)
         {
-            auto actual_projection_parts = part->getProjectionParts();
-            auto it = actual_projection_parts.find(projection.name);
-            if (it != actual_projection_parts.end() && !it->second->is_broken)
+            auto it = part->getProjectionParts().find(projection.name);
+            if (it != part->getProjectionParts().end())
                 projection_parts.push_back(it->second);
         }
         if (projection_parts.size() < global_ctx->future_part->parts.size())
@@ -827,7 +826,7 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
 bool MergeTask::VerticalMergeStage::execute()
 {
     assert(subtasks_iterator != subtasks.end());
-    if ((*subtasks_iterator)())
+    if ((this->**subtasks_iterator)())
         return true;
 
     /// Move to the next subtask in an array of subtasks
@@ -838,7 +837,7 @@ bool MergeTask::VerticalMergeStage::execute()
 bool MergeTask::MergeProjectionsStage::execute()
 {
     assert(subtasks_iterator != subtasks.end());
-    if ((*subtasks_iterator)())
+    if ((this->**subtasks_iterator)())
         return true;
 
     /// Move to the next subtask in an array of subtasks

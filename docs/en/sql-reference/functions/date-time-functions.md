@@ -1564,7 +1564,7 @@ Alias: `TO_DAYS`
 **Arguments**
 
 - `date` — The date to calculate the number of days passed since year zero from. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
-- `time_zone` — A String type const value or a expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
+- `time_zone` — A String type const value or an expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
 
 **Returned value**
 
@@ -2218,7 +2218,7 @@ now64([scale], [timezone])
 
 **Arguments**
 
-- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ]. Typically are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).
+- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ]. Typically, are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
@@ -2305,7 +2305,7 @@ Rounds the time to the half hour.
 
 Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 100 + MM). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
 
-This functions is the opposite of function `YYYYMMDDToDate()`.
+This function is the opposite of function `YYYYMMDDToDate()`.
 
 **Example**
 
@@ -2362,7 +2362,7 @@ Result:
 
 Converts a number containing the year, month and day number to a [Date](../../sql-reference/data-types/date.md).
 
-This functions is the opposite of function `toYYYYMMDD()`.
+This function is the opposite of function `toYYYYMMDD()`.
 
 The output is undefined if the input does not encode a valid Date value.
 
@@ -2406,7 +2406,7 @@ Converts a number containing the year, month, day, hours, minute and second numb
 
 The output is undefined if the input does not encode a valid DateTime value.
 
-This functions is the opposite of function `toYYYYMMDDhhmmss()`.
+This function is the opposite of function `toYYYYMMDDhhmmss()`.
 
 **Syntax**
 
@@ -2981,8 +2981,8 @@ toUTCTimestamp(time_val, time_zone)
 
 **Arguments**
 
-- `time_val` — A DateTime/DateTime64 type const value or a expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
-- `time_zone` — A String type const value or a expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
+- `time_val` — A DateTime/DateTime64 type const value or an expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
+- `time_zone` — A String type const value or an expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
 
 **Returned value**
 
@@ -3014,8 +3014,8 @@ fromUTCTimestamp(time_val, time_zone)
 
 **Arguments**
 
-- `time_val` — A DateTime/DateTime64 type const value or a expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
-- `time_zone` — A String type const value or a expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
+- `time_val` — A DateTime/DateTime64 type const value or an expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
+- `time_zone` — A String type const value or an expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
 
 **Returned value**
 

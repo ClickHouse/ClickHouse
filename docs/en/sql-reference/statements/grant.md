@@ -114,6 +114,7 @@ Hierarchy of privileges:
     - `ALTER VIEW`
         - `ALTER VIEW REFRESH`
         - `ALTER VIEW MODIFY QUERY`
+        - `ALTER VIEW MODIFY SQL SECURITY`
 - [CREATE](#grant-create)
     - `CREATE DATABASE`
     - `CREATE TABLE`
@@ -308,6 +309,7 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
     - `ALTER VIEW` Level: `GROUP`
         - `ALTER VIEW REFRESH`. Level: `VIEW`. Aliases: `ALTER LIVE VIEW REFRESH`, `REFRESH VIEW`
         - `ALTER VIEW MODIFY QUERY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY QUERY`
+        - `ALTER VIEW MODIFY SQL SECURITY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY SQL SECURITY`
 
 Examples of how this hierarchy is treated:
 
@@ -410,6 +412,7 @@ Allows a user to execute queries that manage users, roles and row policies.
         - `SHOW_ROW_POLICIES`. Level: `GLOBAL`. Aliases: `SHOW POLICIES`, `SHOW CREATE ROW POLICY`, `SHOW CREATE POLICY`
         - `SHOW_QUOTAS`. Level: `GLOBAL`. Aliases: `SHOW CREATE QUOTA`
         - `SHOW_SETTINGS_PROFILES`. Level: `GLOBAL`. Aliases: `SHOW PROFILES`, `SHOW CREATE SETTINGS PROFILE`, `SHOW CREATE PROFILE`
+    - `ALLOW SQL SECURITY NONE`. Level: `GLOBAL`. Aliases: `CREATE SQL SECURITY NONE`, `SQL SECURITY NONE`, `SECURITY NONE`
 
 The `ROLE ADMIN` privilege allows a user to assign and revoke any roles including those which are not assigned to the user with the admin option.
 

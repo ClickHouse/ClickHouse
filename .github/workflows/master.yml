@@ -11,7 +11,7 @@ on: # yamllint disable-line rule:truthy
       - 'master'
 jobs:
   RunConfig:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, style-checker-aarch64]
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
@@ -327,6 +327,7 @@ jobs:
       run_command: |
         python3 build_report_check.py "$CHECK_NAME"
   MarkReleaseReady:
+    if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
     needs:
       - BuilderBinDarwin
       - BuilderBinDarwinAarch64
@@ -374,36 +375,12 @@ jobs:
       test_name: Stateless tests (release)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestCoverage:
-    needs: [RunConfig, BuilderDebReleaseCoverage]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (coverage)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestReleaseDatabaseReplicated:
+  FunctionalStatelessTestReleaseAnalyzerS3Replicated:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Stateless tests (release, DatabaseReplicated)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestReleaseAnalyzer:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (release, analyzer)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestReleaseS3:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (release, s3 storage)
+      test_name: Stateless tests (release, analyzer, s3, DatabaseReplicated)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestS3Debug:
@@ -480,14 +457,6 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateful tests (release)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestCoverage:
-    needs: [RunConfig, BuilderDebReleaseCoverage]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (coverage)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatefulTestAarch64:
@@ -840,9 +809,7 @@ jobs:
       - MarkReleaseReady
       - FunctionalStatelessTestDebug
       - FunctionalStatelessTestRelease
-      - FunctionalStatelessTestReleaseDatabaseReplicated
-      - FunctionalStatelessTestReleaseAnalyzer
-      - FunctionalStatelessTestReleaseS3
+      - FunctionalStatelessTestReleaseAnalyzerS3Replicated
       - FunctionalStatelessTestAarch64
       - FunctionalStatelessTestAsan
       - FunctionalStatelessTestTsan
