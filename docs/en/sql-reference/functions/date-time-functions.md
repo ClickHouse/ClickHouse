@@ -750,15 +750,15 @@ toMillisecond(value)
 Alias: `MILLISECOND`
 
 ```sql
-SELECT toMillisecond(toDateTime('2023-04-21 10:20:30'))
+SELECT toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3))
 ```
 
 Result:
 
 ```response
-┌─toMillisecond(toDateTime('2023-04-21 10:20:30'))─┐
-│                                            30000 │
-└──────────────────────────────────────────────────┘
+┌─toMillisecond(toDateTime('2023-04-21 10:20:30.456', 3))─┐
+│                                                     456 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 **Returned value**
