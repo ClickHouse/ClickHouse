@@ -229,7 +229,6 @@ uint64_t CgroupsMemoryUsageObserver::File::readMemoryUsage() const
 
                 assertChar(' ', buf);
                 readIntText(mem_usage, buf);
-                assertChar('\n', buf);
                 found_rss = true;
                 break;
             }
