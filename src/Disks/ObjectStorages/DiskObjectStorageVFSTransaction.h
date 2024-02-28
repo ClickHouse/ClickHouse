@@ -1,13 +1,16 @@
 #pragma once
 #include "DiskObjectStorageTransaction.h"
+#include "VFSLogItem.h"
 
 namespace DB
 {
 class DiskObjectStorageVFS;
 
-struct DiskObjectStorageVFSTransaction : public DiskObjectStorageTransaction
+struct DiskObjectStorageVFSTransaction : DiskObjectStorageTransaction, private VFSLogItem
 {
     DiskObjectStorageVFSTransaction(DiskObjectStorageVFS & disk_); // NOLINT
+    void commit() override;
+
     void replaceFile(const String & from_path, const String & to_path) override;
 
     void copyFile(
@@ -37,6 +40,7 @@ struct DiskObjectStorageVFSTransaction : public DiskObjectStorageTransaction
 
 protected:
     DiskObjectStorageVFS & disk;
+    VFSLogItem & item; // Points to VFSTransactionGroup if there's any, points to *this otherwise
 
     void addStoredObjectsOp(StoredObjects && link, StoredObjects && unlink);
 };

@@ -32,20 +32,21 @@ VFSLogItem VFSLogItem::parse(std::string_view str)
     return out;
 }
 
-String VFSLogItem::serialize() const
+constexpr size_t zk_node_limit = 1_MiB;
+Strings VFSLogItem::serialize() const
 {
-    return fmt::format("{}\n", fmt::join(*this, "\n"));
-}
-
-// TODO myrrc this assumes single log item will never have more than one link to a single stored object
-// which doesn't work for 0copy
-String VFSLogItem::getSerialised(StoredObjects && link, StoredObjects && unlink)
-{
-    String out;
-    for (const auto & obj : link)
-        out += fmt::format("{} 1\n", obj.remote_path);
-    for (const auto & obj : unlink)
-        out += fmt::format("{} -1\n", obj.remote_path);
+    if (empty())
+        return {};
+    Strings out(1);
+    String & ref = out[0];
+    for (const auto & obj : *this)
+    {
+        String item_serialized = fmt::format("{}\n", obj);
+        if (ref.size() + item_serialized.size() <= zk_node_limit)
+            ref += item_serialized;
+        else
+            ref = out.emplace_back(std::move(item_serialized));
+    }
     return out;
 }
 

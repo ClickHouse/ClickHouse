@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Types_fwd.h"
 #include "Disks/ObjectStorages/StoredObject.h"
 #include "boost/container/flat_map.hpp"
 
@@ -22,11 +23,9 @@ struct VFSMergeResult
 struct VFSLogItem : VFSLogItemStorage
 {
     static VFSLogItem parse(std::string_view str);
-
-    String serialize() const;
-    // Faster alternative that avoids constructing VFSLogItem object
-    static String getSerialised(StoredObjects && link, StoredObjects && unlink);
-
+    Strings serialize() const; // ZooKeeper imposes a 1MB limit for node
+    void add(const StoredObject & obj);
+    void remove(const StoredObject & obj);
     void merge(VFSLogItem && other);
     VFSMergeResult mergeWithSnapshot(ReadBuffer & snapshot, WriteBuffer & new_snapshot, Poco::Logger * log) &&;
 };

@@ -12,6 +12,27 @@ DiskObjectStorageVFSTransaction::DiskObjectStorageVFSTransaction(DiskObjectStora
 {
 }
 
+const int pers_seq = zkutil::CreateMode::PersistentSequential;
+void DiskObjectStorageVFSTransaction::commit()
+{
+    DiskObjectStorageTransaction::commit();
+
+    if (const Strings nodes = item.serialize(); nodes.empty())
+        LOG_DEBUG(disk.log, "Nothing to commit");
+    else if (nodes.size() == 1)
+    {
+        LOG_TRACE(disk.log, "Executing {}", nodes[0]);
+        disk.zookeeper()->create(disk.nodes.log_item, nodes[0], pers_seq);
+    }
+    else
+    {
+        Coordination::Requests req;
+        for (const auto & node : nodes)
+            req.emplace_back(zkutil::makeCreateRequest(disk.nodes.log_item, node, pers_seq));
+        disk.zookeeper()->multi(req);
+    }
+}
+
 void DiskObjectStorageVFSTransaction::replaceFile(const String & from_path, const String & to_path)
 {
     DiskObjectStorageTransaction::replaceFile(from_path, to_path);
@@ -40,69 +61,56 @@ void DiskObjectStorageVFSTransaction::removeSharedFileIfExists(const String & pa
     addStoredObjectsOp({}, metadata_storage.getStorageObjects(path));
 }
 
-const int pers_seq = zkutil::CreateMode::PersistentSequential;
 struct RemoveRecursiveObjectStorageVFSOperation final : RemoveRecursiveObjectStorageOperation
 {
-    DiskObjectStorageVFS & disk;
+    VFSLogItem & item;
 
-    RemoveRecursiveObjectStorageVFSOperation(DiskObjectStorageVFS & disk_, const String & path_)
+    RemoveRecursiveObjectStorageVFSOperation(DiskObjectStorageVFS & disk_, VFSLogItem & item_, const String & path_)
         : RemoveRecursiveObjectStorageOperation(
             *disk_.object_storage,
             *disk_.metadata_storage,
             path_,
             /*keep_all_batch_data=*/true,
             {})
-        , disk(disk_)
+        , item(item_)
     {
     }
 
     void execute(MetadataTransactionPtr tx) override
     {
         RemoveRecursiveObjectStorageOperation::execute(tx);
-
-        StoredObjects unlink;
-        for (auto && [_, unlink_by_path] : objects_to_remove_by_path)
-            std::ranges::move(unlink_by_path.objects, std::back_inserter(unlink));
-
-        const String entry = VFSLogItem::getSerialised({}, std::move(unlink));
-        LOG_TRACE(disk.log, "{}: Executing {}", getInfoForLog(), entry);
-
-        disk.zookeeper()->create(disk.nodes.log_item, entry, pers_seq);
+        for (const auto & [_, unlink_by_path] : objects_to_remove_by_path)
+            for (const auto & obj : unlink_by_path.objects)
+                item.remove(obj);
     }
 };
 
 void DiskObjectStorageVFSTransaction::removeSharedRecursive(const String & path, bool, const NameSet &)
 {
-    operations_to_execute.emplace_back(std::make_unique<RemoveRecursiveObjectStorageVFSOperation>(disk, path));
+    operations_to_execute.emplace_back(std::make_unique<RemoveRecursiveObjectStorageVFSOperation>(disk, item, path));
 }
 
 struct RemoveManyObjectStorageVFSOperation final : RemoveManyObjectStorageOperation
 {
-    DiskObjectStorageVFS & disk;
+    VFSLogItem & item;
 
-    RemoveManyObjectStorageVFSOperation(DiskObjectStorageVFS & disk_, const RemoveBatchRequest & request_)
+    RemoveManyObjectStorageVFSOperation(DiskObjectStorageVFS & disk_, VFSLogItem & item_, const RemoveBatchRequest & request_)
         : RemoveManyObjectStorageOperation(
             *disk_.object_storage,
             *disk_.metadata_storage,
             request_,
             /*keep_all_batch_data=*/false, // Different behaviour compared to RemoveObjectStorageOperation
             {})
-        , disk(disk_)
+        , item(item_)
     {
     }
 
     void execute(MetadataTransactionPtr tx) override
     {
         RemoveManyObjectStorageOperation::execute(tx);
-
-        StoredObjects unlink;
-        for (auto && [objects, _] : objects_to_remove)
-            std::ranges::move(objects, std::back_inserter(unlink));
-
-        const String entry = VFSLogItem::getSerialised({}, std::move(unlink));
-        LOG_TRACE(disk.log, "{}: Executing {}", getInfoForLog(), entry);
-
-        disk.zookeeper()->create(disk.nodes.log_item, entry, pers_seq);
+        for (const auto & [objects, _] : objects_to_remove)
+            for (const auto & obj : objects)
+                item.remove(obj);
     }
 
     void finalize() override { }
@@ -110,7 +118,7 @@ struct RemoveManyObjectStorageVFSOperation final : RemoveManyObjectStorageOperat
 
 void DiskObjectStorageVFSTransaction::removeSharedFiles(const RemoveBatchRequest & files, bool, const NameSet &)
 {
-    operations_to_execute.emplace_back(std::make_unique<RemoveManyObjectStorageVFSOperation>(disk, files));
+    operations_to_execute.emplace_back(std::make_unique<RemoveManyObjectStorageVFSOperation>(disk, item, files));
 }
 
 // createFile creates an empty file. If writeFile is called, we'd
@@ -164,10 +172,11 @@ void DiskObjectStorageVFSTransaction::createHardLink(const String & src_path, co
 
 struct CopyFileObjectStorageVFSOperation final : CopyFileObjectStorageOperation
 {
-    DiskObjectStorageVFS & disk;
+    VFSLogItem & item;
 
     CopyFileObjectStorageVFSOperation(
         DiskObjectStorageVFS & disk_,
+        VFSLogItem & item_,
         IObjectStorage & destination_object_storage_,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
@@ -181,18 +190,15 @@ struct CopyFileObjectStorageVFSOperation final : CopyFileObjectStorageOperation
             write_settings_,
             from_path_,
             to_path_)
-        , disk(disk_)
+        , item(item_)
     {
     }
 
     void execute(MetadataTransactionPtr tx) override
     {
         CopyFileObjectStorageOperation::execute(tx);
-
-        const String entry = VFSLogItem::getSerialised(std::move(created_objects), {});
-        LOG_TRACE(disk.log, "{}: Executing {}", getInfoForLog(), entry);
-
-        disk.zookeeper()->create(disk.nodes.log_item, entry, pers_seq);
+        for (const auto & obj : created_objects)
+            item.add(obj);
     }
 };
 
@@ -200,38 +206,18 @@ void DiskObjectStorageVFSTransaction::copyFile(
     const String & from_file_path, const String & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
     operations_to_execute.emplace_back(std::make_unique<CopyFileObjectStorageVFSOperation>(
-        disk, *disk.object_storage, read_settings, write_settings, from_file_path, to_file_path));
+        disk, item, *disk.object_storage, read_settings, write_settings, from_file_path, to_file_path));
 }
 
-// TODO myrrc A better approach would be to execute writes to Keeper as a single transaction when
-// all other transactions are committed. So instead of adding a transaction operation on each filesystem
-// operation, we could store Keeper actions in the VFSTransaction class directly. However, this brings two
-// major questions:
-//
-// What happens if Keeper dies after we finished all FS operations? Will they be retried in order so that
-//  correct info would be propagated to VFS log?
-//  Currently on each Keeper failure we just abort the operation by throwing, achieving "early exit".
-// On metadata copying from replica to replica, how will we handle that? Currently there's a hacky
-//  approach: when a metadata file is written, it's immediately read back, deserialized, and StoredObject
-//  info is propagated to Keeper. Then transaction is committed immediately. This solution was developed
-//  as writeFile autocommits by default, so writing to actual file happens when buffer is finalized, not
-//  when the corresponding transaction commits.
 void DiskObjectStorageVFSTransaction::addStoredObjectsOp(StoredObjects && link, StoredObjects && unlink)
 {
     if (link.empty() && unlink.empty()) [[unlikely]]
         return;
-
     LOG_TRACE(disk.log, "Pushing:\nlink:{}\nunlink:{}", fmt::join(link, "\n"), fmt::join(unlink, "\n"));
-    String entry = VFSLogItem::getSerialised(std::move(link), std::move(unlink));
-
-    auto callback = [entry_captured = std::move(entry), &disk_captured = disk]
-    {
-        LOG_TRACE(disk_captured.log, "Executing {}", entry_captured);
-        disk_captured.zookeeper()->create(disk_captured.nodes.log_item, entry_captured, pers_seq);
-    };
-
-    operations_to_execute.emplace_back(
-        std::make_unique<CallbackOperation<decltype(callback)>>(object_storage, metadata_storage, std::move(callback)));
+    for (const auto & obj : link)
+        item.add(obj);
+    for (const auto & obj : unlink)
+        item.remove(obj);
 }
 
 MultipleDisksObjectStorageVFSTransaction::MultipleDisksObjectStorageVFSTransaction(
@@ -244,6 +230,6 @@ void MultipleDisksObjectStorageVFSTransaction::copyFile(
     const String & from_file_path, const String & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
     operations_to_execute.emplace_back(std::make_unique<CopyFileObjectStorageVFSOperation>(
-        disk, destination_object_storage, read_settings, write_settings, from_file_path, to_file_path));
+        disk, item, destination_object_storage, read_settings, write_settings, from_file_path, to_file_path));
 }
 }

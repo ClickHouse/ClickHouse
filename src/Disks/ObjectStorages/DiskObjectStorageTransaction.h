@@ -3,7 +3,6 @@
 #include <Disks/IDiskTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <base/FnTraits.h>
 
 namespace DB
 {
@@ -16,12 +15,11 @@ struct IDiskObjectStorageOperation
     IObjectStorage & object_storage;
     /// useful for some read operations
     IMetadataStorage & metadata_storage;
-
 public:
     IDiskObjectStorageOperation(IObjectStorage & object_storage_, IMetadataStorage & metadata_storage_)
-        : object_storage(object_storage_), metadata_storage(metadata_storage_)
-    {
-    }
+        : object_storage(object_storage_)
+        , metadata_storage(metadata_storage_)
+    {}
 
     /// Execute operation and something to metadata transaction
     virtual void execute(MetadataTransactionPtr transaction) = 0;
@@ -34,22 +32,6 @@ public:
     virtual ~IDiskObjectStorageOperation() = default;
 
     virtual std::string getInfoForLog() const = 0;
-};
-
-template <Fn<void()> Callback>
-struct CallbackOperation : public IDiskObjectStorageOperation
-{
-    Callback callback;
-
-    CallbackOperation(IObjectStorage & object_storage_, IMetadataStorage & metadata_storage_, Callback && cb_)
-        : IDiskObjectStorageOperation(object_storage_, metadata_storage_), callback(std::move(cb_))
-    {
-    }
-
-    void execute(MetadataTransactionPtr) override { std::move(callback)(); }
-    void undo() override { }
-    void finalize() override { }
-    String getInfoForLog() const override { return "CallbackOperation"; }
 };
 
 using DiskObjectStorageOperation = std::unique_ptr<IDiskObjectStorageOperation>;
@@ -86,7 +68,6 @@ protected:
         IMetadataStorage & metadata_storage_,
         DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
         MetadataTransactionPtr metadata_transaction_);
-
 
     void writeFileUsingBlobWritingFunctionOps(
         const String & path, WriteMode mode, WriteBlobFunction && write_blob_function, StoredObject & object);
