@@ -106,7 +106,7 @@ public:
             else
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal column {} of second argument of function {}. Should be a positive number",
+                    "Illegal column {} of second argument of function {}. Should be a non-negative number",
                     arguments[1].column->getName(),
                     getName());
 
