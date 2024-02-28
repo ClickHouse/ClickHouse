@@ -14,9 +14,9 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
+#include <Common/escapeForFileName.h>
 #include <base/range.h>
 #include <base/sleep.h>
 #include <boost/range/algorithm_ext/erase.hpp>
@@ -108,17 +108,7 @@ static void retryOnZooKeeperUserError(size_t attempts, Func && function)
     }
 }
 
-std::optional<UUID> ReplicatedAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
-{
-    const UUID id = generateRandomID();
-    if (insertWithID(id, new_entity, replace_if_exists, throw_if_exists))
-        return id;
-
-    return std::nullopt;
-}
-
-
-bool ReplicatedAccessStorage::insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+bool ReplicatedAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
 {
     const AccessEntityTypeInfo type_info = AccessEntityTypeInfo::get(new_entity->getType());
     const String & name = new_entity->getName();
@@ -525,9 +515,9 @@ void ReplicatedAccessStorage::refreshEntities(const zkutil::ZooKeeperPtr & zooke
     }
 
     const String zookeeper_uuids_path = zookeeper_path + "/uuid";
-    auto watch_entities_list = [watched_queue = watched_queue](const Coordination::WatchResponse &)
+    auto watch_entities_list = [my_watched_queue = watched_queue](const Coordination::WatchResponse &)
     {
-        [[maybe_unused]] bool push_result = watched_queue->push(UUIDHelpers::Nil);
+        [[maybe_unused]] bool push_result = my_watched_queue->push(UUIDHelpers::Nil);
     };
     Coordination::Stat stat;
     const auto entity_uuid_strs = zookeeper->getChildrenWatch(zookeeper_uuids_path, &stat, watch_entities_list);
@@ -592,10 +582,10 @@ void ReplicatedAccessStorage::refreshEntityNoLock(const zkutil::ZooKeeperPtr & z
 
 AccessEntityPtr ReplicatedAccessStorage::tryReadEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) const
 {
-    const auto watch_entity = [watched_queue = watched_queue, id](const Coordination::WatchResponse & response)
+    const auto watch_entity = [my_watched_queue = watched_queue, id](const Coordination::WatchResponse & response)
     {
         if (response.type == Coordination::Event::CHANGED)
-            [[maybe_unused]] bool push_result = watched_queue->push(id);
+            [[maybe_unused]] bool push_result = my_watched_queue->push(id);
     };
 
     Coordination::Stat entity_stat;
@@ -619,7 +609,7 @@ AccessEntityPtr ReplicatedAccessStorage::tryReadEntityFromZooKeeper(const zkutil
 void ReplicatedAccessStorage::setEntityNoLock(const UUID & id, const AccessEntityPtr & entity)
 {
     LOG_DEBUG(getLogger(), "Setting id {} to entity named {}", toString(id), entity->getName());
-    memory_storage.insertWithID(id, entity, /* replace_if_exists= */ true, /* throw_if_exists= */ false);
+    memory_storage.insert(id, entity, /* replace_if_exists= */ true, /* throw_if_exists= */ false);
 }
 
 
@@ -680,12 +670,12 @@ void ReplicatedAccessStorage::backup(BackupEntriesCollector & backup_entries_col
 
     backup_entries_collector.addPostTask(
         [backup_entry = backup_entry_with_path.second,
-         zookeeper_path = zookeeper_path,
+         my_zookeeper_path = zookeeper_path,
          type,
          &backup_entries_collector,
          backup_coordination]
         {
-            for (const String & path : backup_coordination->getReplicatedAccessFilePaths(zookeeper_path, type))
+            for (const String & path : backup_coordination->getReplicatedAccessFilePaths(my_zookeeper_path, type))
                 backup_entries_collector.addBackupEntry(path, backup_entry);
         });
 }
@@ -708,10 +698,10 @@ void ReplicatedAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
     bool replace_if_exists = (create_access == RestoreAccessCreationMode::kReplace);
     bool throw_if_exists = (create_access == RestoreAccessCreationMode::kCreate);
 
-    restorer.addDataRestoreTask([this, entities = std::move(entities), replace_if_exists, throw_if_exists]
+    restorer.addDataRestoreTask([this, my_entities = std::move(entities), replace_if_exists, throw_if_exists]
     {
-        for (const auto & [id, entity] : entities)
-            insertWithID(id, entity, replace_if_exists, throw_if_exists);
+        for (const auto & [id, entity] : my_entities)
+            insert(id, entity, replace_if_exists, throw_if_exists);
     });
 }
 

@@ -9,8 +9,6 @@
 #include <thread>
 #include <filesystem>
 
-#include <re2/re2.h>
-
 #include <boost/program_options.hpp>
 
 #include <Common/TerminalSize.h>
@@ -18,6 +16,7 @@
 #include <Common/SipHash.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ShellCommand.h>
+#include <Common/re2.h>
 #include <base/find_symbols.h>
 
 #include <IO/copyData.h>
@@ -25,7 +24,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
-
 
 static constexpr auto documentation = R"(
 A tool to extract information from Git repository for analytics.
@@ -1189,7 +1187,7 @@ try
 {
     using namespace DB;
 
-    po::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
+    po::options_description desc("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help,h", "produce help message")
         ("skip-commits-without-parents", po::value<bool>()->default_value(true),
@@ -1218,7 +1216,7 @@ try
     if (options.count("help"))
     {
         std::cout << documentation << '\n'
-            << "Usage: clickhouse git-import\n"
+            << "Usage: " << argv[0] << '\n'
             << desc << '\n'
             << "\nExample:\n"
             << "\nclickhouse git-import --skip-paths 'generated\\.cpp|^(contrib|docs?|website|libs/(libcityhash|liblz4|libdivide|libvectorclass|libdouble-conversion|libcpuid|libzstd|libfarmhash|libmetrohash|libpoco|libwidechar_width))/' --skip-commits-with-messages '^Merge branch '\n";

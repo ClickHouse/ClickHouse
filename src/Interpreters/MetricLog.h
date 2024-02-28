@@ -6,6 +6,7 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
+#include <Storages/ColumnsDescription.h>
 
 #include <vector>
 #include <atomic>
@@ -22,13 +23,12 @@ struct MetricLogElement
 {
     time_t event_time{};
     Decimal64 event_time_microseconds{};
-    UInt64 milliseconds{};
 
     std::vector<ProfileEvents::Count> profile_events;
     std::vector<CurrentMetrics::Metric> current_metrics;
 
     static std::string name() { return "MetricLog"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
     static const char * getCustomColumnList() { return nullptr; }

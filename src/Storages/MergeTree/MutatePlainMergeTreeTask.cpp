@@ -13,7 +13,7 @@ namespace ErrorCodes
 }
 
 
-StorageID MutatePlainMergeTreeTask::getStorageID()
+StorageID MutatePlainMergeTreeTask::getStorageID() const
 {
     return storage.getStorageID();
 }
@@ -23,7 +23,6 @@ void MutatePlainMergeTreeTask::onCompleted()
     bool delay = state == State::SUCCESS;
     task_result_callback(delay);
 }
-
 
 void MutatePlainMergeTreeTask::prepare()
 {
@@ -51,6 +50,14 @@ void MutatePlainMergeTreeTask::prepare()
             merge_list_entry.get(),
             std::move(profile_counters_snapshot));
     };
+
+    if (task_context->getSettingsRef().enable_sharing_sets_for_mutations)
+    {
+        /// If we have a prepared sets cache for this mutations, we will use it.
+        auto mutation_id = future_part->part_info.mutation;
+        auto prepared_sets_cache_for_mutation = storage.getPreparedSetsCache(mutation_id);
+        task_context->setPreparedSetsCache(prepared_sets_cache_for_mutation);
+    }
 
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_part, metadata_snapshot, merge_mutate_entry->commands, merge_list_entry.get(),
@@ -104,7 +111,7 @@ bool MutatePlainMergeTreeTask::executeStep()
                 if (merge_mutate_entry->txn)
                     merge_mutate_entry->txn->onException();
                 PreformattedMessage exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
-                LOG_ERROR(&Poco::Logger::get("MutatePlainMergeTreeTask"), exception_message);
+                LOG_ERROR(getLogger("MutatePlainMergeTreeTask"), exception_message);
                 storage.updateMutationEntriesErrors(future_part, false, exception_message.text);
                 write_part_log(ExecutionStatus::fromCurrentException("", true));
                 tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -130,7 +137,7 @@ ContextMutablePtr MutatePlainMergeTreeTask::createTaskContext() const
 {
     auto context = Context::createCopy(storage.getContext());
     context->makeQueryContext();
-    auto queryId = storage.getStorageID().getShortName() + "::" + future_part->name;
+    auto queryId = getQueryId();
     context->setCurrentQueryId(queryId);
     return context;
 }

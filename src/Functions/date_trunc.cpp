@@ -47,7 +47,7 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be constant string: "
                     "name of datepart", getName());
 
-            datepart_param = datepart_column->getValue<String>();
+            datepart_param = Poco::toLower(datepart_column->getValue<String>());
             if (datepart_param.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "First argument (name of datepart) for function {} cannot be empty",
                     getName());
@@ -107,7 +107,7 @@ public:
         if (result_type_is_date)
             return std::make_shared<DataTypeDate>();
         else
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 1));
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 1, false));
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

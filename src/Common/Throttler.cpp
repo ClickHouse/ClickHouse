@@ -61,20 +61,20 @@ UInt64 Throttler::add(size_t amount)
         throw Exception::createDeprecated(limit_exceeded_exception_message + std::string(" Maximum: ") + toString(limit), ErrorCodes::LIMIT_EXCEEDED);
 
     /// Wait unless there is positive amount of tokens - throttling
-    Int64 sleep_time = 0;
+    Int64 sleep_time_ns = 0;
     if (max_speed && tokens_value < 0)
     {
-        sleep_time = static_cast<Int64>(-tokens_value / max_speed * NS);
-        accumulated_sleep += sleep_time;
-        sleepForNanoseconds(sleep_time);
-        accumulated_sleep -= sleep_time;
-        ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_time / 1000UL);
+        sleep_time_ns = static_cast<Int64>(-tokens_value / max_speed * NS);
+        accumulated_sleep += sleep_time_ns;
+        sleepForNanoseconds(sleep_time_ns);
+        accumulated_sleep -= sleep_time_ns;
+        ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_time_ns / 1000UL);
     }
 
     if (parent)
-        sleep_time += parent->add(amount);
+        sleep_time_ns += parent->add(amount);
 
-    return static_cast<UInt64>(sleep_time);
+    return static_cast<UInt64>(sleep_time_ns);
 }
 
 void Throttler::reset()

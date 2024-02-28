@@ -56,6 +56,8 @@ void CascadeWriteBuffer::nextImpl()
 
 void CascadeWriteBuffer::getResultBuffers(WriteBufferPtrs & res)
 {
+    finalize();
+
     /// Sync position with underlying buffer before invalidating
     curr_buffer->position() = position();
 
@@ -67,6 +69,19 @@ void CascadeWriteBuffer::getResultBuffers(WriteBufferPtrs & res)
     lazy_sources.clear();
 }
 
+void CascadeWriteBuffer::finalizeImpl()
+{
+    if (curr_buffer)
+        curr_buffer->position() = position();
+
+    for (auto & buf : prepared_sources)
+    {
+        if (buf)
+        {
+            buf->finalize();
+        }
+    }
+}
 
 WriteBuffer * CascadeWriteBuffer::setNextBuffer()
 {

@@ -8,14 +8,12 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/Passes/CNF.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/HashUtils.h>
 
 #include <Storages/IStorage.h>
 
 #include <Functions/FunctionFactory.h>
-#include "Analyzer/HashUtils.h"
-#include "Analyzer/IQueryTreeNode.h"
-#include "Interpreters/ComparisonGraph.h"
-#include "base/types.h"
+#include <Interpreters/ComparisonGraph.h>
 
 namespace DB
 {
@@ -688,7 +686,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<ConvertQueryToCNFVisitor>;
     using Base::Base;
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         auto * query_node = node->as<QueryNode>();
         if (!query_node)

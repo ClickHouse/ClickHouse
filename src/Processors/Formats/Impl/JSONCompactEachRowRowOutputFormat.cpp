@@ -15,12 +15,13 @@ JSONCompactEachRowRowOutputFormat::JSONCompactEachRowRowOutputFormat(WriteBuffer
         bool with_names_,
         bool with_types_,
         bool yield_strings_)
-    : RowOutputFormatWithUTF8ValidationAdaptor(settings_.json.validate_utf8, header_, out_)
+    : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(header_, out_, settings_.json.valid_output_on_exception, settings_.json.validate_utf8)
     , settings(settings_)
     , with_names(with_names_)
     , with_types(with_types_)
     , yield_strings(yield_strings_)
 {
+    ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
 }
 
 
@@ -100,6 +101,25 @@ void JSONCompactEachRowRowOutputFormat::consumeTotals(DB::Chunk chunk)
 {
     if (with_names)
         IRowOutputFormat::consumeTotals(std::move(chunk));
+}
+
+void JSONCompactEachRowRowOutputFormat::writeSuffix()
+{
+    if (!exception_message.empty())
+    {
+        if (haveWrittenData())
+            writeRowBetweenDelimiter();
+
+        writeRowStartDelimiter();
+        writeJSONString(exception_message, *ostr, settings);
+        writeRowEndDelimiter();
+    }
+}
+
+void JSONCompactEachRowRowOutputFormat::resetFormatterImpl()
+{
+    RowOutputFormatWithExceptionHandlerAdaptor::resetFormatterImpl();
+    ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
 }
 
 void registerOutputFormatJSONCompactEachRow(FormatFactory & factory)

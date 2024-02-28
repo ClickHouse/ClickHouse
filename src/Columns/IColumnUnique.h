@@ -173,7 +173,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method hasEqualValues is not supported for ColumnUnique.");
     }
 
-    /** Given some value (usually, of type @e ColumnType) @p value that is convertible to DB::StringRef, obtains its
+    /** Given some value (usually, of type @e ColumnType) @p value that is convertible to StringRef, obtains its
      * index in the DB::ColumnUnique::reverse_index hashtable.
      *
      * The reverse index (StringRef => UInt64) is built lazily, so there are two variants:

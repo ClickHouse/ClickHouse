@@ -30,26 +30,45 @@ curl https://clickhouse.com/ | sh
 The binary you just downloaded can run all sorts of ClickHouse tools and utilities. If you want to run ClickHouse as a database server, check out the [Quick Start](../../quick-start.mdx).
 :::
 
-## Query data in a CSV file using SQL
+## Query data in a file using SQL {#query_data_in_file}
 
 A common use of `clickhouse-local` is to run ad-hoc queries on files: where you don't have to insert the data into a table. `clickhouse-local` can stream the data from a file into a temporary table and execute your SQL.
 
-If the file is sitting on the same machine as `clickhouse-local`, use the `file` table engine. The following `reviews.tsv` file contains a sampling of Amazon product reviews:
+If the file is sitting on the same machine as `clickhouse-local`, you can simple specify the file to load. The following `reviews.tsv` file contains a sampling of Amazon product reviews:
+
+```bash
+./clickhouse local -q "SELECT * FROM 'reviews.tsv'"
+```
+
+This command is a shortcut of:
 
 ```bash
 ./clickhouse local -q "SELECT * FROM file('reviews.tsv')"
 ```
 
 ClickHouse knows the file uses a tab-separated format from filename extension. If you need to explicitly specify the format, simply add one of the [many ClickHouse input formats](../../interfaces/formats.md):
-    ```bash
-    ./clickhouse local -q "SELECT * FROM file('reviews.tsv', 'TabSeparated')"
-    ```
+```bash
+./clickhouse local -q "SELECT * FROM file('reviews.tsv', 'TabSeparated')"
+```
 
 The `file` table function creates a table, and you can use `DESCRIBE` to see the inferred schema:
 
 ```bash
 ./clickhouse local -q "DESCRIBE file('reviews.tsv')"
 ```
+
+:::tip
+You are allowed to use globs in file name (See [glob substitutions](/docs/en/sql-reference/table-functions/file.md/#globs-in-path)).
+
+Examples:
+
+```bash
+./clickhouse local -q "SELECT * FROM 'reviews*.jsonl'"
+./clickhouse local -q "SELECT * FROM 'review_?.csv'"
+./clickhouse local -q "SELECT * FROM 'review_{1..3}.csv'"
+```
+
+:::
 
 ```response
 marketplace	Nullable(String)
@@ -180,25 +199,26 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 
 Arguments:
 
--   `-S`, `--structure` — table structure for input data.
--   `--input-format` — input format, `TSV` by default.
--   `-f`, `--file` — path to data, `stdin` by default.
--   `-q`, `--query` — queries to execute with `;` as delimeter. You must specify either `query` or `queries-file` option.
--   `--queries-file` - file path with queries to execute. You must specify either `query` or `queries-file` option.
--   `-N`, `--table` — table name where to put output data, `table` by default.
--   `--format`, `--output-format` — output format, `TSV` by default.
--   `-d`, `--database` — default database, `_local` by default.
--   `--stacktrace` — whether to dump debug output in case of exception.
--   `--echo` — print query before execution.
--   `--verbose` — more details on query execution.
--   `--logger.console` — Log to console.
--   `--logger.log` — Log file name.
--   `--logger.level` — Log level.
--   `--ignore-error` — do not stop processing if a query failed.
--   `-c`, `--config-file` — path to configuration file in same format as for ClickHouse server, by default the configuration empty.
--   `--no-system-tables` — do not attach system tables.
--   `--help` — arguments references for `clickhouse-local`.
--   `-V`, `--version` — print version information and exit.
+- `-S`, `--structure` — table structure for input data.
+- `--input-format` — input format, `TSV` by default.
+- `-f`, `--file` — path to data, `stdin` by default.
+- `-q`, `--query` — queries to execute with `;` as delimiter. `--query` can be specified multiple times, e.g. `--query "SELECT 1" --query "SELECT 2"`. Cannot be used simultaneously with `--queries-file`.
+- `--queries-file` - file path with queries to execute. `--queries-file` can be specified multiple times, e.g. `--query queries1.sql --query queries2.sql`. Cannot be used simultaneously with `--query`.
+- `--multiquery, -n` – If specified, multiple queries separated by semicolons can be listed after the `--query` option. For convenience, it is also possible to omit `--query` and pass the queries directly after `--multiquery`.
+- `-N`, `--table` — table name where to put output data, `table` by default.
+- `--format`, `--output-format` — output format, `TSV` by default.
+- `-d`, `--database` — default database, `_local` by default.
+- `--stacktrace` — whether to dump debug output in case of exception.
+- `--echo` — print query before execution.
+- `--verbose` — more details on query execution.
+- `--logger.console` — Log to console.
+- `--logger.log` — Log file name.
+- `--logger.level` — Log level.
+- `--ignore-error` — do not stop processing if a query failed.
+- `-c`, `--config-file` — path to configuration file in same format as for ClickHouse server, by default the configuration empty.
+- `--no-system-tables` — do not attach system tables.
+- `--help` — arguments references for `clickhouse-local`.
+- `-V`, `--version` — print version information and exit.
 
 Also there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
 

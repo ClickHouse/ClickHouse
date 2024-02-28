@@ -12,12 +12,20 @@
     <keeper_server>
         <tcp_port>2181</tcp_port>
         <server_id>2</server_id>
+        <availability_zone>
+            <value>az-zoo2</value>
+            <enable_auto_detection_on_cloud>1</enable_auto_detection_on_cloud>
+        </availability_zone>
 
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>
             <session_timeout_ms>15000</session_timeout_ms>
             <raft_logs_level>trace</raft_logs_level>
             <force_sync>false</force_sync>
+            <election_timeout_lower_bound_ms>2000</election_timeout_lower_bound_ms>
+            <election_timeout_upper_bound_ms>4000</election_timeout_upper_bound_ms>
+
+            <async_replication>1</async_replication>
         </coordination_settings>
 
         <raft_configuration>

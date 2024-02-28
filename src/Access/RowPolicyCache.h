@@ -29,6 +29,7 @@ private:
         explicit PolicyInfo(const RowPolicyPtr & policy_) { setPolicy(policy_); }
         void setPolicy(const RowPolicyPtr & policy_);
 
+        bool isForDatabase() const { return policy->isForDatabase(); }
         RowPolicyPtr policy;
         const RolesOrUsersSet * roles = nullptr;
         std::shared_ptr<const std::pair<String, String>> database_and_table_name;

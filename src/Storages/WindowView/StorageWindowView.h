@@ -119,7 +119,7 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
 
-    void checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
 
     void dropInnerTableIfAny(bool sync, ContextPtr context) override;
 
@@ -142,7 +142,7 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
     void startup() override;
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
     void read(
         QueryPlan & query_plan,
@@ -177,7 +177,7 @@ public:
     const Block & getOutputHeader() const;
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Stored query, e.g. SELECT * FROM * GROUP BY tumble(now(), *)
     ASTPtr select_query;

@@ -1,33 +1,52 @@
 #!/usr/bin/env python3
 import logging
+
+# isort: off
 from github import Github
 
-from env_helper import GITHUB_RUN_URL
-from pr_info import PRInfo
+# isort: on
+
+from commit_status_helper import (
+    CI_STATUS_NAME,
+    get_commit,
+    get_commit_filtered_statuses,
+    post_commit_status,
+    update_mergeable_check,
+)
 from get_robot_token import get_best_robot_token
-from commit_status_helper import get_commit, get_commit_filtered_statuses
+from pr_info import PRInfo
+from report import PENDING, SUCCESS
 
-NAME = "Run Check"
 
-
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO)
 
     pr_info = PRInfo(need_orgs=True)
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
+    # Update the Mergeable Check at the final step
+    update_mergeable_check(commit, pr_info, CI_STATUS_NAME)
 
-    url = GITHUB_RUN_URL
-    statuses = get_commit_filtered_statuses(commit)
-    pending_status = any(  # find NAME status in pending state
-        True
-        for status in statuses
-        if status.context == NAME and status.state == "pending"
-    )
-    if pending_status:
-        commit.create_status(
-            context=NAME,
-            description="All checks finished",
-            state="success",
-            target_url=url,
+    statuses = [
+        status
+        for status in get_commit_filtered_statuses(commit)
+        if status.context == CI_STATUS_NAME
+    ]
+    if not statuses:
+        return
+    # Take the latest status
+    status = statuses[-1]
+    if status.state == PENDING:
+        post_commit_status(
+            commit,
+            SUCCESS,
+            status.target_url,
+            "All checks finished",
+            CI_STATUS_NAME,
+            pr_info,
+            dump_to_file=True,
         )
+
+
+if __name__ == "__main__":
+    main()

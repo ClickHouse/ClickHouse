@@ -4,8 +4,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-DISABLE_OPTIMIZATION="SET query_plan_remove_redundant_sorting=0;SET optimize_duplicate_order_by_and_distinct=0"
-ENABLE_OPTIMIZATION="SET query_plan_remove_redundant_sorting=1;SET optimize_duplicate_order_by_and_distinct=0"
+if [ -z ${ENABLE_ANALYZER+x} ]; then
+    ENABLE_ANALYZER=0
+fi
+
+DISABLE_OPTIMIZATION="SET allow_experimental_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=0;SET optimize_duplicate_order_by_and_distinct=0"
+ENABLE_OPTIMIZATION="SET allow_experimental_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=1;SET optimize_duplicate_order_by_and_distinct=0"
 
 echo "-- Disabled query_plan_remove_redundant_sorting"
 echo "-- ORDER BY clauses in subqueries are untouched"
@@ -22,13 +26,13 @@ FROM
     ORDER BY number DESC
 )
 ORDER BY number ASC"
-$CLICKHOUSE_CLIENT -nq "$DISABLE_OPTIMIZATION;EXPLAIN header=1 $query"
+$CLICKHOUSE_CLIENT -nq "$DISABLE_OPTIMIZATION;EXPLAIN $query"
 
 function run_query {
     echo "-- query"
     echo "$1"
     echo "-- explain"
-    $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;EXPLAIN header=1 $1"
+    $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;EXPLAIN $1"
     echo "-- execute"
     $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;$1"
 }
@@ -92,7 +96,8 @@ FROM
         ORDER BY number ASC
     )
     ORDER BY number DESC
-) AS t2"
+) AS t2
+ORDER BY t1.number, t2.number"
 run_query "$query"
 
 echo "-- CROSS JOIN with subqueries, ORDER BY in main query -> all ORDER BY clauses will be removed in subqueries"
@@ -134,7 +139,8 @@ FROM
     )
     ORDER BY number DESC
 )
-GROUP BY number"
+GROUP BY number
+ORDER BY number"
 run_query "$query"
 
 echo "-- GROUP BY with aggregation function which depends on order -> keep ORDER BY in first subquery, and eliminate in second subquery"
@@ -150,7 +156,8 @@ FROM
     )
     ORDER BY number DESC
 )
-GROUP BY number"
+GROUP BY number
+ORDER BY number"
 run_query "$query"
 
 echo "-- query with aggregation function but w/o GROUP BY -> remove sorting"
@@ -214,7 +221,8 @@ FROM
     )
     GROUP BY number
 )
-WHERE a > 0"
+WHERE a > 0
+ORDER BY a"
 run_query "$query"
 
 echo "-- GROUP BY in most inner query makes execution parallelized, and removing inner sorting steps will keep it that way. But need to correctly update data streams sorting properties after removing sorting steps"

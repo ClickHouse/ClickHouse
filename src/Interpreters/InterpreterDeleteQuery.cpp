@@ -1,4 +1,5 @@
 #include <Interpreters/InterpreterDeleteQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 
 #include <Access/ContextAccess.h>
 #include <Databases/DatabaseReplicated.h>
@@ -72,7 +73,8 @@ BlockIO InterpreterDeleteQuery::execute()
         mutation_commands.emplace_back(mut_command);
 
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
-        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
+        MutationsInterpreter::Settings settings(false);
+        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), settings).validate();
         table->mutate(mutation_commands, getContext());
         return {};
     }
@@ -107,6 +109,15 @@ BlockIO InterpreterDeleteQuery::execute()
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE query is not supported for table {}", table->getStorageID().getFullTableName());
     }
+}
+
+void registerInterpreterDeleteQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterDeleteQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterDeleteQuery", create_fn);
 }
 
 }

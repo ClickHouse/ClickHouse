@@ -55,22 +55,29 @@ TTLAggregateDescription & TTLAggregateDescription::operator=(const TTLAggregateD
 namespace
 {
 
-void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name)
+void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name, bool allow_suspicious)
 {
-    for (const auto & action : ttl_expression->getActions())
+    /// Do not apply this check in ATTACH queries for compatibility reasons and if explicitly allowed.
+    if (!allow_suspicious)
     {
-        if (action.node->type == ActionsDAG::ActionType::FUNCTION)
+        if (ttl_expression->getRequiredColumns().empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "TTL expression {} does not depend on any of the columns of the table", result_column_name);
+
+        for (const auto & action : ttl_expression->getActions())
         {
-            const IFunctionBase & func = *action.node->function_base;
-            if (!func.isDeterministic())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "TTL expression cannot contain non-deterministic functions, but contains function {}",
-                                func.getName());
+            if (action.node->type == ActionsDAG::ActionType::FUNCTION)
+            {
+                const IFunctionBase & func = *action.node->function_base;
+                if (!func.isDeterministic())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "TTL expression cannot contain non-deterministic functions, but contains function {}",
+                                    func.getName());
+            }
         }
     }
 
     const auto & result_column = ttl_expression->getSampleBlock().getByName(result_column_name);
-
     if (!typeid_cast<const DataTypeDateTime *>(result_column.type.get())
         && !typeid_cast<const DataTypeDate *>(result_column.type.get()))
     {
@@ -162,7 +169,8 @@ TTLDescription TTLDescription::getTTLFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
     ContextPtr context,
-    const KeyDescription & primary_key)
+    const KeyDescription & primary_key,
+    bool is_attach)
 {
     TTLDescription result;
     const auto * ttl_element = definition_ast->as<ASTTTLElement>();
@@ -285,11 +293,11 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs);
+                    ttl_element->recompression_codec, {}, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec, context->getSettingsRef().enable_zstd_qat_codec);
         }
     }
 
-    checkTTLExpression(result.expression, result.result_column);
+    checkTTLExpression(result.expression, result.result_column, is_attach || context->getSettingsRef().allow_suspicious_ttl_expressions);
     return result;
 }
 
@@ -327,7 +335,8 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
     ContextPtr context,
-    const KeyDescription & primary_key)
+    const KeyDescription & primary_key,
+    bool is_attach)
 {
     TTLTableDescription result;
     if (!definition_ast)
@@ -338,7 +347,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     bool have_unconditional_delete_ttl = false;
     for (const auto & ttl_element_ptr : definition_ast->children)
     {
-        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key);
+        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key, is_attach);
         if (ttl.mode == TTLMode::DELETE)
         {
             if (!ttl.where_expression)
@@ -380,7 +389,7 @@ TTLTableDescription TTLTableDescription::parse(const String & str, const Columns
     ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     FunctionNameNormalizer().visit(ast.get());
 
-    return getTTLForTableFromAST(ast, columns, context, primary_key);
+    return getTTLForTableFromAST(ast, columns, context, primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
 }
 
 }

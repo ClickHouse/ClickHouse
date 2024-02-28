@@ -33,3 +33,9 @@ SELECT toDecimalString('64.64'::Float64, 61); -- {serverError CANNOT_PRINT_FLOAT
 SELECT toDecimalString('88'::UInt8, 78); -- {serverError CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER}
 SELECT toDecimalString('646464'::Int256, 78); -- {serverError CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER}
 SELECT toDecimalString('-128.789323123321329854641231237893231233213298546'::Decimal256(45), 78); -- {serverError CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER}
+
+-- wrong types: #52407 and similar
+SELECT toDecimalString('256.256'::Decimal256(45), *); -- {serverError ILLEGAL_COLUMN}
+SELECT toDecimalString('128.128'::Decimal128(30), 'str'); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT toDecimalString('64.64'::Decimal64(10)); -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
+SELECT toDecimalString('64.64'::Decimal64(10), 3, 3); -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}

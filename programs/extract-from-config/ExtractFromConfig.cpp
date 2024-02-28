@@ -17,8 +17,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Exception.h>
 #include <Common/parseGlobs.h>
-
-#include <re2/re2.h>
+#include <Common/re2.h>
 
 static void setupLogging(const std::string & log_level)
 {
@@ -146,11 +145,11 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
 
         if (options.count("help"))
         {
-            std::cout << "Preprocess config file and extract value of the given key." << std::endl
+            std::cerr << "Preprocess config file and extract value of the given key." << std::endl
                 << std::endl;
-            std::cout << "Usage: clickhouse extract-from-config [options]" << std::endl
+            std::cerr << "Usage: clickhouse extract-from-config [options]" << std::endl
                 << std::endl;
-            std::cout << options_desc << std::endl;
+            std::cerr << options_desc << std::endl;
             return 0;
         }
 

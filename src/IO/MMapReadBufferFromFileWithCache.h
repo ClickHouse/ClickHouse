@@ -19,6 +19,8 @@ public:
     off_t getPosition() override;
     std::string getFileName() const override;
     off_t seek(off_t offset, int whence) override;
+    size_t getFileOffsetOfBufferEnd() const override;
+    bool isRegularLocalFile(size_t * /* out_view_offset */) override { return true; }
 
 private:
     MMappedFileCache::MappedPtr mapped;

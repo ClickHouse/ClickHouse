@@ -1,13 +1,16 @@
 #pragma once
 
+#include <Common/ProfileEvents.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Core/Settings.h>
-#include <Interpreters/SystemLog.h>
+#include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/SystemLog.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <IO/AsyncReadCounters.h>
 #include <Parsers/IAST.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace ProfileEvents
@@ -64,6 +67,7 @@ struct QueryLogElement
     std::set<String> query_databases;
     std::set<String> query_tables;
     std::set<String> query_columns;
+    std::set<String> query_partitions;
     std::set<String> query_projections;
     std::set<String> query_views;
 
@@ -88,15 +92,18 @@ struct QueryLogElement
     String log_comment;
 
     std::vector<UInt64> thread_ids;
+    UInt64 peak_threads_usage = 0;
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
     std::shared_ptr<AsyncReadCounters> async_read_counters;
     std::shared_ptr<Settings> query_settings;
 
     TransactionID tid;
 
+    QueryCache::Usage query_cache_usage = QueryCache::Usage::Unknown;
+
     static std::string name() { return "QueryLog"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
     static const char * getCustomColumnList() { return nullptr; }

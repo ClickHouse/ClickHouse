@@ -40,13 +40,17 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
+
+    static ColumnsDescription getTableStructureFromData(
+        const SQLitePtr & sqlite_db_,
+        const String & table);
 
 private:
     String remote_table_name;
     String database_path;
     SQLitePtr sqlite_db;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

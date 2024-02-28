@@ -5,6 +5,7 @@
 #if USE_GRPC
 #include <Poco/Net/SocketAddress.h>
 #include <base/types.h>
+#include <Common/Logger.h>
 #include "clickhouse_grpc.grpc.pb.h"
 
 namespace Poco { class Logger; }
@@ -46,7 +47,7 @@ private:
 
     IServer & iserver;
     const Poco::Net::SocketAddress address_to_listen;
-    Poco::Logger * log;
+    LoggerPtr log;
     GRPCService grpc_service;
     std::unique_ptr<grpc::Server> grpc_server;
     std::unique_ptr<grpc::ServerCompletionQueue> queue;

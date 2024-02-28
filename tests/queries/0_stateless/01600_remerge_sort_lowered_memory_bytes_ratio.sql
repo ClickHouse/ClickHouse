@@ -1,3 +1,5 @@
+-- Tags: no-random-settings
+
 -- Check remerge_sort_lowered_memory_bytes_ratio setting
 
 set max_memory_usage='300Mi';

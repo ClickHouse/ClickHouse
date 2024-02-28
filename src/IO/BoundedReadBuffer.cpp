@@ -4,8 +4,7 @@
 namespace DB
 {
 
-BoundedReadBuffer::BoundedReadBuffer(std::unique_ptr<SeekableReadBuffer> impl_)
-    : ReadBufferFromFileDecorator(std::move(impl_))
+BoundedReadBuffer::BoundedReadBuffer(std::unique_ptr<ReadBufferFromFileBase> impl_) : impl(std::move(impl_))
 {
 }
 
@@ -17,14 +16,6 @@ void BoundedReadBuffer::setReadUntilPosition(size_t position)
 void BoundedReadBuffer::setReadUntilEnd()
 {
     read_until_position.reset();
-}
-
-SeekableReadBuffer::Range BoundedReadBuffer::getRemainingReadRange() const
-{
-    std::optional<size_t> right_bound_included;
-    if (read_until_position)
-        right_bound_included = *read_until_position - 1;
-    return Range{file_offset_of_buffer_end, right_bound_included};
 }
 
 off_t BoundedReadBuffer::getPosition()

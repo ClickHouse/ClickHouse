@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 
 #include <QueryPipeline/BlockIO.h>
@@ -66,8 +67,10 @@ namespace
 
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
+            /// we need to read statistic when `allow_statistic_optimize` is enabled.
+            bool only_analyze = !data.getContext()->getSettings().allow_statistic_optimize;
             InterpreterSelectQuery interpreter(
-                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
+                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze(only_analyze).modify());
 
             const SelectQueryInfo & query_info = interpreter.getQueryInfo();
             if (query_info.view_query)
@@ -536,18 +539,28 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
-            ContextPtr context;
+            ContextPtr context = getContext();
 
-            InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
-            interpreter.buildQueryPlan(plan);
-            context = interpreter.getContext();
-            // collect the selected marks, rows, parts during build query pipeline.
-            plan.buildQueryPipeline(
+            if (context->getSettingsRef().allow_experimental_analyzer)
+            {
+                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+                context = interpreter.getContext();
+                plan = std::move(interpreter).extractQueryPlan();
+            }
+            else
+            {
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+                context = interpreter.getContext();
+                interpreter.buildQueryPlan(plan);
+            }
+
+            // Collect the selected marks, rows, parts during build query pipeline.
+            // Hold on to the returned QueryPipelineBuilderPtr because `plan` may have pointers into
+            // it (through QueryPlanResourceHolder).
+            auto builder = plan.buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(context),
                 BuildQueryPipelineSettings::fromContext(context));
 
-            if (settings.optimize)
-                plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
             plan.explainEstimate(res_columns);
             insert_buf = false;
             break;
@@ -593,6 +606,15 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     }
 
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(sample_block.cloneWithColumns(std::move(res_columns))));
+}
+
+void registerInterpreterExplainQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterExplainQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterExplainQuery", create_fn);
 }
 
 }

@@ -1,0 +1,12 @@
+<clickhouse>
+    <proxy>
+        <https>
+            <resolver>
+                <endpoint>http://resolver:8080/hostname</endpoint>
+                <proxy_scheme>https</proxy_scheme>
+                <proxy_port>443</proxy_port>
+                <proxy_cache_time>10</proxy_cache_time>
+            </resolver>
+        </https>
+    </proxy>
+</clickhouse>

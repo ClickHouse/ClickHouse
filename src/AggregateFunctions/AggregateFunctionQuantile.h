@@ -30,8 +30,8 @@ namespace ErrorCodes
 }
 
 template <typename> class QuantileTiming;
-template <typename> class QuantileApprox;
-
+template <typename> class QuantileGK;
+template <typename> class QuantileDD;
 
 /** Generic aggregate function for calculation of quantiles.
   * It depends on quantile calculation data structure. Look at Quantile*.h for various implementations.
@@ -54,15 +54,17 @@ template <
     typename FloatReturnType,
     /// If true, the function will accept multiple parameters with quantile levels
     ///  and return an Array filled with many values of that quantiles.
-    bool returns_many>
+    bool returns_many,
+    /// If the first parameter (before level) is accuracy.
+    bool has_accuracy_parameter>
 class AggregateFunctionQuantile final
-    : public IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>
+    : public IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many, has_accuracy_parameter>>
 {
 private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
-    static constexpr bool is_quantile_approx = std::is_same_v<Data, QuantileApprox<Value>>;
+    static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDD<Value>>;
     static_assert(!is_decimal<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
@@ -73,20 +75,52 @@ private:
     /// Used for the approximate version of the algorithm (Greenwald-Khanna)
     ssize_t accuracy = 10000;
 
+    /// Used for the quantile sketch
+    Float64 relative_accuracy = 0.01;
+
     DataTypePtr & argument_type;
 
 public:
     AggregateFunctionQuantile(const DataTypes & argument_types_, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>(
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many, has_accuracy_parameter>>(
             argument_types_, params, createResultType(argument_types_))
-        , levels(is_quantile_approx && !params.empty() ? Array(params.begin() + 1, params.end()) : params, returns_many)
+        , levels(has_accuracy_parameter && !params.empty() ? Array(params.begin() + 1, params.end()) : params, returns_many)
         , level(levels.levels[0])
         , argument_type(this->argument_types[0])
     {
         if (!returns_many && levels.size() > 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires one level parameter or less", getName());
 
-        if constexpr (is_quantile_approx)
+        if constexpr (is_quantile_ddsketch)
+        {
+            if (params.empty())
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at least one param", getName());
+
+            const auto & relative_accuracy_field = params[0];
+            if (relative_accuracy_field.getType() != Field::Types::Float64)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} requires relative accuracy parameter with Float64 type", getName());
+
+            relative_accuracy = relative_accuracy_field.get<Float64>();
+
+            if (relative_accuracy <= 0 || relative_accuracy >= 1 || isNaN(relative_accuracy))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Aggregate function {} requires relative accuracy parameter with value between 0 and 1 but is {}",
+                    getName(),
+                    relative_accuracy);
+            // Throw exception if the relative accuracy is too small.
+            // This is to avoid the case where the user specifies a relative accuracy that is too small
+            // and the sketch is not able to allocate enough memory to satisfy the accuracy requirement.
+            if (relative_accuracy < 1e-6)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Aggregate function {} requires relative accuracy parameter with value greater than 1e-6 but is {}",
+                    getName(),
+                    relative_accuracy);
+        }
+        else if constexpr (has_accuracy_parameter)
         {
             if (params.empty())
                 throw Exception(
@@ -115,7 +149,9 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
-        if constexpr (is_quantile_approx)
+        if constexpr (is_quantile_ddsketch)
+            new (place) Data(relative_accuracy);
+        else if constexpr (has_accuracy_parameter)
             new (place) Data(accuracy);
         else
             new (place) Data;
@@ -146,10 +182,14 @@ public:
     {
         /// Return normalized state type: quantiles*(1)(...)
         Array params{1};
+        if constexpr (is_quantile_ddsketch)
+            params = {relative_accuracy, 1};
+        else if constexpr (has_accuracy_parameter)
+            params = {accuracy, 1};
         AggregateFunctionProperties properties;
         return std::make_shared<DataTypeAggregateFunction>(
             AggregateFunctionFactory::instance().get(
-                GatherFunctionQuantileData::toFusedNameOrSelf(getName()), this->argument_types, params, properties),
+                GatherFunctionQuantileData::toFusedNameOrSelf(getName()), NullsAction::EMPTY, this->argument_types, params, properties),
             this->argument_types,
             params);
     }
@@ -163,15 +203,11 @@ public:
         if constexpr (std::is_same_v<Data, QuantileTiming<Value>>)
         {
             /// QuantileTiming only supports unsigned integers. Too large values are also meaningless.
-#ifdef OS_DARWIN
 #   pragma clang diagnostic push
 #   pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
-#endif
             if (isNaN(value) || value > std::numeric_limits<Int64>::max() || value < 0)
                 return;
-#ifdef OS_DARWIN
 #   pragma clang diagnostic pop
-#endif
         }
 
         if constexpr (has_second_arg)
@@ -242,7 +278,7 @@ public:
         if constexpr (has_second_arg)
         {
             assertBinary(Name::name, types);
-            if (!isUnsignedInteger(types[1]))
+            if (!isUInt(types[1]))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Second argument (weight) for function {} must be unsigned integer, but it has type {}",
@@ -295,7 +331,10 @@ struct NameQuantilesBFloat16 { static constexpr auto name = "quantilesBFloat16";
 struct NameQuantileBFloat16Weighted { static constexpr auto name = "quantileBFloat16Weighted"; };
 struct NameQuantilesBFloat16Weighted { static constexpr auto name = "quantilesBFloat16Weighted"; };
 
-struct NameQuantileApprox { static constexpr auto name = "quantileApprox"; };
-struct NameQuantilesApprox { static constexpr auto name = "quantilesApprox"; };
+struct NameQuantileGK { static constexpr auto name = "quantileGK"; };
+struct NameQuantilesGK { static constexpr auto name = "quantilesGK"; };
+
+struct NameQuantileDD { static constexpr auto name = "quantileDD"; };
+struct NameQuantilesDD { static constexpr auto name = "quantilesDD"; };
 
 }

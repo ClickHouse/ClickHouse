@@ -1,3 +1,5 @@
+add_compile_options($<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>)
+
 if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
@@ -55,11 +57,11 @@ option (ENABLE_CLICKHOUSE_KEEPER "ClickHouse alternative to ZooKeeper" ${ENABLE_
 
 option (ENABLE_CLICKHOUSE_KEEPER_CONVERTER "Util allows to convert ZooKeeper logs and snapshots into clickhouse-keeper snapshot" ${ENABLE_CLICKHOUSE_ALL})
 
+option (ENABLE_CLICKHOUSE_KEEPER_CLIENT "ClickHouse Keeper Client" ${ENABLE_CLICKHOUSE_ALL})
+
 option (ENABLE_CLICKHOUSE_SU "A tool similar to 'su'" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_DISKS "A tool to manage disks" ${ENABLE_CLICKHOUSE_ALL})
-
-option (ENABLE_CLICKHOUSE_REPORT "A tiny tool to collect a clickhouse-server state" ${ENABLE_CLICKHOUSE_ALL})
 
 if (NOT ENABLE_NURAFT)
     # RECONFIGURE_MESSAGE_LEVEL should not be used here,
@@ -169,6 +171,13 @@ else()
     message(STATUS "ClickHouse keeper-converter mode: OFF")
 endif()
 
+if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
+    message(STATUS "ClickHouse keeper-client mode: ON")
+else()
+    message(STATUS "ClickHouse keeper-client mode: OFF")
+endif()
+
+
 if (ENABLE_CLICKHOUSE_DISKS)
     message(STATUS "Clickhouse disks mode: ON")
 else()
@@ -237,6 +246,10 @@ if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     add_subdirectory (keeper-converter)
 endif()
 
+if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
+    add_subdirectory (keeper-client)
+endif()
+
 if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
     add_subdirectory (odbc-bridge)
 endif ()
@@ -300,6 +313,9 @@ if (ENABLE_CLICKHOUSE_KEEPER)
 endif()
 if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     clickhouse_target_link_split_lib(clickhouse keeper-converter)
+endif()
+if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
+    clickhouse_target_link_split_lib(clickhouse keeper-client)
 endif()
 if (ENABLE_CLICKHOUSE_INSTALL)
     clickhouse_target_link_split_lib(clickhouse install)
@@ -372,9 +388,6 @@ if (ENABLE_CLICKHOUSE_SU)
     install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-su" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     list(APPEND CLICKHOUSE_BUNDLE clickhouse-su)
 endif ()
-if (ENABLE_CLICKHOUSE_REPORT)
-    include(${ClickHouse_SOURCE_DIR}/utils/report/CMakeLists.txt)
-endif ()
 
 if (ENABLE_CLICKHOUSE_KEEPER)
     if (NOT BUILD_STANDALONE_KEEPER AND CREATE_KEEPER_SYMLINK)
@@ -392,6 +405,18 @@ if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper-converter" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     list(APPEND CLICKHOUSE_BUNDLE clickhouse-keeper-converter)
 endif ()
+if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
+    if (NOT BUILD_STANDALONE_KEEPER)
+        add_custom_target (clickhouse-keeper-client ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper-client DEPENDS clickhouse)
+        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper-client" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+    # symlink to standalone keeper binary
+    else ()
+        add_custom_target (clickhouse-keeper-client ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse-keeper clickhouse-keeper-client DEPENDS clickhouse-keeper)
+        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper-client" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT clickhouse-keeper)
+    endif ()
+
+    list(APPEND CLICKHOUSE_BUNDLE clickhouse-keeper-client)
+endif ()
 if (ENABLE_CLICKHOUSE_DISKS)
     add_custom_target (clickhouse-disks ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-disks DEPENDS clickhouse)
     install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-disks" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
@@ -404,12 +429,24 @@ if (USE_BINARY_HASH)
     add_custom_command(TARGET clickhouse POST_BUILD COMMAND ./clickhouse hash-binary > hash && ${OBJCOPY_PATH} --add-section .clickhouse.hash=hash clickhouse COMMENT "Adding section '.clickhouse.hash' to clickhouse binary" VERBATIM)
 endif()
 
+if (CHECK_LARGE_OBJECT_SIZES)
+    add_custom_command(TARGET clickhouse POST_BUILD
+        COMMAND "${CMAKE_SOURCE_DIR}/utils/check-style/check-large-objects.sh" "${CMAKE_BINARY_DIR}")
+endif ()
+
 if (SPLIT_DEBUG_SYMBOLS)
     clickhouse_split_debug_symbols(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLITTED_DEBUG_SYMBOLS_DIR} BINARY_PATH clickhouse)
 else()
     clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLITTED_DEBUG_SYMBOLS_DIR})
     install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif()
+
+# A target to get stripped binary.
+# Note: this is different to the above (extract debug symbols to a separate place)
+add_custom_target(clickhouse-stripped ALL
+    COMMAND "${STRIP_PATH}" -o "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-stripped" --strip-debug --remove-section=.comment --remove-section=.note "${CMAKE_CURRENT_BINARY_DIR}/clickhouse"
+    DEPENDS clickhouse
+    COMMENT "Stripping clickhouse binary" VERBATIM)
 
 if (ENABLE_TESTS)
     set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_dbms)
@@ -419,4 +456,11 @@ endif()
 
 if (ENABLE_FUZZING)
     add_compile_definitions(FUZZING_MODE=1)
+endif ()
+
+if (TARGET ch_contrib::protobuf)
+    get_property(google_proto_files TARGET ch_contrib::protobuf PROPERTY google_proto_files)
+    foreach (proto_file IN LISTS google_proto_files)
+        install(FILES ${proto_file} DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/clickhouse/protos/google/protobuf)
+    endforeach()
 endif ()

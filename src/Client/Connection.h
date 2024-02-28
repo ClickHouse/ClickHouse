@@ -3,12 +3,14 @@
 
 #include <Poco/Net/StreamSocket.h>
 
-#include "config.h"
+#include <Common/SSH/Wrappers.h>
+#include <Common/callOnce.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
 
 #include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromPocoSocket.h>
 
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/Context_fwd.h>
@@ -19,6 +21,8 @@
 
 #include <atomic>
 #include <optional>
+
+#include "config.h"
 
 namespace DB
 {
@@ -50,6 +54,7 @@ public:
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
+        const ssh::SSHKey & ssh_private_key_,
         const String & quota_key_,
         const String & cluster_,
         const String & cluster_secret_,
@@ -153,14 +158,20 @@ public:
     {
         async_callback = std::move(async_callback_);
         if (in)
-            in->setAsyncCallback(std::move(async_callback));
+            in->setAsyncCallback(async_callback);
+        if (out)
+            out->setAsyncCallback(async_callback);
     }
+
+    bool haveMoreAddressesToConnect() const { return have_more_addresses_to_connect; }
+
 private:
     String host;
     UInt16 port;
     String default_database;
     String user;
     String password;
+    ssh::SSHKey ssh_private_key;
     String quota_key;
 
     /// For inter-server authorization
@@ -196,7 +207,7 @@ private:
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::shared_ptr<ReadBufferFromPocoSocket> in;
-    std::shared_ptr<WriteBuffer> out;
+    std::shared_ptr<WriteBufferFromPocoSocket> out;
     std::optional<UInt64> last_input_packet_type;
 
     String query_id;
@@ -223,6 +234,8 @@ private:
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
     std::unique_ptr<NativeWriter> block_out;
 
+    bool have_more_addresses_to_connect = false;
+
     /// Logger is created lazily, for avoid to run DNS request in constructor.
     class LoggerWrapper
     {
@@ -232,16 +245,18 @@ private:
         {
         }
 
-        Poco::Logger * get()
+        LoggerPtr get()
         {
-            if (!log)
-                log = &Poco::Logger::get("Connection (" + parent.getDescription() + ")");
+            callOnce(log_initialized, [&] {
+                log = getLogger("Connection (" + parent.getDescription() + ")");
+            });
 
             return log;
         }
 
     private:
-        std::atomic<Poco::Logger *> log;
+        OnceFlag log_initialized;
+        LoggerPtr log;
         Connection & parent;
     };
 
@@ -251,8 +266,12 @@ private:
 
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
+    String packStringForSshSign(String challenge);
+
+    void performHandshakeForSSHAuth();
+
     void sendAddendum();
-    void receiveHello();
+    void receiveHello(const Poco::Timespan & handshake_timeout);
 
 #if USE_SSL
     void sendClusterNameAndSalt();
@@ -268,7 +287,7 @@ private:
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
     ParallelReadRequest receiveParallelReadRequest() const;
-    InitialAllRangesAnnouncement receiveInitialParallelReadAnnounecement() const;
+    InitialAllRangesAnnouncement receiveInitialParallelReadAnnouncement() const;
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();
@@ -279,10 +298,11 @@ private:
     [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
 };
 
+template <typename Conn>
 class AsyncCallbackSetter
 {
 public:
-    AsyncCallbackSetter(Connection * connection_, AsyncCallback async_callback) : connection(connection_)
+    AsyncCallbackSetter(Conn * connection_, AsyncCallback async_callback) : connection(connection_)
     {
         connection->setAsyncCallback(std::move(async_callback));
     }
@@ -292,7 +312,7 @@ public:
         connection->setAsyncCallback({});
     }
 private:
-    Connection * connection;
+    Conn * connection;
 };
 
 }

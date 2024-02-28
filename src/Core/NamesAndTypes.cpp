@@ -159,6 +159,18 @@ DataTypes NamesAndTypesList::getTypes() const
     return res;
 }
 
+void NamesAndTypesList::filterColumns(const NameSet & names)
+{
+    for (auto it = begin(); it != end();)
+    {
+        const auto & column = *it;
+        if (names.contains(column.name))
+            ++it;
+        else
+            it = erase(it);
+    }
+}
+
 NamesAndTypesList NamesAndTypesList::filter(const NameSet & names) const
 {
     NamesAndTypesList res;
@@ -226,6 +238,21 @@ size_t NamesAndTypesList::getPosByName(const std::string &name) const noexcept
         ++pos;
     }
     return pos;
+}
+
+String NamesAndTypesList::toNamesAndTypesDescription() const
+{
+    WriteBufferFromOwnString buf;
+    bool first = true;
+    for (const auto & name_and_type : *this)
+    {
+        if (!std::exchange(first, false))
+            writeCString(", ", buf);
+        writeBackQuotedString(name_and_type.name, buf);
+        writeChar(' ', buf);
+        writeString(name_and_type.type->getName(), buf);
+    }
+    return buf.str();
 }
 
 }

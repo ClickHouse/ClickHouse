@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstring>
+#include <sys/types.h> /// ssize_t
 
 #ifdef __SSE2__
 #    include <emmintrin.h>

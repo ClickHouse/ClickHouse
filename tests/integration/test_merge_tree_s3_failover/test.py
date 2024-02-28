@@ -67,6 +67,7 @@ def cluster():
                 "configs/config.d/storage_conf.xml",
                 "configs/config.d/instant_moves.xml",
                 "configs/config.d/part_log.xml",
+                "configs/config.d/merge_tree.xml",
             ],
             with_minio=True,
         )
@@ -85,11 +86,11 @@ def cluster():
 def drop_table(cluster):
     yield
     node = cluster.instances["node"]
-    node.query("DROP TABLE IF EXISTS s3_failover_test NO DELAY")
+    node.query("DROP TABLE IF EXISTS s3_failover_test SYNC")
 
 
 # S3 request will be failed for an appropriate part file write.
-FILES_PER_PART_BASE = 5  # partition.dat, default_compression_codec.txt, count.txt, columns.txt, checksums.txt
+FILES_PER_PART_BASE = 6  # partition.dat, metadata_version.txt, default_compression_codec.txt, count.txt, columns.txt, checksums.txt
 FILES_PER_PART_WIDE = (
     FILES_PER_PART_BASE + 1 + 1 + 3 * 2
 )  # Primary index, MinMax, Mark and data file for column(s)
@@ -183,7 +184,8 @@ def test_move_failover(cluster):
         ) ENGINE=MergeTree()
         ORDER BY id
         TTL dt + INTERVAL 4 SECOND TO VOLUME 'external'
-        SETTINGS storage_policy='s3_cold'
+        SETTINGS storage_policy='s3_cold', temporary_directories_lifetime=1,
+        merge_tree_clear_old_temporary_directories_interval_seconds=1
         """
     )
 

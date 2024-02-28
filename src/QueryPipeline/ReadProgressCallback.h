@@ -23,6 +23,7 @@ public:
     void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(const ProgressCallback & callback) { progress_callback = callback; }
     void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
+    void addTotalBytes(size_t value) { total_bytes += value; }
 
     /// Skip updating profile events.
     /// For merges in mutations it may need special logic, it's done inside ProgressCallback.
@@ -37,6 +38,8 @@ private:
 
     /// The approximate total number of rows to read. For progress bar.
     std::atomic_size_t total_rows_approx = 0;
+    /// The total number of bytes to read. For progress bar.
+    std::atomic_size_t total_bytes = 0;
 
     std::mutex limits_and_quotas_mutex;
     Stopwatch total_stopwatch{CLOCK_MONOTONIC_COARSE};  /// Including waiting time

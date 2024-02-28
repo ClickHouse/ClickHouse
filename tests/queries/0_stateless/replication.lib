@@ -37,7 +37,7 @@ function try_sync_replicas()
         pids[${i}]=$!
         i=$((i + 1))
     done
-    for pid in ${pids[*]}; do
+    for pid in "${pids[@]}"; do
         wait $pid || (echo "Failed to sync some replicas" && exit 1)
     done
     echo "Replication did not hang: synced all replicas of $table_name_prefix"
@@ -54,20 +54,16 @@ function check_replication_consistency()
         sleep 1;
         num_tries=$((num_tries+1))
         if [ $num_tries -eq 250 ]; then
+            echo "Queries for $table_name_prefix did not finish automatically after 250+ seconds"
+            echo "==================== QUERIES ===================="
             $CLICKHOUSE_CLIENT -q "SELECT * FROM system.processes WHERE current_database=currentDatabase() AND query LIKE '%$table_name_prefix%' FORMAT Vertical"
+            echo "==================== STACK  TRACES ===================="
+            $CLICKHOUSE_CLIENT -q "SELECT query_id, thread_name, thread_id, arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') FROM system.stack_trace where query_id IN (SELECT query_id FROM system.processes WHERE current_database=currentDatabase() AND query LIKE '%$table_name_prefix%') SETTINGS allow_introspection_functions=1 FORMAT Vertical"
+            echo "==================== MUTATIONS ===================="
+            $CLICKHOUSE_CLIENT -q "SELECT * FROM system.mutations WHERE database=currentDatabase() FORMAT Vertical"
             break
         fi
     done
-
-    # Touch all data to check that it's readable (and trigger PartCheckThread if needed)
-    while ! $CLICKHOUSE_CLIENT -q "SELECT * FROM merge(currentDatabase(), '$table_name_prefix') FORMAT Null" 2>/dev/null; do
-        sleep 1;
-        num_tries=$((num_tries+1))
-        if [ $num_tries -eq 250 ]; then
-            break
-        fi
-    done
-    time_left=$((300 - num_tries))
 
     # Do not check anything if all replicas are readonly,
     # because is this case all replicas are probably lost (it may happen and it's not a bug)
@@ -78,6 +74,16 @@ function check_replication_consistency()
         echo "Consistency: 1"
         return 0
     fi
+
+    # Touch all data to check that it's readable (and trigger PartCheckThread if needed)
+    while ! $CLICKHOUSE_CLIENT -q "SELECT * FROM merge(currentDatabase(), '$table_name_prefix') FORMAT Null" 2>/dev/null; do
+        sleep 1;
+        num_tries=$((num_tries+1))
+        if [ $num_tries -eq 250 ]; then
+            break
+        fi
+    done
+    time_left=$((300 - num_tries))
 
     # Trigger pullLogsToQueue(...) and updateMutations(...) on some replica to make it pull all mutations, so it will be possible to kill them
     some_table=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.tables WHERE database=currentDatabase() AND name like '$table_name_prefix%' ORDER BY rand() LIMIT 1")
@@ -114,3 +120,5 @@ function check_replication_consistency()
     fi
 
 }
+
+# vi: ft=bash

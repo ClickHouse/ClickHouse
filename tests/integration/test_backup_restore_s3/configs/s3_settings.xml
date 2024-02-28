@@ -11,4 +11,6 @@
             <upload_part_size_multiply_factor>2</upload_part_size_multiply_factor>
         </multipart>
     </s3>
+    <backup_threads>1</backup_threads>
+    <restore_threads>1</restore_threads>
 </clickhouse>

@@ -11,11 +11,10 @@
 namespace DB
 {
 
-static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
+static std::pair<Block, Block> getHeaders(StorageRabbitMQ & storage_, const StorageSnapshotPtr & storage_snapshot)
 {
     auto non_virtual_header = storage_snapshot->metadata->getSampleBlockNonMaterialized();
-    auto virtual_header = storage_snapshot->getSampleBlockForColumns(
-                {"_exchange_name", "_channel_id", "_delivery_tag", "_redelivered", "_message_id", "_timestamp"});
+    auto virtual_header = storage_snapshot->getSampleBlockForColumns(storage_.getVirtuals().getNames());
 
     return {non_virtual_header, virtual_header};
 }
@@ -36,15 +35,17 @@ RabbitMQSource::RabbitMQSource(
     const Names & columns,
     size_t max_block_size_,
     UInt64 max_execution_time_,
+    StreamingHandleErrorMode handle_error_mode_,
     bool ack_in_suffix_)
     : RabbitMQSource(
         storage_,
         storage_snapshot_,
-        getHeaders(storage_snapshot_),
+        getHeaders(storage_, storage_snapshot_),
         context_,
         columns,
         max_block_size_,
         max_execution_time_,
+        handle_error_mode_,
         ack_in_suffix_)
 {
 }
@@ -57,6 +58,7 @@ RabbitMQSource::RabbitMQSource(
     const Names & columns,
     size_t max_block_size_,
     UInt64 max_execution_time_,
+    StreamingHandleErrorMode handle_error_mode_,
     bool ack_in_suffix_)
     : ISource(getSampleBlock(headers.first, headers.second))
     , storage(storage_)
@@ -64,10 +66,11 @@ RabbitMQSource::RabbitMQSource(
     , context(context_)
     , column_names(columns)
     , max_block_size(max_block_size_)
+    , handle_error_mode(handle_error_mode_)
     , ack_in_suffix(ack_in_suffix_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
-    , log(&Poco::Logger::get("RabbitMQSource"))
+    , log(getLogger("RabbitMQSource"))
     , max_execution_time_ms(max_execution_time_)
 {
     storage.incrementReader();
@@ -99,10 +102,7 @@ void RabbitMQSource::updateChannel()
     if (!consumer)
         return;
 
-    consumer->updateAckTracker();
-
-    if (storage.updateChannel(consumer->getChannel()))
-        consumer->setupChannel();
+    consumer->updateChannel(storage.getConnection());
 }
 
 Chunk RabbitMQSource::generate()
@@ -131,14 +131,43 @@ Chunk RabbitMQSource::generateImpl()
 
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
     EmptyReadBuffer empty_buf;
-    auto input_format = FormatFactory::instance().getInputFormat(
-            storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size);
+    auto input_format = FormatFactory::instance().getInput(
+        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
 
-    StreamingFormatExecutor executor(non_virtual_header, input_format);
+    std::optional<String> exception_message;
     size_t total_rows = 0;
 
+    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
+    {
+        if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+        {
+            exception_message = e.message();
+            for (const auto & column : result_columns)
+            {
+                // We could already push some rows to result_columns
+                // before exception, we need to fix it.
+                auto cur_rows = column->size();
+                if (cur_rows > total_rows)
+                    column->popBack(cur_rows - total_rows);
+
+                // All data columns will get default value in case of error.
+                column->insertDefault();
+            }
+
+            return 1;
+        }
+        else
+        {
+            throw std::move(e);
+        }
+    };
+
+    StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
+
+    RabbitMQConsumer::CommitInfo current_commit_info;
     while (true)
     {
+        exception_message.reset();
         size_t new_rows = 0;
 
         if (consumer->hasPendingMessages())
@@ -149,26 +178,34 @@ Chunk RabbitMQSource::generateImpl()
 
         if (new_rows)
         {
-            auto exchange_name = storage.getExchange();
-            auto channel_id = consumer->getChannelID();
-            auto delivery_tag = consumer->getDeliveryTag();
-            auto redelivered = consumer->getRedelivered();
-            auto message_id = consumer->getMessageID();
-            auto timestamp = consumer->getTimestamp();
-
-            consumer->updateAckTracker({delivery_tag, channel_id});
+            const auto exchange_name = storage.getExchange();
+            const auto & message = consumer->currentMessage();
 
             for (size_t i = 0; i < new_rows; ++i)
             {
                 virtual_columns[0]->insert(exchange_name);
-                virtual_columns[1]->insert(channel_id);
-                virtual_columns[2]->insert(delivery_tag);
-                virtual_columns[3]->insert(redelivered);
-                virtual_columns[4]->insert(message_id);
-                virtual_columns[5]->insert(timestamp);
+                virtual_columns[1]->insert(message.channel_id);
+                virtual_columns[2]->insert(message.delivery_tag);
+                virtual_columns[3]->insert(message.redelivered);
+                virtual_columns[4]->insert(message.message_id);
+                virtual_columns[5]->insert(message.timestamp);
+                if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+                {
+                    if (exception_message)
+                    {
+                        virtual_columns[6]->insertData(message.message.data(), message.message.size());
+                        virtual_columns[7]->insertData(exception_message->data(), exception_message->size());
+                    }
+                    else
+                    {
+                        virtual_columns[6]->insertDefault();
+                        virtual_columns[7]->insertDefault();
+                    }
+                }
             }
 
             total_rows += new_rows;
+            current_commit_info = {message.delivery_tag, message.channel_id};
         }
         else if (total_rows == 0)
         {
@@ -210,6 +247,7 @@ Chunk RabbitMQSource::generateImpl()
     for (auto & column : virtual_columns)
         result_columns.push_back(std::move(column));
 
+    commit_info = current_commit_info;
     return Chunk(std::move(result_columns), total_rows);
 }
 
@@ -219,7 +257,7 @@ bool RabbitMQSource::sendAck()
     if (!consumer)
         return false;
 
-    if (!consumer->ackMessages())
+    if (!consumer->ackMessages(commit_info))
         return false;
 
     return true;

@@ -43,7 +43,7 @@ public:
     /// Returns UUID of the backup.
     virtual UUID getUUID() const = 0;
 
-    /// Returns the base backup (can be null).
+    /// Returns the base backup or null if there is no base backup.
     virtual std::shared_ptr<const IBackup> getBaseBackup() const = 0;
 
     /// Returns the number of files stored in the backup. Compare with getNumEntries().
@@ -109,10 +109,10 @@ public:
 
     /// Copies a file from the backup to a specified destination disk. Returns the number of bytes written.
     virtual size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path,
-                                  WriteMode write_mode = WriteMode::Rewrite, const WriteSettings & write_settings = {}) const = 0;
+                                  WriteMode write_mode = WriteMode::Rewrite) const = 0;
 
     virtual size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path,
-                                  WriteMode write_mode = WriteMode::Rewrite, const WriteSettings & write_settings = {}) const = 0;
+                                  WriteMode write_mode = WriteMode::Rewrite) const = 0;
 
     /// Puts a new entry to the backup.
     virtual void writeFile(const BackupFileInfo & file_info, BackupEntryPtr entry) = 0;

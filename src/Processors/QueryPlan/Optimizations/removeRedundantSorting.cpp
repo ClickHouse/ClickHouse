@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
@@ -157,7 +158,9 @@ private:
             auto const & aggregates = parent_aggr->getParams().aggregates;
             for (const auto & aggregate : aggregates)
             {
-                auto aggregate_function_properties = AggregateFunctionFactory::instance().tryGetProperties(aggregate.function->getName());
+                auto action = NullsAction::EMPTY;
+                auto aggregate_function_properties
+                    = AggregateFunctionFactory::instance().tryGetProperties(aggregate.function->getName(), action);
                 if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)
                     return false;
 

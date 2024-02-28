@@ -30,7 +30,7 @@ static Block checkHeaders(const DataStreams & input_streams_)
 }
 
 IntersectOrExceptStep::IntersectOrExceptStep(
-    DataStreams input_streams_ , Operator operator_ , size_t max_threads_)
+    DataStreams input_streams_, Operator operator_, size_t max_threads_)
     : header(checkHeaders(input_streams_))
     , current_operator(operator_)
     , max_threads(max_threads_)

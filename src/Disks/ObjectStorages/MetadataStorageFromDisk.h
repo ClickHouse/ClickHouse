@@ -11,6 +11,9 @@
 namespace DB
 {
 
+struct UnlinkMetadataFileOperationOutcome;
+using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
+
 /// Store metadata on a separate disk
 /// (used for object storages, like S3 and related).
 class MetadataStorageFromDisk final : public IMetadataStorage
@@ -19,16 +22,17 @@ private:
     friend class MetadataStorageFromDiskTransaction;
 
     mutable SharedMutex metadata_mutex;
-
     DiskPtr disk;
-    std::string object_storage_root_path;
+    String compatible_key_prefix;
 
 public:
-    MetadataStorageFromDisk(DiskPtr disk_, const std::string & object_storage_root_path_);
+    MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix);
 
     MetadataTransactionPtr createTransaction() override;
 
     const std::string & getPath() const override;
+
+    MetadataStorageType getType() const override { return MetadataStorageType::Local; }
 
     bool exists(const std::string & path) const override;
 
@@ -63,8 +67,6 @@ public:
     DiskPtr getDisk() const { return disk; }
 
     StoredObjects getStorageObjects(const std::string & path) const override;
-
-    std::string getObjectStorageRootPath() const override { return object_storage_root_path; }
 
     DiskObjectStorageMetadataPtr readMetadata(const std::string & path) const;
 
@@ -101,9 +103,9 @@ public:
 
     void createEmptyMetadataFile(const std::string & path) override;
 
-    void createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) override;
+    void createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
 
-    void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) override;
+    void addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
 
@@ -131,7 +133,7 @@ public:
 
     void replaceFile(const std::string & path_from, const std::string & path_to) override;
 
-    void unlinkMetadata(const std::string & path) override;
+    UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
 
 };

@@ -5,7 +5,7 @@ SET read_in_order_two_level_merge_threshold=100;
 DROP TABLE IF EXISTS t_read_in_order;
 
 CREATE TABLE t_read_in_order(date Date, i UInt64, v UInt64)
-ENGINE = MergeTree ORDER BY (date, i);
+ENGINE = MergeTree ORDER BY (date, i) SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 INSERT INTO t_read_in_order SELECT '2020-10-10', number % 10, number FROM numbers(100000);
 INSERT INTO t_read_in_order SELECT '2020-10-11', number % 10, number FROM numbers(100000);
@@ -55,7 +55,7 @@ SELECT a, b FROM t_read_in_order WHERE a = 1 ORDER BY b DESC SETTINGS read_in_or
 DROP TABLE t_read_in_order;
 
 CREATE TABLE t_read_in_order(dt DateTime, d Decimal64(5), v UInt64)
-ENGINE = MergeTree ORDER BY (toStartOfDay(dt), d);
+ENGINE = MergeTree ORDER BY (toStartOfDay(dt), d) SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 INSERT INTO t_read_in_order SELECT toDateTime('2020-10-10 00:00:00') + number, 1 / (number % 100 + 1), number FROM numbers(1000);
 

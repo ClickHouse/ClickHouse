@@ -1,7 +1,7 @@
 {% set table_size = 15 -%}
 {% for join_algorithm in ['default', 'full_sorting_merge', 'grace_hash'] -%}
 -- {{ join_algorithm }} --
-{% for block_size in range(1, table_size + 1) -%}
+{% for block_size in range(1, table_size + 1, 4) -%}
 ALL INNER USING | bs = {{ block_size }}
 4	0	0
 5	0	0
@@ -50,7 +50,6 @@ ALL LEFT | bs = {{ block_size }}
 14	14	val9	0
 14	14	val9	0
 ALL RIGHT | bs = {{ block_size }}
-{% if join_algorithm != 'grace_hash' -%}
 4	4	0	val10
 5	5	0	val6
 6	6	0	val8
@@ -64,7 +63,6 @@ ALL RIGHT | bs = {{ block_size }}
 13	13	0	val9
 14	14	0	val3
 14	14	0	val7
-{% endif -%}
 ALL INNER | bs = {{ block_size }} | copmosite key
 2	2	2	2	2	2	0	0
 2	2	2	2	2	2	0	0
@@ -85,7 +83,6 @@ ALL LEFT | bs = {{ block_size }} | copmosite key
 2	2	2	2	2	2	val12	0
 2	2	2	2	2	2	val9	0
 ALL RIGHT | bs = {{ block_size }} | copmosite key
-{% if join_algorithm != 'grace_hash' -%}
 0	\N	0	1	1	1	1	val2
 0	\N	0	1	1	1	1	val7
 0	\N	0	1	1	2	1	val5
@@ -99,7 +96,6 @@ ALL RIGHT | bs = {{ block_size }} | copmosite key
 0	\N	0	2	2	\N	1	val9
 2	2	2	2	2	2	0	val4
 2	2	2	2	2	2	0	val4
-{% endif -%}
 ANY INNER USING | bs = {{ block_size }}
 4	0	0
 5	0	0
@@ -137,7 +133,6 @@ ANY LEFT | bs = {{ block_size }}
 13	13	val13	0
 14	14	val9	0
 ANY RIGHT | bs = {{ block_size }}
-{% if join_algorithm != 'grace_hash' -%}
 4	4	0	val10
 5	5	0	val6
 6	6	0	val8
@@ -150,7 +145,6 @@ ANY RIGHT | bs = {{ block_size }}
 13	13	0	val9
 14	14	0	val3
 14	14	0	val7
-{% endif -%}
 ANY INNER | bs = {{ block_size }} | copmosite key
 2	2	2	2	2	2	0	0
 ANY LEFT | bs = {{ block_size }} | copmosite key
@@ -170,7 +164,6 @@ ANY LEFT | bs = {{ block_size }} | copmosite key
 2	2	2	2	2	2	val12	0
 2	2	2	2	2	2	val9	0
 ANY RIGHT | bs = {{ block_size }} | copmosite key
-{% if join_algorithm != 'grace_hash' -%}
 0	\N	0	1	1	1	1	val2
 0	\N	0	1	1	1	1	val7
 0	\N	0	1	1	2	1	val5
@@ -183,7 +176,6 @@ ANY RIGHT | bs = {{ block_size }} | copmosite key
 0	\N	0	2	1	\N	1	val3
 0	\N	0	2	2	\N	1	val9
 2	2	2	2	2	2	0	val4
-{% endif -%}
 {% endfor -%}
 ALL INNER | join_use_nulls = 1
 4	4	0	0
@@ -219,7 +211,6 @@ ALL LEFT | join_use_nulls = 1
 14	14	val9	0
 14	14	val9	0
 ALL RIGHT | join_use_nulls = 1
-{% if join_algorithm != 'grace_hash' -%}
 4	4	0	val10
 5	5	0	val6
 6	6	0	val8
@@ -233,7 +224,6 @@ ALL RIGHT | join_use_nulls = 1
 13	13	0	val9
 14	14	0	val3
 14	14	0	val7
-{% endif -%}
 ALL INNER | join_use_nulls = 1 | copmosite key
 2	2	2	2	2	2	0	0
 2	2	2	2	2	2	0	0
@@ -254,7 +244,6 @@ ALL LEFT | join_use_nulls = 1 | copmosite key
 2	2	2	2	2	2	val12	0
 2	2	2	2	2	2	val9	0
 ALL RIGHT | join_use_nulls = 1 | copmosite key
-{% if join_algorithm != 'grace_hash' -%}
 2	2	2	2	2	2	0	val4
 2	2	2	2	2	2	0	val4
 \N	\N	\N	1	1	1	\N	val2
@@ -268,7 +257,6 @@ ALL RIGHT | join_use_nulls = 1 | copmosite key
 \N	\N	\N	2	1	2	\N	val8
 \N	\N	\N	2	1	\N	\N	val3
 \N	\N	\N	2	2	\N	\N	val9
-{% endif -%}
 ANY INNER | join_use_nulls = 1
 4	4	0	0
 5	5	0	0
@@ -296,7 +284,6 @@ ANY LEFT | join_use_nulls = 1
 13	13	val13	0
 14	14	val9	0
 ANY RIGHT | join_use_nulls = 1
-{% if join_algorithm != 'grace_hash' -%}
 4	4	0	val10
 5	5	0	val6
 6	6	0	val8
@@ -309,7 +296,6 @@ ANY RIGHT | join_use_nulls = 1
 13	13	0	val9
 14	14	0	val3
 14	14	0	val7
-{% endif -%}
 ANY INNER | join_use_nulls = 1 | copmosite key
 2	2	2	2	2	2	0	0
 ANY LEFT | join_use_nulls = 1 | copmosite key
@@ -329,7 +315,6 @@ ANY LEFT | join_use_nulls = 1 | copmosite key
 2	2	2	2	2	2	val12	0
 2	2	2	2	2	2	val9	0
 ANY RIGHT | join_use_nulls = 1 | copmosite key
-{% if join_algorithm != 'grace_hash' -%}
 2	2	2	2	2	2	0	val4
 \N	\N	\N	1	1	1	\N	val2
 \N	\N	\N	1	1	1	\N	val7
@@ -342,5 +327,4 @@ ANY RIGHT | join_use_nulls = 1 | copmosite key
 \N	\N	\N	2	1	2	\N	val8
 \N	\N	\N	2	1	\N	\N	val3
 \N	\N	\N	2	2	\N	\N	val9
-{% endif -%}
 {% endfor -%}

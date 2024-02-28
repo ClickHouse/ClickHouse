@@ -50,13 +50,13 @@ clickhouse-client --query "
 This is a showcase how to parse custom CSV, as it requires multiple tunes.
 
 Explanation:
--   The dataset is in CSV format, but it requires some preprocessing on insertion; we use table function [input](../../sql-reference/table-functions/input.md) to perform preprocessing;
--   The structure of CSV file is specified in the argument of the table function `input`;
--   The field `num` (row number) is unneeded - we parse it from file and ignore;
--   We use `FORMAT CSVWithNames` but the header in CSV will be ignored (by command line parameter `--input_format_with_names_use_header 0`), because the header does not contain the name for the first field;
--   File is using only double quotes to enclose CSV strings; some strings are not enclosed in double quotes, and single quote must not be parsed as the string enclosing - that's why we also add the `--format_csv_allow_single_quote 0` parameter;
--   Some strings from CSV cannot parse, because they contain `\M/` sequence at the beginning of the value; the only value starting with backslash in CSV can be `\N` that is parsed as SQL NULL. We add `--input_format_allow_errors_num 10` parameter and up to ten malformed records can be skipped;
--   There are arrays for ingredients, directions and NER fields; these arrays are represented in unusual form: they are serialized into string as JSON and then placed in CSV - we parse them as String and then use [JSONExtract](../../sql-reference/functions/json-functions.md) function to transform it to Array.
+- The dataset is in CSV format, but it requires some preprocessing on insertion; we use table function [input](../../sql-reference/table-functions/input.md) to perform preprocessing;
+- The structure of CSV file is specified in the argument of the table function `input`;
+- The field `num` (row number) is unneeded - we parse it from file and ignore;
+- We use `FORMAT CSVWithNames` but the header in CSV will be ignored (by command line parameter `--input_format_with_names_use_header 0`), because the header does not contain the name for the first field;
+- File is using only double quotes to enclose CSV strings; some strings are not enclosed in double quotes, and single quote must not be parsed as the string enclosing - that's why we also add the `--format_csv_allow_single_quote 0` parameter;
+- Some strings from CSV cannot parse, because they contain `\M/` sequence at the beginning of the value; the only value starting with backslash in CSV can be `\N` that is parsed as SQL NULL. We add `--input_format_allow_errors_num 10` parameter and up to ten malformed records can be skipped;
+- There are arrays for ingredients, directions and NER fields; these arrays are represented in unusual form: they are serialized into string as JSON and then placed in CSV - we parse them as String and then use [JSONExtract](../../sql-reference/functions/json-functions.md) function to transform it to Array.
 
 ## Validate the Inserted Data
 

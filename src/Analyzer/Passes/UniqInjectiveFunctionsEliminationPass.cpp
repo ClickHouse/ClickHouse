@@ -31,7 +31,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<UniqInjectiveFunctionsEliminationVisitor>;
     using Base::Base;
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_injective_functions_inside_uniq)
             return;
@@ -76,7 +76,9 @@ public:
             argument_types.emplace_back(function_node_argument->getResultType());
 
         AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(function_node->getFunctionName(),
+        auto aggregate_function = AggregateFunctionFactory::instance().get(
+            function_node->getFunctionName(),
+            NullsAction::EMPTY,
             argument_types,
             function_node->getAggregateFunction()->getParameters(),
             properties);

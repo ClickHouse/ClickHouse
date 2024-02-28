@@ -17,42 +17,42 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    DB::UInt64 x = DB::parse<UInt64>(argv[1]);
+    UInt64 x = DB::parse<UInt64>(argv[1]);
 
     std::cout << std::hex << std::showbase << "Input: " << x << std::endl;
 
     Poco::HexBinaryEncoder hex(std::cout);
-    std::cout << "writeVarUIntOverflow(std::ostream): 0x";
-    DB::writeVarUIntOverflow(x, hex);
+    std::cout << "writeVarUInt(std::ostream): 0x";
+    DB::writeVarUInt(x, hex);
     std::cout << std::endl;
 
     std::string s;
 
     {
         DB::WriteBufferFromString wb(s);
-        DB::writeVarUIntOverflow(x, wb);
+        DB::writeVarUInt(x, wb);
         wb.next();
     }
 
-    std::cout << "writeVarUIntOverflow(WriteBuffer): 0x";
+    std::cout << "writeVarUInt(WriteBuffer): 0x";
     hex << s;
     std::cout << std::endl;
 
     s.clear();
     s.resize(9);
 
-    s.resize(DB::writeVarUIntOverflow(x, s.data()) - s.data());
+    s.resize(DB::writeVarUInt(x, s.data()) - s.data());
 
-    std::cout << "writeVarUIntOverflow(char *): 0x";
+    std::cout << "writeVarUInt(char *): 0x";
     hex << s;
     std::cout << std::endl;
 
-    DB::UInt64 y = 0;
+    UInt64 y = 0;
 
     DB::ReadBufferFromString rb(s);
     DB::readVarUInt(y, rb);
 
-    std::cerr << "Input: " << x << ", readVarUInt(writeVarUIntOverflow()): " << y << std::endl;
+    std::cerr << "Input: " << x << ", readVarUInt(writeVarUInt()): " << y << std::endl;
 
     return 0;
 }

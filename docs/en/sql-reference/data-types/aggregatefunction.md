@@ -12,9 +12,9 @@ Aggregate functions can have an implementation-defined intermediate state that c
 
 **Parameters**
 
--   Name of the aggregate function. If the function is parametric, specify its parameters too.
+- Name of the aggregate function. If the function is parametric, specify its parameters too.
 
--   Types of the aggregate function arguments.
+- Types of the aggregate function arguments.
 
 **Example**
 

@@ -71,11 +71,11 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     : update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , configuration{configuration_}
-    , query_builder{dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::Backticks}
+    , query_builder(std::make_shared<ExternalQueryBuilder>(dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::Backticks))
     , sample_block{sample_block_}
     , context(context_)
     , pool{createPool(configuration)}
-    , load_all_query{query_builder.composeLoadAllQuery()}
+    , load_all_query{query_builder->composeLoadAllQuery()}
 {
 }
 
@@ -84,7 +84,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionar
     , dict_struct{other.dict_struct}
     , configuration{other.configuration}
     , invalidate_query_response{other.invalidate_query_response}
-    , query_builder{dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::Backticks}
+    , query_builder(std::make_shared<ExternalQueryBuilder>(dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::Backticks))
     , sample_block{other.sample_block}
     , context(Context::createCopy(other.context))
     , pool{createPool(configuration)}
@@ -99,12 +99,12 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
         time_t hr_time = std::chrono::system_clock::to_time_t(update_time) - configuration.update_lag;
         std::string str_time = DateLUT::instance().timeToString(hr_time);
         update_time = std::chrono::system_clock::now();
-        return query_builder.composeUpdateQuery(configuration.update_field, str_time);
+        return query_builder->composeUpdateQuery(configuration.update_field, str_time);
     }
     else
     {
         update_time = std::chrono::system_clock::now();
-        return query_builder.composeLoadAllQuery();
+        return query_builder->composeLoadAllQuery();
     }
 }
 
@@ -121,13 +121,13 @@ QueryPipeline ClickHouseDictionarySource::loadUpdatedAll()
 
 QueryPipeline ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
-    return createStreamForQuery(query_builder.composeLoadIdsQuery(ids));
+    return createStreamForQuery(query_builder->composeLoadIdsQuery(ids));
 }
 
 
 QueryPipeline ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
-    String query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
+    String query = query_builder->composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
     return createStreamForQuery(query);
 }
 
@@ -168,14 +168,13 @@ QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & qu
 
     if (configuration.is_local)
     {
-        pipeline = executeQuery(query, context_copy, true).pipeline;
-
+        pipeline = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second.pipeline;
         pipeline.convertStructureTo(empty_sample_block.getColumnsWithTypeAndName());
     }
     else
     {
         pipeline = QueryPipeline(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false));
+            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false, false));
     }
 
     return pipeline;
@@ -191,14 +190,14 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 
     if (configuration.is_local)
     {
-        return readInvalidateQuery(executeQuery(request, context_copy, true).pipeline);
+        return readInvalidateQuery(executeQuery(request, context_copy, QueryFlags{ .internal = true }).second.pipeline);
     }
     else
     {
         /// We pass empty block to RemoteQueryExecutor, because we don't know the structure of the result.
         Block invalidate_sample_block;
         QueryPipeline pipeline(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context_copy), false, false));
+            std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context_copy), false, false, false));
         return readInvalidateQuery(std::move(pipeline));
     }
 }
@@ -217,13 +216,13 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         std::optional<Configuration> configuration;
 
         std::string settings_config_prefix = config_prefix + ".clickhouse";
-        auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix) : nullptr;
+        auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, global_context) : nullptr;
 
         if (named_collection)
         {
             validateNamedCollection(
                 *named_collection, {}, ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>{
-                    "secure", "host", "hostnmae", "port", "user", "username", "password", "quota_key", "name",
+                    "secure", "host", "hostname", "port", "user", "username", "password", "quota_key", "name",
                     "db", "database", "table","query", "where", "invalidate_query", "update_field", "update_lag"});
 
             const auto secure = named_collection->getOrDefault("secure", false);

@@ -7,7 +7,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include "HTTPHandler.h"
-#include "NotFoundHandler.h"
 #include "StaticRequestHandler.h"
 #include "ReplicasStatusHandler.h"
 #include "InterserverIOHTTPHandler.h"
@@ -119,35 +118,53 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::
     throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: Unknown HTTP handler factory name.");
 }
 
-static const auto ping_response_expression = "Ok.\n";
-static const auto root_response_expression = "config://http_server_default_response";
 
 void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server)
 {
-    auto root_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(server, root_response_expression);
+    auto root_creator = [&server]() -> std::unique_ptr<StaticRequestHandler>
+    {
+        constexpr auto root_response_expression = "config://http_server_default_response";
+        return std::make_unique<StaticRequestHandler>(server, root_response_expression);
+    };
+    auto root_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(std::move(root_creator));
     root_handler->attachStrictPath("/");
     root_handler->allowGetAndHeadRequest();
     factory.addHandler(root_handler);
 
-    auto ping_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(server, ping_response_expression);
+    auto ping_creator = [&server]() -> std::unique_ptr<StaticRequestHandler>
+    {
+        constexpr auto ping_response_expression = "Ok.\n";
+        return std::make_unique<StaticRequestHandler>(server, ping_response_expression);
+    };
+    auto ping_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(std::move(ping_creator));
     ping_handler->attachStrictPath("/ping");
     ping_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/ping");
     factory.addHandler(ping_handler);
 
     auto replicas_status_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
     replicas_status_handler->attachNonStrictPath("/replicas_status");
     replicas_status_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/replicas_status");
     factory.addHandler(replicas_status_handler);
 
     auto play_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
     play_handler->attachNonStrictPath("/play");
     play_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/play");
     factory.addHandler(play_handler);
 
     auto dashboard_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
     dashboard_handler->attachNonStrictPath("/dashboard");
     dashboard_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/dashboard");
     factory.addHandler(dashboard_handler);
+
+    auto binary_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
+    binary_handler->attachNonStrictPath("/binary");
+    binary_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/binary");
+    factory.addHandler(binary_handler);
 
     auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
     js_handler->attachNonStrictPath("/js/");
@@ -163,16 +180,40 @@ void addDefaultHandlersFactory(
 {
     addCommonDefaultHandlersFactory(factory, server);
 
-    auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(server, "query");
-    query_handler->allowPostAndGetParamsAndOptionsRequest();
+    auto dynamic_creator = [&server] () -> std::unique_ptr<DynamicQueryHandler>
+    {
+        return std::make_unique<DynamicQueryHandler>(server, "query");
+    };
+    auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
+    query_handler->addFilter([](const auto & request)
+        {
+            bool path_matches_get_or_head = startsWith(request.getURI(), "?")
+                            || startsWith(request.getURI(), "/?")
+                            || startsWith(request.getURI(), "/query?");
+            bool is_get_or_head_request = request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+                            || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD;
+
+            bool path_matches_post_or_options = path_matches_get_or_head
+                             || request.getURI() == "/"
+                             || request.getURI().empty();
+            bool is_post_or_options_request = request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
+                                    || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS;
+
+            return (path_matches_get_or_head && is_get_or_head_request) || (path_matches_post_or_options && is_post_or_options_request);
+        }
+    );
     factory.addHandler(query_handler);
 
     /// We check that prometheus handler will be served on current (default) port.
     /// Otherwise it will be created separately, see createHandlerFactory(...).
     if (config.has("prometheus") && config.getInt("prometheus.port", 0) == 0)
     {
-        auto prometheus_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(
-            server, PrometheusMetricsWriter(config, "prometheus", async_metrics));
+        PrometheusMetricsWriter writer(config, "prometheus", async_metrics);
+        auto creator = [&server, writer] () -> std::unique_ptr<PrometheusRequestHandler>
+        {
+            return std::make_unique<PrometheusRequestHandler>(server, writer);
+        };
+        auto prometheus_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(std::move(creator));
         prometheus_handler->attachStrictPath(config.getString("prometheus.endpoint", "/metrics"));
         prometheus_handler->allowGetAndHeadRequest();
         factory.addHandler(prometheus_handler);

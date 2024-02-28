@@ -9,21 +9,30 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/default_compression.xml", "configs/wide_parts_only.xml"],
+    main_configs=[
+        "configs/default_compression.xml",
+        "configs/wide_parts_only.xml",
+        "configs/long_names.xml",
+    ],
     with_zookeeper=True,
 )
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["configs/default_compression.xml", "configs/wide_parts_only.xml"],
+    main_configs=[
+        "configs/default_compression.xml",
+        "configs/wide_parts_only.xml",
+        "configs/long_names.xml",
+    ],
     with_zookeeper=True,
 )
 node3 = cluster.add_instance(
     "node3",
-    main_configs=["configs/default_compression.xml", "configs/wide_parts_only.xml"],
+    main_configs=["configs/default_compression.xml"],
     image="yandex/clickhouse-server",
-    tag="20.3.16",
+    tag="19.16.9.37",
     stay_alive=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 node4 = cluster.add_instance("node4")
 
@@ -262,6 +271,8 @@ def test_default_codec_multiple(start_cluster):
         )
     )
 
+    node2.query("SYSTEM SYNC REPLICA compression_table_multiple", timeout=15)
+
     # Same codec for all
     assert (
         get_compression_codec_byte(node1, "compression_table_multiple", "1_0_0_0")
@@ -329,6 +340,8 @@ def test_default_codec_multiple(start_cluster):
     node2.query("SYSTEM SYNC REPLICA compression_table_multiple", timeout=15)
 
     node1.query("OPTIMIZE TABLE compression_table_multiple FINAL")
+
+    node2.query("SYSTEM SYNC REPLICA compression_table_multiple", timeout=15)
 
     assert (
         get_compression_codec_byte(node1, "compression_table_multiple", "1_0_0_1")

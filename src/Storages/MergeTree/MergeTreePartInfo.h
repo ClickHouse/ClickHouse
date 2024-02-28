@@ -9,6 +9,7 @@
 #include <base/DayNum.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <Parsers/IAST_fwd.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
 
@@ -119,7 +120,7 @@ struct MergeTreePartInfo
     void deserialize(ReadBuffer & in);
 
     /// Simple sanity check for partition ID. Checking that it's not too long or too short, doesn't contain a lot of '_'.
-    static void validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version);
+    static void validatePartitionID(const ASTPtr & partition_id_ast, MergeTreeDataFormatVersion format_version);
 
     static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);
 
@@ -129,6 +130,8 @@ struct MergeTreePartInfo
     static void parseMinMaxDatesFromPartName(const String & part_name, DayNum & min_date, DayNum & max_date);
 
     static bool contains(const String & outer_part_name, const String & inner_part_name, MergeTreeDataFormatVersion format_version);
+
+    static bool areAllBlockNumbersCovered(const MergeTreePartInfo & blocks_range, std::vector<MergeTreePartInfo> candidates);
 
     static constexpr UInt32 MAX_LEVEL = 999999999;
     static constexpr UInt32 MAX_BLOCK_NUMBER = 999999999;
@@ -163,7 +166,8 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "tmp-fetch",
         "covered-by-broken",
         "merge-not-byte-identical",
-        "mutate-not-byte-identical"
+        "mutate-not-byte-identical",
+        "broken-from-backup",
     });
 
     static constexpr auto DETACHED_REASONS_REMOVABLE_BY_TIMEOUT = std::to_array<std::string_view>({
@@ -175,7 +179,8 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "deleting",
         "clone",
         "merge-not-byte-identical",
-        "mutate-not-byte-identical"
+        "mutate-not-byte-identical",
+        "broken-from-backup",
     });
 
     /// NOTE: It may parse part info incorrectly.

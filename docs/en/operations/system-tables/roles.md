@@ -13,4 +13,4 @@ Columns:
 
 ## See Also {#see-also}
 
--   [SHOW ROLES](../../sql-reference/statements/show.md#show-roles-statement)
+- [SHOW ROLES](../../sql-reference/statements/show.md#show-roles-statement)

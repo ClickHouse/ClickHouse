@@ -9,6 +9,8 @@ namespace DB
 /// Represents the full name of a row policy, e.g. "myfilter ON mydb.mytable".
 struct RowPolicyName
 {
+    static constexpr char ANY_TABLE_MARK[] = "";
+
     String short_name;
     String database;
     String table_name;

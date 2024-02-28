@@ -44,7 +44,7 @@ public:
         /// Data of all columns is stored in one file. Marks are also stored in single file.
         Compact,
 
-        /// Format with buffering data in RAM.
+        /// Format with buffering data in RAM. Obsolete - new parts cannot be created in this format.
         InMemory,
 
         Unknown,

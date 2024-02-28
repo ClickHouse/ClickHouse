@@ -62,7 +62,8 @@ $CLICKHOUSE_CLIENT -q "SELECT Price FROM test_02428_pv2(price=50)"  2>&1 |  grep
 $CLICKHOUSE_CLIENT -q "CREATE VIEW test_02428_pv3 AS SELECT * FROM test_02428_Catalog WHERE Price={price:UInt64} AND Quantity=3"
 $CLICKHOUSE_CLIENT -q "SELECT Price FROM test_02428_pv3(price=10)"
 
-$CLICKHOUSE_CLIENT -q "CREATE VIEW test_02428_pv4 AS SELECT * FROM test_02428_Catalog WHERE Price={price:UInt64} AND Quantity={price:UInt64}" 2>&1 |  grep -Fq "DUPLICATE_COLUMN" && echo 'ERROR' || echo 'OK'
+$CLICKHOUSE_CLIENT -q "CREATE VIEW test_02428_pv4 AS SELECT * FROM test_02428_Catalog WHERE Price={price:UInt64} OR Price={price:UInt64}*2"
+$CLICKHOUSE_CLIENT -q "SELECT Price FROM test_02428_pv4(price=10) ORDER BY Price"
 
 $CLICKHOUSE_CLIENT -q "CREATE DATABASE ${CLICKHOUSE_TEST_UNIQUE_NAME}"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}.Catalog (Name String, Price UInt64, Quantity UInt64) ENGINE = Memory"
@@ -111,7 +112,10 @@ $CLICKHOUSE_CLIENT -q "CREATE VIEW 02428_trace_view AS WITH  {trace_id:String} A
                        FROM 02428_otel_traces"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM 02428_trace_view(trace_id='1')"
 
+$CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW test_02428_mv1 ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/materialized_view', 'r1') ORDER BY Name AS SELECT * FROM test_02428_Catalog;"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM test_02428_mv1(test)" 2>&1 |  grep -Fq "UNKNOWN_FUNCTION" && echo 'ERROR' || echo 'OK'
 
+$CLICKHOUSE_CLIENT -q "DROP VIEW test_02428_mv1"
 $CLICKHOUSE_CLIENT -q "DROP VIEW test_02428_pv1"
 $CLICKHOUSE_CLIENT -q "DROP VIEW test_02428_pv2"
 $CLICKHOUSE_CLIENT -q "DROP VIEW test_02428_pv3"

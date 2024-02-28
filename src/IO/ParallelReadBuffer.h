@@ -10,18 +10,17 @@ namespace DB
 {
 
 /**
- * Reads from multiple ReadBuffers in parallel.
- * Preserves order of readers obtained from ReadBufferFactory.
+ * Reads from multiple positions in a ReadBuffer in parallel.
+ * Then reassembles the data into one stream in the original order.
  *
- * It consumes multiple readers and yields data from them in order as it passed.
- * Each working reader save segments of data to internal queue.
+ * Each working reader reads its segment of data into a buffer.
  *
- * ParallelReadBuffer in nextImpl method take first available segment from first reader in deque and fed it to user.
- * When first reader finish reading, they will be removed from worker deque and data from next reader consumed.
+ * ParallelReadBuffer in nextImpl method take first available segment from first reader in deque and reports it it to user.
+ * When first reader finishes reading, they will be removed from worker deque and data from next reader consumed.
  *
  * Number of working readers limited by max_working_readers.
  */
-class ParallelReadBuffer : public SeekableReadBuffer
+class ParallelReadBuffer : public SeekableReadBuffer, public WithFileSize
 {
 private:
     /// Blocks until data occurred in the first reader or this reader indicate finishing
@@ -29,28 +28,19 @@ private:
     bool nextImpl() override;
 
 public:
-    class ReadBufferFactory : public WithFileSize
-    {
-    public:
-        ~ReadBufferFactory() override = default;
-
-        virtual SeekableReadBufferPtr getReader() = 0;
-        virtual off_t seek(off_t off, int whence) = 0;
-    };
-
-    ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers);
+    ParallelReadBuffer(SeekableReadBuffer & input, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers, size_t range_step_, size_t file_size);
 
     ~ParallelReadBuffer() override { finishAndWait(); }
 
     off_t seek(off_t off, int whence) override;
-    size_t getFileSize();
+    size_t getFileSize() override;
     off_t getPosition() override;
 
-    const ReadBufferFactory & getReadBufferFactory() const { return *reader_factory; }
-    ReadBufferFactory & getReadBufferFactory() { return *reader_factory; }
+    const SeekableReadBuffer & getReadBuffer() const { return input; }
+    SeekableReadBuffer & getReadBuffer() { return input; }
 
 private:
-    /// Reader in progress with a list of read segments
+    /// Reader in progress with a buffer for the segment
     struct ReadWorker;
     using ReadWorkerPtr = std::shared_ptr<ReadWorker>;
 
@@ -64,26 +54,28 @@ private:
     void addReaders();
     bool addReaderToPool();
 
-    /// Process read_worker, read data and save into internal segments queue
+    /// Process read_worker, read data and save into the buffer
     void readerThreadFunction(ReadWorkerPtr read_worker);
 
     void onBackgroundException();
     void finishAndWait();
 
-    Memory<> current_segment;
-
     size_t max_working_readers;
-    std::atomic_size_t active_working_reader{0};
+    std::atomic_size_t active_working_readers{0};
 
     ThreadPoolCallbackRunner<void> schedule;
 
-    std::unique_ptr<ReadBufferFactory> reader_factory;
+    SeekableReadBuffer & input;
+    size_t file_size;
+    size_t range_step;
+    size_t next_range_start{0};
 
     /**
      * FIFO queue of readers.
-     * Each worker contains reader itself and downloaded segments.
-     * When reader read all available data it will be removed from
-     * deque and data from next reader will be consumed to user.
+     * Each worker contains a buffer for the downloaded segment.
+     * After all data for the segment is read and delivered to the user, the reader will be removed
+     * from deque and data from next reader will be delivered.
+     * After removing from deque, call addReaders().
      */
     std::deque<ReadWorkerPtr> read_workers;
 
@@ -94,9 +86,15 @@ private:
     std::exception_ptr background_exception = nullptr;
     std::atomic_bool emergency_stop{false};
 
-    off_t current_position{0};
+    off_t current_position{0}; // end of working_buffer
 
     bool all_completed{false};
 };
+
+/// If `buf` is a SeekableReadBuffer with supportsReadAt() == true, creates a ParallelReadBuffer
+/// from it. Otherwise returns nullptr;
+std::unique_ptr<ParallelReadBuffer> wrapInParallelReadBufferIfSupported(
+    ReadBuffer & buf, ThreadPoolCallbackRunner<void> schedule, size_t max_working_readers,
+    size_t range_step, size_t file_size);
 
 }

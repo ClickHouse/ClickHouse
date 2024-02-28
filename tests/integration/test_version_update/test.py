@@ -12,40 +12,45 @@ node2 = cluster.add_instance(
     "node2",
     with_zookeeper=True,
     image="yandex/clickhouse-server",
-    tag="21.2",
+    tag="20.8.11.17",
     with_installed_binary=True,
     stay_alive=True,
+    allow_analyzer=False,
 )
 
-# Use differents nodes because if there is node.restart_from_latest_version(), then in later tests
+# Use different nodes because if there is node.restart_from_latest_version(), then in later tests
 # it will be with latest version, but shouldn't, order of tests in CI is shuffled.
 node3 = cluster.add_instance(
     "node3",
     image="yandex/clickhouse-server",
-    tag="21.5",
+    tag="21.6",
     with_installed_binary=True,
     stay_alive=True,
+    allow_analyzer=False,
 )
 node4 = cluster.add_instance(
     "node4",
     image="yandex/clickhouse-server",
-    tag="21.5",
+    tag="21.6",
     with_installed_binary=True,
     stay_alive=True,
+    allow_analyzer=False,
 )
 node5 = cluster.add_instance(
     "node5",
     image="yandex/clickhouse-server",
-    tag="21.5",
+    tag="21.6",
     with_installed_binary=True,
     stay_alive=True,
+    allow_analyzer=False,
 )
 node6 = cluster.add_instance(
     "node6",
     image="yandex/clickhouse-server",
-    tag="21.5",
+    tag="21.6",
     with_installed_binary=True,
     stay_alive=True,
+    allow_analyzer=False,
 )
 
 

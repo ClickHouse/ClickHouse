@@ -1,3 +1,3 @@
-Tuple(id Int8, key_1 Nested(key_2 Nested(key_3 Nested(key_4 Nested(key_5 Float64, key_6 Int64, key_7 Int32), key_8 Int32))))
+Tuple(\n    id Int8,\n    key_1 Nested(key_2 Nested(key_3 Nested(key_4 Nested(key_5 Float64, key_6 Int64, key_7 Int32), key_8 Int32))))
 {"obj":{"id":1,"key_1":[{"key_2":[{"key_3":[{"key_4":[],"key_8":65537},{"key_4":[{"key_5":-0.02,"key_6":"0","key_7":0},{"key_5":0,"key_6":"0","key_7":1023},{"key_5":0,"key_6":"9223372036854775807","key_7":1}],"key_8":0},{"key_4":[{"key_5":0,"key_6":"0","key_7":65537}],"key_8":0}]}]}]}}
 [[[65537,0,0]]]	[[[[],[-0.02,0,0],[0]]]]	[[[[],[0,0,9223372036854775807],[0]]]]	[[[[],[0,1023,1],[65537]]]]

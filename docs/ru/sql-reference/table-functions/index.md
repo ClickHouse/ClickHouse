@@ -20,8 +20,9 @@ sidebar_position: 34
 
 -   Запросе [INSERT INTO TABLE FUNCTION](../../sql-reference/statements/insert-into.md#inserting-into-table-function).
 
-:::danger "Предупреждение"
-    Если настройка [allow_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) выключена, то использовать табличные функции невозможно.
+:::danger Предупреждение
+Если настройка [allow_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) выключена, то использовать табличные функции невозможно.
+:::
 
 | Функция               | Описание                                                                                                                              |
 |-----------------------|---------------------------------------------------------------------------------------------------------------------------------------|

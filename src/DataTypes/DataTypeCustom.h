@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <cstddef>
-#include <Core/Types.h>
+#include <Core/Types_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB

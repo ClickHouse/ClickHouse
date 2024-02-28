@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-/** Query SHOW TABLES or SHOW DATABASES or SHOW CLUSTERS or SHOW CACHES
+/** Query SHOW TABLES or SHOW DATABASES or SHOW CLUSTERS or SHOW CACHES or SHOW MERGES
   */
 class ASTShowTablesQuery : public ASTQueryWithOutput
 {
@@ -19,13 +19,15 @@ public:
     bool cluster = false;
     bool dictionaries = false;
     bool m_settings = false;
+    bool merges = false;
     bool changed = false;
     bool temporary = false;
     bool caches = false;
     bool full = false;
 
+    IAST * from;
+
     String cluster_str;
-    String from;
     String like;
 
     bool not_like = false;
@@ -37,6 +39,8 @@ public:
     String getID(char) const override { return "ShowTables"; }
     ASTPtr clone() const override;
     QueryKind getQueryKind() const override { return QueryKind::Show; }
+
+    String getFrom() const;
 
 protected:
     void formatLike(const FormatSettings & settings) const;

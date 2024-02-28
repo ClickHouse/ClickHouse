@@ -1,12 +1,12 @@
 # docker build -t clickhouse/test-util .
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 # 15.0.2
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=15
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=17
 
 RUN apt-get update \
     && apt-get install \
@@ -27,7 +27,9 @@ RUN apt-get update \
     && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && echo "deb https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
         /etc/apt/sources.list \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
 
 # Install cmake 3.20+ for rust support
 # Used https://askubuntu.com/a/1157132 as reference
@@ -44,7 +46,6 @@ RUN apt-get update \
         clang-${LLVM_VERSION} \
         clang-tidy-${LLVM_VERSION} \
         cmake \
-        fakeroot \
         gdb \
         git \
         gperf \
@@ -52,6 +53,7 @@ RUN apt-get update \
         lld-${LLVM_VERSION} \
         llvm-${LLVM_VERSION} \
         llvm-${LLVM_VERSION}-dev \
+        libclang-${LLVM_VERSION}-dev \
         moreutils \
         nasm \
         ninja-build \
@@ -60,7 +62,9 @@ RUN apt-get update \
         software-properties-common \
         tzdata \
         --yes --no-install-recommends \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
@@ -93,7 +97,10 @@ RUN mkdir /tmp/ccache \
     && rm -rf /tmp/ccache
 
 ARG TARGETARCH
-ARG SCCACHE_VERSION=v0.4.1
+ARG SCCACHE_VERSION=v0.5.4
+ENV SCCACHE_IGNORE_SERVER_IO_ERROR=1
+# sccache requires a value for the region. So by default we use The Default Region
+ENV SCCACHE_REGION=us-east-1
 RUN arch=${TARGETARCH:-amd64} \
   && case $arch in \
     amd64) rarch=x86_64 ;; \

@@ -1,14 +1,26 @@
 #include <IO/S3/URI.h>
-
+#include <Poco/URI.h>
+#include "Common/Macros.h"
+#include <Interpreters/Context.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #if USE_AWS_S3
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/re2.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
-#include <re2/re2.h>
 
 namespace DB
 {
+
+struct URIConverter
+{
+    static void modifyURI(Poco::URI & uri, std::unordered_map<std::string, std::string> mapper)
+    {
+        Macros macros({{"bucket", uri.getHost()}});
+        uri = macros.expand(mapper[uri.getScheme()]).empty() ? uri : Poco::URI(macros.expand(mapper[uri.getScheme()]) + uri.getPathAndQuery());
+    }
+};
 
 namespace ErrorCodes
 {
@@ -23,7 +35,7 @@ URI::URI(const std::string & uri_)
     /// Case when bucket name represented in domain name of S3 URL.
     /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
     /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
-    static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3|cos|obs|oss)([.\-][a-z0-9\-.:]+))");
+    static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3|cos|obs|oss|eos)([.\-][a-z0-9\-.:]+))");
 
     /// Case when bucket name and key represented in path of S3 URL.
     /// E.g. (https://s3.Region.amazonaws.com/bucket-name/key)
@@ -35,8 +47,32 @@ URI::URI(const std::string & uri_)
     static constexpr auto COS = "COS";
     static constexpr auto OBS = "OBS";
     static constexpr auto OSS = "OSS";
+    static constexpr auto EOS = "EOS";
 
     uri = Poco::URI(uri_);
+
+    std::unordered_map<std::string, std::string> mapper;
+    auto context = Context::getGlobalContextInstance();
+    if (context)
+    {
+        const auto *config = &context->getConfigRef();
+        if (config->has("url_scheme_mappers"))
+        {
+            std::vector<String> config_keys;
+            config->keys("url_scheme_mappers", config_keys);
+            for (const std::string & config_key : config_keys)
+                mapper[config_key] = config->getString("url_scheme_mappers." + config_key + ".to");
+        }
+        else
+        {
+            mapper["s3"] = "https://{bucket}.s3.amazonaws.com";
+            mapper["gs"] = "https://{bucket}.storage.googleapis.com";
+            mapper["oss"] = "https://{bucket}.oss.aliyuncs.com";
+        }
+
+        if (!mapper.empty())
+            URIConverter::modifyURI(uri, mapper);
+    }
 
     storage_name = S3;
 
@@ -52,9 +88,9 @@ URI::URI(const std::string & uri_)
             has_version_id = true;
         }
 
-    /// Poco::URI will ignore '?' when parsing the path, but if there is a vestionId in the http parameter,
+    /// Poco::URI will ignore '?' when parsing the path, but if there is a versionId in the http parameter,
     /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
-    /// If no "vertionId" in the http parameter, '?' can be used as a wildcard.
+    /// If no "versionId" in the http parameter, '?' can be used as a wildcard.
     /// It is necessary to encode '?' to avoid deletion during parsing path.
     if (!has_version_id && uri_.find('?') != String::npos)
     {
@@ -79,7 +115,7 @@ URI::URI(const std::string & uri_)
         }
 
         boost::to_upper(name);
-        if (name != S3 && name != COS && name != OBS && name != OSS)
+        if (name != S3 && name != COS && name != OBS && name != OSS && name != EOS)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Object storage system name is unrecognized in virtual hosted style S3 URI: {}",
                             quoteString(name));
@@ -90,6 +126,8 @@ URI::URI(const std::string & uri_)
             storage_name = OBS;
         else if (name == OSS)
             storage_name = OSS;
+        else if (name == EOS)
+            storage_name = EOS;
         else
             storage_name = COSN;
     }
@@ -101,6 +139,12 @@ URI::URI(const std::string & uri_)
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket or key name are invalid in S3 URI.");
+}
+
+void URI::addRegionToURI(const std::string &region)
+{
+    if (auto pos = endpoint.find("amazonaws.com"); pos != std::string::npos)
+        endpoint = endpoint.substr(0, pos) + region + "." + endpoint.substr(pos);
 }
 
 void URI::validateBucket(const String & bucket, const Poco::URI & uri)

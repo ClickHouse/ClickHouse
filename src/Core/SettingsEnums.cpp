@@ -1,8 +1,10 @@
 #include <Core/SettingsEnums.h>
+#include <magic_enum.hpp>
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_LOAD_BALANCING;
@@ -15,10 +17,10 @@ namespace ErrorCodes
     extern const int UNKNOWN_UNION;
 }
 
-
 IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
     {{"random",           LoadBalancing::RANDOM},
      {"nearest_hostname", LoadBalancing::NEAREST_HOSTNAME},
+     {"hostname_levenshtein_distance", LoadBalancing::HOSTNAME_LEVENSHTEIN_DISTANCE},
      {"in_order",         LoadBalancing::IN_ORDER},
      {"first_or_random",  LoadBalancing::FIRST_OR_RANDOM},
      {"round_robin",      LoadBalancing::ROUND_ROBIN}})
@@ -54,7 +56,7 @@ IMPLEMENT_SETTING_ENUM(OverflowMode, ErrorCodes::UNKNOWN_OVERFLOW_MODE,
      {"break", OverflowMode::BREAK}})
 
 
-IMPLEMENT_SETTING_ENUM_WITH_RENAME(OverflowModeGroupBy, ErrorCodes::UNKNOWN_OVERFLOW_MODE,
+IMPLEMENT_SETTING_ENUM(OverflowModeGroupBy, ErrorCodes::UNKNOWN_OVERFLOW_MODE,
     {{"throw", OverflowMode::THROW},
      {"break", OverflowMode::BREAK},
      {"any", OverflowMode::ANY}})
@@ -67,51 +69,36 @@ IMPLEMENT_SETTING_ENUM(DistributedProductMode, ErrorCodes::UNKNOWN_DISTRIBUTED_P
      {"allow",  DistributedProductMode::ALLOW}})
 
 
-IMPLEMENT_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
+IMPLEMENT_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw",  QueryCacheNondeterministicFunctionHandling::Throw},
+     {"save",   QueryCacheNondeterministicFunctionHandling::Save},
+     {"ignore", QueryCacheNondeterministicFunctionHandling::Ignore}})
+
+
+IMPLEMENT_SETTING_ENUM(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"basic",       FormatSettings::DateTimeInputFormat::Basic},
      {"best_effort", FormatSettings::DateTimeInputFormat::BestEffort},
      {"best_effort_us", FormatSettings::DateTimeInputFormat::BestEffortUS}})
 
 
-IMPLEMENT_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
+IMPLEMENT_SETTING_ENUM(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"simple",         FormatSettings::DateTimeOutputFormat::Simple},
      {"iso",            FormatSettings::DateTimeOutputFormat::ISO},
      {"unix_timestamp", FormatSettings::DateTimeOutputFormat::UnixTimestamp}})
 
-IMPLEMENT_SETTING_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS,
-    {{"none",        LogsLevel::none},
-     {"fatal",       LogsLevel::fatal},
-     {"error",       LogsLevel::error},
-     {"warning",     LogsLevel::warning},
-     {"information", LogsLevel::information},
-     {"debug",       LogsLevel::debug},
-     {"trace",       LogsLevel::trace},
-     {"test",        LogsLevel::test}})
+IMPLEMENT_SETTING_ENUM(IntervalOutputFormat, ErrorCodes::BAD_ARGUMENTS,
+    {{"kusto",     FormatSettings::IntervalOutputFormat::Kusto},
+     {"numeric", FormatSettings::IntervalOutputFormat::Numeric}})
 
-IMPLEMENT_SETTING_ENUM_WITH_RENAME(LogQueriesType, ErrorCodes::BAD_ARGUMENTS,
-    {{"QUERY_START",                QUERY_START},
-     {"QUERY_FINISH",               QUERY_FINISH},
-     {"EXCEPTION_BEFORE_START",     EXCEPTION_BEFORE_START},
-     {"EXCEPTION_WHILE_PROCESSING", EXCEPTION_WHILE_PROCESSING}})
+IMPLEMENT_SETTING_AUTO_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS)
 
+IMPLEMENT_SETTING_AUTO_ENUM(LogQueriesType, ErrorCodes::BAD_ARGUMENTS)
 
-IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUMENTS,
-    {{"Ordinary", DefaultDatabaseEngine::Ordinary},
-     {"Atomic",   DefaultDatabaseEngine::Atomic}})
+IMPLEMENT_SETTING_AUTO_ENUM(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUMENTS)
 
-IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS,
-    {{"None", DefaultTableEngine::None},
-     {"Log", DefaultTableEngine::Log},
-     {"StripeLog", DefaultTableEngine::StripeLog},
-     {"MergeTree", DefaultTableEngine::MergeTree},
-     {"ReplacingMergeTree", DefaultTableEngine::ReplacingMergeTree},
-     {"ReplicatedMergeTree", DefaultTableEngine::ReplicatedMergeTree},
-     {"ReplicatedReplacingMergeTree", DefaultTableEngine::ReplicatedReplacingMergeTree},
-     {"Memory", DefaultTableEngine::Memory}})
+IMPLEMENT_SETTING_AUTO_ENUM(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS)
 
-IMPLEMENT_SETTING_ENUM(CleanDeletedRows, ErrorCodes::BAD_ARGUMENTS,
-    {{"Never", CleanDeletedRows::Never},
-     {"Always", CleanDeletedRows::Always}})
+IMPLEMENT_SETTING_AUTO_ENUM(CleanDeletedRows, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL,
     {{"decimal",    MySQLDataTypesSupport::DECIMAL},
@@ -128,11 +115,13 @@ IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
     {{"none",         DistributedDDLOutputMode::NONE},
      {"throw",    DistributedDDLOutputMode::THROW},
      {"null_status_on_timeout", DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT},
+     {"throw_only_active", DistributedDDLOutputMode::THROW_ONLY_ACTIVE},
+     {"null_status_on_timeout_only_active", DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT_ONLY_ACTIVE},
      {"never_throw", DistributedDDLOutputMode::NEVER_THROW}})
 
-IMPLEMENT_SETTING_ENUM(HandleKafkaErrorMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"default",      HandleKafkaErrorMode::DEFAULT},
-     {"stream",       HandleKafkaErrorMode::STREAM}})
+IMPLEMENT_SETTING_ENUM(StreamingHandleErrorMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"default",      StreamingHandleErrorMode::DEFAULT},
+     {"stream",       StreamingHandleErrorMode::STREAM}})
 
 IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS,
     {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
@@ -144,19 +133,12 @@ IMPLEMENT_SETTING_ENUM(TransactionsWaitCSNMode, ErrorCodes::BAD_ARGUMENTS,
      {"wait",           TransactionsWaitCSNMode::WAIT},
      {"wait_unknown",   TransactionsWaitCSNMode::WAIT_UNKNOWN}})
 
-IMPLEMENT_SETTING_ENUM(EnumComparingMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"by_names",   FormatSettings::EnumComparingMode::BY_NAMES},
-     {"by_values",  FormatSettings::EnumComparingMode::BY_VALUES},
-     {"by_names_case_insensitive", FormatSettings::EnumComparingMode::BY_NAMES_CASE_INSENSITIVE}})
+IMPLEMENT_SETTING_ENUM(CapnProtoEnumComparingMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"by_names",   FormatSettings::CapnProtoEnumComparingMode::BY_NAMES},
+     {"by_values",  FormatSettings::CapnProtoEnumComparingMode::BY_VALUES},
+     {"by_names_case_insensitive", FormatSettings::CapnProtoEnumComparingMode::BY_NAMES_CASE_INSENSITIVE}})
 
-IMPLEMENT_SETTING_ENUM(EscapingRule, ErrorCodes::BAD_ARGUMENTS,
-    {{"None", FormatSettings::EscapingRule::None},
-     {"Escaped", FormatSettings::EscapingRule::Escaped},
-     {"Quoted", FormatSettings::EscapingRule::Quoted},
-     {"CSV", FormatSettings::EscapingRule::CSV},
-     {"JSON", FormatSettings::EscapingRule::JSON},
-     {"XML", FormatSettings::EscapingRule::XML},
-     {"Raw", FormatSettings::EscapingRule::Raw}})
+IMPLEMENT_SETTING_AUTO_ENUM(EscapingRule, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation, ErrorCodes::BAD_ARGUMENTS,
                        {{"bin", FormatSettings::MsgPackUUIDRepresentation::BIN},
@@ -165,18 +147,17 @@ IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation, ErrorCodes::BAD_ARGUMENTS,
 
 IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
     {{"clickhouse", Dialect::clickhouse},
-     {"kusto", Dialect::kusto}})
+     {"kusto", Dialect::kusto},
+     {"prql", Dialect::prql}})
+
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
      {"range", ParallelReplicasCustomKeyFilterType::RANGE}})
 
-IMPLEMENT_SETTING_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS,
-    {{"mmap", LocalFSReadMethod::mmap},
-     {"pread", LocalFSReadMethod::pread},
-     {"read", LocalFSReadMethod::read}})
+IMPLEMENT_SETTING_AUTO_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS)
 
-IMPLEMENT_SETTING_ENUM_WITH_RENAME(ParquetVersion, ErrorCodes::BAD_ARGUMENTS,
+IMPLEMENT_SETTING_ENUM(ParquetVersion, ErrorCodes::BAD_ARGUMENTS,
     {{"1.0",       FormatSettings::ParquetVersion::V1_0},
      {"2.4", FormatSettings::ParquetVersion::V2_4},
      {"2.6", FormatSettings::ParquetVersion::V2_6},
@@ -202,4 +183,27 @@ IMPLEMENT_SETTING_ENUM(ORCCompression, ErrorCodes::BAD_ARGUMENTS,
      {"zlib", FormatSettings::ORCCompression::ZLIB},
      {"lz4", FormatSettings::ORCCompression::LZ4}})
 
+IMPLEMENT_SETTING_ENUM(S3QueueMode, ErrorCodes::BAD_ARGUMENTS,
+                       {{"ordered", S3QueueMode::ORDERED},
+                        {"unordered", S3QueueMode::UNORDERED}})
+
+IMPLEMENT_SETTING_ENUM(S3QueueAction, ErrorCodes::BAD_ARGUMENTS,
+                       {{"keep", S3QueueAction::KEEP},
+                        {"delete", S3QueueAction::DELETE}})
+
+IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
+    {{"none", ExternalCommandStderrReaction::NONE},
+     {"log", ExternalCommandStderrReaction::LOG},
+     {"log_first", ExternalCommandStderrReaction::LOG_FIRST},
+     {"log_last", ExternalCommandStderrReaction::LOG_LAST},
+     {"throw", ExternalCommandStderrReaction::THROW}})
+
+IMPLEMENT_SETTING_ENUM(SchemaInferenceMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"default", SchemaInferenceMode::DEFAULT},
+     {"union", SchemaInferenceMode::UNION}})
+
+IMPLEMENT_SETTING_ENUM(DateTimeOverflowBehavior, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", FormatSettings::DateTimeOverflowBehavior::Throw},
+     {"ignore", FormatSettings::DateTimeOverflowBehavior::Ignore},
+     {"saturate", FormatSettings::DateTimeOverflowBehavior::Saturate}})
 }

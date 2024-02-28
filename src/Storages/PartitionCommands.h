@@ -80,7 +80,7 @@ struct PartitionCommand
 
 using PartitionCommands = std::vector<PartitionCommand>;
 
-/// Result of exectuin of a single partition commands. Partition commands quite
+/// Result of executing of a single partition commands. Partition commands quite
 /// different, so some fields will be empty for some commands. Currently used in
 /// ATTACH and FREEZE commands.
 struct PartitionCommandResultInfo
@@ -92,14 +92,14 @@ struct PartitionCommandResultInfo
     /// Part name, always filled
     String part_name;
     /// Part name in /detached directory, filled in ATTACH
-    String old_part_name;
+    String old_part_name = {};
     /// Absolute path to backup directory, filled in FREEZE
-    String backup_path;
+    String backup_path = {};
     /// Absolute path part backup, filled in FREEZE
-    String part_backup_path;
+    String part_backup_path = {};
     /// Name of the backup (specified by user or increment value), filled in
     /// FREEZE
-    String backup_name;
+    String backup_name = {};
 };
 
 using PartitionCommandsResultInfo = std::vector<PartitionCommandResultInfo>;

@@ -5,7 +5,9 @@
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <Disks/IO/IOUringReader.h>
 #include <Disks/IO/ThreadPoolReader.h>
+#include <Disks/IO/getThreadPoolReader.h>
 #include <IO/SynchronousReader.h>
+#include <IO/AsynchronousReader.h>
 #include <Common/ProfileEvents.h>
 #include "config.h"
 
@@ -27,7 +29,6 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-
 std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     const std::string & filename,
     const ReadSettings & settings,
@@ -38,7 +39,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     size_t alignment)
 {
     if (file_size.has_value() && !*file_size)
-        return std::make_unique<ReadBufferFromEmptyFile>();
+        return std::make_unique<ReadBufferFromEmptyFile>(filename);
 
     size_t estimated_size = 0;
     if (read_hint.has_value())
@@ -99,12 +100,16 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         else if (settings.local_fs_method == LocalFSReadMethod::io_uring)
         {
 #if USE_LIBURING
-            static std::shared_ptr<IOUringReader> reader = std::make_shared<IOUringReader>(512);
-            if (!reader->isSupported())
+            auto global_context = Context::getGlobalContextInstance();
+            if (!global_context)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot obtain io_uring reader (global context not initialized)");
+
+            auto & reader = global_context->getIOURingReader();
+            if (!reader.isSupported())
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "io_uring is not supported by this system");
 
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
-                *reader,
+                reader,
                 settings.priority,
                 filename,
                 buffer_size,
@@ -119,11 +124,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_fake_async)
         {
-            auto context = Context::getGlobalContextInstance();
-            if (!context)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
-
-            auto & reader = context->getThreadPoolReader(Context::FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER);
+            auto & reader = getThreadPoolReader(FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader,
                 settings.priority,
@@ -137,11 +138,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_threadpool)
         {
-            auto context = Context::getGlobalContextInstance();
-            if (!context)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
-
-            auto & reader = context->getThreadPoolReader(Context::FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER);
+            auto & reader = getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader,
                 settings.priority,
