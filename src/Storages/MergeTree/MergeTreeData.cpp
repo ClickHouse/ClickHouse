@@ -450,7 +450,7 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMet
         desc.addEphemeral("_partition_value", std::make_shared<DataTypeTuple>(std::move(partition_types)), "");
     }
 
-    desc.addPersistent(LightweightDeleteDescription::FILTER_COLUMN.name, LightweightDeleteDescription::FILTER_COLUMN.type, nullptr, "");
+    desc.addPersistent(RowExistsColumn::name, RowExistsColumn::type, nullptr, "");
     desc.addPersistent(BlockNumberColumn::name, BlockNumberColumn::type, BlockNumberColumn::codec, "");
 
     return desc;
@@ -3651,6 +3651,7 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & columns = metadata_snapshot->getColumns();
+    const auto & virtuals = *getVirtualsDescription();
 
     if (!hasDynamicSubcolumns(columns))
         return;
@@ -3658,7 +3659,7 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
     const auto & part_columns = part->getColumns();
     for (const auto & part_column : part_columns)
     {
-        if (part_column.name == LightweightDeleteDescription::FILTER_COLUMN.name || part_column.name == BlockNumberColumn::name)
+        if (virtuals.has(part_column.name))
             continue;
 
         auto storage_column = columns.getPhysical(part_column.name);

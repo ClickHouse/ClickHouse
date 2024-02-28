@@ -31,7 +31,6 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/PreparedSets.h>
-#include <Storages/LightweightDeleteDescription.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
 #include <Analyzer/QueryTreeBuilder.h>
@@ -265,7 +264,7 @@ MutationCommand createCommandToApplyDeletedMask(const MutationCommand & command)
     alter_command->partition = alter_command->children.emplace_back(command.partition).get();
 
     auto row_exists_predicate = makeASTFunction("equals",
-        std::make_shared<ASTIdentifier>(LightweightDeleteDescription::FILTER_COLUMN.name),
+        std::make_shared<ASTIdentifier>(RowExistsColumn::name),
         std::make_shared<ASTLiteral>(Field(0)));
 
     if (command.predicate)
@@ -435,60 +434,54 @@ static NameSet getKeyColumns(const MutationsInterpreter::Source & source, const 
 
 static void validateUpdateColumns(
     const MutationsInterpreter::Source & source,
-    const StorageMetadataPtr & metadata_snapshot, const NameSet & updated_columns,
-    const std::unordered_map<String, Names> & column_to_affected_materialized)
+    const StorageMetadataPtr & metadata_snapshot,
+    const NameSet & updated_columns,
+    const std::unordered_map<String, Names> & column_to_affected_materialized,
+    const ContextPtr & context)
 {
+    auto storage_snapshot = source.getStorageSnapshot(metadata_snapshot, context);
     NameSet key_columns = getKeyColumns(source, metadata_snapshot);
 
-    for (const String & column_name : updated_columns)
+    const auto & storage_columns = storage_snapshot->metadata->getColumns();
+    const auto & virtual_columns = *storage_snapshot->virtual_columns;
+
+    for (const auto & column_name : updated_columns)
     {
-        auto found = false;
-        for (const auto & col : metadata_snapshot->getColumns().getOrdinary())
-        {
-            if (col.name == column_name)
-            {
-                found = true;
-                break;
-            }
-        }
-
-        /// Allow to override value of lightweight delete filter virtual column
-        if (!found && column_name == LightweightDeleteDescription::FILTER_COLUMN.name)
-        {
-            if (!source.supportsLightweightDelete())
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
-            found = true;
-        }
-
-        /// Dont allow to override value of block number virtual column
-        if (!found && column_name == BlockNumberColumn::name)
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Update is not supported for virtual column {} ", backQuote(column_name));
-        }
-
-        if (!found)
-        {
-            for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
-            {
-                if (col.name == column_name)
-                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Cannot UPDATE materialized column {}", backQuote(column_name));
-            }
-
-            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", backQuote(column_name));
-        }
-
         if (key_columns.contains(column_name))
             throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Cannot UPDATE key column {}", backQuote(column_name));
+
+        if (storage_columns.tryGetColumn(GetColumnsOptions::Materialized, column_name))
+            throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Cannot UPDATE materialized column {}", backQuote(column_name));
 
         auto materialized_it = column_to_affected_materialized.find(column_name);
         if (materialized_it != column_to_affected_materialized.end())
         {
-            for (const String & materialized : materialized_it->second)
+            for (const auto & materialized : materialized_it->second)
             {
                 if (key_columns.contains(materialized))
+                {
                     throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                                     "Updated column {} affects MATERIALIZED column {}, which is a key column. "
                                     "Cannot UPDATE it.", backQuote(column_name), backQuote(materialized));
+                }
+            }
+        }
+
+        if (!storage_columns.tryGetColumn(GetColumnsOptions::Ordinary, column_name))
+        {
+            /// Allow to override value of lightweight delete filter virtual column
+            if (column_name == RowExistsColumn::name)
+            {
+                if (!source.supportsLightweightDelete())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
+            }
+            else if (virtual_columns.tryGet(column_name))
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Update is not supported for virtual column {} ", backQuote(column_name));
+            }
+            else
+            {
+                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", backQuote(column_name));
             }
         }
     }
@@ -546,8 +539,8 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// Add _row_exists column if it is physically present in the part
     if (source.hasLightweightDeleteMask())
     {
-        all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
-        available_columns_set.insert(LightweightDeleteDescription::FILTER_COLUMN.name);
+        all_columns.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
+        available_columns_set.insert(RowExistsColumn::name);
     }
 
     NameSet updated_columns;
@@ -563,9 +556,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         for (const auto & [name, _] : command.column_to_update_expression)
         {
-            if (!available_columns_set.contains(name)
-                && name != LightweightDeleteDescription::FILTER_COLUMN.name
-                && name != BlockNumberColumn::name)
+            if (!available_columns_set.contains(name) && name != RowExistsColumn::name)
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
                     "Column {} is updated but not requested to read", name);
 
@@ -590,7 +581,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
         }
 
-        validateUpdateColumns(source, metadata_snapshot, updated_columns, column_to_affected_materialized);
+        validateUpdateColumns(source, metadata_snapshot, updated_columns, column_to_affected_materialized, context);
     }
 
     StorageInMemoryMetadata::HasDependencyCallback has_dependency =
@@ -666,14 +657,10 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     type = physical_column->type;
                 }
-                else if (column_name == LightweightDeleteDescription::FILTER_COLUMN.name)
+                else if (column_name == RowExistsColumn::name)
                 {
-                    type = LightweightDeleteDescription::FILTER_COLUMN.type;
+                    type = RowExistsColumn::type;
                     deleted_mask_updated = true;
-                }
-                else if (column_name == BlockNumberColumn::name)
-                {
-                    type = BlockNumberColumn::type;
                 }
                 else
                 {
@@ -1028,7 +1015,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
     /// Add _row_exists column if it is present in the part
     if (source.hasLightweightDeleteMask() || deleted_mask_updated)
-        all_columns.push_back(LightweightDeleteDescription::FILTER_COLUMN);
+        all_columns.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
 
     bool has_filters = false;
     /// Next, for each stage calculate columns changed by this and previous stages.
@@ -1038,7 +1025,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
         {
             for (const auto & column : all_columns)
             {
-                if (column.name == LightweightDeleteDescription::FILTER_COLUMN.name && !deleted_mask_updated)
+                if (column.name == RowExistsColumn::name && !deleted_mask_updated)
                     continue;
 
                 prepared_stages[i].output_columns.insert(column.name);
@@ -1057,7 +1044,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             /// and so it is not in the list of AllPhysical columns.
             for (const auto & [column_name, _] : prepared_stages[i].column_to_updated)
             {
-                if (column_name == LightweightDeleteDescription::FILTER_COLUMN.name && has_filters && !deleted_mask_updated)
+                if (column_name == RowExistsColumn::name && has_filters && !deleted_mask_updated)
                     continue;
 
                 prepared_stages[i].output_columns.insert(column_name);
@@ -1148,93 +1135,6 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
     }
 }
 
-/// This structure re-implements adding virtual columns while reading from MergeTree part.
-/// It would be good to unify it with IMergeTreeSelectAlgorithm.
-struct VirtualColumns
-{
-    struct ColumnAndPosition
-    {
-        ColumnWithTypeAndName column;
-        size_t position;
-    };
-
-    using Columns = std::vector<ColumnAndPosition>;
-
-    Columns virtuals;
-    Names columns_to_read;
-
-    VirtualColumns(Names required_columns, const MergeTreeData::DataPartPtr & part) : columns_to_read(std::move(required_columns))
-    {
-        for (size_t i = 0; i < columns_to_read.size(); ++i)
-        {
-            if (columns_to_read[i] == LightweightDeleteDescription::FILTER_COLUMN.name)
-            {
-                if (!part->getColumns().contains(LightweightDeleteDescription::FILTER_COLUMN.name))
-                {
-                    ColumnWithTypeAndName mask_column;
-                    mask_column.type = LightweightDeleteDescription::FILTER_COLUMN.type;
-                    mask_column.column = mask_column.type->createColumnConst(0, 1);
-                    mask_column.name = std::move(columns_to_read[i]);
-
-                    virtuals.emplace_back(ColumnAndPosition{.column = std::move(mask_column), .position = i});
-                }
-            }
-            else if (columns_to_read[i] == "_partition_id")
-            {
-                ColumnWithTypeAndName column;
-                column.type = std::make_shared<DataTypeString>();
-                column.column = column.type->createColumnConst(0, part->info.partition_id);
-                column.name = std::move(columns_to_read[i]);
-
-                virtuals.emplace_back(ColumnAndPosition{.column = std::move(column), .position = i});
-            }
-            else if (columns_to_read[i] == BlockNumberColumn::name)
-            {
-                if (!part->getColumns().contains(BlockNumberColumn::name))
-                {
-                    ColumnWithTypeAndName block_number_column;
-                    block_number_column.type = BlockNumberColumn::type;
-                    block_number_column.column = block_number_column.type->createColumnConst(0, part->info.min_block);
-                    block_number_column.name = std::move(columns_to_read[i]);
-
-                    virtuals.emplace_back(ColumnAndPosition{.column = std::move(block_number_column), .position = i});
-                }
-            }
-        }
-
-        if (!virtuals.empty())
-        {
-            Names columns_no_virtuals;
-            columns_no_virtuals.reserve(columns_to_read.size());
-            size_t next_virtual = 0;
-            for (size_t i = 0; i < columns_to_read.size(); ++i)
-            {
-                if (next_virtual < virtuals.size() && i == virtuals[next_virtual].position)
-                    ++next_virtual;
-                else
-                    columns_no_virtuals.emplace_back(std::move(columns_to_read[i]));
-            }
-
-            columns_to_read.swap(columns_no_virtuals);
-        }
-    }
-
-    void addVirtuals(QueryPlan & plan)
-    {
-        auto dag = std::make_unique<ActionsDAG>(plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
-
-        for (auto & column : virtuals)
-        {
-            const auto & adding_const = dag->addColumn(std::move(column.column));
-            auto & outputs = dag->getOutputs();
-            outputs.insert(outputs.begin() + column.position, &adding_const);
-        }
-
-        auto step = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), std::move(dag));
-        plan.addStep(std::move(step));
-    }
-};
-
 void MutationsInterpreter::Source::read(
     Stage & first_stage,
     QueryPlan & plan,
@@ -1277,16 +1177,12 @@ void MutationsInterpreter::Source::read(
             filter = ActionsDAG::buildFilterActionsDAG(nodes);
         }
 
-        VirtualColumns virtual_columns(std::move(required_columns), part);
-
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Mutation,
-            plan, *data, storage_snapshot, part,
-            std::move(virtual_columns.columns_to_read),
+            plan, *data, storage_snapshot,
+            part, required_columns,
             apply_deleted_mask_, filter, context_,
             getLogger("MutationsInterpreter"));
-
-        virtual_columns.addVirtuals(plan);
     }
     else
     {

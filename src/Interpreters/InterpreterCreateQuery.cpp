@@ -907,8 +907,7 @@ void validateVirtualColumns(const IStorage & storage)
     auto virtual_columns = storage.getVirtualsDescription();
     for (const auto & storage_column : storage.getInMemoryMetadataPtr()->getColumns())
     {
-        auto virtual_desc = virtual_columns->tryGetDescription(storage_column.name);
-        if (virtual_desc && virtual_desc->kind == VirtualsKind::Persistent)
+        if (virtual_columns->tryGet(storage_column.name, VirtualsKind::Persistent))
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",

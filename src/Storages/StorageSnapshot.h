@@ -40,6 +40,11 @@ struct StorageSnapshot
     StorageSnapshot(
         const IStorage & storage_,
         StorageMetadataPtr metadata_,
+        VirtualsDescriptionPtr virtual_columns_);
+
+    StorageSnapshot(
+        const IStorage & storage_,
+        StorageMetadataPtr metadata_,
         ColumnsDescription object_columns_);
 
     StorageSnapshot(

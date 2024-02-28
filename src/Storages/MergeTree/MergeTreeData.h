@@ -1085,6 +1085,8 @@ public:
 
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
+    static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
+
 protected:
     friend class IMergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;
@@ -1675,8 +1677,6 @@ private:
 
     void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
     void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
-
-    static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

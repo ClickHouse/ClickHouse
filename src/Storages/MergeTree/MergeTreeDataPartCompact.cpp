@@ -76,12 +76,6 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
     ordered_columns_list.sort([this](const auto & lhs, const auto & rhs)
         { return *getColumnPosition(lhs.name) < *getColumnPosition(rhs.name); });
 
-    /// _block_number column is not added by user, but is persisted in a part after merge
-    /// If _block_number is not present in the parts to be merged, then it won't have a position
-    /// So check if its not present and add it at the end
-    if (columns_list.contains(BlockNumberColumn::name) && !ordered_columns_list.contains(BlockNumberColumn::name))
-        ordered_columns_list.emplace_back(NameAndTypePair{BlockNumberColumn::name, BlockNumberColumn::type});
-
     return std::make_unique<MergeTreeDataPartWriterCompact>(
         shared_from_this(), ordered_columns_list, metadata_snapshot,
         indices_to_recalc, stats_to_recalc_, getMarksFileExtension(),

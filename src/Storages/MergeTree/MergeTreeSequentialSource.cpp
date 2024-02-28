@@ -136,7 +136,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     {
         auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
             .withExtendedObjects()
-            .withVirtuals(VirtualsKind::Persistent)
+            .withVirtuals()
             .withSubcolumns(storage.supportsSubcolumns());
 
         columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
@@ -242,6 +242,7 @@ try
         if (rows_read)
         {
             fillBlockNumberColumns(columns, sample, data_part->info.min_block, current_row, rows_read);
+            reader->fillVirtualColumns(columns, rows_read);
 
             current_row += rows_read;
             current_mark += (rows_to_read == rows_read);
@@ -315,14 +316,13 @@ Pipe createMergeTreeSequentialSource(
     bool quiet,
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count)
 {
-    const auto & filter_column = LightweightDeleteDescription::FILTER_COLUMN;
 
     /// The part might have some rows masked by lightweight deletes
     const bool need_to_filter_deleted_rows = apply_deleted_mask && data_part->hasLightweightDelete();
-    const bool has_filter_column = std::ranges::find(columns_to_read, filter_column.name) != columns_to_read.end();
+    const bool has_filter_column = std::ranges::find(columns_to_read, RowExistsColumn::name) != columns_to_read.end();
 
     if (need_to_filter_deleted_rows && !has_filter_column)
-        columns_to_read.emplace_back(filter_column.name);
+        columns_to_read.emplace_back(RowExistsColumn::name);
 
     auto column_part_source = std::make_shared<MergeTreeSequentialSource>(type,
         storage, storage_snapshot, data_part, columns_to_read, std::move(mark_ranges),
@@ -336,7 +336,7 @@ Pipe createMergeTreeSequentialSource(
         pipe.addSimpleTransform([filtered_rows_count, has_filter_column](const Block & header)
         {
             return std::make_shared<FilterTransform>(
-                header, nullptr, filter_column.name, !has_filter_column, false, filtered_rows_count);
+                header, nullptr, RowExistsColumn::name, !has_filter_column, false, filtered_rows_count);
         });
     }
 

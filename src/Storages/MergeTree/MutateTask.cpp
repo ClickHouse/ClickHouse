@@ -283,7 +283,6 @@ getColumnsForNewDataPart(
     ColumnsDescription part_columns(source_part->getColumns());
     NamesAndTypesList system_columns;
 
-    const auto & deleted_mask_column = LightweightDeleteDescription::FILTER_COLUMN;
     bool supports_lightweight_deletes = source_part->supportLightweightDeleteMutate();
 
     bool deleted_mask_updated = false;
@@ -299,9 +298,9 @@ getColumnsForNewDataPart(
         {
             for (const auto & [column_name, _] : command.column_to_update_expression)
             {
-                if (column_name == deleted_mask_column.name
+                if (column_name == RowExistsColumn::name
                     && supports_lightweight_deletes
-                    && !storage_columns_set.contains(deleted_mask_column.name))
+                    && !storage_columns_set.contains(RowExistsColumn::name))
                     deleted_mask_updated = true;
             }
         }
@@ -323,12 +322,12 @@ getColumnsForNewDataPart(
         }
     }
 
-    if (!storage_columns_set.contains(deleted_mask_column.name))
+    if (!storage_columns_set.contains(RowExistsColumn::name))
     {
-        if (deleted_mask_updated || (part_columns.has(deleted_mask_column.name) && !has_delete_command))
+        if (deleted_mask_updated || (part_columns.has(RowExistsColumn::name) && !has_delete_command))
         {
-            storage_columns.push_back(deleted_mask_column);
-            storage_columns_set.insert(deleted_mask_column.name);
+            storage_columns.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
+            storage_columns_set.insert(RowExistsColumn::name);
         }
     }
 

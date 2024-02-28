@@ -1,5 +1,4 @@
 #include <Storages/StorageSnapshot.h>
-#include <Storages/LightweightDeleteDescription.h>
 #include <Storages/MergeTreeVirtualColumns.h>
 #include <Storages/IStorage.h>
 #include <DataTypes/ObjectUtils.h>
@@ -25,6 +24,16 @@ StorageSnapshot::StorageSnapshot(
     : storage(storage_)
     , metadata(std::move(metadata_))
     , virtual_columns(storage_.getVirtualsDescription())
+{
+}
+
+StorageSnapshot::StorageSnapshot(
+    const IStorage & storage_,
+    StorageMetadataPtr metadata_,
+    VirtualsDescriptionPtr virtual_columns_)
+    : storage(storage_)
+    , metadata(std::move(metadata_))
+    , virtual_columns(std::move(virtual_columns_))
 {
 }
 

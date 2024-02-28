@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTreeVirtualColumns.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -57,7 +58,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     /// Add lightweight delete filtering step
     if (extras.reader_settings.apply_deleted_mask && read_info->data_part->hasLightweightDelete())
-        new_readers.prewhere.push_back(create_reader({LightweightDeleteDescription::FILTER_COLUMN}));
+        new_readers.prewhere.push_back(create_reader({{RowExistsColumn::name, RowExistsColumn::type}}));
 
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
         new_readers.prewhere.push_back(create_reader(pre_columns_per_step));

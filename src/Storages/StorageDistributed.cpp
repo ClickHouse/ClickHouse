@@ -19,6 +19,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Columns/ColumnConst.h>
 
@@ -30,6 +31,7 @@
 #include <Common/randomSeed.h>
 #include <Common/formatReadable.h>
 #include <Common/CurrentMetrics.h>
+#include "Storages/StorageInMemoryMetadata.h"
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -108,7 +110,6 @@
 
 #include <memory>
 #include <filesystem>
-#include <optional>
 #include <cassert>
 
 
@@ -290,22 +291,18 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
 StorageDistributed::~StorageDistributed() = default;
 
 
-NamesAndTypesList StorageDistributed::getVirtuals() const
+VirtualColumnsDescription StorageDistributed::createVirtuals()
 {
-    /// NOTE This is weird. Most of these virtual columns are part of MergeTree
+    /// NOTE: This is weird.
+    /// Most of these virtual columns are part of MergeTree
     /// tables info. But Distributed is general-purpose engine.
-    return NamesAndTypesList{
-        NameAndTypePair("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
-        NameAndTypePair("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
-        NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
-        NameAndTypePair("_part_uuid", std::make_shared<DataTypeUUID>()),
-        NameAndTypePair("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
-        NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
-        NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
-        NameAndTypePair("_row_exists", std::make_shared<DataTypeUInt8>()),
-        NameAndTypePair(BlockNumberColumn::name, BlockNumberColumn::type),
-        NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()), /// deprecated
-    };
+    StorageInMemoryMetadata metadata;
+    auto desc = MergeTreeData::createVirtuals(metadata);
+
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_shard_num", std::make_shared<DataTypeUInt32>(), "deprecated");
+
+    return desc;
 }
 
 StorageDistributed::StorageDistributed(
@@ -354,6 +351,7 @@ StorageDistributed::StorageDistributed(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals());
 
     if (sharding_key_)
     {

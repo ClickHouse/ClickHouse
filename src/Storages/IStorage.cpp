@@ -38,7 +38,7 @@ IStorage::IStorage(StorageID storage_id_)
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
 {
     /// Virtual column maybe overridden by real column
-    return !metadata_snapshot->getColumns().has(column_name) && getVirtuals().contains(column_name);
+    return !metadata_snapshot->getColumns().has(column_name) && virtuals.get()->has(column_name);
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(

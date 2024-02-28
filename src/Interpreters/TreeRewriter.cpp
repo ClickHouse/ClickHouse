@@ -56,6 +56,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageJoin.h>
 #include <Common/checkStackSize.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageView.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -990,8 +991,8 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
     {
         auto options = GetColumnsOptions(add_special ? GetColumnsOptions::All : GetColumnsOptions::AllPhysical);
         options.withExtendedObjects();
-        if (storage->supportsSubcolumns())
-            options.withSubcolumns();
+        options.withSubcolumns(storage->supportsSubcolumns());
+        options.withVirtuals();
 
         auto columns_from_storage = storage_snapshot->getColumns(options);
 
@@ -1109,16 +1110,16 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         const auto & partition_desc = storage_snapshot->metadata->getPartitionKey();
         if (partition_desc.expression)
         {
-            auto partition_source_columns = partition_desc.expression->getRequiredColumns();
-            partition_source_columns.push_back("_part");
-            partition_source_columns.push_back("_partition_id");
-            partition_source_columns.push_back("_part_uuid");
-            partition_source_columns.push_back("_partition_value");
+            auto partition_columns = partition_desc.expression->getRequiredColumns();
+            NameSet partition_columns_set(partition_columns.begin(), partition_columns.end());
+
+            const auto & parititon_virtuals = MergeTreeData::virtuals_useful_for_filter;
+            partition_columns_set.insert(parititon_virtuals.begin(), parititon_virtuals.end());
+
             optimize_trivial_count = true;
             for (const auto & required_column : required)
             {
-                if (std::find(partition_source_columns.begin(), partition_source_columns.end(), required_column)
-                    == partition_source_columns.end())
+                if (partition_columns_set.contains(required_column))
                 {
                     optimize_trivial_count = false;
                     break;
@@ -1129,7 +1130,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
     NameSet unknown_required_source_columns = required;
 
-    for (NamesAndTypesList::iterator it = source_columns.begin(); it != source_columns.end();)
+    for (auto it = source_columns.begin(); it != source_columns.end();)
     {
         const String & column_name = it->name;
         unknown_required_source_columns.erase(column_name);
@@ -1141,32 +1142,14 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     }
 
     has_virtual_shard_num = false;
-    /// If there are virtual columns among the unknown columns. Remove them from the list of unknown and add
-    /// in columns list, so that when further processing they are also considered.
-    if (storage)
+    if (is_remote_storage)
     {
-        const auto storage_virtuals = storage->getVirtuals();
-        for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
+        for (const auto & column : *storage_snapshot->virtual_columns)
         {
-            auto column = storage_virtuals.tryGetByName(*it);
-            if (column)
+            if (column.name == "_shard_num" && storage->isVirtualColumn("_shard_num", storage_snapshot->getMetadataForQuery()))
             {
-                source_columns.push_back(*column);
-                it = unknown_required_source_columns.erase(it);
-            }
-            else
-                ++it;
-        }
-
-        if (is_remote_storage)
-        {
-            for (const auto & name_type : storage_virtuals)
-            {
-                if (name_type.name == "_shard_num" && storage->isVirtualColumn("_shard_num", storage_snapshot->getMetadataForQuery()))
-                {
-                    has_virtual_shard_num = true;
-                    break;
-                }
+                has_virtual_shard_num = true;
+                break;
             }
         }
     }

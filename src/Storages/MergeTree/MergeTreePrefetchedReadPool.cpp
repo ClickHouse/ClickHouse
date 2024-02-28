@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTreeVirtualColumns.h>
 #include <base/getThreadId.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
@@ -375,7 +376,7 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
             update_stat_for_column(column.name);
 
         if (reader_settings.apply_deleted_mask && read_info.data_part->hasLightweightDelete())
-            update_stat_for_column(LightweightDeleteDescription::FILTER_COLUMN.name);
+            update_stat_for_column(RowExistsColumn::name);
 
         for (const auto & pre_columns : read_info.task_columns.pre_columns)
             for (const auto & column : pre_columns)

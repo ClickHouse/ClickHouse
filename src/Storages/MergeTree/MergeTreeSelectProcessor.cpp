@@ -48,7 +48,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
         {
             .type = PrewhereExprStep::Filter,
             .actions = nullptr,
-            .filter_column_name = LightweightDeleteDescription::FILTER_COLUMN.name,
+            .filter_column_name = RowExistsColumn::name,
             .remove_filter_column = true,
             .need_filter = true,
             .perform_alter_conversions = true,
