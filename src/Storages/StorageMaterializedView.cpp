@@ -72,14 +72,14 @@ StorageMaterializedView::StorageMaterializedView(
     ContextPtr local_context,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
-    bool attach_,
+    LoadingStrictnessLevel mode,
     const String & comment)
     : IStorage(table_id_), WithMutableContext(local_context->getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     if (query.sql_security)
-        storage_metadata.setDefiner(query.sql_security->as<ASTSQLSecurity &>());
+        storage_metadata.setSQLSecurity(query.sql_security->as<ASTSQLSecurity &>());
 
     if (storage_metadata.sql_security_type == SQLSecurityType::INVOKER)
         throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "SQL SECURITY INVOKER can't be specified for MATERIALIZED VIEW");
@@ -124,7 +124,7 @@ StorageMaterializedView::StorageMaterializedView(
     {
         target_table_id = query.to_table_id;
     }
-    else if (attach_)
+    else if (LoadingStrictnessLevel::ATTACH <= mode)
     {
         /// If there is an ATTACH request, then the internal table must already be created.
         target_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()), query.to_inner_uuid);
@@ -157,7 +157,7 @@ StorageMaterializedView::StorageMaterializedView(
             *this,
             getContext(),
             *query.refresh_strategy);
-        refresh_on_start = !attach_ && !query.is_create_empty;
+        refresh_on_start = mode < LoadingStrictnessLevel::ATTACH && !query.is_create_empty;
     }
 }
 
@@ -657,7 +657,7 @@ void registerStorageMaterializedView(StorageFactory & factory)
         /// Pass local_context here to convey setting for inner table
         return std::make_shared<StorageMaterializedView>(
             args.table_id, args.getLocalContext(), args.query,
-            args.columns, args.attach, args.comment);
+            args.columns, args.mode, args.comment);
     });
 }
 

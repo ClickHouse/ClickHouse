@@ -486,13 +486,13 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
         ast_create.setDatabase(database.getDatabaseName());
 
         StoragePtr view = createTableFromAST(ast_create, database.getDatabaseName(),
-                                             database.getTableDataPath(ast_create), context, true).second;
+                                             database.getTableDataPath(ast_create), context, LoadingStrictnessLevel::FORCE_RESTORE).second;
         database.createTable(context, ast_create.getTable(), view, ast);
         ASTPtr ast_upper = ast_create.clone();
         auto & ast_create_upper = ast_upper->as<ASTCreateQuery &>();
         ast_create_upper.setTable(Poco::toUpper(view_name));
         StoragePtr view_upper = createTableFromAST(ast_create_upper, database.getDatabaseName(),
-                                             database.getTableDataPath(ast_create_upper), context, true).second;
+                                             database.getTableDataPath(ast_create_upper), context, LoadingStrictnessLevel::FORCE_RESTORE).second;
 
         database.createTable(context, ast_create_upper.getTable(), view_upper, ast_upper);
 

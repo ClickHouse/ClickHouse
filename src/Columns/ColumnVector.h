@@ -179,7 +179,7 @@ public:
 
     void reserve(size_t n) override
     {
-        data.reserve(n);
+        data.reserve_exact(n);
     }
 
     void shrinkToFit() override

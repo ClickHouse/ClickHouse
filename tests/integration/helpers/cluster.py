@@ -70,6 +70,11 @@ CLICKHOUSE_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.log"
 
 CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.log"
 
+# Minimum version we use in integration tests to check compatibility with old releases
+# Keep in mind that we only support upgrading between releases that are at most 1 year different.
+# This means that this minimum need to be, at least, 1 year older than the current release
+CLICKHOUSE_CI_MIN_TESTED_VERSION = "22.8"
+
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
@@ -104,8 +109,8 @@ def run_and_check(
     res = subprocess.run(
         args, stdout=stdout, stderr=stderr, env=env, shell=shell, timeout=timeout
     )
-    out = res.stdout.decode("utf-8")
-    err = res.stderr.decode("utf-8")
+    out = res.stdout.decode("utf-8", "ignore")
+    err = res.stderr.decode("utf-8", "ignore")
     # check_call(...) from subprocess does not print stderr, so we do it manually
     for outline in out.splitlines():
         logging.debug(f"Stdout:{outline}")
