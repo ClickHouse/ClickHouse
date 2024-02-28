@@ -1,3 +1,4 @@
+#include <memory>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -20,6 +21,16 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <IO/Operators.h>
+#include "Analyzer/ConstantNode.h"
+#include "Analyzer/FunctionNode.h"
+#include "Analyzer/IQueryTreeNode.h"
+#include "Analyzer/Identifier.h"
+#include "Analyzer/IdentifierNode.h"
+#include "Analyzer/QueryNode.h"
+#include "Analyzer/Utils.h"
+#include <Functions/FunctionFactory.h>
+#include <Poco/Logger.h>
+#include "Common/logger_useful.h"
 
 
 namespace DB
@@ -888,10 +899,10 @@ static void addConstantToWithClause(const ASTPtr & query, const String & column_
 
 /// @expected_columns and @available_columns contain descriptions
 /// of extended Object columns.
-void replaceMissedSubcolumnsByConstants(
+NamesAndTypes calculateMissedSubcolumns(
     const ColumnsDescription & expected_columns,
-    const ColumnsDescription & available_columns,
-    ASTPtr query)
+    const ColumnsDescription & available_columns
+)
 {
     NamesAndTypes missed_names_types;
 
@@ -928,6 +939,18 @@ void replaceMissedSubcolumnsByConstants(
             [](const auto & lhs, const auto & rhs) { return lhs.name < rhs.name; });
     }
 
+    return missed_names_types;
+}
+
+/// @expected_columns and @available_columns contain descriptions
+/// of extended Object columns.
+void replaceMissedSubcolumnsByConstants(
+    const ColumnsDescription & expected_columns,
+    const ColumnsDescription & available_columns,
+    ASTPtr query)
+{
+    NamesAndTypes missed_names_types = calculateMissedSubcolumns(expected_columns, available_columns);
+
     if (missed_names_types.empty())
         return;
 
@@ -938,6 +961,52 @@ void replaceMissedSubcolumnsByConstants(
     for (const auto & [name, type] : missed_names_types)
         if (identifiers.contains(name))
             addConstantToWithClause(query, name, type);
+}
+
+/// @expected_columns and @available_columns contain descriptions
+/// of extended Object columns.
+void replaceMissedSubcolumnsByConstants(
+    const ColumnsDescription & expected_columns,
+    const ColumnsDescription & available_columns,
+    QueryTreeNodePtr & query,
+    const ContextPtr & context [[maybe_unused]])
+{
+    NamesAndTypes missed_names_types = calculateMissedSubcolumns(expected_columns, available_columns);
+
+    if (missed_names_types.empty())
+        return;
+
+    auto * query_node = query->as<QueryNode>();
+    if (!query_node)
+        return;
+
+    auto table_expression = extractLeftTableExpression(query_node->getJoinTree());
+
+    auto & with_nodes = query_node->getWith().getNodes();
+
+    std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
+    for (const auto & [name, type] : missed_names_types)
+    {
+        auto constant = std::make_shared<ConstantNode>(type->getDefault(), type);
+        constant->setAlias(table_expression->getAlias() + name);
+        // auto materialize = std::make_shared<FunctionNode>("materialize");
+
+        // auto function = FunctionFactory::instance().get("materialize", context);
+        // materialize->getArguments().getNodes() = { constant };
+        // materialize->resolveAsFunction(function->build(materialize->getArgumentColumns()));
+        // materialize->setAlias(name);
+
+        with_nodes.push_back(constant);
+
+        auto id = std::make_shared<IdentifierNode>(Identifier(table_expression->getAlias() + name));
+        id->useFullNameInToAST();
+        column_name_to_node[name] = id;
+        LOG_DEBUG(&Poco::Logger::get("replaceMissedSubcolumnsByConstants"), "Name {} Expression\n{}", name, column_name_to_node[name]->dumpTree());
+    }
+
+    LOG_DEBUG(&Poco::Logger::get("replaceMissedSubcolumnsByConstants"), "Table expression\n{} ", table_expression->dumpTree());
+    replaceColumns(query, table_expression, column_name_to_node);
+    LOG_DEBUG(&Poco::Logger::get("replaceMissedSubcolumnsByConstants"), "Result:\n{} ", query->dumpTree());
 }
 
 Field FieldVisitorReplaceScalars::operator()(const Array & x) const

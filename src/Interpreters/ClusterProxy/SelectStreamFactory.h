@@ -7,6 +7,7 @@
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageSnapshot.h>
+#include "Analyzer/IQueryTreeNode.h"
 
 namespace DB
 {
@@ -83,10 +84,35 @@ public:
         bool parallel_replicas_enabled,
         AdditionalShardFilterGenerator shard_filter_generator);
 
+    void createForShard(
+        const Cluster::ShardInfo & shard_info,
+        const QueryTreeNodePtr & query_tree,
+        const StorageID & main_table,
+        const ASTPtr & table_func_ptr,
+        ContextPtr context,
+        std::vector<QueryPlanPtr> & local_plans,
+        Shards & remote_shards,
+        UInt32 shard_count,
+        bool parallel_replicas_enabled,
+        AdditionalShardFilterGenerator shard_filter_generator);
+
     const Block header;
     const ColumnsDescriptionByShardNum objects_by_shard;
     const StorageSnapshotPtr storage_snapshot;
     QueryProcessingStage::Enum processed_stage;
+
+private:
+    void createForShardImpl(
+        const Cluster::ShardInfo & shard_info,
+        const ASTPtr & query_ast,
+        const StorageID & main_table,
+        const ASTPtr & table_func_ptr,
+        ContextPtr context,
+        std::vector<QueryPlanPtr> & local_plans,
+        Shards & remote_shards,
+        UInt32 shard_count,
+        bool parallel_replicas_enabled,
+        AdditionalShardFilterGenerator shard_filter_generator);
 };
 
 }

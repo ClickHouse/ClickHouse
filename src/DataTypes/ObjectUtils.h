@@ -3,6 +3,8 @@
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/FieldVisitors.h>
+#include "Analyzer/IQueryTreeNode.h"
+#include "Interpreters/Context_fwd.h"
 #include <Storages/ColumnsDescription.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -13,6 +15,9 @@ namespace DB
 
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+
+class IQueryTreeNode;
+using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 
 /// Returns number of dimensions in Array type. 0 if type is not array.
 size_t getNumberOfDimensions(const IDataType & type);
@@ -96,6 +101,12 @@ void replaceMissedSubcolumnsByConstants(
     const ColumnsDescription & expected_columns,
     const ColumnsDescription & available_columns,
     ASTPtr query);
+
+void replaceMissedSubcolumnsByConstants(
+    const ColumnsDescription & expected_columns,
+    const ColumnsDescription & available_columns,
+    QueryTreeNodePtr & query,
+    const ContextPtr & context);
 
 /// Visitor that keeps @num_dimensions_to_keep dimensions in arrays
 /// and replaces all scalars or nested arrays to @replacement at that level.

@@ -30,6 +30,7 @@
 #include <Common/randomSeed.h>
 #include <Common/formatReadable.h>
 #include <Common/CurrentMetrics.h>
+#include "Analyzer/IQueryTreeNode.h"
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -813,7 +814,8 @@ void StorageDistributed::read(
     const size_t /*num_streams*/)
 {
     Block header;
-    ASTPtr query_ast;
+
+    SelectQueryInfo modified_query_info = query_info;
 
     if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
@@ -821,7 +823,7 @@ void StorageDistributed::read(
         if (!remote_table_function_ptr)
             remote_storage_id = StorageID{remote_database, remote_table};
 
-        auto query_tree_distributed = buildQueryTreeDistributed(query_info,
+        auto query_tree_distributed = buildQueryTreeDistributed(modified_query_info,
             storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr);
@@ -831,20 +833,24 @@ void StorageDistributed::read(
           */
         for (auto & column : header)
             column.column = column.column->convertToFullColumnIfConst();
-        query_ast = queryNodeToDistributedSelectQuery(query_tree_distributed);
+        modified_query_info.query = queryNodeToDistributedSelectQuery(query_tree_distributed);
+
+        modified_query_info.query_tree = std::move(query_tree_distributed);
     }
     else
     {
-        header = InterpreterSelectQuery(query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
-        query_ast = query_info.query;
+        header = InterpreterSelectQuery(modified_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
     }
 
-    const auto & modified_query_ast = ClusterProxy::rewriteSelectQuery(
-        local_context, query_ast,
-        remote_database, remote_table, remote_table_function_ptr);
+    if (!local_context->getSettingsRef().allow_experimental_analyzer)
+    {
+        modified_query_info.query = ClusterProxy::rewriteSelectQuery(
+            local_context, modified_query_info.query,
+            remote_database, remote_table, remote_table_function_ptr);
+    }
 
     /// Return directly (with correct header) if no shard to query.
-    if (query_info.getCluster()->getShardsInfo().empty())
+    if (modified_query_info.getCluster()->getShardsInfo().empty())
     {
         if (local_context->getSettingsRef().allow_experimental_analyzer)
             return;
@@ -872,7 +878,7 @@ void StorageDistributed::read(
     const auto & settings = local_context->getSettingsRef();
 
     ClusterProxy::AdditionalShardFilterGenerator additional_shard_filter_generator;
-    if (local_context->canUseParallelReplicasCustomKey(*query_info.getCluster()))
+    if (local_context->canUseParallelReplicasCustomKey(*modified_query_info.getCluster()))
     {
         if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *local_context))
         {
@@ -881,7 +887,7 @@ void StorageDistributed::read(
                  column_description = this->getInMemoryMetadataPtr()->columns,
                  custom_key_type = settings.parallel_replicas_custom_key_filter_type.value,
                  context = local_context,
-                 replica_count = query_info.getCluster()->getShardsInfo().front().per_replica_pools.size()](uint64_t replica_num) -> ASTPtr
+                 replica_count = modified_query_info.getCluster()->getShardsInfo().front().per_replica_pools.size()](uint64_t replica_num) -> ASTPtr
             {
                 return getCustomKeyFilterForParallelReplica(
                     replica_count, replica_num - 1, my_custom_key_ast, custom_key_type, column_description, context);
@@ -897,12 +903,10 @@ void StorageDistributed::read(
         remote_table_function_ptr,
         select_stream_factory,
         log,
-        modified_query_ast,
         local_context,
-        query_info,
+        modified_query_info,
         sharding_key_expr,
         sharding_key_column_name,
-        query_info.cluster,
         distributed_settings,
         additional_shard_filter_generator);
 

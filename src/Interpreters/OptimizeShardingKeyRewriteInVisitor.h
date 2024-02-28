@@ -2,6 +2,7 @@
 
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/Cluster.h>
+#include "Analyzer/IQueryTreeNode.h"
 
 namespace DB
 {
@@ -43,5 +44,7 @@ struct OptimizeShardingKeyRewriteInMatcher
 };
 
 using OptimizeShardingKeyRewriteInVisitor = InDepthNodeVisitor<OptimizeShardingKeyRewriteInMatcher, true>;
+
+void optimizeShardingKeyRewriteIn(QueryTreeNodePtr & node, OptimizeShardingKeyRewriteInVisitor::Data data, ContextPtr context);
 
 }
