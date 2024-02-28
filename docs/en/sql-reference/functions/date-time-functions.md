@@ -394,8 +394,7 @@ Result:
 
 ## toYear
 
-Converts a date or date with time to the year number (AD) as `UInt16` value.
-
+Returns the year component (AD) of a date or date with time.
 
 **Syntax**
 
@@ -431,7 +430,7 @@ Result:
 
 ## toQuarter
 
-Converts a date or date with time to the quarter number (1-4) as `UInt8` value.
+Returns the quarter (1-4) of a date or date with time.
 
 **Syntax**
 
@@ -465,10 +464,9 @@ Result:
 └──────────────────────────────────────────────┘
 ```
 
-
 ## toMonth
 
-Converts a date or date with time to the month number (1-12) as `UInt8` value.
+Returns the month component (1-12) of a date or date with time.
 
 **Syntax**
 
@@ -504,7 +502,7 @@ Result:
 
 ## toDayOfYear
 
-Converts a date or date with time to the number of the day of the year (1-366) as `UInt16` value.
+Returns the number of the day within the year (1-366) of a date or date with time.
 
 **Syntax**
 
@@ -540,7 +538,7 @@ Result:
 
 ## toDayOfMonth
 
-Converts a date or date with time to the number of the day in the month (1-31) as `UInt8` value.
+Returns the number of the day within the month (1-31) of a date or date with time.
 
 **Syntax**
 
@@ -576,7 +574,7 @@ Result:
 
 ## toDayOfWeek
 
-Converts a date or date with time to the number of the day in the week as `UInt8` value.
+Returns the number of the day within the week of a date or date with time.
 
 The two-argument form of `toDayOfWeek()` enables you to specify whether the week starts on Monday or Sunday, and whether the return value should be in the range from 0 to 6 or 1 to 7. If the mode argument is omitted, the default mode is 0. The time zone of the date can be specified as the third argument.
 
@@ -627,7 +625,7 @@ Result:
 
 ## toHour
 
-Converts a date with time to the number of the hour in 24-hour time (0-23) as `UInt8` value.
+Returns the hour component (0-24) of a date with time.
 
 Assumes that if clocks are moved ahead, it is by one hour and occurs at 2 a.m., and if clocks are moved back, it is by one hour and occurs at 3 a.m. (which is not always exactly when it occurs - it depends on the timezone).
 
@@ -641,7 +639,7 @@ Alias: `HOUR`
 
 **Arguments**
 
-- `value` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
+- `value` - a [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
 
 **Returned value**
 
@@ -665,7 +663,7 @@ Result:
 
 ## toMinute
 
-Converts a date with time to the number of the minute of the hour (0-59) as `UInt8` value.
+Returns the minute componentn (0-59) a date with time.
 
 **Syntax**
 
@@ -677,7 +675,7 @@ Alias: `MINUTE`
 
 **Arguments**
 
-- `value` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
+- `value` - a [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
 
 **Returned value**
 
@@ -701,7 +699,7 @@ Result:
 
 ## toSecond
 
-Converts a date with time to the second in the minute (0-59) as `UInt8` value. Leap seconds are not considered.
+Returns the second component (0-59) of a date with time. Leap seconds are not considered.
 
 **Syntax**
 
@@ -713,7 +711,7 @@ Alias: `SECOND`
 
 **Arguments**
 
-- `value` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
+- `value` - a [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
 
 **Returned value**
 
@@ -737,7 +735,7 @@ Result:
 
 ## toMillisecond
 
-Similar to the `toSecond` function, it converts a date with time to the milliseconds in the minute of the time as `UInt16` value.
+Returns the millisecond component (0-999) of a date with time.
 
 **Syntax**
 
@@ -747,7 +745,7 @@ toMillisecond(value)
 
 *Arguments**
 
-- `value` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
+- `value` - [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
 
 Alias: `MILLISECOND`
 

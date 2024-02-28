@@ -9,7 +9,6 @@
 #include <string>
 #include <type_traits>
 
-#include <iostream>
 #define DATE_SECONDS_PER_DAY 86400 /// Number of seconds in a day, 60 * 60 * 24
 
 #define DATE_LUT_MIN_YEAR 1900 /// 1900 since majority of financial organizations consider 1900 as an initial year.
@@ -281,9 +280,9 @@ private:
         static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
         assert(divisor > 0);
 
-        if (likely(offset_is_whole_number_of_hours_during_epoch))
+        if (offset_is_whole_number_of_hours_during_epoch) [[likely]]
         {
-            if (likely(x >= 0))
+            if (x >= 0) [[likely]]
                 return static_cast<DateOrTime>(x / divisor * divisor);
 
             /// Integer division for negative numbers rounds them towards zero (up).
@@ -577,10 +576,10 @@ public:
 
     unsigned toSecond(Time t) const
     {
-        if (likely(offset_is_whole_number_of_minutes_during_epoch))
+        if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
         {
             Time res = t % 60;
-            if (likely(res >= 0))
+            if (res >= 0) [[likely]]
                 return static_cast<unsigned>(res);
             return static_cast<unsigned>(res) + 60;
         }
@@ -597,14 +596,14 @@ public:
     unsigned toMillisecond(Time t) const
     {
         if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
-            return (t%60)*1000;
+            return (t % 60) * 1000;
 
         LUTIndex index = findIndex(t);
         Time time = t - lut[index].date;
 
         if (time >= lut[index].time_at_offset_change())
             time += lut[index].amount_of_offset_change();
-        return (time%60)*1000;
+        return (time % 60) * 1000;
     }
 
     unsigned toMinute(Time t) const
@@ -1136,9 +1135,9 @@ public:
     DateOrTime toStartOfMinuteInterval(DateOrTime t, UInt64 minutes) const
     {
         Int64 divisor = 60 * minutes;
-        if (likely(offset_is_whole_number_of_minutes_during_epoch))
+        if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
         {
-            if (likely(t >= 0))
+            if (t >= 0) [[likely]]
                 return static_cast<DateOrTime>(t / divisor * divisor);
             return static_cast<DateOrTime>((t + 1 - divisor) / divisor * divisor);
         }
@@ -1353,7 +1352,7 @@ public:
 
     UInt8 saturateDayOfMonth(Int16 year, UInt8 month, UInt8 day_of_month) const
     {
-        if (likely(day_of_month <= 28))
+        if (day_of_month <= 28) [[likely]]
             return day_of_month;
 
         UInt8 days_in_month = daysInMonth(year, month);
