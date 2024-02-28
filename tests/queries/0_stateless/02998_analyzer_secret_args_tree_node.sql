@@ -1,3 +1,5 @@
+-- Tags: no-fasttest: encrypt function doesn't exist in the fastest build
+
 -- { echoOn }
 SET allow_experimental_analyzer = 1;
 
