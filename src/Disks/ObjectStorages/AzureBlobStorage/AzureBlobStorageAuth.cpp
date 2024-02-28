@@ -60,8 +60,8 @@ AzureBlobStorageEndpoint processAzureBlobStorageEndpoint(const Poco::Util::Abstr
         String endpoint = config.getString(config_prefix + ".endpoint");
 
         /// For some authentication methods account name is not present in the endpoint
-        /// 'endpoint_contains_account_name' bool is used to understand how to split the endpoint (default : true)
-        bool endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", true);
+        /// 'endpoint_contains_account_name' bool is used to understand how to split the endpoint (default : false)
+        bool endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", false);
 
         size_t pos = endpoint.find("//");
         if (pos == std::string::npos)
@@ -76,48 +76,41 @@ AzureBlobStorageEndpoint processAzureBlobStorageEndpoint(const Poco::Util::Abstr
             storage_url = endpoint.substr(0,acc_pos_begin);
             size_t acc_pos_end = endpoint.find('/',acc_pos_begin+1);
 
-            if (acc_pos_end != std::string::npos)
+            if (acc_pos_end == std::string::npos)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected container_name in endpoint");
+
+            account_name = endpoint.substr(acc_pos_begin+1,(acc_pos_end-acc_pos_begin)-1);
+
+            size_t cont_pos_end = endpoint.find('/', acc_pos_end+1);
+
+            if (cont_pos_end != std::string::npos)
             {
-                account_name = endpoint.substr(acc_pos_begin+1,(acc_pos_end-acc_pos_begin)-1);
-
-                size_t cont_pos_end = endpoint.find('/', acc_pos_end+1);
-
-                if (cont_pos_end != std::string::npos)
-                {
-                    container_name = endpoint.substr(acc_pos_end+1,(cont_pos_end-acc_pos_end)-1);
-                    prefix = endpoint.substr(cont_pos_end+1);
-                }
-                else
-                {
-                    container_name = endpoint.substr(acc_pos_end+1);
-                }
+                container_name = endpoint.substr(acc_pos_end+1,(cont_pos_end-acc_pos_end)-1);
+                prefix = endpoint.substr(cont_pos_end+1);
             }
             else
             {
-                account_name = endpoint.substr(acc_pos_begin+1);
+                container_name = endpoint.substr(acc_pos_end+1);
             }
         }
         else
         {
             size_t cont_pos_begin = endpoint.find('/', pos+2);
-            if (cont_pos_begin != std::string::npos)
-            {
-                storage_url = endpoint.substr(0,cont_pos_begin);
-                size_t cont_pos_end = endpoint.find('/',cont_pos_begin+1);
 
-                if (cont_pos_end != std::string::npos)
-                {
-                    container_name = endpoint.substr(cont_pos_begin+1,(cont_pos_end-cont_pos_begin)-1);
-                    prefix = endpoint.substr(cont_pos_end+1);
-                }
-                else
-                {
-                    container_name = endpoint.substr(cont_pos_begin+1);
-                }
+            if (cont_pos_begin == std::string::npos)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected container_name in endpoint");
+
+            storage_url = endpoint.substr(0,cont_pos_begin);
+            size_t cont_pos_end = endpoint.find('/',cont_pos_begin+1);
+
+            if (cont_pos_end != std::string::npos)
+            {
+                container_name = endpoint.substr(cont_pos_begin+1,(cont_pos_end-cont_pos_begin)-1);
+                prefix = endpoint.substr(cont_pos_end+1);
             }
             else
             {
-                storage_url = endpoint;
+                container_name = endpoint.substr(cont_pos_begin+1);
             }
         }
     }

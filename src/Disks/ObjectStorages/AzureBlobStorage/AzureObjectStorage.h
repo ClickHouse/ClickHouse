@@ -130,7 +130,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    String getObjectsNamespace() const override { return container ; }
+    String getObjectsNamespace() const override { return object_namespace ; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
         const std::string & new_namespace,
@@ -154,7 +154,7 @@ private:
     /// client used to access the files in the Blob Storage cloud
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
     MultiVersion<AzureObjectStorageSettings> settings;
-    const String container;
+    const String object_namespace; /// container + prefix
 
     LoggerPtr log;
 };

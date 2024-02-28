@@ -623,6 +623,7 @@ def test_endpoint(cluster):
     SETTINGS disk = disk(
     type = azure_blob_storage,
     endpoint = 'http://azurite1:{port}/{account_name}/{container_name}/{data_prefix}',
+    endpoint_contains_account_name = 'true',
     account_name = 'devstoreaccount1',
     account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
     container_already_exists = 1,
@@ -652,6 +653,7 @@ def test_endpoint_new_container(cluster):
     SETTINGS disk = disk(
     type = azure_blob_storage,
     endpoint = 'http://azurite1:{port}/{account_name}/{container_name}/{data_prefix}',
+    endpoint_contains_account_name = 'true',
     account_name = 'devstoreaccount1',
     account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
     skip_access_check = 0);
@@ -679,6 +681,7 @@ def test_endpoint_without_prefix(cluster):
     SETTINGS disk = disk(
     type = azure_blob_storage,
     endpoint = 'http://azurite1:{port}/{account_name}/{container_name}',
+    endpoint_contains_account_name = 'true',
     account_name = 'devstoreaccount1',
     account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
     skip_access_check = 0);
@@ -688,3 +691,58 @@ def test_endpoint_without_prefix(cluster):
     )
 
     assert 10 == int(node.query("SELECT count() FROM test"))
+
+def test_endpoint_error_check(cluster):
+    node = cluster.instances[NODE_NAME]
+    account_name = "devstoreaccount1"
+    port = cluster.azurite_port
+
+    query = f"""
+    DROP TABLE IF EXISTS test SYNC;
+
+    CREATE TABLE test (a Int32)
+    ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS disk = disk(
+    type = azure_blob_storage,
+    endpoint = 'http://azurite1:{port}/{account_name}',
+    endpoint_contains_account_name = 'true',
+    account_name = 'devstoreaccount1',
+    account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
+    skip_access_check = 0);
+    """
+
+    expected_err_msg = "Expected container_name in endpoint"
+    assert expected_err_msg in azure_query(node, query, expect_error="true")
+
+    query = f"""
+    DROP TABLE IF EXISTS test SYNC;
+
+    CREATE TABLE test (a Int32)
+    ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS disk = disk(
+    type = azure_blob_storage,
+    endpoint = 'http://azurite1:{port}',
+    endpoint_contains_account_name = 'true',
+    account_name = 'devstoreaccount1',
+    account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
+    skip_access_check = 0);
+    """
+
+    expected_err_msg = "Expected account_name in endpoint"
+    assert expected_err_msg in azure_query(node, query, expect_error="true")
+
+    query = f"""
+    DROP TABLE IF EXISTS test SYNC;
+
+    CREATE TABLE test (a Int32)
+    ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS disk = disk(
+    type = azure_blob_storage,
+    endpoint = 'http://azurite1:{port}',
+    account_name = 'devstoreaccount1',
+    account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
+    skip_access_check = 0);
+    """
+
+    expected_err_msg = "Expected container_name in endpoint"
+    assert expected_err_msg in azure_query(node, query, expect_error="true")
