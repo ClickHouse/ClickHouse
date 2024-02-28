@@ -133,7 +133,7 @@ public:
         auto root_offsets = ColumnArray::ColumnOffsets::create();
         auto & root_offsets_data = root_offsets->getData();
 
-        for (size_t i = 0; i < root_decompose_offsets.size(); i++)
+        for (auto root_decompose_offset : root_decompose_offsets)
         {
             //extract residual component of the decomposed series
             ColumnArray::Offset residual_start_offset = nested_decompose_offsets[prev_decompose_offset + 1];
@@ -199,7 +199,7 @@ public:
 
             root_offsets_data.push_back(res_col_offsets->size());
 
-            prev_decompose_offset = root_decompose_offsets[i];
+            prev_decompose_offset = root_decompose_offset;
         }
 
         ColumnArray::MutablePtr nested_array_col = ColumnArray::create(std::move(res), std::move(res_col_offsets));
