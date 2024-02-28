@@ -550,6 +550,7 @@ public:
     FutureMulti asyncMulti(const Coordination::Requests & ops);
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops);
+    FutureMulti asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops);
 
     using FutureSync = std::future<Coordination::SyncResponse>;
     FutureSync asyncSync(const std::string & path);
