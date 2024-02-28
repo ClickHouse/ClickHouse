@@ -663,7 +663,7 @@ Result:
 
 ## toMinute
 
-Returns the minute componentn (0-59) a date with time.
+Returns the minute component (0-59) a date with time.
 
 **Syntax**
 
