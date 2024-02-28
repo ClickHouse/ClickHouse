@@ -7,6 +7,7 @@
 #include <Parsers/Kusto/ParserKQLOperators.h>
 #include <Parsers/Kusto/ParserKQLProject.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
+#include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 
@@ -44,7 +45,7 @@ bool ParserKQLExtend ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     int32_t round_bracket_count = 0;
     int32_t square_bracket_count = 0;
-    while (!npos->isEnd())
+    while (isValidKQLPos(npos))
     {
         if (npos->type == TokenType::OpeningRoundBracket)
             ++round_bracket_count;

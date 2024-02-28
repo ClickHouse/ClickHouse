@@ -25,6 +25,7 @@ CREATE TABLE buffer_ (key UInt64) Engine=Buffer(currentDatabase(), null_,
 
 SET max_memory_usage=10e6;
 SET max_block_size=100e3;
+SET max_insert_threads=1;
 
 -- Check that max_memory_usage is ignored only on flush and not on squash
 SET min_insert_block_size_bytes=9e6;

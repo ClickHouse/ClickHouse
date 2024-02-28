@@ -224,7 +224,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     auto res = ColumnFixedString::create(n);
 
     if (result_size_hint)
-        res->chars.reserve(result_size_hint > 0 ? result_size_hint * n : chars.size());
+        res->chars.reserve_exact(result_size_hint > 0 ? result_size_hint * n : chars.size());
 
     const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + col_size;

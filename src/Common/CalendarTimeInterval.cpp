@@ -16,26 +16,26 @@ CalendarTimeInterval::CalendarTimeInterval(const CalendarTimeInterval::Intervals
     {
         switch (kind.kind)
         {
-            case IntervalKind::Nanosecond:
-            case IntervalKind::Microsecond:
-            case IntervalKind::Millisecond:
+            case IntervalKind::Kind::Nanosecond:
+            case IntervalKind::Kind::Microsecond:
+            case IntervalKind::Kind::Millisecond:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sub-second intervals are not supported here");
 
-            case IntervalKind::Second:
-            case IntervalKind::Minute:
-            case IntervalKind::Hour:
-            case IntervalKind::Day:
-            case IntervalKind::Week:
+            case IntervalKind::Kind::Second:
+            case IntervalKind::Kind::Minute:
+            case IntervalKind::Kind::Hour:
+            case IntervalKind::Kind::Day:
+            case IntervalKind::Kind::Week:
                 seconds += val * kind.toAvgSeconds();
                 break;
 
-            case IntervalKind::Month:
+            case IntervalKind::Kind::Month:
                 months += val;
                 break;
-            case IntervalKind::Quarter:
+            case IntervalKind::Kind::Quarter:
                 months += val * 3;
                 break;
-            case IntervalKind::Year:
+            case IntervalKind::Kind::Year:
                 months += val * 12;
                 break;
         }
@@ -57,8 +57,8 @@ CalendarTimeInterval::Intervals CalendarTimeInterval::toIntervals() const
         }
         chassert(x == 0);
     };
-    greedy(months, {{IntervalKind::Year, 12}, {IntervalKind::Month, 1}});
-    greedy(seconds, {{IntervalKind::Week, 3600*24*7}, {IntervalKind::Day, 3600*24}, {IntervalKind::Hour, 3600}, {IntervalKind::Minute, 60}, {IntervalKind::Second, 1}});
+    greedy(months, {{IntervalKind::Kind::Year, 12}, {IntervalKind::Kind::Month, 1}});
+    greedy(seconds, {{IntervalKind::Kind::Week, 3600*24*7}, {IntervalKind::Kind::Day, 3600*24}, {IntervalKind::Kind::Hour, 3600}, {IntervalKind::Kind::Minute, 60}, {IntervalKind::Kind::Second, 1}});
     return res;
 }
 

@@ -54,7 +54,7 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
 QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);
 
 /// Extract table, table function, query, union from join tree.
-QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join = false);
+QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join = false, bool recursive = false);
 
 /// Extract left table expression from join tree.
 QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_node);

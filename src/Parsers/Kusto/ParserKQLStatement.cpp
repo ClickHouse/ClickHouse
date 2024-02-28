@@ -5,6 +5,7 @@
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSetQuery.h>
 
 namespace DB
@@ -79,7 +80,7 @@ bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         {
             ++paren_count;
             auto pos_start = pos;
-            while (!pos->isEnd())
+            while (isValidKQLPos(pos))
             {
                 if (pos->type == TokenType::ClosingRoundBracket)
                     --paren_count;

@@ -18,17 +18,18 @@ ARRAY, 10 rows, index_granularity = 8192, GRANULARITY = 1 million --> 1 granule,
 - Annoy: WHERE-type, EXPLAIN
 Expression ((Projection + Before ORDER BY))
   Limit (preliminary LIMIT (without OFFSET))
-    ReadFromMergeTree (default.tab_annoy)
-    Indexes:
-      PrimaryKey
-        Condition: true
-        Parts: 1/1
-        Granules: 1/1
-      Skip
-        Name: idx
-        Description: annoy GRANULARITY 100000000
-        Parts: 1/1
-        Granules: 1/1
+    Expression
+      ReadFromMergeTree (default.tab_annoy)
+      Indexes:
+        PrimaryKey
+          Condition: true
+          Parts: 1/1
+          Granules: 1/1
+        Skip
+          Name: idx
+          Description: annoy GRANULARITY 100000000
+          Parts: 1/1
+          Granules: 1/1
 - Annoy: ORDER-BY-type, EXPLAIN
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
@@ -48,17 +49,18 @@ Expression (Projection)
 - Usearch: WHERE-type, EXPLAIN
 Expression ((Projection + Before ORDER BY))
   Limit (preliminary LIMIT (without OFFSET))
-    ReadFromMergeTree (default.tab_usearch)
-    Indexes:
-      PrimaryKey
-        Condition: true
-        Parts: 1/1
-        Granules: 1/1
-      Skip
-        Name: idx
-        Description: usearch GRANULARITY 100000000
-        Parts: 1/1
-        Granules: 1/1
+    Expression
+      ReadFromMergeTree (default.tab_usearch)
+      Indexes:
+        PrimaryKey
+          Condition: true
+          Parts: 1/1
+          Granules: 1/1
+        Skip
+          Name: idx
+          Description: usearch GRANULARITY 100000000
+          Parts: 1/1
+          Granules: 1/1
 - Usearch: ORDER-BY-type, EXPLAIN
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
@@ -95,17 +97,18 @@ ARRAY vectors, 12 rows, index_granularity = 3, GRANULARITY = 2 --> 4 granules, 2
 - Annoy: WHERE-type, EXPLAIN
 Expression ((Projection + Before ORDER BY))
   Limit (preliminary LIMIT (without OFFSET))
-    ReadFromMergeTree (default.tab_annoy)
-    Indexes:
-      PrimaryKey
-        Condition: true
-        Parts: 1/1
-        Granules: 4/4
-      Skip
-        Name: idx
-        Description: annoy GRANULARITY 2
-        Parts: 1/1
-        Granules: 1/4
+    Expression
+      ReadFromMergeTree (default.tab_annoy)
+      Indexes:
+        PrimaryKey
+          Condition: true
+          Parts: 1/1
+          Granules: 4/4
+        Skip
+          Name: idx
+          Description: annoy GRANULARITY 2
+          Parts: 1/1
+          Granules: 1/4
 - Annoy: ORDER-BY-type, EXPLAIN
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
@@ -125,17 +128,18 @@ Expression (Projection)
 - Usearch: WHERE-type, EXPLAIN
 Expression ((Projection + Before ORDER BY))
   Limit (preliminary LIMIT (without OFFSET))
-    ReadFromMergeTree (default.tab_usearch)
-    Indexes:
-      PrimaryKey
-        Condition: true
-        Parts: 1/1
-        Granules: 4/4
-      Skip
-        Name: idx
-        Description: usearch GRANULARITY 2
-        Parts: 1/1
-        Granules: 1/4
+    Expression
+      ReadFromMergeTree (default.tab_usearch)
+      Indexes:
+        PrimaryKey
+          Condition: true
+          Parts: 1/1
+          Granules: 4/4
+        Skip
+          Name: idx
+          Description: usearch GRANULARITY 2
+          Parts: 1/1
+          Granules: 1/4
 - Usearch: ORDER-BY-type, EXPLAIN
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))

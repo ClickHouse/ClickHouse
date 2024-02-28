@@ -1,0 +1,92 @@
+-- test summarize --
+12	25	46	32.416666666666664	389
+Skilled Manual	5	26	36	30.2	151
+Professional	6	25	46	34.166666666666664	205
+Management abcd defg	1	33	33	33	33
+Skilled Manual	0
+Professional	2
+Management abcd defg	0
+Skilled Manual	36
+Professional	38
+Management abcd defg	33
+Skilled Manual	26
+Professional	25
+Management abcd defg	33
+Skilled Manual	30.2
+Professional	29.25
+Management abcd defg	33
+Skilled Manual	151
+Professional	117
+Management abcd defg	33
+4
+2
+40	2
+30	4
+20	6
+Skilled Manual	5
+Professional	6
+Management abcd defg	1
+-- make_list() --
+Skilled Manual	['Bachelors','Graduate Degree','High School','Partial College','Bachelors']
+Professional	['Graduate Degree','Partial College','Partial College','Partial College','Partial College','Partial College']
+Management abcd defg	['Bachelors']
+Skilled Manual	['Bachelors','Graduate Degree']
+Professional	['Graduate Degree','Partial College']
+Management abcd defg	['Bachelors']
+-- make_list_if() --
+Skilled Manual	['Edward','Christine']
+Professional	['Dalton','Angel']
+Management abcd defg	['Stephanie']
+Skilled Manual	['Edward']
+Professional	['Dalton']
+Management abcd defg	['Stephanie']
+-- make_set() --
+Skilled Manual	['Graduate Degree','High School','Partial College','Bachelors']
+Professional	['Graduate Degree','Partial College']
+Management abcd defg	['Bachelors']
+Skilled Manual	['Graduate Degree','Bachelors']
+Professional	['Graduate Degree','Partial College']
+Management abcd defg	['Bachelors']
+-- make_set_if() --
+Skilled Manual	['Partial College','High School']
+Professional	['Partial College']
+Management abcd defg	['Bachelors']
+Skilled Manual	['High School']
+Professional	['Partial College']
+Management abcd defg	['Bachelors']
+-- stdev() --
+6.855102059227432
+-- stdevif() --
+7.557189365836421
+-- binary_all_and --
+42
+-- binary_all_or --
+46
+-- binary_all_xor --
+4
+43.8
+25.55	30.5	43.8
+30.5
+35
+[25,35,45]
+-- Summarize following sort --
+Skilled Manual	5
+Professional	6
+Management abcd defg	1
+-- summarize with bin --
+0	1
+245000	2
+0	1
+245	2
+0	1
+245	2
+2015-10-12 00:00:00.000000000
+2016-10-12 00:00:00.000000000
+-- make_list_with_nulls --
+['Theodore','Stephanie','Peter','Latoya','Joshua','Edward','Dalton','Christine','Cameron','Angel','Apple',NULL]
+Skilled Manual	['Theodore','Peter','Edward','Christine','Apple']
+Professional	['Latoya','Joshua','Dalton','Cameron','Angel',NULL]
+Management abcd defg	['Stephanie']
+Skilled Manual	['Theodore','Peter','Edward','Christine','Apple']	[28,26,36,33,28]
+Professional	['Latoya','Joshua','Dalton','Cameron','Angel',NULL]	[25,26,42,28,46,38]
+Management abcd defg	['Stephanie']	[33]

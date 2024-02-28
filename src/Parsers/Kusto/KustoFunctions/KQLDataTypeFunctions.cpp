@@ -7,6 +7,7 @@
 #include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSetQuery.h>
 #include "Poco/String.h"
 #include <format>
@@ -51,7 +52,7 @@ bool DatatypeDatetime::convertImpl(String & out, IParser::Pos & pos)
     else
     {
         auto start = pos;
-        while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+        while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
         {
             ++pos;
             if (pos->type == TokenType::ClosingRoundBracket)
@@ -77,7 +78,7 @@ bool DatatypeDynamic::convertImpl(String & out, IParser::Pos & pos)
     if (pos->type == TokenType::OpeningCurlyBrace)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property bags are not supported for now in {}", function_name);
 
-    while (!pos->isEnd() && pos->type != TokenType::ClosingRoundBracket)
+    while (isValidKQLPos(pos) && pos->type != TokenType::ClosingRoundBracket)
     {
         if (const auto token_type = pos->type; token_type == TokenType::BareWord || token_type == TokenType::Number
             || token_type == TokenType::QuotedIdentifier || token_type == TokenType::StringLiteral)
@@ -117,7 +118,7 @@ bool DatatypeGuid::convertImpl(String & out, IParser::Pos & pos)
     else
     {
         auto start = pos;
-        while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+        while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
         {
             ++pos;
             if (pos->type == TokenType::ClosingRoundBracket)

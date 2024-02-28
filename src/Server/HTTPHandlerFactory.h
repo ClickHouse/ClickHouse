@@ -36,7 +36,6 @@ public:
         creator = [&server]() -> std::unique_ptr<TEndpoint> { return std::make_unique<TEndpoint>(server); };
     }
 
-
     void addFilter(Filter cur_filter)
     {
         Filter prev_filter = filter;

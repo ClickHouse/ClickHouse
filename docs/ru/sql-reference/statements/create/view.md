@@ -11,7 +11,9 @@ sidebar_label: "Представление"
 ## Обычные представления {#normal}
 
 ``` sql
-CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] AS SELECT ...
+CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] 
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }] 
+AS SELECT ...
 ```
 
 Обычные представления не хранят никаких данных, они выполняют чтение данных из другой таблицы при каждом доступе. Другими словами, обычное представление — это не что иное, как сохраненный запрос. При чтении данных из представления этот сохраненный запрос используется как подзапрос в секции [FROM](../../../sql-reference/statements/select/from.md).
@@ -37,7 +39,9 @@ SELECT a, b, c FROM (SELECT ...)
 ## Материализованные представления {#materialized}
 
 ``` sql
-CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] 
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }] 
+AS SELECT ...
 ```
 
 Материализованные (MATERIALIZED) представления хранят данные, преобразованные соответствующим запросом [SELECT](../../../sql-reference/statements/select/index.md).
@@ -65,6 +69,52 @@ CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]na
 Представления выглядят так же, как обычные таблицы. Например, они перечисляются в результате запроса `SHOW TABLES`.
 
 Чтобы удалить представление, следует использовать [DROP VIEW](../../../sql-reference/statements/drop.md#drop-view). Впрочем, `DROP TABLE` тоже работает для представлений.
+
+## SQL безопасность {#sql_security}
+
+Параметры `DEFINER` и `SQL SECURITY` позволяют задать правило от имени какого пользователя будут выполняться запросы к таблицам, на которые ссылается представление.
+Для `SQL SECURITY` допустимо три значения: `DEFINER`, `INVOKER`, или `NONE`.
+Для `DEFINER` можно указать имя любого существующего пользователя или же `CURRENT_USER`.
+
+Далее приведена таблица, объясняющая какие права необходимы каким пользователям при заданных параметрах SQL безопасности.
+Обратите внимание, что, в независимости от заданных параметров SQL безопасности, 
+у пользователя должно быть право `GRANT SELECT ON <view>` для чтения из представления.
+
+| SQL security option | View                                                                                               | Materialized View                                                                          |
+|---------------------|----------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------|
+| `DEFINER alice`     | У `alice` должно быть право `SELECT` на таблицу-источник.                                          | У `alice` должны быть права `SELECT` на таблицу-источник и `INSERT` на таблицу-назначение. |
+| `INVOKER`           | У пользователя выполняющего запрос к представлению должно быть право `SELECT` на таблицу-источник. | Тип `SQL SECURITY INVOKER` не может быть указан для материализованных представлений.       |
+| `NONE`              | -                                                                                                  | -                                                                                          |
+
+:::note
+Тип `SQL SECURITY NONE` не безопасен для использования. Любой пользователь с правом создавать представления с `SQL SECURITY NONE` сможет исполнять любые запросы без проверки прав.
+По умолчанию, у пользователей нет прав указывать `SQL SECURITY NONE`, однако, при необходимости, это право можно выдать с помощью `GRANT ALLOW SQL SECURITY NONE TO <user>`.
+:::
+
+Если `DEFINER`/`SQL SECURITY` не указан, будут использованы значения по умолчанию:
+- `SQL SECURITY`: `INVOKER` для обычных представлений и `DEFINER` для материализованных ([изменяется в настройках](../../../operations/settings/settings.md#default_normal_view_sql_security))
+- `DEFINER`: `CURRENT_USER` ([изменяется в настройках](../../../operations/settings/settings.md#default_view_definer))
+
+Если представление подключается с помощью ключевого слова `ATTACH` и настройки SQL безопасности не были заданы,
+то по умолчанию будет использоваться `SQL SECURITY NONE` для материализованных представлений и `SQL SECURITY INVOKER` для обычных.
+
+Изменить параметры SQL безопасности возможно с помощью следующего запроса:
+```sql
+ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
+```
+
+### Примеры представлений с SQL безопасностью
+```sql
+CREATE test_view
+DEFINER = alice SQL SECURITY DEFINER
+AS SELECT ...
+```
+
+```sql
+CREATE test_view
+SQL SECURITY INVOKER
+AS SELECT ...
+```
 
 ## LIVE-представления [экспериментальный функционал] {#live-view}
 

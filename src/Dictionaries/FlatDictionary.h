@@ -76,11 +76,11 @@ public:
     DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Simple; }
 
     ColumnPtr getColumn(
-        const std::string& attribute_name,
-        const DataTypePtr & result_type,
+        const std::string & attribute_name,
+        const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const override;
+        DefaultOrFilter default_or_filter) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -164,6 +164,13 @@ private:
         const PaddedPODArray<UInt64> & keys,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
+
+    template <typename AttributeType, bool is_nullable, typename ValueSetter>
+    size_t getItemsShortCircuitImpl(
+        const Attribute & attribute,
+        const PaddedPODArray<UInt64> & keys,
+        ValueSetter && set_value,
+        IColumn::Filter & default_mask) const;
 
     template <typename T>
     void resize(Attribute & attribute, UInt64 key);

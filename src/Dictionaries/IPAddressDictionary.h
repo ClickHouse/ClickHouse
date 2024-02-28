@@ -78,11 +78,11 @@ public:
     void convertKeyColumns(Columns & key_columns, DataTypes & key_types) const override;
 
     ColumnPtr getColumn(
-        const std::string& attribute_name,
-        const DataTypePtr & result_type,
+        const std::string & attribute_name,
+        const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const override;
+        DefaultOrFilter default_or_filter) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -179,12 +179,26 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
+    template <typename AttributeType, typename ValueSetter>
+    size_t getItemsByTwoKeyColumnsShortCircuitImpl(
+        const Attribute & attribute,
+        const Columns & key_columns,
+        ValueSetter && set_value,
+        IColumn::Filter & default_mask) const;
+
     template <typename AttributeType,typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const Columns & key_columns,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
+
+    template <typename AttributeType,typename ValueSetter>
+    size_t getItemsShortCircuitImpl(
+        const Attribute & attribute,
+        const Columns & key_columns,
+        ValueSetter && set_value,
+        IColumn::Filter & default_mask) const;
 
     template <typename T>
     void setAttributeValueImpl(Attribute & attribute, const T value); /// NOLINT

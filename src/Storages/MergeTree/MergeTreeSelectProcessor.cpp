@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Chunk.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/BlockNumberColumn.h>
 #include <city.h>
@@ -19,7 +20,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
 }
@@ -71,7 +71,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
         lightweight_delete_filter_step = std::make_shared<PrewhereExprStep>(std::move(step));
     }
 
-    header_without_const_virtual_columns = applyPrewhereActions(pool->getHeader(), prewhere_info);
+    header_without_const_virtual_columns = SourceStepWithFilter::applyPrewhereActions(pool->getHeader(), prewhere_info);
     size_t non_const_columns_offset = header_without_const_virtual_columns.columns();
     injectNonConstVirtualColumns(0, header_without_const_virtual_columns, virt_column_names);
 
@@ -395,62 +395,11 @@ void MergeTreeSelectProcessor::injectVirtualColumns(
     injectPartConstVirtualColumns(row_count, block, task, partition_value_type, virtual_columns);
 }
 
-Block MergeTreeSelectProcessor::applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info)
-{
-    if (prewhere_info)
-    {
-        if (prewhere_info->row_level_filter)
-        {
-            block = prewhere_info->row_level_filter->updateHeader(std::move(block));
-            auto & row_level_column = block.getByName(prewhere_info->row_level_column_name);
-            if (!row_level_column.type->canBeUsedInBooleanContext())
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in PREWHERE: {}",
-                    row_level_column.type->getName());
-            }
-
-            block.erase(prewhere_info->row_level_column_name);
-        }
-
-        if (prewhere_info->prewhere_actions)
-        {
-            block = prewhere_info->prewhere_actions->updateHeader(std::move(block));
-
-            auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
-            if (!prewhere_column.type->canBeUsedInBooleanContext())
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in PREWHERE: {}",
-                    prewhere_column.type->getName());
-            }
-
-            if (prewhere_info->remove_prewhere_column)
-            {
-                block.erase(prewhere_info->prewhere_column_name);
-            }
-            else if (prewhere_info->need_filter)
-            {
-                WhichDataType which(removeNullable(recursiveRemoveLowCardinality(prewhere_column.type)));
-
-                if (which.isNativeInt() || which.isNativeUInt())
-                    prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
-                else if (which.isFloat())
-                    prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f)->convertToFullColumnIfConst();
-                else
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                        "Illegal type {} of column for filter",
-                        prewhere_column.type->getName());
-            }
-        }
-    }
-
-    return block;
-}
-
 Block MergeTreeSelectProcessor::transformHeader(
     Block block, const PrewhereInfoPtr & prewhere_info, const DataTypePtr & partition_value_type, const Names & virtual_columns)
 {
     injectVirtualColumns(block, 0, nullptr, partition_value_type, virtual_columns);
-    auto transformed = applyPrewhereActions(std::move(block), prewhere_info);
+    auto transformed = SourceStepWithFilter::applyPrewhereActions(std::move(block), prewhere_info);
     return transformed;
 }
 

@@ -35,11 +35,6 @@ public:
             tryGetIdentifierNameInto(table, name);
             return name;
         }
-
-        Table clone() const
-        {
-            return Table{.database = database->clone(), .table = table->clone()};
-        }
     };
 
     struct Element
@@ -66,11 +61,6 @@ public:
     {
         auto res = std::make_shared<ASTRenameQuery>(*this);
         cloneOutputOptions(*res);
-        for (auto & element : res->elements)
-        {
-            element.from = element.from.clone();
-            element.to = element.to.clone();
-        }
         return res;
     }
 

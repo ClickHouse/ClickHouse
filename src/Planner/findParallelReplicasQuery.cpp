@@ -126,8 +126,10 @@ public:
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
             auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
 
-            auto storage_dummy
-                = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(), ColumnsDescription(storage_snapshot->getColumns(get_column_options)));
+            auto storage_dummy = std::make_shared<StorageDummy>(
+                storage_snapshot->storage.getStorageID(),
+                ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
+                storage_snapshot);
 
             auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
 
@@ -263,7 +265,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     auto updated_query_tree = replaceTablesWithDummyTables(query_tree_node, mutable_context);
 
     SelectQueryOptions options;
-    Planner planner(updated_query_tree, options, std::make_shared<GlobalPlannerContext>(nullptr, nullptr));
+    Planner planner(updated_query_tree, options, std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
     planner.buildQueryPlanIfNeeded();
 
     /// This part is a bit clumsy.

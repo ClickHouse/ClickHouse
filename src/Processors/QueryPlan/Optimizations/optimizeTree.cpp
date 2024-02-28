@@ -114,9 +114,12 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
     while (!stack.empty())
     {
-        /// NOTE: optimizePrewhere can modify the stack.
-        optimizePrewhere(stack, nodes);
         optimizePrimaryKeyCondition(stack);
+
+        /// NOTE: optimizePrewhere can modify the stack.
+        /// Prewhere optimization relies on PK optimization (getConditionEstimatorByPredicate)
+        if (optimization_settings.optimize_prewhere)
+            optimizePrewhere(stack, nodes);
 
         auto & frame = stack.back();
 
@@ -221,11 +224,6 @@ void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::
             ++frame.next_child;
             stack.push_back(next_frame);
             continue;
-        }
-
-        if (auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>(frame.node->step.get()))
-        {
-            source_step_with_filter->applyFilters();
         }
 
         addPlansForSets(plan, *frame.node, nodes);

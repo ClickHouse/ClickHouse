@@ -36,7 +36,6 @@ static constexpr auto DEFAULT_BLOCK_SIZE
 static constexpr auto DEFAULT_INSERT_BLOCK_SIZE
     = 1048449; /// 1048576 - PADDING_FOR_SIMD - (PADDING_FOR_SIMD - 1) bytes padding that we usually have in arrays
 
-static constexpr auto DEFAULT_PERIODIC_LIVE_VIEW_REFRESH_SEC = 60;
 static constexpr auto SHOW_CHARS_ON_SYNTAX_ERROR = ptrdiff_t(160);
 /// each period reduces the error counter by 2 times
 /// too short a period can cause errors to disappear immediately after creation.

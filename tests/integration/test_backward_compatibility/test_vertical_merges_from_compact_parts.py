@@ -1,13 +1,13 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 
 cluster = ClickHouseCluster(__file__)
 
 node_old = cluster.add_instance(
     "node1",
     image="clickhouse/clickhouse-server",
-    tag="22.8",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
     with_zookeeper=True,

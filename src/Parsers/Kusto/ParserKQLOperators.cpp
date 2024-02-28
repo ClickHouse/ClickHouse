@@ -5,6 +5,7 @@
 #include <Parsers/Kusto/ParserKQLOperators.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/formatAST.h>
@@ -148,7 +149,7 @@ String KQLOperators::genHasAnyAllOpExpr(std::vector<String> & tokens, IParser::P
 
     String logic_op = (kql_op == "has_all") ? " and " : " or ";
 
-    while (!token_pos->isEnd() && token_pos->type != TokenType::PipeMark && token_pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(token_pos) && token_pos->type != TokenType::PipeMark && token_pos->type != TokenType::Semicolon)
     {
         auto tmp_arg = IParserKQLFunction::getExpression(token_pos);
         if (token_pos->type == TokenType::Comma)
@@ -217,7 +218,7 @@ String genInOpExprCis(std::vector<String> & tokens, DB::IParser::Pos & token_pos
     --token_pos;
 
     new_expr += ch_op;
-    while (!token_pos->isEnd() && token_pos->type != DB::TokenType::PipeMark && token_pos->type != DB::TokenType::Semicolon)
+    while (isValidKQLPos(token_pos) && token_pos->type != DB::TokenType::PipeMark && token_pos->type != DB::TokenType::Semicolon)
     {
         auto tmp_arg = String(token_pos->begin, token_pos->end);
         if (token_pos->type != DB::TokenType::Comma && token_pos->type != DB::TokenType::ClosingRoundBracket
@@ -329,7 +330,7 @@ bool KQLOperators::convert(std::vector<String> & tokens, IParser::Pos & pos)
 {
     auto begin = pos;
 
-    if (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+    if (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
         KQLOperatorValue op_value = KQLOperatorValue::none;
 
@@ -339,14 +340,14 @@ bool KQLOperators::convert(std::vector<String> & tokens, IParser::Pos & pos)
         if (token == "!")
         {
             ++pos;
-            if (pos->isEnd() || pos->type == TokenType::PipeMark || pos->type == TokenType::Semicolon)
+            if (!isValidKQLPos(pos) || pos->type == TokenType::PipeMark || pos->type == TokenType::Semicolon)
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid negative operator");
             op = "!" + String(pos->begin, pos->end);
         }
         else if (token == "matches")
         {
             ++pos;
-            if (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+            if (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
             {
                 if (String(pos->begin, pos->end) == "regex")
                     op += " regex";
@@ -360,7 +361,7 @@ bool KQLOperators::convert(std::vector<String> & tokens, IParser::Pos & pos)
         }
 
         ++pos;
-        if (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+        if (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
         {
             if (String(pos->begin, pos->end) == "~")
                 op += "~";

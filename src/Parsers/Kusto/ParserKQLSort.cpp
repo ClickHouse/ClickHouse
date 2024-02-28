@@ -4,6 +4,7 @@
 #include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLSort.h>
+#include <Parsers/Kusto/Utilities.h>
 
 namespace DB
 {
@@ -24,7 +25,7 @@ bool ParserKQLSort::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!order_list.parse(pos_backup, order_expression_list, expected))
         return false;
 
-    while (!new_pos->isEnd() && new_pos->type != TokenType::PipeMark && new_pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(new_pos) && new_pos->type != TokenType::PipeMark && new_pos->type != TokenType::Semicolon)
     {
         String tmp(new_pos->begin, new_pos->end);
         if (tmp == "desc" || tmp == "asc")

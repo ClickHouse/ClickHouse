@@ -448,9 +448,6 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
             DB::writePointerHex(frame.physical_addr, out);
         }
 
-        if (frame.object.has_value())
-            out << " in " << *frame.object;
-
         callback(out.str());
     };
 #else

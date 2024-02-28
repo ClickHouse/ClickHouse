@@ -279,7 +279,7 @@ public:
             for (size_t i = 0; i < size; ++i)
             {
                 Impl::apply(
-                    reinterpret_cast<const char *>(&data[i * length]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
+                    reinterpret_cast<const char *>(&data[i]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
             }
             return col_to;
         }

@@ -12,7 +12,7 @@ namespace DB
 
 struct AsynchronousInsertLogElement
 {
-    enum Status : Int8
+    enum Status : int8_t
     {
         Ok = 0,
         ParsingError = 1,

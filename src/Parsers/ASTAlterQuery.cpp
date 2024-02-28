@@ -466,10 +466,6 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
                       << (settings.hilite ? hilite_none : "");
         refresh->formatImpl(settings, state, frame);
     }
-    else if (type == ASTAlterCommand::LIVE_VIEW_REFRESH)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "REFRESH " << (settings.hilite ? hilite_none : "");
-    }
     else if (type == ASTAlterCommand::RENAME_COLUMN)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "RENAME COLUMN " << (if_exists ? "IF EXISTS " : "")
@@ -478,6 +474,11 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO ";
         rename_to->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::MODIFY_SQL_SECURITY)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY " << (settings.hilite ? hilite_none : "");
+        sql_security->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::APPLY_DELETED_MASK)
     {
@@ -620,9 +621,6 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
             break;
         case AlterObjectType::DATABASE:
             settings.ostr << "ALTER DATABASE ";
-            break;
-        case AlterObjectType::LIVE_VIEW:
-            settings.ostr << "ALTER LIVE VIEW ";
             break;
         default:
             break;

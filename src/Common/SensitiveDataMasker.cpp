@@ -91,7 +91,7 @@ void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker>&& sen
 {
 
     if (!sensitive_data_masker_)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: the 'sensitive_data_masker' is not set");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The 'sensitive_data_masker' is not set");
 
     if (sensitive_data_masker_->rulesCount() > 0)
     {

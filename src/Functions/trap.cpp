@@ -177,7 +177,7 @@ public:
             }
             else if (mode == "logical error")
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: trap");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trap");
             }
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown trap mode");

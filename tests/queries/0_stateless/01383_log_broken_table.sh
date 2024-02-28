@@ -20,6 +20,7 @@ function test_func()
         MAX_MEM=$((2 * $MAX_MEM))
 
         $CLICKHOUSE_CLIENT --query "INSERT INTO log SELECT number, number, number FROM numbers(1000000)" --max_memory_usage $MAX_MEM > "${CLICKHOUSE_TMP}"/insert_result 2>&1
+        RES=$?
 
         grep -o -F 'Memory limit' "${CLICKHOUSE_TMP}"/insert_result || cat "${CLICKHOUSE_TMP}"/insert_result
 
@@ -27,7 +28,7 @@ function test_func()
 
         cat "${CLICKHOUSE_TMP}"/select_result
 
-        [[ $MAX_MEM -gt 200000000 ]] && break;
+        { [[ $RES -eq 0 ]] || [[ $MAX_MEM -gt 200000000 ]]; } && break;
     done
 
     $CLICKHOUSE_CLIENT --query "DROP TABLE log";

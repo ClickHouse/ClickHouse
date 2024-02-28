@@ -1,0 +1,27 @@
+--  distinct * --
+Theodore	Diaz	Skilled Manual	Bachelors	28
+Stephanie	Cox	Management abcd defg	Bachelors	33
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Latoya	Shen	Professional	Graduate Degree	25
+Apple		Skilled Manual	Bachelors	28
+\N	why	Professional	Partial College	38
+--  distinct one column --
+Skilled Manual
+Management abcd defg
+Professional
+--  distinct two column --
+Skilled Manual	Bachelors
+Management abcd defg	Bachelors
+Skilled Manual	Graduate Degree
+Professional	Graduate Degree
+Professional	Partial College
+--  distinct with where --
+Skilled Manual	Bachelors
+Management abcd defg	Bachelors
+Skilled Manual	Graduate Degree
+Professional	Graduate Degree
+Professional	Partial College
+--  distinct with where, order --
+Skilled Manual	Bachelors
+Skilled Manual	Graduate Degree
+Professional	Graduate Degree

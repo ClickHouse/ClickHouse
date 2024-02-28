@@ -133,10 +133,18 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
         return {};
 
     std::unordered_set<const ActionsDAG::Node *> prewhere_conditions;
+    std::list<const ActionsDAG::Node *> prewhere_conditions_list;
     for (const auto & condition : optimize_result->prewhere_conditions)
-        prewhere_conditions.insert(condition.node.getDAGNode());
+    {
+        const ActionsDAG::Node * condition_node = condition.node.getDAGNode();
+        if (prewhere_conditions.insert(condition_node).second)
+            prewhere_conditions_list.push_back(condition_node);
+    }
 
-    return {.prewhere_nodes = std::move(prewhere_conditions), .fully_moved_to_prewhere = optimize_result->where_conditions.empty()};
+    return {
+        .prewhere_nodes = std::move(prewhere_conditions),
+        .prewhere_nodes_list = std::move(prewhere_conditions_list),
+        .fully_moved_to_prewhere = optimize_result->where_conditions.empty()};
 }
 
 static void collectColumns(const RPNBuilderTreeNode & node, const NameSet & columns_names, NameSet & result_set, bool & has_invalid_column)

@@ -1298,9 +1298,7 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     };
 
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(creator));
-
     factory->addFiltersFromConfig(config, config_prefix);
-
     return factory;
 }
 

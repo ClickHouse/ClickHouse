@@ -100,11 +100,11 @@ public:
     void convertKeyColumns(Columns & key_columns, DataTypes & key_types) const override;
 
     ColumnPtr getColumn(
-        const std::string& attribute_name,
-        const DataTypePtr & result_type,
+        const std::string & attribute_name,
+        const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const override;
+        DefaultOrFilter default_or_filter) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -154,6 +154,13 @@ private:
         ValueGetter && get_value,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
+
+    template <typename AttributeType, typename ValueGetter, typename ValueSetter>
+    void getItemsShortCircuitImpl(
+        const std::vector<IPolygonDictionary::Point> & requested_key_points,
+        ValueGetter && get_value,
+        ValueSetter && set_value,
+        IColumn::Filter & default_mask) const;
 
     ColumnPtr key_attribute_column;
 

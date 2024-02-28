@@ -677,21 +677,23 @@ class ReadFromAzureBlob : public SourceStepWithFilter
 public:
     std::string getName() const override { return "ReadFromAzureBlob"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters() override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     ReadFromAzureBlob(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
         Block sample_block,
         std::shared_ptr<StorageAzureBlob> storage_,
         ReadFromFormatInfo info_,
         const bool need_only_count_,
-        ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , info(std::move(info_))
         , need_only_count(need_only_count_)
-        , context(std::move(context_))
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
     {
@@ -702,8 +704,6 @@ private:
     ReadFromFormatInfo info;
     const bool need_only_count;
 
-    ContextPtr context;
-
     size_t max_block_size;
     const size_t num_streams;
 
@@ -712,9 +712,9 @@ private:
     void createIterator(const ActionsDAG::Node * predicate);
 };
 
-void ReadFromAzureBlob::applyFilters()
+void ReadFromAzureBlob::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -742,11 +742,14 @@ void StorageAzureBlob::read(
         && local_context->getSettingsRef().optimize_count_from_files;
 
     auto reading = std::make_unique<ReadFromAzureBlob>(
+        column_names,
+        query_info,
+        storage_snapshot,
+        local_context,
         read_from_format_info.source_header,
         std::move(this_ptr),
         std::move(read_from_format_info),
         need_only_count,
-        local_context,
         max_block_size,
         num_streams);
 

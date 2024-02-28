@@ -54,7 +54,7 @@ public:
     size_t byteSizeAt(size_t) const override { return sizeof(data[0]); }
     size_t allocatedBytes() const override { return data.allocated_bytes(); }
     void protect() override { data.protect(); }
-    void reserve(size_t n) override { data.reserve(n); }
+    void reserve(size_t n) override { data.reserve_exact(n); }
     void shrinkToFit() override { data.shrink_to_fit(); }
 
     void insertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }

@@ -106,7 +106,8 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
         ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
     }
 
-    Arguments arguments {
+    Arguments arguments
+    {
         .query = query,
         .context = context,
         .options = options
