@@ -157,6 +157,10 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        /// Fast path when data is empty
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
         ColumnsWithTypeAndName arguments = args;
         executeShortCircuitArguments(arguments);
         /** We will gather values from columns in branches to result column,
@@ -257,7 +261,7 @@ public:
         }
 
         const WhichDataType which(removeNullable(result_type));
-        bool execute_multiif_columnar = settings.allow_execute_multiif_columnar && !contains_short
+        bool execute_multiif_columnar = allow_execute_multiif_columnar && !contains_short
             && instructions.size() <= std::numeric_limits<UInt8>::max()
             && (which.isInt() || which.isUInt() || which.isFloat() || which.isDecimal() || which.isDateOrDate32OrDateTimeOrDateTime64()
                 || which.isEnum() || which.isIPv4() || which.isIPv6());
@@ -266,6 +270,7 @@ public:
         if (!execute_multiif_columnar)
         {
             MutableColumnPtr res = return_type->createColumn();
+            res->reserve(rows);
             executeInstructions(instructions, rows, res);
             return std::move(res);
         }
@@ -367,7 +372,7 @@ private:
     template <typename S>
     static void calculateInserts(std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
     {
-        for (S i = static_cast<S>(instructions.size() - 1); i >= 0; --i)
+        for (S i = instructions.size() - 1; i != static_cast<S>(-1); --i)
         {
             auto & instruction = instructions[i];
             if (instruction.condition_always_true)
@@ -450,6 +455,7 @@ private:
                     data_cols[i] = assert_cast<const ColumnVectorOrDecimal<T> &>(*instructions[i].source).getData().data();
                 }
             }
+
             for (size_t row_i = 0; row_i < rows; ++row_i)
             {
                 S insert = inserts[row_i];
