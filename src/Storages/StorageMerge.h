@@ -5,6 +5,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/OptimizedRegularExpression.h>
+#include "Storages/VirtualColumnsDescription.h"
 
 
 namespace DB
@@ -281,6 +282,8 @@ private:
         ContextPtr query_context,
         bool filter_by_database_virtual_column,
         bool filter_by_table_virtual_column) const;
+
+    // static VirtualColumnsDescription createVirtuals(StoragePtr first_table);
 };
 
 }

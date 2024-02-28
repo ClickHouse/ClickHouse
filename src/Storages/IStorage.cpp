@@ -28,6 +28,13 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
 }
 
+IStorage::IStorage(StorageID storage_id_)
+    : storage_id(std::move(storage_id_))
+    , metadata(std::make_unique<StorageInMemoryMetadata>())
+    , virtuals(std::make_unique<VirtualColumnsDescription>())
+{
+}
+
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
 {
     /// Virtual column maybe overridden by real column

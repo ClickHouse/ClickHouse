@@ -574,7 +574,7 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
         views_data.source_storage_id,
         views_data.source_metadata_snapshot->getColumns(),
         std::move(block),
-        views_data.source_storage->getVirtuals()));
+        *views_data.source_storage->getVirtualsDescription()));
 
     QueryPipelineBuilder pipeline;
 

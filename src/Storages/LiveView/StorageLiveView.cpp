@@ -27,6 +27,7 @@ limitations under the License. */
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
+#include "Storages/VirtualColumnsDescription.h"
 #include <base/hex.h>
 
 #include <Storages/LiveView/StorageLiveView.h>
@@ -218,6 +219,10 @@ StorageLiveView::StorageLiveView(
 
     setInMemoryMetadata(storage_metadata);
 
+    VirtualColumnsDescription virtuals;
+    virtuals.addEphemeral("_version", std::make_shared<DataTypeUInt64>(), "");
+    setVirtuals(virtuals);
+
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
 
@@ -254,13 +259,6 @@ StorageLiveView::StorageLiveView(
 StorageLiveView::~StorageLiveView()
 {
     shutdown(false);
-}
-
-NamesAndTypesList StorageLiveView::getVirtuals() const
-{
-    return NamesAndTypesList{
-        NameAndTypePair("_version", std::make_shared<DataTypeUInt64>())
-    };
 }
 
 void StorageLiveView::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const

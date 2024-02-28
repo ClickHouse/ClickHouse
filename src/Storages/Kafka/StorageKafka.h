@@ -7,6 +7,7 @@
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Common/SettingsChanges.h>
+#include "Storages/VirtualColumnsDescription.h"
 
 #include <Poco/Semaphore.h>
 
@@ -74,8 +75,6 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    NamesAndTypesList getVirtuals() const override;
-    Names getVirtualColumnNames() const;
     StreamingHandleErrorMode getStreamingHandleErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
 
     struct SafeConsumers
@@ -159,6 +158,8 @@ private:
     bool checkDependencies(const StorageID & table_id);
 
     void cleanConsumers();
+
+    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };
 
 }

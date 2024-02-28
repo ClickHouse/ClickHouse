@@ -153,6 +153,8 @@ StorageMaterializedView::StorageMaterializedView(
             *query.refresh_strategy);
         refresh_on_start = mode < LoadingStrictnessLevel::ATTACH && !query.is_create_empty;
     }
+
+    setVirtuals(*getTargetTable()->getVirtualsDescription());
 }
 
 QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
@@ -501,11 +503,6 @@ StoragePtr StorageMaterializedView::tryGetTargetTable() const
 {
     checkStackSize();
     return DatabaseCatalog::instance().tryGetTable(getTargetTableId(), getContext());
-}
-
-NamesAndTypesList StorageMaterializedView::getVirtuals() const
-{
-    return getTargetTable()->getVirtuals();
 }
 
 Strings StorageMaterializedView::getDataPaths() const

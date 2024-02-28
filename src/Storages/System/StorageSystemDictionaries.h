@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/System/IStorageSystemOneBlock.h>
+#include "Interpreters/StorageID.h"
 
 
 namespace DB
@@ -12,11 +13,11 @@ class Context;
 class StorageSystemDictionaries final : public IStorageSystemOneBlock<StorageSystemDictionaries>
 {
 public:
+    explicit StorageSystemDictionaries(const StorageID & storage_id_);
+
     std::string getName() const override { return "SystemDictionaries"; }
 
     static ColumnsDescription getColumnsDescription();
-
-    NamesAndTypesList getVirtuals() const override;
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

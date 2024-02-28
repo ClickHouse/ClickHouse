@@ -89,6 +89,9 @@ StorageNATS::StorageNATS(
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
 
+    auto virtuals = createVirtuals(nats_settings->nats_handle_error_mode);
+    setVirtuals(virtuals);
+
     nats_context = addSettings(getContext());
     nats_context->makeQueryContext();
 
@@ -131,6 +134,19 @@ StorageNATS::StorageNATS(
     connection_task->deactivate();
 }
 
+VirtualColumnsDescription StorageNATS::createVirtuals(StreamingHandleErrorMode handle_error_mode)
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_subject", std::make_shared<DataTypeString>(), "");
+
+    if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+    {
+        desc.addEphemeral("_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+    }
+
+    return desc;
+}
 
 Names StorageNATS::parseList(const String & list, char delim)
 {
@@ -744,22 +760,6 @@ void registerStorageNATS(StorageFactory & factory)
     };
 
     factory.registerStorage("NATS", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
-}
-
-
-NamesAndTypesList StorageNATS::getVirtuals() const
-{
-    auto virtuals = NamesAndTypesList{
-            {"_subject", std::make_shared<DataTypeString>()}
-    };
-
-    if (nats_settings->nats_handle_error_mode == StreamingHandleErrorMode::STREAM)
-    {
-        virtuals.push_back({"_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
-        virtuals.push_back({"_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
-    }
-
-    return virtuals;
 }
 
 }

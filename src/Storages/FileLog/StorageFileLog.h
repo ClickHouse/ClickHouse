@@ -9,6 +9,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Common/SettingsChanges.h>
+#include "Storages/VirtualColumnsDescription.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -101,8 +102,6 @@ public:
 
     String getFullMetaPath(const String & file_name) const { return std::filesystem::path(metadata_base_path) / file_name; }
     String getFullDataPath(const String & file_name) const { return std::filesystem::path(root_data_path) / file_name; }
-
-    NamesAndTypesList getVirtuals() const override;
 
     static UInt64 getInode(const String & file_name);
 
@@ -212,6 +211,8 @@ private:
         UInt64 inode = 0;
     };
     ReadMetadataResult readMetadata(const String & filename) const;
+
+    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };
 
 }
