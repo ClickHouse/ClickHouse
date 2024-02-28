@@ -122,7 +122,7 @@ URI::URI(const std::string & uri_)
                             "Object storage system name is unrecognized in virtual hosted style S3 URI: {}",
                             quoteString(name));
 
-        if (name == COS || name == COSN)
+        if (name == COS)
             storage_name = COSN;
         else
             storage_name = name;

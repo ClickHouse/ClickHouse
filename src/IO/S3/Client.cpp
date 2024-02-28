@@ -1,4 +1,5 @@
 #include <IO/S3/Client.h>
+#include <Common/Exception.h>
 
 #if USE_AWS_S3
 
@@ -965,6 +966,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
 
 bool isS3ExpressEndpoint(const std::string & endpoint)
 {
+    /// On one hand this check isn't 100% reliable, on the other - all it will change is whether we attach checksums to the requests.
     return endpoint.contains("s3express");
 }
 }

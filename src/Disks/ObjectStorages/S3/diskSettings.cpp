@@ -1,5 +1,6 @@
 #include <Disks/ObjectStorages/S3/diskSettings.h>
-#include "IO/S3/Client.h"
+#include <IO/S3/Client.h>
+#include <Common/Exception.h>
 
 #if USE_AWS_S3
 
@@ -10,7 +11,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include "Disks/DiskFactory.h"
+#include <Disks/DiskFactory.h>
 
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <base/getFQDNOrHostName.h>
@@ -24,6 +25,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int NO_ELEMENTS_IN_CONFIG;
+}
 
 std::unique_ptr<S3ObjectStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
@@ -47,10 +53,14 @@ std::unique_ptr<S3::Client> getClient(
     const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
     const Settings & local_settings = context->getSettingsRef();
 
-    String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+    const String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
     S3::URI uri(endpoint);
     if (!uri.key.ends_with('/'))
         uri.key.push_back('/');
+
+    if (S3::isS3ExpressEndpoint(endpoint) && !config.has(config_prefix + ".region"))
+        throw Exception(
+            ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Region should be explicitly specified for directory buckets ({})", config_prefix);
 
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         config.getString(config_prefix + ".region", ""),
