@@ -94,12 +94,21 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     cache_state = node.query(
         "SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE size > 0 ORDER BY key, file_segment_range_begin, size"
     )
+    keys = (
+        node.query(
+            "SELECT distinct(key) FROM system.filesystem_cache WHERE size > 0 ORDER BY key, file_segment_range_begin, size"
+        )
+        .strip()
+        .splitlines()
+    )
 
     node.restart_clickhouse()
 
-    assert cache_count == int(node.query("SELECT count() FROM system.filesystem_cache"))
+    # < because of additional files loaded into cache on server startup.
+    assert cache_count <= int(node.query("SELECT count() FROM system.filesystem_cache"))
+    keys_set = ",".join(["'" + x + "'" for x in keys])
     assert cache_state == node.query(
-        "SELECT key, file_segment_range_begin, size FROM system.filesystem_cache ORDER BY key, file_segment_range_begin, size"
+        f"SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE key in ({keys_set}) ORDER BY key, file_segment_range_begin, size"
     )
 
     assert node.contains_in_log("Loading filesystem cache with 30 threads")
