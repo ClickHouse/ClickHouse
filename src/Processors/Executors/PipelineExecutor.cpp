@@ -410,7 +410,7 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
             cancel();
             throw;
         }
-        
+
         tasks.processAsyncTasks();
         pool->wait();
     }
