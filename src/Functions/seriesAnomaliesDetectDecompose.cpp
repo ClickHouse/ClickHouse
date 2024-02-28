@@ -114,7 +114,7 @@ public:
         auto get_decompose_res = get_decompose->execute(decompose_cols, decompose_res_type, input_rows_count);
 
         const ColumnArray * decompose_res_array = checkAndGetColumn<ColumnArray>(get_decompose_res.get());
-        auto root_decompose_data = &decompose_res_array->getData();
+        const auto *root_decompose_data = &decompose_res_array->getData();
         const IColumn::Offsets & root_decompose_offsets = decompose_res_array->getOffsets();
 
         const ColumnArray * decompose_data_array = checkAndGetColumn<ColumnArray>(root_decompose_data);
