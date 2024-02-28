@@ -204,10 +204,6 @@ Default: 0
 
 Internal DNS cache max entries.
 
-:::note
-ClickHouse also has a reverse cache, so the actual memory usage could be twice as much.
-:::
-
 Type: UInt64
 
 Default: 10000
