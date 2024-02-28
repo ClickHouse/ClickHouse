@@ -102,14 +102,14 @@ public:
     /// Returns all the flags related to a dictionary.
     static AccessFlags allDictionaryFlags();
 
-    /// Returns all the flags related to a table engine.
-    static AccessFlags allTableEngineFlags();
-
     /// Returns all the flags related to a named collection.
     static AccessFlags allNamedCollectionFlags();
 
     /// Returns all the flags related to a user.
     static AccessFlags allUserNameFlags();
+
+    /// Returns all the flags related to a table engine.
+    static AccessFlags allTableEngineFlags();
 
     /// Returns all the flags which could be granted on the global level.
     /// The same as allFlags().

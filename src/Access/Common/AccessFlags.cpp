@@ -103,8 +103,8 @@ namespace
         const Flags & getColumnFlags() const { return all_flags_for_target[COLUMN]; }
         const Flags & getDictionaryFlags() const { return all_flags_for_target[DICTIONARY]; }
         const Flags & getTableEngineFlags() const { return all_flags_for_target[TABLE_ENGINE]; }
-        const Flags & getNamedCollectionFlags() const { return all_flags_for_target[NAMED_COLLECTION]; }
         const Flags & getUserNameFlags() const { return all_flags_for_target[USER_NAME]; }
+        const Flags & getNamedCollectionFlags() const { return all_flags_for_target[NAMED_COLLECTION]; }
         const Flags & getAllFlagsGrantableOnGlobalLevel() const { return getAllFlags(); }
         const Flags & getAllFlagsGrantableOnGlobalWithParameterLevel() const { return getGlobalWithParameterFlags(); }
         const Flags & getAllFlagsGrantableOnDatabaseLevel() const { return all_flags_grantable_on_database_level; }
@@ -122,9 +122,9 @@ namespace
             VIEW = TABLE,
             COLUMN,
             DICTIONARY,
-            TABLE_ENGINE,
             NAMED_COLLECTION,
             USER_NAME,
+            TABLE_ENGINE,
         };
 
         struct Node;
@@ -355,7 +355,7 @@ namespace
         std::unordered_map<std::string_view, Flags> keyword_to_flags_map;
         std::vector<Flags> access_type_to_flags_mapping;
         Flags all_flags;
-        Flags all_flags_for_target[static_cast<size_t>(USER_NAME) + 1];
+        Flags all_flags_for_target[static_cast<size_t>(TABLE_ENGINE) + 1];
         Flags all_flags_grantable_on_database_level;
         Flags all_flags_grantable_on_table_level;
         Flags all_flags_grantable_on_global_with_parameter_level;
@@ -395,16 +395,16 @@ AccessFlags::ParameterType AccessFlags::getParameterType() const
     if (isEmpty() || !AccessFlags::allGlobalWithParameterFlags().contains(*this))
         return AccessFlags::NONE;
 
-    /// All flags refer to TABLE ENGINE access type.
-    if (AccessFlags::allTableEngineFlags().contains(*this))
-        return AccessFlags::TABLE_ENGINE;
-
     /// All flags refer to NAMED COLLECTION access type.
     if (AccessFlags::allNamedCollectionFlags().contains(*this))
         return AccessFlags::NAMED_COLLECTION;
 
     if (AccessFlags::allUserNameFlags().contains(*this))
         return AccessFlags::USER_NAME;
+
+    /// All flags refer to TABLE ENGINE access type.
+    if (AccessFlags::allTableEngineFlags().contains(*this))
+        return AccessFlags::TABLE_ENGINE;
 
     throw Exception(ErrorCodes::MIXED_ACCESS_PARAMETER_TYPES, "Having mixed parameter types: {}", toString());
 }
@@ -423,9 +423,9 @@ AccessFlags AccessFlags::allDatabaseFlags() { return Helper::instance().getDatab
 AccessFlags AccessFlags::allTableFlags() { return Helper::instance().getTableFlags(); }
 AccessFlags AccessFlags::allColumnFlags() { return Helper::instance().getColumnFlags(); }
 AccessFlags AccessFlags::allDictionaryFlags() { return Helper::instance().getDictionaryFlags(); }
-AccessFlags AccessFlags::allTableEngineFlags() { return Helper::instance().getTableEngineFlags(); }
 AccessFlags AccessFlags::allNamedCollectionFlags() { return Helper::instance().getNamedCollectionFlags(); }
 AccessFlags AccessFlags::allUserNameFlags() { return Helper::instance().getUserNameFlags(); }
+AccessFlags AccessFlags::allTableEngineFlags() { return Helper::instance().getTableEngineFlags(); }
 AccessFlags AccessFlags::allFlagsGrantableOnGlobalLevel() { return Helper::instance().getAllFlagsGrantableOnGlobalLevel(); }
 AccessFlags AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel() { return Helper::instance().getAllFlagsGrantableOnGlobalWithParameterLevel(); }
 AccessFlags AccessFlags::allFlagsGrantableOnDatabaseLevel() { return Helper::instance().getAllFlagsGrantableOnDatabaseLevel(); }
