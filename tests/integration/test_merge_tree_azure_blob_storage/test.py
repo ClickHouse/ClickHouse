@@ -692,6 +692,7 @@ def test_endpoint_without_prefix(cluster):
 
     assert 10 == int(node.query("SELECT count() FROM test"))
 
+
 def test_endpoint_error_check(cluster):
     node = cluster.instances[NODE_NAME]
     account_name = "devstoreaccount1"
