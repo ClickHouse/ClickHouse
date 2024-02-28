@@ -139,7 +139,7 @@ static std::atomic_flag fatal_error_printed;
 
 /// Special handling for a function isPointerReadable.
 thread_local bool checking_pointer = false;
-thread_local jmp_buf signal_jump_buffer;
+thread_local sigjmp_buf signal_jump_buffer;
 
 /** Handler for "fault" or diagnostic signals. Send data about fault to separate thread to write into log.
   */
