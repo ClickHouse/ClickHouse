@@ -45,6 +45,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageMerge.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/ColumnNode.h>
@@ -64,6 +65,7 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 
+#include <Planner/findQueryForParallelReplicas.h>
 #include <Planner/Utils.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerActionsVisitor.h>
@@ -134,6 +136,7 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
   *
   * StorageDistributed skip unused shards optimization relies on this.
   * Parallel replicas estimation relies on this too.
+  * StorageMerge common header calculation relies on this too.
   *
   * To collect filters that will be applied to specific table in case we have JOINs requires
   * to run query plan optimization pipeline.
@@ -144,16 +147,16 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
   * 3. Optimize query plan.
   * 4. Extract filters from ReadFromDummy query plan steps from query plan leaf nodes.
   */
-void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
+
+FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const QueryTreeNodes & table_nodes, const ContextPtr & query_context)
 {
     bool collect_filters = false;
-    const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
     bool parallel_replicas_estimation_enabled
         = query_context->canUseParallelReplicasOnInitiator() && settings.parallel_replicas_min_number_of_rows_per_replica > 0;
 
-    for (auto & [table_expression, table_expression_data] : planner_context->getTableExpressionNodeToData())
+    for (const auto & table_expression : table_nodes)
     {
         auto * table_node = table_expression->as<TableNode>();
         auto * table_function_node = table_expression->as<TableFunctionNode>();
@@ -161,7 +164,7 @@ void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const Planne
             continue;
 
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-        if (typeid_cast<const StorageDistributed *>(storage.get())
+        if (typeid_cast<const StorageDistributed *>(storage.get()) || typeid_cast<const StorageMerge *>(storage.get())
             || (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage)))
         {
             collect_filters = true;
@@ -170,18 +173,18 @@ void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const Planne
     }
 
     if (!collect_filters)
-        return;
+        return {};
 
     ResultReplacementMap replacement_map;
-    auto updated_query_tree = replaceTableExpressionsWithDummyTables(query_tree, planner_context->getQueryContext(), &replacement_map);
 
-    std::unordered_map<const IStorage *, TableExpressionData *> dummy_storage_to_table_expression_data;
+    auto updated_query_tree = replaceTableExpressionsWithDummyTables(query_tree, table_nodes, query_context, &replacement_map);
+
+    std::unordered_map<const IStorage *, QueryTreeNodePtr> dummy_storage_to_table;
 
     for (auto & [from_table_expression, dummy_table_expression] : replacement_map)
     {
         auto * dummy_storage = dummy_table_expression->as<TableNode &>().getStorage().get();
-        auto * table_expression_data = &planner_context->getTableExpressionDataOrThrow(from_table_expression);
-        dummy_storage_to_table_expression_data.emplace(dummy_storage, table_expression_data);
+        dummy_storage_to_table.emplace(dummy_storage, from_table_expression);
     }
 
     SelectQueryOptions select_query_options;
@@ -192,6 +195,8 @@ void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const Planne
 
     auto optimization_settings = QueryPlanOptimizationSettings::fromContext(query_context);
     result_query_plan.optimize(optimization_settings);
+
+    FiltersForTableExpressionMap res;
 
     std::vector<QueryPlan::Node *> nodes_to_process;
     nodes_to_process.push_back(result_query_plan.getRootNode());
@@ -206,10 +211,33 @@ void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const Planne
         if (!read_from_dummy)
             continue;
 
-        auto filter_actions = ActionsDAG::buildFilterActionsDAG(read_from_dummy->getFilterNodes().nodes);
-        auto & table_expression_data = dummy_storage_to_table_expression_data.at(&read_from_dummy->getStorage());
-        table_expression_data->setFilterActions(std::move(filter_actions));
+        auto filter_actions = read_from_dummy->getFilterActionsDAG();
+        const auto & table_node = dummy_storage_to_table.at(&read_from_dummy->getStorage());
+        res[table_node] = FiltersForTableExpression{std::move(filter_actions), read_from_dummy->getPrewhereInfo()};
     }
+
+    return res;
+}
+
+FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree_node, SelectQueryOptions & select_query_options)
+{
+    if (select_query_options.only_analyze)
+        return {};
+
+    auto * query_node = query_tree_node->as<QueryNode>();
+    auto * union_node = query_tree_node->as<UnionNode>();
+
+    if (!query_node && !union_node)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Expected QUERY or UNION node. Actual {}",
+            query_tree_node->formatASTForErrorMessage());
+
+    auto context = query_node ? query_node->getContext() : union_node->getContext();
+
+    auto table_expressions_nodes
+        = extractTableExpressions(query_tree_node, false /* add_array_join */, true /* recursive */);
+
+    return collectFiltersForAnalysis(query_tree_node, table_expressions_nodes, context);
 }
 
 /// Extend lifetime of query context, storages, and table locks
@@ -1057,7 +1085,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         Planner subquery_planner(
             query_tree,
             subquery_options,
-            std::make_shared<GlobalPlannerContext>()); //planner_context->getGlobalPlannerContext());
+            std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
         subquery_planner.buildQueryPlanIfNeeded();
 
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
@@ -1160,7 +1188,11 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
     SelectQueryOptions & select_query_options_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
-    , planner_context(buildPlannerContext(query_tree, select_query_options, std::make_shared<GlobalPlannerContext>()))
+    , planner_context(buildPlannerContext(query_tree, select_query_options,
+        std::make_shared<GlobalPlannerContext>(
+            findQueryForParallelReplicas(query_tree, select_query_options),
+            findTableForParallelReplicas(query_tree, select_query_options),
+            collectFiltersForAnalysis(query_tree, select_query_options))))
 {
 }
 
@@ -1223,6 +1255,8 @@ void Planner::buildPlanForUnionNode()
         query_planner.buildQueryPlanIfNeeded();
         for (const auto & row_policy : query_planner.getUsedRowPolicies())
             used_row_policies.insert(row_policy);
+        const auto & mapping = query_planner.getQueryNodeToPlanStepMapping();
+        query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
         auto query_node_plan = std::make_unique<QueryPlan>(std::move(query_planner).extractQueryPlan());
         query_plans_headers.push_back(query_node_plan->getCurrentDataStream().header);
         query_plans.push_back(std::move(query_node_plan));
@@ -1341,7 +1375,7 @@ void Planner::buildPlanForQueryNode()
     {
         if (planner_context->getPreparedSets().hasSubqueries())
         {
-            if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+            if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");
 
             auto & mutable_context = planner_context->getMutableQueryContext();
@@ -1353,8 +1387,20 @@ void Planner::buildPlanForQueryNode()
     collectTableExpressionData(query_tree, planner_context);
     checkStoragesSupportTransactions(planner_context);
 
-    if (!select_query_options.only_analyze)
-        collectFiltersForAnalysis(query_tree, planner_context);
+    const auto & table_filters = planner_context->getGlobalPlannerContext()->filters_for_table_expressions;
+    if (!select_query_options.only_analyze && !table_filters.empty()) // && top_level)
+    {
+        for (auto & [table_node, table_expression_data] : planner_context->getTableExpressionNodeToData())
+        {
+            auto it = table_filters.find(table_node);
+            if (it != table_filters.end())
+            {
+                const auto & filters = it->second;
+                table_expression_data.setFilterActions(filters.filter_actions);
+                table_expression_data.setPrewhereInfo(filters.prewhere_info);
+            }
+        }
+    }
 
     if (query_context->canUseTaskBasedParallelReplicas())
     {
@@ -1368,7 +1414,7 @@ void Planner::buildPlanForQueryNode()
             const auto & modifiers = table_node->getTableExpressionModifiers();
             if (modifiers.has_value() && modifiers->hasFinal())
             {
-                if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
                 else
                 {
@@ -1387,7 +1433,7 @@ void Planner::buildPlanForQueryNode()
         /// Check support for JOIN for parallel replicas with custom key
         if (planner_context->getTableExpressionNodeToData().size() > 1)
         {
-            if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+            if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
             else
             {
@@ -1402,16 +1448,27 @@ void Planner::buildPlanForQueryNode()
         }
     }
 
-    auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
-    auto join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,
-        select_query_info,
-        select_query_options,
-        top_level_identifiers,
-        planner_context);
+    JoinTreeQueryPlan join_tree_query_plan;
+    if (planner_context->getMutableQueryContext()->canUseTaskBasedParallelReplicas()
+        && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &query_node)
+    {
+        join_tree_query_plan = buildQueryPlanForParallelReplicas(query_node, planner_context, select_query_info.storage_limits);
+    }
+    else
+    {
+        auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
+        join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,
+            select_query_info,
+            select_query_options,
+            top_level_identifiers,
+            planner_context);
+    }
 
     auto from_stage = join_tree_query_plan.from_stage;
     query_plan = std::move(join_tree_query_plan.query_plan);
     used_row_policies = std::move(join_tree_query_plan.used_row_policies);
+    auto & mapping = join_tree_query_plan.query_node_to_plan_step_mapping;
+    query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
 
     LOG_TRACE(getLogger("Planner"), "Query {} from stage {} to stage {}{}",
         query_tree->formatConvertedASTForErrorMessage(),
@@ -1681,6 +1738,8 @@ void Planner::buildPlanForQueryNode()
 
     if (!select_query_options.only_analyze)
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
+
+    query_node_to_plan_step_mapping[&query_node] = query_plan.getRootNode();
 }
 
 SelectQueryInfo Planner::buildSelectQueryInfo() const

@@ -51,7 +51,7 @@ namespace ErrorCodes
 /// For the case of single storage.
 StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     const StorageID & table_id_,
-    bool is_attach_,
+    LoadingStrictnessLevel mode,
     const String & remote_database_name,
     const String & remote_table_name_,
     const postgres::ConnectionInfo & connection_info,
@@ -66,7 +66,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
     , nested_table_id(StorageID(table_id_.database_name, getNestedTableName()))
     , remote_table_name(remote_table_name_)
-    , is_attach(is_attach_)
+    , is_attach(mode >= LoadingStrictnessLevel::ATTACH)
 {
     if (table_id_.uuid == UUIDHelpers::Nil)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MaterializedPostgreSQL is allowed only for Atomic database");
@@ -573,7 +573,8 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         metadata.setColumns(args.columns);
         metadata.setConstraints(args.constraints);
 
-        if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_materialized_postgresql_table)
+        if (args.mode <= LoadingStrictnessLevel::CREATE
+            && !args.getLocalContext()->getSettingsRef().allow_experimental_materialized_postgresql_table)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "MaterializedPostgreSQL is an experimental table engine."
                                 " You can enable it with the `allow_experimental_materialized_postgresql_table` setting");
 
@@ -600,7 +601,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
 
         return std::make_shared<StorageMaterializedPostgreSQL>(
-                args.table_id, args.attach, configuration.database, configuration.table, connection_info,
+                args.table_id, args.mode, configuration.database, configuration.table, connection_info,
                 metadata, args.getContext(),
                 std::move(postgresql_replication_settings));
     };

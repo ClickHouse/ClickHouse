@@ -195,7 +195,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     auto add_optional_param = [&](const char * desc)
     {
         ++max_num_params;
-        needed_params += needed_params.empty() ? "\n" : ",\n[";
+        needed_params += needed_params.empty() ? "\n[" : ",\n[";
         needed_params += desc;
         needed_params += "]";
     };
@@ -299,7 +299,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                             arg_idx, e.message(), verbose_help_message);
         }
     }
-    else if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_deprecated_syntax_for_merge_tree)
+    else if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef().allow_deprecated_syntax_for_merge_tree)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "This syntax for *MergeTree engine is deprecated. "
                                                    "Use extended storage definition syntax with ORDER BY/PRIMARY KEY clause. "
@@ -316,12 +316,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
 
     /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
-    bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
+    /// and if UUID was explicitly passed in CREATE TABLE (like for ATTACH)
+    bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach || args.query.has_uuid;
 
     auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name)
     {
         /// Unfold {database} and {table} macro on table creation, so table can be renamed.
-        if (!args.attach)
+        if (args.mode < LoadingStrictnessLevel::ATTACH)
         {
             Macros::MacroExpansionInfo info;
             /// NOTE: it's not recursive
@@ -405,10 +406,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             /// Try use default values if arguments are not specified.
             /// Note: {uuid} macro works for ON CLUSTER queries when database engine is Atomic.
-            const auto & config = args.getContext()->getConfigRef();
-            zookeeper_path = StorageReplicatedMergeTree::getDefaultZooKeeperPath(config);
+            const auto & server_settings = args.getContext()->getServerSettings();
+            zookeeper_path = server_settings.default_replica_path;
             /// TODO maybe use hostname if {replica} is not defined?
-            replica_name = StorageReplicatedMergeTree::getDefaultReplicaName(config);
+            replica_name = server_settings.default_replica_name;
 
             /// Modify query, so default values will be written to metadata
             assert(arg_num == 0);
@@ -526,7 +527,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (is_extended_storage_def)
     {
-        storage_settings->loadFromQuery(*args.storage_def, context, args.attach);
+        storage_settings->loadFromQuery(*args.storage_def, context, LoadingStrictnessLevel::ATTACH <= args.mode);
 
         if (storage_settings->queue)
         {
@@ -640,7 +641,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::Builder().buildFromAST(args.storage_def->sample_by->ptr(), metadata.columns, context);
 
-        bool allow_suspicious_ttl = args.attach || args.getLocalContext()->getSettingsRef().allow_suspicious_ttl_expressions;
+        bool allow_suspicious_ttl = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode || args.getLocalContext()->getSettingsRef().allow_suspicious_ttl_expressions;
 
         if (args.storage_def->ttl_table)
         {
@@ -670,7 +671,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         // updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
         {
-            if (!args.attach)
+            if (args.mode <= LoadingStrictnessLevel::CREATE)
                 args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
             metadata.settings_changes = args.storage_def->settings->ptr();
         }
@@ -749,7 +750,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (ast && ast->value.getType() == Field::Types::UInt64)
         {
             storage_settings->index_granularity = ast->value.safeGet<UInt64>();
-            if (!args.attach)
+            if (args.mode <= LoadingStrictnessLevel::CREATE)
             {
                 SettingsChanges changes;
                 changes.emplace_back("index_granularity", Field(storage_settings->index_granularity));
@@ -760,12 +761,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index granularity must be a positive integer{}", verbose_help_message);
         ++arg_num;
 
-        if (args.storage_def->ttl_table && !args.attach)
+        if (args.storage_def->ttl_table && args.mode <= LoadingStrictnessLevel::CREATE)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table TTL is not allowed for MergeTree in old syntax");
     }
 
     DataTypes data_types = metadata.partition_key.data_types;
-    if (!args.attach && !storage_settings->allow_floating_point_partition_key)
+    if (args.mode <= LoadingStrictnessLevel::CREATE && !storage_settings->allow_floating_point_partition_key)
     {
         for (size_t i = 0; i < data_types.size(); ++i)
             if (isFloat(data_types[i]))
@@ -785,7 +786,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         return std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_path,
             replica_name,
-            args.attach,
+            args.mode,
             args.table_id,
             args.relative_data_path,
             metadata,
@@ -793,7 +794,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             date_column_name,
             merging_params,
             std::move(storage_settings),
-            args.has_force_restore_data_flag,
             renaming_restrictions,
             need_check_table_structure);
     }
@@ -802,12 +802,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.table_id,
             args.relative_data_path,
             metadata,
-            args.attach,
+            args.mode,
             context,
             date_column_name,
             merging_params,
-            std::move(storage_settings),
-            args.has_force_restore_data_flag);
+            std::move(storage_settings));
 }
 
 
