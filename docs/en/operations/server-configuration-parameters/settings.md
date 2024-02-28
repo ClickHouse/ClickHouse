@@ -210,7 +210,7 @@ ClickHouse also has a reverse cache, so the actual memory usage could be twice a
 
 Type: UInt64
 
-Default: 1024
+Default: 1048576
 
 
 ## dns_cache_update_period
