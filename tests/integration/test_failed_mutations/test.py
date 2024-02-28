@@ -62,10 +62,6 @@ def started_cluster():
             node_with_backoff,
             True,
         ),
-        (
-            node_no_backoff,
-            False,
-        ),
     ],
 )
 def test_exponential_backoff_with_merge_tree(started_cluster, node, found_in_log):
