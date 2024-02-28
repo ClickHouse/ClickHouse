@@ -382,8 +382,8 @@ struct ContextSharedPart : boost::noncopyable
     /// The global pool of HTTP sessions for background fetches.
     PooledSessionFactoryPtr fetches_session_factory TSA_GUARDED_BY(background_executors_mutex);
 
-    RemoteHostFilter remote_host_filter TSA_GUARDED_BY(mutex);                    /// Allowed URL from config.xml
-    HTTPHeaderFilter http_header_filter TSA_GUARDED_BY(mutex);                    /// Forbidden HTTP headers from config.xml
+    RemoteHostFilter remote_host_filter;                    /// Allowed URL from config.xml
+    HTTPHeaderFilter http_header_filter;                    /// Forbidden HTTP headers from config.xml
 
     /// No lock required for trace_collector modified only during initialization
     std::optional<TraceCollector> trace_collector;          /// Thread collecting traces from threads executing queries
@@ -797,6 +797,7 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
 {
     auto res = std::shared_ptr<Context>(new Context);
     res->shared = shared_part;
+    res->query_access_info = std::make_shared<QueryAccessInfo>();
     return res;
 }
 
@@ -816,7 +817,9 @@ SharedContextHolder Context::createShared()
 ContextMutablePtr Context::createCopy(const ContextPtr & other)
 {
     SharedLockGuard lock(other->mutex);
-    return std::shared_ptr<Context>(new Context(*other));
+    auto new_context = std::shared_ptr<Context>(new Context(*other));
+    new_context->query_access_info = std::make_shared<QueryAccessInfo>(*other->query_access_info);
+    return new_context;
 }
 
 ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
@@ -1610,12 +1613,12 @@ void Context::addQueryAccessInfo(
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
 
-    std::lock_guard lock(query_access_info.mutex);
-    query_access_info.databases.emplace(quoted_database_name);
-    query_access_info.tables.emplace(full_quoted_table_name);
+    std::lock_guard lock(query_access_info->mutex);
+    query_access_info->databases.emplace(quoted_database_name);
+    query_access_info->tables.emplace(full_quoted_table_name);
 
     for (const auto & column_name : column_names)
-        query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
+        query_access_info->columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
 }
 
 void Context::addQueryAccessInfo(const Names & partition_names)
@@ -1623,9 +1626,9 @@ void Context::addQueryAccessInfo(const Names & partition_names)
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
 
-    std::lock_guard<std::mutex> lock(query_access_info.mutex);
+    std::lock_guard<std::mutex> lock(query_access_info->mutex);
     for (const auto & partition_name : partition_names)
-        query_access_info.partitions.emplace(partition_name);
+        query_access_info->partitions.emplace(partition_name);
 }
 
 void Context::addViewAccessInfo(const String & view_name)
@@ -1633,8 +1636,8 @@ void Context::addViewAccessInfo(const String & view_name)
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
 
-    std::lock_guard<std::mutex> lock(query_access_info.mutex);
-    query_access_info.views.emplace(view_name);
+    std::lock_guard<std::mutex> lock(query_access_info->mutex);
+    query_access_info->views.emplace(view_name);
 }
 
 void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name)
@@ -1645,8 +1648,8 @@ void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_proje
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
 
-    std::lock_guard<std::mutex> lock(query_access_info.mutex);
-    query_access_info.projections.emplace(fmt::format(
+    std::lock_guard<std::mutex> lock(query_access_info->mutex);
+    query_access_info->projections.emplace(fmt::format(
         "{}.{}", qualified_projection_name.storage_id.getFullTableName(), backQuoteIfNeed(qualified_projection_name.projection_name)));
 }
 
@@ -2297,7 +2300,8 @@ void Context::setMacros(std::unique_ptr<Macros> && macros)
 ContextMutablePtr Context::getQueryContext() const
 {
     auto ptr = query_context.lock();
-    if (!ptr) throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "There is no query or query context has expired");
+    if (!ptr)
+        throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "There is no query or query context has expired");
     return ptr;
 }
 
@@ -3303,7 +3307,7 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
 }
 
 #if USE_NURAFT
-std::shared_ptr<KeeperDispatcher> & Context::getKeeperDispatcher() const
+std::shared_ptr<KeeperDispatcher> Context::getKeeperDispatcher() const
 {
     std::lock_guard lock(shared->keeper_dispatcher_mutex);
     if (!shared->keeper_dispatcher)
@@ -3312,7 +3316,7 @@ std::shared_ptr<KeeperDispatcher> & Context::getKeeperDispatcher() const
     return shared->keeper_dispatcher;
 }
 
-std::shared_ptr<KeeperDispatcher> & Context::tryGetKeeperDispatcher() const
+std::shared_ptr<KeeperDispatcher> Context::tryGetKeeperDispatcher() const
 {
     std::lock_guard lock(shared->keeper_dispatcher_mutex);
     return shared->keeper_dispatcher;
@@ -3489,25 +3493,21 @@ String Context::getInterserverScheme() const
 
 void Context::setRemoteHostFilter(const Poco::Util::AbstractConfiguration & config)
 {
-    std::lock_guard lock(shared->mutex);
     shared->remote_host_filter.setValuesFromConfig(config);
 }
 
 const RemoteHostFilter & Context::getRemoteHostFilter() const
 {
-    SharedLockGuard lock(shared->mutex);
     return shared->remote_host_filter;
 }
 
 void Context::setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config)
 {
-    std::lock_guard lock(shared->mutex);
     shared->http_header_filter.setValuesFromConfig(config);
 }
 
 const HTTPHeaderFilter & Context::getHTTPHeaderFilter() const
 {
-    SharedLockGuard lock(shared->mutex);
     return shared->http_header_filter;
 }
 
