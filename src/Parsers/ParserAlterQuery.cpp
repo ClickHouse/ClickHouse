@@ -40,6 +40,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_modify_setting("MODIFY SETTING");
     ParserKeyword s_reset_setting("RESET SETTING");
     ParserKeyword s_modify_query("MODIFY QUERY");
+    ParserKeyword s_modify_sql_security("MODIFY SQL SECURITY");
     ParserKeyword s_modify_refresh("MODIFY REFRESH");
 
     ParserKeyword s_add_index("ADD INDEX");
@@ -139,6 +140,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         /* allow_empty = */ false);
     ParserNameList values_p;
     ParserSelectWithUnionQuery select_p;
+    ParserSQLSecurity sql_security_p;
     ParserRefreshStrategy refresh_p;
     ParserTTLExpressionList parser_ttl_list;
 
@@ -163,6 +165,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr command_select;
     ASTPtr command_values;
     ASTPtr command_rename_to;
+    ASTPtr command_sql_security;
 
     if (with_round_bracket)
     {
@@ -861,6 +864,14 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
                 command->type = ASTAlterCommand::MODIFY_QUERY;
             }
+            else if (s_modify_sql_security.ignore(pos, expected))
+            {
+                /// This is a hack so we can reuse parser from create and don't have to write `MODIFY SQL SECURITY SQL SECURITY INVOKER`
+                pos -= 2;
+                if (!sql_security_p.parse(pos, command_sql_security, expected))
+                    return false;
+                command->type = ASTAlterCommand::MODIFY_SQL_SECURITY;
+            }
             else if (s_modify_refresh.ignore(pos, expected))
             {
                 if (!refresh_p.parse(pos, command->refresh, expected))
@@ -935,6 +946,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->select = command->children.emplace_back(std::move(command_select)).get();
     if (command_values)
         command->values = command->children.emplace_back(std::move(command_values)).get();
+    if (command_sql_security)
+        command->sql_security = command->children.emplace_back(std::move(command_sql_security)).get();
     if (command_rename_to)
         command->rename_to = command->children.emplace_back(std::move(command_rename_to)).get();
 

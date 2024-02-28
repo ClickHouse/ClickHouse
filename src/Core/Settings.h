@@ -592,6 +592,7 @@ class IColumn;
     M(Bool, optimize_using_constraints, false, "Use constraints for query optimization", 0)                                                                                                                                           \
     M(Bool, optimize_substitute_columns, false, "Use constraints for column substitution", 0)                                                                                                                                         \
     M(Bool, optimize_append_index, false, "Use constraints in order to append index condition (indexHint)", 0) \
+    M(Bool, optimize_time_filter_with_preimage, true, "Optimize Date and DateTime predicates by converting functions into equivalent comparisons without conversions (e.g. toYear(col) = 2023 -> col >= '2023-01-01' AND col <= '2023-12-31')", 0) \
     M(Bool, normalize_function_names, true, "Normalize function names to their canonical names", 0) \
     M(Bool, enable_early_constant_folding, true, "Enable query optimization where we analyze function and subqueries results and rewrite query if there are constants there", 0) \
     M(Bool, deduplicate_blocks_in_dependent_materialized_views, false, "Should deduplicate blocks for materialized views if the block is not a duplicate for the table. Use true to always deduplicate in dependent tables.", 0) \
@@ -870,6 +871,9 @@ class IColumn;
     M(Bool, print_pretty_type_names, true, "Print pretty type names in DESCRIBE query and toTypeName() function", 0) \
     M(Bool, create_table_empty_primary_key_by_default, false, "Allow to create *MergeTree tables with empty primary key when ORDER BY and PRIMARY KEY not specified", 0) \
     M(Bool, allow_named_collection_override_by_default, true, "Allow named collections' fields override by default.", 0)\
+    M(SQLSecurityType, default_normal_view_sql_security, SQLSecurityType::INVOKER, "Allows to set a default value for SQL SECURITY option when creating a normal view.", 0) \
+    M(SQLSecurityType, default_materialized_view_sql_security, SQLSecurityType::DEFINER, "Allows to set a default value for SQL SECURITY option when creating a materialized view.", 0) \
+    M(String, default_view_definer, "CURRENT_USER", "Allows to set a default value for DEFINER option when creating view.", 0) \
     M(Bool, allow_experimental_shared_merge_tree, false, "Only available in ClickHouse Cloud", 0) \
     M(UInt64, cache_warmer_threads, 4, "Only available in ClickHouse Cloud", 0) \
     M(Int64, ignore_cold_parts_seconds, 0, "Only available in ClickHouse Cloud", 0) \
@@ -1161,6 +1165,7 @@ class IColumn;
     M(Bool, dictionary_use_async_executor, false, "Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.", 0) \
     M(Bool, precise_float_parsing, false, "Prefer more precise (but slower) float parsing algorithm", 0) \
     M(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", "Overflow mode for Date, Date32, DateTime, DateTime64 types. Possible values: 'ignore', 'throw', 'saturate'.", 0) \
+    M(Bool, validate_experimental_and_suspicious_types_inside_nested_types, true, "Validate usage of experimental and suspicious types inside nested types like Array/Map/Tuple", 0) \
 
 
 // End of FORMAT_FACTORY_SETTINGS

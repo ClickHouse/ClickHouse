@@ -112,6 +112,7 @@ CDMA
 CESU
 CIDR
 CIDRToRange
+CKMAN
 CLOB
 CLion
 CMPLNT
@@ -1288,6 +1289,7 @@ cipherList
 ciphertext
 cityHash
 cityhash
+ckman
 clangd
 cli
 clickcache
@@ -1895,6 +1897,7 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+mergeTreeIndex
 mergeable
 mergetree
 messageID
@@ -2423,6 +2426,7 @@ subranges
 subreddits
 subseconds
 subsequence
+substreams
 substring
 substringIndex
 substringIndexUTF
