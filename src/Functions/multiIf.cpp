@@ -28,7 +28,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -370,7 +369,7 @@ private:
 
     /// We should read source from which instruction on each row?
     template <typename S>
-    static void calculateInserts(std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
+    static NO_INLINE void calculateInserts(std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
     {
         for (S i = instructions.size() - 1; i != static_cast<S>(-1); --i)
         {
@@ -411,7 +410,7 @@ private:
     }
 
     template <typename T, typename S>
-    static void executeInstructionsColumnar(
+    static NO_INLINE void executeInstructionsColumnar(
         std::vector<Instruction> & instructions,
         size_t rows,
         PaddedPODArray<T> & res_data,
