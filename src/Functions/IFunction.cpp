@@ -198,6 +198,10 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
 
     if (null_presence.has_nullable)
     {
+        /// Usually happens during analyzing. We should return non-const column to avoid wrong constant folding.
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
         IColumn::Filter mask(input_rows_count, 1);
         MaskInfo mask_info = {.has_ones = true, .has_zeros = false};
         for (const auto & arg : args)
