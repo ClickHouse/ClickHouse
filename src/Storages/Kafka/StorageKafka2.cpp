@@ -564,16 +564,16 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
     for (const auto & topic_partition_path : topic_partition_paths)
         ops.push_back(zkutil::makeCreateRequest(topic_partition_path + lock_file_name, uuid_as_string, zkutil::CreateMode::Ephemeral));
 
-        Coordination::Responses responses;
+    Coordination::Responses responses;
 
-        if (const auto code = keeper_to_use.tryMulti(ops, responses); code != Coordination::Error::ZOK)
-        {
-            if (code != Coordination::Error::ZNODEEXISTS)
-                zkutil::KeeperMultiException::check(code, ops, responses);
+    if (const auto code = keeper_to_use.tryMulti(ops, responses); code != Coordination::Error::ZOK)
+    {
+        if (code != Coordination::Error::ZNODEEXISTS)
+            zkutil::KeeperMultiException::check(code, ops, responses);
 
-            // TODO(antaljanosbenjamin): maybe check the content, if we have the locks, we can continue with them
-            return std::nullopt;
-        }
+        // TODO(antaljanosbenjamin): maybe check the content, if we have the locks, we can continue with them
+        return std::nullopt;
+    }
 
     // We have the locks, let's gather the information we needed
     TopicPartitionLocks locks;
