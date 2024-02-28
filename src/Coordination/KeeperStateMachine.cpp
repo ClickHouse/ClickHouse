@@ -83,29 +83,32 @@ void KeeperStateMachine::init()
     uint64_t latest_log_index = snapshot_manager.getLatestSnapshotIndex();
     LOG_DEBUG(log, "Trying to load state machine from snapshot up to log index {}", latest_log_index);
 
-    try
+    if (has_snapshots)
     {
-        latest_snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
-        auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
-        latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
+        try
+        {
+            latest_snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
+            auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
+            latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
 
-        if (isLocalDisk(*latest_snapshot_info.disk))
-            latest_snapshot_buf = nullptr;
+            if (isLocalDisk(*latest_snapshot_info.disk))
+                latest_snapshot_buf = nullptr;
 
-        storage = std::move(snapshot_deserialization_result.storage);
-        latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
-        cluster_config = snapshot_deserialization_result.cluster_config;
-        keeper_context->setLastCommitIndex(latest_snapshot_meta->get_last_log_idx());
-    }
-    catch (...)
-    {
-        tryLogCurrentException(
-            log,
-            fmt::format(
-                "Aborting because of failure to load from latest snapshot with index {}. Problematic snapshot can be removed but it will "
-                "lead to data loss",
-                latest_log_index));
-        std::abort();
+            storage = std::move(snapshot_deserialization_result.storage);
+            latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
+            cluster_config = snapshot_deserialization_result.cluster_config;
+            keeper_context->setLastCommitIndex(latest_snapshot_meta->get_last_log_idx());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                log,
+                fmt::format(
+                    "Aborting because of failure to load from latest snapshot with index {}. Problematic snapshot can be removed but it will "
+                    "lead to data loss",
+                    latest_log_index));
+            std::abort();
+        }
     }
 
     auto last_committed_idx = keeper_context->lastCommittedIndex();

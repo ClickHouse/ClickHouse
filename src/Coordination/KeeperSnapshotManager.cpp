@@ -780,7 +780,7 @@ DiskPtr KeeperSnapshotManager::getLatestSnapshotDisk() const
 void KeeperSnapshotManager::removeOutdatedSnapshotsIfNeeded()
 {
     while (existing_snapshots.size() > snapshots_to_keep)
-        removeSnapshot(existing_snapshots.begin()->first, /*detach=*/false);
+        removeSnapshot(existing_snapshots.begin()->first);
 }
 
 void KeeperSnapshotManager::moveSnapshotsIfNeeded()
@@ -813,50 +813,14 @@ void KeeperSnapshotManager::moveSnapshotsIfNeeded()
 
 }
 
-void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx, bool detach)
+void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx)
 {
     auto itr = existing_snapshots.find(log_idx);
     if (itr == existing_snapshots.end())
         throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
 
-    const auto & [path_string, snapshot_disk] = itr->second;
-    std::filesystem::path path(path_string);
-
-    if (!detach)
-    {
-        snapshot_disk->removeFileIfExists(path);
-        existing_snapshots.erase(itr);
-        return;
-    }
-
-    auto disk = getDisk();
-
-    const auto timestamp_folder = (fs::path(snapshots_detached_dir) / getCurrentTimestampFolder()).generic_string();
-
-    if (!disk->exists(timestamp_folder))
-    {
-        LOG_WARNING(log, "Moving broken snapshot to {}", timestamp_folder);
-        disk->createDirectories(timestamp_folder);
-    }
-
-    LOG_WARNING(log, "Removing snapshot {}", path);
-    const auto new_path = timestamp_folder / path.filename();
-
-    if (snapshot_disk == disk)
-    {
-        try
-        {
-            disk->moveFile(path.generic_string(), new_path.generic_string());
-        }
-        catch (const DB::Exception & e)
-        {
-            if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED)
-                moveSnapshotBetweenDisks(snapshot_disk, path, disk, new_path, keeper_context);
-        }
-    }
-    else
-        moveSnapshotBetweenDisks(snapshot_disk, path, disk, new_path, keeper_context);
-
+    const auto & [path, disk] = itr->second;
+    disk->removeFileIfExists(path);
     existing_snapshots.erase(itr);
 }
 

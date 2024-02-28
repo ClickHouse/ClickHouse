@@ -136,7 +136,7 @@ public:
     nuraft::ptr<nuraft::buffer> deserializeLatestSnapshotBufferFromDisk();
 
     /// Remove snapshot  with this log_index
-    void removeSnapshot(uint64_t log_idx, bool detach);
+    void removeSnapshot(uint64_t log_idx);
 
     /// Total amount of snapshots
     size_t totalSnapshots() const { return existing_snapshots.size(); }

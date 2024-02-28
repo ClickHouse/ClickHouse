@@ -1873,8 +1873,7 @@ void testLogAndStateMachine(
         SnapshotsQueue snapshots_queue2{1};
         keeper_context = get_keeper_context();
         auto invalid_snapshot_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue2, keeper_context, nullptr);
-        invalid_snapshot_machine->init();
-        assertBrokenFileRemoved("./snapshots", fs::path(path).filename());
+        ASSERT_DEATH(invalid_snapshot_machine->init(), "Aborting because of failure to load from latest snapshot with");
     }
 }
 
