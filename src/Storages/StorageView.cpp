@@ -12,7 +12,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
-#include <Storages/AlterCommands.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/SelectQueryDescription.h>
@@ -36,7 +35,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -92,10 +90,10 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
   */
-ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot)
+ContextPtr getViewContext(ContextPtr context)
 {
-    auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
-    Settings view_settings = view_context->getSettings();
+    auto view_context = Context::createCopy(context);
+    Settings view_settings = context->getSettings();
     view_settings.max_result_rows = 0;
     view_settings.max_result_bytes = 0;
     view_settings.extremes = false;
@@ -124,8 +122,6 @@ StorageView::StorageView(
         storage_metadata.setColumns(columns_);
 
     storage_metadata.setComment(comment);
-    if (query.sql_security)
-        storage_metadata.setSQLSecurity(query.sql_security->as<ASTSQLSecurity &>());
 
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
@@ -164,13 +160,13 @@ void StorageView::read(
 
     if (context->getSettingsRef().allow_experimental_analyzer)
     {
-        InterpreterSelectQueryAnalyzer interpreter(current_inner_query, getViewContext(context, storage_snapshot), options);
+        InterpreterSelectQueryAnalyzer interpreter(current_inner_query, getViewContext(context), options);
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
     }
     else
     {
-        InterpreterSelectWithUnionQuery interpreter(current_inner_query, getViewContext(context, storage_snapshot), options, column_names);
+        InterpreterSelectWithUnionQuery interpreter(current_inner_query, getViewContext(context), options, column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);
         interpreter.buildQueryPlan(query_plan);
     }
@@ -284,15 +280,6 @@ ASTPtr StorageView::restoreViewName(ASTSelectQuery & select_query, const ASTPtr 
         if (child.get() == subquery.get())
             child = view_name;
     return subquery->children[0];
-}
-
-void StorageView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* local_context */) const
-{
-    for (const auto & command : commands)
-    {
-        if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_SQL_SECURITY)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
-    }
 }
 
 void registerStorageView(StorageFactory & factory)
