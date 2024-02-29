@@ -7,12 +7,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS line_as_string1";
 $CLICKHOUSE_CLIENT --query="CREATE TABLE line_as_string1(field String) ENGINE = Memory";
 
-echo -e '"id" : 1,
+cat <<'EOF' | $CLICKHOUSE_CLIENT --query="INSERT INTO line_as_string1 FORMAT LineAsString";
+"id" : 1,
 "date" : "01.01.2020",
 "string" : "123{{{\"\\",
 "array" : [1, 2, 3],
 
-Finally implement this new feature.' | $CLICKHOUSE_CLIENT --query="INSERT INTO line_as_string1 FORMAT LineAsString";
+Finally implement this new feature.
+EOF
 
 $CLICKHOUSE_CLIENT --query="SELECT * FROM line_as_string1";
 $CLICKHOUSE_CLIENT --query="DROP TABLE line_as_string1"
