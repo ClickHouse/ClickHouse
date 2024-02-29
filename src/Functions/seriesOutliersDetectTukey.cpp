@@ -81,15 +81,15 @@ public:
 
             min_percentile = arguments[1].column->getFloat64(0);
             if (isnan(min_percentile) || !isFinite(min_percentile) || min_percentile < min_percentile_lower_bound|| min_percentile > max_percentile_upper_bound)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} must be in range [2.0, 98.0]", getName());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} must be in range [0.02, 0.98]", getName());
 
             max_percentile = arguments[2].column->getFloat64(0);
             if (isnan(max_percentile) || !isFinite(max_percentile) || max_percentile < min_percentile_lower_bound || max_percentile > max_percentile_upper_bound || max_percentile < min_percentile)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The third argument of function {} must be in range [2.0, 98.0]", getName());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The third argument of function {} must be in range [0.02, 0.98]", getName());
 
             k = arguments[3].column->getFloat64(0);
             if (k < 0.0 || isnan(k) || !isFinite(k))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The fourth argument of function {} must be a positive number", getName());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The fourth argument of function {} must be a non-negative number", getName());
         }
 
         if (executeNumber<UInt8>(arr_data, arr_offsets, min_percentile, max_percentile, k, col_res)
