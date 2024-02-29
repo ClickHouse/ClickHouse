@@ -5,6 +5,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <base/hex.h>
+#include "Common/ZooKeeper/IKeeper.h"
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/checkStackSize.h>
@@ -211,10 +212,13 @@ void KeeperDispatcher::requestThread()
                 if (shutdown_called)
                     break;
 
+                bool execute_requests_after_write = has_read_request || has_reconfig_request;
+
                 nuraft::ptr<nuraft::buffer> result_buf = nullptr;
                 /// Forcefully process all previous pending requests
                 if (prev_result)
-                    result_buf = forceWaitAndProcessResult(prev_result, prev_batch);
+                    result_buf
+                        = forceWaitAndProcessResult(prev_result, prev_batch, /*clear_requests_on_success=*/true);
 
                 /// Process collected write requests batch
                 if (!current_batch.empty())
@@ -235,10 +239,11 @@ void KeeperDispatcher::requestThread()
                 }
 
                 /// If we will execute read or reconfig next, we have to process result now
-                if (has_read_request || has_reconfig_request)
+                if (execute_requests_after_write)
                 {
                     if (prev_result)
-                        result_buf = forceWaitAndProcessResult(prev_result, current_batch);
+                        result_buf = forceWaitAndProcessResult(
+                            prev_result, current_batch, /*clear_requests_on_success=*/!execute_requests_after_write);
 
                     /// In case of older version or disabled async replication, result buf will be set to value of `commit` function
                     /// which always returns nullptr
@@ -250,18 +255,12 @@ void KeeperDispatcher::requestThread()
                         nuraft::buffer_serializer bs(result_buf);
                         auto log_idx = bs.get_u64();
 
-                        /// we will wake up this thread on each commit so we need to run it in loop until the last request of batch is committed
-                        while (true)
-                        {
-                            if (shutdown_called)
-                                return;
+                        /// if timeout happened set error responses for the requests
+                        if (!keeper_context->waitCommittedUpto(log_idx, coordination_settings->operation_timeout_ms.totalMilliseconds()))
+                            addErrorResponses(current_batch, Coordination::Error::ZOPERATIONTIMEOUT);
 
-                            auto current_last_committed_idx = keeper_context->lastCommittedIndex();
-                            if (current_last_committed_idx >= log_idx)
-                                break;
-
-                            keeper_context->waitLastCommittedIndexUpdated(current_last_committed_idx);
-                        }
+                        if (shutdown_called)
+                            return;
                     }
                 }
 
@@ -501,10 +500,6 @@ void KeeperDispatcher::shutdown()
 
             LOG_DEBUG(log, "Shutting down storage dispatcher");
 
-            /// some threads can be waiting for certain commits, so we set value
-            /// of the last commit index to something that will always unblock
-            keeper_context->setLastCommitIndex(std::numeric_limits<uint64_t>::max());
-
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();
 
@@ -718,7 +713,8 @@ void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSession
     }
 }
 
-nuraft::ptr<nuraft::buffer> KeeperDispatcher::forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions)
+nuraft::ptr<nuraft::buffer> KeeperDispatcher::forceWaitAndProcessResult(
+    RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions, bool clear_requests_on_success)
 {
     if (!result->has_result())
         result->get();
@@ -732,7 +728,10 @@ nuraft::ptr<nuraft::buffer> KeeperDispatcher::forceWaitAndProcessResult(RaftAppe
     auto result_buf = result->get();
 
     result = nullptr;
-    requests_for_sessions.clear();
+
+    if (!result_buf || clear_requests_on_success)
+        requests_for_sessions.clear();
+
     return result_buf;
 }
 
