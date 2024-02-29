@@ -1082,6 +1082,8 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     Block virtual_columns_block = getBlockWithVirtualPartColumns(parts, true /* one_part */);
 
     auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), nullptr);
+    if (!filter_dag)
+        return {};
 
     // Generate valid expressions for filtering
     bool valid = true;

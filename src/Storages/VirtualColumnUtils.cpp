@@ -467,6 +467,23 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block & allo
     return true;
 }
 
+static bool isDeterministic(const ActionsDAG::Node * node)
+{
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return true;
+
+    if (!node->function_base->isDeterministic())
+        return false;
+
+    for (const auto * child : node->children)
+    {
+        if (!isDeterministic(child))
+            return false;
+    }
+
+    return true;
+}
+
 static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
     const ActionsDAG::Node * node,
     const Block * allowed_inputs,
@@ -541,6 +558,10 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                     }
                 }
             }
+        }
+        else if (!isDeterministic(node))
+        {
+            return nullptr;
         }
     }
 
