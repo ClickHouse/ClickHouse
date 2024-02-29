@@ -3,6 +3,7 @@
 #include <base/DayNum.h>
 #include <base/defines.h>
 #include <base/types.h>
+#include <Core/DecimalFunctions.h>
 
 #include <ctime>
 #include <cassert>
@@ -216,7 +217,6 @@ private:
     Time offset_at_start_of_lut;
     bool offset_is_whole_number_of_hours_during_epoch;
     bool offset_is_whole_number_of_minutes_during_epoch;
-    bool offset_is_whole_number_of_seconds_during_epoch;
 
     /// Time zone name.
     std::string time_zone;
@@ -593,17 +593,28 @@ public:
         return time % 60;
     }
 
-    unsigned toMillisecond(Time t) const
+    template <typename DateOrTime>
+    unsigned toMillisecond(const DateOrTime & datetime, Int64 scale_multiplier) const
     {
-        if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
-            return (t % 60) * 1000;
+        const auto microsecond_multiplier = 1000000;
+        const auto millisecond_multiplier = 1000;
 
-        LUTIndex index = findIndex(t);
-        Time time = t - lut[index].date;
+        auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
 
-        if (time >= lut[index].time_at_offset_change())
-            time += lut[index].amount_of_offset_change();
-        return (time % 60) * 1000;
+        if (datetime.value < 0 && components.fractional)
+        {
+            components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
+            --components.whole;
+        }
+        Int64 fractional = components.fractional;
+        if (scale_multiplier > microsecond_multiplier)
+            fractional = fractional / (scale_multiplier / microsecond_multiplier);
+        else if (scale_multiplier < microsecond_multiplier)
+            fractional = fractional * (microsecond_multiplier / scale_multiplier);
+
+        constexpr Int64 divider = microsecond_multiplier / millisecond_multiplier;
+        UInt16 millisecond = static_cast<UInt16>(fractional / divider);
+        return millisecond;
     }
 
     unsigned toMinute(Time t) const

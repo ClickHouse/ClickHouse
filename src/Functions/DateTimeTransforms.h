@@ -6,6 +6,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/DateLUT.h>
 #include <Common/IntervalKind.h>
+#include "base/Decimal.h"
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
@@ -1522,13 +1523,14 @@ struct ToMillisecondImpl
 {
     static constexpr auto name = "toMillisecond";
 
-    static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
+    static UInt16 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
     {
-        return time_zone.toMillisecond(t);
+        return time_zone.toMillisecond<DateTime64>(datetime64, scale_multiplier);
     }
-    static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
+    
+    static UInt16 execute(UInt32, const DateLUTImpl &)
     {
-        return time_zone.toMillisecond(t);
+        return 0; /// Only DateTime64 type will give a value for milliseconds
     }
     static UInt16 execute(Int32, const DateLUTImpl &)
     {
@@ -1540,7 +1542,7 @@ struct ToMillisecondImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ToStartOfSecondImpl;
+    using FactorTransform = ZeroTransform;
 };
 
 struct ToISOYearImpl
