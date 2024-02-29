@@ -368,11 +368,11 @@ private:
 
     /// We should read source from which instruction on each row?
     template <typename S>
-    static NO_INLINE void calculateInserts(std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
+    static NO_INLINE void calculateInserts(const std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
     {
         for (S i = instructions.size() - 1; i != static_cast<S>(-1); --i)
         {
-            auto & instruction = instructions[i];
+            const auto & instruction = instructions[i];
             if (instruction.condition_always_true)
             {
                 for (size_t row_i = 0; row_i < rows; ++row_i)
@@ -410,7 +410,7 @@ private:
 
     template <typename T, typename S, bool nullable_result = false>
     static NO_INLINE void executeInstructionsColumnar(
-        std::vector<Instruction> & instructions,
+        const std::vector<Instruction> & instructions,
         size_t rows,
         PaddedPODArray<T> & res_data,
         PaddedPODArray<UInt8> * res_null_map = nullptr)
@@ -426,7 +426,7 @@ private:
         std::vector<const UInt8 *> null_map_cols(instructions.size(), nullptr);
         for (size_t i = 0; i < instructions.size(); ++i)
         {
-            auto & instruction = instructions[i];
+            const auto & instruction = instructions[i];
             const IColumn * non_const_col = instructions[i].source_is_constant
                 ? &assert_cast<const ColumnConst &>(*instruction.source).getDataColumn()
                 : instruction.source.get();
@@ -454,7 +454,7 @@ private:
         for (size_t row_i = 0; row_i < rows; ++row_i)
         {
             S insert = inserts[row_i];
-            auto & instruction = instructions[insert];
+            const auto & instruction = instructions[insert];
             size_t index = instruction.source_is_constant ? 0 : row_i;
             res_data[row_i] = *(data_cols[insert] + index);
             if constexpr (nullable_result)
