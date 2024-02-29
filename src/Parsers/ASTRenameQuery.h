@@ -35,11 +35,6 @@ public:
             tryGetIdentifierNameInto(table, name);
             return name;
         }
-
-        Table clone() const
-        {
-            return Table{.database = database->clone(), .table = table->clone()};
-        }
     };
 
     struct Element
@@ -66,11 +61,6 @@ public:
     {
         auto res = std::make_shared<ASTRenameQuery>(*this);
         cloneOutputOptions(*res);
-        for (auto & element : res->elements)
-        {
-            element.from = element.from.clone();
-            element.to = element.to.clone();
-        }
         return res;
     }
 
@@ -94,7 +84,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Rename; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         if (database)
         {
@@ -103,9 +93,9 @@ protected:
             if (elements.at(0).if_exists)
                 settings.ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
 
-            settings.ostr << backQuoteIfNeed(elements.at(0).from.getDatabase());
+            elements.at(0).from.database->formatImpl(settings, state, frame);
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
-            settings.ostr << backQuoteIfNeed(elements.at(0).to.getDatabase());
+            elements.at(0).to.database->formatImpl(settings, state, frame);
             formatOnCluster(settings);
             return;
         }
@@ -129,9 +119,26 @@ protected:
 
             if (it->if_exists)
                 settings.ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
-            settings.ostr << (it->from.database ? backQuoteIfNeed(it->from.getDatabase()) + "." : "") << backQuoteIfNeed(it->from.getTable())
-                << (settings.hilite ? hilite_keyword : "") << (exchange ? " AND " : " TO ") << (settings.hilite ? hilite_none : "")
-                << (it->to.database ? backQuoteIfNeed(it->to.getDatabase()) + "." : "") << backQuoteIfNeed(it->to.getTable());
+
+
+            if (it->from.database)
+            {
+                it->from.database->formatImpl(settings, state, frame);
+                settings.ostr << '.';
+            }
+
+            it->from.table->formatImpl(settings, state, frame);
+
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << (exchange ? " AND " : " TO ") << (settings.hilite ? hilite_none : "");
+
+            if (it->to.database)
+            {
+                it->to.database->formatImpl(settings, state, frame);
+                settings.ostr << '.';
+            }
+
+            it->to.table->formatImpl(settings, state, frame);
+
         }
 
         formatOnCluster(settings);
