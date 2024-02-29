@@ -578,6 +578,7 @@ ReturnType parseDateTimeBestEffortImpl(
     if (!year && !month && !day_of_month && !has_time)
         return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: neither Date nor Time was parsed successfully");
 
+    auto is_leap_year = [](Int16 y) { return (y % 400 == 0) || (y % 100 != 0 && y % 4 == 0); };
     if (!day_of_month)
         day_of_month = 1;
     if (!month)
@@ -585,11 +586,35 @@ ReturnType parseDateTimeBestEffortImpl(
     if (!year)
     {
         time_t now = time(nullptr);
-        UInt16 curr_year = local_time_zone.toYear(now);
-        year = now < local_time_zone.makeDateTime(curr_year, month, day_of_month, hour, minute, second) ? curr_year - 1 : curr_year;
+        Int16 curr_year = local_time_zone.toYear(now);
+        year = curr_year;
+        if (month == 2 && day_of_month == 29)
+        {
+            /// Select the leap year (if any). If not check_date will fail
+            for (Int16 possible_year = curr_year - 1; possible_year <= (curr_year + 1); possible_year++)
+            {
+                if (is_leap_year(possible_year))
+                {
+                    year = possible_year;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            /// Select the year with the closest date
+            auto selected_date = std::numeric_limits<DateLUTImpl::Time>::max();
+            for (Int16 possible_year = curr_year - 1; possible_year <= (curr_year + 1); possible_year++)
+            {
+                auto possible_date = local_time_zone.makeDate(possible_year, month, day_of_month);
+                if (abs(possible_date - now) < abs(selected_date - now))
+                {
+                    year = possible_year;
+                    selected_date = possible_date;
+                }
+            }
+        }
     }
-
-    auto is_leap_year = (year % 400 == 0) || (year % 100 != 0 && year % 4 == 0);
 
     auto check_date = [](const auto & is_leap_year_, const auto & month_, const auto & day_)
     {
@@ -602,7 +627,7 @@ ReturnType parseDateTimeBestEffortImpl(
         return false;
     };
 
-    if (!check_date(is_leap_year, month, day_of_month))
+    if (!check_date(is_leap_year(year), month, day_of_month))
         return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected date: {}-{}-{}",
                         year, static_cast<UInt16>(month), static_cast<UInt16>(day_of_month));
 
