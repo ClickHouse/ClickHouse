@@ -54,6 +54,9 @@ public:
 
     struct Result
     {
+        /// The read data is at [buf + offset, buf + size), where `buf` is from Request struct.
+        /// (Notice that `offset` is included in `size`.)
+
         /// size
         /// Less than requested amount of data can be returned.
         /// If size is zero - the file has ended.

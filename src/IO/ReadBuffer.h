@@ -225,11 +225,22 @@ public:
      *  - seek() to a position above the until position (even if you setReadUntilPosition() to a
      *    higher value right after the seek!),
      *
-     * Typical implementations discard any current buffers and connections, even if the position is
-     * adjusted only a little.
+     * Implementations are recommended to:
+     *  - Allow the read-until-position to go below current position, e.g.:
+     *      // Read block [300, 400)
+     *      setReadUntilPosition(400);
+     *      seek(300);
+     *      next();
+     *      // Read block [100, 200)
+     *      setReadUntilPosition(200); // oh oh, this is below the current position, but should be allowed
+     *      seek(100); // but now everything's fine again
+     *      next();
+     *      // (Swapping the order of seek and setReadUntilPosition doesn't help: then it breaks if the order of blocks is reversed.)
+     *  - Check if new read-until-position value is equal to the current value and do nothing in this case,
+     *    so that the caller doesn't have to.
      *
-     * Typical usage is to call it right after creating the ReadBuffer, before it started doing any
-     * work.
+     * Typical implementations discard any current buffers and connections when the
+     * read-until-position changes even by a small (nonzero) amount.
      */
     virtual void setReadUntilPosition(size_t /* position */) {}
 
