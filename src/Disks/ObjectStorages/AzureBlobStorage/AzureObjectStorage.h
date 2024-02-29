@@ -67,7 +67,7 @@ public:
         const String & name_,
         AzureClientPtr && client_,
         SettingsPtr && settings_,
-        const String & container_);
+        const String & object_namespace_);
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
 

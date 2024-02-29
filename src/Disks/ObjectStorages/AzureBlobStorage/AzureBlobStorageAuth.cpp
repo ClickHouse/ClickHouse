@@ -60,8 +60,8 @@ AzureBlobStorageEndpoint processAzureBlobStorageEndpoint(const Poco::Util::Abstr
         String endpoint = config.getString(config_prefix + ".endpoint");
 
         /// For some authentication methods account name is not present in the endpoint
-        /// 'endpoint_contains_account_name' bool is used to understand how to split the endpoint (default : false)
-        bool endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", false);
+        /// 'endpoint_contains_account_name' bool is used to understand how to split the endpoint (default : true)
+        bool endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", true);
 
         size_t pos = endpoint.find("//");
         if (pos == std::string::npos)
