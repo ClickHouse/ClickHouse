@@ -453,8 +453,8 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 
     Chars & res_chars = res->chars;
     Offsets & res_offsets = res->offsets;
-    res_chars.reserve(chars.size() / col_size * replicate_offsets.back());
-    res_offsets.reserve(replicate_offsets.back());
+    res_chars.reserve_exact(chars.size() / col_size * replicate_offsets.back());
+    res_offsets.reserve_exact(replicate_offsets.back());
 
     Offset prev_replicate_offset = 0;
     Offset prev_string_offset = 0;
@@ -491,7 +491,7 @@ void ColumnString::gather(ColumnGathererStream & gatherer)
 
 void ColumnString::reserve(size_t n)
 {
-    offsets.reserve(n);
+    offsets.reserve_exact(n);
 }
 
 void ColumnString::shrinkToFit()
