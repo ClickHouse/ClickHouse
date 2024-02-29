@@ -12,7 +12,8 @@ max-statements=200
 
 [tool.pylint.'MESSAGES CONTROL']
           # pytest.mark.parametrize is not callable (not-callable)
-disable = '''missing-docstring,
+disable = '''
+          missing-docstring,
           too-few-public-methods,
           invalid-name,
           too-many-arguments,
