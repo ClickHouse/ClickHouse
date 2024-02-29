@@ -46,6 +46,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
+    extern const int SETTING_CONSTRAINT_VIOLATION;
 }
 
 class MemorySink : public SinkToStorage
@@ -54,10 +55,11 @@ public:
     MemorySink(
         StorageMemory & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        ContextPtr context)
+        ContextPtr context_)
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
-        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context))
+        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context_))
+        , context(context_)
     {
     }
 
@@ -100,21 +102,49 @@ public:
             inserted_rows += block.rows();
         }
 
+        Settings settings = context->getSettings();
+        if ((settings.min_bytes_to_keep && settings.min_bytes_to_keep > settings.max_bytes_to_keep)
+            || (settings.min_rows_to_keep && settings.min_rows_to_keep > settings.max_rows_to_keep)) {
+            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Min. bytes / rows must be set with a max.");
+        }
+
         std::lock_guard lock(storage.mutex);
 
         auto new_data = std::make_unique<Blocks>(*(storage.data.get()));
+        UInt64 new_total_rows = storage.total_size_rows.load(std::memory_order_relaxed) + inserted_rows;
+        UInt64 new_total_bytes = storage.total_size_bytes.load(std::memory_order_relaxed) + inserted_bytes;
+        while (!new_data->empty()
+               && ((settings.max_bytes_to_keep && new_total_bytes > settings.max_bytes_to_keep)
+                   || (settings.max_rows_to_keep && new_total_rows > settings.max_rows_to_keep)))
+        {
+            Block oldest_block = new_data->front();
+            UInt64 rows_to_remove = oldest_block.rows();
+            UInt64 bytes_to_remove = oldest_block.allocatedBytes();
+            if (new_total_bytes - bytes_to_remove < settings.min_bytes_to_keep
+                || new_total_rows - rows_to_remove < settings.min_rows_to_keep)
+            {
+                break; // stop - removing next block will put us under min_bytes / min_rows threshold
+            }
+
+            // delete old block from current storage table
+            new_total_rows -= rows_to_remove;
+            new_total_bytes -= bytes_to_remove;
+            new_data->erase(new_data->begin());
+        }
+
+        // finally - append new data to modified storage table and commit
         new_data->insert(new_data->end(), new_blocks.begin(), new_blocks.end());
 
         storage.data.set(std::move(new_data));
-        storage.total_size_bytes.fetch_add(inserted_bytes, std::memory_order_relaxed);
-        storage.total_size_rows.fetch_add(inserted_rows, std::memory_order_relaxed);
+        storage.total_size_rows.store(new_total_rows, std::memory_order_relaxed);
+        storage.total_size_bytes.store(new_total_bytes, std::memory_order_relaxed);
     }
 
 private:
     Blocks new_blocks;
-
     StorageMemory & storage;
     StorageSnapshotPtr storage_snapshot;
+    ContextPtr context;
 };
 
 
