@@ -585,8 +585,7 @@ ReturnType parseDateTimeBestEffortImpl(
     if (!year)
     {
         time_t now = time(nullptr);
-        UInt16 curr_year = local_time_zone.toYear(now);
-        year = now < local_time_zone.makeDateTime(curr_year, month, day_of_month, hour, minute, second) ? curr_year - 1 : curr_year;
+        year = local_time_zone.toYear(now);
     }
 
     auto is_leap_year = (year % 400 == 0) || (year % 100 != 0 && year % 4 == 0);
