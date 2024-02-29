@@ -26,6 +26,4 @@ void moveFileBetweenDisks(
     LoggerPtr logger,
     const KeeperContextPtr & keeper_context);
 
-std::string getCurrentTimestampFolder();
-
 }

@@ -569,8 +569,7 @@ KeeperSnapshotManager::KeeperSnapshotManager(
     bool compress_snapshots_zstd_,
     const std::string & superdigest_,
     size_t storage_tick_time_)
-    : snapshots_detached_dir("detached")
-    , snapshots_to_keep(snapshots_to_keep_)
+    : snapshots_to_keep(snapshots_to_keep_)
     , compress_snapshots_zstd(compress_snapshots_zstd_)
     , superdigest(superdigest_)
     , storage_tick_time(storage_tick_time_)
@@ -818,7 +817,6 @@ void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx)
     auto itr = existing_snapshots.find(log_idx);
     if (itr == existing_snapshots.end())
         throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
-
     const auto & [path, disk] = itr->second;
     disk->removeFileIfExists(path);
     existing_snapshots.erase(itr);

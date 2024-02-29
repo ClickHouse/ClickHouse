@@ -157,8 +157,6 @@ private:
     /// ZSTD codec.
     static bool isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer);
 
-    const std::string snapshots_detached_dir;
-
     /// How many snapshots to keep before remove
     const size_t snapshots_to_keep;
     /// All existing snapshots in our path (log_index -> path)
