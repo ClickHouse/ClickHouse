@@ -74,6 +74,7 @@ public:
     }
 
     void insert(const Field & x) override;
+    bool tryInsert(const Field & x) override;
     void insertDefault() override;
 
     void insertFrom(const IColumn & src, size_t n) override;
