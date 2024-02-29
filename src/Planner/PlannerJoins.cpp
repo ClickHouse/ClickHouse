@@ -1,3 +1,4 @@
+#include <memory>
 #include <Planner/PlannerJoins.h>
 
 #include <boost/algorithm/string/split.hpp>
@@ -41,6 +42,7 @@
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
+#include "PlannerActionsVisitor.h"
 
 namespace DB
 {
@@ -125,13 +127,13 @@ TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node)
     return res;
 }
 
-std::optional<JoinTableSide> extractJoinTableSideFromExpression(
+std::set<JoinTableSide> extractJoinTableSidesFromExpression(//const ActionsDAG::Node * expression_root_node,
     const IQueryTreeNode * expression_root_node,
     const TableExpressionSet & left_table_expressions,
     const TableExpressionSet & right_table_expressions,
     const JoinNode & join_node)
 {
-    std::optional<JoinTableSide> table_side;
+    std::set<JoinTableSide> table_sides;
     std::vector<const IQueryTreeNode *> nodes_to_process;
     nodes_to_process.push_back(expression_root_node);
 
@@ -169,15 +171,10 @@ std::optional<JoinTableSide> extractJoinTableSideFromExpression(
                 join_node.getRightTableExpression()->formatASTForErrorMessage());
 
         auto input_table_side = is_column_from_left_expr ? JoinTableSide::Left : JoinTableSide::Right;
-        if (table_side && (*table_side) != input_table_side)
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "JOIN {} join expression contains column from left and right table",
-                join_node.formatASTForErrorMessage());
-
-        table_side = input_table_side;
+        table_sides.insert(input_table_side);
     }
 
-    return table_side;
+    return table_sides;
 }
 
 const ActionsDAG::Node * appendExpression(
@@ -199,6 +196,7 @@ const ActionsDAG::Node * appendExpression(
 void buildJoinClause(
     ActionsDAGPtr & left_dag,
     ActionsDAGPtr & right_dag,
+    ActionsDAGPtr & mixed_dag,
     const PlannerContextPtr & planner_context,
     const QueryTreeNodePtr & join_expression,
     const TableExpressionSet & left_table_expressions,
@@ -219,6 +217,7 @@ void buildJoinClause(
             buildJoinClause(
                 left_dag,
                 right_dag,
+                mixed_dag,
                 planner_context,
                 child,
                 left_table_expressions,
@@ -235,41 +234,52 @@ void buildJoinClause(
 
     if (function_name == "equals" || function_name == "isNotDistinctFrom" || is_asof_join_inequality)
     {
+        if (function_node->getArguments().getNodes().size() != 2)
+        {
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "JOIN {} ON expression expected two arguments",
+                join_node.formatASTForErrorMessage());
+        }
+
         const auto left_child = function_node->getArguments().getNodes().at(0);
         const auto right_child = function_node->getArguments().getNodes().at(1);
 
-        auto left_expression_side_optional = extractJoinTableSideFromExpression(left_child.get(),
+        auto left_expression_sides = extractJoinTableSidesFromExpression(left_child.get(),
             left_table_expressions,
             right_table_expressions,
             join_node);
 
-        auto right_expression_side_optional = extractJoinTableSideFromExpression(right_child.get(),
+        auto right_expression_sides = extractJoinTableSidesFromExpression(right_child.get(),
             left_table_expressions,
             right_table_expressions,
             join_node);
-
-        if (!left_expression_side_optional && !right_expression_side_optional)
+        
+        if (left_expression_sides.empty() && right_expression_sides.empty())
         {
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "JOIN {} ON expression with constants is not supported",
+                "JOIN {} ON expression expected non-empty left and right table expressions",
                 join_node.formatASTForErrorMessage());
         }
-        else if (left_expression_side_optional && !right_expression_side_optional)
+        else if (left_expression_sides.size() == 1 && right_expression_sides.empty())
         {
-            auto & dag = *left_expression_side_optional == JoinTableSide::Left ? left_dag : right_dag;
+            auto expression_side = *left_expression_sides.begin();
+            auto & dag =  expression_side == JoinTableSide::Left ? left_dag : right_dag;
             const auto * node = appendExpression(dag, join_expression, planner_context, join_node);
-            join_clause.addCondition(*left_expression_side_optional, node);
+            join_clause.addCondition(expression_side, node);
+
         }
-        else if (!left_expression_side_optional && right_expression_side_optional)
+        else if (left_expression_sides.empty() && right_expression_sides.size() == 1)
         {
-            auto & dag = *right_expression_side_optional == JoinTableSide::Left ? left_dag : right_dag;
+            auto expression_side = *right_expression_sides.begin();
+            auto & dag =  expression_side == JoinTableSide::Left ? left_dag : right_dag;
             const auto * node = appendExpression(dag, join_expression, planner_context, join_node);
-            join_clause.addCondition(*right_expression_side_optional, node);
+            join_clause.addCondition(expression_side, node);
+
         }
-        else
+        else if (left_expression_sides.size() == 1 && right_expression_sides.size() == 1)
         {
-            auto left_expression_side = *left_expression_side_optional;
-            auto right_expression_side = *right_expression_side_optional;
+            auto left_expression_side = *left_expression_sides.begin();
+            auto right_expression_side = *right_expression_sides.begin();
 
             if (left_expression_side != right_expression_side)
             {
@@ -310,23 +320,36 @@ void buildJoinClause(
                 join_clause.addCondition(left_expression_side, node);
             }
         }
+        else
+        {
+            /// expression involves both tables.
+            /// `expr1(left.col1, right.col2) == expr2(left.col3, right.col4)`
+            const auto * node = appendExpression(mixed_dag, join_expression, planner_context, join_node);
+            join_clause.addMixedCondition(node);
+        }
 
-        return;
     }
+    else
+    {
+        auto expression_sides = extractJoinTableSidesFromExpression(join_expression.get(),
+            left_table_expressions,
+            right_table_expressions,
+            join_node);
 
-    auto expression_side_optional = extractJoinTableSideFromExpression(
-        join_expression.get(),
-        left_table_expressions,
-        right_table_expressions,
-        join_node);
-
-    if (!expression_side_optional)
-        expression_side_optional = JoinTableSide::Right;
-
-    auto expression_side = *expression_side_optional;
-    auto & dag = expression_side == JoinTableSide::Left ? left_dag : right_dag;
-    const auto * node = appendExpression(dag, join_expression, planner_context, join_node);
-    join_clause.addCondition(expression_side, node);
+        if (expression_sides.empty() || expression_sides.size() == 1)
+        {
+            auto expression_side = expression_sides.empty() ? JoinTableSide::Right : *expression_sides.begin();
+            auto & dag = expression_side == JoinTableSide::Left ? left_dag : right_dag;
+            const auto * node = appendExpression(dag, join_expression, planner_context, join_node);
+            join_clause.addCondition(expression_side, node);
+        }
+        else
+        {
+            /// expression involves both tables.
+            const auto * node = appendExpression(mixed_dag, join_expression, planner_context, join_node);
+            join_clause.addMixedCondition(node);
+        }
+    }
 }
 
 JoinClausesAndActions buildJoinClausesAndActions(
@@ -337,6 +360,16 @@ JoinClausesAndActions buildJoinClausesAndActions(
 {
     ActionsDAGPtr left_join_actions = std::make_shared<ActionsDAG>(left_table_expression_columns);
     ActionsDAGPtr right_join_actions = std::make_shared<ActionsDAG>(right_table_expression_columns);
+    ColumnsWithTypeAndName mixed_table_expression_columns;
+    for (const auto & left_column : left_table_expression_columns)
+    {
+        mixed_table_expression_columns.push_back(left_column);
+    }
+    for (const auto & right_column : right_table_expression_columns)
+    {
+        mixed_table_expression_columns.push_back(right_column);
+    }
+    ActionsDAGPtr mixed_join_actions = std::make_shared<ActionsDAG>(mixed_table_expression_columns);
 
     /** It is possible to have constant value in JOIN ON section, that we need to ignore during DAG construction.
       * If we do not ignore it, this function will be replaced by underlying constant.
@@ -390,6 +423,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
 
     JoinClausesAndActions result;
 
+    bool is_inequal_join = false;
     const auto & function_name = function_node->getFunction()->getName();
     if (function_name == "or")
     {
@@ -400,12 +434,14 @@ JoinClausesAndActions buildJoinClausesAndActions(
             buildJoinClause(
                 left_join_actions,
                 right_join_actions,
+                mixed_join_actions,
                 planner_context,
                 child,
                 join_left_table_expressions,
                 join_right_table_expressions,
                 join_node,
                 result.join_clauses.back());
+            is_inequal_join |= result.join_clauses.back().hasMixedFilterCondition();
         }
     }
     else
@@ -415,12 +451,14 @@ JoinClausesAndActions buildJoinClausesAndActions(
         buildJoinClause(
                 left_join_actions,
                 right_join_actions,
+                mixed_join_actions,
                 planner_context,
                 join_expression,
                 join_left_table_expressions,
                 join_right_table_expressions,
                 join_node,
                 result.join_clauses.back());
+        is_inequal_join |= result.join_clauses.back().hasMixedFilterCondition();
     }
 
     auto and_function = FunctionFactory::instance().get("and", planner_context->getQueryContext());
@@ -441,7 +479,6 @@ JoinClausesAndActions buildJoinClausesAndActions(
         if (!left_filter_condition_nodes.empty())
         {
             const ActionsDAG::Node * dag_filter_condition_node = nullptr;
-
             if (left_filter_condition_nodes.size() > 1)
                 dag_filter_condition_node = &left_join_actions->addFunction(and_function, left_filter_condition_nodes, {});
             else
@@ -539,6 +576,32 @@ JoinClausesAndActions buildJoinClausesAndActions(
     result.right_join_expressions_actions = right_join_actions->clone();
     result.right_join_tmp_expression_actions = std::move(right_join_actions);
     result.right_join_expressions_actions->removeUnusedActions(join_right_actions_names);
+
+    /// If there is any inequal join condition, we need to build full join expressions actions.
+    if (is_inequal_join)
+    {
+        if (result.join_clauses.size() > 1)
+        {
+            auto full_join_expressions_actions = std::make_shared<ActionsDAG>(mixed_table_expression_columns);
+            PlannerActionsVisitor join_expression_visitor(planner_context);
+            auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(full_join_expressions_actions, join_expression);
+            if (join_expression_dag_node_raw_pointers.size() != 1)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "JOIN {} ON clause contains multiple expressions", join_node.formatASTForErrorMessage());
+
+            full_join_expressions_actions->addOrReplaceInOutputs(*join_expression_dag_node_raw_pointers[0]);
+            Names required_names{join_expression_dag_node_raw_pointers[0]->result_name};
+            full_join_expressions_actions->removeUnusedActions(required_names);
+            result.full_join_expressions_actions = full_join_expressions_actions;
+        }
+        else
+        {
+            const auto & join_clause = result.join_clauses.front();
+            const auto & mixed_filter_condition_nodes = join_clause.getMixedFilterConditionNodes();
+            auto full_join_expressions_actions = ActionsDAG::buildFilterActionsDAG(mixed_filter_condition_nodes, {}, true);
+            result.full_join_expressions_actions = full_join_expressions_actions;
+        }
+    }
 
     return result;
 }
@@ -751,6 +814,12 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     const Block & right_table_expression_header,
     const PlannerContextPtr & planner_context)
 {
+    if (table_join->getFullJoinExpression() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH))
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "JOIN with mixed conditions supports only hash join algorithm");
+    }
+
     trySetStorageInTableJoin(right_table_expression, table_join);
 
     auto & right_table_expression_data = planner_context->getTableExpressionDataOrThrow(right_table_expression);

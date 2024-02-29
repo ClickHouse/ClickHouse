@@ -1,3 +1,4 @@
+#include <unordered_map>
 #include <Planner/PlannerJoinTree.h>
 
 #include <Common/scope_guard_safe.h>
@@ -1316,6 +1317,14 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
                 std::swap(table_join_clause.key_names_left.at(asof_condition.key_index), table_join_clause.key_names_left.back());
                 std::swap(table_join_clause.key_names_right.at(asof_condition.key_index), table_join_clause.key_names_right.back());
             }
+        }
+
+        if (join_clauses_and_actions.full_join_expressions_actions)
+        {
+            ExpressionActionsPtr & full_join_expression = table_join->getFullJoinExpression();
+            full_join_expression = std::make_shared<ExpressionActions>(
+                join_clauses_and_actions.full_join_expressions_actions,
+                ExpressionActionsSettings::fromContext(planner_context->getQueryContext(), CompileExpressions::no));
         }
     }
     else if (join_node.isUsingJoinExpression())

@@ -11,6 +11,8 @@
 #include <Interpreters/IKeyValueEntity.h>
 
 #include <Common/Exception.h>
+#include "ActionsDAG.h"
+#include "ExpressionActions.h"
 #include <Parsers/IAST_fwd.h>
 
 #include <cstddef>
@@ -153,6 +155,8 @@ private:
     ASTs key_asts_right;
 
     Clauses clauses;
+    /// Originally used for inequal join. If there is no any inequal join condition, it will be nullptr.
+    ExpressionActionsPtr full_join_expression = nullptr;
 
     ASTTableJoin table_join;
 
@@ -297,6 +301,10 @@ public:
 
     std::vector<JoinOnClause> & getClauses() { return clauses; }
     const std::vector<JoinOnClause> & getClauses() const { return clauses; }
+
+    const ExpressionActionsPtr & getFullJoinExpression() const { return full_join_expression;}
+    ExpressionActionsPtr & getFullJoinExpression() { return full_join_expression;}
+
 
     Names getAllNames(JoinTableSide side) const;
 

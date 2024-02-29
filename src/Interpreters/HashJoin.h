@@ -9,6 +9,7 @@
 
 #include <Interpreters/IJoin.h>
 #include <Interpreters/AggregationCommon.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/RowRefs.h>
 
 #include <Common/Arena.h>
@@ -470,6 +471,8 @@ private:
     static Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
     bool empty() const;
+
+    void validateAdditionalFilterExpression(ExpressionActionsPtr additional_filter_expression);
 };
 
 }
