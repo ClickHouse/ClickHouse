@@ -52,11 +52,6 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-    void useFullNameInToAST()
-    {
-        use_parts_for_to_ast = false;
-    }
-
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
@@ -69,7 +64,6 @@ protected:
 private:
     Identifier identifier;
     std::optional<TableExpressionModifiers> table_expression_modifiers;
-    bool use_parts_for_to_ast = false;
 
     static constexpr size_t children_size = 0;
 };

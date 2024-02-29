@@ -59,7 +59,7 @@ def test_distributed_type_object(started_cluster):
     )
 
     expected = TSV("120\n")
-    assert TSV(node1.query("SELECT sum(data.k2 * id) FROM dist_table")) == expected
+    assert TSV(node1.query("SELECT sum(data.k2 * id) FROM dist_table SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0")) == expected
 
     node1.query("TRUNCATE TABLE local_table")
     node2.query("TRUNCATE TABLE local_table")

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vector>
 #include <Client/ConnectionPool.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Cluster.h>
@@ -43,6 +44,8 @@ ASTPtr rewriteSelectQuery(
 using ColumnsDescriptionByShardNum = std::unordered_map<UInt32, ColumnsDescription>;
 using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;
 
+using MissingObjectList = std::vector<std::pair<String, String>>;
+
 class SelectStreamFactory
 {
 public:
@@ -54,6 +57,8 @@ public:
         /// Used to check the table existence on remote node
         StorageID main_table;
         Block header;
+
+        MissingObjectList missing_object_list;
 
         Cluster::ShardInfo shard_info;
 
@@ -112,7 +117,8 @@ private:
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
-        AdditionalShardFilterGenerator shard_filter_generator);
+        AdditionalShardFilterGenerator shard_filter_generator,
+        MissingObjectList missed_list = {});
 };
 
 }

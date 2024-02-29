@@ -965,30 +965,32 @@ void replaceMissedSubcolumnsByConstants(
 
 /// @expected_columns and @available_columns contain descriptions
 /// of extended Object columns.
-void replaceMissedSubcolumnsByConstants(
+MissingObjectList replaceMissedSubcolumnsByConstants(
     const ColumnsDescription & expected_columns,
     const ColumnsDescription & available_columns,
     QueryTreeNodePtr & query,
     const ContextPtr & context [[maybe_unused]])
 {
+    MissingObjectList missed_list;
+
     NamesAndTypes missed_names_types = calculateMissedSubcolumns(expected_columns, available_columns);
 
     if (missed_names_types.empty())
-        return;
+        return missed_list;
 
     auto * query_node = query->as<QueryNode>();
     if (!query_node)
-        return;
+        return missed_list;
+
+    missed_list.reserve(missed_names_types.size());
 
     auto table_expression = extractLeftTableExpression(query_node->getJoinTree());
-
-    auto & with_nodes = query_node->getWith().getNodes();
 
     std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
     for (const auto & [name, type] : missed_names_types)
     {
         auto constant = std::make_shared<ConstantNode>(type->getDefault(), type);
-        constant->setAlias(table_expression->getAlias() + name);
+        constant->setAlias(table_expression->getAlias() + "." + name);
         // auto materialize = std::make_shared<FunctionNode>("materialize");
 
         // auto function = FunctionFactory::instance().get("materialize", context);
@@ -996,17 +998,17 @@ void replaceMissedSubcolumnsByConstants(
         // materialize->resolveAsFunction(function->build(materialize->getArgumentColumns()));
         // materialize->setAlias(name);
 
-        with_nodes.push_back(constant);
-
-        auto id = std::make_shared<IdentifierNode>(Identifier(table_expression->getAlias() + name));
-        id->useFullNameInToAST();
-        column_name_to_node[name] = id;
+        column_name_to_node[name] = buildCastFunction(constant, type, context);
+        missed_list.push_back({ constant->getValueStringRepresentation() + "_" + constant->getResultType()->getName(), table_expression->getAlias() + "." + name });
+        LOG_DEBUG(&Poco::Logger::get("replaceMissedSubcolumnsByConstants"), "{} -> {}", missed_list.back().first, missed_list.back().second);
         LOG_DEBUG(&Poco::Logger::get("replaceMissedSubcolumnsByConstants"), "Name {} Expression\n{}", name, column_name_to_node[name]->dumpTree());
     }
 
     LOG_DEBUG(&Poco::Logger::get("replaceMissedSubcolumnsByConstants"), "Table expression\n{} ", table_expression->dumpTree());
     replaceColumns(query, table_expression, column_name_to_node);
     LOG_DEBUG(&Poco::Logger::get("replaceMissedSubcolumnsByConstants"), "Result:\n{} ", query->dumpTree());
+
+    return missed_list;
 }
 
 Field FieldVisitorReplaceScalars::operator()(const Array & x) const

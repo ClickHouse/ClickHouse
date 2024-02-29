@@ -102,7 +102,9 @@ void replaceMissedSubcolumnsByConstants(
     const ColumnsDescription & available_columns,
     ASTPtr query);
 
-void replaceMissedSubcolumnsByConstants(
+using MissingObjectList = std::vector<std::pair<String, String>>;
+
+MissingObjectList replaceMissedSubcolumnsByConstants(
     const ColumnsDescription & expected_columns,
     const ColumnsDescription & available_columns,
     QueryTreeNodePtr & query,

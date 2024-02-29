@@ -1,4 +1,3 @@
-#include <memory>
 #include <Analyzer/IdentifierNode.h>
 
 #include <Common/assert_cast.h>
@@ -57,18 +56,13 @@ void IdentifierNode::updateTreeHashImpl(HashState & state) const
 
 QueryTreeNodePtr IdentifierNode::cloneImpl() const
 {
-    auto result = std::make_shared<IdentifierNode>(identifier);
-    result->use_parts_for_to_ast = use_parts_for_to_ast;
-    return result;
+    return std::make_shared<IdentifierNode>(identifier);
 }
 
 ASTPtr IdentifierNode::toASTImpl(const ConvertToASTOptions & /* options */) const
 {
     auto identifier_parts = identifier.getParts();
-    if (use_parts_for_to_ast)
-        return std::make_shared<ASTIdentifier>(std::move(identifier_parts));
-    else
-        return std::make_shared<ASTIdentifier>(identifier.getFullName());
+    return std::make_shared<ASTIdentifier>(std::move(identifier_parts));
 }
 
 }

@@ -151,7 +151,8 @@ void SelectStreamFactory::createForShardImpl(
     Shards & remote_shards,
     UInt32 shard_count,
     bool parallel_replicas_enabled,
-    AdditionalShardFilterGenerator shard_filter_generator)
+    AdditionalShardFilterGenerator shard_filter_generator,
+    MissingObjectList missed_list)
 {
     auto emplace_local_stream = [&]()
     {
@@ -177,6 +178,7 @@ void SelectStreamFactory::createForShardImpl(
             .query = query_ast,
             .main_table = main_table,
             .header = shard_header,
+            .missing_object_list = std::move(missed_list),
             .shard_info = shard_info,
             .lazy = lazy,
             .local_delay = local_delay,
@@ -299,8 +301,9 @@ void SelectStreamFactory::createForShard(
 
     auto it = objects_by_shard.find(shard_info.shard_num);
     QueryTreeNodePtr modified_query = query_tree;
+    MissingObjectList missed_list;
     if (it != objects_by_shard.end())
-        replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, modified_query, context);
+        missed_list = replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, modified_query, context);
 
     auto query_ast = queryNodeToDistributedSelectQuery(modified_query);
 
@@ -314,7 +317,8 @@ void SelectStreamFactory::createForShard(
         remote_shards,
         shard_count,
         parallel_replicas_enabled,
-        std::move(shard_filter_generator));
+        std::move(shard_filter_generator),
+        std::move(missed_list));
 
 }
 
