@@ -23,6 +23,7 @@
 #include <aws/s3/model/DeleteObjectsRequest.h>
 #include <aws/s3/model/ChecksumAlgorithm.h>
 #include <aws/s3/model/CompletedPart.h>
+#include <aws/core/utils/HashingUtils.h>
 
 #include <base/defines.h>
 
@@ -37,6 +38,17 @@ namespace RequestChecksum
 inline void setPartChecksum(Model::CompletedPart & part, const std::string & checksum)
 {
     part.SetChecksumCRC32(checksum);
+}
+
+inline void setRequestChecksum(Model::UploadPartRequest & req, const std::string & checksum)
+{
+    req.SetChecksumCRC32(checksum);
+}
+
+inline std::string calculateChecksum(Model::UploadPartRequest & req)
+{
+    chassert(req.GetChecksumAlgorithm() == Aws::S3::Model::ChecksumAlgorithm::CRC32);
+    return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateCRC32(*(req.GetBody())));
 }
 
 template <typename R>

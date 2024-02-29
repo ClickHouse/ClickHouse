@@ -18,10 +18,6 @@
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
-#include <aws/core/utils/HashingUtils.h>
-#include <aws/s3/model/StorageClass.h>
-#include <aws/s3/model/ChecksumAlgorithm.h>
-
 #include <utility>
 
 
@@ -461,9 +457,9 @@ S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, Pa
     /// Checksums need to be provided on CompleteMultipartUpload requests, so we calculate then manually and store in multipart_checksums
     if (client_ptr->isS3ExpressBucket())
     {
-        chassert(req.GetChecksumAlgorithm() == Aws::S3::Model::ChecksumAlgorithm::CRC32);
-        req.SetChecksumCRC32(Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateCRC32(*(req.GetBody()))));
-        multipart_checksums.push_back(req.GetChecksumCRC32());
+        auto checksum = S3::RequestChecksum::calculateChecksum(req);
+        S3::RequestChecksum::setRequestChecksum(req, checksum);
+        multipart_checksums.push_back(std::move(checksum));
     }
 
     return req;
