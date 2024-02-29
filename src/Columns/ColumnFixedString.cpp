@@ -63,6 +63,17 @@ void ColumnFixedString::insert(const Field & x)
     insertData(s.data(), s.size());
 }
 
+bool ColumnFixedString::tryInsert(const Field & x)
+{
+    if (x.getType() != Field::Types::Which::String)
+        return false;
+    const String & s = x.get<const String &>();
+    if (s.size() > n)
+        return false;
+    insertData(s.data(), s.size());
+    return true;
+}
+
 void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
 {
     const ColumnFixedString & src = assert_cast<const ColumnFixedString &>(src_);

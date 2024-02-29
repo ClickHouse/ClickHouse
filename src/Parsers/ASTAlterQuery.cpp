@@ -456,13 +456,13 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     }
     else if (type == ASTAlterCommand::MODIFY_QUERY)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY QUERY " << settings.nl_or_ws
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY QUERY" << settings.nl_or_ws
                       << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_REFRESH)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY REFRESH " << settings.nl_or_ws
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY" << settings.nl_or_ws
                       << (settings.hilite ? hilite_none : "");
         refresh->formatImpl(settings, state, frame);
     }
@@ -630,16 +630,19 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
 
     if (table)
     {
+        settings.ostr << indent_str;
         if (database)
         {
-            settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
-            settings.ostr << ".";
+            database->formatImpl(settings, state, frame);
+            settings.ostr << '.';
         }
-        settings.ostr << indent_str << backQuoteIfNeed(getTable());
+
+        table->formatImpl(settings, state, frame);
     }
     else if (alter_object == AlterObjectType::DATABASE && database)
     {
-        settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
+        settings.ostr << indent_str;
+        database->formatImpl(settings, state, frame);
     }
 
     formatOnCluster(settings);

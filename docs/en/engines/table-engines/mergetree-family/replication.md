@@ -304,6 +304,24 @@ We use the term `MergeTree` to refer to all table engines in the `MergeTree fami
 
 If you had a `MergeTree` table that was manually replicated, you can convert it to a replicated table. You might need to do this if you have already collected a large amount of data in a `MergeTree` table and now you want to enable replication.
 
+`MergeTree` table can be automatically converted on server restart if `convert_to_replicated` flag is set at the table's data directory (`/var/lib/clickhouse/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` for `Atomic` database).
+Create empty `convert_to_replicated` file and the table will be loaded as replicated on next server restart.
+
+This query can be used to get the table's data path.
+
+```sql
+SELECT data_paths FROM system.tables WHERE table = 'table_name' AND database = 'database_name';
+```
+
+Note that ReplicatedMergeTree table will be created with values of `default_replica_path` and `default_replica_name` settings.
+To create a converted table on other replicas, you will need to explicitly specify its path in the first argument of the `ReplicatedMergeTree` engine. The following query can be used to get its path.
+
+```sql
+SELECT zookeeper_path FROM system.replicas WHERE table = 'table_name';
+```
+
+There is also a manual way to do this without server restart.
+
 If the data differs on various replicas, first sync it, or delete this data on all the replicas except one.
 
 Rename the existing MergeTree table, then create a `ReplicatedMergeTree` table with the old name.

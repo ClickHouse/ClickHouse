@@ -96,6 +96,8 @@ public:
 
     void insert(const Field & x) override;
 
+    bool tryInsert(const Field & x) override;
+
     void insertFrom(const IColumn & src_, size_t index) override;
 
     void insertData(const char * pos, size_t length) override;

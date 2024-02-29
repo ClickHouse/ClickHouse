@@ -134,9 +134,9 @@ bool DataTypeVariant::hasDynamicSubcolumns() const
     return std::any_of(variants.begin(), variants.end(), [](auto && elem) { return elem->hasDynamicSubcolumns(); });
 }
 
-std::optional<ColumnVariant::Discriminator> DataTypeVariant::tryGetVariantDiscriminator(const DataTypePtr & type) const
+std::optional<ColumnVariant::Discriminator> DataTypeVariant::tryGetVariantDiscriminator(const IDataType & type) const
 {
-    String type_name = type->getName();
+    String type_name = type.getName();
     for (size_t i = 0; i != variants.size(); ++i)
     {
         /// We don't use equals here, because it doesn't respect custom type names.

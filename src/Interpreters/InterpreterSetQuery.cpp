@@ -19,7 +19,7 @@ BlockIO InterpreterSetQuery::execute()
     getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
     session_context->applySettingsChanges(ast.changes);
-    session_context->addQueryParameters(ast.query_parameters);
+    session_context->addQueryParameters(NameToNameMap{ast.query_parameters.begin(), ast.query_parameters.end()});
     session_context->resetSettingsToDefaultValue(ast.default_settings);
     return {};
 }

@@ -37,7 +37,8 @@ CAN_BE_TESTED_LABEL = "can be tested"
 FEATURE_LABEL = "pr-feature"
 SUBMODULE_CHANGED_LABEL = "submodule changed"
 PR_CHECK = "PR Check"
-AUTO_BACKPORT_LABELS = ["pr-ci", "pr-bugfix"]
+# pr-bugfix autoport can lead to issues in releases, let's do ci fixes only
+AUTO_BACKPORT_LABELS = ["pr-ci"]
 
 
 def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
