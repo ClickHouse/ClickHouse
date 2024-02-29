@@ -299,7 +299,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                             ASTPtr replica_ast;
                             if (!ParserStringLiteral{}.parse(pos, replica_ast, expected))
                                 return false;
-                            res->src_replicas.insert(replica_ast->as<ASTLiteral &>().value.safeGet<String>());
+                            res->src_replicas.emplace_back(replica_ast->as<ASTLiteral &>().value.safeGet<String>());
                         } while (ParserToken{TokenType::Comma}.ignore(pos, expected));
                     }
                 }

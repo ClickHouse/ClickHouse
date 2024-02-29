@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeVariant.h>
 
 #include <Core/AccurateComparison.h>
 
@@ -487,16 +488,30 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return object;
         }
     }
+    else if (const DataTypeVariant * type_variant = typeid_cast<const DataTypeVariant *>(&type))
+    {
+        /// If we have type hint and Variant contains such type, no need to convert field.
+        if (from_type_hint && type_variant->tryGetVariantDiscriminator(*from_type_hint))
+            return src;
+
+        /// Create temporary column and check if we can insert this field to the variant.
+        /// If we can insert, no need to convert anything.
+        auto col = type_variant->createColumn();
+        if (col->tryInsert(src))
+            return src;
+    }
 
     /// Conversion from string by parsing.
     if (src.getType() == Field::Types::String)
     {
         /// Promote data type to avoid overflows. Note that overflows in the largest data type are still possible.
         /// But don't promote Float32, since we want to keep the exact same value
+        /// Also don't promote domain types (like bool) because we would otherwise use the serializer of the promoted type (e.g. UInt64 for
+        /// bool, which does not allow 'true' and 'false' as input values)
         const IDataType * type_to_parse = &type;
         DataTypePtr holder;
 
-        if (type.canBePromoted() && !which_type.isFloat32())
+        if (type.canBePromoted() && !which_type.isFloat32() && !type.getCustomSerialization())
         {
             holder = type.promoteNumericType();
             type_to_parse = holder.get();

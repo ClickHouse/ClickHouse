@@ -37,15 +37,15 @@ public:
         Status status;
 
         /// Future that allows to wait until the query is flushed.
-        std::future<void> future;
+        std::future<void> future{};
 
         /// Read buffer that contains extracted
         /// from query data in case of too much data.
-        std::unique_ptr<ReadBuffer> insert_data_buffer;
+        std::unique_ptr<ReadBuffer> insert_data_buffer{};
 
         /// Block that contains received by Native
         /// protocol data in case of too much data.
-        Block insert_block;
+        Block insert_block{};
     };
 
     enum class DataKind
@@ -248,7 +248,6 @@ private:
     Milliseconds getBusyWaitTimeoutMs(
         const Settings & settings,
         const QueueShard & shard,
-        size_t shard_num,
         const QueueShardFlushTimeHistory::TimePoints & flush_time_points,
         std::chrono::steady_clock::time_point now) const;
 

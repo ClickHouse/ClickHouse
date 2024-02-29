@@ -1,0 +1,6 @@
+<clickhouse>
+    <placement>
+        <use_imds>0</use_imds>
+        <availability_zone_from_file>/tmp/node-zone</availability_zone_from_file>
+    </placement>
+</clickhouse>
