@@ -716,6 +716,15 @@ void ColumnObject::insert(const Field & field)
     ++num_rows;
 }
 
+bool ColumnObject::tryInsert(const Field & field)
+{
+    if (field.getType() != Field::Types::Which::Object)
+        return false;
+
+    insert(field);
+    return true;
+}
+
 void ColumnObject::insertDefault()
 {
     for (auto & entry : subcolumns)

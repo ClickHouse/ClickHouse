@@ -380,7 +380,7 @@ namespace
                 findMySQLFunctionSecretArguments();
             }
             else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS") ||
-                     (engine_name == "DeltaLake") || (engine_name == "Hudi") || (engine_name == "Iceberg"))
+                     (engine_name == "DeltaLake") || (engine_name == "Hudi") || (engine_name == "Iceberg") || (engine_name == "S3Queue"))
             {
                 /// S3('url', ['aws_access_key_id', 'aws_secret_access_key',] ...)
                 findS3TableEngineSecretArguments();
@@ -813,8 +813,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
     /// Should this function to be written as operator?
     bool written = false;
-
-    if (arguments && !parameters)
+    if (arguments && !parameters && nulls_action == NullsAction::EMPTY)
     {
         /// Unary prefix operators.
         if (arguments->children.size() == 1)
@@ -835,34 +834,37 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
                 const auto * literal = arguments->children[0]->as<ASTLiteral>();
                 const auto * function = arguments->children[0]->as<ASTFunction>();
-                bool negate = name == "negate";
                 bool is_tuple = literal && literal->value.getType() == Field::Types::Tuple;
                 // do not add parentheses for tuple literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`
                 bool literal_need_parens = literal && !is_tuple;
+
                 // negate always requires parentheses, otherwise -(-1) will be printed as --1
-                bool negate_need_parens = negate && (literal_need_parens || (function && function->name == "negate"));
-                // We don't need parentheses around a single literal.
-                bool need_parens = !literal && frame.need_parens && !negate_need_parens;
+                bool inside_parens = name == "negate" && (literal_need_parens || (function && function->name == "negate"));
+
+                /// We DO need parentheses around a single literal
+                /// For example, SELECT (NOT 0) + (NOT 0) cannot be transformed into SELECT NOT 0 + NOT 0, since
+                /// this is equal to SELECT NOT (0 + NOT 0)
+                bool outside_parens = frame.need_parens && !inside_parens;
 
                 // do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
-                if (negate_need_parens)
+                if (inside_parens)
                     nested_need_parens.need_parens = false;
 
-                if (need_parens)
+                if (outside_parens)
                     settings.ostr << '(';
 
                 settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
 
-                if (negate_need_parens)
+                if (inside_parens)
                     settings.ostr << '(';
 
                 arguments->formatImpl(settings, state, nested_need_parens);
                 written = true;
 
-                if (negate_need_parens)
+                if (inside_parens)
                     settings.ostr << ')';
 
-                if (need_parens)
+                if (outside_parens)
                     settings.ostr << ')';
 
                 break;
@@ -1034,31 +1036,39 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 }
             }
 
-            if (!written && name == "lambda"sv)
+            const auto & first_argument = arguments->children[0];
+            const ASTIdentifier * first_argument_identifier = first_argument->as<ASTIdentifier>();
+            const ASTFunction * first_argument_function = first_argument->as<ASTFunction>();
+            bool first_argument_is_tuple = first_argument_function && first_argument_function->name == "tuple";
+
+            /// Only these types of arguments are accepted by the parser of the '->' operator.
+            bool acceptable_first_argument_for_lambda_expression = first_argument_identifier || first_argument_is_tuple;
+
+            if (!written && name == "lambda"sv && acceptable_first_argument_for_lambda_expression)
             {
                 /// Special case: zero elements tuple in lhs of lambda is printed as ().
                 /// Special case: one-element tuple in lhs of lambda is printed as its element.
+                /// If lambda function is not the first element in the list, it has to be put in parentheses.
+                /// Example: f(x, (y -> z)) should not be printed as f((x, y) -> z).
 
-                if (frame.need_parens)
+                if (frame.need_parens || frame.list_element_index > 0)
                     settings.ostr << '(';
 
-                const auto * first_arg_func = arguments->children[0]->as<ASTFunction>();
-                if (first_arg_func
-                    && first_arg_func->name == "tuple"
-                    && first_arg_func->arguments
-                    && (first_arg_func->arguments->children.size() == 1 || first_arg_func->arguments->children.empty()))
+                if (first_argument_is_tuple
+                    && first_argument_function->arguments
+                    && (first_argument_function->arguments->children.size() == 1 || first_argument_function->arguments->children.empty()))
                 {
-                    if (first_arg_func->arguments->children.size() == 1)
-                        first_arg_func->arguments->children[0]->formatImpl(settings, state, nested_need_parens);
+                    if (first_argument_function->arguments->children.size() == 1)
+                        first_argument_function->arguments->children[0]->formatImpl(settings, state, nested_need_parens);
                     else
                         settings.ostr << "()";
                 }
                 else
-                    arguments->children[0]->formatImpl(settings, state, nested_need_parens);
+                    first_argument->formatImpl(settings, state, nested_need_parens);
 
                 settings.ostr << (settings.hilite ? hilite_operator : "") << " -> " << (settings.hilite ? hilite_none : "");
                 arguments->children[1]->formatImpl(settings, state, nested_need_parens);
-                if (frame.need_parens)
+                if (frame.need_parens || frame.list_element_index > 0)
                     settings.ostr << ')';
                 written = true;
             }
@@ -1235,6 +1245,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 continue;
             }
 
+            nested_dont_need_parens.list_element_index = i;
             argument->formatImpl(settings, state, nested_dont_need_parens);
         }
     }
