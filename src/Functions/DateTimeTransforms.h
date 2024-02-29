@@ -683,21 +683,21 @@ struct ToStartOfInterval<IntervalKind::Kind::Day>
 template <>
 struct ToStartOfInterval<IntervalKind::Kind::Week>
 {
-    static UInt16 execute(UInt16 d, Int64 weeks, const DateLUTImpl & time_zone, Int64)
+    static UInt16 execute(UInt16 d, Int64 weeks, const DateLUTImpl & time_zone, Int64, UInt8 week_mode = 1)
     {
-        return time_zone.toStartOfWeekInterval(DayNum(d), weeks);
+        return time_zone.toStartOfWeekInterval(DayNum(d), weeks, week_mode);
     }
-    static UInt16 execute(Int32 d, Int64 weeks, const DateLUTImpl & time_zone, Int64)
+    static UInt16 execute(Int32 d, Int64 weeks, const DateLUTImpl & time_zone, Int64, UInt8 week_mode = 1)
     {
-        return time_zone.toStartOfWeekInterval(ExtendedDayNum(d), weeks);
+        return time_zone.toStartOfWeekInterval(ExtendedDayNum(d), weeks, week_mode);
     }
-    static UInt16 execute(UInt32 t, Int64 weeks, const DateLUTImpl & time_zone, Int64)
+    static UInt16 execute(UInt32 t, Int64 weeks, const DateLUTImpl & time_zone, Int64, UInt8 week_mode = 1)
     {
-        return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t), weeks);
+        return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t), weeks, week_mode);
     }
-    static UInt16 execute(Int64 t, Int64 weeks, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    static UInt16 execute(Int64 t, Int64 weeks, const DateLUTImpl & time_zone, Int64 scale_multiplier, UInt8 week_mode = 1)
     {
-        return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
+        return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks, week_mode);
     }
 };
 

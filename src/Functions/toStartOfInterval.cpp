@@ -1,3 +1,5 @@
+#include "Interpreters/Context.h"
+
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/DateLUTImpl.h>
@@ -25,8 +27,15 @@ namespace ErrorCodes
 
 class FunctionToStartOfInterval : public IFunction
 {
+    const bool enable_default_monday_first = true;
+
 public:
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToStartOfInterval>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToStartOfInterval>(context); }
+
+    explicit FunctionToStartOfInterval(ContextPtr context)
+        : enable_default_monday_first(context->getSettingsRef().default_mode_week_functions != DefaultWeekMode::SUNDAY)
+    {
+    }
 
     static constexpr auto name = "toStartOfInterval";
     String getName() const override { return name; }
@@ -250,7 +259,15 @@ private:
         Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
 
         for (size_t i = 0; i != size; ++i)
+        {
+            if (unit == IntervalKind::Kind::Week && !enable_default_monday_first)
+            {
+                result_data[i] = static_cast<ResultFieldType>(ToStartOfInterval<IntervalKind::Kind::Week>::execute(time_data[i], num_units, time_zone, scale_multiplier, /*week_mode=*/0));
+                continue;
+            }
+
             result_data[i] = static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
+        }
 
         return result_col;
     }
