@@ -74,7 +74,7 @@ public:
     using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
 
 private:
-    friend class COWHelper<IColumn, ColumnVariant>;
+    friend class COWHelper<IColumnHelper<ColumnVariant>, ColumnVariant>;
 
     using NestedColumns = std::vector<WrappedPtr>;
 
@@ -103,7 +103,7 @@ public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other variants.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested variants.
       */
-    using Base = COWHelper<IColumn, ColumnVariant>;
+    using Base = COWHelper<IColumnHelper<ColumnVariant>, ColumnVariant>;
     static Ptr create(const Columns & variants_) { return create(variants_, {}); }
     static Ptr create(const Columns & variants_, const std::vector<Discriminator> & local_to_global_discriminators_);
     static Ptr create(const ColumnPtr & local_discriminators_, const Columns & variants_) { return create(local_discriminators_, variants_, {}); }
