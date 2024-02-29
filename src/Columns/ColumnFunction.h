@@ -84,6 +84,11 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
     }
 
+    bool tryInsert(const Field &) override
+    {
+        return false;
+    }
+
     void insertDefault() override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());

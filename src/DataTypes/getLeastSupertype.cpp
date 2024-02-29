@@ -640,7 +640,8 @@ DataTypePtr getLeastSupertypeOrString(const DataTypes & types)
     return getLeastSupertype<LeastSupertypeOnError::String>(types);
 }
 
-DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types)
+template<>
+DataTypePtr getLeastSupertype<LeastSupertypeOnError::Variant>(const DataTypes & types)
 {
     auto common_type = getLeastSupertype<LeastSupertypeOnError::Null>(types);
     if (common_type)
@@ -664,6 +665,11 @@ DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types)
     }
 
     return std::make_shared<DataTypeVariant>(variants);
+}
+
+DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types)
+{
+    return getLeastSupertype<LeastSupertypeOnError::Variant>(types);
 }
 
 DataTypePtr tryGetLeastSupertype(const DataTypes & types)

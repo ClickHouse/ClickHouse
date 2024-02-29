@@ -148,6 +148,31 @@ void ColumnTuple::insert(const Field & x)
         columns[i]->insert(tuple[i]);
 }
 
+bool ColumnTuple::tryInsert(const Field & x)
+{
+    if (x.getType() != Field::Types::Which::Tuple)
+        return false;
+
+    const auto & tuple = x.get<const Tuple &>();
+
+    const size_t tuple_size = columns.size();
+    if (tuple.size() != tuple_size)
+        return false;
+
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        if (!columns[i]->tryInsert(tuple[i]))
+        {
+            for (size_t j = 0; j != i; ++j)
+                columns[i]->popBack(1);
+
+            return false;
+        }
+    }
+
+    return true;
+}
+
 void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
 {
     const ColumnTuple & src = assert_cast<const ColumnTuple &>(src_);

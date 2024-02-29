@@ -152,8 +152,7 @@ Block getHeaderForProcessingStage(
             return result;
         }
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical Error: unknown processed stage.");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown processed stage.");
 }
 
 }
-
