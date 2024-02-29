@@ -1,8 +1,5 @@
 import argparse
 import concurrent.futures
-from copy import deepcopy
-from dataclasses import asdict, dataclass
-from enum import Enum
 import json
 import logging
 import os
@@ -11,17 +8,21 @@ import re
 import subprocess
 import sys
 import time
+from copy import deepcopy
+from dataclasses import asdict, dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Union
 
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
-from ci_config import CI_CONFIG, Build, Labels, JobNames
+from ci_config import CI_CONFIG, Build, JobNames, Labels
 from ci_utils import GHActions, is_hex, normalize_string
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
+    InsertException,
     get_instance_id,
     get_instance_type,
     prepare_tests_results_for_clickhouse,
@@ -645,12 +646,18 @@ class CiCache:
             return {}
         poll_interval_sec = 300
         TIMEOUT = 3600
+        MAX_ROUNDS_TO_WAIT = 6
+        MAX_JOB_NUM_TO_WAIT = 3
         await_finished: Dict[str, List[int]] = {}
         round_cnt = 0
-        while len(jobs_with_params) > 4 and round_cnt < 5:
+        while (
+            len(jobs_with_params) > MAX_JOB_NUM_TO_WAIT
+            and round_cnt < MAX_ROUNDS_TO_WAIT
+        ):
             round_cnt += 1
             GHActions.print_in_group(
-                f"Wait pending jobs, round [{round_cnt}]:", list(jobs_with_params)
+                f"Wait pending jobs, round [{round_cnt}/{MAX_ROUNDS_TO_WAIT}]:",
+                list(jobs_with_params),
             )
             # this is initial approach to wait pending jobs:
             # start waiting for the next TIMEOUT seconds if there are more than X(=4) jobs to wait
@@ -1498,7 +1505,10 @@ def _upload_build_profile_data(
             profile_data_file.stat().st_size,
             query,
         )
-        ch_helper.insert_file(url, auth, query, profile_data_file)
+        try:
+            ch_helper.insert_file(url, auth, query, profile_data_file)
+        except InsertException:
+            logging.error("Failed to insert profile data for the build, continue")
 
         query = f"""INSERT INTO binary_sizes
             (
@@ -1524,7 +1534,10 @@ def _upload_build_profile_data(
             binary_sizes_file.stat().st_size,
             query,
         )
-        ch_helper.insert_file(url, auth, query, binary_sizes_file)
+        try:
+            ch_helper.insert_file(url, auth, query, binary_sizes_file)
+        except InsertException:
+            logging.error("Failed to insert binary_size_file for the build, continue")
 
 
 def _run_test(job_name: str, run_command: str) -> int:

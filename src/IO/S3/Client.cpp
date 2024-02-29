@@ -715,7 +715,7 @@ std::string Client::getRegionForBucket(const std::string & bucket, bool force_de
     if (outcome.IsSuccess())
     {
         const auto & result = outcome.GetResult();
-        region = result.GetRegion();
+        region = result.GetBucketRegion();
     }
     else
     {
