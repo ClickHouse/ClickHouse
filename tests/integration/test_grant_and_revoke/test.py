@@ -370,6 +370,7 @@ def test_implicit_create_temporary_table_grant():
     )
 
     instance.query("GRANT CREATE TABLE ON test.* TO A")
+    instance.query("GRANT TABLE ENGINE ON Memory TO A")
     instance.query("CREATE TEMPORARY TABLE tmp(name String)", user="A")
 
     instance.query("REVOKE CREATE TABLE ON *.* FROM A")
@@ -730,9 +731,7 @@ def test_table_engine_grant_and_revoke():
 
     instance.query("GRANT TABLE ENGINE ON TinyLog TO A")
 
-    assert "Not enough privileges" not in instance.query(
-        "CREATE TABLE test.table1(a Integer) engine=TinyLog", user="A"
-    )
+    instance.query("CREATE TABLE test.table1(a Integer) engine=TinyLog", user="A")
 
     assert instance.query("SHOW GRANTS FOR A") == TSV(
         [
@@ -751,3 +750,23 @@ def test_table_engine_grant_and_revoke():
     instance.query("DROP TABLE test.table1")
 
     assert instance.query("SHOW GRANTS FOR A") == TSV([])
+
+
+def test_table_engine_and_source_grant():
+    instance.query("DROP USER IF EXISTS A")
+    instance.query("CREATE USER A")
+
+    instance.query("GRANT CREATE TABLE ON test.table1 TO A")
+    instance.query("GRANT TABLE ENGINE ON PostgreSQL TO A")
+    # We don't need the following statement as GRANT TABLE ENGINE covers it already.
+    # instance.query("GRANT POSTGRES ON *.* TO A")
+
+    instance.query(
+        """
+        CREATE TABLE test.table1(a Integer) 
+        engine=PostgreSQL('localhost:5432', 'dummy', 'dummy', 'dummy', 'dummy');
+        """,
+        user="A",
+    )
+
+    instance.query("DROP TABLE test.table1")
