@@ -43,7 +43,7 @@ struct GetColumnsOptions
         All = AllPhysical | Aliases | Ephemeral,
     };
 
-    explicit GetColumnsOptions(Kind kind_) : kind(kind_) {}
+    GetColumnsOptions(Kind kind_) : kind(kind_) {}
 
     GetColumnsOptions & withSubcolumns(bool value = true)
     {
