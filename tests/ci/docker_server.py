@@ -6,7 +6,7 @@ import json
 import logging
 import sys
 import time
-from os import makedirs
+from os import getenv, makedirs
 from os import path as p
 from pathlib import Path
 from typing import Dict, List
@@ -15,6 +15,7 @@ from build_check import get_release_or_pr
 from build_download_helper import read_build_urls
 from docker_images_helper import DockerImageData, docker_login
 from env_helper import (
+    CI,
     GITHUB_RUN_URL,
     REPORT_PATH,
     S3_BUILDS_BUCKET,
@@ -71,13 +72,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--image-path",
         type=str,
-        default="docker/server",
+        default="",
         help="a path to docker context directory",
     )
     parser.add_argument(
         "--image-repo",
         type=str,
-        default="clickhouse/clickhouse-server",
+        default="",
         help="image name on docker hub",
     )
     parser.add_argument(
@@ -92,14 +93,7 @@ def parse_args() -> argparse.Namespace:
         default=argparse.SUPPRESS,
         help="don't push reports to S3 and github",
     )
-    parser.add_argument("--push", default=True, help=argparse.SUPPRESS)
-    parser.add_argument(
-        "--no-push-images",
-        action="store_false",
-        dest="push",
-        default=argparse.SUPPRESS,
-        help="don't push images to docker hub",
-    )
+    parser.add_argument("--push", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--os", default=["ubuntu", "alpine"], help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-ubuntu",
@@ -337,13 +331,37 @@ def main():
     makedirs(TEMP_PATH, exist_ok=True)
 
     args = parse_args()
-    image = DockerImageData(args.image_path, args.image_repo, False)
+
+    pr_info = PRInfo()
+    check_name = getenv("CHECK_NAME", "")
+    if CI:
+        assert check_name and not args.image_path and not args.image_repo
+
+    image_path = args.image_path
+    image_repo = args.image_repo
+    push = args.push
+    del args.image_path
+    del args.image_repo
+    del args.push
+
+    if check_name:
+        if "server image" in check_name.lower():
+            image_path = "docker/server"
+            image_repo = "clickhouse/clickhouse-server"
+        elif "keeper image" in check_name.lower():
+            image_path = "docker/keeper"
+            image_repo = "clickhouse/clickhouse-keeper"
+        else:
+            assert False, "Invalid CHECK_NAME"
+
+    if pr_info.is_master():
+        push = True
+
+    image = DockerImageData(image_path, image_repo, False)
     args.release_type = auto_release_type(args.version, args.release_type)
     tags = gen_tags(args.version, args.release_type)
-    pr_info = None
     repo_urls = dict()
     direct_urls: Dict[str, List[str]] = dict()
-    pr_info = PRInfo()
     release_or_pr, _ = get_release_or_pr(pr_info, args.version)
 
     for arch, build_name in zip(ARCH, ("package_release", "package_aarch64")):
@@ -355,13 +373,13 @@ def main():
             repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
         if args.allow_build_reuse:
             # read s3 urls from pre-downloaded build reports
-            if "clickhouse-server" in args.image_repo:
+            if "clickhouse-server" in image_repo:
                 PACKAGES = [
                     "clickhouse-client",
                     "clickhouse-server",
                     "clickhouse-common-static",
                 ]
-            elif "clickhouse-keeper" in args.image_repo:
+            elif "clickhouse-keeper" in image_repo:
                 PACKAGES = ["clickhouse-keeper"]
             else:
                 assert False, "BUG"
@@ -375,7 +393,7 @@ def main():
                 if any(package in url for package in PACKAGES) and "-dbg" not in url
             ]
 
-    if args.push:
+    if push:
         docker_login()
 
     logging.info("Following tags will be created: %s", ", ".join(tags))
@@ -385,7 +403,7 @@ def main():
         for tag in tags:
             test_results.extend(
                 build_and_push_image(
-                    image, args.push, repo_urls, os, tag, args.version, direct_urls
+                    image, push, repo_urls, os, tag, args.version, direct_urls
                 )
             )
             if test_results[-1].status != "OK":
