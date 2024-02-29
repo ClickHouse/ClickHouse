@@ -56,6 +56,7 @@ public:
     StringRef getDataAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
+    bool tryInsert(const Field & x) override;
     void insertDefault() override;
     void popBack(size_t n) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const override;
