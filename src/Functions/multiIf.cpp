@@ -418,11 +418,6 @@ private:
         PaddedPODArray<S> inserts(rows, static_cast<S>(instructions.size()));
         calculateInserts(instructions, rows, inserts);
 
-        for (size_t i=0; i<rows; ++i)
-        {
-            std::cout << "rows:" << i << ", inserts:" << static_cast<size_t>(inserts[i]) << std::endl;
-        }
-
         res_data.resize_exact(rows);
         if (res_null_map)
             res_null_map->resize_exact(rows);
