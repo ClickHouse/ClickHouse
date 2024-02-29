@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Disks/IDisk.h>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -59,6 +60,18 @@ Pipe StorageSystemRemoteDataPaths::read(
             std::vector<IDisk::LocalPathWithObjectStoragePaths> remote_paths_by_local_path;
             disk->getRemotePathsRecursive("store", remote_paths_by_local_path);
             disk->getRemotePathsRecursive("data", remote_paths_by_local_path);
+            if (context->getSettingsRef().traverse_shadow_remote_data_paths)
+                disk->getRemotePathsRecursive(
+                    "shadow",
+                    remote_paths_by_local_path,
+                    [](const String & local_path)
+                    {
+                        // `shadow/{backup_name}/revision.txt` is not an object metadata file
+                        const auto path = fs::path(local_path);
+                        return path.filename() == "revision.txt" &&
+                               path.parent_path().has_parent_path() &&
+                               path.parent_path().parent_path().filename() == "shadow";
+                    });
 
             FileCachePtr cache;
 

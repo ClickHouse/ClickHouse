@@ -320,7 +320,10 @@ public:
         {}
     };
 
-    virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)
+    virtual void getRemotePathsRecursive(
+        const String &,
+        std::vector<LocalPathWithObjectStoragePaths> &,
+        const std::function<bool(const String &)> & /* skip_predicate */ = {})
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Method `getRemotePathsRecursive() not implemented for disk: {}`",
