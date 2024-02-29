@@ -1085,11 +1085,6 @@ MutableColumns ColumnVariant::scatter(ColumnIndex num_columns, const Selector & 
     return result;
 }
 
-void ColumnVariant::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
-}
-
 bool ColumnVariant::hasEqualValues() const
 {
     if (local_discriminators->empty() || hasOnlyNulls())
@@ -1118,15 +1113,6 @@ int ColumnVariant::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_di
 
     /// If rows have the same discriminators, compare actual values from corresponding variants.
     return getVariantByGlobalDiscriminator(left_discr).compareAt(offsetAt(n), rhs_variant.offsetAt(m), rhs_variant.getVariantByGlobalDiscriminator(right_discr), nan_direction_hint);
-}
-
-void ColumnVariant::compareColumn(
-    const IColumn & rhs, size_t rhs_row_num,
-    PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-    int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnVariant>(assert_cast<const ColumnVariant &>(rhs), rhs_row_num, row_indexes,
-                                         compare_results, direction, nan_direction_hint);
 }
 
 struct ColumnVariant::ComparatorBase

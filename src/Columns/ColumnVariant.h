@@ -54,7 +54,7 @@ namespace DB
  *         1                  2
  *
  */
-class ColumnVariant final : public COWHelper<IColumn, ColumnVariant>
+class ColumnVariant final : public COWHelper<IColumnHelper<ColumnVariant>, ColumnVariant>
 {
 public:
     using Discriminator = UInt8;
@@ -199,13 +199,7 @@ public:
     ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
-    void gather(ColumnGathererStream & gatherer_stream) override;
-
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
-    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                               PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                               int direction, int nan_direction_hint) const override;
-
     bool hasEqualValues() const override;
     void getExtremes(Field & min, Field & max) const override;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
