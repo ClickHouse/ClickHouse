@@ -32,8 +32,7 @@ Columns:
 - `memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The difference between the amount of allocated and freed memory in context of this thread.
 - `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The maximum difference between the amount of allocated and freed memory in context of this thread.
 - `thread_name` ([String](../../sql-reference/data-types/string.md)) — Name of the thread.
-- `thread_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Internal thread ID.
-- `thread_id` ([Int32](../../sql-reference/data-types/int-uint.md)) — thread ID.
+- `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — OS thread ID.
 - `master_thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — OS initial ID of initial thread.
 - `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
 - `is_initial_query` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Query type. Possible values:
