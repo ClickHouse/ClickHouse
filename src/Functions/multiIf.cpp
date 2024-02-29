@@ -418,6 +418,11 @@ private:
         PaddedPODArray<S> inserts(rows, static_cast<S>(instructions.size()));
         calculateInserts(instructions, rows, inserts);
 
+        for (size_t i=0; i<rows; ++i)
+        {
+            std::cout << "rows:" << i << ", inserts:" << static_cast<size_t>(inserts[i]) << std::endl;
+        }
+
         res_data.resize_exact(rows);
         if (res_null_map)
             res_null_map->resize_exact(rows);
@@ -426,23 +431,14 @@ private:
         std::vector<const UInt8 *> null_map_cols(instructions.size(), nullptr);
         for (size_t i = 0; i < instructions.size(); ++i)
         {
-            if (instructions[i].source->isNullable())
-            {
-                const ColumnNullable * nullable_col;
-                if (!instructions[i].source_is_constant)
-                    nullable_col = assert_cast<const ColumnNullable *>(instructions[i].source.get());
-                else
-                {
-                    const ColumnPtr data_column = assert_cast<const ColumnConst &>(*instructions[i].source).getDataColumnPtr();
-                    nullable_col = assert_cast<const ColumnNullable *>(data_column.get());
-                }
-                null_map_cols[i] = assert_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumnPtr()).getData().data();
-                data_cols[i] = assert_cast<const ColumnVectorOrDecimal<T> &>(*nullable_col->getNestedColumnPtr()).getData().data();
-            }
-            else
-            {
-                data_cols[i] = assert_cast<const ColumnVectorOrDecimal<T> &>(*instructions[i].source).getData().data();
-            }
+            auto & instruction = instructions[i];
+            const IColumn * non_const_col = instructions[i].source_is_constant
+                ? &assert_cast<const ColumnConst &>(*instruction.source).getDataColumn()
+                : instruction.source.get();
+            const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(non_const_col);
+            data_cols[i] = nullable_col ? assert_cast<const ColumnVectorOrDecimal<T> &>(nullable_col->getNestedColumn()).getData().data()
+                                        : assert_cast<const ColumnVectorOrDecimal<T> &>(*non_const_col).getData().data();
+            null_map_cols[i] = nullable_col ? assert_cast<const ColumnUInt8 &>(nullable_col->getNullMapColumn()).getData().data() : nullptr;
         }
 
         std::unique_ptr<PaddedPODArray<UInt8>> shared_null_map;
