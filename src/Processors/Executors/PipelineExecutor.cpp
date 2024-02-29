@@ -391,7 +391,9 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
     SCOPE_EXIT_SAFE(
         if (!finished_flag)
         {
-            finish();
+            /// If finished_flag is not set, there was an exception.
+            /// Cancel execution in this case.
+            cancel();
             if (pool)
                 pool->wait();
         }
@@ -399,18 +401,7 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
 
     if (num_threads > 1)
     {
-        try
-        {
-            spawnThreads(); // start at least one thread
-        }
-        catch (...)
-        {
-            /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
-            /// We should cancel execution properly before rethrow.
-            cancel();
-            throw;
-        }
-
+        spawnThreads(); // start at least one thread
         tasks.processAsyncTasks();
         pool->wait();
     }
