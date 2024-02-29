@@ -26,8 +26,8 @@ namespace
 class NumbersSource : public ISource
 {
 public:
-    NumbersSource(UInt64 block_size_, UInt64 offset_, UInt64 step_)
-        : ISource(createHeader()), block_size(block_size_), next(offset_), step(step_)
+    NumbersSource(UInt64 block_size_, UInt64 offset_, std::optional<UInt64> limit_, UInt64 step_)
+        : ISource(createHeader()), block_size(block_size_), next(offset_), limit(limit_), step(step_)
     {
     }
 
@@ -38,7 +38,10 @@ public:
 protected:
     Chunk generate() override
     {
-        auto column = ColumnUInt64::create(block_size);
+        UInt64 real_block_size = block_size;
+        if (limit)
+            real_block_size = std::min(block_size, limit.value() - next);
+        auto column = ColumnUInt64::create(real_block_size);
         ColumnUInt64::Container & vec = column->getData();
 
         UInt64 curr = next; /// The local variable for some reason works faster (>20%) than member of class.
@@ -56,6 +59,7 @@ protected:
 private:
     UInt64 block_size;
     UInt64 next;
+    std::optional<UInt64> limit;
     UInt64 step;
 };
 
@@ -478,7 +482,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source
-            = std::make_shared<NumbersSource>(max_block_size, numbers_storage.offset + i * max_block_size, num_streams * max_block_size);
+            = std::make_shared<NumbersSource>(max_block_size, numbers_storage.offset + i * max_block_size, numbers_storage.limit, num_streams * max_block_size);
 
         if (numbers_storage.limit && i == 0)
         {
