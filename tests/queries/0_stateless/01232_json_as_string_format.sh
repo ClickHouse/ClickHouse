@@ -9,7 +9,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS json_as_string";
 
 $CLICKHOUSE_CLIENT --query="CREATE TABLE json_as_string (field String) ENGINE = Memory";
 
-echo '
+echo -e '
 {
     "id" : 1,
     "date" : "01.01.2020",
@@ -44,7 +44,7 @@ echo '
     }
 }' | $CLICKHOUSE_CLIENT --query="INSERT INTO json_as_string FORMAT JSONAsString";
 
-echo '
+echo -e '
 [
     {
         "id" : 1,
