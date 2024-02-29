@@ -305,6 +305,25 @@ void ColumnArray::insert(const Field & x)
     getOffsets().push_back(getOffsets().back() + size);
 }
 
+bool ColumnArray::tryInsert(const Field & x)
+{
+    if (x.getType() != Field::Types::Which::Array)
+        return false;
+
+    const Array & array = x.get<const Array &>();
+    size_t size = array.size();
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (!getData().tryInsert(array[i]))
+        {
+            getData().popBack(i);
+            return false;
+        }
+    }
+
+    getOffsets().push_back(getOffsets().back() + size);
+    return true;
+}
 
 void ColumnArray::insertFrom(const IColumn & src_, size_t n)
 {
