@@ -727,7 +727,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
     auto context = getContext();
     auto read_buffer_creator =
         [this, read_settings, object_size]
-        (const std::string & path, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
+        (bool restricted_seek, const std::string & path) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<ReadBufferFromS3>(
             client,
@@ -738,20 +738,24 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
             read_settings,
             /* use_external_buffer */true,
             /* offset */0,
-            read_until_position,
-            /* restricted_seek */true,
+            /* read_until_position */0,
+            restricted_seek,
             object_size);
     };
+
+    auto modified_settings{read_settings};
+    /// User's S3 object may change, don't cache it.
+    modified_settings.use_page_cache_for_disks_without_file_cache = false;
+
+    /// FIXME: Changing this setting to default value breaks something around parquet reading
+    modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
 
     auto s3_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
         std::move(read_buffer_creator),
         StoredObjects{StoredObject{key, /* local_path */ "", object_size}},
+        "",
         read_settings,
         /* cache_log */nullptr, /* use_external_buffer */true);
-
-    auto modified_settings{read_settings};
-    /// FIXME: Changing this setting to default value breaks something around parquet reading
-    modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
 
     auto & pool_reader = context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
     auto async_reader = std::make_unique<AsynchronousBoundedReadBuffer>(
