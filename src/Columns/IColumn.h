@@ -2,6 +2,7 @@
 
 #include <Common/COW.h>
 #include <Common/PODArray_fwd.h>
+#include <Common/PODArray.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <base/StringRef.h>
