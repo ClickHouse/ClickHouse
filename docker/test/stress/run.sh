@@ -57,8 +57,7 @@ azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
-# shellcheck disable=SC2119
-start
+start_server
 
 setup_logs_replication
 
@@ -68,8 +67,7 @@ clickhouse-client --query "SHOW TABLES FROM datasets"
 
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
 
-# shellcheck disable=SC2119
-stop
+stop_server
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
 
 # Randomize cache policies.
@@ -89,8 +87,7 @@ if [ "$cache_policy" = "SLRU" ]; then
     mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
 fi
 
-# shellcheck disable=SC2119
-start
+start_server
 
 clickhouse-client --query "SHOW TABLES FROM datasets"
 clickhouse-client --query "SHOW TABLES FROM test"
@@ -193,8 +190,7 @@ clickhouse-client --query "SHOW TABLES FROM test"
 
 clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
 
-# shellcheck disable=SC2119
-stop
+stop_server
 
 # Let's enable S3 storage by default
 export USE_S3_STORAGE_FOR_MERGE_TREE=1
@@ -228,8 +224,7 @@ if [ $(( $(date +%-d) % 2 )) -eq 1 ]; then
         > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
 fi
 
-# shellcheck disable=SC2119
-start
+start_server
 
 stress --hung-check --drop-databases --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
@@ -239,21 +234,18 @@ stress --hung-check --drop-databases --output-folder test_output --skip-func-tes
 rg -Fa "No queries hung" /test_output/test_results.tsv | grep -Fa "OK" \
   || echo -e "Hung check failed, possible deadlock found (see hung_check.log)$FAIL$(head_escaped /test_output/hung_check.log)" >> /test_output/test_results.tsv
 
-# shellcheck disable=SC2119
-stop
+stop_server
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
 
 # NOTE Disable thread fuzzer before server start with data after stress test.
 # In debug build it can take a lot of time.
 unset "${!THREAD_@}"
 
-# shellcheck disable=SC2119
-start
+start_server
 
 check_server_start
 
-# shellcheck disable=SC2119
-stop
+stop_server
 
 [ -f /var/log/clickhouse-server/clickhouse-server.log ] || echo -e "Server log does not exist\tFAIL"
 [ -f /var/log/clickhouse-server/stderr.log ] || echo -e "Stderr log does not exist\tFAIL"

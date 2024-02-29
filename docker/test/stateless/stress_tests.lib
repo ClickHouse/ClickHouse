@@ -29,7 +29,7 @@ function unts()
 
 function trim_server_logs()
 {
-    head -n :$FAILURE_CONTEXT_LINES "/test_output/$1" | grep -Eo " \[ [0-9]+ \] \{.*" | escaped
+    head -n "$FAILURE_CONTEXT_LINES" "/test_output/$1" | grep -Eo " \[ [0-9]+ \] \{.*" | escaped
 }
 
 function install_packages()
@@ -146,10 +146,10 @@ EOL
 
 }
 
-function stop()
+function stop_server()
 {
-    local max_tries="${1:-90}"
-    local check_hang="${2:-true}"
+    local max_tries=90
+    local check_hang=true
     local pid
     # Preserve the pid, since the server can hung after the PID will be deleted.
     pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
@@ -176,12 +176,13 @@ function stop()
     fi
 }
 
-function start()
+function start_server()
 {
     counter=0
+    max_attempt=120
     until clickhouse-client --query "SELECT 1"
     do
-        if [ "$counter" -gt "${1:-120}" ]
+        if [ "$counter" -gt "$max_attempt" ]
         then
             echo "Cannot start clickhouse-server"
             rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt ||:
