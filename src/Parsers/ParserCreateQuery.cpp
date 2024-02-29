@@ -954,7 +954,7 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         if (ParserKeyword{"REFRESH"}.ignore(pos, expected) || ParserKeyword{"PERIODIC REFRESH"}.ignore(pos, expected))
         {
             if (!ParserNumber{}.parse(pos, live_view_periodic_refresh, expected))
-                live_view_periodic_refresh = std::make_shared<ASTLiteral>(static_cast<UInt64>(DEFAULT_PERIODIC_LIVE_VIEW_REFRESH_SEC));
+                live_view_periodic_refresh = std::make_shared<ASTLiteral>(static_cast<UInt64>(60));
 
             with_periodic_refresh = true;
         }
@@ -1584,8 +1584,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         }
     }
 
-    if (!sql_security && !sql_security_p.parse(pos, sql_security, expected))
-        sql_security = std::make_shared<ASTSQLSecurity>();
+    if (!sql_security)
+        sql_security_p.parse(pos, sql_security, expected);
 
     /// AS SELECT ...
     if (!s_as.ignore(pos, expected))
@@ -1629,7 +1629,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         query->set(query->refresh_strategy, refresh_strategy);
     if (comment)
         query->set(query->comment, comment);
-    query->sql_security = typeid_cast<std::shared_ptr<ASTSQLSecurity>>(sql_security);
+    if (sql_security)
+        query->sql_security = typeid_cast<std::shared_ptr<ASTSQLSecurity>>(sql_security);
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);

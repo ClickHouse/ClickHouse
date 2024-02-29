@@ -79,6 +79,7 @@ class RefreshSet;
 class Cluster;
 class Compiler;
 class MarkCache;
+class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
 class ProcessList;
@@ -113,6 +114,7 @@ class BlobStorageLog;
 class IAsynchronousReader;
 class IOUringReader;
 struct MergeTreeSettings;
+struct DistributedSettings;
 struct InitialAllRangesAnnouncement;
 struct ParallelReadRequest;
 struct ParallelReadResponse;
@@ -938,8 +940,8 @@ public:
     void setClientProtocolVersion(UInt64 version);
 
 #if USE_NURAFT
-    std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
-    std::shared_ptr<KeeperDispatcher> & tryGetKeeperDispatcher() const;
+    std::shared_ptr<KeeperDispatcher> getKeeperDispatcher() const;
+    std::shared_ptr<KeeperDispatcher> tryGetKeeperDispatcher() const;
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
@@ -966,6 +968,10 @@ public:
     void updateUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
     void clearUncompressedCache() const;
+
+    void setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes_total, bool use_madv_free, bool use_huge_pages);
+    std::shared_ptr<PageCache> getPageCache() const;
+    void dropPageCache() const;
 
     void setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
@@ -1080,6 +1086,7 @@ public:
 
     const MergeTreeSettings & getMergeTreeSettings() const;
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
+    const DistributedSettings & getDistributedSettings() const;
     const StorageS3Settings & getStorageS3Settings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)

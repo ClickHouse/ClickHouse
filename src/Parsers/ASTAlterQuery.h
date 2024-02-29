@@ -17,8 +17,6 @@ namespace DB
  *      MODIFY COLUMN col_name type,
  *      DROP PARTITION partition,
  *      COMMENT_COLUMN col_name 'comment',
- *  ALTER LIVE VIEW [db.]name_type
- *      REFRESH
  */
 
 class ASTAlterCommand : public IAST
@@ -63,6 +61,7 @@ public:
 
         DROP_PARTITION,
         DROP_DETACHED_PARTITION,
+        FORGET_PARTITION,
         ATTACH_PARTITION,
         MOVE_PARTITION,
         REPLACE_PARTITION,
@@ -77,8 +76,6 @@ public:
         APPLY_DELETED_MASK,
 
         NO_TYPE,
-
-        LIVE_VIEW_REFRESH,
 
         MODIFY_DATABASE_SETTING,
 
@@ -140,7 +137,7 @@ public:
 
     IAST * statistic_decl = nullptr;
 
-    /** Used in DROP PARTITION, ATTACH PARTITION FROM, UPDATE, DELETE queries.
+    /** Used in DROP PARTITION, ATTACH PARTITION FROM, FORGET PARTITION, UPDATE, DELETE queries.
      *  The value or ID of the partition is stored here.
      */
     IAST * partition = nullptr;
@@ -245,7 +242,6 @@ public:
     {
         TABLE,
         DATABASE,
-        LIVE_VIEW,
         UNKNOWN,
     };
 
