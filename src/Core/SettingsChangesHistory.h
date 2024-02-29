@@ -87,8 +87,10 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
 {
     {"24.2", {
               {"parallelize_execution_after_rollup_or_cube", true, true, "Enables better pipeline parallelism for calculations done after ROLLUP/CUBE"},
+              {"allow_suspicious_variant_types", true, false, "Don't allow creating Variant type with suspicious variants by default"},
               {"validate_experimental_and_suspicious_types_inside_nested_types", false, true, "Validate usage of experimental and suspicious types inside nested types"},
               {"output_format_values_escape_quote_with_quote", false, false, "If true escape ' with '', otherwise quoted with \\'"},
+              {"output_format_pretty_single_large_number_tip_threshold", 0, 1'000'000, "Print a readable number tip on the right side of the table if the block consists of a single number which exceeds this value (except 0)"},
               {"input_format_try_infer_exponent_floats", true, false, "Don't infer floats in exponential notation by default"},
               {"query_plan_optimize_prewhere", true, true, "Allow to push down filter to PREWHERE expression for supported storages"},
               {"async_insert_max_data_size", 1000000, 10485760, "The previous value appeared to be too small."},
