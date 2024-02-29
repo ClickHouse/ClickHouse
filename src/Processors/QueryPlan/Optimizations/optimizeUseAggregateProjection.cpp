@@ -651,6 +651,9 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
                 }
                 chassert(i == len);
                 part_with_ranges.ranges = std::move(new_ranges);
+
+                if (part_with_ranges.ranges.empty())
+                    chassert(ordinary_reading_marks == 0);
             }
         }
 
@@ -686,6 +689,8 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
             {
                 if (ordinary_reading_marks > 0)
                 {
+                    ordinary_reading_select_result->selected_marks = ordinary_reading_marks;
+                    ordinary_reading_select_result->selected_rows -= candidates.exact_count;
                     reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
                     reading->setProjection();
                 }

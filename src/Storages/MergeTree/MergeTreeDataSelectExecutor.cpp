@@ -1165,8 +1165,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
     auto check_in_range = [&](const MarkRange & range, bool check_can_be_false_for_single_mark = false)
     {
-        BoolMask initial_mask = range.end == range.begin + 1 && check_can_be_false_for_single_mark ? BoolMask::consider_both
-                                                                                                   : BoolMask::consider_only_can_be_true;
+        BoolMask initial_mask
+            = range.end == range.begin + 1 && check_can_be_false_for_single_mark ? BoolMask() : BoolMask::consider_only_can_be_true;
 
         auto check_key_condition = [&]()
         {

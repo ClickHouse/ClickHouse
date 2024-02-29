@@ -5,9 +5,10 @@
 /// Multiple Boolean values. That is, two Boolean values: can it be true, can it be false.
 struct BoolMask
 {
-    bool can_be_true;
-    bool can_be_false;
+    bool can_be_true = false;
+    bool can_be_false = false;
 
+    BoolMask() = default;
     BoolMask(bool can_be_true_, bool can_be_false_) : can_be_true(can_be_true_), can_be_false(can_be_false_) { }
 
     BoolMask operator&(const BoolMask & m) const { return {can_be_true && m.can_be_true, can_be_false || m.can_be_false}; }
@@ -18,13 +19,19 @@ struct BoolMask
 
     /// Check if mask is no longer changeable under operation |.
     /// We use this condition to early-exit KeyConditions::check{InRange,After} methods.
-    bool isComplete() const
+    bool isComplete(const BoolMask & initial_mask) const
     {
-        if (*this == consider_only_can_be_true)
+        if (initial_mask == consider_only_can_be_true)
             return can_be_true;
-        else if (*this == consider_only_can_be_false)
-            return !can_be_false;
+        else if (initial_mask == consider_only_can_be_false)
+            return can_be_false;
         return false;
+    }
+
+    /// Combine check result in different hyperrectangles.
+    static BoolMask combine(const BoolMask & left, const BoolMask & right)
+    {
+        return {left.can_be_true || right.can_be_true, left.can_be_false || right.can_be_false};
     }
 
     /// These special constants are used to implement KeyCondition::mayBeTrue{InRange,After} via KeyCondition::check{InRange,After}.
@@ -32,7 +39,6 @@ struct BoolMask
     /// calculation of discarded BoolMask component as it is already set to true.
     static const BoolMask consider_only_can_be_true;
     static const BoolMask consider_only_can_be_false;
-    static const BoolMask consider_both;
 };
 
 namespace fmt

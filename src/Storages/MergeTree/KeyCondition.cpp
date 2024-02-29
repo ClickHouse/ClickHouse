@@ -2281,14 +2281,13 @@ static BoolMask forAnyHyperrectangle(
             hyperrectangle[i] = Range::createWholeUniverseWithoutNull();
     }
 
-    BoolMask result = initial_mask;
-    result = result | callback(hyperrectangle);
+    auto result = BoolMask::combine(initial_mask, callback(hyperrectangle));
 
     /// There are several early-exit conditions (like the one below) hereinafter.
     /// They are important; in particular, if initial_mask == BoolMask::consider_only_can_be_true
     /// (which happens when this routine is called from KeyCondition::mayBeTrueXXX),
     /// they provide significant speedup, which may be observed on merge_tree_huge_pk performance test.
-    if (result.isComplete())
+    if (result.isComplete(initial_mask))
         return result;
 
     /// [x1]       × [y1 .. +inf)
@@ -2296,10 +2295,12 @@ static BoolMask forAnyHyperrectangle(
     if (left_bounded)
     {
         hyperrectangle[prefix_size] = Range(left_keys[prefix_size]);
-        result = result
-            | forAnyHyperrectangle(
-                key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback);
-        if (result.isComplete())
+        result = BoolMask::combine(
+            result,
+            forAnyHyperrectangle(
+                key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback));
+
+        if (result.isComplete(initial_mask))
             return result;
     }
 
@@ -2308,11 +2309,10 @@ static BoolMask forAnyHyperrectangle(
     if (right_bounded)
     {
         hyperrectangle[prefix_size] = Range(right_keys[prefix_size]);
-        result = result
-            | forAnyHyperrectangle(
-                key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback);
-        if (result.isComplete())
-            return result;
+        result = BoolMask::combine(
+            result,
+            forAnyHyperrectangle(
+                key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback));
     }
 
     return result;
