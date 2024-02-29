@@ -278,18 +278,17 @@ public:
     if (which.is##TYPE()) \
     { \
         MutableColumnPtr res = result_type->createColumn(); \
-        res->reserve(rows); \
         if (result_type->isNullable()) \
         { \
             auto & res_nullable = assert_cast<ColumnNullable &>(*res); \
             auto & res_data = assert_cast<ColumnVectorOrDecimal<FIELD> &>(res_nullable.getNestedColumn()).getData(); \
             auto & res_null_map = res_nullable.getNullMapData(); \
-            executeInstructionsColumnar<FIELD, INDEX>(instructions, rows, res_data, &res_null_map); \
+            executeInstructionsColumnar<FIELD, INDEX, true>(instructions, rows, res_data, &res_null_map); \
         } \
         else \
         { \
             auto & res_data = assert_cast<ColumnVectorOrDecimal<FIELD> &>(*res).getData(); \
-            executeInstructionsColumnar<FIELD, INDEX>(instructions, rows, res_data, nullptr); \
+            executeInstructionsColumnar<FIELD, INDEX, false>(instructions, rows, res_data, nullptr); \
         } \
         return std::move(res); \
     }
@@ -409,7 +408,7 @@ private:
         }
     }
 
-    template <typename T, typename S>
+    template <typename T, typename S, bool nullable_result = false>
     static NO_INLINE void executeInstructionsColumnar(
         std::vector<Instruction> & instructions,
         size_t rows,
@@ -419,50 +418,56 @@ private:
         PaddedPODArray<S> inserts(rows, static_cast<S>(instructions.size()));
         calculateInserts(instructions, rows, inserts);
 
-        if (!res_null_map)
+        res_data.resize_exact(rows);
+        if (res_null_map)
+            res_null_map->resize_exact(rows);
+
+        std::vector<const T *> data_cols(instructions.size(), nullptr);
+        std::vector<const UInt8 *> null_map_cols(instructions.size(), nullptr);
+        for (size_t i = 0; i < instructions.size(); ++i)
         {
-            for (size_t row_i = 0; row_i < rows; ++row_i)
+            if (instructions[i].source->isNullable())
             {
-                auto & instruction = instructions[inserts[row_i]];
-                auto ref = instruction.source->getDataAt(row_i);
-                res_data[row_i] = *reinterpret_cast<const T*>(ref.data);
-            }
-        }
-        else
-        {
-            std::vector<const T *> data_cols(instructions.size());
-            std::vector<const UInt8 *> null_map_cols(instructions.size());
-            PaddedPODArray<UInt8> shared_null_map(rows, 0);
-            for (size_t i = 0; i < instructions.size(); ++i)
-            {
-                if (instructions[i].source->isNullable())
-                {
-                    const ColumnNullable * nullable_col;
-                    if (!instructions[i].source_is_constant)
-                        nullable_col = assert_cast<const ColumnNullable *>(instructions[i].source.get());
-                    else
-                    {
-                        const ColumnPtr data_column = assert_cast<const ColumnConst &>(*instructions[i].source).getDataColumnPtr();
-                        nullable_col = assert_cast<const ColumnNullable *>(data_column.get());
-                    }
-                    null_map_cols[i] = assert_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumnPtr()).getData().data();
-                    data_cols[i] = assert_cast<const ColumnVectorOrDecimal<T> &>(*nullable_col->getNestedColumnPtr()).getData().data();
-                }
+                const ColumnNullable * nullable_col;
+                if (!instructions[i].source_is_constant)
+                    nullable_col = assert_cast<const ColumnNullable *>(instructions[i].source.get());
                 else
                 {
-                    null_map_cols[i] = shared_null_map.data();
-                    data_cols[i] = assert_cast<const ColumnVectorOrDecimal<T> &>(*instructions[i].source).getData().data();
+                    const ColumnPtr data_column = assert_cast<const ColumnConst &>(*instructions[i].source).getDataColumnPtr();
+                    nullable_col = assert_cast<const ColumnNullable *>(data_column.get());
+                }
+                null_map_cols[i] = assert_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumnPtr()).getData().data();
+                data_cols[i] = assert_cast<const ColumnVectorOrDecimal<T> &>(*nullable_col->getNestedColumnPtr()).getData().data();
+            }
+            else
+            {
+                data_cols[i] = assert_cast<const ColumnVectorOrDecimal<T> &>(*instructions[i].source).getData().data();
+            }
+        }
+
+        std::unique_ptr<PaddedPODArray<UInt8>> shared_null_map;
+        if constexpr (nullable_result)
+        {
+            for (auto & col : null_map_cols)
+            {
+                if (!col)
+                {
+                    if (!shared_null_map)
+                        shared_null_map = std::make_unique<PaddedPODArray<UInt8>>(rows, 0);
+
+                    col = shared_null_map->data();
                 }
             }
+        }
 
-            for (size_t row_i = 0; row_i < rows; ++row_i)
-            {
-                S insert = inserts[row_i];
-                auto & instruction = instructions[insert];
-                size_t index = instruction.source_is_constant ? 0 : row_i;
-                res_data[row_i] = *(data_cols[insert] + index);
+        for (size_t row_i = 0; row_i < rows; ++row_i)
+        {
+            S insert = inserts[row_i];
+            auto & instruction = instructions[insert];
+            size_t index = instruction.source_is_constant ? 0 : row_i;
+            res_data[row_i] = *(data_cols[insert] + index);
+            if constexpr (nullable_result)
                 (*res_null_map)[row_i] = *(null_map_cols[insert] + index);
-            }
         }
     }
 
