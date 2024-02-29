@@ -84,6 +84,7 @@ public:
     StringRef getDataAt(size_t) const override { throwMustBeDecompressed(); }
     bool isDefaultAt(size_t) const override { throwMustBeDecompressed(); }
     void insert(const Field &) override { throwMustBeDecompressed(); }
+    bool tryInsert(const Field &) override { throwMustBeDecompressed(); }
     void insertRangeFrom(const IColumn &, size_t, size_t) override { throwMustBeDecompressed(); }
     void insertData(const char *, size_t) override { throwMustBeDecompressed(); }
     void insertDefault() override { throwMustBeDecompressed(); }

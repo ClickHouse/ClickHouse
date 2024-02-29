@@ -518,6 +518,23 @@ void ColumnAggregateFunction::insert(const Field & x)
     func->deserialize(data.back(), read_buffer, version, &arena);
 }
 
+bool ColumnAggregateFunction::tryInsert(const DB::Field & x)
+{
+    if (x.getType() != Field::Types::AggregateFunctionState)
+        return false;
+
+    const auto & field_name = x.get<const AggregateFunctionStateData &>().name;
+    if (type_string != field_name)
+        return false;
+
+    ensureOwnership();
+    Arena & arena = createOrGetArena();
+    pushBackAndCreateState(data, arena, func.get());
+    ReadBufferFromString read_buffer(x.get<const AggregateFunctionStateData &>().data);
+    func->deserialize(data.back(), read_buffer, version, &arena);
+    return true;
+}
+
 void ColumnAggregateFunction::insertDefault()
 {
     ensureOwnership();
