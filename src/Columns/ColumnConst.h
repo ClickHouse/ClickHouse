@@ -131,6 +131,15 @@ public:
         ++s;
     }
 
+    bool tryInsert(const Field & field) override
+    {
+        auto tmp = data->cloneEmpty();
+        if (!tmp->tryInsert(field))
+            return false;
+        ++s;
+        return true;
+    }
+
     void insertData(const char *, size_t) override
     {
         ++s;
@@ -263,7 +272,7 @@ public:
         if (!data->isDefaultAt(0))
         {
             size_t to = limit && from + limit < size() ? from + limit : size();
-            indices.reserve(indices.size() + to - from);
+            indices.reserve_exact(indices.size() + to - from);
             for (size_t i = from; i < to; ++i)
                 indices.push_back(i);
         }
