@@ -240,6 +240,14 @@ public:
         data.push_back(static_cast<T>(x.get<T>()));
     }
 
+    bool tryInsert(const DB::Field & x) override
+    {
+        NearestFieldType<T> value;
+        if (!x.tryGet<NearestFieldType<T>>(value))
+            return false;
+        data.push_back(static_cast<T>(value));
+        return true;
+    }
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
