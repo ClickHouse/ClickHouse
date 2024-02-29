@@ -1,4 +1,6 @@
+#include <atomic>
 #include <chrono>
+
 #include <Coordination/KeeperContext.h>
 
 #include <Coordination/Defines.h>
@@ -442,7 +444,7 @@ bool KeeperContext::waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms
     bool success = last_committed_log_idx_cv.wait_for(
         lock,
         std::chrono::milliseconds(wait_timeout_ms),
-        [&] { return shutdown_called || last_committed_log_idx >= wait_commit_upto_idx; });
+        [&] { return shutdown_called || lastCommittedIndex() >= wait_commit_upto_idx; });
 
     wait_commit_upto_idx.reset();
     return success;

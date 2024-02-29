@@ -218,7 +218,7 @@ void KeeperDispatcher::requestThread()
                 /// Forcefully process all previous pending requests
                 if (prev_result)
                     result_buf
-                        = forceWaitAndProcessResult(prev_result, prev_batch, /*clear_requests_on_success=*/true);
+                        = forceWaitAndProcessResult(prev_result, prev_batch, /*clear_requests_on_success=*/!execute_requests_after_write);
 
                 /// Process collected write requests batch
                 if (!current_batch.empty())
@@ -243,7 +243,7 @@ void KeeperDispatcher::requestThread()
                 {
                     if (prev_result)
                         result_buf = forceWaitAndProcessResult(
-                            prev_result, current_batch, /*clear_requests_on_success=*/!execute_requests_after_write);
+                            prev_result, prev_batch, /*clear_requests_on_success=*/!execute_requests_after_write);
 
                     /// In case of older version or disabled async replication, result buf will be set to value of `commit` function
                     /// which always returns nullptr
@@ -257,11 +257,13 @@ void KeeperDispatcher::requestThread()
 
                         /// if timeout happened set error responses for the requests
                         if (!keeper_context->waitCommittedUpto(log_idx, coordination_settings->operation_timeout_ms.totalMilliseconds()))
-                            addErrorResponses(current_batch, Coordination::Error::ZOPERATIONTIMEOUT);
+                            addErrorResponses(prev_batch, Coordination::Error::ZOPERATIONTIMEOUT);
 
                         if (shutdown_called)
                             return;
                     }
+
+                    prev_batch.clear();
                 }
 
                 if (has_reconfig_request)
