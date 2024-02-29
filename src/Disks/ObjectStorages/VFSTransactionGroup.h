@@ -5,7 +5,7 @@
 namespace DB
 {
 class DiskObjectStorageVFS;
-struct VFSTransactionGroup : private VFSLogItem
+struct VFSTransactionGroup : VFSLogItem
 {
     explicit VFSTransactionGroup(DiskPtr disk_);
     ~VFSTransactionGroup();
@@ -13,7 +13,6 @@ struct VFSTransactionGroup : private VFSLogItem
     VFSTransactionGroup(VFSTransactionGroup &&) = delete;
 
 private:
-    friend class DiskObjectStorageVFS; // We'd need public inheritance from VFSLogItem otherwise
     DiskObjectStorageVFS * disk;
 };
 }

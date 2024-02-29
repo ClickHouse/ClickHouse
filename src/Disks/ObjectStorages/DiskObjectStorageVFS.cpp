@@ -106,6 +106,46 @@ String DiskObjectStorageVFS::getStructure() const
     return fmt::format("DiskObjectStorageVFS-{}({})", getName(), object_storage->getName());
 }
 
+// We want to have transaction group only for the thread it was created in to allow
+// multiple concurrent tasks involving one disk (e.g. downloading part and merge).
+constexpr size_t MAX_CONCURRENT_DISKS = 32;
+static thread_local std::pair<DiskObjectStorageVFS *, VFSTransactionGroup *> disks_transactions[MAX_CONCURRENT_DISKS]
+    = {{nullptr, nullptr}};
+
+bool DiskObjectStorageVFS::tryAddGroup(VFSTransactionGroup * group)
+{
+    for (auto & pair : disks_transactions)
+        if (pair.first == this)
+        {
+            if (pair.second)
+                return false;
+            pair.second = group;
+            return true;
+        }
+    for (auto & pair : disks_transactions)
+        if (!pair.first)
+        {
+            pair = {this, group};
+            return true;
+        }
+    return false;
+}
+
+void DiskObjectStorageVFS::removeGroup()
+{
+    for (auto & pair : disks_transactions)
+        if (pair.first == this)
+            pair.first = nullptr;
+}
+
+VFSTransactionGroup * DiskObjectStorageVFS::getGroup() const
+{
+    for (auto & [disk, group] : disks_transactions)
+        if (disk == this)
+            return group;
+    return nullptr;
+}
+
 bool DiskObjectStorageVFS::tryDownloadMetadata(std::string_view remote_from, const String & to)
 {
     auto buf = object_storage->readObject(getMetadataObject(remote_from));

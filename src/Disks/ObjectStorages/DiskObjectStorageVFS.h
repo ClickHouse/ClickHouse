@@ -1,5 +1,4 @@
 #pragma once
-#include <atomic>
 #include "Common/MultiVersion.h"
 #include "Common/ZooKeeper/ZooKeeperWithFaultInjection.h"
 #include "DiskObjectStorage.h"
@@ -49,7 +48,10 @@ private:
     const ObjectStorageType object_storage_type;
     const VFSNodes nodes;
     MultiVersion<VFSSettings> settings;
-    std::atomic<VFSTransactionGroup *> group{nullptr};
+
+    bool tryAddGroup(VFSTransactionGroup * group);
+    VFSTransactionGroup * getGroup() const;
+    void removeGroup();
 
     ZooKeeperWithFaultInjection::Ptr zookeeper() const;
     DiskTransactionPtr createObjectStorageTransaction() final;

@@ -16,7 +16,7 @@ DiskObjectStorageVFSTransaction::DiskObjectStorageVFSTransaction(DiskObjectStora
     // nullptr as send_metadata is prohibited in VFS disk constructor
     : DiskObjectStorageTransaction(*disk_.object_storage, *disk_.metadata_storage, nullptr)
     , disk(disk_)
-    , item(*leftIfNonNull(disk.group.load(), this))
+    , item(*leftIfNonNull(disk.getGroup(), this))
 {
 }
 
@@ -42,6 +42,8 @@ void DiskObjectStorageVFSTransaction::commit()
             req.emplace_back(zkutil::makeCreateRequest(disk.nodes.log_item, node, pers_seq));
         disk.zookeeper()->multi(req);
     }
+
+    item.clear();
 }
 
 void DiskObjectStorageVFSTransaction::replaceFile(const String & from_path, const String & to_path)
