@@ -1119,7 +1119,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             optimize_trivial_count = true;
             for (const auto & required_column : required)
             {
-                if (partition_columns_set.contains(required_column))
+                if (!partition_columns_set.contains(required_column))
                 {
                     optimize_trivial_count = false;
                     break;
