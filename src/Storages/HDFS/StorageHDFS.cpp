@@ -241,9 +241,7 @@ StorageHDFS::StorageHDFS(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-
-    auto virtuals = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns());
-    setVirtuals(virtuals);
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 namespace

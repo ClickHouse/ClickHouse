@@ -88,9 +88,7 @@ StorageNATS::StorageNATS(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
-
-    auto virtuals = createVirtuals(nats_settings->nats_handle_error_mode);
-    setVirtuals(virtuals);
+    setVirtuals(createVirtuals(nats_settings->nats_handle_error_mode));
 
     nats_context = addSettings(getContext());
     nats_context->makeQueryContext();

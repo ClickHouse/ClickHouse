@@ -1075,9 +1075,7 @@ StorageS3::StorageS3(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-
-    auto virtuals = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns());
-    setVirtuals(virtuals);
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(

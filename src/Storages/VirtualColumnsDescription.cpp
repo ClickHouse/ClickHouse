@@ -19,11 +19,12 @@ VirtualColumnDescription::VirtualColumnDescription(
 {
 }
 
-void VirtualColumnsDescription::add(VirtualColumnDescription desc_)
+void VirtualColumnsDescription::add(VirtualColumnDescription desc)
 {
-    auto [it, inserted] = container.emplace(std::move(desc_));
-    if (!inserted)
-        throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Virtual column {} already exists", it->name);
+    if (container.get<1>().contains(desc.name))
+        throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Virtual column {} already exists", desc.name);
+
+    container.get<0>().push_back(std::move(desc));
 }
 
 void VirtualColumnsDescription::addEphemeral(String name, DataTypePtr type, String comment)
@@ -47,8 +48,8 @@ NamesAndTypesList VirtualColumnsDescription::get(VirtualsKind kind) const
 
 std::optional<NameAndTypePair> VirtualColumnsDescription::tryGet(const String & name, VirtualsKind kind) const
 {
-    auto it = container.find(name);
-    if (it != container.end() && (static_cast<UInt8>(it->kind) & static_cast<UInt8>(kind)))
+    auto it = container.get<1>().find(name);
+    if (it != container.get<1>().end() && (static_cast<UInt8>(it->kind) & static_cast<UInt8>(kind)))
         return NameAndTypePair{it->name, it->type};
     return {};
 }
@@ -63,8 +64,8 @@ NameAndTypePair VirtualColumnsDescription::get(const String & name, VirtualsKind
 
 std::optional<VirtualColumnDescription> VirtualColumnsDescription::tryGetDescription(const String & name, VirtualsKind kind) const
 {
-    auto it = container.find(name);
-    if (it != container.end() && (static_cast<UInt8>(it->kind) & static_cast<UInt8>(kind)))
+    auto it = container.get<1>().find(name);
+    if (it != container.get<1>().end() && (static_cast<UInt8>(it->kind) & static_cast<UInt8>(kind)))
         return *it;
     return {};
 }

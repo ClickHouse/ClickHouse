@@ -346,7 +346,7 @@ bool MutationsInterpreter::Source::isCompactPart() const
     return part && part->getType() == MergeTreeDataPartType::Compact;
 }
 
-static Names getAvailableColumnswithVirtuals(StorageMetadataPtr metadata_snapshot, const IStorage & storage)
+static Names getAvailableColumnsWithVirtuals(StorageMetadataPtr metadata_snapshot, const IStorage & storage)
 {
     auto all_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
     for (const auto & column : storage.getVirtuals())
@@ -363,7 +363,7 @@ MutationsInterpreter::MutationsInterpreter(
     : MutationsInterpreter(
         Source(storage_),
         metadata_snapshot_, std::move(commands_),
-        getAvailableColumnswithVirtuals(metadata_snapshot_, *storage_),
+        getAvailableColumnsWithVirtuals(metadata_snapshot_, *storage_),
         std::move(context_), std::move(settings_))
 {
     if (settings.can_execute && dynamic_cast<const MergeTreeData *>(source.getStorage().get()))

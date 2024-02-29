@@ -16,20 +16,18 @@ public:
 
     bool isEphemeral() const { return kind == VirtualsKind::Ephemeral; }
     bool isPersistent() const { return kind == VirtualsKind::Persistent; }
-
-    struct Comparator
-    {
-        using is_transparent = void;
-        bool operator()(const Self & lhs, const Self & rhs) const { return lhs.name < rhs.name; }
-        bool operator()(const Self & lhs, const String & rhs) const { return lhs.name < rhs; }
-        bool operator()(const String & lhs, const Self & rhs) const { return lhs < rhs.name; }
-    };
+    const String & getName() const { return name; }
 };
 
 class VirtualColumnsDescription
 {
 public:
-    using Container = std::set<VirtualColumnDescription, VirtualColumnDescription::Comparator>;
+    using Container = boost::multi_index_container<
+        VirtualColumnDescription,
+        boost::multi_index::indexed_by<
+            boost::multi_index::sequenced<>,
+            boost::multi_index::ordered_unique<boost::multi_index::const_mem_fun<VirtualColumnDescription, const String &, &VirtualColumnDescription::getName>>>>;
+
     using const_iterator = Container::const_iterator;
 
     const_iterator begin() const { return container.begin(); }
@@ -41,8 +39,9 @@ public:
     void addEphemeral(String name, DataTypePtr type, String comment);
     void addPersistent(String name, DataTypePtr type, ASTPtr codec, String comment);
 
+    size_t size() const { return container.size(); }
     bool empty() const { return container.empty(); }
-    bool has(const String & name) const { return container.contains(name); }
+    bool has(const String & name) const { return container.get<1>().contains(name); }
 
     NameAndTypePair get(const String & name, VirtualsKind kind) const;
     std::optional<NameAndTypePair> tryGet(const String & name, VirtualsKind kind) const;

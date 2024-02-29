@@ -435,23 +435,22 @@ MergeTreeData::MergeTreeData(
 VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMetadata & metadata)
 {
     VirtualColumnsDescription desc;
-    auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
-    desc.addEphemeral("_part", low_cardinality_type, "");
-    desc.addEphemeral("_part_index", std::make_shared<DataTypeUInt64>(), "");
-    desc.addEphemeral("_part_uuid", std::make_shared<DataTypeUUID>(), "");
-    desc.addEphemeral("_partition_id", low_cardinality_type, "");
-    desc.addEphemeral("_sample_factor", std::make_shared<DataTypeFloat64>(), "");
-    desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "");
+    desc.addEphemeral("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of part");
+    desc.addEphemeral("_part_index", std::make_shared<DataTypeUInt64>(), "Sequential index of the part in the query result");
+    desc.addEphemeral("_part_uuid", std::make_shared<DataTypeUUID>(), "Unique part identifier (if enabled MergeTree setting assign_part_uuids)");
+    desc.addEphemeral("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of partition");
+    desc.addEphemeral("_sample_factor", std::make_shared<DataTypeFloat64>(), "Sample factor (from the query)");
+    desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "Number of row in the part");
 
     if (metadata.hasPartitionKey())
     {
         auto partition_types = metadata.partition_key.sample_block.getDataTypes();
-        desc.addEphemeral("_partition_value", std::make_shared<DataTypeTuple>(std::move(partition_types)), "");
+        desc.addEphemeral("_partition_value", std::make_shared<DataTypeTuple>(std::move(partition_types)), "Value (a tuple) of a PARTITION BY expression");
     }
 
-    desc.addPersistent(RowExistsColumn::name, RowExistsColumn::type, nullptr, "");
-    desc.addPersistent(BlockNumberColumn::name, BlockNumberColumn::type, BlockNumberColumn::codec, "");
+    desc.addPersistent(RowExistsColumn::name, RowExistsColumn::type, nullptr, "Persisted mask created by lightweight delete that show whether row exists or is deleted");
+    desc.addPersistent(BlockNumberColumn::name, BlockNumberColumn::type, BlockNumberColumn::codec, "Persisted original number of block that was assigned at insert");
 
     return desc;
 }

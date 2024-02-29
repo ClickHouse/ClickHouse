@@ -31,7 +31,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Storages/MergeTreeVirtualColumns.h>
 
 
 namespace DB

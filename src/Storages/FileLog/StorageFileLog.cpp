@@ -148,9 +148,7 @@ StorageFileLog::StorageFileLog(
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-
-    auto virtuals = createVirtuals(filelog_settings->handle_error_mode);
-    setVirtuals(virtuals);
+    setVirtuals(createVirtuals(filelog_settings->handle_error_mode));
 
     if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
     {

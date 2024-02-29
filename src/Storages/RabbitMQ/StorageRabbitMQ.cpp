@@ -137,9 +137,7 @@ StorageRabbitMQ::StorageRabbitMQ(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
-
-    auto virtuals = createVirtuals(rabbitmq_settings->rabbitmq_handle_error_mode);
-    setVirtuals(virtuals);
+    setVirtuals(createVirtuals(rabbitmq_settings->rabbitmq_handle_error_mode));
 
     rabbitmq_context = addSettings(getContext());
     rabbitmq_context->makeQueryContext();

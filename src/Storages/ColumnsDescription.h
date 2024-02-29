@@ -66,12 +66,6 @@ struct GetColumnsOptions
         return *this;
     }
 
-    GetColumnsOptions & withPersistentVirtuals(bool value = true)
-    {
-        with_persistent_virtuals = value;
-        return *this;
-    }
-
     GetColumnsOptions & withExtendedObjects(bool value = true)
     {
         with_extended_objects = value;
@@ -82,7 +76,6 @@ struct GetColumnsOptions
     VirtualsKind virtuals_kind = VirtualsKind::None;
 
     bool with_subcolumns = false;
-    bool with_persistent_virtuals = false;
     bool with_extended_objects = false;
 };
 

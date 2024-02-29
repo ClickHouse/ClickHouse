@@ -4,6 +4,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageSnapshot.h>
 #include <Parsers/IAST_fwd.h>
+#include "Storages/VirtualColumnsDescription.h"
 
 
 namespace DB

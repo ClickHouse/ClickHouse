@@ -11,13 +11,13 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/VirtualColumnsDescription.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/StorageSnapshot.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
-#include "Storages/VirtualColumnsDescription.h"
 
 #include <optional>
 #include <compare>
@@ -230,7 +230,7 @@ public:
     ///
     /// By default return empty list of columns.
     VirtualsDescriptionPtr getVirtualsDescription() const { return virtuals.get(); }
-    virtual NamesAndTypesList getVirtuals() const { return virtuals.get()->getNamesAndTypesList(); }
+    NamesAndTypesList getVirtuals() const { return virtuals.get()->getNamesAndTypesList(); }
     Block getVirtualsHeader() const { return virtuals.get()->getSampleBlock(); }
 
     Names getAllRegisteredNames() const override;

@@ -1,3 +1,4 @@
+#include <memory>
 #include <Storages/StorageMaterializedView.h>
 
 #include <Storages/MaterializedView/RefreshTask.h>
@@ -21,6 +22,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include "Storages/StorageSnapshot.h"
 #include <Core/ServerSettings.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -153,8 +155,6 @@ StorageMaterializedView::StorageMaterializedView(
             *query.refresh_strategy);
         refresh_on_start = mode < LoadingStrictnessLevel::ATTACH && !query.is_create_empty;
     }
-
-    setVirtuals(*getTargetTable()->getVirtualsDescription());
 }
 
 QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
@@ -165,6 +165,12 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
 {
     const auto & target_metadata = getTargetTable()->getInMemoryMetadataPtr();
     return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getStorageSnapshot(target_metadata, local_context), query_info);
+}
+
+StorageSnapshotPtr StorageMaterializedView::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
+{
+    /// We cannot set virtuals at table creation because target table may not exist at that time.
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, getTargetTable()->getVirtualsDescription());
 }
 
 void StorageMaterializedView::read(

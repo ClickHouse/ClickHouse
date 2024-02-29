@@ -345,9 +345,7 @@ StorageKafka::StorageKafka(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
-
-    auto virtuals = createVirtuals(kafka_settings->kafka_handle_error_mode);
-    setVirtuals(virtuals);
+    setVirtuals(createVirtuals(kafka_settings->kafka_handle_error_mode));
 
     auto task_count = thread_per_consumer ? num_consumers : 1;
     for (size_t i = 0; i < task_count; ++i)
