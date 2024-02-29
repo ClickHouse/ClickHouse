@@ -1527,7 +1527,7 @@ struct ToMillisecondImpl
     {
         return time_zone.toMillisecond<DateTime64>(datetime64, scale_multiplier);
     }
-    
+
     static UInt16 execute(UInt32, const DateLUTImpl &)
     {
         return 0; /// Only DateTime64 type will give a value for milliseconds
