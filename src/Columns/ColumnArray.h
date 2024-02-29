@@ -85,6 +85,7 @@ public:
     void updateHashFast(SipHash & hash) const override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     void insert(const Field & x) override;
+    bool tryInsert(const Field & x) override;
     void insertFrom(const IColumn & src_, size_t n) override;
     void insertDefault() override;
     void popBack(size_t n) override;

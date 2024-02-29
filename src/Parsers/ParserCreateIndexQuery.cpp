@@ -25,7 +25,6 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     ParserUnsignedInteger granularity_p;
 
     ASTPtr expr;
-    ASTPtr order;
     ASTPtr type;
     ASTPtr granularity;
 
@@ -35,7 +34,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     }
     else if (open.ignore(pos, expected))
     {
-        if (!order_list.parse(pos, order, expected))
+        if (!order_list.parse(pos, expr, expected))
             return false;
 
         if (!close.ignore(pos, expected))
@@ -72,7 +71,6 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
             index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
     }
     node = index;
-
     return true;
 }
 
