@@ -43,9 +43,9 @@ struct PreformattedMessage
     template <typename... Args>
     static PreformattedMessage create(FormatStringHelper<Args...> fmt, Args &&... args);
 
-    explicit operator const std::string & () const { return text; }
-    explicit operator std::string () && { return std::move(text); }
-    explicit operator fmt::format_string<> () const { UNREACHABLE(); }
+    operator const std::string & () const { return text; } /// NOLINT
+    operator std::string () && { return std::move(text); } /// NOLINT
+    operator fmt::format_string<> () const { UNREACHABLE(); } /// NOLINT
 
     void apply(std::string & out_text, std::string_view & out_format_string) const &
     {
