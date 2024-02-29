@@ -1082,11 +1082,11 @@ ClickHouse生成异常
 这些函数可以转化为：
 
 - [length](../../sql-reference/functions/array-functions.md/#array_functions-length) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
-- [empty](../../sql-reference/functions/array-functions.md/#function-empty) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
-- [notEmpty](../../sql-reference/functions/array-functions.md/#function-notempty) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
+- [empty](../../sql-reference/functions/array-functions.md/#empty函数) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
+- [notEmpty](../../sql-reference/functions/array-functions.md/#notempty函数) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
 - [isNull](../../sql-reference/operators/index.md#operator-is-null) 读取 [null](../../sql-reference/data-types/nullable. md/#finding-null) 子列。
 - [isNotNull](../../sql-reference/operators/index.md#is-not-null) 读取 [null](../../sql-reference/data-types/nullable. md/#finding-null) 子列。
-- [count](../../sql-reference/aggregate-functions/reference/count.md) 读取 [null](../../sql-reference/data-types/nullable.md/ #finding-null) 子列。
+- [count](../../sql-reference/aggregate-functions/reference/count.md) 读取 [null](../../sql-reference/data-types/nullable.md/#finding-null) 子列。
 - [mapKeys](../../sql-reference/functions/tuple-map-functions.md/#mapkeys) 读取 [keys](../../sql-reference/data-types/map.md/#map-subcolumns) 子列。
 - [mapValues](../../sql-reference/functions/tuple-map-functions.md/#mapvalues) 读取 [values](../../sql-reference/data-types/map.md/#map-subcolumns) 子列。
 
