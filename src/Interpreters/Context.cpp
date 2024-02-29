@@ -15,7 +15,6 @@
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
 #include <Coordination/KeeperDispatcher.h>
@@ -1320,6 +1319,23 @@ std::shared_ptr<const EnabledRolesInfo> Context::getRolesInfo() const
     return getAccess()->getRolesInfo();
 }
 
+namespace
+{
+ALWAYS_INLINE inline void
+contextSanityCheckWithLock(const Context & context, const Settings & settings, const std::lock_guard<ContextSharedMutex> &)
+{
+    const auto type = context.getApplicationType();
+    if (type == Context::ApplicationType::LOCAL || type == Context::ApplicationType::SERVER)
+        doSettingsSanityCheck(settings);
+}
+
+ALWAYS_INLINE inline void contextSanityCheck(const Context & context, const Settings & settings)
+{
+    const auto type = context.getApplicationType();
+    if (type == Context::ApplicationType::LOCAL || type == Context::ApplicationType::SERVER)
+        doSettingsSanityCheck(settings);
+}
+}
 
 template <typename... Args>
 void Context::checkAccessImpl(const Args &... args) const
@@ -1429,6 +1445,7 @@ void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_i
         checkSettingsConstraintsWithLock(profiles_info.settings, SettingSource::PROFILE);
     applySettingsChangesWithLock(profiles_info.settings, lock);
     settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
+    contextSanityCheckWithLock(*this, settings, lock);
 }
 
 void Context::setCurrentProfile(const String & profile_name, bool check_constraints)
@@ -1997,6 +2014,7 @@ void Context::setSettings(const Settings & settings_)
     std::lock_guard lock(mutex);
     settings = settings_;
     need_recalculate_access = true;
+    contextSanityCheck(*this, settings);
 }
 
 void Context::setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock)
@@ -2009,6 +2027,7 @@ void Context::setSettingWithLock(std::string_view name, const String & value, co
     settings.set(name, value);
     if (ContextAccessParams::dependsOnSettingName(name))
         need_recalculate_access = true;
+    contextSanityCheckWithLock(*this, settings, lock);
 }
 
 void Context::setSettingWithLock(std::string_view name, const Field & value, const std::lock_guard<ContextSharedMutex> & lock)
@@ -2028,6 +2047,7 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
     try
     {
         setSettingWithLock(change.name, change.value, lock);
+        contextSanityCheckWithLock(*this, settings, lock);
     }
     catch (Exception & e)
     {
@@ -2055,6 +2075,7 @@ void Context::setSetting(std::string_view name, const Field & value)
 {
     std::lock_guard lock(mutex);
     setSettingWithLock(name, value, lock);
+    contextSanityCheckWithLock(*this, settings, lock);
 }
 
 void Context::applySettingChange(const SettingChange & change)
@@ -2082,26 +2103,36 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 void Context::checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source) const
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, profile_elements, source);
+    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
+        doSettingsSanityCheck(settings);
 }
 
 void Context::checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source) const
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, change, source);
+    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
+        doSettingsSanityCheck(settings);
 }
 
 void Context::checkSettingsConstraintsWithLock(const SettingsChanges & changes, SettingSource source) const
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
+    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
+        doSettingsSanityCheck(settings);
 }
 
 void Context::checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
+    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
+        doSettingsSanityCheck(settings);
 }
 
 void Context::clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clamp(settings, changes, source);
+    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
+        doSettingsSanityCheck(settings);
 }
 
 void Context::checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
@@ -2125,6 +2156,7 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingS
 {
     SharedLockGuard lock(mutex);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
+    doSettingsSanityCheck(settings);
 }
 
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source) const
@@ -4337,6 +4369,7 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     setCurrentProfile(shared->system_profile_name);
 
     applySettingsQuirks(settings, getLogger("SettingsQuirks"));
+    doSettingsSanityCheck(settings);
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
     buffer_context = Context::createCopy(shared_from_this());

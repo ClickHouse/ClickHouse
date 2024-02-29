@@ -2560,7 +2560,7 @@ public:
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false));
             else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: It is a bug.");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "MaterializedMySQL is a bug.");
             else if constexpr (to_decimal)
             {
                 UInt64 scale = extractToDecimalScale(arguments[1]);
@@ -4213,7 +4213,7 @@ arguments, result_type, input_rows_count); \
             };
         }
 
-        auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(removeNullableOrLowCardinalityNullable(from_type));
+        auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(*removeNullableOrLowCardinalityNullable(from_type));
         if (!variant_discr_opt)
             throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert type {} to {}. Conversion to Variant allowed only for types from this Variant", from_type->getName(), to_variant.getName());
 

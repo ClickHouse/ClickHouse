@@ -56,6 +56,7 @@ public:
     void nestedRemoveNullable() override;
 
     size_t uniqueInsert(const Field & x) override;
+    bool tryUniqueInsert(const Field & x, size_t & index) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
     MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     IColumnUnique::IndexesWithOverflow uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length,
@@ -344,6 +345,26 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
     auto single_value_data = single_value_column->getDataAt(0);
 
     return uniqueInsertData(single_value_data.data, single_value_data.size);
+}
+
+template <typename ColumnType>
+bool ColumnUnique<ColumnType>::tryUniqueInsert(const Field & x, size_t & index)
+{
+    if (x.isNull())
+    {
+        if (!is_nullable)
+            return false;
+        index = getNullValueIndex();
+        return true;
+    }
+
+    auto single_value_column = column_holder->cloneEmpty();
+    if (!single_value_column->tryInsert(x))
+        return false;
+
+    auto single_value_data = single_value_column->getDataAt(0);
+    index = uniqueInsertData(single_value_data.data, single_value_data.size);
+    return true;
 }
 
 template <typename ColumnType>
