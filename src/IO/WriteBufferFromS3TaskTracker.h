@@ -1,7 +1,7 @@
 #pragma once
 
 #include "config.h"
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include "WriteBufferFromS3.h"
 
 #include <Common/logger_useful.h>
