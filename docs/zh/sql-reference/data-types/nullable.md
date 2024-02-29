@@ -20,6 +20,34 @@ slug: /zh/sql-reference/data-types/nullable
 
 掩码文件中的条目允许ClickHouse区分每个表行的对应数据类型的«NULL»和默认值由于有额外的文件，«Nullable»列比普通列消耗更多的存储空间
 
+## null子列 {#finding-null}
+
+It is possible to find `NULL` values in a column by using `null` subcolumn without reading the whole column. It returns `1` if the corresponding value is `NULL` and `0` otherwise.
+通过使用`null`子列可以在列中查找`NULL`值，而无需读取整个列。如果对应的值为`NULL`，则返回`1`，否则返回`0`。
+
+**示例**
+
+SQL查询:
+
+``` sql
+CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO nullable VALUES (1) (NULL) (2) (NULL);
+
+SELECT n.null FROM nullable;
+```
+
+结果:
+
+``` text
+┌─n.null─┐
+│      0 │
+│      1 │
+│      0 │
+│      1 │
+└────────┘
+```
+
 ## 用法示例 {#yong-fa-shi-li}
 
 ``` sql
