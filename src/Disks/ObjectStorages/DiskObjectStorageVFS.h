@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include "Common/MultiVersion.h"
 #include "Common/ZooKeeper/ZooKeeperWithFaultInjection.h"
 #include "DiskObjectStorage.h"
@@ -7,6 +8,8 @@
 
 namespace DB
 {
+struct VFSTransactionGroup;
+
 // A wrapper for object storage which counts references to objects using a transaction log in Keeper.
 // Operations don't remove data from object storage immediately -- a garbage collector is responsible for that.
 class DiskObjectStorageVFS final : public DiskObjectStorage
@@ -35,19 +38,18 @@ public:
     void uploadMetadata(std::string_view remote_to, const String & from);
 
 private:
-    friend struct RemoveRecursiveObjectStorageVFSOperation;
-    friend struct RemoveManyObjectStorageVFSOperation;
-    friend struct CopyFileObjectStorageVFSOperation;
     friend struct DiskObjectStorageVFSTransaction;
+    friend struct VFSTransactionGroup;
     friend class VFSGarbageCollector;
     friend struct VFSMigration;
 
     std::optional<VFSGarbageCollector> garbage_collector;
 
-    const bool enable_gc; // In certain conditions we don't want a GC e.g. when running from clickhouse-disks
+    const bool enable_gc; // We don't want a GC e.g. when running from clickhouse-disks
     const ObjectStorageType object_storage_type;
     const VFSNodes nodes;
     MultiVersion<VFSSettings> settings;
+    std::atomic<VFSTransactionGroup *> group{nullptr};
 
     ZooKeeperWithFaultInjection::Ptr zookeeper() const;
     DiskTransactionPtr createObjectStorageTransaction() final;

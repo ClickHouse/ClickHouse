@@ -3,12 +3,20 @@
 #include "DiskObjectStorageVFS.h"
 #include "Disks/IO/WriteBufferWithFinalizeCallback.h"
 #include "VFSLogItem.h"
+#include "VFSTransactionGroup.h"
 
 namespace DB
 {
+constexpr VFSLogItem * leftIfNonNull(VFSLogItem * left, VFSLogItem * right)
+{
+    return left ? left : right;
+}
+
 DiskObjectStorageVFSTransaction::DiskObjectStorageVFSTransaction(DiskObjectStorageVFS & disk_)
-    // nullptr as we prohibit send_metadata in VFS disk constructor
-    : DiskObjectStorageTransaction(*disk_.object_storage, *disk_.metadata_storage, nullptr), disk(disk_)
+    // nullptr as send_metadata is prohibited in VFS disk constructor
+    : DiskObjectStorageTransaction(*disk_.object_storage, *disk_.metadata_storage, nullptr)
+    , disk(disk_)
+    , item(*leftIfNonNull(disk.group.load(), this))
 {
 }
 
@@ -18,15 +26,18 @@ void DiskObjectStorageVFSTransaction::commit()
     DiskObjectStorageTransaction::commit();
 
     if (const Strings nodes = item.serialize(); nodes.empty())
-        LOG_DEBUG(disk.log, "Nothing to commit");
+        LOG_DEBUG(disk.log, "VFSTransaction: nothing to commit");
     else if (nodes.size() == 1)
     {
-        LOG_TRACE(disk.log, "Executing {}", nodes[0]);
+        LOG_TRACE(disk.log, "VFSTransaction: executing {}", nodes[0]);
         disk.zookeeper()->create(disk.nodes.log_item, nodes[0], pers_seq);
     }
     else
     {
+        LOG_TRACE(disk.log, "VFSTransaction: executing {}", fmt::join(nodes, "\n"));
+
         Coordination::Requests req;
+        req.reserve(nodes.size());
         for (const auto & node : nodes)
             req.emplace_back(zkutil::makeCreateRequest(disk.nodes.log_item, node, pers_seq));
         disk.zookeeper()->multi(req);
@@ -65,10 +76,11 @@ struct RemoveRecursiveObjectStorageVFSOperation final : RemoveRecursiveObjectSto
 {
     VFSLogItem & item;
 
-    RemoveRecursiveObjectStorageVFSOperation(DiskObjectStorageVFS & disk_, VFSLogItem & item_, const String & path_)
+    RemoveRecursiveObjectStorageVFSOperation(
+        IObjectStorage & object_storage_, IMetadataStorage & metadata_storage_, const String & path_, VFSLogItem & item_)
         : RemoveRecursiveObjectStorageOperation(
-            *disk_.object_storage,
-            *disk_.metadata_storage,
+            object_storage_,
+            metadata_storage_,
             path_,
             /*keep_all_batch_data=*/true,
             {})
@@ -87,17 +99,19 @@ struct RemoveRecursiveObjectStorageVFSOperation final : RemoveRecursiveObjectSto
 
 void DiskObjectStorageVFSTransaction::removeSharedRecursive(const String & path, bool, const NameSet &)
 {
-    operations_to_execute.emplace_back(std::make_unique<RemoveRecursiveObjectStorageVFSOperation>(disk, item, path));
+    operations_to_execute.emplace_back(
+        std::make_unique<RemoveRecursiveObjectStorageVFSOperation>(*disk.object_storage, *disk.metadata_storage, path, item));
 }
 
 struct RemoveManyObjectStorageVFSOperation final : RemoveManyObjectStorageOperation
 {
     VFSLogItem & item;
 
-    RemoveManyObjectStorageVFSOperation(DiskObjectStorageVFS & disk_, VFSLogItem & item_, const RemoveBatchRequest & request_)
+    RemoveManyObjectStorageVFSOperation(
+        IObjectStorage & object_storage_, IMetadataStorage & metadata_storage_, const RemoveBatchRequest & request_, VFSLogItem & item_)
         : RemoveManyObjectStorageOperation(
-            *disk_.object_storage,
-            *disk_.metadata_storage,
+            object_storage_,
+            metadata_storage_,
             request_,
             /*keep_all_batch_data=*/false, // Different behaviour compared to RemoveObjectStorageOperation
             {})
@@ -118,7 +132,8 @@ struct RemoveManyObjectStorageVFSOperation final : RemoveManyObjectStorageOperat
 
 void DiskObjectStorageVFSTransaction::removeSharedFiles(const RemoveBatchRequest & files, bool, const NameSet &)
 {
-    operations_to_execute.emplace_back(std::make_unique<RemoveManyObjectStorageVFSOperation>(disk, item, files));
+    operations_to_execute.emplace_back(
+        std::make_unique<RemoveManyObjectStorageVFSOperation>(*disk.object_storage, *disk.metadata_storage, files, item));
 }
 
 // createFile creates an empty file. If writeFile is called, we'd
@@ -175,21 +190,16 @@ struct CopyFileObjectStorageVFSOperation final : CopyFileObjectStorageOperation
     VFSLogItem & item;
 
     CopyFileObjectStorageVFSOperation(
-        DiskObjectStorageVFS & disk_,
-        VFSLogItem & item_,
+        IObjectStorage & object_storage_,
+        IMetadataStorage & metadata_storage_,
         IObjectStorage & destination_object_storage_,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
         const String & from_path_,
-        const String & to_path_)
+        const String & to_path_,
+        VFSLogItem & item_)
         : CopyFileObjectStorageOperation(
-            *disk_.object_storage,
-            *disk_.metadata_storage,
-            destination_object_storage_,
-            read_settings_,
-            write_settings_,
-            from_path_,
-            to_path_)
+            object_storage_, metadata_storage_, destination_object_storage_, read_settings_, write_settings_, from_path_, to_path_)
         , item(item_)
     {
     }
@@ -206,7 +216,14 @@ void DiskObjectStorageVFSTransaction::copyFile(
     const String & from_file_path, const String & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
     operations_to_execute.emplace_back(std::make_unique<CopyFileObjectStorageVFSOperation>(
-        disk, item, *disk.object_storage, read_settings, write_settings, from_file_path, to_file_path));
+        *disk.object_storage,
+        *disk.metadata_storage,
+        *disk.object_storage,
+        read_settings,
+        write_settings,
+        from_file_path,
+        to_file_path,
+        item));
 }
 
 void DiskObjectStorageVFSTransaction::addStoredObjectsOp(StoredObjects && link, StoredObjects && unlink)
@@ -230,6 +247,6 @@ void MultipleDisksObjectStorageVFSTransaction::copyFile(
     const String & from_file_path, const String & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
     operations_to_execute.emplace_back(std::make_unique<CopyFileObjectStorageVFSOperation>(
-        disk, item, destination_object_storage, read_settings, write_settings, from_file_path, to_file_path));
+        object_storage, metadata_storage, destination_object_storage, read_settings, write_settings, from_file_path, to_file_path, item));
 }
 }

@@ -8,13 +8,17 @@ from kazoo.client import KazooClient
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.network import PartitionManager
 from concurrent.futures import ThreadPoolExecutor, wait
+from itertools import product
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
 # TODO myrrc dimension for 0copy
-# TODO myrrc dimension for large data
-@pytest.fixture(scope="module", params=[False, True], ids=["sequential", "parallel"])
+@pytest.fixture(
+    scope="module",
+    params=product(*((True, False),) * 2),
+    ids=["sequential", "parallel", "sequential-large", "parallel-large"],
+)
 def started_cluster(request):
     cluster = ClickHouseCluster(__file__)
     try:
@@ -29,13 +33,13 @@ def started_cluster(request):
             )
         cluster.start()
 
-        yield cluster, request.param
+        yield cluster, request.param[0], request.param[1]
     finally:
         cluster.shutdown()
 
 
 def test_to_vfs(started_cluster):
-    cluster, parallel = started_cluster
+    cluster, large_data, parallel = started_cluster
     node1: ClickHouseInstance = cluster.instances["node1"]
 
     node1.query(

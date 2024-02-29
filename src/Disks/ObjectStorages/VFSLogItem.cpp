@@ -50,18 +50,25 @@ Strings VFSLogItem::serialize() const
     return out;
 }
 
+void VFSLogItem::add(const StoredObject & obj)
+{
+    (*this)[obj.remote_path]++;
+}
+
+void VFSLogItem::remove(const StoredObject & obj)
+{
+    (*this)[obj.remote_path]--;
+}
+
 void VFSLogItem::merge(VFSLogItem && other)
 {
     reserve(size() + other.size());
-    // As we have only link + unlink, we can't distinguish 2 situations:
+    // Leave objects with 0 references and postpone the decision till we merge with snapshot as we can't
+    // distinguish between 2 situations:
     // 1. We created an object and deleted it in the log batch -- then we need to remove it
     // 2. We created and removed link to object -- we don't need to remove the object.
-    // So we leave objects with non-positive references and postpone the decision till we merge with snapshot
     for (auto & elem : other)
-        if (auto it = find(elem.first); it == end())
-            emplace(std::move(elem));
-        else
-            it->second += elem.second;
+        (*this)[std::move(elem.first)] += elem.second;
 }
 
 VFSMergeResult VFSLogItem::mergeWithSnapshot(ReadBuffer & snapshot, WriteBuffer & new_snapshot, Poco::Logger * log) &&

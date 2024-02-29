@@ -14,8 +14,6 @@ void VFSMigration::migrate() const
     auto ctx = getContext();
 
     MetadataStoragePtr metadata_storage = disk.getMetadataStorage();
-
-    // TODO myrrc batch in 1MB sizes (may be done on VFSTransaction side by @mkmkme)
     VFSLogItem item;
 
     const auto path = fs::path(disk.getPath());
@@ -33,8 +31,12 @@ void VFSMigration::migrate() const
                     it->second += links;
             }
 
-    // TODO myrrc write to s3 instead
-    disk.zookeeper()->create(disk.nodes.log_item, item.serialize(), zkutil::CreateMode::PersistentSequential);
+    Coordination::Requests req;
+    const Strings nodes = item.serialize();
+    req.reserve(nodes.size());
+    for (const auto & node : nodes)
+        req.emplace_back(zkutil::makeCreateRequest(disk.nodes.log_item, node, zkutil::CreateMode::PersistentSequential));
+    disk.zookeeper()->multi(req);
 
     LOG_INFO(log, "Migrated disk {}", disk.getName());
 }
