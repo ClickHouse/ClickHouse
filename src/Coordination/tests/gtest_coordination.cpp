@@ -1790,7 +1790,6 @@ void testLogAndStateMachine(
         keeper_context);
     changelog.init(state_machine->last_commit_index() + 1, settings->reserved_log_items);
 
-    std::optional<SnapshotFileInfo> latest_snapshot;
     for (size_t i = 1; i < total_logs + 1; ++i)
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
@@ -1819,7 +1818,7 @@ void testLogAndStateMachine(
             bool pop_result = snapshots_queue.pop(snapshot_task);
             EXPECT_TRUE(pop_result);
 
-            latest_snapshot = snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
+            snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
         }
 
         if (snapshot_created && changelog.size() > settings->reserved_log_items)
@@ -1861,19 +1860,6 @@ void testLogAndStateMachine(
     {
         auto path = "/hello_" + std::to_string(i);
         EXPECT_EQ(source_storage.container.getValue(path).getData(), restored_storage.container.getValue(path).getData());
-    }
-
-    if (latest_snapshot.has_value())
-    {
-        const auto & [path, disk] = *latest_snapshot;
-        EXPECT_TRUE(disk->exists(path));
-        DB::WriteBufferFromFile plain_buf(
-            fs::path("./snapshots") / path, DB::DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
-        plain_buf.truncate(0);
-        SnapshotsQueue snapshots_queue2{1};
-        keeper_context = get_keeper_context();
-        auto invalid_snapshot_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue2, keeper_context, nullptr);
-        ASSERT_DEATH(invalid_snapshot_machine->init(), "Aborting because of failure to load from latest snapshot with");
     }
 }
 

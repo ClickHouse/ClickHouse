@@ -161,3 +161,45 @@ def test_ephemeral_after_restart(started_cluster):
                 node_zk2.close()
         except:
             pass
+
+
+def test_invalid_snapshot(started_cluster):
+    keeper_utils.wait_until_connected(started_cluster, node)
+    node_zk = None
+    try:
+        node_zk = get_connection_zk("node")
+        node_zk.create("/test_invalid_snapshot", b"somevalue")
+        keeper_utils.send_4lw_cmd(started_cluster, node, "csnp")
+        node.stop_clickhouse()
+        snapshots = (
+            node.exec_in_container(["ls", "/var/lib/clickhouse/coordination/snapshots"])
+            .strip()
+            .split("\n")
+        )
+
+        def snapshot_sort_key(snapshot_name):
+            snapshot_prefix_size = len("snapshot_")
+            last_log_idx = snapshot_name.split(".")[0][snapshot_prefix_size:]
+            return int(last_log_idx)
+
+        snapshots.sort(key=snapshot_sort_key)
+        last_snapshot = snapshots[-1]
+        node.exec_in_container(
+            [
+                "truncate",
+                "-s",
+                "0",
+                f"/var/lib/clickhouse/coordination/snapshots/{last_snapshot}",
+            ]
+        )
+        node.start_clickhouse(expected_to_fail=True)
+        assert node.contains_in_log(
+            "Aborting because of failure to load from latest snapshot with index"
+        )
+    finally:
+        try:
+            if node_zk is not None:
+                node_zk.stop()
+                node_zk.close()
+        except:
+            pass
