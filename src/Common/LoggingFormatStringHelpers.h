@@ -26,7 +26,7 @@ struct FormatStringHelperImpl
         formatStringCheckArgsNumImpl(message_format_string, sizeof...(Args));
     }
     template<typename T>
-    FormatStringHelperImpl(fmt::basic_runtime<T> && str) : message_format_string(), fmt_str(std::forward<fmt::basic_runtime<T>>(str)) {}
+    FormatStringHelperImpl(fmt::basic_runtime<T> && str) : message_format_string(), fmt_str(std::forward<fmt::basic_runtime<T>>(str)) {} /// NOLINT
 
     PreformattedMessage format(Args && ...args) const;
 };
@@ -43,9 +43,9 @@ struct PreformattedMessage
     template <typename... Args>
     static PreformattedMessage create(FormatStringHelper<Args...> fmt, Args &&... args);
 
-    operator const std::string & () const { return text; }
-    operator std::string () && { return std::move(text); }
-    operator fmt::format_string<> () const { UNREACHABLE(); }
+    operator const std::string & () const { return text; } /// NOLINT
+    operator std::string () && { return std::move(text); } /// NOLINT
+    operator fmt::format_string<> () const { UNREACHABLE(); } /// NOLINT
 
     void apply(std::string & out_text, std::string_view & out_format_string) const &
     {
