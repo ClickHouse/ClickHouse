@@ -63,15 +63,6 @@
     M(MarkCacheMisses, "Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.") \
     M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.") \
     M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Only updated for SELECT queries with SETTING use_query_cache = 1.") \
-    /* Each page cache chunk access increments exactly one of the following 5 PageCacheChunk* counters. */ \
-    /* Something like hit rate: (PageCacheChunkShared + PageCacheChunkDataHits) / [sum of all 5]. */ \
-    M(PageCacheChunkMisses, "Number of times a chunk has not been found in the userspace page cache.") \
-    M(PageCacheChunkShared, "Number of times a chunk has been found in the userspace page cache, already in use by another thread.") \
-    M(PageCacheChunkDataHits, "Number of times a chunk has been found in the userspace page cache, not in use, with all pages intact.") \
-    M(PageCacheChunkDataPartialHits, "Number of times a chunk has been found in the userspace page cache, not in use, but some of its pages were evicted by the OS.") \
-    M(PageCacheChunkDataMisses, "Number of times a chunk has been found in the userspace page cache, not in use, but all its pages were evicted by the OS.") \
-    M(PageCacheBytesUnpinnedRoundedToPages, "Total size of populated pages in chunks that became evictable in PageCache. Rounded up to whole pages.") \
-    M(PageCacheBytesUnpinnedRoundedToHugePages, "See PageCacheBytesUnpinnedRoundedToPages, but rounded to huge pages. Use the ratio between the two as a measure of memory waste from using huge pages.") \
     M(CreatedReadBufferOrdinary, "Number of times ordinary read buffer was created for reading data (while choosing among other read methods).") \
     M(CreatedReadBufferDirectIO, "Number of times a read buffer with O_DIRECT was created for reading data (while choosing among other read methods).") \
     M(CreatedReadBufferDirectIOFailed, "Number of times a read buffer with O_DIRECT was attempted to be created for reading data (while choosing among other read methods), but the OS did not allow it (due to lack of filesystem support or other reasons) and we fallen back to the ordinary reading method.") \
