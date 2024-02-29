@@ -882,6 +882,7 @@ SnapshotFileInfo KeeperSnapshotManager::getLatestSnapshotInfo() const
         }
         catch (...)
         {
+            tryLogCurrentException(log);
         }
     }
     return {"", nullptr};
