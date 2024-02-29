@@ -112,6 +112,7 @@ CDMA
 CESU
 CIDR
 CIDRToRange
+CKMAN
 CLOB
 CLion
 CMPLNT
@@ -1288,6 +1289,7 @@ cipherList
 ciphertext
 cityHash
 cityhash
+ckman
 clangd
 cli
 clickcache
