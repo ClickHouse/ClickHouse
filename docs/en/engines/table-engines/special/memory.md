@@ -21,3 +21,56 @@ When restarting a server, data disappears from the table and the table becomes e
 Normally, using this table engine is not justified. However, it can be used for tests, and for tasks where maximum speed is required on a relatively small number of rows (up to approximately 100,000,000).
 
 The Memory engine is used by the system for temporary tables with external query data (see the section “External data for processing a query”), and for implementing `GLOBAL IN` (see the section “IN operators”).
+
+## Engine Parameters
+
+- `min_bytes_to_keep` — Minimum bytes to keep when memory table is size-capped.
+  - Default value: `0`
+  - Requires `max_bytes_to_keep`
+- `max_bytes_to_keep` — Maximum bytes to keep within memory table where oldest rows are deleted on each insertion (i.e circular buffer). Max bytes can exceed the stated limit if the oldest batch of rows to remove falls under the `min_bytes_to_keep` limit when adding a large block.
+  - Default value: `0`
+- `min_rows_to_keep` — Minimum rows to keep when memory table is size-capped.
+  - Default value: `0`
+  - Requires `max_rows_to_keep`
+- `max_rows_to_keep` — Maximum rows to keep within memory table where oldest rows are deleted on each insertion (i.e circular buffer). Max rows can exceed the stated limit if the oldest batch of rows to remove falls under the `min_rows_to_keep` limit when adding a large block.
+  - Default value: `0`
+
+## Usage {#usage}
+
+``` sql
+CREATE TABLE memory (i UInt32) ENGINE = Memory;
+```
+
+## Examples {#examples}
+
+**Example 1: Setting parameters**
+``` sql
+SET min_bytes_to_keep = 4096, max_bytes_to_keep = 16384;
+```
+
+**Note:** Both `bytes` and `rows` capping parameters can be set at the same time, however, the lower bounds of `max` and `min` will be adhered to.
+
+**Example 2: Basic usage**
+``` sql
+CREATE TABLE memory (i UInt32) ENGINE = Memory;
+
+SET min_bytes_to_keep = 4096, max_bytes_to_keep = 16384;
+
+/* 1. testing oldest block doesn't get deleted due to min-threshold - 3000 rows */
+INSERT INTO memory SELECT * FROM numbers(0, 1600);
+
+/* 2. adding block that doesn't get deleted */
+INSERT INTO memory SELECT * FROM numbers(1000, 100);
+
+/* 3. testing oldest block gets deleted - 9216 bytes - 1100 */
+INSERT INTO memory SELECT * FROM numbers(9000, 1000);
+
+/* 4. checking a very large block overrides all */
+INSERT INTO memory SELECT * FROM numbers(9000, 10000);
+```
+
+``` text
+┌─total_bytes─┬─total_rows─┐
+│       65536 │      10000 │
+└─────────────┴────────────┘
+```
