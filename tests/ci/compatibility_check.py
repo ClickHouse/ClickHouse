@@ -4,9 +4,13 @@ import argparse
 import logging
 import subprocess
 import sys
-from distutils.version import StrictVersion
 from pathlib import Path
 from typing import List, Tuple
+
+# isort: off
+from pip._vendor.packaging.version import Version
+
+# isort: on
 
 from build_download_helper import download_builds_filter
 from docker_images_helper import DockerImage, get_docker_image, pull_image
@@ -38,7 +42,7 @@ def process_glibc_check(log_path: Path, max_glibc_version: str) -> TestResults:
                 _, version = symbol_with_glibc.split("@GLIBC_")
                 if version == "PRIVATE":
                     test_results.append(TestResult(symbol_with_glibc, "FAIL"))
-                elif StrictVersion(version) > max_glibc_version:
+                elif Version(version) > Version(max_glibc_version):
                     test_results.append(TestResult(symbol_with_glibc, "FAIL"))
     if not test_results:
         test_results.append(TestResult("glibc check", "OK"))

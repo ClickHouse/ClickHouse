@@ -314,7 +314,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     SettingsChanges changes;
-    NameToNameMap query_parameters;
+    NameToNameVector query_parameters;
     std::vector<String> default_settings;
 
     while (true)
@@ -330,7 +330,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         if (!parameter.first.empty())
-            query_parameters.emplace(std::move(parameter));
+            query_parameters.emplace_back(std::move(parameter));
         else if (!name_of_default_setting.empty())
             default_settings.emplace_back(std::move(name_of_default_setting));
         else

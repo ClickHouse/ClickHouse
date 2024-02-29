@@ -17,8 +17,6 @@ namespace DB
  *      MODIFY COLUMN col_name type,
  *      DROP PARTITION partition,
  *      COMMENT_COLUMN col_name 'comment',
- *  ALTER LIVE VIEW [db.]name_type
- *      REFRESH
  */
 
 class ASTAlterCommand : public IAST
@@ -79,11 +77,10 @@ public:
 
         NO_TYPE,
 
-        LIVE_VIEW_REFRESH,
-
         MODIFY_DATABASE_SETTING,
 
         MODIFY_COMMENT,
+        MODIFY_SQL_SECURITY,
     };
 
     Type type = NO_TYPE;
@@ -166,6 +163,9 @@ public:
     /// For MODIFY_QUERY
     IAST * select = nullptr;
 
+    /// For MODIFY_SQL_SECURITY
+    IAST * sql_security = nullptr;
+
     /// In ALTER CHANNEL, ADD, DROP, SUSPEND, RESUME, REFRESH, MODIFY queries, the list of live views is stored here
     IAST * values = nullptr;
 
@@ -242,7 +242,6 @@ public:
     {
         TABLE,
         DATABASE,
-        LIVE_VIEW,
         UNKNOWN,
     };
 

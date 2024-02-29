@@ -25,6 +25,14 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/** Parses sql security option. DEFINER = user_name SQL SECURITY DEFINER
+ */
+class ParserSQLSecurity : public IParserBase
+{
+protected:
+    const char * getName() const override { return "sql security"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 /** Storage engine or Codec. For example:
  *         Memory()
@@ -220,11 +228,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             return false;
         if (!type_parser.parse(pos, type, expected))
             return false;
-        if (s_collate.ignore(pos, expected))
-        {
-            if (!collation_parser.parse(pos, collation_expression, expected))
-                return false;
-        }
+        if (s_collate.ignore(pos, expected)
+            && !collation_parser.parse(pos, collation_expression, expected))
+            return false;
     }
 
     if (allow_null_modifiers)
@@ -238,6 +244,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         else if (s_null.check(pos, expected))
             null_modifier.emplace(true);
     }
+
+    /// Collate is also allowed after NULL/NOT NULL
+    if (!collation_expression && s_collate.ignore(pos, expected)
+        && !collation_parser.parse(pos, collation_expression, expected))
+        return false;
 
     Pos pos_before_specifier = pos;
     if (s_default.ignore(pos, expected) || s_materialized.ignore(pos, expected) || s_alias.ignore(pos, expected))

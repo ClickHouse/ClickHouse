@@ -54,8 +54,6 @@ struct MergeTreeDataPartChecksums
 
     bool has(const String & file_name) const { return files.find(file_name) != files.end(); }
 
-    bool remove(const String & file_name) { return files.erase(file_name); }
-
     bool empty() const { return files.empty(); }
 
     /// Checks that the set of columns and their checksums are the same. If not, throws an exception.

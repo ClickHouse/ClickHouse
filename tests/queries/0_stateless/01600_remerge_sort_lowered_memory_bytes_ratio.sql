@@ -2,7 +2,7 @@
 
 -- Check remerge_sort_lowered_memory_bytes_ratio setting
 
-set max_memory_usage='300Mi';
+set max_memory_usage='200Mi';
 -- enter remerge once limit*2 is reached
 set max_bytes_before_remerge_sort='10Mi';
 -- more blocks

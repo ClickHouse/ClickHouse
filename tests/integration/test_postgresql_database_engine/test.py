@@ -287,7 +287,7 @@ def test_predefined_connection_configuration(started_cluster):
     )
     print(f"kssenii: {result}")
     assert result.strip().endswith(
-        "ENGINE = PostgreSQL(postgres1, table = \\'test_table\\')"
+        "ENGINE = PostgreSQL(postgres1, `table` = \\'test_table\\')"
     )
 
     node1.query(

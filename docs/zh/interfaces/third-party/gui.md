@@ -129,3 +129,18 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 -   数据编辑器。
 -   重构。
 -   搜索和导航。
+
+### CKMAN {#ckman}
+
+[CKMAN](https://www.github.com/housepower/ckman) 是一个用于管理和监控ClickHouse集群的可视化工具！
+
+特征：
+
+- 非常快速便捷的通过浏览器界面自动化部署集群
+- 支持对集群进行扩缩容操作
+- 对集群的数据进行负载均衡
+- 对集群进行在线升级
+- 通过界面修改集群配置
+- 提供集群节点监控，zookeeper监控
+- 监控表、分区状态，慢SQL监控
+- 提供简单易操作的SQL执行页面

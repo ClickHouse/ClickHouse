@@ -220,13 +220,16 @@ FROM
 )
 GROUP BY number
 ORDER BY number
+SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test
 -- explain
 Expression (Projection)
   Sorting (Sorting for ORDER BY)
     Expression (Before ORDER BY)
       Aggregating
-        Expression ((Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-          ReadFromSystemNumbers
+        Expression ((Before GROUP BY + Projection))
+          Sorting (Sorting for ORDER BY)
+            Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
+              ReadFromSystemNumbers
 -- execute
 0
 1
@@ -289,13 +292,16 @@ FROM
     GROUP BY number
 )
 ORDER BY a ASC
+SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test
 -- explain
 Expression (Projection)
   Sorting (Sorting for ORDER BY)
     Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
       Aggregating
-        Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-          ReadFromSystemNumbers
+        Expression ((Before GROUP BY + Projection))
+          Sorting (Sorting for ORDER BY)
+            Expression (Before ORDER BY)
+              ReadFromSystemNumbers
 -- execute
 0
 1
@@ -321,14 +327,18 @@ FROM
 )
 WHERE a > 0
 ORDER BY a
+SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test
 -- explain
 Expression (Projection)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + ))
-      Aggregating
-        Filter
-          Filter (( + (Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY))))))
-            ReadFromSystemNumbers
+    Expression (Before ORDER BY)
+      Filter ((WHERE + (Projection + Before ORDER BY)))
+        Filter (HAVING)
+          Aggregating
+            Expression ((Before GROUP BY + Projection))
+              Sorting (Sorting for ORDER BY)
+                Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
+                  ReadFromSystemNumbers
 -- execute
 1
 2

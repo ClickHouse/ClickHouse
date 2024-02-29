@@ -69,7 +69,6 @@ namespace
             bool expect_public_ssh_key = false;
             bool expect_http_auth_server = false;
 
-
             if (ParserKeyword{"WITH"}.ignore(pos, expected))
             {
                 for (auto check_type : collections::range(AuthenticationType::MAX))

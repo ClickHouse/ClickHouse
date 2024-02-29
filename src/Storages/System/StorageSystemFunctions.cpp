@@ -25,7 +25,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
 };
 
-enum class FunctionOrigin : Int8
+enum class FunctionOrigin : int8_t
 {
     SYSTEM = 0,
     SQL_USER_DEFINED = 1,

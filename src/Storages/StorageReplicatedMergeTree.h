@@ -231,14 +231,6 @@ public:
     /// Checks ability to use granularity
     bool canUseAdaptiveGranularity() const override;
 
-    /// Returns the default path to the table in ZooKeeper.
-    /// It's used if not set in engine's arguments while creating a replicated table.
-    static String getDefaultReplicaPath(const ContextPtr & context_);
-
-    /// Returns the default replica name in ZooKeeper.
-    /// It's used if not set in engine's arguments while creating a replicated table.
-    static String getDefaultReplicaName(const ContextPtr & context_);
-
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
     void adjustCreateQueryForBackup(ASTPtr & create_query) const override;
 
@@ -359,6 +351,8 @@ public:
     bool canUseZeroCopyReplication() const;
 
     bool isTableReadOnly () { return is_readonly; }
+
+    std::optional<bool> hasMetadataInZooKeeper () { return has_metadata_in_zookeeper; }
 
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;

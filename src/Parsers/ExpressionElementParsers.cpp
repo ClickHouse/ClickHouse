@@ -934,7 +934,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             if (float_value < 0)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Logical error: token number cannot begin with minus, "
+                                "Token number cannot begin with minus, "
                                 "but parsed float number is less than zero.");
 
             if (negative)
