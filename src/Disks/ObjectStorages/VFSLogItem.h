@@ -1,6 +1,6 @@
 #pragma once
 #include "Core/Types_fwd.h"
-#include "Disks/ObjectStorages/StoredObject.h"
+#include "StoredObject.h"
 #include "boost/container/flat_map.hpp"
 
 namespace Poco

@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
 
+#include "Disks/ObjectStorages/VFSTransactionGroup.h"
 #include "config.h"
 
 #include <Formats/NativeWriter.h>
@@ -999,6 +1000,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     auto part_dir = tmp_prefix + part_name;
     auto part_relative_path = data.getRelativeDataPath() + String(to_detached ? "detached/" : "");
     auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
+
+    const VFSTransactionGroup group{disk};
 
     /// Create temporary part storage to write sent files.
     /// Actual part storage will be initialized later from metadata.

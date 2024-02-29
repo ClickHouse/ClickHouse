@@ -33,6 +33,7 @@ void VFSMigration::migrate() const
 
     Coordination::Requests req;
     const Strings nodes = item.serialize();
+    LOG_TRACE(disk.log, "VFSTransaction: executing {}", fmt::join(nodes, "\n"));
     req.reserve(nodes.size());
     for (const auto & node : nodes)
         req.emplace_back(zkutil::makeCreateRequest(disk.nodes.log_item, node, zkutil::CreateMode::PersistentSequential));
