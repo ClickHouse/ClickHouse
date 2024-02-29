@@ -21,6 +21,7 @@ class Labels(metaclass=WithIter):
     CI_SET_REDUCED = "ci_set_reduced"
     CI_SET_ARM = "ci_set_arm"
     CI_SET_INTEGRATION = "ci_set_integration"
+    CI_SET_ANALYZER = "ci_set_analyzer"
 
     libFuzzer = "libFuzzer"
 
@@ -645,6 +646,16 @@ CI_CONFIG = CIConfig(
                 JobNames.STYLE_CHECK,
                 Build.PACKAGE_RELEASE,
                 JobNames.INTEGRATION_TEST,
+            ]
+        ),
+        Labels.CI_SET_ANALYZER: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_RELEASE,
+                Build.PACKAGE_ASAN,
+                JobNames.STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE,
+                JobNames.INTEGRATION_TEST_ASAN_ANALYZER,
             ]
         ),
         Labels.CI_SET_REDUCED: LabelConfig(
