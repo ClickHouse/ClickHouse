@@ -32,7 +32,7 @@ LocalObjectStorage::LocalObjectStorage(String key_prefix_)
     else
         description = "/";
 
-    fs::create_directories(getCommonKeyPrefix());
+    fs::create_directories(key_prefix);
 }
 
 bool LocalObjectStorage::exists(const StoredObject & object) const
