@@ -31,6 +31,7 @@
 * Support single-argument version for the `merge` table function, as `merge(['db_name', ] 'tables_regexp')`. [#60372](https://github.com/ClickHouse/ClickHouse/pull/60372) ([豪肥肥](https://github.com/HowePa)).
 * Support negative positional arguments. Closes [#57736](https://github.com/ClickHouse/ClickHouse/issues/57736). [#58292](https://github.com/ClickHouse/ClickHouse/pull/58292) ([flynn](https://github.com/ucasfl)).
 * Support specifying a set of permitted users for specific S3 settings in config using `user` key. [#60144](https://github.com/ClickHouse/ClickHouse/pull/60144) ([Antonio Andelic](https://github.com/antonio2368)).
+* Added table function `mergeTreeIndex`. It represents the contents of index and marks files of `MergeTree` tables. It can be used for introspection. Syntax: `mergeTreeIndex(database, table, [with_marks = true])` where `database.table` is an existing table with `MergeTree` engine. [#58140](https://github.com/ClickHouse/ClickHouse/pull/58140) ([Anton Popov](https://github.com/CurtizJ)).
 
 #### Experimental Feature
 * Add function `variantType` that returns Enum with variant type name for each row. [#59398](https://github.com/ClickHouse/ClickHouse/pull/59398) ([Kruglov Pavel](https://github.com/Avogar)).
