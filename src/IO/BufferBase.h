@@ -60,9 +60,6 @@ public:
     BufferBase(Position ptr, size_t size, size_t offset)
         : pos(ptr + offset), working_buffer(ptr, ptr + size), internal_buffer(ptr, ptr + size) {}
 
-    /// Assign the buffers and pos.
-    /// Be careful when calling this from ReadBuffer::nextImpl() implementations: `offset` is
-    /// effectively ignored because ReadBuffer::next() reassigns `pos`.
     void set(Position ptr, size_t size, size_t offset)
     {
         internal_buffer = Buffer(ptr, ptr + size);
