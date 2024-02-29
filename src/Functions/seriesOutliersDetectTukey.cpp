@@ -24,8 +24,8 @@ class FunctionSeriesOutliersDetectTukey : public IFunction
 public:
     static constexpr auto name = "seriesOutliersDetectTukey";
 
-    static constexpr Float64 min_quartile = 2.0;
-    static constexpr Float64 max_quartile = 98.0;
+    static constexpr Float64 min_quartile = 0.02;
+    static constexpr Float64 max_quartile = 0.98;
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSeriesOutliersDetectTukey>(); }
 
@@ -73,7 +73,6 @@ public:
         if (input_rows_count == 0)
             return ColumnArray::create(ColumnFloat64::create());
 
-
         Float64 min_percentile = 0.25; /// default 25th percentile
         Float64 max_percentile = 0.75; /// default 75th percentile
         Float64 k = 1.50;
@@ -84,13 +83,13 @@ public:
             if (isnan(p_min) || !isFinite(p_min) || p_min < min_quartile|| p_min > max_quartile)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} must be in range [2.0, 98.0]", getName());
 
-            min_percentile = p_min / 100;
+            min_percentile = p_min;
 
             Float64 p_max = arguments[2].column->getFloat64(0);
-            if (isnan(p_max) || !isFinite(p_max) || p_max < min_quartile || p_max > max_quartile || p_max < min_percentile * 100)
+            if (isnan(p_max) || !isFinite(p_max) || p_max < min_quartile || p_max > max_quartile || p_max < min_percentile)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The third argument of function {} must be in range [2.0, 98.0]", getName());
 
-            max_percentile = p_max / 100;
+            max_percentile = p_max;
 
             auto k_val = arguments[3].column->getFloat64(0);
             if (k_val < 0.0 || isnan(k_val) || !isFinite(k_val))
@@ -155,7 +154,8 @@ private:
             src_sorted.assign(src_vec.begin() + prev_src_offset, src_vec.begin() + src_offset);
             std::sort(src_sorted.begin(), src_sorted.end());
 
-            Float64 q1, q2;
+            Float64 q1;
+            Float64 q2;
 
             Float64 p1 = len * min_percentile;
             if (p1 == static_cast<Int64>(p1))
@@ -216,8 +216,8 @@ seriesOutliersDetectTukey(series, min_percentile, max_percentile, k);
 **Arguments**
 
 - `series` - An array of numeric values.
-- `min_percentile` - The minimum percentile to be used to calculate inter-quantile range [(IQR)](https://en.wikipedia.org/wiki/Interquartile_range). The value must be in range [2,98]. The default is 25.
-- `max_percentile` - The maximum percentile to be used to calculate inter-quantile range (IQR). The value must be in range [2,98]. The default is 75.
+- `min_quantile` - The minimum quantile to be used to calculate inter-quantile range [(IQR)](https://en.wikipedia.org/wiki/Interquartile_range). The value must be in range [2,98]. The default is 25.
+- `max_quantile` - The maximum quantile to be used to calculate inter-quantile range (IQR). The value must be in range [0.02, 0.98]. The default is 0.75.
 - `k` - Non-negative constant value to detect mild or stronger outliers. The default value is 1.5
 
 At least four data points are required in `series` to detect outliers.
@@ -247,7 +247,7 @@ Result:
 Query:
 
 ``` sql
-SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4.50, 5, 12, 45, 12, 3.40, 3, 4, 5, 6], 20, 80, 1.5) AS print_0;
+SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4.50, 5, 12, 45, 12, 3.40, 3, 4, 5, 6], .2, .8, 1.5) AS print_0;
 ```
 
 Result:
