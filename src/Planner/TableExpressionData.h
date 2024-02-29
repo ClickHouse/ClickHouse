@@ -55,7 +55,7 @@ public:
     /// Return true if column with name exists, false otherwise
     bool hasColumn(const std::string & column_name) const
     {
-        return column_name_to_column.contains(column_name);
+        return alias_columns_names.contains(column_name) || column_name_to_column.contains(column_name);
     }
 
     /** Add column in table expression data.
@@ -63,40 +63,37 @@ public:
       *
       * Logical error exception is thrown if column already exists.
       */
-    void addColumn(const NameAndTypePair & column, const ColumnIdentifier & column_identifier, bool is_selected_column = true)
+    void addColumn(const NameAndTypePair & column, const ColumnIdentifier & column_identifier)
     {
         if (hasColumn(column.name))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column with name {} already exists", column.name);
 
-        column_names.push_back(column.name);
-        addColumnImpl(column, column_identifier, is_selected_column);
+        addColumnImpl(column, column_identifier);
     }
 
-    /// Add alias column
-    void addAliasColumn(const NameAndTypePair & column, const ColumnIdentifier & column_identifier, ActionsDAGPtr actions_dag, bool is_selected_column = true)
+    /** Add column if it does not exists in table expression data.
+      * Column identifier must be created using global planner context.
+      */
+    void addColumnIfNotExists(const NameAndTypePair & column, const ColumnIdentifier & column_identifier)
     {
-        alias_column_expressions.emplace(column.name, std::move(actions_dag));
-        addColumnImpl(column, column_identifier, is_selected_column);
+        if (hasColumn(column.name))
+            return;
+
+        addColumnImpl(column, column_identifier);
     }
 
-    /// Mark existing column as selected
-    void markSelectedColumn(const std::string & column_name)
+    /// Add alias column name
+    void addAliasColumnName(const std::string & column_name, const ColumnIdentifier & column_identifier)
     {
-        auto [_, inserted] = selected_column_names_set.emplace(column_name);
-        if (inserted)
-            selected_column_names.push_back(column_name);
+        alias_columns_names.insert(column_name);
+
+        column_name_to_column_identifier.emplace(column_name, column_identifier);
     }
 
-    /// Get columns that are requested from table expression, including ALIAS columns
-    const Names & getSelectedColumnsNames() const
+    /// Get alias columns names
+    const NameSet & getAliasColumnsNames() const
     {
-        return selected_column_names;
-    }
-
-    /// Get ALIAS columns names mapped to expressions
-    const std::unordered_map<std::string, ActionsDAGPtr> & getAliasColumnExpressions() const
-    {
-        return alias_column_expressions;
+        return alias_columns_names;
     }
 
     /// Get column name to column map
@@ -105,7 +102,7 @@ public:
         return column_name_to_column;
     }
 
-    /// Get column names that are read from table expression
+    /// Get column names
     const Names & getColumnNames() const
     {
         return column_names;
@@ -120,6 +117,23 @@ public:
             result.push_back(column_name_to_column.at(column_name));
 
         return result;
+    }
+
+    ColumnIdentifiers getColumnIdentifiers() const
+    {
+        ColumnIdentifiers result;
+        result.reserve(column_identifier_to_column_name.size());
+
+        for (const auto & [column_identifier, _] : column_identifier_to_column_name)
+            result.push_back(column_identifier);
+
+        return result;
+    }
+
+    /// Get column name to column identifier map
+    const ColumnNameToColumnIdentifier & getColumnNameToIdentifier() const
+    {
+        return column_name_to_column_identifier;
     }
 
     /// Get column identifier to column name map
@@ -143,6 +157,18 @@ public:
         }
 
         return it->second;
+    }
+
+    /** Get column for column name.
+      * Null is returned if there are no column for column name.
+      */
+    const NameAndTypePair * getColumnOrNull(const std::string & column_name) const
+    {
+        auto it = column_name_to_column.find(column_name);
+        if (it == column_name_to_column.end())
+            return nullptr;
+
+        return &it->second;
     }
 
     /** Get column identifier for column name.
@@ -172,6 +198,24 @@ public:
             return nullptr;
 
         return &it->second;
+    }
+
+    /** Get column name for column identifier.
+      * Exception is thrown if there are no column name for column identifier.
+      */
+    const std::string & getColumnNameOrThrow(const ColumnIdentifier & column_identifier) const
+    {
+        auto it = column_identifier_to_column_name.find(column_identifier);
+        if (it == column_identifier_to_column_name.end())
+        {
+            auto column_identifiers = getColumnIdentifiers();
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Column name for column identifier {} does not exists. There are only column identifiers: {}",
+                column_identifier,
+                fmt::join(column_identifiers.begin(), column_identifiers.end(), ", "));
+        }
+
+        return it->second;
     }
 
     /** Get column name for column identifier.
@@ -252,35 +296,22 @@ public:
     }
 
 private:
-    void addColumnImpl(const NameAndTypePair & column, const ColumnIdentifier & column_identifier, bool add_to_selected_columns)
+    void addColumnImpl(const NameAndTypePair & column, const ColumnIdentifier & column_identifier)
     {
-        if (add_to_selected_columns)
-            markSelectedColumn(column.name);
-
+        column_names.push_back(column.name);
         column_name_to_column.emplace(column.name, column);
         column_name_to_column_identifier.emplace(column.name, column_identifier);
         column_identifier_to_column_name.emplace(column_identifier, column.name);
     }
 
-    /// Set of columns that are physically read from table expression
-    /// In case of ALIAS columns it contains source column names that are used to calculate alias
-    /// This source column may be not used by user
+    /// Valid for table, table function, array join, query, union nodes
     Names column_names;
-
-    /// Set of columns that are SELECTed from table expression
-    /// It may contain ALIAS columns.
-    /// Mainly it's used to determine access to which columns to check
-    /// For example user may have an access to column `a ALIAS x + y` but not to `x` and `y`
-    /// In that case we can read `x` and `y` and calculate `a`, but not return `x` and `y` to user
-    Names selected_column_names;
-    /// To deduplicate columns in `selected_column_names`
-    NameSet selected_column_names_set;
-
-    /// Expression to calculate ALIAS columns
-    std::unordered_map<std::string, ActionsDAGPtr> alias_column_expressions;
 
     /// Valid for table, table function, array join, query, union nodes
     ColumnNameToColumn column_name_to_column;
+
+    /// Valid only for table node
+    NameSet alias_columns_names;
 
     /// Valid for table, table function, array join, query, union nodes
     ColumnNameToColumnIdentifier column_name_to_column_identifier;
