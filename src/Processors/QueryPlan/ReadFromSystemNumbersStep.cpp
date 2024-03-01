@@ -27,8 +27,10 @@ class NumbersSource : public ISource
 {
 public:
     NumbersSource(UInt64 block_size_, UInt64 offset_, std::optional<UInt64> limit_, UInt64 step_)
-        : ISource(createHeader()), block_size(block_size_), next(offset_), limit(limit_), step(step_)
+        : ISource(createHeader()), block_size(block_size_), next(offset_), step(step_)
     {
+        if (limit_.has_value())
+            end = limit_.value() + offset_;
     }
 
     String getName() const override { return "Numbers"; }
@@ -39,27 +41,31 @@ protected:
     Chunk generate() override
     {
         UInt64 real_block_size = block_size;
-        if (limit)
-            real_block_size = std::min(block_size, limit.value() - next);
+        if (end.has_value())
+        {
+            if (end.value() <= next)
+                return {};
+            real_block_size = std::min(block_size, end.value() - next);
+        }
         auto column = ColumnUInt64::create(real_block_size);
         ColumnUInt64::Container & vec = column->getData();
 
         UInt64 curr = next; /// The local variable for some reason works faster (>20%) than member of class.
         UInt64 * pos = vec.data(); /// This also accelerates the code.
-        UInt64 * end = &vec[block_size];
-        iota(pos, static_cast<size_t>(end - pos), curr);
+        UInt64 * end_ = &vec[real_block_size];
+        iota(pos, static_cast<size_t>(end_ - pos), curr);
 
         next += step;
 
         progress(column->size(), column->byteSize());
 
-        return {Columns{std::move(column)}, block_size};
+        return {Columns{std::move(column)}, real_block_size};
     }
 
 private:
     UInt64 block_size;
     UInt64 next;
-    std::optional<UInt64> limit;
+    std::optional<UInt64> end; /// not included
     UInt64 step;
 };
 

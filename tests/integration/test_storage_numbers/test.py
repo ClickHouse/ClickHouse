@@ -249,5 +249,12 @@ def test_non_number_filter(started_cluster):
         "SELECT toString(number) as a FROM numbers(3) WHERE a = '1' FORMAT Values",
         query_id="test_non_number_filter",
     )
-    assert response == "(1)"
-    check_read_rows("test_non_number_filter", 1)
+    assert response == "('1')"
+    check_read_rows("test_non_number_filter", 3)
+
+    response = node.query(
+        "SELECT toString(number) as a FROM numbers(1, 4) WHERE a = '1' FORMAT Values SETTINGS max_block_size = 3",
+        query_id="test_non_number_filter2",
+    )
+    assert response == "('1')"
+    check_read_rows("test_non_number_filter2", 4)
