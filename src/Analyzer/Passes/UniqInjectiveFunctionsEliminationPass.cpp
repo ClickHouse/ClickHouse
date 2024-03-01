@@ -89,7 +89,7 @@ public:
 
 }
 
-void UniqInjectiveFunctionsEliminationPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void UniqInjectiveFunctionsEliminationPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     UniqInjectiveFunctionsEliminationVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

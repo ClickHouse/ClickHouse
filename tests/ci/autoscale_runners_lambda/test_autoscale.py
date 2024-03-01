@@ -4,7 +4,7 @@ import unittest
 from dataclasses import dataclass
 from typing import Any, List
 
-from app import set_capacity, Queue
+from app import Queue, set_capacity
 
 
 @dataclass
@@ -68,10 +68,16 @@ class TestSetCapacity(unittest.TestCase):
         test_cases = (
             # Do not change capacity
             TestCase("noqueue", 1, 13, 20, [Queue("in_progress", 155, "noqueue")], -1),
-            TestCase(
-                "w/reserve-1", 1, 13, 20, [Queue("queued", 15, "w/reserve-1")], 14
-            ),
+            TestCase("reserve", 1, 13, 20, [Queue("queued", 13, "reserve")], -1),
             # Increase capacity
+            TestCase(
+                "increase-always",
+                1,
+                13,
+                20,
+                [Queue("queued", 14, "increase-always")],
+                14,
+            ),
             TestCase("increase-1", 1, 13, 20, [Queue("queued", 23, "increase-1")], 17),
             TestCase(
                 "style-checker", 1, 13, 20, [Queue("queued", 33, "style-checker")], 20

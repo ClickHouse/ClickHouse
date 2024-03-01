@@ -63,14 +63,14 @@ endif()
 option(WITH_COVERAGE "Instrumentation for code coverage with default implementation" OFF)
 
 if (WITH_COVERAGE)
-    message (INFORMATION "Enabled instrumentation for code coverage")
+    message (STATUS "Enabled instrumentation for code coverage")
     set(COVERAGE_FLAGS "-fprofile-instr-generate -fcoverage-mapping")
 endif()
 
 option (SANITIZE_COVERAGE "Instrumentation for code coverage with custom callbacks" OFF)
 
 if (SANITIZE_COVERAGE)
-    message (INFORMATION "Enabled instrumentation for code coverage")
+    message (STATUS "Enabled instrumentation for code coverage")
 
     # We set this define for whole build to indicate that at least some parts are compiled with coverage.
     # And to expose it in system.build_options.

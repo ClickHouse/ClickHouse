@@ -13,7 +13,7 @@ ClickHouse utilizes third-party libraries for different purposes, e.g., to conne
 SELECT library_name, license_type, license_path FROM system.licenses ORDER BY library_name COLLATE 'en';
 ```
 
-(Note that the listed libraries are the ones located in the `contrib/` directory of the ClickHouse repository. Depending on the build options, some of of the libraries may have not been compiled, and as a result, their functionality may not be available at runtime.
+Note that the listed libraries are the ones located in the `contrib/` directory of the ClickHouse repository. Depending on the build options, some of the libraries may have not been compiled, and as a result, their functionality may not be available at runtime.
 
 [Example](https://play.clickhouse.com/play?user=play#U0VMRUNUIGxpYnJhcnlfbmFtZSwgbGljZW5zZV90eXBlLCBsaWNlbnNlX3BhdGggRlJPTSBzeXN0ZW0ubGljZW5zZXMgT1JERVIgQlkgbGlicmFyeV9uYW1lIENPTExBVEUgJ2VuJw==)
 

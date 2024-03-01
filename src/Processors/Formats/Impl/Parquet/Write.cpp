@@ -409,7 +409,7 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
             #pragma clang diagnostic pop
 
             if (max_dest_size > std::numeric_limits<int>::max())
-                throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column of size {}", formatReadableSizeWithBinarySuffix(source.size()));
+                throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column of size {}", ReadableSize(source.size()));
 
             scratch.resize(max_dest_size);
 

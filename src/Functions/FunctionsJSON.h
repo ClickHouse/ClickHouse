@@ -5,7 +5,7 @@
 
 #include <base/range.h>
 
-#include <Common/CpuId.h>
+#include <Common/CPUID.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 

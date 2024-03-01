@@ -36,6 +36,7 @@ public:
     Field operator[](size_t) const override;
     void get(size_t, Field &) const override;
     void insert(const Field &) override;
+    bool tryInsert(const Field &) override { return false; }
     bool isDefaultAt(size_t) const override;
 
     StringRef getDataAt(size_t) const override

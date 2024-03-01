@@ -6,25 +6,26 @@ import json
 import logging
 import sys
 import time
+from os import makedirs
+from os import path as p
 from pathlib import Path
-from os import path as p, makedirs
 from typing import Dict, List
 
 from build_check import get_release_or_pr
+from build_download_helper import read_build_urls
 from docker_images_helper import DockerImageData, docker_login
 from env_helper import (
     GITHUB_RUN_URL,
     REPORT_PATH,
-    TEMP_PATH,
     S3_BUILDS_BUCKET,
     S3_DOWNLOAD,
+    TEMP_PATH,
 )
 from git_helper import Git
 from pr_info import PRInfo
-from report import JobReport, TestResults, TestResult
+from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from build_download_helper import read_build_urls
 from version_helper import (
     ClickHouseVersion,
     get_tagged_versions,
@@ -378,7 +379,7 @@ def main():
         docker_login()
 
     logging.info("Following tags will be created: %s", ", ".join(tags))
-    status = "success"
+    status = SUCCESS
     test_results = []  # type: TestResults
     for os in args.os:
         for tag in tags:
@@ -388,7 +389,7 @@ def main():
                 )
             )
             if test_results[-1].status != "OK":
-                status = "failure"
+                status = FAILURE
     pr_info = pr_info or PRInfo()
 
     description = f"Processed tags: {', '.join(tags)}"
@@ -401,7 +402,7 @@ def main():
         additional_files=[],
     ).dump()
 
-    if status != "success":
+    if status != SUCCESS:
         sys.exit(1)
 
 

@@ -9,4 +9,10 @@ struct NameHas { static constexpr auto name = "has"; };
 using FunctionHas = FunctionArrayIndex<HasAction, NameHas>;
 
 REGISTER_FUNCTION(Has) { factory.registerFunction<FunctionHas>(); }
+
+FunctionOverloadResolverPtr createInternalFunctionHasOverloadResolver()
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionHas>());
+}
+
 }

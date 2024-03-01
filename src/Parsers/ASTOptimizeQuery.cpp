@@ -7,8 +7,15 @@ namespace DB
 
 void ASTOptimizeQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "OPTIMIZE TABLE " << (settings.hilite ? hilite_none : "")
-                  << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "OPTIMIZE TABLE " << (settings.hilite ? hilite_none : "");
+
+    if (database)
+    {
+        database->formatImpl(settings, state, frame);
+        settings.ostr << '.';
+    }
+
+    table->formatImpl(settings, state, frame);
 
     formatOnCluster(settings);
 

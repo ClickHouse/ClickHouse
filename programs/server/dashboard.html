@@ -85,11 +85,10 @@
             gap: 1rem;
         }
         .chart {
-            flex: 1 40%;
-            min-width: 20rem;
+            flex: 1 1 40rem;
             min-height: 16rem;
             background: var(--chart-background);
-            box-shadow: 0 0 1rem var(--shadow-color);
+            box-shadow: 1px 1px 0 var(--shadow-color);
             overflow: hidden;
             position: relative;
         }
@@ -195,7 +194,7 @@
         }
 
         .inputs input {
-            box-shadow: 0 0 1rem var(--shadow-color);
+            box-shadow: 1px 1px 0 var(--shadow-color);
             padding: 0.25rem;
         }
 
@@ -255,8 +254,6 @@
             font-weight: bold;
             user-select: none;
             cursor: pointer;
-            padding-left: 0.5rem;
-            padding-right: 0.5rem;
             background: var(--new-chart-background-color);
             color: var(--new-chart-text-color);
             float: right;
@@ -274,7 +271,6 @@
             float: right;
             width: 36%;
         }
-
 
         #global-error {
             align-self: center;
@@ -298,7 +294,7 @@
             background: var(--param-background-color);
             color: var(--param-text-color);
             display: inline-block;
-            box-shadow: 0 0 1rem var(--shadow-color);
+            box-shadow: 1px 1px 0 var(--shadow-color);
             margin-bottom: 1rem;
         }
 
@@ -491,17 +487,10 @@
   * - if a query returned something unusual, display the table;
   */
 
-let host = 'https://play.clickhouse.com/';
-let user = 'explorer';
+let host = location.protocol != 'file:' ? location.origin : 'http://localhost:8123/';
+let user = 'default';
 let password = '';
-let add_http_cors_header = true;
-
-/// If it is hosted on server, assume that it is the address of ClickHouse.
-if (location.protocol != 'file:') {
-    host = location.origin;
-    user = 'default';
-    add_http_cors_header = false;
-}
+let add_http_cors_header = (location.protocol != 'file:');
 
 const errorCodeMessageMap = {
     516: 'Error authenticating with database. Please check your connection params and try again.'
@@ -521,16 +510,17 @@ const errorMessages = [
 
 
 /// Query to fill `queries` list for the dashboard
-let search_query = `SELECT title, query FROM system.dashboards WHERE dashboard = 'overview'`;
+let search_query = `SELECT title, query FROM system.dashboards WHERE dashboard = 'Overview'`;
 let customized = false;
 let queries = [];
 
 /// Query parameters with predefined default values.
 /// All other parameters will be automatically found in the queries.
-let params = {
+let default_params = {
     'rounding': '60',
     'seconds': '86400'
 };
+let params = default_params;
 
 /// Palette generation for charts
 function generatePalette(baseColor, numColors) {
@@ -594,13 +584,19 @@ let plots = [];
 let charts = document.getElementById('charts');
 
 /// This is not quite correct (we cannot really parse SQL with regexp) but tolerable.
-const query_param_regexp = /\{(\w+):[^}]+\}/g;
+const query_param_regexp = /\{(\w+):([^}]+)\}/g;
 
 /// Automatically parse more parameters from the queries.
 function findParamsInQuery(query, new_params) {
+    const typeDefault = (type) => type.includes('Int') ? '0'
+        : (type.includes('Float') ? '0.0'
+        : (type.includes('Bool') ? 'false'
+        : (type.includes('Date') ? new Date().toISOString().slice(0, 10)
+        : (type.includes('UUID') ? '00000000-0000-0000-0000-000000000000'
+        : ''))));
     for (let match of query.matchAll(query_param_regexp)) {
         const name = match[1];
-        new_params[name] = params[name] || '';
+        new_params[name] = params[name] || default_params[name] || typeDefault(match[2]);
     }
 }
 
@@ -1266,8 +1262,11 @@ function hideError() {
 }
 
 let firstLoad = true;
-
+let is_drawing = false; // Prevent race condition leading to duplicate/dangling charts.
 async function drawAll() {
+    if (is_drawing) return;
+    is_drawing = true;
+
     let params = getParamsForURL();
     const chartsArray = document.getElementsByClassName('chart');
 
@@ -1294,12 +1293,12 @@ async function drawAll() {
             document.getElementById('edit').style.display = 'inline-block';
             document.getElementById('search-span').style.display = '';
             hideError();
-        }
-        else {
-            const charts = document.getElementById('charts')
-            charts.style.height = '0px';
+        } else {
+            document.getElementById('charts').style.height = '0px';
         }
     });
+
+    is_drawing = false;
 }
 
 function resize() {
@@ -1380,11 +1379,13 @@ document.getElementById('params').onsubmit = function(event) {
     event.preventDefault();
 }
 
+const decodeState = (x) => JSON.parse(LZString.decompressFromEncodedURIComponent(x) || atob(x));
+const encodeState = (x) => LZString.compressToEncodedURIComponent(JSON.stringify(x));
 
 function saveState() {
     const state = { host, user, queries, params, search_query, customized };
     history.pushState(state, '',
-        window.location.pathname + (window.location.search || '') + '#' + LZString.compressToEncodedURIComponent(JSON.stringify(state)));
+        window.location.pathname + (window.location.search || '') + '#' + encodeState(state));
 }
 
 async function searchQueries() {
@@ -1450,7 +1451,8 @@ window.onpopstate = function(event) {
 if (window.location.hash) {
     try {
         let search_query_, customized_;
-        ({host, user, queries, params, search_query_, customized_} = JSON.parse(LZString.decompressFromEncodedURIComponent(window.location.hash.substring(1))));
+        ({host, user, queries, params, search_query_, customized_} = decodeState(window.location.hash.substring(1)));
+
         // For compatibility with old URLs' hashes
         search_query = search_query_ !== undefined ? search_query_ : search_query;
         customized = customized_ !== undefined ? customized_ : true;

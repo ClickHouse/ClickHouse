@@ -5,29 +5,27 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List
 
+from ci_config import CI_CONFIG
 from env_helper import (
     GITHUB_JOB_URL,
     GITHUB_REPOSITORY,
     GITHUB_SERVER_URL,
-    TEMP_PATH,
     REPORT_PATH,
+    TEMP_PATH,
 )
+from pr_info import PRInfo
 from report import (
-    BuildResult,
     ERROR,
     PENDING,
     SUCCESS,
+    BuildResult,
     JobReport,
     create_build_html_report,
     get_worst_status,
 )
-
-from pr_info import PRInfo
-from ci_config import CI_CONFIG
 from stopwatch import Stopwatch
-
 
 # Old way to read the neads_data
 NEEDS_DATA_PATH = os.getenv("NEEDS_DATA_PATH", "")
@@ -48,18 +46,34 @@ def main():
     )
 
     build_check_name = sys.argv[1]
-    needs_data: List[str] = []
+    needs_data: Dict[str, Dict[str, Any]] = {}
     required_builds = 0
 
+    # NEEDS_DATA is a next dict:
+    # {
+    #   "BuilderDebAarch64": {
+    #     "result": "skipped",
+    #     "outputs": {}
+    #   },
+    #   "BuilderDebAsan": {
+    #     "result": "success",
+    #     "outputs": {}
+    #   },
+    #   "BuilderDebDebug": {
+    #     "result": "skipped",
+    #     "outputs": {}
+    #   },
+    # }
     if NEEDS_DATA:
         needs_data = json.loads(NEEDS_DATA)
-        # drop non build jobs if any
-        needs_data = [d for d in needs_data if "Build" in d]
     elif os.path.exists(NEEDS_DATA_PATH):
         with open(NEEDS_DATA_PATH, "rb") as file_handler:
-            needs_data = list(json.load(file_handler).keys())
+            needs_data = json.load(file_handler)
     else:
-        assert False, "NEEDS_DATA env var required"
+        raise RuntimeError("NEEDS_DATA env var required")
+
+    # drop non build jobs if any
+    needs_data = {name: data for name, data in needs_data.items() if "Build" in name}
 
     required_builds = len(needs_data)
 
@@ -88,8 +102,9 @@ def main():
     # The code to collect missing reports for failed jobs
     missing_job_names = [
         name
-        for name in needs_data
+        for name, data in needs_data.items()
         if not any(1 for br in build_results if br.job_name.startswith(name))
+        and data["result"] != "skipped"
     ]
     missing_builds = len(missing_job_names)
     for job_name in reversed(missing_job_names):

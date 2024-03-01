@@ -102,6 +102,15 @@ void ColumnMap::insert(const Field & x)
     nested->insert(Array(map.begin(), map.end()));
 }
 
+bool ColumnMap::tryInsert(const Field & x)
+{
+    if (x.getType() != Field::Types::Which::Map)
+        return false;
+
+    const auto & map = x.get<const Map &>();
+    return nested->tryInsert(Array(map.begin(), map.end()));
+}
+
 void ColumnMap::insertDefault()
 {
     nested->insertDefault();

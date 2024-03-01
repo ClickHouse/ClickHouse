@@ -256,7 +256,7 @@ void tryFuseQuantiles(QueryTreeNodePtr query_tree_node, ContextPtr context)
 
 }
 
-void FuseFunctionsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void FuseFunctionsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     tryFuseSumCountAvg(query_tree_node, context);
     tryFuseQuantiles(query_tree_node, context);

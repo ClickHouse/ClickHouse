@@ -91,7 +91,7 @@ public:
         if constexpr (std::is_floating_point_v<T>)
             return x.getValue().template convertTo<T>() / x.getScaleMultiplier().template convertTo<T>();
         else
-            return (x.getValue() / x.getScaleMultiplier()). template convertTo<T>();
+            return (x.getValue() / x.getScaleMultiplier()).template convertTo<T>();
     }
 
     T operator() (const AggregateFunctionStateData &) const

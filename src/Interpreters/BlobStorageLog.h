@@ -12,7 +12,7 @@ namespace DB
 
 struct BlobStorageLogElement
 {
-    enum class EventType : Int8
+    enum class EventType : int8_t
     {
         Upload = 1,
         Delete = 2,

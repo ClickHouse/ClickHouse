@@ -1,7 +1,7 @@
 version: '2.3'
 services:
     mysql2:
-        image: mysql:5.7
+        image: mysql:8.0
         restart: always
         environment:
             MYSQL_ROOT_PASSWORD: clickhouse
@@ -23,7 +23,7 @@ services:
               source: ${MYSQL_CLUSTER_LOGS:-}
               target: /mysql/
     mysql3:
-        image: mysql:5.7
+        image: mysql:8.0
         restart: always
         environment:
             MYSQL_ROOT_PASSWORD: clickhouse
@@ -45,7 +45,7 @@ services:
               source: ${MYSQL_CLUSTER_LOGS:-}
               target: /mysql/
     mysql4:
-        image: mysql:5.7
+        image: mysql:8.0
         restart: always
         environment:
             MYSQL_ROOT_PASSWORD: clickhouse

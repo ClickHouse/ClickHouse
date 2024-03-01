@@ -92,11 +92,6 @@ size_t MMapReadBufferFromFileDescriptor::getFileSize()
     return getSizeFromFileDescriptor(getFD(), getFileName());
 }
 
-size_t MMapReadBufferFromFileDescriptor::getFileOffsetOfBufferEnd() const
-{
-     return mapped.getOffset() + mapped.getLength();
-}
-
 size_t MMapReadBufferFromFileDescriptor::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &)
 {
     if (offset >= mapped.getLength())

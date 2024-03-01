@@ -2,7 +2,7 @@
 
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
 #include <Common/ThreadPool.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <mutex>
 #include <Common/CurrentMetrics.h>
 

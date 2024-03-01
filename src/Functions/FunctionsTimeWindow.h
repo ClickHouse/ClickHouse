@@ -4,31 +4,22 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <Functions/IFunction.h>
 
+
 namespace DB
 {
 
 /** Time window functions:
   *
   * tumble(time_attr, interval [, timezone])
-  *
   * tumbleStart(window_id)
-  *
   * tumbleStart(time_attr, interval [, timezone])
-  *
   * tumbleEnd(window_id)
-  *
   * tumbleEnd(time_attr, interval [, timezone])
-  *
   * hop(time_attr, hop_interval, window_interval [, timezone])
-  *
   * hopStart(window_id)
-  *
   * hopStart(time_attr, hop_interval, window_interval [, timezone])
-  *
   * hopEnd(window_id)
-  *
   * hopEnd(time_attr, hop_interval, window_interval [, timezone])
-  *
   */
 enum TimeWindowFunctionName
 {
@@ -46,7 +37,7 @@ struct ToStartOfTransform;
 
 #define TRANSFORM_DATE(INTERVAL_KIND) \
     template <> \
-    struct ToStartOfTransform<IntervalKind::INTERVAL_KIND> \
+    struct ToStartOfTransform<IntervalKind::Kind::INTERVAL_KIND> \
     { \
         static auto execute(UInt32 t, UInt64 delta, const DateLUTImpl & time_zone) \
         { \
@@ -60,7 +51,7 @@ struct ToStartOfTransform;
 #undef TRANSFORM_DATE
 
     template <>
-    struct ToStartOfTransform<IntervalKind::Day>
+    struct ToStartOfTransform<IntervalKind::Kind::Day>
     {
         static UInt32 execute(UInt32 t, UInt64 delta, const DateLUTImpl & time_zone)
         {
@@ -70,7 +61,7 @@ struct ToStartOfTransform;
 
 #define TRANSFORM_TIME(INTERVAL_KIND) \
     template <> \
-    struct ToStartOfTransform<IntervalKind::INTERVAL_KIND> \
+    struct ToStartOfTransform<IntervalKind::Kind::INTERVAL_KIND> \
     { \
         static UInt32 execute(UInt32 t, UInt64 delta, const DateLUTImpl & time_zone) \
         { \
@@ -84,7 +75,7 @@ struct ToStartOfTransform;
 
 #define TRANSFORM_SUBSECONDS(INTERVAL_KIND, DEF_SCALE) \
 template<> \
-    struct ToStartOfTransform<IntervalKind::INTERVAL_KIND> \
+    struct ToStartOfTransform<IntervalKind::Kind::INTERVAL_KIND> \
     { \
         static Int64 execute(Int64 t, UInt64 delta, const UInt32 scale) \
         { \
@@ -112,7 +103,7 @@ template<> \
 
 #define ADD_DATE(INTERVAL_KIND) \
     template <> \
-    struct AddTime<IntervalKind::INTERVAL_KIND> \
+    struct AddTime<IntervalKind::Kind::INTERVAL_KIND> \
     { \
         static inline auto execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone) \
         { \
@@ -125,7 +116,7 @@ template<> \
 #undef ADD_DATE
 
     template <>
-    struct AddTime<IntervalKind::Week>
+    struct AddTime<IntervalKind::Kind::Week>
     {
         static inline NO_SANITIZE_UNDEFINED ExtendedDayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl &)
         {
@@ -135,7 +126,7 @@ template<> \
 
 #define ADD_TIME(INTERVAL_KIND, INTERVAL) \
     template <> \
-    struct AddTime<IntervalKind::INTERVAL_KIND> \
+    struct AddTime<IntervalKind::Kind::INTERVAL_KIND> \
     { \
         static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &) \
         { return static_cast<UInt32>(t + delta * INTERVAL); } \
@@ -148,7 +139,7 @@ template<> \
 
 #define ADD_SUBSECONDS(INTERVAL_KIND, DEF_SCALE) \
 template <> \
-    struct AddTime<IntervalKind::INTERVAL_KIND> \
+    struct AddTime<IntervalKind::Kind::INTERVAL_KIND> \
     { \
         static inline NO_SANITIZE_UNDEFINED Int64 execute(Int64 t, UInt64 delta, const UInt32 scale) \
         { \

@@ -11,6 +11,8 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/multiMatchAny.h>
+#include <Functions/logical.h>
 
 #include <Interpreters/Context.h>
 
@@ -132,10 +134,12 @@ private:
 
 }
 
-void ConvertOrLikeChainPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void ConvertOrLikeChainPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    auto or_function_resolver = FunctionFactory::instance().get("or", context);
-    auto match_function_resolver = FunctionFactory::instance().get("multiMatchAny", context);
+    const auto & settings = context->getSettingsRef();
+    auto match_function_resolver = createInternalMultiMatchAnyOverloadResolver(settings.allow_hyperscan, settings.max_hyperscan_regexp_length, settings.max_hyperscan_regexp_total_length, settings.reject_expensive_hyperscan_regexps);
+    auto or_function_resolver = createInternalFunctionOrOverloadResolver();
+
     ConvertOrLikeChainVisitor visitor(std::move(or_function_resolver), std::move(match_function_resolver), std::move(context));
     visitor.visit(query_tree_node);
 }

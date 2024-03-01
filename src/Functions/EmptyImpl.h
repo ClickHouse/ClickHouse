@@ -35,7 +35,7 @@ struct EmptyImpl
     /// Only make sense if is_fixed_to_constant.
     static void vectorFixedToConstant(const ColumnString::Chars & /*data*/, size_t /*n*/, UInt8 & /*res*/)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: 'vectorFixedToConstant method' is called");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "'vectorFixedToConstant method' is called");
     }
 
     static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt8> & res)

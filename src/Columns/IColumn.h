@@ -166,6 +166,10 @@ public:
     /// Is used to transform raw strings to Blocks (for example, inside input format parsers)
     virtual void insert(const Field & x) = 0;
 
+    /// Appends new value at the end of the column if it has appropriate type and
+    /// returns true if insert is successful and false otherwise.
+    virtual bool tryInsert(const Field & x) = 0;
+
     /// Appends n-th element from other column with the same type.
     /// Is used in merge-sort and merges. It could be implemented in inherited classes more optimally than default implementation.
     virtual void insertFrom(const IColumn & src, size_t n);

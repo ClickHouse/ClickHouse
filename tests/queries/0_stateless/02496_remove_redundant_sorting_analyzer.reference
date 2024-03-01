@@ -220,6 +220,7 @@ FROM
 )
 GROUP BY number
 ORDER BY number
+SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test
 -- explain
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
@@ -291,6 +292,7 @@ FROM
     GROUP BY number
 )
 ORDER BY a ASC
+SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test
 -- explain
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
@@ -325,6 +327,7 @@ FROM
 )
 WHERE a > 0
 ORDER BY a
+SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test
 -- explain
 Expression (Project names)
   Sorting (Sorting for ORDER BY)

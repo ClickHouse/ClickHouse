@@ -46,12 +46,13 @@ class HashedDictionaryParallelLoader : public boost::noncopyable
 public:
     explicit HashedDictionaryParallelLoader(DictionaryType & dictionary_)
         : dictionary(dictionary_)
+        , dictionary_name(dictionary.getFullName())
         , shards(dictionary.configuration.shards)
         , pool(CurrentMetrics::HashedDictionaryThreads, CurrentMetrics::HashedDictionaryThreadsActive, CurrentMetrics::HashedDictionaryThreadsScheduled, shards)
         , shards_queues(shards)
     {
         UInt64 backlog = dictionary.configuration.shard_load_queue_backlog;
-        LOG_TRACE(dictionary.log, "Will load the dictionary using {} threads (with {} backlog)", shards, backlog);
+        LOG_TRACE(dictionary.log, "Will load the {} dictionary using {} threads (with {} backlog)", dictionary_name, shards, backlog);
 
         shards_slots.resize(shards);
         iota(shards_slots.data(), shards_slots.size(), UInt64(0));
@@ -82,6 +83,7 @@ public:
     {
         IColumn::Selector selector = createShardSelector(block, shards_slots);
         Blocks shards_blocks = splitBlock(selector, block);
+        block.clear();
 
         for (size_t shard = 0; shard < shards; ++shard)
         {
@@ -98,7 +100,7 @@ public:
         Stopwatch watch;
         pool.wait();
         UInt64 elapsed_ms = watch.elapsedMilliseconds();
-        LOG_TRACE(dictionary.log, "Processing the tail took {}ms", elapsed_ms);
+        LOG_TRACE(dictionary.log, "Processing the tail of dictionary {} took {}ms", dictionary_name, elapsed_ms);
     }
 
     ~HashedDictionaryParallelLoader()
@@ -119,6 +121,7 @@ public:
 
 private:
     DictionaryType & dictionary;
+    String dictionary_name;
     const size_t shards;
     ThreadPool pool;
     std::vector<std::optional<ConcurrentBoundedQueue<Block>>> shards_queues;

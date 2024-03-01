@@ -256,11 +256,11 @@ void KeeperDispatcher::requestThread()
                             if (shutdown_called)
                                 return;
 
-                            auto current_last_committed_idx = our_last_committed_log_idx.load(std::memory_order_relaxed);
+                            auto current_last_committed_idx = keeper_context->lastCommittedIndex();
                             if (current_last_committed_idx >= log_idx)
                                 break;
 
-                            our_last_committed_log_idx.wait(current_last_committed_idx);
+                            keeper_context->waitLastCommittedIndexUpdated(current_last_committed_idx);
                         }
                     }
                 }
@@ -414,8 +414,8 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
 
-    keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
     configuration_and_settings = KeeperConfigurationAndSettings::loadFromConfig(config, standalone_keeper);
+    keeper_context = std::make_shared<KeeperContext>(standalone_keeper, configuration_and_settings->coordination_settings);
 
     keeper_context->initialize(config, this);
 
@@ -433,7 +433,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         snapshots_queue,
         keeper_context,
         snapshot_s3,
-        [this](uint64_t log_idx, const KeeperStorage::RequestForSession & request_for_session)
+        [this](uint64_t /*log_idx*/, const KeeperStorage::RequestForSession & request_for_session)
         {
             {
                 /// check if we have queue of read requests depending on this request to be committed
@@ -457,9 +457,6 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                     }
                 }
             }
-
-            our_last_committed_log_idx.store(log_idx, std::memory_order_relaxed);
-            our_last_committed_log_idx.notify_all();
         });
 
     try
@@ -504,8 +501,9 @@ void KeeperDispatcher::shutdown()
 
             LOG_DEBUG(log, "Shutting down storage dispatcher");
 
-            our_last_committed_log_idx = std::numeric_limits<uint64_t>::max();
-            our_last_committed_log_idx.notify_all();
+            /// some threads can be waiting for certain commits, so we set value
+            /// of the last commit index to something that will always unblock
+            keeper_context->setLastCommitIndex(std::numeric_limits<uint64_t>::max());
 
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();

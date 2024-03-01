@@ -58,7 +58,7 @@ public:
 
 }
 
-void ShardNumColumnToFunctionPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void ShardNumColumnToFunctionPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     ShardNumColumnToFunctionVisitor visitor(context);
     visitor.visit(query_tree_node);

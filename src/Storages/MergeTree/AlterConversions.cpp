@@ -9,6 +9,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+bool AlterConversions::supportsMutationCommandType(MutationCommand::Type t)
+{
+    return t == MutationCommand::Type::RENAME_COLUMN;
+}
+
 void AlterConversions::addMutationCommand(const MutationCommand & command)
 {
     /// Currently only RENAME_COLUMN is applied on-fly.

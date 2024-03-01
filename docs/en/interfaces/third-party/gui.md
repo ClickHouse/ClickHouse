@@ -306,3 +306,18 @@ License: [commercial](https://tablum.io/pricing) product with 3-month free perio
 
 Try it out for free [in the cloud](https://tablum.io/try).
 Learn more about the product at [TABLUM.IO](https://tablum.io/)
+
+### CKMAN {#ckman}
+
+[CKMAN] (https://www.github.com/housepower/ckman) is a tool for managing and monitoring ClickHouse clusters!
+
+Features:
+
+- Rapid and convenient automated deployment of clusters through a browser interface
+- Clusters can be scaled or scaled
+- Load balance the data of the cluster
+- Upgrade the cluster online
+- Modify the cluster configuration on the page
+- Provides cluster node monitoring and zookeeper monitoring
+- Monitor the status of tables and partitions, and monitor slow SQL statements
+- Provides an easy-to-use SQL execution page

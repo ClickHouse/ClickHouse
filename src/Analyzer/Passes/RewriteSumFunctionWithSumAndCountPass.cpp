@@ -120,7 +120,7 @@ private:
 
 }
 
-void RewriteSumFunctionWithSumAndCountPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void RewriteSumFunctionWithSumAndCountPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     RewriteSumFunctionWithSumAndCountVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

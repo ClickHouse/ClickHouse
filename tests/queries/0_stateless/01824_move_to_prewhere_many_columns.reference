@@ -1,12 +1,19 @@
 1	Wide
 2	Compact
 35
-SELECT count()
-FROM t_move_to_prewhere
-PREWHERE a AND b AND c AND (NOT ignore(fat_string))
+      Filter
+      Filter column: and(a, b, c, not(ignore(fat_string))) (removed)
+        Prewhere info
+          Prewhere filter
+          Prewhere filter column: and(a, b, c) (removed)
 1	Compact
 2	Compact
 35
 SELECT count()
 FROM t_move_to_prewhere
-PREWHERE a AND b AND c AND (NOT ignore(fat_string))
+WHERE a AND b AND c AND (NOT ignore(fat_string))
+      Filter
+      Filter column: and(a, b, c, not(ignore(fat_string))) (removed)
+        Prewhere info
+          Prewhere filter
+          Prewhere filter column: a

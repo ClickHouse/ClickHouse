@@ -109,7 +109,7 @@ public:
             "replace chains of equality functions inside an OR with a single IN operator";
     }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 };
 
 }

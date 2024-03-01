@@ -2,7 +2,6 @@
 #include <cstdlib>
 #include <csignal>
 #include <iostream>
-#include <fstream>
 #include <iomanip>
 #include <optional>
 #include <random>
@@ -640,7 +639,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
             std::cout << desc << "\n";
-            return 1;
+            std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-benchmark/\n";
+            return 0;
         }
 
         print_stacktrace = options.count("stacktrace");

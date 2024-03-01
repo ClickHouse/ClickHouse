@@ -114,10 +114,41 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
     while (!stack.empty())
     {
-        /// NOTE: optimizePrewhere can modify the stack.
-        optimizePrewhere(stack, nodes);
         optimizePrimaryKeyCondition(stack);
 
+        /// NOTE: optimizePrewhere can modify the stack.
+        /// Prewhere optimization relies on PK optimization (getConditionEstimatorByPredicate)
+        if (optimization_settings.optimize_prewhere)
+            optimizePrewhere(stack, nodes);
+
+        auto & frame = stack.back();
+
+        if (frame.next_child == 0)
+        {
+
+            if (optimization_settings.read_in_order)
+                optimizeReadInOrder(*frame.node, nodes);
+
+            if (optimization_settings.distinct_in_order)
+                tryDistinctReadInOrder(frame.node);
+        }
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+
+        stack.pop_back();
+    }
+
+    stack.push_back({.node = &root});
+
+    while (!stack.empty())
+    {
         {
             /// NOTE: frame cannot be safely used after stack was modified.
             auto & frame = stack.back();
@@ -126,19 +157,14 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             {
                 has_reading_from_mt |= typeid_cast<const ReadFromMergeTree *>(frame.node->step.get()) != nullptr;
 
-                if (optimization_settings.read_in_order)
-                    optimizeReadInOrder(*frame.node, nodes);
-
                 /// Projection optimization relies on PK optimization
                 if (optimization_settings.optimize_projection)
                     num_applied_projection
                         += optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings.optimize_use_implicit_projections);
 
+
                 if (optimization_settings.aggregation_in_order)
                     optimizeAggregationInOrder(*frame.node, nodes);
-
-                if (optimization_settings.distinct_in_order)
-                    tryDistinctReadInOrder(frame.node);
             }
 
             /// Traverse all children first.
@@ -198,11 +224,6 @@ void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::
             ++frame.next_child;
             stack.push_back(next_frame);
             continue;
-        }
-
-        if (auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>(frame.node->step.get()))
-        {
-            source_step_with_filter->applyFilters();
         }
 
         addPlansForSets(plan, *frame.node, nodes);

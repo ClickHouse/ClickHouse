@@ -101,6 +101,15 @@ def started_cluster():
             ],
             stay_alive=True,
         )
+        cluster.add_instance(
+            "old_instance",
+            with_zookeeper=True,
+            image="clickhouse/clickhouse-server",
+            tag="23.12",
+            stay_alive=True,
+            with_installed_binary=True,
+            allow_analyzer=False,
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -1385,4 +1394,45 @@ def test_processed_file_setting_distributed(started_cluster, processing_threads)
         if expected_rows == get_count():
             break
         time.sleep(1)
+    assert expected_rows == get_count()
+
+
+def test_upgrade(started_cluster):
+    node = started_cluster.instances["old_instance"]
+
+    table_name = f"test_upgrade"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+        },
+    )
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    expected_rows = 10
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+
+    assert expected_rows == get_count()
+
+    node.restart_with_latest_version()
+
     assert expected_rows == get_count()

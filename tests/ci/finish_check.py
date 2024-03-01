@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 import logging
+
+# isort: off
 from github import Github
+
+# isort: on
 
 from commit_status_helper import (
     CI_STATUS_NAME,
@@ -11,6 +15,7 @@ from commit_status_helper import (
 )
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
+from report import PENDING, SUCCESS
 
 
 def main():
@@ -31,10 +36,10 @@ def main():
         return
     # Take the latest status
     status = statuses[-1]
-    if status.state == "pending":
+    if status.state == PENDING:
         post_commit_status(
             commit,
-            "success",
+            SUCCESS,
             status.target_url,
             "All checks finished",
             CI_STATUS_NAME,

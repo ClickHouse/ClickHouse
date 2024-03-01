@@ -115,12 +115,17 @@ def run_docker_image_with_env(
     subprocess.check_call(cmd, shell=True)
 
 
-def is_release_build(debug_build: bool, package_type: str, sanitizer: str) -> bool:
-    return not debug_build and package_type == "deb" and sanitizer == ""
+def is_release_build(
+    debug_build: bool, package_type: str, sanitizer: str, coverage: bool
+) -> bool:
+    return (
+        not debug_build and package_type == "deb" and sanitizer == "" and not coverage
+    )
 
 
 def parse_env_variables(
     debug_build: bool,
+    coverage: bool,
     compiler: str,
     sanitizer: str,
     package_type: str,
@@ -261,7 +266,7 @@ def parse_env_variables(
         build_target = (
             f"{build_target} clickhouse-odbc-bridge clickhouse-library-bridge"
         )
-        if is_release_build(debug_build, package_type, sanitizer):
+        if is_release_build(debug_build, package_type, sanitizer, coverage):
             cmake_flags.append("-DSPLIT_DEBUG_SYMBOLS=ON")
             result.append("WITH_PERFORMANCE=1")
             if is_cross_arm:
@@ -286,6 +291,9 @@ def parse_env_variables(
         result.append("BUILD_TYPE=Debug")
     else:
         result.append("BUILD_TYPE=None")
+
+    if coverage:
+        cmake_flags.append("-DSANITIZE_COVERAGE=1 -DBUILD_STANDALONE_KEEPER=0")
 
     if not cache:
         cmake_flags.append("-DCOMPILER_CACHE=disabled")
@@ -415,6 +423,11 @@ def parse_args() -> argparse.Namespace:
         choices=("address", "thread", "memory", "undefined", ""),
         default="",
     )
+    parser.add_argument(
+        "--coverage",
+        action="store_true",
+        help="enable granular coverage with introspection",
+    )
 
     parser.add_argument("--clang-tidy", action="store_true")
     parser.add_argument(
@@ -507,6 +520,7 @@ def main() -> None:
 
     env_prepared = parse_env_variables(
         args.debug_build,
+        args.coverage,
         args.compiler,
         args.sanitizer,
         args.package_type,

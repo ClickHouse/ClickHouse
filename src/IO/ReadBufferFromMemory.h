@@ -20,6 +20,7 @@ public:
         : SeekableReadBuffer(const_cast<char *>(str.data()), str.size(), 0) {}
 
     off_t seek(off_t off, int whence) override;
+
     off_t getPosition() override;
 };
 

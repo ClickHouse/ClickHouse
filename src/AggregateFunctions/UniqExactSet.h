@@ -156,7 +156,6 @@ public:
     void read(ReadBuffer & in)
     {
         size_t new_size = 0;
-        auto * const position = in.position();
         readVarUInt(new_size, in);
         if (new_size > 100'000'000'000)
             throw DB::Exception(
@@ -174,8 +173,14 @@ public:
         }
         else
         {
-            in.position() = position; // Rollback position
-            asSingleLevel().read(in);
+            asSingleLevel().reserve(new_size);
+
+            for (size_t i = 0; i < new_size; ++i)
+            {
+                typename SingleLevelSet::Cell x;
+                x.read(in);
+                asSingleLevel().insert(x.getValue());
+            }
         }
     }
 

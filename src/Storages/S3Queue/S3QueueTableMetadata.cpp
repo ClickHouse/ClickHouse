@@ -69,16 +69,23 @@ void S3QueueTableMetadata::read(const String & metadata_str)
 {
     Poco::JSON::Parser parser;
     auto json = parser.parse(metadata_str).extract<Poco::JSON::Object::Ptr>();
+
     after_processing = json->getValue<String>("after_processing");
     mode = json->getValue<String>("mode");
     s3queue_tracked_files_limit = json->getValue<UInt64>("s3queue_tracked_files_limit");
     s3queue_tracked_file_ttl_sec = json->getValue<UInt64>("s3queue_tracked_file_ttl_sec");
     format_name = json->getValue<String>("format_name");
     columns = json->getValue<String>("columns");
+
     if (json->has("s3queue_total_shards_num"))
         s3queue_total_shards_num = json->getValue<UInt64>("s3queue_total_shards_num");
+    else
+        s3queue_total_shards_num = 1;
+
     if (json->has("s3queue_processing_threads_num"))
         s3queue_processing_threads_num = json->getValue<UInt64>("s3queue_processing_threads_num");
+    else
+        s3queue_processing_threads_num = 1;
 }
 
 S3QueueTableMetadata S3QueueTableMetadata::parse(const String & metadata_str)

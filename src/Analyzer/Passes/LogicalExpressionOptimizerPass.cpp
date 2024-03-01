@@ -404,12 +404,12 @@ private:
 
             auto operand_type = and_operands[0]->getResultType();
             auto function_type = function_node.getResultType();
-            assert(!function_type->isNullable());
+            chassert(!function_type->isNullable());
             if (!function_type->equals(*operand_type))
             {
                 /// Result of equality operator can be low cardinality, while AND always returns UInt8.
                 /// In that case we replace `(lc = 1) AND (lc = 1)` with `(lc = 1) AS UInt8`
-                assert(function_type->equals(*removeLowCardinality(operand_type)));
+                chassert(function_type->equals(*removeLowCardinality(operand_type)));
                 node = createCastFunction(std::move(and_operands[0]), function_type, getContext());
             }
             else
@@ -427,7 +427,7 @@ private:
     void tryReplaceOrEqualsChainWithIn(QueryTreeNodePtr & node)
     {
         auto & function_node = node->as<FunctionNode &>();
-        assert(function_node.getFunctionName() == "or");
+        chassert(function_node.getFunctionName() == "or");
 
         QueryTreeNodes or_operands;
 
@@ -486,7 +486,7 @@ private:
             /// first we create tuple from RHS of equals functions
             for (const auto & equals : equals_functions)
             {
-                is_any_nullable |= equals->getResultType()->isNullable();
+                is_any_nullable |= removeLowCardinality(equals->getResultType())->isNullable();
 
                 const auto * equals_function = equals->as<FunctionNode>();
                 assert(equals_function && equals_function->getFunctionName() == "equals");
@@ -554,7 +554,7 @@ private:
     }
 };
 
-void LogicalExpressionOptimizerPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void LogicalExpressionOptimizerPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     LogicalExpressionOptimizerVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

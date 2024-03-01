@@ -9,6 +9,7 @@
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/config_version.h>
 #include "Coordination/KeeperFeatureFlags.h"
 #include <Coordination/Keeper4LWInfo.h>
 #include <IO/WriteHelpers.h>
@@ -37,6 +38,12 @@ String formatZxid(int64_t zxid)
 
 }
 
+#if USE_NURAFT
+namespace ProfileEvents
+{
+    extern const std::vector<Event> keeper_profile_events;
+}
+#endif
 
 namespace DB
 {
@@ -193,6 +200,8 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr jemalloc_disable_profile = std::make_shared<JemallocDisableProfile>(keeper_dispatcher);
         factory.registerCommand(jemalloc_disable_profile);
 #endif
+        FourLetterCommandPtr profile_events_command = std::make_shared<ProfileEventsCommand>(keeper_dispatcher);
+        factory.registerCommand(profile_events_command);
 
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
@@ -561,6 +570,12 @@ String LogInfoCommand::run()
     append("leader_committed_log_idx", log_info.leader_committed_log_idx);
     append("target_committed_log_idx", log_info.target_committed_log_idx);
     append("last_snapshot_idx", log_info.last_snapshot_idx);
+
+    append("latest_logs_cache_entries", log_info.latest_logs_cache_entries);
+    append("latest_logs_cache_size", log_info.latest_logs_cache_size);
+
+    append("commit_logs_cache_entries", log_info.commit_logs_cache_entries);
+    append("commit_logs_cache_size", log_info.commit_logs_cache_size);
     return ret.str();
 }
 
@@ -643,5 +658,32 @@ String JemallocDisableProfile::run()
     return "ok";
 }
 #endif
+
+String ProfileEventsCommand::run()
+{
+    StringBuffer ret;
+
+#if USE_NURAFT
+    auto append = [&ret] (const String & metric, uint64_t value, const String & docs) -> void
+    {
+        writeText(metric, ret);
+        writeText('\t', ret);
+        writeText(std::to_string(value), ret);
+        writeText('\t', ret);
+        writeText(docs, ret);
+        writeText('\n', ret);
+    };
+
+    for (auto i : ProfileEvents::keeper_profile_events)
+    {
+        const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
+        std::string metric_name{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
+        std::string metric_doc{ProfileEvents::getDocumentation(static_cast<ProfileEvents::Event>(i))};
+        append(metric_name, counter, metric_doc);
+    }
+#endif
+
+    return ret.str();
+}
 
 }

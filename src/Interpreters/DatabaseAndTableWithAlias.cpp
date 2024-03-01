@@ -71,7 +71,7 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableExpression & 
         alias = table_expression.subquery->tryGetAlias();
     }
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no known elements in ASTTableExpression");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No known elements in ASTTableExpression");
 }
 
 bool DatabaseAndTableWithAlias::satisfies(const DatabaseAndTableWithAlias & db_table, bool table_may_be_an_alias) const

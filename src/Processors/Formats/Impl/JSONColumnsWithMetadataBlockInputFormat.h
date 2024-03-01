@@ -15,7 +15,7 @@ public:
     bool checkChunkEnd() override;
 
 private:
-    const Block & header;
+    const Block header;
     const bool validate_types_from_metadata;
 };
 

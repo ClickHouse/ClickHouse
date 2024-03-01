@@ -43,6 +43,7 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
+    void forEachChild(const ChildCallback & callback) const override;
 
     Field getDefault() const override;
 

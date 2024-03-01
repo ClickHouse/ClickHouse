@@ -54,6 +54,8 @@ public:
 
     static bool checkKeyType(DataTypePtr key_type);
 
+    void forEachChild(const ChildCallback & callback) const override;
+
 private:
     void assertKeyType() const;
 };

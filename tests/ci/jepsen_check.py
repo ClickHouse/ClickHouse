@@ -5,28 +5,25 @@ import logging
 import os
 import sys
 import time
-
 from pathlib import Path
 from typing import Any, List
 
 import boto3  # type: ignore
 import requests  # type: ignore
-
 from build_download_helper import (
     download_build_with_progress,
     get_build_name_for_check,
     read_build_urls,
 )
 from compress_files import compress_fast
-from env_helper import REPO_COPY, REPORT_PATH, S3_URL, TEMP_PATH, S3_BUILDS_BUCKET
+from env_helper import REPO_COPY, REPORT_PATH, S3_BUILDS_BUCKET, S3_URL, TEMP_PATH
 from get_robot_token import get_parameter_from_ssm
 from git_helper import git_runner
 from pr_info import PRInfo
-from report import JobReport, TestResults, TestResult
+from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from ssh import SSHKey
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-
 
 JEPSEN_GROUP_NAME = "jepsen_group"
 
@@ -263,21 +260,21 @@ def main():
             else:
                 logging.info("Run failed")
 
-    status = "success"
+    status = SUCCESS
     description = "No invalid analysis found ヽ(‘ー`)ノ"
     jepsen_log_path = result_path / "jepsen_run_all_tests.log"
     additional_data = []
     try:
         test_result = _parse_jepsen_output(jepsen_log_path)
         if any(r.status == "FAIL" for r in test_result):
-            status = "failure"
+            status = FAILURE
             description = "Found invalid analysis (ﾉಥ益ಥ）ﾉ ┻━┻"
 
         compress_fast(result_path / "store", result_path / "jepsen_store.tar.zst")
         additional_data.append(result_path / "jepsen_store.tar.zst")
     except Exception as ex:
         print("Exception", ex)
-        status = "failure"
+        status = FAILURE
         description = "No Jepsen output log"
         test_result = [TestResult("No Jepsen output log", "FAIL")]
 

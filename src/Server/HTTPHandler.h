@@ -148,6 +148,12 @@ private:
         HTTPServerResponse & response,
         Output & used_output);
 
+    void formatExceptionForClient(
+        int exception_code,
+        HTTPServerRequest & request,
+        HTTPServerResponse & response,
+        Output & used_output);
+
     static void pushDelayedResults(Output & used_output);
 };
 

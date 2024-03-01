@@ -196,7 +196,8 @@ def test_cancel_backup():
     start_restore(try_restore_id_1, backup_id)
     cancel_restore(try_restore_id_1)
 
-    node.query(f"DROP TABLE tbl SYNC")
+    # IF EXISTS because it's unknown whether RESTORE had managed to create a table before it got cancelled.
+    node.query(f"DROP TABLE IF EXISTS tbl SYNC")
 
     restore_id = uuid.uuid4().hex
     start_restore(restore_id, backup_id)

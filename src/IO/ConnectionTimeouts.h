@@ -16,8 +16,8 @@ struct Settings;
     M(secure_connection_timeout, withSecureConnectionTimeout) \
     M(send_timeout, withSendTimeout) \
     M(receive_timeout, withReceiveTimeout) \
-    M(tcp_keep_alive_timeout, withTcpKeepAliveTimeout) \
-    M(http_keep_alive_timeout, withHttpKeepAliveTimeout) \
+    M(tcp_keep_alive_timeout, withTCPKeepAliveTimeout) \
+    M(http_keep_alive_timeout, withHTTPKeepAliveTimeout) \
     M(hedged_connection_timeout, withHedgedConnectionTimeout) \
     M(receive_data_timeout, withReceiveDataTimeout) \
     M(handshake_timeout, withHandshakeTimeout) \

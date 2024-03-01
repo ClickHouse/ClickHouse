@@ -1,8 +1,8 @@
-#include <Common/PODArray.h>
+#include <Formats/FormatFactory.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/PrettySpaceBlockOutputFormat.h>
+#include <Common/PODArray.h>
 
 
 namespace DB
@@ -30,9 +30,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     calculateWidths(header, chunk, widths, max_widths, name_widths);
 
     if (format_settings.pretty.output_format_pretty_row_numbers)
-    {
         writeString(String(row_number_width, ' '), out);
-    }
     /// Names
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -78,9 +76,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
             // Write row number;
             auto row_num_string = std::to_string(row + 1 + total_rows) + ". ";
             for (size_t i = 0; i < row_number_width - row_num_string.size(); ++i)
-            {
                 writeCString(" ", out);
-            }
             writeString(row_num_string, out);
         }
         for (size_t column = 0; column < num_columns; ++column)
@@ -107,6 +103,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
             }
         }
 
+        writeReadableNumberTip(chunk);
         writeChar('\n', out);
 
         if (has_transferred_row)

@@ -10,8 +10,16 @@ from typing import Tuple
 
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
-from pr_info import FORCE_TESTS_LABEL, PRInfo
-from report import JobReport, TestResult, TestResults, read_test_results
+from pr_info import PRInfo
+from report import (
+    ERROR,
+    FAILURE,
+    SUCCESS,
+    JobReport,
+    TestResult,
+    TestResults,
+    read_test_results,
+)
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
@@ -56,16 +64,16 @@ def process_results(result_directory: Path) -> Tuple[str, str, TestResults]:
             status = list(csv.reader(status_file, delimiter="\t"))
     if len(status) != 1 or len(status[0]) != 2:
         logging.info("Files in result folder %s", os.listdir(result_directory))
-        return "error", "Invalid check_status.tsv", test_results
+        return ERROR, "Invalid check_status.tsv", test_results
     state, description = status[0][0], status[0][1]
 
     try:
         results_path = result_directory / "test_results.tsv"
         test_results = read_test_results(results_path)
         if len(test_results) == 0:
-            return "error", "Empty test_results.tsv", test_results
+            return ERROR, "Empty test_results.tsv", test_results
     except Exception as e:
-        return ("error", f"Cannot parse test_results.tsv ({e})", test_results)
+        return (ERROR, f"Cannot parse test_results.tsv ({e})", test_results)
 
     return state, description, test_results
 
@@ -149,25 +157,25 @@ def main():
     test_results = []  # type: TestResults
     if "submodule_log.txt" not in test_output_files:
         description = "Cannot clone repository"
-        state = "failure"
+        state = FAILURE
     elif "cmake_log.txt" not in test_output_files:
         description = "Cannot fetch submodules"
-        state = "failure"
+        state = FAILURE
     elif "build_log.txt" not in test_output_files:
         description = "Cannot finish cmake"
-        state = "failure"
+        state = FAILURE
     elif "install_log.txt" not in test_output_files:
         description = "Cannot build ClickHouse"
-        state = "failure"
+        state = FAILURE
     elif not test_log_exists and not test_result_exists:
         description = "Cannot install or start ClickHouse"
-        state = "failure"
+        state = FAILURE
     else:
         state, description, test_results = process_results(output_path)
 
     if timeout_expired:
         test_results.append(TestResult.create_check_timeout_expired(args.timeout))
-        state = "failure"
+        state = FAILURE
         description = test_results[-1].name
 
     JobReport(
@@ -181,14 +189,8 @@ def main():
     ).dump()
 
     # Refuse other checks to run if fast test failed
-    if state != "success":
-        if state == "error":
-            print("The status is 'error', report failure disregard the labels")
-            sys.exit(1)
-        elif FORCE_TESTS_LABEL in pr_info.labels:
-            print(f"'{FORCE_TESTS_LABEL}' enabled, reporting success")
-        else:
-            sys.exit(1)
+    if state != SUCCESS:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

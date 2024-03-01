@@ -69,6 +69,11 @@ String DataTypeArray::doGetPrettyName(size_t indent) const
     return s.str();
 }
 
+void DataTypeArray::forEachChild(const ChildCallback & callback) const
+{
+    callback(*nested);
+    nested->forEachChild(callback);
+}
 
 static DataTypePtr create(const ASTPtr & arguments)
 {

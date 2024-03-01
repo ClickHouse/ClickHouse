@@ -14,7 +14,7 @@ public:
 
     String getDescription() override { return "Replaces injective functions by it's arguments in GROUP BY section."; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 };
 
 }

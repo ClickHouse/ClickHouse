@@ -15,7 +15,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT constraint_name;
 
 See more on [constraints](../../../sql-reference/statements/create/table.md#constraints).
 
-Queries will add or remove metadata about constraints from table so they are processed immediately.
+Queries will add or remove metadata about constraints from table, so they are processed immediately.
 
 :::tip
 Constraint check **will not be executed** on existing data if it was added.

@@ -225,8 +225,7 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
     select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
 
-    auto new_subquery = std::make_shared<ASTSubquery>();
-    new_subquery->children.push_back(select_with_union_query);
+    auto new_subquery = std::make_shared<ASTSubquery>(std::move(select_with_union_query));
     ast->children[0]->children.back() = std::move(new_subquery);
 
     return true;
@@ -1582,8 +1581,7 @@ public:
         if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             return false;
 
-        auto subquery = std::make_shared<ASTSubquery>();
-        subquery->children.push_back(std::move(node));
+        auto subquery = std::make_shared<ASTSubquery>(std::move(node));
         elements = {makeASTFunction("exists", subquery)};
 
         finished = true;

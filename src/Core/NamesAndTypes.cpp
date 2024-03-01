@@ -1,4 +1,3 @@
-#include <cstddef>
 #include <Core/NamesAndTypes.h>
 
 #include <base/sort.h>
@@ -12,6 +11,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
+#include <boost/algorithm/string.hpp>
+#include <cstddef>
 
 namespace DB
 {
@@ -213,6 +214,16 @@ bool NamesAndTypesList::contains(const String & name) const
     for (const NameAndTypePair & column : *this)
     {
         if (column.name == name)
+            return true;
+    }
+    return false;
+}
+
+bool NamesAndTypesList::containsCaseInsensitive(const String & name) const
+{
+    for (const NameAndTypePair & column : *this)
+    {
+        if (boost::iequals(column.name, name))
             return true;
     }
     return false;

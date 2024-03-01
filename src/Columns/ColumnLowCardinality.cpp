@@ -140,6 +140,18 @@ void ColumnLowCardinality::insert(const Field & x)
     idx.insertPosition(dictionary.getColumnUnique().uniqueInsert(x));
 }
 
+bool ColumnLowCardinality::tryInsert(const Field & x)
+{
+    compactIfSharedDictionary();
+
+    size_t index;
+    if (!dictionary.getColumnUnique().tryUniqueInsert(x, index))
+        return false;
+
+    idx.insertPosition(index);
+    return true;
+}
+
 void ColumnLowCardinality::insertDefault()
 {
     idx.insertPosition(getDictionary().getDefaultValueIndex());

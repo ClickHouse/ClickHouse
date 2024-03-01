@@ -1,4 +1,5 @@
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseQuery.h>
@@ -21,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int UNEXPECTED_AST_STRUCTURE;
 }
 
 namespace
@@ -103,11 +105,25 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
 
     if (function->arguments->children.size() > 2)
     {
-        const auto & query_arg = function->arguments->children[2];
+        const auto & subquery_arg = function->arguments->children[2];
+        const auto * subquery = subquery_arg->as<ASTSubquery>();
+
+        if (!subquery)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table function '{}' requires a subquery argument, got '{}'",
+                getName(), queryToString(subquery_arg));
+
+        if (subquery->children.empty())
+            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                "A subquery AST element must have a child");
+
+        const auto & query_arg = subquery->children[0];
+
         if (!query_arg->as<ASTSelectWithUnionQuery>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Table function '{}' requires a EXPLAIN SELECT query argument, got EXPLAIN '{}'",
+                "Table function '{}' requires a EXPLAIN's SELECT query argument, got '{}'",
                 getName(), queryToString(query_arg));
+
         explain_query->setExplainedQuery(query_arg);
     }
     else if (kind != ASTExplainQuery::ExplainKind::CurrentTransaction)

@@ -128,6 +128,15 @@ public:
         offsets.push_back(new_size);
     }
 
+    bool tryInsert(const Field & x) override
+    {
+        if (x.getType() != Field::Types::Which::String)
+            return false;
+
+        insert(x);
+        return true;
+    }
+
     void insertFrom(const IColumn & src_, size_t n) override
     {
         const ColumnString & src = assert_cast<const ColumnString &>(src_);

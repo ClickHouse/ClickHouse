@@ -12,7 +12,7 @@ public:
 
     String getDescription() override { return "Convert logical expression to CNF and apply optimizations using constraints"; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 };
 
 }

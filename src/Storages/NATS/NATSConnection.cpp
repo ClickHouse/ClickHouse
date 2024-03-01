@@ -91,6 +91,8 @@ void NATSConnectionManager::connectImpl()
         natsOptions_SetUserInfo(options, configuration.username.c_str(), configuration.password.c_str());
     if (!configuration.token.empty())
         natsOptions_SetToken(options, configuration.token.c_str());
+    if (!configuration.credential_file.empty())
+        natsOptions_SetUserCredentialsFromFiles(options, configuration.credential_file.c_str(), nullptr);
 
     if (configuration.secure)
     {

@@ -429,7 +429,7 @@ public:
         , number_of_arguments(arguments.size())
     {
         if (number_of_arguments == 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: single argument is passed to AggregateFunctionNullVariadic");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Single argument is passed to AggregateFunctionNullVariadic");
 
         if (number_of_arguments > MAX_ARGS)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,

@@ -78,7 +78,7 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
 
     if (enabled)
     {
-        server_data_path = config.getString("path", "");
+        server_data_path = config.getString("path", DB::DBMS_DEFAULT_PATH);
         const std::filesystem::path & default_tmp_path = fs::path(config.getString("tmp_path", fs::temp_directory_path())) / "sentry";
         const std::string & endpoint
             = config.getString("send_crash_reports.endpoint");

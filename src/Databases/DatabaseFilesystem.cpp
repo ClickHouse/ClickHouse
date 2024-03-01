@@ -146,9 +146,18 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
     if (!checkTableFilePath(table_path, context_, throw_on_error))
         return {};
 
-    auto format = FormatFactory::instance().getFormatFromFileName(table_path, throw_on_error);
-    if (format.empty())
-        return {};
+    String format;
+    if (throw_on_error)
+    {
+        format = FormatFactory::instance().getFormatFromFileName(table_path);
+    }
+    else
+    {
+        auto format_maybe = FormatFactory::instance().tryGetFormatFromFileName(table_path);
+        if (!format_maybe)
+            return {};
+        format = *format_maybe;
+    }
 
     auto ast_function_ptr = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path), std::make_shared<ASTLiteral>(format));
 

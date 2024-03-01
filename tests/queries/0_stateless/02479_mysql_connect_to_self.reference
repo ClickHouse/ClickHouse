@@ -67,6 +67,6 @@ SELECT
     __table1.a AS a,
     __table1.b AS b,
     __table1.c AS c
-FROM mysql(\'127.0.0.1:9004\', \'default\', foo, \'default\', \'\', SETTINGS connection_wait_timeout = 123, connect_timeout = 40123002, read_write_timeout = 40123001, connection_pool_size = 3) AS __table1
+FROM mysql(\'127.0.0.1:9004\', _CAST(\'default\', \'String\'), foo, \'default\', \'\', SETTINGS connection_wait_timeout = 123, connect_timeout = 40123002, read_write_timeout = 40123001, connection_pool_size = 3) AS __table1
 ---
 5

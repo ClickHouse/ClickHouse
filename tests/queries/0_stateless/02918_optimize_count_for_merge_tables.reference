@@ -7,3 +7,6 @@ Expression ((Projection + Before ORDER BY))
   Aggregating
     Expression (Before GROUP BY)
       ReadFromMerge
+        ReadFromMergeTree (default.mt1)
+        ReadFromMergeTree (default.mt2)
+        ReadFromStorage (TinyLog)

@@ -69,7 +69,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         ContextPtr context_,
         const ColumnsDescription & columns_,
         std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
-        bool is_attach)
+        LoadingStrictnessLevel mode)
         : IStorage(table_id_)
         , WithContext(context_->getGlobalContext())
         , rabbitmq_settings(std::move(rabbitmq_settings_))
@@ -170,13 +170,13 @@ StorageRabbitMQ::StorageRabbitMQ(
         connection = std::make_unique<RabbitMQConnection>(configuration, log);
         if (connection->connect())
             initRabbitMQ();
-        else if (!is_attach)
+        else if (mode <= LoadingStrictnessLevel::CREATE)
             throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "Cannot connect to {}", connection->connectionInfoForLog());
     }
     catch (...)
     {
         tryLogCurrentException(log);
-        if (!is_attach)
+        if (mode <= LoadingStrictnessLevel::CREATE)
             throw;
     }
 
@@ -1061,7 +1061,8 @@ bool StorageRabbitMQ::tryStreamToViews()
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto source = std::make_shared<RabbitMQSource>(
-            *this, storage_snapshot, rabbitmq_context, column_names, block_size, max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode, false);
+            *this, storage_snapshot, rabbitmq_context, column_names, block_size,
+            max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode, false);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
@@ -1069,26 +1070,31 @@ bool StorageRabbitMQ::tryStreamToViews()
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
 
+    std::atomic_size_t rows = 0;
+    block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
+
     if (!connection->getHandler().loopRunning())
         startLoop();
 
+    bool write_failed = false;
+    try
     {
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
     }
+    catch (...)
+    {
+        LOG_ERROR(log, "Failed to push to views. Error: {}", getCurrentExceptionMessage(true));
+        write_failed = true;
+    }
+
+    LOG_TRACE(log, "Processed {} rows", rows);
 
     /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
      * error occurs or connection is lost while ack is being sent
      */
     deactivateTask(looping_task, false, true);
     size_t queue_empty = 0;
-
-    if (!hasDependencies(getStorageID()))
-    {
-        /// Do not commit to rabbitmq if the dependency was removed.
-        LOG_TRACE(log, "No dependencies, reschedule");
-        return false;
-    }
 
     if (!connection->isConnected())
     {
@@ -1130,7 +1136,7 @@ bool StorageRabbitMQ::tryStreamToViews()
              *    the same channel will also commit all previously not-committed messages. Anyway I do not think that for ack frame this
              *    will ever happen.
              */
-            if (!source->sendAck())
+            if (write_failed ? source->sendNack() : source->sendAck())
             {
                 /// Iterate loop to activate error callbacks if they happened
                 connection->getHandler().iterateLoop();
@@ -1140,6 +1146,19 @@ bool StorageRabbitMQ::tryStreamToViews()
 
             connection->getHandler().iterateLoop();
         }
+    }
+
+    if (write_failed)
+    {
+        LOG_TRACE(log, "Write failed, reschedule");
+        return false;
+    }
+
+    if (!hasDependencies(getStorageID()))
+    {
+        /// Do not commit to rabbitmq if the dependency was removed.
+        LOG_TRACE(log, "No dependencies, reschedule");
+        return false;
     }
 
     if ((queue_empty == num_created_consumers) && (++read_attempts == MAX_FAILED_READ_ATTEMPTS))
@@ -1188,7 +1207,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         if (!rabbitmq_settings->rabbitmq_format.changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `rabbitmq_format` setting");
 
-        return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, std::move(rabbitmq_settings), args.attach);
+        return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, std::move(rabbitmq_settings), args.mode);
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });

@@ -53,7 +53,7 @@ public:
     bool isContentCached(size_t offset, size_t size) override;
 
 private:
-    std::unique_ptr<ReadBufferFromFileBase> createImplementationBuffer(const StoredObject & object);
+    SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object);
 
     bool nextImpl() override;
 
@@ -80,7 +80,7 @@ private:
 
     StoredObject current_object;
     size_t current_buf_idx = 0;
-    std::unique_ptr<ReadBufferFromFileBase> current_buf;
+    SeekableReadBufferPtr current_buf;
 
     LoggerPtr log;
 };

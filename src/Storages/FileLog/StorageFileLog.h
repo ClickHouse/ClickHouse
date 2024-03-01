@@ -38,7 +38,7 @@ public:
         const String & format_name_,
         std::unique_ptr<FileLogSettings> settings,
         const String & comment,
-        bool attach);
+        LoadingStrictnessLevel mode);
 
     using Files = std::vector<String>;
 

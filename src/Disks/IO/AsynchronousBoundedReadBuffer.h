@@ -95,7 +95,6 @@ private:
     IAsynchronousReader::Result readSync(char * data, size_t size);
 
     void resetPrefetch(FilesystemPrefetchState state);
-
 };
 
 }

@@ -125,7 +125,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
                 Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0))
             .withReceiveTimeout(
                 Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0))
-            .withTcpKeepAliveTimeout(
+            .withTCPKeepAliveTimeout(
                 Poco::Timespan(config.getInt("tcp_keep_alive_timeout", DEFAULT_TCP_KEEP_ALIVE_TIMEOUT), 0))
             .withHandshakeTimeout(
                 Poco::Timespan(config.getInt("handshake_timeout_ms", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC * 1000) * 1000))

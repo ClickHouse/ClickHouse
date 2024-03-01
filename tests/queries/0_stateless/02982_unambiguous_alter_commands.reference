@@ -1,0 +1,6 @@
+--- Alter commands in parens
+ALTER TABLE a\n    MODIFY TTL expr GROUP BY some_key,\n    ADD COLUMN `a` Int64
+ALTER TABLE a\n    MODIFY TTL expr TO VOLUME \'vol1\', expr2 + toIntervalYear(2) TO VOLUME \'vol2\',\n    DROP COLUMN c
+--- Check only consistent parens around alter commands are accepted
+ALTER TABLE a\n    DROP COLUMN b,\n    DROP COLUMN c
+ALTER TABLE a\n    DROP COLUMN b,\n    DROP COLUMN c

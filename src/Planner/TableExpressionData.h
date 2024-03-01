@@ -17,6 +17,9 @@ using ColumnIdentifier = std::string;
 using ColumnIdentifiers = std::vector<ColumnIdentifier>;
 using ColumnIdentifierSet = std::unordered_set<ColumnIdentifier>;
 
+struct PrewhereInfo;
+using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
+
 /** Table expression data is created for each table expression that take part in query.
   * Table expression data has information about columns that participate in query, their name to identifier mapping,
   * and additional table expression properties.
@@ -282,6 +285,16 @@ public:
         filter_actions = std::move(filter_actions_value);
     }
 
+    const PrewhereInfoPtr & getPrewhereInfo() const
+    {
+        return prewhere_info;
+    }
+
+    void setPrewhereInfo(PrewhereInfoPtr prewhere_info_value)
+    {
+        prewhere_info = std::move(prewhere_info_value);
+    }
+
 private:
     void addColumnImpl(const NameAndTypePair & column, const ColumnIdentifier & column_identifier)
     {
@@ -308,6 +321,9 @@ private:
 
     /// Valid for table, table function
     ActionsDAGPtr filter_actions;
+
+    /// Valid for table, table function
+    PrewhereInfoPtr prewhere_info;
 
     /// Valid for table, table function
     ActionsDAGPtr prewhere_filter_actions;

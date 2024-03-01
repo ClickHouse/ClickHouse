@@ -1,17 +1,18 @@
 #pragma once
 
-#include <sstream>
-#include <string>
+#include "config.h"
+
 #include <unordered_map>
-
-#include <Coordination/KeeperDispatcher.h>
-#include <IO/WriteBufferFromString.h>
-
-#include <Common/config_version.h>
-
+#include <string>
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
+
+class WriteBufferFromOwnString;
+class KeeperDispatcher;
+
+using String = std::string;
 
 struct IFourLetterCommand;
 using FourLetterCommandPtr = std::shared_ptr<DB::IFourLetterCommand>;
@@ -478,5 +479,17 @@ struct JemallocDisableProfile : public IFourLetterCommand
     ~JemallocDisableProfile() override = default;
 };
 #endif
+
+struct ProfileEventsCommand : public IFourLetterCommand
+{
+    explicit ProfileEventsCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "pfev"; }
+    String run() override;
+    ~ProfileEventsCommand() override = default;
+};
 
 }

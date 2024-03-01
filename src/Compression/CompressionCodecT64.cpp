@@ -91,6 +91,7 @@ enum class MagicNumber : uint8_t
     Decimal32   = 19,
     Decimal64   = 20,
     IPv4        = 21,
+    Date32      = 22,
 };
 
 MagicNumber serializeTypeId(std::optional<TypeIndex> type_id)
@@ -109,6 +110,7 @@ MagicNumber serializeTypeId(std::optional<TypeIndex> type_id)
         case TypeIndex::Int32:      return MagicNumber::Int32;
         case TypeIndex::Int64:      return MagicNumber::Int64;
         case TypeIndex::Date:       return MagicNumber::Date;
+        case TypeIndex::Date32:     return MagicNumber::Date32;
         case TypeIndex::DateTime:   return MagicNumber::DateTime;
         case TypeIndex::DateTime64: return MagicNumber::DateTime64;
         case TypeIndex::Enum8:      return MagicNumber::Enum8;
@@ -137,6 +139,7 @@ TypeIndex deserializeTypeId(uint8_t serialized_type_id)
         case MagicNumber::Int32:        return TypeIndex::Int32;
         case MagicNumber::Int64:        return TypeIndex::Int64;
         case MagicNumber::Date:         return TypeIndex::Date;
+        case MagicNumber::Date32:       return TypeIndex::Date32;
         case MagicNumber::DateTime:     return TypeIndex::DateTime;
         case MagicNumber::DateTime64:   return TypeIndex::DateTime64;
         case MagicNumber::Enum8:        return TypeIndex::Enum8;
@@ -165,6 +168,7 @@ TypeIndex baseType(TypeIndex type_idx)
             return TypeIndex::Int16;
         case TypeIndex::Int32:
         case TypeIndex::Decimal32:
+        case TypeIndex::Date32:
             return TypeIndex::Int32;
         case TypeIndex::Int64:
         case TypeIndex::Decimal64:
@@ -205,6 +209,7 @@ TypeIndex typeIdx(const IDataType * data_type)
         case TypeIndex::UInt16:
         case TypeIndex::Enum16:
         case TypeIndex::Date:
+        case TypeIndex::Date32:
         case TypeIndex::Int32:
         case TypeIndex::UInt32:
         case TypeIndex::IPv4:

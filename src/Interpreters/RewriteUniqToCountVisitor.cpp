@@ -156,7 +156,11 @@ void RewriteUniqToCountMatcher::visit(ASTPtr & ast, Data & /*data*/)
     };
 
     if (match_subquery_with_distinct() || match_subquery_with_group_by())
+    {
+        auto main_alias = expr_list->children[0]->tryGetAlias();
         expr_list->children[0] = makeASTFunction("count");
+        expr_list->children[0]->setAlias(main_alias);
+    }
 }
 
 }

@@ -52,7 +52,9 @@ public:
     const DataTypes & getVariants() const { return variants; }
 
     /// Check if Variant has provided type in the list of variants and return its discriminator.
-    std::optional<ColumnVariant::Discriminator> tryGetVariantDiscriminator(const DataTypePtr & type) const;
+    std::optional<ColumnVariant::Discriminator> tryGetVariantDiscriminator(const IDataType & type) const;
+
+    void forEachChild(const ChildCallback & callback) const override;
 
 private:
     std::string doGetName() const override;

@@ -20,7 +20,7 @@ ConnectionTimeouts ConnectionTimeouts::getTCPTimeoutsWithoutFailover(const Setti
         .withConnectionTimeout(settings.connect_timeout)
         .withSendTimeout(settings.send_timeout)
         .withReceiveTimeout(settings.receive_timeout)
-        .withTcpKeepAliveTimeout(settings.tcp_keep_alive_timeout)
+        .withTCPKeepAliveTimeout(settings.tcp_keep_alive_timeout)
         .withHandshakeTimeout(settings.handshake_timeout_ms)
         .withHedgedConnectionTimeout(settings.hedged_connection_timeout_ms)
         .withReceiveDataTimeout(settings.receive_data_timeout_ms);
@@ -40,8 +40,8 @@ ConnectionTimeouts ConnectionTimeouts::getHTTPTimeouts(const Settings & settings
         .withConnectionTimeout(settings.http_connection_timeout)
         .withSendTimeout(settings.http_send_timeout)
         .withReceiveTimeout(settings.http_receive_timeout)
-        .withHttpKeepAliveTimeout(http_keep_alive_timeout)
-        .withTcpKeepAliveTimeout(settings.tcp_keep_alive_timeout)
+        .withHTTPKeepAliveTimeout(http_keep_alive_timeout)
+        .withTCPKeepAliveTimeout(settings.tcp_keep_alive_timeout)
         .withHandshakeTimeout(settings.handshake_timeout_ms);
 }
 

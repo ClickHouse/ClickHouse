@@ -111,6 +111,10 @@ public:
         const SubcolumnCallback & callback,
         const SubstreamData & data);
 
+    /// Call callback for each nested type recursively.
+    using ChildCallback = std::function<void(const IDataType &)>;
+    virtual void forEachChild(const ChildCallback &) const {}
+
     Names getSubcolumnNames() const;
 
     virtual MutableSerializationInfoPtr createSerializationInfo(const SerializationInfo::Settings & settings) const;

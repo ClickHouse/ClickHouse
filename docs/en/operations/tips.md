@@ -111,6 +111,14 @@ On newer Linux kernels transparent huge pages are alright.
 $ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ```
 
+If you want to modify the transparent huge pages setting permanently, editing the `/etc/default/grub` to add the `transparent_hugepage=never` to the `GRUB_CMDLINE_LINUX_DEFAULT` option:
+
+```bash
+$ GRUB_CMDLINE_LINUX_DEFAULT="transparent_hugepage=madvise ..."
+```
+
+After that, run the `sudo update-grub` command then reboot to take effect.
+
 ## Hypervisor configuration
 
 If you are using OpenStack, set

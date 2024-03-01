@@ -37,7 +37,7 @@ namespace ErrorCodes
 
 AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFS(
     IAsynchronousReader & reader_, const ReadSettings & settings_, std::shared_ptr<ReadBufferFromHDFS> impl_)
-    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0)
+    : BufferWithOwnMemory<SeekableReadBuffer>(settings_.remote_fs_buffer_size)
     , reader(reader_)
     , base_priority(settings_.priority)
     , impl(std::move(impl_))

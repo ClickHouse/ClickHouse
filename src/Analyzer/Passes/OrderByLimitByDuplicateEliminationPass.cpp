@@ -70,7 +70,7 @@ private:
 
 }
 
-void OrderByLimitByDuplicateEliminationPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
+void OrderByLimitByDuplicateEliminationPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr)
 {
     OrderByLimitByDuplicateEliminationVisitor visitor;
     visitor.visit(query_tree_node);

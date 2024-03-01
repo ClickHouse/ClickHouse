@@ -76,9 +76,4 @@ off_t MMapReadBufferFromFileWithCache::seek(off_t offset, int whence)
     return new_pos;
 }
 
-size_t MMapReadBufferFromFileWithCache::getFileOffsetOfBufferEnd() const
-{
-    return mapped->getOffset() + mapped->getLength();
-}
-
 }

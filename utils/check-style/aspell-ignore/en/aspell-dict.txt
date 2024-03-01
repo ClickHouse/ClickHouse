@@ -112,6 +112,7 @@ CDMA
 CESU
 CIDR
 CIDRToRange
+CKMAN
 CLOB
 CLion
 CMPLNT
@@ -190,6 +191,7 @@ CustomSeparatedWithNamesAndTypes
 DBAs
 DBMSs
 DBeaver
+DD
 DDLWORKER
 DDLWorker
 DDLWorkerThreads
@@ -215,7 +217,6 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
-DD
 Decrypted
 Deduplicate
 Deduplication
@@ -772,6 +773,7 @@ ReferenceKeyed
 Refreshable
 RegexpTree
 RemoteRead
+SharedMergeTree
 ReplacingMergeTree
 ReplicasMaxAbsoluteDelay
 ReplicasMaxInsertsInQueue
@@ -840,6 +842,7 @@ Sematext
 SendExternalTables
 SendScalars
 ShareAlike
+Shortkeys
 SimHash
 Simhash
 SimpleAggregateFunction
@@ -952,6 +955,7 @@ TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
 Transactional
+Tukey
 TwoColumnList
 UBSan
 UDFs
@@ -989,6 +993,7 @@ VIEWs
 Vadim
 Valgrind
 Vectorized
+VersionBadge
 VersionInteger
 VersionedCollapsingMergeTree
 VideoContainer
@@ -1263,6 +1268,8 @@ centroid
 certificateFile
 cetera
 cfg
+cgroup
+cgroups
 chadmin
 changelog
 changelogs
@@ -1282,6 +1289,7 @@ cipherList
 ciphertext
 cityHash
 cityhash
+ckman
 clangd
 cli
 clickcache
@@ -1324,6 +1332,7 @@ cosineDistance
 countDigits
 countEqual
 countMatches
+countMatchesCaseInsensitive
 countSubstrings
 covarPop
 covarSamp
@@ -1348,6 +1357,7 @@ cryptographic
 csv
 csvwithnames
 csvwithnamesandtypes
+ctukey
 curdate
 currentDatabase
 currentProfiles
@@ -1607,6 +1617,8 @@ greaterorequals
 greenspace
 groupArray
 groupArrayInsertAt
+grouparrayintersect
+groupArrayIntersect
 groupArrayLast
 groupArrayMovingAvg
 groupArrayMovingSum
@@ -1686,6 +1698,7 @@ hudi
 hyperscan
 hypot
 hyvor
+iTerm
 icosahedron
 icudata
 idempotency
@@ -1733,6 +1746,7 @@ isValidJSON
 isValidUTF
 isZeroOrNull
 iteratively
+iTerm
 jaccard
 jaccardIndex
 jaroSimilarity
@@ -1883,6 +1897,7 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+mergeTreeIndex
 mergeable
 mergetree
 messageID
@@ -2130,6 +2145,7 @@ py
 qryn
 quantile
 quantileBFloat
+quantileDD
 quantileDeterministic
 quantileExact
 quantileExactExclusive
@@ -2144,6 +2160,7 @@ quantileTDigestWeighted
 quantileTiming
 quantileTimingWeighted
 quantilebfloat
+quantileddsketch
 quantiledeterministic
 quantileexact
 quantileexactweighted
@@ -2156,8 +2173,6 @@ quantiletdigest
 quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
-quantileddsketch
-quantileDD
 quartile
 queryID
 queryString
@@ -2291,6 +2306,7 @@ sequenceCount
 sequenceMatch
 sequenceNextNode
 seriesDecomposeSTL
+seriesOutliersDetectTukey
 seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
@@ -2304,6 +2320,8 @@ shardNum
 sharded
 sharding
 shortcircuit
+Shortkeys
+shortkeys
 shoutout
 simdjson
 simpleLinearRegression
@@ -2408,6 +2426,7 @@ subranges
 subreddits
 subseconds
 subsequence
+substreams
 substring
 substringIndex
 substringIndexUTF
@@ -2583,6 +2602,7 @@ tryPunycodeDecode
 tskv
 tsv
 tui
+tukey
 tumbleEnd
 tumbleStart
 tupleConcat
@@ -2706,6 +2726,7 @@ wordShingleSimHashCaseInsensitive
 wordShingleSimHashCaseInsensitiveUTF
 wordShingleSimHashUTF
 wordshingleMinHash
+writability
 wrt
 xcode
 xeus
@@ -2726,6 +2747,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-iTerm
-shortkeys
-Shortkeys

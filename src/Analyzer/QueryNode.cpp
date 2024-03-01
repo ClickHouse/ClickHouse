@@ -421,11 +421,8 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (is_subquery)
     {
-        auto subquery = std::make_shared<ASTSubquery>();
-
+        auto subquery = std::make_shared<ASTSubquery>(std::move(result_select_query));
         subquery->cte_name = cte_name;
-        subquery->children.push_back(std::move(result_select_query));
-
         return subquery;
     }
 

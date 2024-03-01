@@ -6,6 +6,7 @@
 #include <Parsers/Kusto/ParserKQLMakeSeries.h>
 #include <Parsers/Kusto/ParserKQLOperators.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
+#include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 
@@ -39,7 +40,7 @@ bool ParserKQLMakeSeries ::parseAggregationColumns(AggregationColumns & aggregat
     ParserToken close_bracket(TokenType::ClosingRoundBracket);
     ParserToken comma(TokenType::Comma);
 
-    while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
         String alias;
         String aggregation_fun;
@@ -96,7 +97,7 @@ bool ParserKQLMakeSeries ::parseFromToStepClause(FromToStepClause & from_to_step
     auto step_pos = begin;
     auto end_pos = begin;
 
-    while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
         if (String(pos->begin, pos->end) == "from")
             from_pos = pos;
@@ -175,7 +176,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
         Tokens tokens(src.c_str(), src.c_str() + src.size());
         IParser::Pos pos(tokens, max_depth);
         String res;
-        while (!pos->isEnd())
+        while (isValidKQLPos(pos))
         {
             String tmp = String(pos->begin, pos->end);
             if (tmp == "parseDateTime64BestEffortOrNull")
@@ -201,7 +202,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
         std::vector<String> group_expression_tokens;
         Tokens tokens(group_expression.c_str(), group_expression.c_str() + group_expression.size());
         IParser::Pos pos(tokens, max_depth);
-        while (!pos->isEnd())
+        while (isValidKQLPos(pos))
         {
             if (String(pos->begin, pos->end) == "AS")
             {

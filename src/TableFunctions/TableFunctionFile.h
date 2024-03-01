@@ -26,8 +26,9 @@ public:
 
 protected:
     int fd = -1;
+    String path_to_archive;
     void parseFirstArguments(const ASTPtr & arg, const ContextPtr & context) override;
-    String getFormatFromFirstArgument() override;
+    std::optional<String> tryGetFormatFromFirstArgument() override;
 
 private:
     StoragePtr getStorage(

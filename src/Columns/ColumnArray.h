@@ -85,6 +85,7 @@ public:
     void updateHashFast(SipHash & hash) const override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     void insert(const Field & x) override;
+    bool tryInsert(const Field & x) override;
     void insertFrom(const IColumn & src_, size_t n) override;
     void insertDefault() override;
     void popBack(size_t n) override;
@@ -142,6 +143,10 @@ public:
 
     const ColumnPtr & getOffsetsPtr() const { return offsets; }
     ColumnPtr & getOffsetsPtr() { return offsets; }
+
+    /// Returns a copy of the data column's part corresponding to a specified range of rows.
+    /// For example, `getDataInRange(0, size())` is the same as `getDataPtr()->clone()`.
+    MutableColumnPtr getDataInRange(size_t start, size_t length) const;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {

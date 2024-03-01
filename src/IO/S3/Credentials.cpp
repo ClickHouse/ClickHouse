@@ -22,7 +22,6 @@ namespace ErrorCodes
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
 
-#    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <aws/core/utils/HashingUtils.h>
 #    include <aws/core/platform/FileSystem.h>
 
@@ -31,9 +30,7 @@ namespace ErrorCodes
 #    include <IO/S3/Client.h>
 
 #    include <fstream>
-#    include <base/EnumReflection.h>
 
-#    include <boost/algorithm/string.hpp>
 #    include <boost/algorithm/string/split.hpp>
 #    include <boost/algorithm/string/classification.hpp>
 #    include <Poco/Exception.h>
@@ -755,7 +752,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.put_request_throttler,
                 Aws::Http::SchemeMapper::ToString(Aws::Http::Scheme::HTTP));
 
-            /// See MakeDefaultHttpResourceClientConfiguration().
+            /// See MakeDefaultHTTPResourceClientConfiguration().
             /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
             /// of contrib/aws/aws-cpp-sdk-core/source/internal/AWSHttpResourceClient.cpp
             aws_client_configuration.maxConnections = 2;

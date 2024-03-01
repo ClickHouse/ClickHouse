@@ -107,6 +107,9 @@ class S3Helper:
         logging.info("Upload %s to %s. Meta: %s", file_path, url, metadata)
         return url
 
+    def delete_file_from_s3(self, bucket_name: str, s3_path: str) -> None:
+        self.client.delete_object(Bucket=bucket_name, Key=s3_path)
+
     def upload_test_report_to_s3(self, file_path: Path, s3_path: str) -> str:
         if CI:
             return self._upload_file_to_s3(S3_TEST_REPORTS_BUCKET, file_path, s3_path)

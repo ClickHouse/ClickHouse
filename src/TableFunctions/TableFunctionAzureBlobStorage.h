@@ -55,7 +55,7 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context);
 
-    static void addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr & context);
+    static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr & context);
 
 protected:
 

@@ -37,7 +37,7 @@ public:
     void resetReadBuffer() override;
 
     /// TODO: remove context somehow.
-    void setContext(ContextPtr & context_) { context = Context::createCopy(context_); }
+    void setContext(const ContextPtr & context_) { context = Context::createCopy(context_); }
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 

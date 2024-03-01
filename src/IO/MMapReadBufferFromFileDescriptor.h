@@ -36,8 +36,6 @@ public:
 
     std::string getFileName() const override;
 
-    size_t getFileOffsetOfBufferEnd() const override;
-
     int getFD() const;
 
     size_t getFileSize() override;

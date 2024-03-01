@@ -60,12 +60,6 @@ public:
     /// file offset and what getPosition() returns.
     virtual bool isRegularLocalFile(size_t * /* out_view_offset */ = nullptr) { return false; }
 
-    /// NOTE: This method should be thread-safe against seek(), since it can be
-    /// used in CachedOnDiskReadBufferFromFile from multiple threads (because
-    /// it first releases the buffer, and then do logging, and so other thread
-    /// can already call seek() which will lead to data-race).
-    virtual size_t getFileOffsetOfBufferEnd() const = 0;
-
 protected:
     std::optional<size_t> file_size;
     ProfileCallback profile_callback;

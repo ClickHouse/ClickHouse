@@ -64,6 +64,8 @@ def get_packager_cmd(
         cmd += " --debug-build"
     if build_config.sanitizer:
         cmd += f" --sanitizer={build_config.sanitizer}"
+    if build_config.coverage:
+        cmd += " --coverage"
     if build_config.tidy:
         cmd += " --clang-tidy"
 

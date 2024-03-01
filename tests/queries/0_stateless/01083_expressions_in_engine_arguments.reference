@@ -6,6 +6,6 @@ CREATE TABLE default.distributed\n(\n    `n` Int8\n)\nENGINE = Distributed(\'tes
 CREATE TABLE default.distributed_tf\n(\n    `n` Int8\n) AS cluster(\'test_shard_localhost\', \'default\', \'buffer\')
 CREATE TABLE default.url\n(\n    `n` UInt64,\n    `col` String\n)\nENGINE = URL(\'https://localhost:8443/?query=select+n,+_table+from+default.merge+format+CSV\', \'CSV\')
 CREATE TABLE default.rich_syntax\n(\n    `n` Int64\n) AS remote(\'localhos{x|y|t}\', cluster(\'test_shard_localhost\', remote(\'127.0.0.{1..4}\', \'default\', \'view\')))
-CREATE VIEW default.view\n(\n    `n` Int64\n) AS\nSELECT toInt64(n) AS n\nFROM\n(\n    SELECT toString(n) AS n\n    FROM default.merge\n    WHERE _table != \'qwerty\'\n    ORDER BY _table ASC\n)\nUNION ALL\nSELECT *\nFROM default.file
+CREATE VIEW default.view\n(\n    `n` Int64\n)\nAS SELECT toInt64(n) AS n\nFROM\n(\n    SELECT toString(n) AS n\n    FROM default.merge\n    WHERE _table != \'qwerty\'\n    ORDER BY _table ASC\n)\nUNION ALL\nSELECT *\nFROM default.file
 CREATE DICTIONARY default.dict\n(\n    `n` UInt64,\n    `col` String DEFAULT \'42\'\n)\nPRIMARY KEY n\nSOURCE(CLICKHOUSE(HOST \'localhost\' PORT 9440 SECURE 1 USER \'default\' TABLE \'url\'))\nLIFETIME(MIN 0 MAX 1)\nLAYOUT(CACHE(SIZE_IN_CELLS 1))
 16

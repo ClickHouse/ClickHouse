@@ -5,7 +5,7 @@ create table rmt1 (n int) engine=ReplicatedMergeTree('/test/02468/{database}', '
 system stop cleanup rmt;
 system stop merges rmt1;
 
-insert into rmt select * from numbers(10) settings max_block_size=1;
+insert into rmt select * from numbers(10) settings max_block_size=1, max_insert_threads=1;
 
 alter table rmt drop partition id '0';
 truncate table rmt1;
@@ -31,7 +31,7 @@ create table rmt2 (n int) engine=ReplicatedMergeTree('/test/02468/{database}2', 
 
 system stop cleanup rmt;
 system stop merges rmt1;
-insert into rmt select * from numbers(10) settings max_block_size=1;
+insert into rmt select * from numbers(10) settings max_block_size=1, max_insert_threads=1;
 system sync replica rmt1 lightweight;
 
 alter table rmt replace partition id '0' from rmt2;

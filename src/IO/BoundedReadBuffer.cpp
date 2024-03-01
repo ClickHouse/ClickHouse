@@ -4,7 +4,8 @@
 namespace DB
 {
 
-BoundedReadBuffer::BoundedReadBuffer(std::unique_ptr<ReadBufferFromFileBase> impl_) : impl(std::move(impl_))
+BoundedReadBuffer::BoundedReadBuffer(std::unique_ptr<SeekableReadBuffer> impl_)
+    : ReadBufferFromFileDecorator(std::move(impl_))
 {
 }
 

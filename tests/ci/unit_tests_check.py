@@ -3,15 +3,15 @@
 import json
 import logging
 import os
-import sys
 import subprocess
+import sys
 from pathlib import Path
 from typing import Tuple
 
 from build_download_helper import download_unit_tests
-from docker_images_helper import pull_image, get_docker_image
+from docker_images_helper import get_docker_image, pull_image
 from env_helper import REPORT_PATH, TEMP_PATH
-from report import ERROR, FAILURE, FAIL, OK, SUCCESS, JobReport, TestResults, TestResult
+from report import ERROR, FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
@@ -104,7 +104,7 @@ def process_results(
             if "failures" in test_case:
                 raw_logs = ""
                 for failure in test_case["failures"]:
-                    raw_logs += failure["failure"]
+                    raw_logs += failure[FAILURE]
                 if (
                     "Segmentation fault" in raw_logs  # type: ignore
                     and SEGFAULT not in description
@@ -205,7 +205,7 @@ def main():
         additional_files=additional_files,
     ).dump()
 
-    if state == "failure":
+    if state == FAILURE:
         sys.exit(1)
 
 
