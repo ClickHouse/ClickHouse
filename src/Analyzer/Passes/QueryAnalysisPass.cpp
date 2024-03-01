@@ -718,6 +718,8 @@ struct IdentifierResolveScope
             group_by_use_nulls = context->getSettingsRef().group_by_use_nulls &&
                 (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());
         }
+
+        join_use_nulls = context->getSettingsRef().join_use_nulls;
     }
 
     QueryTreeNodePtr scope_node;
@@ -772,6 +774,8 @@ struct IdentifierResolveScope
 
     /// Apply nullability to aggregation keys
     bool group_by_use_nulls = false;
+    /// Join retutns NULLs instead of default values
+    bool join_use_nulls = false;
 
     /// JOINs count
     size_t joins_count = 0;
@@ -3286,7 +3290,6 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     QueryTreeNodePtr resolved_identifier;
 
     JoinKind join_kind = from_join_node.getKind();
-    bool join_use_nulls = scope.context->getSettingsRef().join_use_nulls;
 
     /// If columns from left or right table were missed Object(Nullable('json')) subcolumns, they will be replaced
     /// to ConstantNode(NULL), which can't be cast to ColumnNode, so we resolve it here.
@@ -3451,7 +3454,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     if (join_node_in_resolve_process || !resolved_identifier)
         return resolved_identifier;
 
-    if (join_use_nulls)
+    if (scope.join_use_nulls)
     {
         resolved_identifier = resolved_identifier->clone();
         convertJoinedColumnTypeToNullIfNeeded(resolved_identifier, join_kind, resolved_side);
@@ -4439,7 +4442,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     else
         matched_expression_nodes_with_names = resolveUnqualifiedMatcher(matcher_node, scope);
 
-    if (scope.context->getSettingsRef().join_use_nulls)
+    if (scope.join_use_nulls)
     {
         /** If we are resolving matcher came from the result of JOIN and `join_use_nulls` is set,
           * we need to convert joined column type to Nullable.
@@ -7558,7 +7561,21 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     if (query_node_typed.getPrewhere())
+    {
+        /** Expression in PREWHERE with JOIN should not be modified by join_use_nulls.
+          * Example: SELECT * FROM t1 JOIN t2 USING (id) PREWHERE a = 1
+          * Column `a` should be resolved from table and should not change its type to Nullable.
+          */
+        bool join_use_nulls = scope.join_use_nulls;
+        bool use_identifier_lookup_to_result_cache = scope.use_identifier_lookup_to_result_cache;
+        scope.join_use_nulls = false;
+        scope.use_identifier_lookup_to_result_cache = false;
+
         resolveExpressionNode(query_node_typed.getPrewhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        scope.join_use_nulls = join_use_nulls;
+        scope.use_identifier_lookup_to_result_cache = use_identifier_lookup_to_result_cache;
+    }
 
     if (query_node_typed.getWhere())
         resolveExpressionNode(query_node_typed.getWhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
