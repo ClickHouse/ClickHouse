@@ -18,7 +18,7 @@ on:  # yamllint disable-line rule:truthy
 ##########################################################################################
 jobs:
   RunConfig:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, style-checker-aarch64]
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
@@ -117,8 +117,6 @@ jobs:
       test_name: Compatibility check (amd64)
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
-      run_command: |
-        python3 compatibility_check.py --check-name "Compatibility check (amd64)" --check-glibc --check-distributions
   CompatibilityCheckAarch64:
     needs: [RunConfig, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
@@ -127,8 +125,6 @@ jobs:
       test_name: Compatibility check (aarch64)
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
-      run_command: |
-        python3 compatibility_check.py --check-name "Compatibility check (aarch64)" --check-glibc
 #########################################################################################
 #################################### ORDINARY BUILDS ####################################
 #########################################################################################
@@ -391,28 +387,12 @@ jobs:
       test_name: Stateless tests (release)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestReleaseDatabaseReplicated:
+  FunctionalStatelessTestReleaseAnalyzerS3Replicated:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Stateless tests (release, DatabaseReplicated)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestReleaseAnalyzer:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (release, analyzer)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestReleaseS3:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (release, s3 storage)
+      test_name: Stateless tests (release, analyzer, s3, DatabaseReplicated)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestS3Debug:
@@ -750,14 +730,6 @@ jobs:
 #############################################################################################
 ############################# INTEGRATION TESTS #############################################
 #############################################################################################
-  IntegrationTestsAsan:
-    needs: [RunConfig, BuilderDebAsan]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Integration tests (asan)
-      runner_type: stress-tester
-      data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsAnalyzerAsan:
     needs: [RunConfig, BuilderDebAsan]
     if: ${{ !failure() && !cancelled() }}
@@ -772,14 +744,6 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Integration tests (tsan)
-      runner_type: stress-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  IntegrationTestsRelease:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Integration tests (release)
       runner_type: stress-tester
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsAarch64:
@@ -890,8 +854,6 @@ jobs:
       - TestsBugfixCheck
       - FunctionalStatelessTestDebug
       - FunctionalStatelessTestRelease
-      - FunctionalStatelessTestReleaseDatabaseReplicated
-      - FunctionalStatelessTestReleaseAnalyzer
       - FunctionalStatelessTestAarch64
       - FunctionalStatelessTestAsan
       - FunctionalStatelessTestTsan
@@ -904,9 +866,9 @@ jobs:
       - FunctionalStatefulTestTsan
       - FunctionalStatefulTestMsan
       - FunctionalStatefulTestUBsan
-      - FunctionalStatelessTestReleaseS3
       - FunctionalStatelessTestS3Debug
       - FunctionalStatelessTestS3Tsan
+      - FunctionalStatelessTestReleaseAnalyzerS3Replicated
       - FunctionalStatefulTestReleaseParallelReplicas
       - FunctionalStatefulTestAsanParallelReplicas
       - FunctionalStatefulTestTsanParallelReplicas
@@ -927,10 +889,8 @@ jobs:
       - ASTFuzzerTestTsan
       - ASTFuzzerTestMSan
       - ASTFuzzerTestUBSan
-      - IntegrationTestsAsan
       - IntegrationTestsAnalyzerAsan
       - IntegrationTestsTsan
-      - IntegrationTestsRelease
       - IntegrationTestsAarch64
       - IntegrationTestsFlakyCheck
       - PerformanceComparisonX86

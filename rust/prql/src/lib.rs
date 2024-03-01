@@ -1,8 +1,8 @@
-use prql_compiler::sql::Dialect;
-use prql_compiler::{Options, Target};
+use prqlc::sql::Dialect;
+use prqlc::{Options, Target};
 use std::ffi::{c_char, CString};
-use std::slice;
 use std::panic;
+use std::slice;
 
 fn set_output(result: String, out: *mut *mut u8, out_size: *mut u64) {
     assert!(!out_size.is_null());
@@ -37,7 +37,7 @@ pub unsafe extern "C" fn prql_to_sql_impl(
         signature_comment: false,
         color: false,
     };
-    let (is_err, res) = match prql_compiler::compile(&prql_query, &opts) {
+    let (is_err, res) = match prqlc::compile(&prql_query, &opts) {
         Ok(sql_str) => (false, sql_str),
         Err(err) => (true, err.to_string()),
     };

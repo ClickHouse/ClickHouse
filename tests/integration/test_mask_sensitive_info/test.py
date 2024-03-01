@@ -175,7 +175,7 @@ def test_create_table():
     password = new_password()
 
     table_engines = [
-        f"MySQL('mysql57:3306', 'mysql_db', 'mysql_table', 'mysql_user', '{password}')",
+        f"MySQL('mysql80:3306', 'mysql_db', 'mysql_table', 'mysql_user', '{password}')",
         f"PostgreSQL('postgres1:5432', 'postgres_db', 'postgres_table', 'postgres_user', '{password}')",
         f"MongoDB('mongo1:27017', 'mongo_db', 'mongo_col', 'mongo_user', '{password}')",
         f"S3('http://minio1:9001/root/data/test1.csv')",
@@ -183,9 +183,9 @@ def test_create_table():
         f"S3('http://minio1:9001/root/data/test3.csv.gz', 'CSV', 'gzip')",
         f"S3('http://minio1:9001/root/data/test4.csv', 'minio', '{password}', 'CSV')",
         f"S3('http://minio1:9001/root/data/test5.csv.gz', 'minio', '{password}', 'CSV', 'gzip')",
-        f"MySQL(named_collection_1, host = 'mysql57', port = 3306, database = 'mysql_db', table = 'mysql_table', user = 'mysql_user', password = '{password}')",
-        f"MySQL(named_collection_2, database = 'mysql_db', host = 'mysql57', port = 3306, password = '{password}', table = 'mysql_table', user = 'mysql_user')",
-        f"MySQL(named_collection_3, database = 'mysql_db', host = 'mysql57', port = 3306, table = 'mysql_table')",
+        f"MySQL(named_collection_1, host = 'mysql80', port = 3306, database = 'mysql_db', table = 'mysql_table', user = 'mysql_user', password = '{password}')",
+        f"MySQL(named_collection_2, database = 'mysql_db', host = 'mysql80', port = 3306, password = '{password}', table = 'mysql_table', user = 'mysql_user')",
+        f"MySQL(named_collection_3, database = 'mysql_db', host = 'mysql80', port = 3306, table = 'mysql_table')",
         f"PostgreSQL(named_collection_4, host = 'postgres1', port = 5432, database = 'postgres_db', table = 'postgres_table', user = 'postgres_user', password = '{password}')",
         f"MongoDB(named_collection_5, host = 'mongo1', port = 5432, db = 'mongo_db', collection = 'mongo_col', user = 'mongo_user', password = '{password}')",
         f"S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '{password}', format = 'CSV')",
@@ -195,6 +195,10 @@ def test_create_table():
             f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
             "DNS_ERROR",
         ),
+        f"S3Queue('http://minio1:9001/root/data/', 'CSV')",
+        f"S3Queue('http://minio1:9001/root/data/', 'CSV', 'gzip')",
+        f"S3Queue('http://minio1:9001/root/data/', 'minio', '{password}', 'CSV')",
+        f"S3Queue('http://minio1:9001/root/data/', 'minio', '{password}', 'CSV', 'gzip')",
     ]
 
     def make_test_case(i):
@@ -219,7 +223,7 @@ def test_create_table():
         assert (
             node.query(f"SHOW CREATE TABLE table0 {show_secrets}={toggle}")
             == "CREATE TABLE default.table0\\n(\\n    `x` Int32\\n)\\n"
-            "ENGINE = MySQL(\\'mysql57:3306\\', \\'mysql_db\\', "
+            "ENGINE = MySQL(\\'mysql80:3306\\', \\'mysql_db\\', "
             f"\\'mysql_table\\', \\'mysql_user\\', \\'{secret}\\')\n"
         )
 
@@ -228,16 +232,16 @@ def test_create_table():
         ) == TSV(
             [
                 [
-                    "CREATE TABLE default.table0 (`x` Int32) ENGINE = MySQL(\\'mysql57:3306\\', \\'mysql_db\\', "
+                    "CREATE TABLE default.table0 (`x` Int32) ENGINE = MySQL(\\'mysql80:3306\\', \\'mysql_db\\', "
                     f"\\'mysql_table\\', \\'mysql_user\\', \\'{secret}\\')",
-                    f"MySQL(\\'mysql57:3306\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'{secret}\\')",
+                    f"MySQL(\\'mysql80:3306\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'{secret}\\')",
                 ],
             ]
         )
 
     check_logs(
         must_contain=[
-            "CREATE TABLE table0 (`x` int) ENGINE = MySQL('mysql57:3306', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
+            "CREATE TABLE table0 (`x` int) ENGINE = MySQL('mysql80:3306', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
             "CREATE TABLE table1 (`x` int) ENGINE = PostgreSQL('postgres1:5432', 'postgres_db', 'postgres_table', 'postgres_user', '[HIDDEN]')",
             "CREATE TABLE table2 (`x` int) ENGINE = MongoDB('mongo1:27017', 'mongo_db', 'mongo_col', 'mongo_user', '[HIDDEN]')",
             "CREATE TABLE table3 (x int) ENGINE = S3('http://minio1:9001/root/data/test1.csv')",
@@ -245,15 +249,19 @@ def test_create_table():
             "CREATE TABLE table5 (x int) ENGINE = S3('http://minio1:9001/root/data/test3.csv.gz', 'CSV', 'gzip')",
             "CREATE TABLE table6 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test4.csv', 'minio', '[HIDDEN]', 'CSV')",
             "CREATE TABLE table7 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test5.csv.gz', 'minio', '[HIDDEN]', 'CSV', 'gzip')",
-            "CREATE TABLE table8 (`x` int) ENGINE = MySQL(named_collection_1, host = 'mysql57', port = 3306, database = 'mysql_db', table = 'mysql_table', user = 'mysql_user', password = '[HIDDEN]')",
-            "CREATE TABLE table9 (`x` int) ENGINE = MySQL(named_collection_2, database = 'mysql_db', host = 'mysql57', port = 3306, password = '[HIDDEN]', table = 'mysql_table', user = 'mysql_user')",
-            "CREATE TABLE table10 (x int) ENGINE = MySQL(named_collection_3, database = 'mysql_db', host = 'mysql57', port = 3306, table = 'mysql_table')",
-            "CREATE TABLE table11 (`x` int) ENGINE = PostgreSQL(named_collection_4, host = 'postgres1', port = 5432, database = 'postgres_db', table = 'postgres_table', user = 'postgres_user', password = '[HIDDEN]')",
+            "CREATE TABLE table8 (`x` int) ENGINE = MySQL(named_collection_1, host = 'mysql80', port = 3306, database = 'mysql_db', `table` = 'mysql_table', user = 'mysql_user', password = '[HIDDEN]')",
+            "CREATE TABLE table9 (`x` int) ENGINE = MySQL(named_collection_2, database = 'mysql_db', host = 'mysql80', port = 3306, password = '[HIDDEN]', `table` = 'mysql_table', user = 'mysql_user')",
+            "CREATE TABLE table10 (x int) ENGINE = MySQL(named_collection_3, database = 'mysql_db', host = 'mysql80', port = 3306, table = 'mysql_table')",
+            "CREATE TABLE table11 (`x` int) ENGINE = PostgreSQL(named_collection_4, host = 'postgres1', port = 5432, database = 'postgres_db', `table` = 'postgres_table', user = 'postgres_user', password = '[HIDDEN]')",
             "CREATE TABLE table12 (`x` int) ENGINE = MongoDB(named_collection_5, host = 'mongo1', port = 5432, db = 'mongo_db', collection = 'mongo_col', user = 'mongo_user', password = '[HIDDEN]'",
             "CREATE TABLE table13 (`x` int) ENGINE = S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '[HIDDEN]', format = 'CSV')",
             "CREATE TABLE table14 (x int) ENGINE = S3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV', 'gzip')",
             "CREATE TABLE table15 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '[HIDDEN]')",
             "CREATE TABLE table16 (`x` int) ENGINE = DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            "CREATE TABLE table17 (x int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'CSV')",
+            "CREATE TABLE table18 (x int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'CSV', 'gzip')",
+            "CREATE TABLE table19 (`x` int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'minio', '[HIDDEN]', 'CSV')",
+            "CREATE TABLE table20 (`x` int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'minio', '[HIDDEN]', 'CSV', 'gzip')",
         ],
         must_not_contain=[password],
     )
@@ -320,7 +328,7 @@ def test_table_functions():
     password = new_password()
 
     table_functions = [
-        f"mysql('mysql57:3306', 'mysql_db', 'mysql_table', 'mysql_user', '{password}')",
+        f"mysql('mysql80:3306', 'mysql_db', 'mysql_table', 'mysql_user', '{password}')",
         f"postgresql('postgres1:5432', 'postgres_db', 'postgres_table', 'postgres_user', '{password}')",
         f"mongodb('mongo1:27017', 'mongo_db', 'mongo_col', 'mongo_user', '{password}', 'x int')",
         f"s3('http://minio1:9001/root/data/test1.csv')",
@@ -345,7 +353,7 @@ def test_table_functions():
         f"remote('127.{{2..11}}', numbers(10), 'remote_user', '{password}', rand())",
         f"remoteSecure('127.{{2..11}}', 'default', 'remote_table', 'remote_user', '{password}')",
         f"remoteSecure('127.{{2..11}}', 'default', 'remote_table', 'remote_user', rand())",
-        f"mysql(named_collection_1, host = 'mysql57', port = 3306, database = 'mysql_db', table = 'mysql_table', user = 'mysql_user', password = '{password}')",
+        f"mysql(named_collection_1, host = 'mysql80', port = 3306, database = 'mysql_db', table = 'mysql_table', user = 'mysql_user', password = '{password}')",
         f"postgresql(named_collection_2, password = '{password}', host = 'postgres1', port = 5432, database = 'postgres_db', table = 'postgres_table', user = 'postgres_user')",
         f"s3(named_collection_2, url = 'http://minio1:9001/root/data/test4.csv', access_key_id = 'minio', secret_access_key = '{password}')",
         f"remote(named_collection_6, addresses_expr = '127.{{2..11}}', database = 'default', table = 'remote_table', user = 'remote_user', password = '{password}', sharding_key = rand())",
@@ -377,7 +385,7 @@ def test_table_functions():
         assert (
             node.query(f"SHOW CREATE TABLE tablefunc0 {show_secrets}={toggle}")
             == "CREATE TABLE default.tablefunc0\\n(\\n    `x` Int32\\n) AS "
-            "mysql(\\'mysql57:3306\\', \\'mysql_db\\', \\'mysql_table\\', "
+            "mysql(\\'mysql80:3306\\', \\'mysql_db\\', \\'mysql_table\\', "
             f"\\'mysql_user\\', \\'{secret}\\')\n"
         )
 
@@ -387,7 +395,7 @@ def test_table_functions():
         ) == TSV(
             [
                 [
-                    "CREATE TABLE default.tablefunc0 (`x` Int32) AS mysql(\\'mysql57:3306\\', "
+                    "CREATE TABLE default.tablefunc0 (`x` Int32) AS mysql(\\'mysql80:3306\\', "
                     f"\\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'{secret}\\')",
                     "",
                 ],
@@ -396,7 +404,7 @@ def test_table_functions():
 
     check_logs(
         must_contain=[
-            "CREATE TABLE tablefunc0 (`x` int) AS mysql('mysql57:3306', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
+            "CREATE TABLE tablefunc0 (`x` int) AS mysql('mysql80:3306', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
             "CREATE TABLE tablefunc1 (`x` int) AS postgresql('postgres1:5432', 'postgres_db', 'postgres_table', 'postgres_user', '[HIDDEN]')",
             "CREATE TABLE tablefunc2 (`x` int) AS mongodb('mongo1:27017', 'mongo_db', 'mongo_col', 'mongo_user', '[HIDDEN]', 'x int')",
             "CREATE TABLE tablefunc3 (x int) AS s3('http://minio1:9001/root/data/test1.csv')",
@@ -421,11 +429,11 @@ def test_table_functions():
             "CREATE TABLE tablefunc22 (`x` int) AS remote('127.{2..11}', numbers(10), 'remote_user', '[HIDDEN]', rand())",
             "CREATE TABLE tablefunc23 (`x` int) AS remoteSecure('127.{2..11}', 'default', 'remote_table', 'remote_user', '[HIDDEN]')",
             "CREATE TABLE tablefunc24 (x int) AS remoteSecure('127.{2..11}', 'default', 'remote_table', 'remote_user', rand())",
-            "CREATE TABLE tablefunc25 (`x` int) AS mysql(named_collection_1, host = 'mysql57', port = 3306, database = 'mysql_db', table = 'mysql_table', user = 'mysql_user', password = '[HIDDEN]')",
-            "CREATE TABLE tablefunc26 (`x` int) AS postgresql(named_collection_2, password = '[HIDDEN]', host = 'postgres1', port = 5432, database = 'postgres_db', table = 'postgres_table', user = 'postgres_user')",
+            "CREATE TABLE tablefunc25 (`x` int) AS mysql(named_collection_1, host = 'mysql80', port = 3306, database = 'mysql_db', `table` = 'mysql_table', user = 'mysql_user', password = '[HIDDEN]')",
+            "CREATE TABLE tablefunc26 (`x` int) AS postgresql(named_collection_2, password = '[HIDDEN]', host = 'postgres1', port = 5432, database = 'postgres_db', `table` = 'postgres_table', user = 'postgres_user')",
             "CREATE TABLE tablefunc27 (`x` int) AS s3(named_collection_2, url = 'http://minio1:9001/root/data/test4.csv', access_key_id = 'minio', secret_access_key = '[HIDDEN]')",
-            "CREATE TABLE tablefunc28 (`x` int) AS remote(named_collection_6, addresses_expr = '127.{2..11}', database = 'default', table = 'remote_table', user = 'remote_user', password = '[HIDDEN]', sharding_key = rand())",
-            "CREATE TABLE tablefunc29 (`x` int) AS remoteSecure(named_collection_6, addresses_expr = '127.{2..11}', database = 'default', table = 'remote_table', user = 'remote_user', password = '[HIDDEN]')",
+            "CREATE TABLE tablefunc28 (`x` int) AS remote(named_collection_6, addresses_expr = '127.{2..11}', database = 'default', `table` = 'remote_table', user = 'remote_user', password = '[HIDDEN]', sharding_key = rand())",
+            "CREATE TABLE tablefunc29 (`x` int) AS remoteSecure(named_collection_6, addresses_expr = '127.{2..11}', database = 'default', `table` = 'remote_table', user = 'remote_user', password = '[HIDDEN]')",
             "CREATE TABLE tablefunc30 (x int) AS s3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV')",
             "CREATE TABLE tablefunc31 (`x` int) AS s3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '[HIDDEN]')",
             "CREATE TABLE tablefunc32 (`x` int) AS deltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
@@ -567,31 +575,31 @@ def test_on_cluster():
     password = new_password()
 
     node.query(
-        f"CREATE TABLE table_oncl ON CLUSTER 'test_shard_localhost' (x int) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '{password}')"
+        f"CREATE TABLE table_oncl ON CLUSTER 'test_shard_localhost' (x int) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '{password}')"
     )
 
     check_logs(
         must_contain=[
-            "CREATE TABLE table_oncl ON CLUSTER test_shard_localhost (`x` int) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
+            "CREATE TABLE table_oncl ON CLUSTER test_shard_localhost (`x` int) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )
 
     # Check logs of DDLWorker during executing of this query.
     assert node.contains_in_log(
-        "DDLWorker: Processing task .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
+        "DDLWorker: Processing task .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
     )
     assert node.contains_in_log(
-        "DDLWorker: Executing query: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
+        "DDLWorker: Executing query: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
     )
     assert node.contains_in_log(
-        "executeQuery: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
+        "executeQuery: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
     )
     assert node.contains_in_log(
-        "DDLWorker: Executed query: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
+        "DDLWorker: Executed query: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
     )
     assert system_query_log_contains_search_pattern(
-        "%CREATE TABLE default.table_oncl UUID \\'%\\' (`x` Int32) ENGINE = MySQL(\\'mysql57:3307\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\')"
+        "%CREATE TABLE default.table_oncl UUID \\'%\\' (`x` Int32) ENGINE = MySQL(\\'mysql80:3307\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\')"
     )
 
     node.query("DROP TABLE table_oncl")

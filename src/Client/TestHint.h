@@ -53,7 +53,7 @@ class TestHint
 {
 public:
     using ErrorVector = std::vector<int>;
-    TestHint(const String & query_);
+    explicit TestHint(const String & query_);
 
     const auto & serverErrors() const { return server_errors; }
     const auto & clientErrors() const { return client_errors; }

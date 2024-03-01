@@ -14,7 +14,7 @@ on: # yamllint disable-line rule:truthy
 
 jobs:
   RunConfig:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, style-checker-aarch64]
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
@@ -68,8 +68,6 @@ jobs:
       test_name: Compatibility check (amd64)
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
-      run_command: |
-        python3 compatibility_check.py --check-name "Compatibility check (amd64)" --check-glibc --check-distributions
   CompatibilityCheckAarch64:
     needs: [RunConfig, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
@@ -78,8 +76,6 @@ jobs:
       test_name: Compatibility check (aarch64)
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
-      run_command: |
-        python3 compatibility_check.py --check-name "Compatibility check (aarch64)" --check-glibc
 #########################################################################################
 #################################### ORDINARY BUILDS ####################################
 #########################################################################################
