@@ -440,6 +440,7 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMet
     desc.addEphemeral("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of partition");
     desc.addEphemeral("_sample_factor", std::make_shared<DataTypeFloat64>(), "Sample factor (from the query)");
     desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "Number of row in the part");
+    desc.addEphemeral("_data_version", std::make_shared<DataTypeUInt64>(), "Data version of mutation of part");
 
     if (metadata.hasPartitionKey())
     {
@@ -1027,7 +1028,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
     /// TODO Checks for Graphite mode.
 }
 
-const Names MergeTreeData::virtuals_useful_for_filter = {"_part", "_partition_id", "_part_uuid", "_partition_value"};
+const Names MergeTreeData::virtuals_useful_for_filter = {"_part", "_partition_id", "_part_uuid", "_partition_value", "_data_version"};
 
 Block MergeTreeData::getHeaderWithVirtualsForFilter() const
 {

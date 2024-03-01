@@ -47,6 +47,9 @@ Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTree
     if (column_name == "_partition_id")
         return part.info.partition_id;
 
+    if (column_name == "_data_version")
+        return part.info.getDataVersion();
+
     if (column_name == "_partition_value")
         return Tuple(part.partition.value.begin(), part.partition.value.end());
 

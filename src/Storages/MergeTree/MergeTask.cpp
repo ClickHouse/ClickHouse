@@ -7,7 +7,6 @@
 
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
-#include "Storages/MergeTreeVirtualColumns.h"
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
