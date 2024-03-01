@@ -22,7 +22,6 @@ from tee_popen import TeePopen
 from upload_result_helper import upload_results
 from docker_images_helper import DockerImageData, docker_login, get_images_oredered_list
 
-NAME = "Push to Dockerhub"
 TEMP_PATH = Path(RUNNER_TEMP) / "docker_images_check"
 TEMP_PATH.mkdir(parents=True, exist_ok=True)
 
@@ -174,6 +173,9 @@ def main():
     stopwatch = Stopwatch()
 
     args = parse_args()
+
+    NAME = f"Push to Dockerhub {args.suffix}"
+
     if args.push:
         logging.info("login to docker hub")
         docker_login()
