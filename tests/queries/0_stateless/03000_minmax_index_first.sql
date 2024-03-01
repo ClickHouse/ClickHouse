@@ -4,7 +4,7 @@ CREATE TABLE skip_table
 (
     k UInt64,
     v UInt64,
-    INDEX v_set v TYPE set(100) GRANULARITY 2,
+    INDEX v_set v TYPE set(100) GRANULARITY 2, -- set index is declared before minmax intentionally
     INDEX v_mm v TYPE minmax GRANULARITY 2
 )
 ENGINE = MergeTree
