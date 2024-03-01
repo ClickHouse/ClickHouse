@@ -1672,7 +1672,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
             {
                 /// Skip temporary directories, file 'format_version.txt' and directory 'detached'.
-                if (startsWith(it->name(), "tmp") || it->name() == MergeTreeData::FORMAT_VERSION_FILE_NAME
+                if (startsWith(it->name(), "tmp") || it->name() == MergeTreeData::FORMAT_VERSION_FILE_NAME || it->name() == "prefix.path"
                     || it->name() == DETACHED_DIR_NAME)
                     continue;
 

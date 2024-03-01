@@ -112,20 +112,21 @@ size_t DiskObjectStorage::getFileSize(const String & path) const
     return metadata_storage->getFileSize(path);
 }
 
+void DiskObjectStorage::moveDirectory(const String & from_path, const String & to_path)
+{
+    if (send_metadata)
+        sendMoveMetadata(from_path, to_path);
+
+    auto transaction = createObjectStorageTransaction();
+    transaction->moveDirectory(from_path, to_path);
+    transaction->commit();
+}
+
 void DiskObjectStorage::moveFile(const String & from_path, const String & to_path, bool should_send_metadata)
 {
 
     if (should_send_metadata)
-    {
-        auto revision = metadata_helper->revision_counter + 1;
-        metadata_helper->revision_counter += 1;
-
-        const ObjectAttributes object_metadata {
-            {"from_path", from_path},
-            {"to_path", to_path}
-        };
-        metadata_helper->createFileOperationObject("rename", revision, object_metadata);
-    }
+        sendMoveMetadata(from_path, to_path);
 
     auto transaction = createObjectStorageTransaction();
     transaction->moveFile(from_path, to_path);
@@ -408,6 +409,15 @@ bool DiskObjectStorage::tryReserve(UInt64 bytes)
     }
 
     return false;
+}
+void DiskObjectStorage::sendMoveMetadata(const String & from_path, const String & to_path)
+{
+    chassert(send_metadata);
+    auto revision = metadata_helper->revision_counter + 1;
+    metadata_helper->revision_counter += 1;
+
+    const ObjectAttributes object_metadata{{"from_path", from_path}, {"to_path", to_path}};
+    metadata_helper->createFileOperationObject("rename", revision, object_metadata);
 }
 
 bool DiskObjectStorage::supportsCache() const

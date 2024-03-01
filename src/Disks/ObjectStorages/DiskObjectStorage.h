@@ -112,7 +112,7 @@ public:
 
     void clearDirectory(const String & path) override;
 
-    void moveDirectory(const String & from_path, const String & to_path) override { moveFile(from_path, to_path); }
+    void moveDirectory(const String & from_path, const String & to_path) override;
 
     void removeDirectory(const String & path) override;
 
@@ -228,6 +228,7 @@ private:
     std::mutex reservation_mutex;
 
     bool tryReserve(UInt64 bytes);
+    void sendMoveMetadata(const String & from_path, const String & to_path);
 
     const bool send_metadata;
 

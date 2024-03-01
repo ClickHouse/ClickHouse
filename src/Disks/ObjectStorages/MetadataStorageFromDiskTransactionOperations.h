@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/SharedMutex.h>
+#include <Disks/ObjectStorages/IMetadataOperation.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 
 #include <numeric>
@@ -13,17 +13,6 @@ class IDisk;
 /**
  * Implementations for transactional operations with metadata used by MetadataStorageFromDisk.
  */
-
-struct IMetadataOperation
-{
-    virtual void execute(std::unique_lock<SharedMutex> & metadata_lock) = 0;
-    virtual void undo() = 0;
-    virtual void finalize() {}
-    virtual ~IMetadataOperation() = default;
-};
-
-using MetadataOperationPtr = std::unique_ptr<IMetadataOperation>;
-
 
 struct SetLastModifiedOperation final : public IMetadataOperation
 {
