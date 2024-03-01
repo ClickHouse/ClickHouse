@@ -57,14 +57,8 @@ pub unsafe extern "C" fn prql_to_sql(
     out: *mut *mut u8,
     out_size: *mut u64,
 ) -> i64 {
-    let ret = panic::catch_unwind(|| {
-        return prql_to_sql_impl(query, size, out, out_size);
-    });
-    return match ret {
-        // NOTE: using cxxbridge we can return proper Result<> type.
-        Err(_err) => 1,
-        Ok(res) => res,
-    }
+    // NOTE: using cxxbridge we can return proper Result<> type.
+    panic::catch_unwind(|| prql_to_sql_impl(query, size, out, out_size)).unwrap_or(1)
 }
 
 #[no_mangle]
