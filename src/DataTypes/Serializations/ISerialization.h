@@ -9,7 +9,7 @@
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
 #include <memory>
-#include <set>
+#include <variant>
 
 namespace DB
 {
@@ -142,8 +142,6 @@ public:
             NullMap,
 
             TupleElement,
-            NamedOffsets,
-            NamedNullMap,
 
             DictionaryKeys,
             DictionaryIndexes,
@@ -154,25 +152,16 @@ public:
             ObjectStructure,
             ObjectData,
 
-            VariantDiscriminators,
-            NamedVariantDiscriminators,
-            VariantOffsets,
-            VariantElements,
-            VariantElement,
-
             Regular,
         };
 
-        /// Types of substreams that can have arbitrary name.
-        static const std::set<Type> named_types;
-
         Type type;
 
-        /// The name of a variant element type.
-        String variant_element_name;
+        /// Index of tuple element, starting at 1 or name.
+        String tuple_element_name;
 
-        /// Name of substream for type from 'named_types'.
-        String name_of_substream;
+        /// Do we need to escape a dot in filenames for tuple elements.
+        bool escape_tuple_delimiter = true;
 
         /// Data for current substream.
         SubstreamData data;
@@ -184,6 +173,7 @@ public:
         mutable bool visited = false;
 
         Substream(Type type_) : type(type_) {} /// NOLINT
+
         String toString() const;
     };
 
@@ -330,20 +320,17 @@ public:
     virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
 
     virtual void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-    virtual bool tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization as a literal that may be inserted into a query.
       */
     virtual void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
 
     virtual void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-    virtual bool tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization for the CSV format.
       */
     virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-    virtual bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization for displaying on a terminal or saving into a text file, and the like.
       * Without escaping or quoting.
@@ -353,13 +340,11 @@ public:
     /** Text deserialization in case when buffer contains only one value, without any escaping and delimiters.
       */
     virtual void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-    virtual bool tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization intended for using in JSON format.
       */
     virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-    virtual bool tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
     virtual void serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t /*indent*/) const
     {
         serializeTextJSON(column, row_num, ostr, settings);
@@ -379,14 +364,10 @@ public:
      *  additional code in data types serialization and ReadHelpers.
      */
     virtual void deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
-    virtual bool tryDeserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
     virtual void serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
-
-    virtual void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
 
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
     static String getFileNameForStream(const String & name_in_storage, const SubstreamPath & path);
-
     static String getSubcolumnNameForStream(const SubstreamPath & path);
     static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len);
 
@@ -409,7 +390,6 @@ protected:
 using SerializationPtr = std::shared_ptr<const ISerialization>;
 using Serializations = std::vector<SerializationPtr>;
 using SerializationByName = std::unordered_map<String, SerializationPtr>;
-using SubstreamType = ISerialization::Substream::Type;
 
 template <typename State, typename StatePtr>
 State * ISerialization::checkAndGetState(const StatePtr & state) const
@@ -431,5 +411,7 @@ State * ISerialization::checkAndGetState(const StatePtr & state) const
 
     return state_concrete;
 }
+
+bool isOffsetsOfNested(const ISerialization::SubstreamPath & path);
 
 }

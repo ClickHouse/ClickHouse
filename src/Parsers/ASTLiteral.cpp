@@ -10,13 +10,11 @@
 namespace DB
 {
 
-void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+void ASTLiteral::updateTreeHashImpl(SipHash & hash_state) const
 {
     const char * prefix = "Literal_";
     hash_state.update(prefix, strlen(prefix));
     applyVisitor(FieldVisitorHash(hash_state), value);
-    if (!ignore_aliases)
-        ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 ASTPtr ASTLiteral::clone() const
@@ -88,17 +86,8 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     }
     else
     {
-        /// Shortcut for huge AST. The `FieldVisitorToString` becomes expensive
-        /// for tons of literals as it creates temporary String.
-        if (value.getType() == Field::Types::String)
-        {
-            writeQuoted(value.get<String>(), ostr);
-        }
-        else
-        {
-            String column_name = applyVisitor(FieldVisitorToString(), value);
-            writeString(column_name, ostr);
-        }
+        String column_name = applyVisitor(FieldVisitorToString(), value);
+        writeString(column_name, ostr);
     }
 }
 

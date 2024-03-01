@@ -40,7 +40,6 @@ public:
     {
         bool require_nonempty;
         DictionaryLifetime lifetime;
-        bool use_async_executor = false;
     };
 
     const std::string name = "RegExpTree";
@@ -50,22 +49,20 @@ public:
         const DictionaryStructure & structure_,
         DictionarySourcePtr source_ptr_,
         Configuration configuration_,
-        bool use_vectorscan_,
-        bool flag_case_insensitive_,
-        bool flag_dotall_);
+        bool use_vectorscan_);
 
     std::string getTypeName() const override { return name; }
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    size_t getQueryCount() const override { return query_count.load(); }
+    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
     double getFoundRate() const override
     {
-        const auto queries = query_count.load();
+        const auto queries = query_count.load(std::memory_order_relaxed);
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
     }
 
     double getHitRate() const override { return 1.0; }
@@ -88,8 +85,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<RegExpTreeDictionary>(
-            getDictionaryID(), structure, source_ptr->clone(), configuration, use_vectorscan, flag_case_insensitive, flag_dotall);
+        return std::make_shared<RegExpTreeDictionary>(getDictionaryID(), structure, source_ptr->clone(), configuration, use_vectorscan);
     }
 
     ColumnUInt8::Ptr hasKeys(const Columns &, const DataTypes &) const override
@@ -193,8 +189,6 @@ private:
     using RegexTreeNodePtr = std::shared_ptr<RegexTreeNode>;
 
     bool use_vectorscan;
-    bool flag_case_insensitive;
-    bool flag_dotall;
 
     std::vector<std::string> simple_regexps;
     std::vector<UInt64>      regexp_ids;
@@ -208,7 +202,7 @@ private:
     MultiRegexps::DataBasePtr origin_db;
     #endif
 
-    LoggerPtr logger;
+    Poco::Logger * logger;
 };
 
 }

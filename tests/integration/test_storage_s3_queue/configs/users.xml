@@ -2,7 +2,7 @@
     <profiles>
         <default>
             <stream_like_engine_allow_direct_select>1</stream_like_engine_allow_direct_select>
-            <s3queue_enable_logging_to_s3queue_log>1</s3queue_enable_logging_to_s3queue_log>
+            <allow_experimental_s3queue>1</allow_experimental_s3queue>
         </default>
     </profiles>
 </clickhouse>

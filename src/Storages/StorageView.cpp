@@ -112,15 +112,7 @@ StorageView::StorageView(
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
-    if (!is_parameterized_view_)
-    {
-        /// If CREATE query is to create parameterized view, then we dont want to set columns
-        if (!query.isParameterizedView())
-            storage_metadata.setColumns(columns_);
-    }
-    else
-        storage_metadata.setColumns(columns_);
-
+    storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
 
     if (!query.select)
@@ -251,7 +243,8 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
 
     view_name = table_expression->database_and_table_name;
     table_expression->database_and_table_name = {};
-    table_expression->subquery = std::make_shared<ASTSubquery>(view_query);
+    table_expression->subquery = std::make_shared<ASTSubquery>();
+    table_expression->subquery->children.push_back(view_query);
     table_expression->subquery->setAlias(alias);
 
     for (auto & child : table_expression->children)

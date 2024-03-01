@@ -10,7 +10,6 @@
 #include <IO/Operators.h>
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/logical.h>
 
 #include <Common/checkStackSize.h>
 
@@ -80,7 +79,7 @@ public:
 
         if (name == "and" || name == "or")
         {
-            auto function_resolver = name == "and" ? createInternalFunctionAndOverloadResolver() : createInternalFunctionOrOverloadResolver();
+            auto function_resolver = FunctionFactory::instance().get(name, current_context);
 
             const auto & arguments = function_node->getArguments().getNodes();
             if (arguments.size() > 2)
@@ -111,10 +110,10 @@ private:
 class PushNotVisitor
 {
 public:
-    explicit PushNotVisitor()
-        : not_function_resolver(createInternalFunctionNotOverloadResolver())
-        , or_function_resolver(createInternalFunctionOrOverloadResolver())
-        , and_function_resolver(createInternalFunctionAndOverloadResolver())
+    explicit PushNotVisitor(const ContextPtr & context)
+        : not_function_resolver(FunctionFactory::instance().get("not", context))
+        , or_function_resolver(FunctionFactory::instance().get("or", context))
+        , and_function_resolver(FunctionFactory::instance().get("and", context))
     {}
 
     void visit(QueryTreeNodePtr & node, bool add_negation)
@@ -163,10 +162,10 @@ private:
 class PushOrVisitor
 {
 public:
-    explicit PushOrVisitor(size_t max_atoms_)
+    PushOrVisitor(ContextPtr context, size_t max_atoms_)
         : max_atoms(max_atoms_)
-        , and_resolver(createInternalFunctionAndOverloadResolver())
-        , or_resolver(createInternalFunctionOrOverloadResolver())
+        , and_resolver(FunctionFactory::instance().get("and", context))
+        , or_resolver(FunctionFactory::instance().get("or", context))
     {}
 
     bool visit(QueryTreeNodePtr & node, size_t num_atoms)
@@ -514,11 +513,11 @@ std::optional<CNF> CNF::tryBuildCNF(const QueryTreeNodePtr & node, ContextPtr co
     }
 
     {
-        PushNotVisitor visitor;
+        PushNotVisitor visitor(context);
         visitor.visit(node_cloned, false);
     }
 
-    if (PushOrVisitor visitor(max_atoms);
+    if (PushOrVisitor visitor(context, max_atoms);
         !visitor.visit(node_cloned, atom_count))
             return std::nullopt;
 
@@ -537,13 +536,12 @@ CNF CNF::toCNF(const QueryTreeNodePtr & node, ContextPtr context, size_t max_gro
     if (!cnf)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
             "Cannot convert expression '{}' to CNF, because it produces to many clauses."
-            "Size of boolean formula in CNF can be exponential of size of source formula.",
-            node->formatConvertedASTForErrorMessage());
+            "Size of boolean formula in CNF can be exponential of size of source formula.");
 
     return *cnf;
 }
 
-QueryTreeNodePtr CNF::toQueryTree() const
+QueryTreeNodePtr CNF::toQueryTree(ContextPtr context) const
 {
     if (statements.empty())
         return nullptr;
@@ -551,9 +549,9 @@ QueryTreeNodePtr CNF::toQueryTree() const
     QueryTreeNodes and_arguments;
     and_arguments.reserve(statements.size());
 
-    auto not_resolver = createInternalFunctionNotOverloadResolver();
-    auto or_resolver = createInternalFunctionOrOverloadResolver();
-    auto and_resolver = createInternalFunctionAndOverloadResolver();
+    auto not_resolver = FunctionFactory::instance().get("not", context);
+    auto or_resolver = FunctionFactory::instance().get("or", context);
+    auto and_resolver = FunctionFactory::instance().get("and", context);
 
     const auto function_node_from_atom = [&](const auto & atom) -> QueryTreeNodePtr
     {

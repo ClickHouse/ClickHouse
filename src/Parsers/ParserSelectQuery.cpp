@@ -1,23 +1,20 @@
-#include <Parsers/ParserSelectQuery.h>
-
-#include <Parsers/ASTAsterisk.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTInterpolateElement.h>
+#include <memory>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/IParserBase.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/IParserBase.h>
-#include <Parsers/ParserSampleRatio.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserSampleRatio.h>
+#include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserWithElement.h>
-#include <Poco/String.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTIdentifier.h>
 
-#include <memory>
 
 namespace DB
 {
@@ -289,13 +286,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 } else
                     interpolate_expression_list = std::make_shared<ASTExpressionList>();
             }
-        }
-        else if (order_expression_list->children.size() == 1)
-        {
-            /// ORDER BY *
-            auto * asterisk = order_expression_list->children[0]->as<ASTOrderByElement>()->children[0]->as<ASTAsterisk>();
-            if (asterisk != nullptr)
-                select_query->order_by_all = true;
         }
     }
 

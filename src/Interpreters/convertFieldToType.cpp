@@ -283,11 +283,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             /// Already in needed type.
             return src;
         }
-        if (which_type.isIPv4() && src.getType() == Field::Types::UInt64)
-        {
-            /// convert to UInt32 which is the underlying type for native IPv4
-            return convertNumericType<UInt32>(src, type);
-        }
     }
     else if (which_type.isUUID() && src.getType() == Field::Types::UUID)
     {
@@ -492,13 +487,10 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     if (src.getType() == Field::Types::String)
     {
         /// Promote data type to avoid overflows. Note that overflows in the largest data type are still possible.
-        /// But don't promote Float32, since we want to keep the exact same value
-        /// Also don't promote domain types (like bool) because we would otherwise use the serializer of the promoted type (e.g. UInt64 for
-        /// bool, which does not allow 'true' and 'false' as input values)
         const IDataType * type_to_parse = &type;
         DataTypePtr holder;
 
-        if (type.canBePromoted() && !which_type.isFloat32() && !type.getCustomSerialization())
+        if (type.canBePromoted())
         {
             holder = type.promoteNumericType();
             type_to_parse = holder.get();

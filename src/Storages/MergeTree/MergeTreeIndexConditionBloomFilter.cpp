@@ -97,18 +97,39 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
 }
 
 MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
-    const ActionsDAGPtr & filter_actions_dag, ContextPtr context_, const Block & header_, size_t hash_functions_)
-    : WithContext(context_), header(header_), hash_functions(hash_functions_)
+    const SelectQueryInfo & info_, ContextPtr context_, const Block & header_, size_t hash_functions_)
+    : WithContext(context_), header(header_), query_info(info_), hash_functions(hash_functions_)
 {
-    if (!filter_actions_dag)
+    if (context_->getSettingsRef().allow_experimental_analyzer)
+    {
+        if (!query_info.filter_actions_dag)
+        {
+            rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
+            return;
+        }
+
+        RPNBuilder<RPNElement> builder(
+            query_info.filter_actions_dag->getOutputs().at(0),
+            context_,
+            [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
+        rpn = std::move(builder).extractRPN();
+        return;
+    }
+
+    ASTPtr filter_node = buildFilterNode(query_info.query);
+
+    if (!filter_node)
     {
         rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
         return;
     }
 
+    auto block_with_constants = KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context_);
     RPNBuilder<RPNElement> builder(
-        filter_actions_dag->getOutputs().at(0),
+        filter_node,
         context_,
+        std::move(block_with_constants),
+        query_info.prepared_sets,
         [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
     rpn = std::move(builder).extractRPN();
 }
