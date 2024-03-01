@@ -1,7 +1,7 @@
 #include <iostream>
+#include <optional>
 #include <boost/program_options.hpp>
 
-#include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/ZooKeeperDataReader.h>
 #include <Common/TerminalSize.h>
@@ -28,7 +28,7 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
     po::store(po::command_line_parser(argc, argv).options(desc).run(), options);
     Poco::AutoPtr<Poco::ConsoleChannel> console_channel(new Poco::ConsoleChannel);
 
-    LoggerPtr logger = getLogger("KeeperConverter");
+    Poco::Logger * logger = &Poco::Logger::get("KeeperConverter");
     logger->setChannel(console_channel);
 
     if (options.count("help"))
@@ -40,7 +40,7 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
 
     try
     {
-        auto keeper_context = std::make_shared<KeeperContext>(true, std::make_shared<CoordinationSettings>());
+        auto keeper_context = std::make_shared<KeeperContext>(true);
         keeper_context->setDigestEnabled(true);
         keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("Keeper-snapshots", options["output-dir"].as<std::string>()));
 

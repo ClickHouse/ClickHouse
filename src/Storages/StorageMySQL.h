@@ -92,7 +92,7 @@ private:
 
     mysqlxx::PoolWithFailoverPtr pool;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

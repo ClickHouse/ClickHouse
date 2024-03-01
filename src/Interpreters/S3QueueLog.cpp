@@ -14,7 +14,7 @@
 namespace DB
 {
 
-ColumnsDescription S3QueueLogElement::getColumnsDescription()
+NamesAndTypesList S3QueueLogElement::getNamesAndTypes()
 {
     auto status_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -22,15 +22,11 @@ ColumnsDescription S3QueueLogElement::getColumnsDescription()
             {"Processed", static_cast<Int8>(S3QueueLogElement::S3QueueStatus::Processed)},
             {"Failed", static_cast<Int8>(S3QueueLogElement::S3QueueStatus::Failed)},
         });
-
-    return ColumnsDescription
-    {
+    return {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
-        {"database", std::make_shared<DataTypeString>()},
-        {"table", std::make_shared<DataTypeString>()},
-        {"uuid", std::make_shared<DataTypeString>()},
+        {"table_uuid", std::make_shared<DataTypeString>()},
         {"file_name", std::make_shared<DataTypeString>()},
         {"rows_processed", std::make_shared<DataTypeUInt64>()},
         {"status", status_datatype},
@@ -47,9 +43,7 @@ void S3QueueLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
-    columns[i++]->insert(database);
-    columns[i++]->insert(table);
-    columns[i++]->insert(uuid);
+    columns[i++]->insert(table_uuid);
     columns[i++]->insert(file_name);
     columns[i++]->insert(rows_processed);
     columns[i++]->insert(status);

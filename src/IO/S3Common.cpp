@@ -1,19 +1,26 @@
 #include <IO/S3Common.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
 #include <Poco/Util/AbstractConfiguration.h>
-
 #include "config.h"
 
 #if USE_AWS_S3
 
-#    include <IO/HTTPHeaderEntries.h>
-#    include <IO/S3/Client.h>
-#    include <IO/S3/Requests.h>
 #    include <Common/quoteString.h>
+
+#    include <IO/WriteBufferFromString.h>
+#    include <IO/HTTPHeaderEntries.h>
+#    include <Storages/StorageS3Settings.h>
+
+#    include <IO/S3/PocoHTTPClientFactory.h>
+#    include <IO/S3/PocoHTTPClient.h>
+#    include <IO/S3/Client.h>
+#    include <IO/S3/URI.h>
+#    include <IO/S3/Requests.h>
+#    include <IO/S3/Credentials.h>
 #    include <Common/logger_useful.h>
 
+#    include <fstream>
 
 namespace ProfileEvents
 {
@@ -126,15 +133,6 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
     HTTPHeaderEntries headers = getHTTPHeaders(config_elem, config);
     ServerSideEncryptionKMSConfig sse_kms_config = getSSEKMSConfig(config_elem, config);
 
-    std::unordered_set<std::string> users;
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(config_elem, keys);
-    for (const auto & key : keys)
-    {
-        if (startsWith(key, "user"))
-            users.insert(config.getString(config_elem + "." + key));
-    }
-
     return AuthSettings
     {
         std::move(access_key_id), std::move(secret_access_key), std::move(session_token),
@@ -145,22 +143,10 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
         use_environment_credentials,
         use_insecure_imds_request,
         expiration_window_seconds,
-        no_sign_request,
-        std::move(users)
+        no_sign_request
     };
 }
 
-bool AuthSettings::canBeUsedByUser(const String & user) const
-{
-    return users.empty() || users.contains(user);
-}
-
-bool AuthSettings::hasUpdates(const AuthSettings & other) const
-{
-    AuthSettings copy = *this;
-    copy.updateFrom(other);
-    return *this != copy;
-}
 
 void AuthSettings::updateFrom(const AuthSettings & from)
 {
@@ -189,9 +175,7 @@ void AuthSettings::updateFrom(const AuthSettings & from)
         expiration_window_seconds = from.expiration_window_seconds;
 
     if (from.no_sign_request.has_value())
-        no_sign_request = from.no_sign_request;
-
-    users.insert(from.users.begin(), from.users.end());
+        no_sign_request = *from.no_sign_request;
 }
 
 }

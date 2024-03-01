@@ -34,8 +34,7 @@ class PullingPipelineExecutor;
 class IStorageURLBase : public IStorage
 {
 public:
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -57,15 +56,7 @@ public:
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
-
-    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromData(
-        const String & uri,
-        CompressionMethod compression_method,
-        const HTTPHeaderEntries & headers,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
-
+        ContextPtr context);
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
@@ -76,11 +67,9 @@ public:
         const ContextPtr & context);
 
 protected:
-    friend class ReadFromURL;
-
     IStorageURLBase(
         const String & uri_,
-        const ContextPtr & context_,
+        ContextPtr context_,
         const StorageID & id_,
         const String & format_name_,
         const std::optional<FormatSettings> & format_settings_,
@@ -114,7 +103,7 @@ protected:
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
-        const ContextPtr & context,
+        ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
@@ -122,7 +111,7 @@ protected:
         const Names & column_names,
         const ColumnsDescription & columns_description,
         const SelectQueryInfo & query_info,
-        const ContextPtr & context,
+        ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
@@ -135,14 +124,6 @@ protected:
     bool supportsTrivialCountOptimization() const override { return true; }
 
 private:
-    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromDataImpl(
-        std::optional<String> format,
-        const String & uri,
-        CompressionMethod compression_method,
-        const HTTPHeaderEntries & headers,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
-
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
 };
 
@@ -155,7 +136,7 @@ public:
     class DisclosedGlobIterator
     {
     public:
-        DisclosedGlobIterator(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
+        DisclosedGlobIterator(const String & uri_, size_t max_addresses, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
 
         String next();
         size_t size();
@@ -176,17 +157,23 @@ public:
         const String & format,
         const std::optional<FormatSettings> & format_settings,
         String name_,
-        const ContextPtr & context,
+        ContextPtr context,
         UInt64 max_block_size,
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
         size_t max_parsing_threads,
+        const SelectQueryInfo & query_info,
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
         bool glob_url = false,
         bool need_only_count_ = false);
 
     String getName() const override { return name; }
+
+    void setKeyCondition(const SelectQueryInfo & query_info_, ContextPtr context_) override
+    {
+        setKeyConditionImpl(query_info_, context_, block_for_format);
+    }
 
     void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override
     {
@@ -247,7 +234,7 @@ public:
         const String & format,
         const std::optional<FormatSettings> & format_settings,
         const Block & sample_block,
-        const ContextPtr & context,
+        ContextPtr context,
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers = {},
@@ -279,7 +266,7 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        const ContextPtr & context_,
+        ContextPtr context_,
         const String & compression_method_,
         const HTTPHeaderEntries & headers_ = {},
         const String & method_ = "",
@@ -308,12 +295,9 @@ public:
         std::string addresses_expr;
     };
 
-    static Configuration getConfiguration(ASTs & args, const ContextPtr & context);
+    static Configuration getConfiguration(ASTs & args, ContextPtr context);
 
-    /// Does evaluateConstantExpressionOrIdentifierAsLiteral() on all arguments.
-    /// If `headers(...)` argument is present, parses it and moves it to the end of the array.
-    /// Returns number of arguments excluding `headers(...)`.
-    static size_t evalArgsAndCollectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context);
+    static ASTs::iterator collectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, ContextPtr context);
 
     static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
 };
@@ -330,11 +314,10 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const ContextPtr & context_,
+        ContextPtr context_,
         const String & compression_method_);
 
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,

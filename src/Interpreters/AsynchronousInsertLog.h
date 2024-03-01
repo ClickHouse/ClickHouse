@@ -5,7 +5,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -38,12 +37,12 @@ struct AsynchronousInsertLogElement
     time_t flush_time{};
     Decimal64 flush_time_microseconds{};
     String flush_query_id;
-    UInt64 timeout_milliseconds = 0;
 
     static std::string name() { return "AsynchronousInsertLog"; }
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class AsynchronousInsertLog : public SystemLog<AsynchronousInsertLogElement>

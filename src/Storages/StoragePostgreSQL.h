@@ -79,7 +79,7 @@ private:
     String on_conflict;
     postgres::PoolWithFailoverPtr pool;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

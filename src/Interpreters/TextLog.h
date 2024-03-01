@@ -4,7 +4,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Poco/Message.h>
-#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -31,7 +30,7 @@ struct TextLogElement
     std::string_view message_format_string;
 
     static std::string name() { return "TextLog"; }
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
     static const char * getCustomColumnList() { return nullptr; }

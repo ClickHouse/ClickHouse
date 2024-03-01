@@ -4,7 +4,6 @@
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
-#include <Interpreters/Cache/FileCache.h>
 #include <IO/ReadSettings.h>
 #include <IO/SwapHelper.h>
 #include <Interpreters/FilesystemCacheLog.h>
@@ -56,7 +55,7 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     , query_id(CurrentThread::getQueryId())
     , use_external_buffer(use_external_buffer_)
     , with_cache(withCache(settings))
-    , log(getLogger("ReadBufferFromRemoteFSGather"))
+    , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
 {
     if (!blobs_to_read.empty())
         current_object = blobs_to_read.front();
@@ -83,7 +82,6 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
             object_path,
             cache_key,
             settings.remote_fs_cache,
-            FileCache::getCommonUser(),
             std::move(current_read_buffer_creator),
             settings,
             query_id,

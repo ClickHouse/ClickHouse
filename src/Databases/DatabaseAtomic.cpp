@@ -1,7 +1,6 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Databases/DatabaseFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -76,7 +75,7 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 
 void DatabaseAtomic::drop(ContextPtr)
 {
-    waitDatabaseStarted();
+    waitDatabaseStarted(false);
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     try
     {
@@ -115,7 +114,7 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
-    waitDatabaseStarted();
+    waitDatabaseStarted(false);
     auto table = tryGetTable(table_name, local_context);
     /// Remove the inner table (if any) to avoid deadlock
     /// (due to attempt to execute DROP from the worker thread)
@@ -179,7 +178,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (exchange && !supportsAtomicRename())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported");
 
-    waitDatabaseStarted();
+    waitDatabaseStarted(false);
 
     auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);
     bool inside_database = this == &other_db;
@@ -468,30 +467,13 @@ LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, Loa
             for (const auto & table : table_names)
                 tryCreateSymlink(table.first, table.second, true);
         });
-    std::scoped_lock lock(mutex);
     return startup_atomic_database_task = makeLoadTask(async_loader, {job});
 }
 
-void DatabaseAtomic::waitDatabaseStarted() const
+void DatabaseAtomic::waitDatabaseStarted(bool no_throw) const
 {
-    LoadTaskPtr task;
-    {
-        std::scoped_lock lock(mutex);
-        task = startup_atomic_database_task;
-    }
-    if (task)
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task, false);
-}
-
-void DatabaseAtomic::stopLoading()
-{
-    LoadTaskPtr stop_atomic_database;
-    {
-        std::scoped_lock lock(mutex);
-        stop_atomic_database.swap(startup_atomic_database_task);
-    }
-    stop_atomic_database.reset();
-    DatabaseOrdinary::stopLoading();
+    if (startup_atomic_database_task)
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_atomic_database_task, no_throw);
 }
 
 void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist)
@@ -561,7 +543,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
 {
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
 
-    waitDatabaseStarted();
+    waitDatabaseStarted(false);
 
     bool check_ref_deps = query_context->getSettingsRef().check_referential_table_dependencies;
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef().check_table_dependencies;
@@ -640,16 +622,4 @@ void DatabaseAtomic::checkDetachedTableNotInUse(const UUID & uuid)
     assertDetachedTableNotInUse(uuid);
 }
 
-void registerDatabaseAtomic(DatabaseFactory & factory)
-{
-    auto create_fn = [](const DatabaseFactory::Arguments & args)
-    {
-        return make_shared<DatabaseAtomic>(
-            args.database_name,
-            args.metadata_path,
-            args.uuid,
-            args.context);
-    };
-    factory.registerDatabase("Atomic", create_fn);
-}
 }

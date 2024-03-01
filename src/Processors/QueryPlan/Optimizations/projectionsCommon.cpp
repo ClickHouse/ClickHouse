@@ -211,6 +211,7 @@ bool analyzeProjectionCandidate(
     const MergeTreeDataSelectExecutor & reader,
     const Names & required_column_names,
     const RangesInDataParts & parts_with_ranges,
+    const StorageMetadataPtr & metadata,
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
     const std::shared_ptr<PartitionIdToMaxBlock> & max_added_blocks,
@@ -223,7 +224,7 @@ bool analyzeProjectionCandidate(
     {
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(candidate.projection->name);
-        if (it != created_projections.end() && !it->second->is_broken)
+        if (it != created_projections.end())
         {
             projection_parts.push_back(it->second);
         }
@@ -241,6 +242,7 @@ bool analyzeProjectionCandidate(
         std::move(projection_parts),
         nullptr,
         required_column_names,
+        metadata,
         candidate.projection->metadata,
         query_info, /// How it is actually used? I hope that for index we need only added_filter_nodes
         added_filter_nodes,
@@ -248,17 +250,23 @@ bool analyzeProjectionCandidate(
         context->getSettingsRef().max_threads,
         max_added_blocks);
 
+    if (projection_result_ptr->error())
+        return false;
+
     candidate.merge_tree_projection_select_result_ptr = std::move(projection_result_ptr);
-    candidate.sum_marks += candidate.merge_tree_projection_select_result_ptr->selected_marks;
+    candidate.sum_marks += candidate.merge_tree_projection_select_result_ptr->marks();
 
     if (!normal_parts.empty())
     {
         /// TODO: We can reuse existing analysis_result by filtering out projection parts
         auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts), std::move(alter_conversions));
 
-        if (normal_result_ptr->selected_marks != 0)
+        if (normal_result_ptr->error())
+            return false;
+
+        if (normal_result_ptr->marks() != 0)
         {
-            candidate.sum_marks += normal_result_ptr->selected_marks;
+            candidate.sum_marks += normal_result_ptr->marks();
             candidate.merge_tree_ordinary_select_result_ptr = std::move(normal_result_ptr);
         }
     }

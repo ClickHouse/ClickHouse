@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowFunctionsQuery.h>
 
 #include <Interpreters/Context.h>
@@ -25,13 +24,13 @@ String InterpreterShowFunctionsQuery::getRewrittenQuery()
 
     const auto & query = query_ptr->as<ASTShowFunctionsQuery &>();
 
-    DatabasePtr system_db = DatabaseCatalog::instance().getSystemDatabase();
+    DatabasePtr systemDb = DatabaseCatalog::instance().getSystemDatabase();
 
     String rewritten_query = fmt::format(
         R"(
 SELECT *
 FROM {}.{})",
-        system_db->getDatabaseName(),
+        systemDb->getDatabaseName(),
         functions_table);
 
     if (!query.like.empty())
@@ -42,15 +41,6 @@ FROM {}.{})",
     }
 
     return rewritten_query;
-}
-
-void registerInterpreterShowFunctionsQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterShowFunctionsQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterShowFunctionsQuery", create_fn);
 }
 
 }

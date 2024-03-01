@@ -22,6 +22,6 @@ public:
         return "SystemContributors";
     }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 };
 }

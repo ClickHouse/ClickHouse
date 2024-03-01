@@ -6,15 +6,14 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemFormats::getColumnsDescription()
+NamesAndTypesList StorageSystemFormats::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"name", std::make_shared<DataTypeString>(), "Format name."},
-        {"is_input", std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the format is suitable for data input."},
-        {"is_output", std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the format is suitable for data output."},
-        {"supports_parallel_parsing", std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the format supports parallel parsing."},
-        {"supports_parallel_formatting", std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the format supports parallel formatting."},
+    return {
+        {"name", std::make_shared<DataTypeString>()},
+        {"is_input", std::make_shared<DataTypeUInt8>()},
+        {"is_output", std::make_shared<DataTypeUInt8>()},
+        {"supports_parallel_parsing", std::make_shared<DataTypeUInt8>()},
+        {"supports_parallel_formatting", std::make_shared<DataTypeUInt8>()},
     };
 }
 

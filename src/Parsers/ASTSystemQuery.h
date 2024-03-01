@@ -67,7 +67,6 @@ public:
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
         RELOAD_USERS,
-        RELOAD_ASYNCHRONOUS_METRICS,
         RESTART_DISK,
         STOP_MERGES,
         START_MERGES,
@@ -144,8 +143,6 @@ public:
     String fail_point_name;
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
-
-    std::unordered_set<String> src_replicas;
 
     ServerType server_type;
 

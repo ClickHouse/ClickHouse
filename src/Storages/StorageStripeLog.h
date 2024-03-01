@@ -33,7 +33,7 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        LoadingStrictnessLevel mode,
+        bool attach,
         ContextMutablePtr context_);
 
     ~StorageStripeLog() override;
@@ -123,7 +123,7 @@ private:
 
     mutable std::shared_timed_mutex rwlock;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }
