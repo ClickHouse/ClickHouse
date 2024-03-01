@@ -7,7 +7,6 @@
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Common/SettingsChanges.h>
-#include "Storages/VirtualColumnsDescription.h"
 
 #include <Poco/Semaphore.h>
 

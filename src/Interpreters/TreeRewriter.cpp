@@ -992,7 +992,6 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
         auto options = GetColumnsOptions(add_special ? GetColumnsOptions::All : GetColumnsOptions::AllPhysical);
         options.withExtendedObjects();
         options.withSubcolumns(storage->supportsSubcolumns());
-        options.withVirtuals();
 
         auto columns_from_storage = storage_snapshot->getColumns(options);
 
@@ -1002,8 +1001,7 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
             source_columns.insert(source_columns.end(), columns_from_storage.begin(), columns_from_storage.end());
 
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-        auto metadata_column_descriptions = metadata_snapshot->getColumns();
-        source_columns_ordinary = metadata_column_descriptions.getOrdinary();
+        source_columns_ordinary = metadata_snapshot->getColumns().getOrdinary();
     }
 
     source_columns_set = removeDuplicateColumns(source_columns);
@@ -1142,16 +1140,25 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     }
 
     has_virtual_shard_num = false;
-    if (is_remote_storage)
+    /// If there are virtual columns among the unknown columns. Remove them from the list of unknown and add
+    /// in columns list, so that when further processing they are also considered.
+    if (storage_snapshot)
     {
-        for (const auto & column : *storage_snapshot->virtual_columns)
+        const auto & virtuals = storage_snapshot->virtual_columns;
+        for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
         {
-            if (column.name == "_shard_num" && storage->isVirtualColumn("_shard_num", storage_snapshot->getMetadataForQuery()))
+            if (auto column = virtuals->tryGet(*it))
             {
-                has_virtual_shard_num = true;
-                break;
+                source_columns.push_back(*column);
+                it = unknown_required_source_columns.erase(it);
+            }
+            else
+            {
+                ++it;
             }
         }
+
+        has_virtual_shard_num = is_remote_storage && storage->isVirtualColumn("_shard_num", storage_snapshot->getMetadataForQuery()) && virtuals->has("_shard_num");
     }
 
     /// Collect missed object subcolumns

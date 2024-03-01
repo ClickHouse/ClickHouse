@@ -1,4 +1,3 @@
-#include <memory>
 #include <Storages/StorageMaterializedView.h>
 
 #include <Storages/MaterializedView/RefreshTask.h>
@@ -22,7 +21,6 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include "Storages/StorageSnapshot.h"
 #include <Core/ServerSettings.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>

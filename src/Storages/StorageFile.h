@@ -80,8 +80,6 @@ public:
     bool storesDataOnDisk() const override;
     Strings getDataPaths() const override;
 
-    static Names getVirtualColumnNames();
-
     static Strings getPathsList(const String & table_path, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read);
 
     /// Check if the format supports reading only some subset of columns.

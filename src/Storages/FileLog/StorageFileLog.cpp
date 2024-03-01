@@ -27,7 +27,6 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
-#include "Storages/VirtualColumnsDescription.h"
 
 #include <sys/stat.h>
 

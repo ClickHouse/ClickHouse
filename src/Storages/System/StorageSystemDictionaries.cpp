@@ -16,9 +16,6 @@
 #include <Core/Names.h>
 
 #include <base/map.h>
-#include "Storages/System/IStorageSystemOneBlock.h"
-#include "Storages/VirtualColumnsDescription.h"
-#include <mutex>
 
 namespace DB
 {

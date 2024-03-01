@@ -5,7 +5,6 @@
 #include <Storages/MergeTree/IMergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
 #include <boost/core/noncopyable.hpp>
-#include "Storages/StorageSnapshot.h"
 
 
 namespace DB

@@ -1302,11 +1302,6 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
     }
 }
 
-Names IStorageURLBase::getVirtualColumnNames()
-{
-    return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
-}
-
 SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)
 {
     static SchemaCache schema_cache(context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_url", DEFAULT_SCHEMA_CACHE_ELEMENTS));

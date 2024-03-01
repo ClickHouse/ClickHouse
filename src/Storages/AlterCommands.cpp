@@ -31,7 +31,6 @@
 #include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>

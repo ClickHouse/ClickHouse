@@ -9,7 +9,6 @@
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Common/ActionBlocker.h>
-#include "Storages/VirtualColumnsDescription.h"
 #include <Interpreters/Cluster.h>
 
 #include <pcg_random.hpp>

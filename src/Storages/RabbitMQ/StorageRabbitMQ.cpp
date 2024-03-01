@@ -30,7 +30,6 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
-#include "Storages/VirtualColumnsDescription.h"
 
 namespace DB
 {

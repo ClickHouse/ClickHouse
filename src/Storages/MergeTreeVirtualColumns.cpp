@@ -1,8 +1,8 @@
 #include <Storages/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {

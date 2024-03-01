@@ -69,8 +69,6 @@ public:
         ContextPtr local_context,
         TableExclusiveLockHolder &) override;
 
-    static Names getVirtualColumnNames();
-
     bool supportsPartitionBy() const override { return true; }
 
     /// Check if the format is column-oriented.

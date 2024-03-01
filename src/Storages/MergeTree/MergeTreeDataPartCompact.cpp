@@ -5,7 +5,6 @@
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Compression/CompressedReadBufferFromFile.h>
-#include <Storages/MergeTreeVirtualColumns.h>
 
 
 namespace DB

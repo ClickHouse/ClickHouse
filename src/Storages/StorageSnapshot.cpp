@@ -5,7 +5,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <Storages/StorageView.h>
 #include <sparsehash/dense_hash_set>
-#include "Storages/ColumnsDescription.h"
 
 namespace DB
 {

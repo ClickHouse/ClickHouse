@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <functional>
 #include <iterator>
-#include <memory>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -61,7 +60,6 @@
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
-#include "Storages/StorageSnapshot.h"
 #include <Core/NamesAndTypes.h>
 #include <Functions/FunctionFactory.h>
 

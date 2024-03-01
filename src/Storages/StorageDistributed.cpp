@@ -31,7 +31,6 @@
 #include <Common/randomSeed.h>
 #include <Common/formatReadable.h>
 #include <Common/CurrentMetrics.h>
-#include "Storages/StorageInMemoryMetadata.h"
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -105,8 +104,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
-
-#include <Storages/MergeTreeVirtualColumns.h>
 
 #include <memory>
 #include <filesystem>

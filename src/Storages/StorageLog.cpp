@@ -22,7 +22,6 @@
 
 #include <Interpreters/Context.h>
 #include "StorageLogSettings.h"
-#include "Storages/StorageSnapshot.h"
 #include <Processors/Sources/NullSource.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>

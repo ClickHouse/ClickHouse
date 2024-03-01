@@ -2,11 +2,7 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNested.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>

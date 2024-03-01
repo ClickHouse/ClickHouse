@@ -336,8 +336,6 @@ public:
 
     void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
 
-    static Names getVirtualColumnNames();
-
     bool supportsPartitionBy() const override;
 
     static void processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection);

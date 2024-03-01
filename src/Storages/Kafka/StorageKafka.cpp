@@ -52,7 +52,6 @@
 #include <Common/config_version.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#include "Storages/VirtualColumnsDescription.h"
 #include <base/sleep.h>
 
 #if USE_KRB5

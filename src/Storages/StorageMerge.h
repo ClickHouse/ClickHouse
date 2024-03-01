@@ -5,7 +5,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/OptimizedRegularExpression.h>
-#include "Storages/VirtualColumnsDescription.h"
 
 
 namespace DB

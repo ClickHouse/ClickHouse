@@ -1,5 +1,4 @@
 #include "StorageMaterializedPostgreSQL.h"
-#include "Storages/VirtualColumnsDescription.h"
 
 #if USE_LIBPQXX
 #include <Common/logger_useful.h>

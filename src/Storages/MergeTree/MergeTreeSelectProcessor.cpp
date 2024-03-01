@@ -6,7 +6,6 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include "Storages/StorageSnapshot.h"
 #include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>

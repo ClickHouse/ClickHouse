@@ -1178,11 +1178,6 @@ void registerStorageHDFS(StorageFactory & factory)
     });
 }
 
-Names StorageHDFS::getVirtualColumnNames()
-{
-    return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
-}
-
 SchemaCache & StorageHDFS::getSchemaCache(const ContextPtr & ctx)
 {
     static SchemaCache schema_cache(ctx->getConfigRef().getUInt("schema_inference_cache_max_elements_for_hdfs", DEFAULT_SCHEMA_CACHE_ELEMENTS));

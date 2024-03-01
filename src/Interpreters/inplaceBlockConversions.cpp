@@ -20,7 +20,6 @@
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/MergeTreeVirtualColumns.h>
 
 
 namespace DB

@@ -9,7 +9,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Common/SettingsChanges.h>
-#include "Storages/VirtualColumnsDescription.h"
 
 #include <atomic>
 #include <condition_variable>

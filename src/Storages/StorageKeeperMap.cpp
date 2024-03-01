@@ -41,7 +41,6 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include "Storages/VirtualColumnsDescription.h"
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackupCoordination.h>

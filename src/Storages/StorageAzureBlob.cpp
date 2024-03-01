@@ -886,11 +886,6 @@ SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMeta
     }
 }
 
-Names StorageAzureBlob::getVirtualColumnNames()
-{
-    return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
-}
-
 bool StorageAzureBlob::supportsPartitionBy() const
 {
     return true;

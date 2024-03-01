@@ -6,7 +6,6 @@
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/logger_useful.h>
-#include <Storages/MergeTreeVirtualColumns.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB

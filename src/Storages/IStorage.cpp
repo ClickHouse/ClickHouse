@@ -1,7 +1,6 @@
 #include <Storages/IStorage.h>
 
 #include <Common/StringUtils/StringUtils.h>
-#include "Storages/VirtualColumnsDescription.h"
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>

@@ -5,7 +5,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnsDescription.h>
-#include "Storages/ColumnsDescription.h"
 
 #include <unordered_set>
 
@@ -58,7 +57,7 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
     return res;
 }
 
-Names getVirtualNamesForFileLikeStorage();
+NameSet getVirtualNamesForFileLikeStorage();
 VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns);
 
 ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);

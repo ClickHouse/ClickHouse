@@ -1975,11 +1975,6 @@ void registerStorageOSS(StorageFactory & factory)
     return registerStorageS3Impl("OSS", factory);
 }
 
-Names StorageS3::getVirtualColumnNames()
-{
-    return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
-}
-
 bool StorageS3::supportsPartitionBy() const
 {
     return true;

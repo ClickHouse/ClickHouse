@@ -343,7 +343,7 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
     }
 }
 
-Names getVirtualNamesForFileLikeStorage()
+NameSet getVirtualNamesForFileLikeStorage()
 {
     return {"_path", "_file", "_size"};
 }

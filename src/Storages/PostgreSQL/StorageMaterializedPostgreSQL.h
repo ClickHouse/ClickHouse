@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Storages/VirtualColumnsDescription.h"
 #include "config.h"
 
 #if USE_LIBPQXX

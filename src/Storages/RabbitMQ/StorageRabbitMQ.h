@@ -9,7 +9,6 @@
 #include <Storages/RabbitMQ/RabbitMQSettings.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
 #include <Common/thread_local_rng.h>
-#include "Storages/VirtualColumnsDescription.h"
 #include <amqpcpp/libuv.h>
 #include <uv.h>
 #include <random>

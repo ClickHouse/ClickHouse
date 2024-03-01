@@ -37,8 +37,6 @@
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include "Storages/ProjectionsDescription.h"
-#include "Storages/VirtualColumnsDescription.h"
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
