@@ -7,8 +7,7 @@ import helpers.keeper_utils as keeper_utils
 import random
 import string
 import os
-import time
-from kazoo.client import KazooClient, KazooState
+from kazoo.client import KazooClient
 
 
 cluster = ClickHouseCluster(__file__)
@@ -196,6 +195,15 @@ def test_invalid_snapshot(started_cluster):
         assert node.contains_in_log(
             "Aborting because of failure to load from latest snapshot with index"
         )
+
+        node.stop_clickhouse()
+        node.exec_in_container(
+            [
+                "rm",
+                f"/var/lib/clickhouse/coordination/snapshots/{last_snapshot}",
+            ]
+        )
+        node.start_clickhouse()
     finally:
         try:
             if node_zk is not None:
