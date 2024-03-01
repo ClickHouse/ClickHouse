@@ -953,10 +953,18 @@ def _mark_success_action(
     # FIXME: find generic design for propagating and handling job status (e.g. stop using statuses in GH api)
     #   now job ca be build job w/o status data, any other job that exit with 0 with or w/o status data
     if CI_CONFIG.is_build_job(job):
-        # there is no status for build jobs
-        # create dummy success to mark it as done
+        # there is no CommitStatus for build jobs
+        # create dummy status relying on JobReport
         # FIXME: consider creating commit status for build jobs too, to treat everything the same way
-        CommitStatusData(SUCCESS, "dummy description", "dummy_url").dump_status()
+        job_report = JobReport.load() if JobReport.exist() else None
+        if job_report and job_report.status == SUCCESS:
+            CommitStatusData(
+                SUCCESS,
+                "dummy description",
+                "dummy_url",
+                pr_num=pr_info.number,
+                sha=pr_info.sha,
+            ).dump_status()
 
     job_status = None
     if CommitStatusData.exist():
