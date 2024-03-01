@@ -1244,7 +1244,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
 void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 {
     const auto & metadata = table->getInMemoryMetadata();
-    const auto & virtuals = *table->getVirtualsDescription();
+    auto virtuals = table->getVirtualsPtr();
 
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
@@ -1281,7 +1281,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (command.data_type->hasDynamicSubcolumns())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Adding a new column of a type which has dynamic subcolumns to an existing table is not allowed. It has known bugs");
 
-            if (virtuals.tryGet(column_name, VirtualsKind::Persistent))
+            if (virtuals->tryGet(column_name, VirtualsKind::Persistent))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot add column {}: this column name is reserved for persistent virtual column", backQuote(column_name));
 
@@ -1495,7 +1495,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::DUPLICATE_COLUMN,
                     "Cannot rename to {}: column with this name already exists", backQuote(command.rename_to));
 
-            if (virtuals.tryGet(command.rename_to, VirtualsKind::Persistent))
+            if (virtuals->tryGet(command.rename_to, VirtualsKind::Persistent))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot rename to {}: this column name is reserved for persistent virtual column", backQuote(command.rename_to));
 

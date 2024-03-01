@@ -22,7 +22,7 @@ StorageSnapshot::StorageSnapshot(
     StorageMetadataPtr metadata_)
     : storage(storage_)
     , metadata(std::move(metadata_))
-    , virtual_columns(storage_.getVirtualsDescription())
+    , virtual_columns(storage_.getVirtualsPtr())
 {
 }
 
@@ -42,7 +42,7 @@ StorageSnapshot::StorageSnapshot(
     ColumnsDescription object_columns_)
     : storage(storage_)
     , metadata(std::move(metadata_))
-    , virtual_columns(storage_.getVirtualsDescription())
+    , virtual_columns(storage_.getVirtualsPtr())
     , object_columns(std::move(object_columns_))
 {
 }
@@ -54,7 +54,7 @@ StorageSnapshot::StorageSnapshot(
     DataPtr data_)
     : storage(storage_)
     , metadata(std::move(metadata_))
-    , virtual_columns(storage_.getVirtualsDescription())
+    , virtual_columns(storage_.getVirtualsPtr())
     , object_columns(std::move(object_columns_))
     , data(std::move(data_))
 {
@@ -83,7 +83,7 @@ NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options)
         for (const auto & column : all_columns)
             column_names.insert(column.name);
 
-        auto virtuals_list = virtual_columns->get(options.virtuals_kind);
+        auto virtuals_list = virtual_columns->getNamesAndTypesList(options.virtuals_kind);
         for (const auto & column : virtuals_list)
         {
             if (column_names.contains(column.name))
@@ -150,7 +150,7 @@ CompressionCodecPtr StorageSnapshot::getCodecOrDefault(const String & column_nam
     if (const auto * column_desc = columns.tryGet(column_name))
         return get_codec_or_default(*column_desc);
 
-    if (const auto virtual_desc = virtual_columns->tryGetDescription(column_name))
+    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
         return get_codec_or_default(*virtual_desc);
 
     return default_codec;
@@ -172,7 +172,7 @@ ASTPtr StorageSnapshot::getCodecDescOrDefault(const String & column_name, Compre
     if (const auto * column_desc = columns.tryGet(column_name))
         return get_codec_or_default(*column_desc);
 
-    if (const auto virtual_desc = virtual_columns->tryGetDescription(column_name))
+    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
         return get_codec_or_default(*virtual_desc);
 
     return default_codec->getFullCodecDesc();

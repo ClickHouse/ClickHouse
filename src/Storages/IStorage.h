@@ -229,8 +229,8 @@ public:
     /// virtual column will be overridden and inaccessible.
     ///
     /// By default return empty list of columns.
-    VirtualsDescriptionPtr getVirtualsDescription() const { return virtuals.get(); }
-    NamesAndTypesList getVirtuals() const { return virtuals.get()->getNamesAndTypesList(); }
+    VirtualsDescriptionPtr getVirtualsPtr() const { return virtuals.get(); }
+    NamesAndTypesList getVirtualsList() const { return virtuals.get()->getNamesAndTypesList(); }
     Block getVirtualsHeader() const { return virtuals.get()->getSampleBlock(); }
 
     Names getAllRegisteredNames() const override;

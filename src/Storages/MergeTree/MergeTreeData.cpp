@@ -1031,7 +1031,7 @@ const Names MergeTreeData::virtuals_useful_for_filter = {"_part", "_partition_id
 Block MergeTreeData::getHeaderWithVirtualsForFilter() const
 {
     Block header;
-    auto virtuals_desc = getVirtualsDescription();
+    auto virtuals_desc = getVirtualsPtr();
     for (const auto & name : virtuals_useful_for_filter)
         if (auto column = virtuals_desc->tryGet(name))
             header.insert({column->type->createColumn(), column->type, name});
@@ -3648,7 +3648,7 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & columns = metadata_snapshot->getColumns();
-    const auto & virtuals = *getVirtualsDescription();
+    auto virtuals = getVirtualsPtr();
 
     if (!hasDynamicSubcolumns(columns))
         return;
@@ -3656,7 +3656,7 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
     const auto & part_columns = part->getColumns();
     for (const auto & part_column : part_columns)
     {
-        if (virtuals.has(part_column.name))
+        if (virtuals->has(part_column.name))
             continue;
 
         auto storage_column = columns.getPhysical(part_column.name);

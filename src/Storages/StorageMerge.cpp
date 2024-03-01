@@ -325,7 +325,7 @@ StorageSnapshotPtr StorageMerge::getStorageSnapshot(const StorageMetadataPtr & m
     auto virtuals = common_virtuals;
     if (auto first_table = getFirstTable([](auto && table) { return table; }))
     {
-        auto table_virtuals = first_table->getVirtualsDescription();
+        auto table_virtuals = first_table->getVirtualsPtr();
         for (const auto & column : *table_virtuals)
         {
             if (virtuals.has(column.name))

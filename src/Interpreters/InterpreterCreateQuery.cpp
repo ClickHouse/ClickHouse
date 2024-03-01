@@ -904,7 +904,7 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
 void validateVirtualColumns(const IStorage & storage)
 {
-    auto virtual_columns = storage.getVirtualsDescription();
+    auto virtual_columns = storage.getVirtualsPtr();
     for (const auto & storage_column : storage.getInMemoryMetadataPtr()->getColumns())
     {
         if (virtual_columns->tryGet(storage_column.name, VirtualsKind::Persistent))

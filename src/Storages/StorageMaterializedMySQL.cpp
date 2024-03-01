@@ -23,7 +23,7 @@ StorageMaterializedMySQL::StorageMaterializedMySQL(const StoragePtr & nested_sto
     : StorageProxy(nested_storage_->getStorageID()), nested_storage(nested_storage_), database(database_)
 {
     setInMemoryMetadata(nested_storage->getInMemoryMetadata());
-    setVirtuals(*nested_storage->getVirtualsDescription());
+    setVirtuals(*nested_storage->getVirtualsPtr());
 }
 
 bool StorageMaterializedMySQL::needRewriteQueryWithFinal(const Names & column_names) const
