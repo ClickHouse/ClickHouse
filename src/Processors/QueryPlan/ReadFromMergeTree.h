@@ -101,7 +101,9 @@ public:
         UInt64 selected_marks_pk = 0;
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
+        bool find_exact_ranges = false;
 
+        bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }
         void checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const;
     };
 
@@ -187,11 +189,7 @@ public:
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
-    bool hasAnalyzedResult() const { return analyzed_result_ptr != nullptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
-
-    bool hasProjection() const { return has_projection; }
-    void setProjection() { has_projection = true; }
 
     const MergeTreeData::DataPartsVector & getParts() const { return prepared_parts; }
     const std::vector<AlterConversionsPtr> & getAlterConvertionsForParts() const { return alter_conversions_for_parts; }
@@ -271,7 +269,6 @@ private:
 
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
     AnalysisResultPtr analyzed_result_ptr;
-    bool has_projection = false; /// Make sure only one projection is used.
 
     bool is_parallel_reading_from_replicas;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;

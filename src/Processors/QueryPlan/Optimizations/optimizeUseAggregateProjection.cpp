@@ -601,10 +601,11 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
     }
     else if (!candidates.real.empty() || !candidates.only_count_column.empty())
     {
-        chassert(!reading->hasProjection());
-        auto ordinary_reading_select_result = reading->hasAnalyzedResult()
-            ? reading->getAnalyzedResult()
-            : reading->selectRangesToRead(parts, alter_conversions, !candidates.only_count_column.empty());
+        auto ordinary_reading_select_result = reading->getAnalyzedResult();
+        bool find_exact_ranges = !candidates.only_count_column.empty();
+        if (!ordinary_reading_select_result || (!ordinary_reading_select_result->find_exact_ranges && find_exact_ranges))
+            ordinary_reading_select_result = reading->selectRangesToRead(parts, alter_conversions, find_exact_ranges);
+
         size_t ordinary_reading_marks = ordinary_reading_select_result->selected_marks;
 
         /// Nothing to read. Ignore projections.
@@ -651,10 +652,11 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
                 }
                 chassert(i == len);
                 part_with_ranges.ranges = std::move(new_ranges);
-
-                if (part_with_ranges.ranges.empty())
-                    chassert(ordinary_reading_marks == 0);
             }
+
+            std::erase_if(parts_with_ranges, [&](const auto & part_with_ranges) { return part_with_ranges.ranges.empty(); });
+            if (parts_with_ranges.empty())
+                chassert(ordinary_reading_marks == 0);
         }
 
         /// Selecting best candidate.
@@ -692,7 +694,6 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
                     ordinary_reading_select_result->selected_marks = ordinary_reading_marks;
                     ordinary_reading_select_result->selected_rows -= candidates.exact_count;
                     reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
-                    reading->setProjection();
                 }
             }
             else
@@ -756,7 +757,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
             .projection_name = "Optimized trivial count",
         };
 
-        has_ordinary_parts = reading->hasAnalyzedResult();
+        has_ordinary_parts = reading->getAnalyzedResult() != nullptr;
     }
     else
     {
@@ -787,10 +788,6 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
             Pipe pipe(std::make_shared<NullSource>(std::move(header)));
             projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         }
-        else
-        {
-            typeid_cast<ReadFromMergeTree &>(*projection_reading).setProjection();
-        }
 
         projection_name = Context::QualifiedProjectionName
         {
@@ -800,10 +797,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
 
         has_ordinary_parts = best_candidate->merge_tree_ordinary_select_result_ptr != nullptr;
         if (has_ordinary_parts)
-        {
             reading->setAnalyzedResult(std::move(best_candidate->merge_tree_ordinary_select_result_ptr));
-            reading->setProjection();
-        }
     }
 
     if (!query_info.is_internal && context->hasQueryContext())

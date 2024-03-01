@@ -141,9 +141,9 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     const auto & query_info = reading->getQueryInfo();
     MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
 
-    chassert(!reading->hasProjection());
-    auto ordinary_reading_select_result
-        = reading->hasAnalyzedResult() ? reading->getAnalyzedResult() : reading->selectRangesToRead(parts, alter_conversions);
+    auto ordinary_reading_select_result = reading->getAnalyzedResult();
+    if (!ordinary_reading_select_result)
+        ordinary_reading_select_result = reading->selectRangesToRead(parts, alter_conversions);
     size_t ordinary_reading_marks = ordinary_reading_select_result->selected_marks;
 
     /// Nothing to read. Ignore projections.
@@ -217,10 +217,6 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
         Pipe pipe(std::make_shared<NullSource>(proj_snapshot->getSampleBlockForColumns(required_columns)));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
     }
-    else
-    {
-        typeid_cast<ReadFromMergeTree &>(*projection_reading).setProjection();
-    }
 
     if (!query_info.is_internal && context->hasQueryContext())
     {
@@ -233,10 +229,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
 
     bool has_ordinary_parts = best_candidate->merge_tree_ordinary_select_result_ptr != nullptr;
     if (has_ordinary_parts)
-    {
         reading->setAnalyzedResult(std::move(best_candidate->merge_tree_ordinary_select_result_ptr));
-        reading->setProjection();
-    }
 
     projection_reading->setStepDescription(best_candidate->projection->name);
 

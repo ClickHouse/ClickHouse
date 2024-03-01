@@ -1163,10 +1163,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     std::vector<FieldRef> part_offset_left(2);
     std::vector<FieldRef> part_offset_right(2);
 
-    auto check_in_range = [&](const MarkRange & range, bool check_can_be_false_for_single_mark = false)
+    auto check_in_range = [&](const MarkRange & range, bool check_can_be_false = false)
     {
-        BoolMask initial_mask
-            = range.end == range.begin + 1 && check_can_be_false_for_single_mark ? BoolMask() : BoolMask::consider_only_can_be_true;
+        BoolMask initial_mask = check_can_be_false ? BoolMask() : BoolMask::consider_only_can_be_true;
 
         auto check_key_condition = [&]()
         {
@@ -1252,7 +1251,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
             steps++;
 
-            auto result = check_in_range(range, exact_ranges);
+            auto result = check_in_range(range, exact_ranges && range.end == range.begin + 1);
             if (!result.can_be_true)
                 continue;
 
@@ -1345,7 +1344,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             {
                 if (result_range.begin + 1 == result_range.end)
                 {
-                    auto check_result = check_in_range(result_range, exact_ranges);
+                    auto check_result = check_in_range(result_range, true);
                     if (check_result.can_be_true)
                     {
                         if (!check_result.can_be_false)
@@ -1357,15 +1356,15 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 {
                     /// Candidate range with size > 1 is already can_be_true
                     auto result_exact_range = result_range;
-                    if (check_in_range({result_range.begin, result_range.begin + 1}, exact_ranges).can_be_false)
+                    if (check_in_range({result_range.begin, result_range.begin + 1}, true).can_be_false)
                         ++result_exact_range.begin;
 
-                    if (check_in_range({result_range.end - 1, result_range.end}, exact_ranges).can_be_false)
+                    if (check_in_range({result_range.end - 1, result_range.end}, true).can_be_false)
                         --result_exact_range.end;
 
                     if (result_exact_range.begin < result_exact_range.end)
                     {
-                        chassert(check_in_range(result_exact_range, exact_ranges) == BoolMask(true, false));
+                        chassert(check_in_range(result_exact_range, true) == BoolMask(true, false));
                         exact_ranges->emplace_back(std::move(result_exact_range));
                     }
 
