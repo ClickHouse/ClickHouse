@@ -1,9 +1,10 @@
 #include "config.h"
 #include <Disks/ObjectStorages/ObjectStorageFactory.h>
 #if USE_AWS_S3
-#include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
-#include <Disks/ObjectStorages/S3/diskSettings.h>
 #include <Disks/ObjectStorages/S3/DiskS3Utils.h>
+#include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/ObjectStorages/S3/S3PlainRewritableObjectStorage.h>
+#include <Disks/ObjectStorages/S3/diskSettings.h>
 #endif
 #if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
@@ -210,6 +211,38 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         return object_storage;
     });
 }
+
+void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
+{
+    static constexpr auto disk_type = "s3_plain_rewritable";
+
+    factory.registerObjectStorageType(
+        disk_type,
+        [](const std::string & name,
+           const Poco::Util::AbstractConfiguration & config,
+           const std::string & config_prefix,
+           const ContextPtr & context,
+           bool /* skip_access_check */) -> ObjectStoragePtr
+        {
+            /// send_metadata changes the filenames (includes revision), while
+            /// s3_plain do not care about this, and expect that the file name
+            /// will not be changed.
+            if (config.getBool(config_prefix + ".send_metadata", false))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "s3_plain_rewritable does not supports send_metadata");
+
+            auto uri = getS3URI(config, config_prefix, context);
+            auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
+            auto settings = getSettings(config, config_prefix, context);
+            auto client = getClient(config, config_prefix, context, *settings);
+            auto key_generator = getKeyGenerator(uri, config, config_prefix);
+
+            auto object_storage = std::make_shared<S3PlainRewritableObjectStorage>(
+                std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
+
+            return object_storage;
+        });
+}
+
 #endif
 
 #if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
@@ -317,6 +350,7 @@ void registerObjectStorages()
 #if USE_AWS_S3
     registerS3ObjectStorage(factory);
     registerS3PlainObjectStorage(factory);
+    registerS3PlainRewritableObjectStorage(factory);
 #endif
 
 #if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)

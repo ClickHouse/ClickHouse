@@ -53,6 +53,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
 #if USE_AWS_S3
     factory.registerDiskType("s3", creator); /// For compatibility
     factory.registerDiskType("s3_plain", creator); /// For compatibility
+    factory.registerDiskType("s3_plain_rewritable", creator);
 #endif
 #if USE_HDFS
     factory.registerDiskType("hdfs", creator); /// For compatibility
