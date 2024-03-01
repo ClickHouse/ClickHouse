@@ -654,7 +654,7 @@ __attribute__((__no_sanitize__("undefined"))) inline void *memcpy_tiny(void * __
 //---------------------------------------------------------------------
 // main routine
 //---------------------------------------------------------------------
-inline void* memcpy_fast_sse(void * __restrict destination, const void * __restrict source, size_t size)
+void* memcpy_fast_sse(void * __restrict destination, const void * __restrict source, size_t size) /// NOLINT(misc-definitions-in-headers)
 {
     unsigned char *dst = (unsigned char*)destination;
     const unsigned char *src = (const unsigned char*)source;

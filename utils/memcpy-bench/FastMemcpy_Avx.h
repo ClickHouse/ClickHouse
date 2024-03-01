@@ -371,7 +371,7 @@ static INLINE void *memcpy_tiny_avx(void * __restrict dst, const void * __restri
 //---------------------------------------------------------------------
 // main routine
 //---------------------------------------------------------------------
-inline void* memcpy_fast_avx(void * __restrict destination, const void * __restrict source, size_t size)
+void* memcpy_fast_avx(void * __restrict destination, const void * __restrict source, size_t size) /// NOLINT(misc-definitions-in-headers)
 {
     unsigned char *dst = reinterpret_cast<unsigned char*>(destination);
     const unsigned char *src = reinterpret_cast<const unsigned char*>(source);
