@@ -596,8 +596,9 @@ public:
     template <typename DateOrTime>
     unsigned toMillisecond(const DateOrTime & datetime, Int64 scale_multiplier) const
     {
-        const auto microsecond_multiplier = 1000000;
-        const auto millisecond_multiplier = 1000;
+        constexpr Int64 millisecond_multiplier = 1'000;
+        constexpr Int64 microsecond_multiplier = 1'000 * millisecond_multiplier;
+        constexpr Int64 divider = microsecond_multiplier / millisecond_multiplier;
 
         auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
 
@@ -612,7 +613,6 @@ public:
         else if (scale_multiplier < microsecond_multiplier)
             fractional = fractional * (microsecond_multiplier / scale_multiplier);
 
-        constexpr Int64 divider = microsecond_multiplier / millisecond_multiplier;
         UInt16 millisecond = static_cast<UInt16>(fractional / divider);
         return millisecond;
     }
