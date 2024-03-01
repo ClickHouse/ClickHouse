@@ -1228,13 +1228,6 @@ try
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
-    size_t page_cache_size = server_settings.page_cache_size;
-    if (page_cache_size != 0)
-        global_context->setPageCache(
-            server_settings.page_cache_chunk_size, server_settings.page_cache_mmap_size,
-            page_cache_size, server_settings.page_cache_use_madv_free,
-            server_settings.page_cache_use_transparent_huge_pages);
-
     String index_uncompressed_cache_policy = server_settings.index_uncompressed_cache_policy;
     size_t index_uncompressed_cache_size = server_settings.index_uncompressed_cache_size;
     double index_uncompressed_cache_size_ratio = server_settings.index_uncompressed_cache_size_ratio;
