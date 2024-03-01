@@ -12,7 +12,7 @@
 #include <Storages/StorageS3Settings.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <IO/S3/BlobStorageLogWriter.h>
-#include <IO/WriteBufferFromS3TaskTracker.h>
+#include <Common/ThreadPoolTaskTracker.h>
 
 #include <memory>
 #include <vector>

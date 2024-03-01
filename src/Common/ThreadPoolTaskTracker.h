@@ -1,10 +1,10 @@
 #pragma once
 
 #include "config.h"
-#include <Common/threadPoolCallbackRunner.h>
-#include "WriteBufferFromS3.h"
+#include "threadPoolCallbackRunner.h"
+#include "IO/WriteBufferFromS3.h"
 
-#include <Common/logger_useful.h>
+#include "logger_useful.h"
 
 #include <list>
 

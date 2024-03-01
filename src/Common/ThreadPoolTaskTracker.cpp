@@ -1,6 +1,6 @@
 #include "config.h"
 
-#include <IO/WriteBufferFromS3TaskTracker.h>
+#include "ThreadPoolTaskTracker.h"
 
 namespace ProfileEvents
 {

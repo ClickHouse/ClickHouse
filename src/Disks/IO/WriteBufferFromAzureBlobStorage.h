@@ -11,7 +11,7 @@
 #include <IO/WriteSettings.h>
 #include <azure/storage/blobs.hpp>
 #include <azure/core/io/body_stream.hpp>
-#include <IO/WriteBufferFromS3TaskTracker.h>
+#include <Common/ThreadPoolTaskTracker.h>
 
 
 namespace Poco

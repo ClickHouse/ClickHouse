@@ -4,8 +4,8 @@
 
 #include "StdIStreamFromMemory.h"
 #include "WriteBufferFromS3.h"
-#include "WriteBufferFromS3TaskTracker.h"
 
+#include <Common/ThreadPoolTaskTracker.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
