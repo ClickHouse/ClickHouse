@@ -1,7 +1,3 @@
-Expression ((Projection + Before ORDER BY))
-  AggregatingProjection
-    Expression (Before GROUP BY)
-      Filter (WHERE)
         ReadFromMergeTree (default.x)
     ReadFromPreparedSource (Optimized trivial count)
 5

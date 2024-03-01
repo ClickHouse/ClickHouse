@@ -17,7 +17,7 @@ struct BoolMask
 
     bool operator==(const BoolMask & other) const { return can_be_true == other.can_be_true && can_be_false == other.can_be_false; }
 
-    /// Check if mask is no longer changeable under operation |.
+    /// Check if mask is no longer changeable under combine.
     /// We use this condition to early-exit KeyConditions::check{InRange,After} methods.
     bool isComplete(const BoolMask & initial_mask) const
     {
@@ -25,7 +25,8 @@ struct BoolMask
             return can_be_true;
         else if (initial_mask == consider_only_can_be_false)
             return can_be_false;
-        return false;
+        else
+            return can_be_true && can_be_false;
     }
 
     /// Combine check result in different hyperrectangles.
