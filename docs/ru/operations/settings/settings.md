@@ -3258,7 +3258,7 @@ SELECT * FROM test2;
 
 ## allow_experimental_live_view {#allow-experimental-live-view}
 
-Включает экспериментальную возможность использования [LIVE-представлений](../../sql-reference/statements/create/view.md#live-view).
+Включает устаревшую возможность использования [LIVE-представлений](../../sql-reference/statements/create/view.md#live-view).
 
 Возможные значения:
 - 0 — живые представления не поддерживаются.
@@ -3268,21 +3268,15 @@ SELECT * FROM test2;
 
 ## live_view_heartbeat_interval {#live-view-heartbeat-interval}
 
-Задает интервал в секундах для периодической проверки существования [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view).
-
-Значение по умолчанию: `15`.
+Устарело.
 
 ## max_live_view_insert_blocks_before_refresh {#max-live-view-insert-blocks-before-refresh}
 
-Задает наибольшее число вставок, после которых запрос на формирование [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) исполняется снова.
-
-Значение по умолчанию: `64`.
+Устарело.
 
 ## periodic_live_view_refresh {#periodic-live-view-refresh}
 
-Задает время в секундах, по истечении которого [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) с установленным автообновлением обновляется.
-
-Значение по умолчанию: `60`.
+Устарело.
 
 ## check_query_single_value_result {#check_query_single_value_result}
 
