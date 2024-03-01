@@ -33,6 +33,6 @@ Result:
 **See also**
 
 - [disable_internal_dns_cache setting](../../operations/server-configuration-parameters/settings.md#disable_internal_dns_cache)
-- [dns_cache_max_size setting](../../operations/server-configuration-parameters/settings.md#dns_cache_max_size)
+- [dns_cache_max_entries setting](../../operations/server-configuration-parameters/settings.md#dns_cache_max_entries)
 - [dns_cache_update_period setting](../../operations/server-configuration-parameters/settings.md#dns_cache_update_period)
 - [dns_max_consecutive_failures setting](../../operations/server-configuration-parameters/settings.md#dns_max_consecutive_failures)

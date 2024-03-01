@@ -63,7 +63,7 @@ class MarksInCompressedFile
 public:
     using PlainArray = PODArray<MarkInCompressedFile>;
 
-    MarksInCompressedFile(const PlainArray & marks);
+    explicit MarksInCompressedFile(const PlainArray & marks);
 
     MarkInCompressedFile get(size_t idx) const;
 

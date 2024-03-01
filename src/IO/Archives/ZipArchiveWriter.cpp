@@ -274,6 +274,11 @@ std::unique_ptr<WriteBufferFromFileBase> ZipArchiveWriter::writeFile(const Strin
     return std::make_unique<WriteBufferFromZipArchive>(std::static_pointer_cast<ZipArchiveWriter>(shared_from_this()), filename);
 }
 
+std::unique_ptr<WriteBufferFromFileBase> ZipArchiveWriter::writeFile(const String & filename, [[maybe_unused]] size_t size)
+{
+    return ZipArchiveWriter::writeFile(filename);
+}
+
 bool ZipArchiveWriter::isWritingFile() const
 {
     std::lock_guard lock{mutex};
