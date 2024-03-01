@@ -16,7 +16,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 # TODO myrrc dimension for 0copy
 @pytest.fixture(
     scope="module",
-    params=product(*((True, False),) * 2),
+    params=product([False, True], [False, True]),
     ids=["sequential", "parallel", "sequential-large", "parallel-large"],
 )
 def started_cluster(request):
@@ -38,6 +38,12 @@ def started_cluster(request):
         cluster.shutdown()
 
 
+def insert_large_data(node, mb_start):
+    start = 1024 * 1024 * mb_start
+    count = 1024 * 1024 * 10
+    node.query(f"INSERT INTO test (i) SELECT * FROM numbers({start}, {count})")
+
+
 def test_to_vfs(started_cluster):
     cluster, large_data, parallel = started_cluster
     node1: ClickHouseInstance = cluster.instances["node1"]
@@ -47,14 +53,26 @@ def test_to_vfs(started_cluster):
         "ENGINE=ReplicatedMergeTree('/clickhouse/tables/test', '{replica}') "
         "ORDER BY i PARTITION BY i % 10"
     )
-    node1.query("INSERT INTO test (i) SELECT * FROM numbers(2)")
-    node1.query("ALTER TABLE test UPDATE t = t + 5 WHERE i > 0")
-    node1.query("INSERT INTO test (i) SELECT * FROM numbers(2, 1)")
+
+    if large_data:
+        insert_large_data(node1, 0)
+    else:
+        node1.query("INSERT INTO test (i) SELECT * FROM numbers(2)")
+
+    node1.query("ALTER TABLE test UPDATE t = t + 5 WHERE i % 10 > 0")
+
+    if large_data:
+        insert_large_data(node1, 10)
+    else:
+        node1.query("INSERT INTO test (i) SELECT * FROM numbers(2, 1)")
 
     def validate(node, a, b):
         assert node.query("SELECT count(), uniqExact(t) FROM test") == f"{a}\t{b}\n"
 
-    validate(node1, 3, 3)
+    if large_data:
+        validate(node1, 20 * 1024 * 1024, 19922940)
+    else:
+        validate(node1, 3, 3)
 
     def migrate(i):
         print(f"Migrating node {i}")
@@ -66,7 +84,11 @@ def test_to_vfs(started_cluster):
         )
         node.restart_clickhouse()
         assert node.contains_in_log("Migrated disk s3")
-        node.query(f"INSERT INTO test (i) SELECT * FROM numbers(3 + {i}, 1)")
+
+        if large_data:
+            insert_large_data(node, 10 + i * 10)
+        else:
+            node.query(f"INSERT INTO test (i) SELECT * FROM numbers(3 + {i}, 1)")
 
     with ThreadPoolExecutor(max_workers=3 if parallel else 1) as exe:
         exe.map(migrate, range(1, 4))
@@ -75,6 +97,10 @@ def test_to_vfs(started_cluster):
     for i in range(1, 4):
         node: ClickHouseInstance = cluster.instances[f"node{i}"]
         node.query("SYSTEM SYNC REPLICA test")
-        validate(node, 6, 5)
+
+        if large_data:
+            validate(node, 50 * 1024 * 1024, 51380220)
+        else:
+            validate(node, 6, 5)
 
     node1.query("DROP TABLE test ON CLUSTER cluster SYNC")
