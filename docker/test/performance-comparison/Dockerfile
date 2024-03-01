@@ -1,7 +1,18 @@
 # docker build -t clickhouse/performance-comparison .
 
-ARG FROM_TAG=latest
-FROM clickhouse/test-base:$FROM_TAG
+# Using ubuntu:22.04 over 20.04 as all other images, since:
+# a) ubuntu 20.04 has too old parallel, and does not support --memsuspend
+# b) anyway for perf tests it should not be important (backward compatiblity
+#    with older ubuntu had been checked lots of times in various tests)
+FROM ubuntu:22.04
+
+# ARG for quick switch to a given ubuntu mirror
+ARG apt_archive="http://archive.ubuntu.com"
+RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+
+ENV LANG=C.UTF-8
+ENV TZ=Europe/Moscow
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
@@ -37,10 +48,21 @@ RUN apt-get update \
     && apt-get purge --yes python3-dev g++ \
     && apt-get autoremove --yes \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+    && rm -rf /var/lib/apt/lists/*
 
-COPY run.sh /
+COPY * /
 
-CMD ["bash", "/run.sh"]
+# Bind everything to one NUMA node, if there's more than one. Theoretically the
+# node #0 should be less stable because of system interruptions. We bind
+# randomly to node 1 or 0 to gather some statistics on that. We have to bind
+# both servers and the tmpfs on which the database is stored. How to do it
+# through Yandex Sandbox API is unclear, but by default tmpfs uses
+# 'process allocation policy', not sure which process but hopefully the one that
+# writes to it, so just bind the downloader script as well. We could also try to
+# remount it with proper options in Sandbox task.
+# https://www.kernel.org/doc/Documentation/filesystems/tmpfs.txt
+# Double-escaped backslashes are a tribute to the engineering wonder of docker --
+# it gives '/bin/sh: 1: [bash,: not found' otherwise.
+CMD ["bash", "-c", "node=$((RANDOM % $(numactl --hardware | sed -n 's/^.*available:\\(.*\\)nodes.*$/\\1/p'))); echo Will bind to NUMA node $node; numactl --cpunodebind=$node --membind=$node /entrypoint.sh"]
 
 # docker run --network=host --volume <workspace>:/workspace --volume=<output>:/output -e PR_TO_TEST=<> -e SHA_TO_TEST=<> clickhouse/performance-comparison

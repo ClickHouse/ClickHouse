@@ -24,7 +24,7 @@ template <typename T>
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
     const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path)
 {
-    static constexpr bool async_insert = std::is_same_v<T, std::vector<String>>;
+    constexpr bool async_insert = std::is_same_v<T, std::vector<String>>;
 
     String path;
 
@@ -42,15 +42,16 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
         if constexpr (async_insert)
         {
             for (const auto & single_dedup_path : deduplication_path)
-                zkutil::addCheckNotExistsRequest(ops, *zookeeper_, single_dedup_path);
+            {
+                ops.emplace_back(zkutil::makeCreateRequest(single_dedup_path, "", zkutil::CreateMode::Persistent));
+                ops.emplace_back(zkutil::makeRemoveRequest(single_dedup_path, -1));
+            }
         }
         else
         {
-            zkutil::addCheckNotExistsRequest(ops, *zookeeper_, deduplication_path);
+            ops.emplace_back(zkutil::makeCreateRequest(deduplication_path, "", zkutil::CreateMode::Persistent));
+            ops.emplace_back(zkutil::makeRemoveRequest(deduplication_path, -1));
         }
-
-        auto deduplication_path_ops_size = ops.size();
-
         ops.emplace_back(zkutil::makeCreateRequest(path_prefix_, holder_path, zkutil::CreateMode::EphemeralSequential));
         Coordination::Responses responses;
         Coordination::Error e = zookeeper_->tryMulti(ops, responses);
@@ -59,12 +60,11 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
             if constexpr (async_insert)
             {
                 auto failed_idx = zkutil::getFailedOpIndex(Coordination::Error::ZNODEEXISTS, responses);
-
-                if (failed_idx < deduplication_path_ops_size)
+                if (failed_idx < deduplication_path.size() * 2)
                 {
-                    const String & failed_op_path = ops[failed_idx]->getPath();
+                    const String & failed_op_path = deduplication_path[failed_idx / 2];
                     LOG_DEBUG(
-                        getLogger("createEphemeralLockInZooKeeper"),
+                        &Poco::Logger::get("createEphemeralLockInZooKeeper"),
                         "Deduplication path already exists: deduplication_path={}",
                         failed_op_path);
                     return EphemeralLockInZooKeeper{"", nullptr, "", failed_op_path};
@@ -73,7 +73,7 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
             else if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
             {
                 LOG_DEBUG(
-                    getLogger("createEphemeralLockInZooKeeper"),
+                    &Poco::Logger::get("createEphemeralLockInZooKeeper"),
                     "Deduplication path already exists: deduplication_path={}",
                     deduplication_path);
                 return {};
@@ -119,7 +119,7 @@ EphemeralLockInZooKeeper::~EphemeralLockInZooKeeper()
     {
         if (Coordination::isHardwareError(e.code))
             LOG_DEBUG(
-                getLogger("EphemeralLockInZooKeeper"),
+                &Poco::Logger::get("EphemeralLockInZooKeeper"),
                 "ZooKeeper communication error during unlock: code={} message='{}'",
                 e.code,
                 e.message());
@@ -130,7 +130,7 @@ EphemeralLockInZooKeeper::~EphemeralLockInZooKeeper()
             /// But it's possible that the multi op request can be executed on server side, and client will not get response due to network issue.
             /// In such case, assumeUnlocked() will not be called, so we'll get ZNONODE error here since the noded is already deleted
             LOG_DEBUG(
-                getLogger("EphemeralLockInZooKeeper"),
+                &Poco::Logger::get("EphemeralLockInZooKeeper"),
                 "ZooKeeper node was already deleted: code={} message={}",
                 e.code,
                 e.message());
@@ -168,7 +168,7 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
         Coordination::Error rc = zookeeper->tryMulti(lock_ops, lock_responses);
         if (rc == Coordination::Error::ZBADVERSION)
         {
-            LOG_TRACE(getLogger("EphemeralLocksInAllPartitions"), "Someone has inserted a block in a new partition while we were creating locks. Retry.");
+            LOG_TRACE(&Poco::Logger::get("EphemeralLocksInAllPartitions"), "Someone has inserted a block in a new partition while we were creating locks. Retry.");
             continue;
         }
         else if (rc != Coordination::Error::ZOK)

@@ -1,12 +1,8 @@
-#include "Common/logger_useful.h"
 #include "config.h"
 
 #if USE_MYSQL
 
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
-#include <Databases/MySQL/tryParseTableIDFromDDL.h>
-#include <Databases/MySQL/tryQuoteUnrecognizedTokens.h>
-#include <Databases/MySQL/tryConvertStringLiterals.h>
 #include <cstdlib>
 #include <random>
 #include <string_view>
@@ -26,7 +22,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Storages/StorageMergeTree.h>
 #include <Common/quoteString.h>
-#include <Common/randomNumber.h>
 #include <Common/setThreadName.h>
 #include <base/sleep.h>
 #include <boost/algorithm/string/split.hpp>
@@ -47,42 +42,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_EXCEPTION;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int NETWORK_ERROR;
-    extern const int UNKNOWN_TABLE;
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
-    extern const int THERE_IS_NO_QUERY;
-    extern const int QUERY_WAS_CANCELLED;
-    extern const int TABLE_ALREADY_EXISTS;
-    extern const int DATABASE_ALREADY_EXISTS;
-    extern const int DATABASE_NOT_EMPTY;
-    extern const int TABLE_IS_DROPPED;
-    extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
-    extern const int CANNOT_CREATE_CHARSET_CONVERTER;
-    extern const int UNKNOWN_FUNCTION;
-    extern const int UNKNOWN_IDENTIFIER;
-    extern const int UNKNOWN_TYPE;
-    extern const int TIMEOUT_EXCEEDED;
-    extern const int MEMORY_LIMIT_EXCEEDED;
-    extern const int MYSQL_SYNTAX_ERROR;
 }
-
-// USE MySQL ERROR CODE:
-// https://dev.mysql.com/doc/mysql-errors/5.7/en/server-error-reference.html
-constexpr int ER_ACCESS_DENIED_ERROR = 1045; /// NOLINT
-constexpr int ER_DBACCESS_DENIED_ERROR = 1044; /// NOLINT
-constexpr int ER_BAD_DB_ERROR = 1049; /// NOLINT
-constexpr int ER_MASTER_HAS_PURGED_REQUIRED_GTIDS = 1789; /// NOLINT
-constexpr int ER_MASTER_FATAL_ERROR_READING_BINLOG = 1236; /// NOLINT
-
-// https://dev.mysql.com/doc/mysql-errors/8.0/en/client-error-reference.html
-constexpr int CR_CONN_HOST_ERROR = 2003; /// NOLINT
-constexpr int CR_SERVER_GONE_ERROR = 2006; /// NOLINT
-constexpr int CR_SERVER_LOST = 2013; /// NOLINT
-constexpr int ER_SERVER_SHUTDOWN = 1053; /// NOLINT
-constexpr int ER_LOCK_DEADLOCK = 1213; /// NOLINT
-constexpr int ER_LOCK_WAIT_TIMEOUT = 1205; /// NOLINT
-constexpr int ER_OPTION_PREVENTS_STATEMENT = 1290; /// NOLINT
 
 static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
 
@@ -99,7 +59,7 @@ static ContextMutablePtr createQueryContext(ContextPtr context)
     query_context->setSettings(new_query_settings);
     query_context->setInternalQuery(true);
 
-    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     query_context->setCurrentQueryId(""); // generate random query_id
     return query_context;
 }
@@ -111,12 +71,12 @@ static BlockIO tryToExecuteQuery(const String & query_to_execute, ContextMutable
         if (!database.empty())
             query_context->setCurrentDatabase(database);
 
-        return executeQuery("/*" + comment + "*/ " + query_to_execute, query_context, QueryFlags{ .internal = true }).second;
+        return executeQuery("/*" + comment + "*/ " + query_to_execute, query_context, true);
     }
     catch (...)
     {
         tryLogCurrentException(
-            getLogger("MaterializedMySQLSyncThread(" + database + ")"),
+            &Poco::Logger::get("MaterializedMySQLSyncThread(" + database + ")"),
             "Query " + query_to_execute + " wasn't finished successfully");
         throw;
     }
@@ -178,6 +138,7 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
     {
         bool first = true;
         WriteBufferFromOwnString error_message;
+        error_message << "Illegal MySQL variables, the MaterializedMySQL engine requires ";
         for (const auto & [variable_name, variable_error_val] : variables_error_message)
         {
             error_message << (first ? "" : ", ") << variable_name << "='" << variable_error_val << "'";
@@ -186,64 +147,63 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
                 first = false;
         }
 
-        throw Exception(ErrorCodes::ILLEGAL_MYSQL_VARIABLE, "Illegal MySQL variables, the MaterializedMySQL engine requires {}",
-                        error_message.str());
+        throw Exception::createDeprecated(error_message.str(), ErrorCodes::ILLEGAL_MYSQL_VARIABLE);
     }
 }
 
-static bool shouldReconnectOnException(const std::exception_ptr & e)
+static std::tuple<String, String> tryExtractTableNameFromDDL(const String & ddl)
 {
-    try
+    String table_name;
+    String database_name;
+    if (ddl.empty()) return std::make_tuple(database_name, table_name);
+
+    bool parse_failed = false;
+    Tokens tokens(ddl.data(), ddl.data() + ddl.size());
+    IParser::Pos pos(tokens, 0);
+    Expected expected;
+    ASTPtr res;
+    ASTPtr table;
+    if (ParserKeyword("CREATE TEMPORARY TABLE").ignore(pos, expected) || ParserKeyword("CREATE TABLE").ignore(pos, expected))
     {
-        std::rethrow_exception(e);
+        ParserKeyword("IF NOT EXISTS").ignore(pos, expected);
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
     }
-    catch (const mysqlxx::ConnectionFailed &) {} /// NOLINT
-    catch (const mysqlxx::ConnectionLost &) {} /// NOLINT
-    catch (const Poco::Net::ConnectionResetException &) {} /// NOLINT
-    catch (const Poco::Net::ConnectionRefusedException &) {} /// NOLINT
-    catch (const DB::NetException &) {} /// NOLINT
-    catch (const Poco::Net::NetException & e)
+    else if (ParserKeyword("ALTER TABLE").ignore(pos, expected))
     {
-        if (e.code() != POCO_ENETDOWN &&
-            e.code() != POCO_ENETUNREACH &&
-            e.code() != POCO_ENETRESET &&
-            e.code() != POCO_ESYSNOTREADY)
-            return false;
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
     }
-    catch (const mysqlxx::BadQuery & e)
+    else if (ParserKeyword("DROP TABLE").ignore(pos, expected) || ParserKeyword("DROP TEMPORARY TABLE").ignore(pos, expected))
     {
-        // Lost connection to MySQL server during query
-        if (e.code() != CR_SERVER_LOST &&
-            e.code() != ER_SERVER_SHUTDOWN &&
-            e.code() != CR_SERVER_GONE_ERROR &&
-            e.code() != CR_CONN_HOST_ERROR &&
-            e.code() != ER_LOCK_DEADLOCK &&
-            e.code() != ER_LOCK_WAIT_TIMEOUT &&
-            e.code() != ER_OPTION_PREVENTS_STATEMENT)
-            return false;
+        ParserKeyword("IF EXISTS").ignore(pos, expected);
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
     }
-    catch (const mysqlxx::Exception & e)
+    else if (ParserKeyword("TRUNCATE").ignore(pos, expected))
     {
-        // ER_SERVER_SHUTDOWN is thrown in different types under different conditions.
-        // E.g. checkError() in Common/mysqlxx/Exception.cpp will throw mysqlxx::Exception.
-        if (e.code() != CR_SERVER_LOST && e.code() != ER_SERVER_SHUTDOWN && e.code() != CR_SERVER_GONE_ERROR && e.code() != CR_CONN_HOST_ERROR)
-            return false;
+        ParserKeyword("TABLE").ignore(pos, expected);
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
     }
-    catch (const Poco::Exception & e)
+    else if (ParserKeyword("RENAME TABLE").ignore(pos, expected))
     {
-        if (e.code() != ErrorCodes::NETWORK_ERROR &&
-            e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED &&
-            e.code() != ErrorCodes::UNKNOWN_TABLE && // Since we have ignored the DDL exception when the tables without primary key, insert into those tables will get UNKNOWN_TABLE.
-            e.code() != ErrorCodes::CANNOT_READ_ALL_DATA &&
-            e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF &&
-            e.code() != ErrorCodes::TIMEOUT_EXCEEDED)
-            return false;
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
     }
-    catch (...)
+    else
     {
-        return false;
+        parse_failed = true;
     }
-    return true;
+    if (!parse_failed)
+    {
+        if (auto table_id = table->as<ASTTableIdentifier>()->getTableId())
+        {
+            database_name = table_id.database_name;
+            table_name = table_id.table_name;
+        }
+    }
+    return std::make_tuple(database_name, table_name);
 }
 
 MaterializedMySQLSyncThread::MaterializedMySQLSyncThread(
@@ -252,15 +212,13 @@ MaterializedMySQLSyncThread::MaterializedMySQLSyncThread(
     const String & mysql_database_name_,
     mysqlxx::Pool && pool_,
     MySQLClient && client_,
-    const MySQLReplication::BinlogClientPtr & binlog_client_,
     MaterializedMySQLSettings * settings_)
     : WithContext(context_->getGlobalContext())
-    , log(getLogger("MaterializedMySQLSyncThread"))
+    , log(&Poco::Logger::get("MaterializedMySQLSyncThread"))
     , database_name(database_name_)
     , mysql_database_name(mysql_database_name_)
     , pool(std::move(pool_)) /// NOLINT
     , client(std::move(client_))
-    , binlog_client(binlog_client_)
     , settings(settings_)
 {
     query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
@@ -304,26 +262,13 @@ void MaterializedMySQLSyncThread::synchronization()
 
             try
             {
-                UInt64 elapsed_ms = watch.elapsedMilliseconds();
-                if (elapsed_ms < max_flush_time)
-                {
-                    const auto timeout_ms = max_flush_time - elapsed_ms;
-                    BinlogEventPtr binlog_event;
-                    if (binlog)
-                        binlog->tryReadEvent(binlog_event, timeout_ms);
-                    else
-                        binlog_event = client.readOneBinlogEvent(timeout_ms);
-                    if (binlog_event && !ignoreEvent(binlog_event))
-                        onEvent(buffers, binlog_event, metadata);
-                }
+                BinlogEventPtr binlog_event = client.readOneBinlogEvent(std::max(UInt64(1), max_flush_time - watch.elapsedMilliseconds()));
+                if (binlog_event)
+                    onEvent(buffers, binlog_event, metadata);
             }
             catch (const Exception & e)
             {
-                if (settings->max_wait_time_when_mysql_unavailable < 0)
-                    throw;
-                bool binlog_was_purged = e.code() == ER_MASTER_FATAL_ERROR_READING_BINLOG ||
-                                         e.code() == ER_MASTER_HAS_PURGED_REQUIRED_GTIDS;
-                if (!binlog_was_purged && !shouldReconnectOnException(std::current_exception()))
+                if (e.code() != ErrorCodes::CANNOT_READ_ALL_DATA || settings->max_wait_time_when_mysql_unavailable < 0)
                     throw;
 
                 flushBuffersData(buffers, metadata);
@@ -346,7 +291,6 @@ void MaterializedMySQLSyncThread::synchronization()
     catch (...)
     {
         client.disconnect();
-        binlog = nullptr;
         tryLogCurrentException(log);
         setSynchronizationThreadException(std::current_exception());
     }
@@ -360,7 +304,6 @@ void MaterializedMySQLSyncThread::stopSynchronization()
         if (background_thread_pool->joinable())
             background_thread_pool->join();
         client.disconnect();
-        binlog = nullptr;
     }
 }
 
@@ -449,8 +392,9 @@ static inline String rewriteMysqlQueryColumn(mysqlxx::Pool::Entry & connection, 
                     { std::make_shared<DataTypeString>(),   "column_type" }
             };
 
-    String query = "SELECT COLUMN_NAME AS column_name, COLUMN_TYPE AS column_type FROM INFORMATION_SCHEMA.COLUMNS"
-                   " WHERE TABLE_SCHEMA = '" + database_name + "' AND TABLE_NAME = '" + table_name + "' ORDER BY ORDINAL_POSITION";
+    const String & query =  "SELECT COLUMN_NAME AS column_name, COLUMN_TYPE AS column_type FROM INFORMATION_SCHEMA.COLUMNS"
+                            " WHERE TABLE_SCHEMA = '"  + backQuoteIfNeed(database_name) +
+                            "' AND TABLE_NAME = '" + backQuoteIfNeed(table_name) +  "' ORDER BY ORDINAL_POSITION";
 
     StreamSettings mysql_input_stream_settings(global_settings, false, true);
     auto mysql_source = std::make_unique<MySQLSource>(connection, query, tables_columns_sample_block, mysql_input_stream_settings);
@@ -496,15 +440,13 @@ static inline void dumpDataForTables(
             CurrentThread::QueryScope query_scope(query_context);
 
             String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
-            String create_query = iterator->second;
-            tryConvertStringLiterals(create_query);
-            tryToExecuteQuery(query_prefix + " " + create_query, query_context, database_name, comment); /// create table.
+            tryToExecuteQuery(query_prefix + " " + iterator->second, query_context, database_name, comment); /// create table.
 
             auto pipeline = getTableOutput(database_name, table_name, query_context);
             StreamSettings mysql_input_stream_settings(context->getSettingsRef());
             String mysql_select_all_query = "SELECT " + rewriteMysqlQueryColumn(connection, mysql_database_name, table_name, context->getSettingsRef()) + " FROM "
                     + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name);
-            LOG_INFO(getLogger("MaterializedMySQLSyncThread(" + database_name + ")"), "mysql_select_all_query is {}", mysql_select_all_query);
+            LOG_INFO(&Poco::Logger::get("MaterializedMySQLSyncThread(" + database_name + ")"), "mysql_select_all_query is {}", mysql_select_all_query);
             auto input = std::make_unique<MySQLSource>(connection, mysql_select_all_query, pipeline.getHeader(), mysql_input_stream_settings);
             auto counting = std::make_shared<CountingTransform>(pipeline.getHeader());
             Pipe pipe(std::move(input));
@@ -516,7 +458,7 @@ static inline void dumpDataForTables(
             executor.execute();
 
             const Progress & progress = counting->getProgress();
-            LOG_INFO(getLogger("MaterializedMySQLSyncThread(" + database_name + ")"),
+            LOG_INFO(&Poco::Logger::get("MaterializedMySQLSyncThread(" + database_name + ")"),
                 "Materialize MySQL step 1: dump {}, {} rows, {} in {} sec., {} rows/sec., {}/sec."
                 , table_name, formatReadableQuantity(progress.written_rows), formatReadableSizeWithBinarySuffix(progress.written_bytes)
                 , watch.elapsedSeconds(), formatReadableQuantity(static_cast<size_t>(progress.written_rows / watch.elapsedSeconds()))
@@ -528,6 +470,15 @@ static inline void dumpDataForTables(
             throw;
         }
     }
+}
+
+static inline UInt32 randomNumber()
+{
+    std::mt19937 rng;
+    rng.seed(std::random_device()());
+    std::uniform_int_distribution<std::mt19937::result_type> dist6(
+        std::numeric_limits<UInt32>::min(), std::numeric_limits<UInt32>::max());
+    return static_cast<UInt32>(dist6(rng));
 }
 
 bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & metadata)
@@ -557,7 +508,7 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
             if (!need_dumping_tables.empty())
             {
                 Position position;
-                position.update(metadata.binlog_position, metadata.binlog_file, metadata.executed_gtid_set, 0);
+                position.update(metadata.binlog_position, metadata.binlog_file, metadata.executed_gtid_set);
 
                 metadata.transaction(position, [&]()
                 {
@@ -581,20 +532,8 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
             if (opened_transaction)
                 connection->query("COMMIT").execute();
 
-            if (binlog_client)
-            {
-                binlog_client->setBinlogChecksum(metadata.binlog_checksum);
-                binlog = binlog_client->createBinlog(metadata.executed_gtid_set,
-                                                     database_name,
-                                                     {mysql_database_name},
-                                                     settings->max_bytes_in_binlog_queue,
-                                                     settings->max_milliseconds_to_wait_in_binlog_queue);
-            }
-            else
-            {
-                client.connect();
-                client.startBinlogDumpGTID(randomNumber(), mysql_database_name, materialized_tables_list, metadata.executed_gtid_set, metadata.binlog_checksum);
-            }
+            client.connect();
+            client.startBinlogDumpGTID(randomNumber(), mysql_database_name, materialized_tables_list, metadata.executed_gtid_set, metadata.binlog_checksum);
 
             setSynchronizationThreadException(nullptr);
             return true;
@@ -606,11 +545,17 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
             if (opened_transaction)
                 connection->query("ROLLBACK").execute();
 
-            if (settings->max_wait_time_when_mysql_unavailable < 0)
+            try
+            {
                 throw;
-
-            if (!shouldReconnectOnException(std::current_exception()))
-                throw;
+            }
+            catch (const mysqlxx::ConnectionFailed &) {}
+            catch (const mysqlxx::BadQuery & e)
+            {
+                // Lost connection to MySQL server during query
+                if (e.code() != CR_SERVER_LOST || settings->max_wait_time_when_mysql_unavailable < 0)
+                    throw;
+            }
 
             setSynchronizationThreadException(std::current_exception());
             /// Avoid busy loop when MySQL is not available.
@@ -621,55 +566,17 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
     return false;
 }
 
-bool MaterializedMySQLSyncThread::isTableIgnored(const String & table_name) const
-{
-    return !materialized_tables_list.empty() && !materialized_tables_list.contains(table_name);
-}
-
-bool MaterializedMySQLSyncThread::ignoreEvent(const BinlogEventPtr & event) const
-{
-    switch (event->type())
-    {
-        case MYSQL_WRITE_ROWS_EVENT:
-        case MYSQL_DELETE_ROWS_EVENT:
-        case MYSQL_UPDATE_ROWS_EVENT:
-        case MYSQL_UNPARSED_ROWS_EVENT:
-        {
-            auto table_name = static_cast<RowsEvent &>(*event).table;
-            if (!table_name.empty() && isTableIgnored(table_name))
-            {
-                switch (event->header.type)
-                {
-                    case WRITE_ROWS_EVENT_V1:
-                    case WRITE_ROWS_EVENT_V2:
-                    case DELETE_ROWS_EVENT_V1:
-                    case DELETE_ROWS_EVENT_V2:
-                    case UPDATE_ROWS_EVENT_V1:
-                    case UPDATE_ROWS_EVENT_V2:
-                        break;
-                    default:
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown event type: {}", magic_enum::enum_name(event->header.type));
-                }
-                return true;
-            }
-        } break;
-        default:
-            break;
-    }
-    return false;
-}
-
 void MaterializedMySQLSyncThread::flushBuffersData(Buffers & buffers, MaterializeMetadata & metadata)
 {
     if (buffers.data.empty())
         return;
 
-    metadata.transaction(getPosition(), [&]() { buffers.commit(getContext()); });
+    metadata.transaction(client.getPosition(), [&]() { buffers.commit(getContext()); });
 
     const auto & position_message = [&]()
     {
         WriteBufferFromOwnString buf;
-        getPosition().dump(buf);
+        client.getPosition().dump(buf);
         return buf.str();
     };
     LOG_INFO(log, "MySQL executed position: \n {}", position_message());
@@ -918,33 +825,10 @@ void MaterializedMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPt
     else if (receive_event->type() == MYSQL_QUERY_EVENT)
     {
         QueryEvent & query_event = static_cast<QueryEvent &>(*receive_event);
-        /// Skip events for different databases if any
-        if (!query_event.query_database_name.empty() && query_event.query_database_name != mysql_database_name)
-        {
-            LOG_WARNING(
-                log,
-                "Skipped QueryEvent, current mysql database name: {}, ddl schema: {}, query: {}",
-                mysql_database_name,
-                query_event.query_database_name,
-                query_event.query);
-            return;
-        }
-        if (!query_event.query_table_name.empty() && isTableIgnored(query_event.query_table_name))
-        {
-            LOG_WARNING(log, "Due to the table filter rules, query_event on {} is ignored.", database_name);
-            return;
-        }
-
         Position position_before_ddl;
-        position_before_ddl.update(metadata.binlog_position, metadata.binlog_file, metadata.executed_gtid_set, query_event.header.timestamp);
+        position_before_ddl.update(metadata.binlog_position, metadata.binlog_file, metadata.executed_gtid_set);
         metadata.transaction(position_before_ddl, [&]() { buffers.commit(getContext()); });
-        metadata.transaction(getPosition(),[&]() { executeDDLAtomic(query_event); });
-    }
-    else if (receive_event->type() == MYSQL_UNPARSED_ROWS_EVENT)
-    {
-        UnparsedRowsEvent & unparsed_event = static_cast<UnparsedRowsEvent &>(*receive_event);
-        auto nested_event = unparsed_event.parse();
-        onEvent(buffers, nested_event, metadata);
+        metadata.transaction(client.getPosition(),[&](){ executeDDLAtomic(query_event); });
     }
     else
     {
@@ -954,10 +838,7 @@ void MaterializedMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPt
             /// Some behaviors(such as changing the value of "binlog_checksum") rotate the binlog file.
             /// To ensure that the synchronization continues, we need to handle these events
             metadata.fetchMasterVariablesValue(pool.get(/* wait_timeout= */ UINT64_MAX));
-            if (binlog_client)
-                binlog_client->setBinlogChecksum(metadata.binlog_checksum);
-            else
-                client.setBinlogChecksum(metadata.binlog_checksum);
+            client.setBinlogChecksum(metadata.binlog_checksum);
         }
         else if (receive_event->header.type != HEARTBEAT_EVENT)
         {
@@ -981,16 +862,16 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
         CurrentThread::QueryScope query_scope(query_context);
 
         String query = query_event.query;
-        tryQuoteUnrecognizedTokens(query);
-        tryConvertStringLiterals(query);
         if (!materialized_tables_list.empty())
         {
-            auto table_id = tryParseTableIDFromDDL(query, query_event.schema);
-            if (!table_id.table_name.empty())
+             auto [ddl_database_name, ddl_table_name] = tryExtractTableNameFromDDL(query_event.query);
+
+            if (!ddl_table_name.empty())
             {
-                if (table_id.database_name != mysql_database_name || isTableIgnored(table_id.table_name))
+                ddl_database_name =  ddl_database_name.empty() ? query_event.schema: ddl_database_name;
+                if (ddl_database_name != mysql_database_name || !materialized_tables_list.contains(ddl_table_name))
                 {
-                    LOG_DEBUG(log, "Skip MySQL DDL for {}.{}:\n{}", table_id.database_name, table_id.table_name, query);
+                    LOG_DEBUG(log, "Skip MySQL DDL: \n {}", query_event.query);
                     return;
                 }
             }
@@ -1006,28 +887,8 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
         tryLogCurrentException(log);
 
         /// If some DDL query was not successfully parsed and executed
-        /// Then replication may fail on next binlog events anyway.
-        /// We can skip the error binlog evetns and continue to execute the right ones.
-        /// eg. The user creates a table without primary key and finds it is wrong, then
-        /// drops it and creates a new right one. We guarantee the right one can be executed.
-
-        if (exception.code() != ErrorCodes::SYNTAX_ERROR &&
-            exception.code() != ErrorCodes::MYSQL_SYNTAX_ERROR &&
-            exception.code() != ErrorCodes::NOT_IMPLEMENTED &&
-            exception.code() != ErrorCodes::UNKNOWN_TABLE &&
-            exception.code() != ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY &&
-            exception.code() != ErrorCodes::THERE_IS_NO_QUERY &&
-            exception.code() != ErrorCodes::QUERY_WAS_CANCELLED &&
-            exception.code() != ErrorCodes::TABLE_ALREADY_EXISTS &&
-            exception.code() != ErrorCodes::UNKNOWN_DATABASE &&
-            exception.code() != ErrorCodes::DATABASE_ALREADY_EXISTS &&
-            exception.code() != ErrorCodes::DATABASE_NOT_EMPTY &&
-            exception.code() != ErrorCodes::TABLE_IS_DROPPED &&
-            exception.code() != ErrorCodes::TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT &&
-            exception.code() != ErrorCodes::CANNOT_CREATE_CHARSET_CONVERTER &&
-            exception.code() != ErrorCodes::UNKNOWN_FUNCTION &&
-            exception.code() != ErrorCodes::UNKNOWN_IDENTIFIER &&
-            exception.code() != ErrorCodes::UNKNOWN_TYPE)
+        /// Then replication may fail on next binlog events anyway
+        if (exception.code() != ErrorCodes::SYNTAX_ERROR)
             throw;
     }
 }

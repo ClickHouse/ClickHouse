@@ -1,6 +1,4 @@
 #include <Common/ZooKeeper/ZooKeeperLock.h>
-#include <Common/logger_useful.h>
-#include <Common/ErrorCodes.h>
 #include <filesystem>
 
 namespace DB
@@ -26,7 +24,7 @@ ZooKeeperLock::ZooKeeperLock(
     : zookeeper(zookeeper_)
     , lock_path(fs::path(lock_prefix_) / lock_name_)
     , lock_message(lock_message_)
-    , log(getLogger("zkutil::Lock"))
+    , log(&Poco::Logger::get("zkutil::Lock"))
 {
     zookeeper->createIfNotExists(lock_prefix_, "");
 }

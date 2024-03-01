@@ -1,10 +1,8 @@
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/TargetSpecific.h>
-#include <Common/logger_useful.h>
 #include <Core/UUID.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -16,10 +14,6 @@
 
 #ifdef __SSE2__
 #include <emmintrin.h>
-#endif
-
-#if USE_MULTITARGET_CODE
-#include <immintrin.h>
 #endif
 
 #if defined(__aarch64__) && defined(__ARM_NEON)
@@ -847,8 +841,8 @@ MergeTreeRangeReader::MergeTreeRangeReader(
         if (step.actions)
             step.actions->execute(result_sample_block, true);
 
-        if (step.remove_filter_column)
-            result_sample_block.erase(step.filter_column_name);
+        if (step.remove_column)
+            result_sample_block.erase(step.column_name);
     }
 }
 
@@ -911,21 +905,13 @@ UInt64 MergeTreeRangeReader::Stream::lastPartOffset() const
 
 size_t MergeTreeRangeReader::Stream::ceilRowsToCompleteGranules(size_t rows_num) const
 {
-    /// Find the first occurrence of mark that satisfies getRowsCountInRange(left, mark + 1) >= rows_num
-    /// in [current_mark, last_mark).
-    assert(current_mark + 1 <= last_mark);
-    size_t left_mark = current_mark;
-    size_t right_mark = last_mark;
-    while (left_mark < right_mark)
-    {
-        size_t mid_mark = left_mark + (right_mark - left_mark) / 2;
-        if (index_granularity->getRowsCountInRange(current_mark, mid_mark + 1) >= rows_num)
-            right_mark = mid_mark;
-        else
-            left_mark = mid_mark + 1;
-    }
-    size_t end_mark = (left_mark == last_mark) ? left_mark : left_mark + 1;
-    return index_granularity->getRowsCountInRange(current_mark, end_mark);
+    /// FIXME suboptimal
+    size_t result = 0;
+    size_t from_mark = current_mark;
+    while (result < rows_num && from_mark < last_mark)
+        result += index_granularity->getMarkRows(from_mark++);
+
+    return result;
 }
 
 
@@ -994,9 +980,12 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         /// Calculate and update read bytes
         size_t total_bytes = 0;
         for (auto & column : columns)
+        {
             if (column)
+            {
                 total_bytes += column->byteSize();
-
+            }
+        }
         read_result.addNumBytesRead(total_bytes);
 
         if (!columns.empty())
@@ -1010,7 +999,8 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             /// some columns (e.g. arrays) might be only partially filled and thus not be valid and
             /// fillMissingColumns() fixes this.
             bool should_evaluate_missing_defaults;
-            merge_tree_reader->fillMissingColumns(columns, should_evaluate_missing_defaults, num_read_rows);
+            merge_tree_reader->fillMissingColumns(columns, should_evaluate_missing_defaults,
+                                                    num_read_rows);
 
             if (read_result.total_rows_per_granule == num_read_rows && read_result.num_rows != num_read_rows)
             {
@@ -1035,8 +1025,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             }
 
             /// If columns not empty, then apply on-fly alter conversions if any required
-            if (!prewhere_info || prewhere_info->perform_alter_conversions)
-                merge_tree_reader->performRequiredConversions(columns);
+            merge_tree_reader->performRequiredConversions(columns);
         }
 
         read_result.columns.reserve(read_result.columns.size() + columns.size());
@@ -1060,15 +1049,15 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             Columns physical_columns(read_result.columns.begin(), read_result.columns.begin() + physical_columns_count);
 
             bool should_evaluate_missing_defaults;
-            merge_tree_reader->fillMissingColumns(physical_columns, should_evaluate_missing_defaults, read_result.num_rows);
+            merge_tree_reader->fillMissingColumns(physical_columns, should_evaluate_missing_defaults,
+                                                  read_result.num_rows);
 
             /// If some columns absent in part, then evaluate default values
             if (should_evaluate_missing_defaults)
                 merge_tree_reader->evaluateMissingDefaults({}, physical_columns);
 
             /// If result not empty, then apply on-fly alter conversions if any required
-            if (!prewhere_info || prewhere_info->perform_alter_conversions)
-                merge_tree_reader->performRequiredConversions(physical_columns);
+            merge_tree_reader->performRequiredConversions(physical_columns);
 
             for (size_t i = 0; i < physical_columns.size(); ++i)
                 read_result.columns[i] = std::move(physical_columns[i]);
@@ -1178,7 +1167,7 @@ void MergeTreeRangeReader::fillPartOffsetColumn(ReadResult & result, UInt64 lead
     UInt64 * pos = vec.data();
     UInt64 * end = &vec[num_rows];
 
-    /// Fill the remaining part of the previous range (it was started in the previous read request).
+    /// Fill the reamining part of the previous range (it was started in the previous read request).
     while (pos < end && leading_begin_part_offset < leading_end_part_offset)
         *pos++ = leading_begin_part_offset++;
 
@@ -1257,107 +1246,6 @@ static void checkCombinedFiltersSize(size_t bytes_in_first_filter, size_t second
             "does not match second filter size ({})", bytes_in_first_filter, second_filter_size);
 }
 
-DECLARE_AVX512VBMI2_SPECIFIC_CODE(
-inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, const UInt8 * second_begin)
-{
-    constexpr size_t AVX512_VEC_SIZE_IN_BYTES = 64;
-
-    while (first_begin + AVX512_VEC_SIZE_IN_BYTES <= first_end)
-    {
-        UInt64 mask = bytes64MaskToBits64Mask(first_begin);
-        __m512i src = _mm512_loadu_si512(reinterpret_cast<void *>(first_begin));
-        __m512i dst = _mm512_mask_expandloadu_epi8(src, static_cast<__mmask64>(mask), reinterpret_cast<const void *>(second_begin));
-        _mm512_storeu_si512(reinterpret_cast<void *>(first_begin), dst);
-
-        first_begin += AVX512_VEC_SIZE_IN_BYTES;
-        second_begin += std::popcount(mask);
-    }
-
-    for (/* empty */; first_begin < first_end; ++first_begin)
-    {
-        if (*first_begin)
-        {
-            *first_begin = *second_begin++;
-        }
-    }
-}
-)
-
-/* The BMI2 intrinsic, _pdep_u64 (unsigned __int64 a, unsigned __int64 mask), works
- * by copying contiguous low-order bits from unsigned 64-bit integer a to destination
- * at the corresponding bit locations specified by mask. To implement the column
- * combination with the intrinsic, 8 contiguous bytes would be loaded from second_begin
- * as a UInt64 and act the first operand, meanwhile the mask should be constructed from
- * first_begin so that the bytes to be replaced (non-zero elements) are mapped to 0xFF
- * at the exact bit locations and 0x00 otherwise.
- *
- * The construction of mask employs the SSE intrinsic, mm_cmpeq_epi8(__m128i a, __m128i
- * b), which compares packed 8-bit integers in first_begin and packed 0s and outputs
- * 0xFF for equality and 0x00 for inequality. The result's negation then creates the
- * desired bit masks for _pdep_u64.
- *
- * The below example visualizes how this optimization applies to the combination of
- * two quadwords from first_begin and second_begin.
- *
- *                                      Addr  high                           low
- *                                      <----------------------------------------
- * first_begin............................0x00 0x11 0x12 0x00 0x00 0x13 0x14 0x15
- *     |      mm_cmpeq_epi8(src, 0)        |    |    |    |    |    |    |    |
- *     v                                   v    v    v    v    v    v    v    v
- *  inv_mask..............................0xFF 0x00 0x00 0xFF 0xFF 0x00 0x00 0x00
- *     |      (negation)                   |    |    |    |    |    |    |    |
- *     v                                   v    v    v    v    v    v    v    v
- *    mask-------------------------+......0x00 0xFF 0xFF 0x00 0x00 0xFF 0xFF 0xFF
- *                                 |            |    |              |    |    |
- *                                 v            v    v              v    v    v
- *    dst = pdep_u64(second_begin, mask)..0x00 0x05 0x04 0x00 0x00 0x03 0x02 0x01
- *                        ^                     ^    ^              ^    ^    ^
- *                        |                     |    |              |    |    |
- *                        |                     |    +---------+    |    |    |
- *     +------------------+                     +---------+    |    |    |    |
- *     |                                                  |    |    |    |    |
- * second_begin...........................0x00 0x00 0x00 0x05 0x04 0x03 0x02 0x01
- *
- * References:
- * 1. https://www.felixcloutier.com/x86/pdep
- * 2. https://www.felixcloutier.com/x86/pcmpeqb:pcmpeqw:pcmpeqd
- */
-DECLARE_AVX2_SPECIFIC_CODE(
-inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, const UInt8 * second_begin)
-{
-    constexpr size_t XMM_VEC_SIZE_IN_BYTES = 16;
-    const __m128i zero16 = _mm_setzero_si128();
-
-    while (first_begin + XMM_VEC_SIZE_IN_BYTES <= first_end)
-    {
-        __m128i src = _mm_loadu_si128(reinterpret_cast<__m128i *>(first_begin));
-        __m128i inv_mask = _mm_cmpeq_epi8(src, zero16);
-
-        UInt64 masks[] = {
-            ~static_cast<UInt64>(_mm_extract_epi64(inv_mask, 0)),
-            ~static_cast<UInt64>(_mm_extract_epi64(inv_mask, 1)),
-        };
-
-        for (const auto & mask: masks)
-        {
-            UInt64 dst = _pdep_u64(unalignedLoad<UInt64>(second_begin), mask);
-            unalignedStore<UInt64>(first_begin, dst);
-
-            first_begin += sizeof(UInt64);
-            second_begin += std::popcount(mask) / 8;
-        }
-    }
-
-    for (/* empty */; first_begin < first_end; ++first_begin)
-    {
-        if (*first_begin)
-        {
-            *first_begin = *second_begin++;
-        }
-    }
-}
-)
-
 /// Second filter size must be equal to number of 1s in the first filter.
 /// The result has size equal to first filter size and contains 1s only where both filters contain 1s.
 static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
@@ -1400,25 +1288,12 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     auto & first_data = typeid_cast<ColumnUInt8 *>(mut_first.get())->getData();
     const auto * second_data = second_descr.data->data();
 
-#if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::AVX512VBMI2))
+    for (auto & val : first_data)
     {
-        TargetSpecific::AVX512VBMI2::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
-    }
-    else if (isArchSupported(TargetArch::AVX2))
-    {
-        TargetSpecific::AVX2::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
-    }
-    else
-#endif
-    {
-        for (auto & val : first_data)
+        if (val)
         {
-            if (val)
-            {
-                val = *second_data;
-                ++second_data;
-            }
+            val = *second_data;
+            ++second_data;
         }
     }
 
@@ -1441,87 +1316,91 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
                         "Invalid number of columns passed to MergeTreeRangeReader. Expected {}, got {}",
                         num_columns, result.columns.size());
 
-    /// Restore block from columns list.
-    Block block;
-    size_t pos = 0;
-
-    if (prev_reader)
-    {
-        for (const auto & col : prev_reader->getSampleBlock())
-        {
-            block.insert({result.columns[pos], col.type, col.name});
-            ++pos;
-        }
-    }
-
-    for (auto name_and_type = header.begin(); name_and_type != header.end() && pos < result.columns.size(); ++pos, ++name_and_type)
-        block.insert({result.columns[pos], name_and_type->type, name_and_type->name});
+    /// Filter computed at the current step. Its size is equal to num_rows which is <= total_rows_per_granule
+    ColumnPtr current_step_filter;
+    size_t prewhere_column_pos;
 
     {
-        /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
-        Block additional_columns = block;
+        /// Restore block from columns list.
+        Block block;
+        size_t pos = 0;
 
-        if (prewhere_info->actions)
+        if (prev_reader)
         {
-            const String dummy_column = addDummyColumnWithRowCount(block, result.num_rows);
-
-            LOG_TEST(log, "Executing prewhere actions on block: {}", block.dumpStructure());
-
-            prewhere_info->actions->execute(block);
-
-            if (!dummy_column.empty())
-                block.erase(dummy_column);
-        }
-
-        result.additional_columns.clear();
-        /// Additional columns might only be needed if there are more steps in the chain.
-        if (!last_reader_in_chain)
-        {
-            for (auto & col : additional_columns)
+            for (const auto & col : prev_reader->getSampleBlock())
             {
-                /// Exclude columns that are present in the result block to avoid storing them and filtering twice.
-                /// TODO: also need to exclude the columns that are not needed for the next steps.
-                if (block.has(col.name))
-                    continue;
-                result.additional_columns.insert(col);
+                block.insert({result.columns[pos], col.type, col.name});
+                ++pos;
             }
         }
+
+        for (auto name_and_type = header.begin(); name_and_type != header.end() && pos < result.columns.size(); ++pos, ++name_and_type)
+            block.insert({result.columns[pos], name_and_type->type, name_and_type->name});
+
+        {
+            /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
+            Block additional_columns = block;
+
+            if (prewhere_info->actions)
+            {
+                const String dummy_column = addDummyColumnWithRowCount(block, result.num_rows);
+
+                LOG_TEST(log, "Executing prewhere actions on block: {}", block.dumpStructure());
+
+                prewhere_info->actions->execute(block);
+
+                if (!dummy_column.empty())
+                    block.erase(dummy_column);
+            }
+
+            result.additional_columns.clear();
+            /// Additional columns might only be needed if there are more steps in the chain.
+            if (!last_reader_in_chain)
+            {
+                for (auto & col : additional_columns)
+                {
+                    /// Exclude columns that are present in the result block to avoid storing them and filtering twice.
+                    /// TODO: also need to exclude the columns that are not needed for the next steps.
+                    if (block.has(col.name))
+                        continue;
+                    result.additional_columns.insert(col);
+                }
+            }
+        }
+
+        prewhere_column_pos = block.getPositionByName(prewhere_info->column_name);
+
+        result.columns.clear();
+        result.columns.reserve(block.columns());
+        for (auto & col : block)
+            result.columns.emplace_back(std::move(col.column));
+
+        current_step_filter = result.columns[prewhere_column_pos];
     }
 
-    result.columns.clear();
-    result.columns.reserve(block.columns());
-    for (auto & col : block)
-        result.columns.emplace_back(std::move(col.column));
+    /// In case when we are returning prewhere column the caller expects it to serve as a final filter:
+    /// it must contain 0s not only from the current step but also from all the previous steps.
+    /// One way to achieve this is to apply the final_filter if we know that the final_filter was not applied at
+    /// several previous steps but was accumulated instead.
+    result.can_return_prewhere_column_without_filtering = result.filterWasApplied();
 
-    if (prewhere_info->type == PrewhereExprStep::Filter)
+    if (prewhere_info->remove_column)
+        result.columns.erase(result.columns.begin() + prewhere_column_pos);
+
+    FilterWithCachedCount current_filter(current_step_filter);
+
+    result.optimize(current_filter, merge_tree_reader->canReadIncompleteGranules());
+
+    if (prewhere_info->need_filter && !result.filterWasApplied())
     {
-        /// Filter computed at the current step. Its size is equal to num_rows which is <= total_rows_per_granule
-        size_t filter_column_pos = block.getPositionByName(prewhere_info->filter_column_name);
-        auto current_step_filter = result.columns[filter_column_pos];
-
-        /// In case when we are returning prewhere column the caller expects it to serve as a final filter:
-        /// it must contain 0s not only from the current step but also from all the previous steps.
-        /// One way to achieve this is to apply the final_filter if we know that the final_filter was not applied at
-        /// several previous steps but was accumulated instead.
-        result.can_return_prewhere_column_without_filtering = result.filterWasApplied();
-
-        if (prewhere_info->remove_filter_column)
-            result.columns.erase(result.columns.begin() + filter_column_pos);
-
-        FilterWithCachedCount current_filter(current_step_filter);
-        result.optimize(current_filter, merge_tree_reader->canReadIncompleteGranules());
-
-        if (prewhere_info->need_filter && !result.filterWasApplied())
-        {
-            /// Depending on whether the final filter was applied at the previous step or not we need to apply either
-            /// just the current step filter or the accumulated filter.
-            FilterWithCachedCount filter_to_apply =
-                current_filter.size() == result.total_rows_per_granule
-                    ? result.final_filter
-                    : current_filter;
+        /// Depending on whether the final filter was applied at the previous step or not we need to apply either
+        /// just the current step filter   or the accumulated filter.
+        FilterWithCachedCount filter_to_apply =
+            current_filter.size() == result.total_rows_per_granule ?
+                result.final_filter :
+                current_filter;
 
             result.applyFilter(filter_to_apply);
-        }
     }
 
     LOG_TEST(log, "After execute prewhere {}", result.dumpInfo());
@@ -1535,12 +1414,12 @@ std::string PrewhereExprInfo::dump() const
     for (size_t i = 0; i < steps.size(); ++i)
     {
         s << "STEP " << i << ":\n"
-            << "  ACTIONS: " << (steps[i]->actions ?
-                (indent + boost::replace_all_copy(steps[i]->actions->dumpActions(), "\n", indent)) :
+            << "  ACTIONS: " << (steps[i].actions ?
+                (indent + boost::replace_all_copy(steps[i].actions->dumpActions(), "\n", indent)) :
                 "nullptr") << "\n"
-            << "  COLUMN: " << steps[i]->filter_column_name << "\n"
-            << "  REMOVE_COLUMN: " << steps[i]->remove_filter_column << "\n"
-            << "  NEED_FILTER: " << steps[i]->need_filter << "\n\n";
+            << "  COLUMN: " << steps[i].column_name << "\n"
+            << "  REMOVE_COLUMN: " << steps[i].remove_column << "\n"
+            << "  NEED_FILTER: " << steps[i].need_filter << "\n\n";
     }
 
     return s.str();
@@ -1551,7 +1430,7 @@ std::string PrewhereExprInfo::dumpConditions() const
     WriteBufferFromOwnString s;
 
     for (size_t i = 0; i < steps.size(); ++i)
-        s << (i == 0 ? "\"" : ", \"") << steps[i]->filter_column_name << "\"";
+        s << (i == 0 ? "\"" : ", \"") << steps[i].column_name << "\"";
 
     return s.str();
 }

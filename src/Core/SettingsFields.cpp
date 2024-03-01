@@ -1,7 +1,8 @@
 #include <Core/SettingsFields.h>
+
 #include <Core/Field.h>
-#include <Core/AccurateComparison.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
@@ -20,7 +21,6 @@ namespace ErrorCodes
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int CANNOT_PARSE_BOOL;
     extern const int CANNOT_PARSE_NUMBER;
-    extern const int CANNOT_CONVERT_TYPE;
 }
 
 
@@ -49,51 +49,9 @@ namespace
     T fieldToNumber(const Field & f)
     {
         if (f.getType() == Field::Types::String)
-        {
             return stringToNumber<T>(f.get<const String &>());
-        }
-        else if (f.getType() == Field::Types::UInt64)
-        {
-            T result;
-            if (!accurate::convertNumeric(f.get<UInt64>(), result))
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
-            return result;
-        }
-        else if (f.getType() == Field::Types::Int64)
-        {
-            T result;
-            if (!accurate::convertNumeric(f.get<Int64>(), result))
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
-            return result;
-        }
-        else if (f.getType() == Field::Types::Bool)
-        {
-            return T(f.get<bool>());
-        }
-        else if (f.getType() == Field::Types::Float64)
-        {
-            Float64 x = f.get<Float64>();
-            if constexpr (std::is_floating_point_v<T>)
-            {
-                return T(x);
-            }
-            else
-            {
-                if (!isFinite(x))
-                {
-                    /// Conversion of infinite values to integer is undefined.
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert infinite value to integer type");
-                }
-                else if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
-                {
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
-                }
-                else
-                    return T(x);
-            }
-        }
         else
-            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Invalid value {} of the setting, which needs {}", f, demangle(typeid(T).name()));
+            return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }
 
     Map stringToMap(const String & str)
@@ -217,7 +175,7 @@ namespace
         if (f.getType() == Field::Types::String)
             return stringToMaxThreads(f.get<const String &>());
         else
-            return fieldToNumber<UInt64>(f);
+            return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), f);
     }
 }
 
@@ -380,7 +338,7 @@ void SettingFieldString::readBinary(ReadBuffer & in)
 /// that. The linker does not complain only because clickhouse-keeper does not call any of below
 /// functions. A cleaner alternative would be more modular libraries, e.g. one for data types, which
 /// could then be linked by the server and the linker.
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
+#ifndef KEEPER_STANDALONE_BUILD
 
 SettingFieldMap::SettingFieldMap(const Field & f) : value(fieldToMap(f)) {}
 
@@ -419,40 +377,6 @@ void SettingFieldMap::readBinary(ReadBuffer & in)
     Map map;
     DB::readBinary(map, in);
     *this = map;
-}
-
-#else
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-SettingFieldMap::SettingFieldMap(const Field &) : value(Map()) {}
-String SettingFieldMap::toString() const
-{
-    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
-}
-
-
-SettingFieldMap & SettingFieldMap::operator =(const Field &)
-{
-    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
-}
-
-void SettingFieldMap::parseFromString(const String &)
-{
-    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
-}
-
-void SettingFieldMap::writeBinary(WriteBuffer &) const
-{
-    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
-}
-
-void SettingFieldMap::readBinary(ReadBuffer &)
-{
-    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Setting of type Map not supported");
 }
 
 #endif
@@ -527,17 +451,6 @@ String SettingFieldEnumHelpers::readBinary(ReadBuffer & in)
     return str;
 }
 
-void SettingFieldTimezone::writeBinary(WriteBuffer & out) const
-{
-    writeStringBinary(value, out);
-}
-
-void SettingFieldTimezone::readBinary(ReadBuffer & in)
-{
-    String str;
-    readStringBinary(str, in);
-    *this = std::move(str);
-}
 
 String SettingFieldCustom::toString() const
 {

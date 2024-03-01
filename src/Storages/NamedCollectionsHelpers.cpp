@@ -1,5 +1,4 @@
 #include "NamedCollectionsHelpers.h"
-#include <Access/ContextAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -16,16 +15,19 @@ namespace ErrorCodes
 
 namespace
 {
-    std::optional<std::string> getCollectionName(ASTs asts)
+    NamedCollectionPtr tryGetNamedCollectionFromASTs(ASTs asts, bool throw_unknown_collection)
     {
         if (asts.empty())
-            return std::nullopt;
+            return nullptr;
 
         const auto * identifier = asts[0]->as<ASTIdentifier>();
         if (!identifier)
-            return std::nullopt;
+            return nullptr;
 
-        return identifier->name();
+        const auto & collection_name = identifier->name();
+        if (throw_unknown_collection)
+            return NamedCollectionFactory::instance().get(collection_name);
+        return NamedCollectionFactory::instance().tryGet(collection_name);
     }
 
     std::optional<std::pair<std::string, std::variant<Field, ASTPtr>>> getKeyValueFromAST(ASTPtr ast, bool fallback_to_ast_value, ContextPtr context)
@@ -72,18 +74,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
     NamedCollectionUtils::loadIfNot();
 
-    auto collection_name = getCollectionName(asts);
-    if (!collection_name.has_value())
-        return nullptr;
-
-    context->checkAccess(AccessType::NAMED_COLLECTION, *collection_name);
-
-    NamedCollectionPtr collection;
-    if (throw_unknown_collection)
-        collection = NamedCollectionFactory::instance().get(*collection_name);
-    else
-        collection = NamedCollectionFactory::instance().tryGet(*collection_name);
-
+    auto collection = tryGetNamedCollectionFromASTs(asts, throw_unknown_collection);
     if (!collection)
         return nullptr;
 
@@ -92,23 +83,14 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     if (asts.size() == 1)
         return collection_copy;
 
-    const auto allow_override_by_default = context->getSettings().allow_named_collection_override_by_default;
-
     for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
     {
         auto value_override = getKeyValueFromAST(*it, /* fallback_to_ast_value */complex_args != nullptr, context);
 
+        if (!value_override && !(*it)->as<ASTFunction>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument or function");
         if (!value_override)
-        {
-            if (!(*it)->as<ASTFunction>())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument or function");
-            if (allow_override_by_default)
-                continue;
-            // if allow_override_by_default is false we don't allow extra arguments
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed because setting allow_override_by_default is disabled");
-        }
-        else if (!collection_copy->isOverridable(value_override->first, allow_override_by_default))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", value_override->first);
+            continue;
 
         if (const ASTPtr * value = std::get_if<ASTPtr>(&value_override->second))
         {
@@ -117,34 +99,26 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         }
 
         const auto & [key, value] = *value_override;
-        collection_copy->setOrUpdate<String>(key, toString(std::get<Field>(value)), {});
+        collection_copy->setOrUpdate<String>(key, toString(std::get<Field>(value_override->second)));
     }
 
     return collection_copy;
 }
 
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
     auto collection_name = config.getString(config_prefix + ".name", "");
     if (collection_name.empty())
         return nullptr;
-
-    context->checkAccess(AccessType::NAMED_COLLECTION, collection_name);
 
     const auto & collection = NamedCollectionFactory::instance().get(collection_name);
     auto collection_copy = collection->duplicate();
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
-    const auto allow_override_by_default = context->getSettings().allow_named_collection_override_by_default;
     for (const auto & key : keys)
-    {
-        if (collection_copy->isOverridable(key, allow_override_by_default))
-            collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key), {});
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
-    }
+        collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key));
 
     return collection_copy;
 }

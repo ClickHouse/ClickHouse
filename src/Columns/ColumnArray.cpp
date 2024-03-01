@@ -109,7 +109,7 @@ MutableColumnPtr ColumnArray::cloneResized(size_t to_size) const
             offset = getOffsets().back();
         }
 
-        res->getOffsets().resize_exact(to_size);
+        res->getOffsets().resize(to_size);
         for (size_t i = from_size; i < to_size; ++i)
             res->getOffsets()[i] = offset;
     }
@@ -205,7 +205,7 @@ void ColumnArray::insertData(const char * pos, size_t length)
 }
 
 
-StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
+StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     size_t array_size = sizeAt(n);
     size_t offset = offsetAt(n);
@@ -427,12 +427,6 @@ void ColumnArray::reserve(size_t n)
     getData().reserve(n); /// The average size of arrays is not taken into account here. Or it is considered to be no more than 1.
 }
 
-void ColumnArray::shrinkToFit()
-{
-    getOffsets().shrink_to_fit();
-    getData().shrinkToFit();
-}
-
 void ColumnArray::ensureOwnership()
 {
     getData().ensureOwnership();
@@ -554,21 +548,6 @@ void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t leng
 }
 
 
-MutableColumnPtr ColumnArray::getDataInRange(size_t start, size_t length) const
-{
-    if (start + length > getOffsets().size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnArray::getDataPtrForRange method. "
-            "[start({}) + length({}) > offsets.size({})]", start, length, getOffsets().size());
-
-    size_t start_offset = offsetAt(start);
-    size_t end_offset = offsetAt(start + length);
-
-    auto res = getData().cloneEmpty();
-    res->insertRangeFrom(getData(), start_offset, end_offset - start_offset);
-    return res;
-}
-
-
 ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     if (typeid_cast<const ColumnUInt8 *>(data.get()))
@@ -624,7 +603,7 @@ void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
 
     ssize_t index = mask.size() - 1;
     ssize_t from = offsets_data.size() - 1;
-    offsets_data.resize_exact(mask.size());
+    offsets_data.resize(mask.size());
     UInt64 last_offset = offsets_data[from];
     while (index >= 0)
     {
@@ -852,7 +831,7 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     auto res = ColumnArray::create(data->cloneEmpty());
 
     Offsets & res_offsets = res->getOffsets();
-    res_offsets.resize_exact(limit);
+    res_offsets.resize(limit);
     size_t current_offset = 0;
 
     for (size_t i = 0; i < limit; ++i)
@@ -963,9 +942,9 @@ ColumnPtr ColumnArray::compress() const
     size_t byte_size = data_compressed->byteSize() + offsets_compressed->byteSize();
 
     return ColumnCompressed::create(size(), byte_size,
-        [my_data_compressed = std::move(data_compressed), my_offsets_compressed = std::move(offsets_compressed)]
+        [data_compressed = std::move(data_compressed), offsets_compressed = std::move(offsets_compressed)]
         {
-            return ColumnArray::create(my_data_compressed->decompress(), my_offsets_compressed->decompress());
+            return ColumnArray::create(data_compressed->decompress(), offsets_compressed->decompress());
         });
 }
 

@@ -151,7 +151,7 @@ public:
         s -= n;
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const UInt8 *) const override
+    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin) const override
     {
         return data->serializeValueIntoArena(0, arena, begin);
     }
@@ -230,12 +230,12 @@ public:
         data->getExtremes(min, max);
     }
 
-    void forEachSubcolumn(MutableColumnCallback callback) override
+    void forEachSubcolumn(ColumnCallback callback) const override
     {
         callback(data);
     }
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
     {
         callback(*data);
         data->forEachSubcolumnRecursively(callback);
@@ -291,10 +291,5 @@ public:
 
     bool isCollationSupported() const override { return data->isCollationSupported(); }
 };
-
-ColumnConst::Ptr createColumnConst(const ColumnPtr & column, Field value);
-ColumnConst::Ptr createColumnConst(const ColumnPtr & column, size_t const_value_index);
-ColumnConst::Ptr createColumnConstWithDefaultValue(const ColumnPtr  &column);
-
 
 }

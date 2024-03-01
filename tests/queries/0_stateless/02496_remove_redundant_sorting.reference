@@ -1,13 +1,21 @@
 -- Disabled query_plan_remove_redundant_sorting
 -- ORDER BY clauses in subqueries are untouched
 Expression (Projection)
+Header: number UInt64
   Sorting (Sorting for ORDER BY)
+  Header: number UInt64
     Expression ((Before ORDER BY + Projection))
+    Header: number UInt64
       Sorting (Sorting for ORDER BY)
+      Header: number UInt64
         Expression ((Before ORDER BY + Projection))
+        Header: number UInt64
           Sorting (Sorting for ORDER BY)
+          Header: number UInt64
             Expression (Before ORDER BY)
-              ReadFromSystemNumbers
+            Header: number UInt64
+              ReadFromStorage (SystemNumbers)
+              Header: number UInt64
 -- Enabled query_plan_remove_redundant_sorting
 -- ORDER BY removes ORDER BY clauses in subqueries
 -- query
@@ -26,9 +34,13 @@ FROM
 ORDER BY number ASC
 -- explain
 Expression (Projection)
+Header: number UInt64
   Sorting (Sorting for ORDER BY)
+  Header: number UInt64
     Expression ((Before ORDER BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-      ReadFromSystemNumbers
+    Header: number UInt64
+      ReadFromStorage (SystemNumbers)
+      Header: number UInt64
 -- execute
 0
 1
@@ -50,12 +62,19 @@ FROM
 ORDER BY number ASC
 -- explain
 Expression (Projection)
+Header: number UInt64
   Sorting (Sorting for ORDER BY)
+  Header: number UInt64
     Expression ((Before ORDER BY + Projection))
+    Header: number UInt64
       Filling
+      Header: number UInt64
         Sorting (Sorting for ORDER BY)
+        Header: number UInt64
           Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-            ReadFromSystemNumbers
+          Header: number UInt64
+            ReadFromStorage (SystemNumbers)
+            Header: number UInt64
 -- execute
 0
 1
@@ -78,13 +97,21 @@ FROM
 ORDER BY number ASC
 -- explain
 Expression (Projection)
+Header: number UInt64
   Sorting (Sorting for ORDER BY)
+  Header: number UInt64
     Expression ((Before ORDER BY + Projection))
+    Header: number UInt64
       LimitBy
+      Header: number UInt64
         Expression (Before LIMIT BY)
+        Header: number UInt64
           Sorting (Sorting for ORDER BY)
+          Header: number UInt64
             Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-              ReadFromSystemNumbers
+            Header: number UInt64
+              ReadFromStorage (SystemNumbers)
+              Header: number UInt64
 -- execute
 0
 1
@@ -113,26 +140,39 @@ FROM
     )
     ORDER BY number DESC
 ) AS t2
-ORDER BY t1.number, t2.number
 -- explain
-Expression (Projection)
-  Sorting (Sorting for ORDER BY)
-    Expression (Before ORDER BY)
-      Join (JOIN FillRightFirst)
-        Expression ((Before JOIN + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-          ReadFromSystemNumbers
-        Expression ((Joined actions + (Rename joined columns + (Projection + (Before ORDER BY + (Projection + Before ORDER BY))))))
-          ReadFromSystemNumbers
+Expression ((Projection + Before ORDER BY))
+Header: number UInt64
+        t2.number UInt64
+  Join (JOIN FillRightFirst)
+  Header: number UInt64
+          t2.number UInt64
+    Expression ((Before JOIN + Projection))
+    Header: number UInt64
+      Sorting (Sorting for ORDER BY)
+      Header: number UInt64
+        Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
+        Header: number UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
+    Expression ((Joined actions + (Rename joined columns + Projection)))
+    Header: t2.number UInt64
+      Sorting (Sorting for ORDER BY)
+      Header: number UInt64
+        Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
+        Header: number UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
 -- execute
-0	0
-0	1
 0	2
-1	0
-1	1
+0	1
+0	0
 1	2
-2	0
-2	1
+1	1
+1	0
 2	2
+2	1
+2	0
 -- CROSS JOIN with subqueries, ORDER BY in main query -> all ORDER BY clauses will be removed in subqueries
 -- query
 SELECT *
@@ -160,13 +200,25 @@ FROM
 ORDER BY t1.number, t2.number
 -- explain
 Expression (Projection)
+Header: number UInt64
+        t2.number UInt64
   Sorting (Sorting for ORDER BY)
+  Header: number UInt64
+          t2.number UInt64
     Expression (Before ORDER BY)
+    Header: number UInt64
+            t2.number UInt64
       Join (JOIN FillRightFirst)
+      Header: number UInt64
+              t2.number UInt64
         Expression ((Before JOIN + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-          ReadFromSystemNumbers
+        Header: number UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
         Expression ((Joined actions + (Rename joined columns + (Projection + (Before ORDER BY + (Projection + Before ORDER BY))))))
-          ReadFromSystemNumbers
+        Header: t2.number UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
 -- execute
 0	0
 0	1
@@ -192,18 +244,20 @@ FROM
     ORDER BY number DESC
 )
 GROUP BY number
-ORDER BY number
 -- explain
-Expression (Projection)
-  Sorting (Sorting for ORDER BY)
-    Expression (Before ORDER BY)
-      Aggregating
-        Expression ((Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-          ReadFromSystemNumbers
+Expression ((Projection + Before ORDER BY))
+Header: sum(number) UInt64
+  Aggregating
+  Header: number UInt64
+          sum(number) UInt64
+    Expression ((Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
+    Header: number UInt64
+      ReadFromStorage (SystemNumbers)
+      Header: number UInt64
 -- execute
 0
-1
 2
+1
 -- GROUP BY with aggregation function which depends on order -> keep ORDER BY in first subquery, and eliminate in second subquery
 -- query
 SELECT any(number)
@@ -219,18 +273,19 @@ FROM
     ORDER BY number DESC
 )
 GROUP BY number
-ORDER BY number
 -- explain
-Expression (Projection)
-  Sorting (Sorting for ORDER BY)
-    Expression (Before ORDER BY)
-      Aggregating
-        Expression ((Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-          ReadFromSystemNumbers
+Expression ((Projection + Before ORDER BY))
+Header: number UInt64
+  Aggregating
+  Header: number UInt64
+    Expression ((Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
+    Header: number UInt64
+      ReadFromStorage (SystemNumbers)
+      Header: number UInt64
 -- execute
 0
-1
 2
+1
 -- query with aggregation function but w/o GROUP BY -> remove sorting
 -- query
 SELECT sum(number)
@@ -242,9 +297,13 @@ FROM
 )
 -- explain
 Expression ((Projection + Before ORDER BY))
+Header: sum(number) UInt64
   Aggregating
+  Header: sum(number) UInt64
     Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-      ReadFromSystemNumbers
+    Header: number UInt64
+      ReadFromStorage (SystemNumbers)
+      Header: number UInt64
 -- execute
 45
 -- check that optimization is applied recursively to subqueries as well
@@ -265,11 +324,18 @@ FROM
 ORDER BY a ASC
 -- explain
 Expression (Projection)
+Header: a UInt64
   Sorting (Sorting for ORDER BY)
+  Header: a UInt64
     Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
+    Header: a UInt64
       Aggregating
+      Header: number UInt64
+              sum(number) UInt64
         Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-          ReadFromSystemNumbers
+        Header: number UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
 -- execute
 0
 1
@@ -291,11 +357,17 @@ FROM
 ORDER BY a ASC
 -- explain
 Expression (Projection)
+Header: a UInt64
   Sorting (Sorting for ORDER BY)
+  Header: a UInt64
     Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
+    Header: a UInt64
       Aggregating
+      Header: number UInt64
         Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-          ReadFromSystemNumbers
+        Header: number UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
 -- execute
 0
 1
@@ -320,18 +392,20 @@ FROM
     GROUP BY number
 )
 WHERE a > 0
-ORDER BY a
 -- explain
-Expression (Projection)
-  Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + ))
-      Aggregating
-        Filter
-          Filter (( + (Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY))))))
-            ReadFromSystemNumbers
+Expression ((Projection + (Before ORDER BY + )))
+Header: a UInt64
+  Aggregating
+  Header: number UInt64
+    Filter
+    Header: number UInt64
+      Filter (( + (Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY))))))
+      Header: number UInt64
+        ReadFromStorage (SystemNumbers)
+        Header: number UInt64
 -- execute
-1
 2
+1
 -- GROUP BY in most inner query makes execution parallelized, and removing inner sorting steps will keep it that way. But need to correctly update data streams sorting properties after removing sorting steps
 -- query
 SELECT *
@@ -350,11 +424,17 @@ FROM
 ORDER BY number ASC
 -- explain
 Expression (Projection)
+Header: number UInt64
   Sorting (Sorting for ORDER BY)
+  Header: number UInt64
     Expression ((Before ORDER BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
+    Header: number UInt64
       Aggregating
+      Header: number UInt64
         Expression (Before GROUP BY)
-          ReadFromSystemNumbers
+        Header: number UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
 -- execute
 0
 1
@@ -379,16 +459,28 @@ FROM
 )
 -- explain
 Expression ((Projection + Before ORDER BY))
+Header: toTypeName(sum(v)) String
+        sum(v) Float64
   Aggregating
+  Header: sum(v) Float64
     Expression ((Before GROUP BY + Projection))
+    Header: v Float64
       Sorting (Sorting for ORDER BY)
+      Header: v Float64
         Union
+        Header: v Float64
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Float64
             ReadFromStorage (SystemOne)
+            Header: dummy UInt8
           Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Float64
             ReadFromStorage (SystemOne)
+            Header: dummy UInt8
           Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Float64
             ReadFromStorage (SystemOne)
+            Header: dummy UInt8
 -- execute
 Float64	9007199254740994
 -- sum() with Nullable(Floats) depends on order, -> sorting is not removed here
@@ -411,16 +503,28 @@ FROM
 )
 -- explain
 Expression ((Projection + Before ORDER BY))
+Header: toTypeName(sum(v)) String
+        sum(v) Nullable(Float64)
   Aggregating
+  Header: sum(v) Nullable(Float64)
     Expression ((Before GROUP BY + Projection))
+    Header: v Nullable(Float64)
       Sorting (Sorting for ORDER BY)
+      Header: v Nullable(Float64)
         Union
+        Header: v Nullable(Float64)
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Nullable(Float64)
             ReadFromStorage (SystemOne)
+            Header: dummy UInt8
           Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Nullable(Float64)
             ReadFromStorage (SystemOne)
+            Header: dummy UInt8
           Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Nullable(Float64)
             ReadFromStorage (SystemOne)
+            Header: dummy UInt8
 -- execute
 Nullable(Float64)	9007199254740994
 -- sumIf() with Floats depends on order, -> sorting is not removed here
@@ -443,16 +547,29 @@ FROM
 )
 -- explain
 Expression ((Projection + Before ORDER BY))
+Header: toTypeName(sumIf(v, greater(v, 0))) String
+        sumIf(v, greater(v, 0)) Float64
   Aggregating
+  Header: sumIf(v, greater(v, 0)) Float64
     Expression ((Before GROUP BY + Projection))
+    Header: v Float64
+            greater(v, 0) UInt8
       Sorting (Sorting for ORDER BY)
+      Header: v Float64
         Union
+        Header: v Float64
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Float64
             ReadFromStorage (SystemOne)
+            Header: dummy UInt8
           Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Float64
             ReadFromStorage (SystemOne)
+            Header: dummy UInt8
           Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Float64
             ReadFromStorage (SystemOne)
+            Header: dummy UInt8
 -- execute
 Float64	9007199254740994
 -- disable common optimization to avoid functions to be lifted up (liftUpFunctions optimization), needed for testing with stateful function
@@ -470,12 +587,22 @@ FROM
 ORDER BY number ASC
 -- explain
 Expression (Projection)
+Header: number UInt64
+        neighbor(number, 2) UInt64
   Sorting (Sorting for ORDER BY)
+  Header: number UInt64
+          neighbor(number, 2) UInt64
     Expression (Before ORDER BY)
+    Header: number UInt64
+            neighbor(number, 2) UInt64
       Expression (Projection)
+      Header: number UInt64
         Sorting (Sorting for ORDER BY)
+        Header: number UInt64
           Expression (Before ORDER BY)
-            ReadFromSystemNumbers
+          Header: number UInt64
+            ReadFromStorage (SystemNumbers)
+            Header: number UInt64
 -- execute
 0	0
 1	0
@@ -500,11 +627,19 @@ FROM
 )
 -- explain
 Expression (Projection)
+Header: number UInt64
+        plus(number, 2) UInt64
   Expression (Before ORDER BY)
+  Header: number UInt64
+          plus(number, 2) UInt64
     Expression (Projection)
+    Header: number UInt64
       Sorting (Sorting for ORDER BY)
+      Header: number UInt64
         Expression (Before ORDER BY)
-          ReadFromSystemNumbers
+        Header: number UInt64
+          ReadFromStorage (SystemNumbers)
+          Header: number UInt64
 -- execute
 9	11
 8	10

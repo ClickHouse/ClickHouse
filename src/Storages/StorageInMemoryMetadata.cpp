@@ -40,9 +40,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , table_ttl(other.table_ttl)
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
     , select(other.select)
-    , refresh(other.refresh ? other.refresh->clone() : nullptr)
     , comment(other.comment)
-    , metadata_version(other.metadata_version)
 {
 }
 
@@ -70,9 +68,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     else
         settings_changes.reset();
     select = other.select;
-    refresh = other.refresh ? other.refresh->clone() : nullptr;
     comment = other.comment;
-    metadata_version = other.metadata_version;
     return *this;
 }
 
@@ -124,23 +120,6 @@ void StorageInMemoryMetadata::setSettingsChanges(const ASTPtr & settings_changes
 void StorageInMemoryMetadata::setSelectQuery(const SelectQueryDescription & select_)
 {
     select = select_;
-}
-
-void StorageInMemoryMetadata::setRefresh(ASTPtr refresh_)
-{
-    refresh = refresh_;
-}
-
-void StorageInMemoryMetadata::setMetadataVersion(int32_t metadata_version_)
-{
-    metadata_version = metadata_version_;
-}
-
-StorageInMemoryMetadata StorageInMemoryMetadata::withMetadataVersion(int32_t metadata_version_) const
-{
-    StorageInMemoryMetadata copy(*this);
-    copy.setMetadataVersion(metadata_version_);
-    return copy;
 }
 
 const ColumnsDescription & StorageInMemoryMetadata::getColumns() const
@@ -200,7 +179,7 @@ TTLDescription StorageInMemoryMetadata::getRowsTTL() const
 
 bool StorageInMemoryMetadata::hasRowsTTL() const
 {
-    return table_ttl.rows_ttl.expression_ast != nullptr;
+    return table_ttl.rows_ttl.expression != nullptr;
 }
 
 TTLDescriptions StorageInMemoryMetadata::getRowsWhereTTLs() const
@@ -243,10 +222,7 @@ bool StorageInMemoryMetadata::hasAnyGroupByTTL() const
     return !table_ttl.group_by_ttl.empty();
 }
 
-ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
-    const NameSet & updated_columns,
-    bool include_ttl_target,
-    const HasDependencyCallback & has_dependency) const
+ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet & updated_columns, bool include_ttl_target) const
 {
     if (updated_columns.empty())
         return {};
@@ -258,8 +234,9 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
     NameSet required_ttl_columns;
     NameSet updated_ttl_columns;
 
-    auto add_dependent_columns = [&updated_columns](const Names & required_columns, auto & to_set)
+    auto add_dependent_columns = [&updated_columns](const auto & expression, auto & to_set)
     {
+        auto required_columns = expression->getRequiredColumns();
         for (const auto & dependency : required_columns)
         {
             if (updated_columns.contains(dependency))
@@ -273,20 +250,14 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
     };
 
     for (const auto & index : getSecondaryIndices())
-    {
-        if (has_dependency(index.name, ColumnDependency::SKIP_INDEX))
-            add_dependent_columns(index.expression->getRequiredColumns(), indices_columns);
-    }
+        add_dependent_columns(index.expression, indices_columns);
 
     for (const auto & projection : getProjections())
-    {
-        if (has_dependency(projection.name, ColumnDependency::PROJECTION))
-            add_dependent_columns(projection.getRequiredColumns(), projections_columns);
-    }
+        add_dependent_columns(&projection, projections_columns);
 
     auto add_for_rows_ttl = [&](const auto & expression, auto & to_set)
     {
-        if (add_dependent_columns(expression.getNames(), to_set) && include_ttl_target)
+        if (add_dependent_columns(expression, to_set) && include_ttl_target)
         {
             /// Filter all columns, if rows TTL expression have to be recalculated.
             for (const auto & column : getColumns().getAllPhysical())
@@ -295,25 +266,25 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
     };
 
     if (hasRowsTTL())
-        add_for_rows_ttl(getRowsTTL().expression_columns, required_ttl_columns);
+        add_for_rows_ttl(getRowsTTL().expression, required_ttl_columns);
 
     for (const auto & entry : getRowsWhereTTLs())
-        add_for_rows_ttl(entry.expression_columns, required_ttl_columns);
+        add_for_rows_ttl(entry.expression, required_ttl_columns);
 
     for (const auto & entry : getGroupByTTLs())
-        add_for_rows_ttl(entry.expression_columns, required_ttl_columns);
+        add_for_rows_ttl(entry.expression, required_ttl_columns);
 
     for (const auto & entry : getRecompressionTTLs())
-        add_dependent_columns(entry.expression_columns.getNames(), required_ttl_columns);
+        add_dependent_columns(entry.expression, required_ttl_columns);
 
     for (const auto & [name, entry] : getColumnTTLs())
     {
-        if (add_dependent_columns(entry.expression_columns.getNames(), required_ttl_columns) && include_ttl_target)
+        if (add_dependent_columns(entry.expression, required_ttl_columns) && include_ttl_target)
             updated_ttl_columns.insert(name);
     }
 
     for (const auto & entry : getMoveTTLs())
-        add_dependent_columns(entry.expression_columns.getNames(), required_ttl_columns);
+        add_dependent_columns(entry.expression, required_ttl_columns);
 
     //TODO what about rows_where_ttl and group_by_ttl ??
 
@@ -327,6 +298,7 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
         res.emplace(column, ColumnDependency::TTL_TARGET);
 
     return res;
+
 }
 
 Block StorageInMemoryMetadata::getSampleBlockInsertable() const

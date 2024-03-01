@@ -1,18 +1,30 @@
 #!/usr/bin/env python3
 
+from distutils.version import StrictVersion
+from pathlib import Path
+from typing import List, Tuple
 import argparse
 import logging
 import subprocess
 import sys
-from distutils.version import StrictVersion
-from pathlib import Path
-from typing import List, Tuple
+
+from github import Github
 
 from build_download_helper import download_builds_filter
-from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPORT_PATH, TEMP_PATH
-from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
+from clickhouse_helper import (
+    ClickHouseHelper,
+    mark_flaky_tests,
+    prepare_tests_results_for_clickhouse,
+)
+from commit_status_helper import RerunHelper, get_commit, post_commit_status
+from docker_pull_helper import get_images_with_versions, DockerImage
+from env_helper import TEMP_PATH, REPORTS_PATH
+from get_robot_token import get_best_robot_token
+from pr_info import PRInfo
+from report import TestResults, TestResult
+from s3_helper import S3Helper
 from stopwatch import Stopwatch
+from upload_result_helper import upload_results
 
 IMAGE_UBUNTU = "clickhouse/test-old-ubuntu"
 IMAGE_CENTOS = "clickhouse/test-old-centos"
@@ -55,19 +67,19 @@ def process_result(
     glibc_log_path = result_directory / "glibc.log"
     test_results = process_glibc_check(glibc_log_path, max_glibc_version)
 
-    status = SUCCESS
+    status = "success"
     description = "Compatibility check passed"
 
     if check_glibc:
         if len(test_results) > 1 or test_results[0].status != "OK":
-            status = FAILURE
+            status = "failure"
             description = "glibc check failed"
 
-    if status == SUCCESS and check_distributions:
+    if status == "success" and check_distributions:
         for operating_system in ("ubuntu:12.04", "centos:5"):
             test_result = process_os_check(result_directory / operating_system)
             if test_result.status != "OK":
-                status = FAILURE
+                status = "failure"
                 description = f"Old {operating_system} failed"
                 test_results += [test_result]
                 break
@@ -134,9 +146,18 @@ def main():
     stopwatch = Stopwatch()
 
     temp_path = Path(TEMP_PATH)
-    reports_path = Path(REPORT_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
-    reports_path.mkdir(parents=True, exist_ok=True)
+    reports_path = Path(REPORTS_PATH)
+
+    pr_info = PRInfo()
+
+    gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
+
+    rerun_helper = RerunHelper(commit, args.check_name)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
@@ -167,25 +188,26 @@ def main():
         run_commands.extend(check_glibc_commands)
 
     if args.check_distributions:
-        centos_image = pull_image(get_docker_image(IMAGE_CENTOS))
-        ubuntu_image = pull_image(get_docker_image(IMAGE_UBUNTU))
+        docker_images = get_images_with_versions(
+            reports_path, [IMAGE_CENTOS, IMAGE_UBUNTU]
+        )
         check_distributions_commands = get_run_commands_distributions(
             packages_path,
             result_path,
             server_log_path,
-            centos_image,
-            ubuntu_image,
+            docker_images[0],
+            docker_images[1],
         )
         run_commands.extend(check_distributions_commands)
 
-    state = SUCCESS
+    state = "success"
     for run_command in run_commands:
         try:
             logging.info("Running command %s", run_command)
             subprocess.check_call(run_command, shell=True)
         except subprocess.CalledProcessError as ex:
             logging.info("Exception calling command %s", ex)
-            state = FAILURE
+            state = "failure"
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
@@ -198,6 +220,7 @@ def main():
     else:
         raise Exception("Can't determine max glibc version")
 
+    s3_helper = S3Helper()
     state, description, test_results, additional_logs = process_result(
         result_path,
         server_log_path,
@@ -206,16 +229,33 @@ def main():
         max_glibc_version,
     )
 
-    JobReport(
-        description=description,
-        test_results=test_results,
-        status=state,
-        start_time=stopwatch.start_time_str,
-        duration=stopwatch.duration_seconds,
-        additional_files=additional_logs,
-    ).dump()
+    ch_helper = ClickHouseHelper()
+    mark_flaky_tests(ch_helper, args.check_name, test_results)
 
-    if state == FAILURE:
+    report_url = upload_results(
+        s3_helper,
+        pr_info.number,
+        pr_info.sha,
+        test_results,
+        additional_logs,
+        args.check_name,
+    )
+    print(f"::notice ::Report url: {report_url}")
+    post_commit_status(commit, state, report_url, description, args.check_name, pr_info)
+
+    prepared_events = prepare_tests_results_for_clickhouse(
+        pr_info,
+        test_results,
+        state,
+        stopwatch.duration_seconds,
+        stopwatch.start_time_str,
+        report_url,
+        args.check_name,
+    )
+
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+
+    if state == "failure":
         sys.exit(1)
 
 

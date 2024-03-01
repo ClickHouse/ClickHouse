@@ -9,7 +9,6 @@
 #include <Common/Fiber.h>
 #include <Common/Epoll.h>
 #include <Common/TimerDescriptor.h>
-#include <Common/AsyncTaskExecutor.h>
 
 namespace DB
 {
@@ -20,58 +19,138 @@ namespace DB
 /// socket and receive timeout are added in epoll and execution returns to the main program.
 /// So, you can poll this epoll file descriptor to determine when to resume
 /// packet receiving.
-class PacketReceiver : public AsyncTaskExecutor
+class PacketReceiver
 {
 public:
-    explicit PacketReceiver(Connection * connection_);
-
-    bool isPacketReady() const { return !is_read_in_process && !is_timeout_expired && !exception; }
-    Packet getPacket() { return std::move(packet); }
-
-    bool hasException() const { return exception.operator bool(); }
-    std::exception_ptr getException() const { return exception; }
-
-    bool isTimeoutExpired() const { return is_timeout_expired; }
-    Poco::Timespan getTimeout() const { return timeout; }
-
-    void setTimeout(const Poco::Timespan & timeout_)
+    explicit PacketReceiver(Connection * connection_) : connection(connection_)
     {
-        timeout_descriptor.setRelative(timeout_);
-        timeout = timeout_;
+        epoll.add(receive_timeout.getDescriptor());
+        epoll.add(connection->getSocket()->impl()->sockfd());
+
+        fiber = boost::context::fiber(std::allocator_arg_t(), fiber_stack, Routine{*this});
+    }
+
+    /// Resume packet receiving.
+    std::variant<int, Packet, Poco::Timespan, std::exception_ptr> resume()
+    {
+        /// If there is no pending data, check receive timeout.
+        if (!connection->hasReadPendingData() && !checkReceiveTimeout())
+        {
+            /// Receive timeout expired.
+            return connection->getSocket()->getReceiveTimeout();
+        }
+
+        /// Resume fiber.
+        fiber = std::move(fiber).resume();
+        if (exception)
+            return std::move(exception);
+
+        if (is_read_in_process)
+            return epoll.getFileDescriptor();
+
+        /// Receiving packet was finished.
+        return std::move(packet);
+    }
+
+    void cancel()
+    {
+        Fiber to_destroy = std::move(fiber);
+        connection = nullptr;
     }
 
     int getFileDescriptor() const { return epoll.getFileDescriptor(); }
 
-private:
-    bool checkBeforeTaskResume() override;
-    void afterTaskResume() override {}
-
-    void processAsyncEvent(int fd, Poco::Timespan socket_timeout, AsyncEventTimeoutType, const std::string &, uint32_t) override;
-    void clearAsyncEvent() override;
-
-    void processException(std::exception_ptr e) override { exception = e; }
-
-    struct Task : public AsyncTask
+    void setReceiveTimeout(const Poco::Timespan & timeout)
     {
-        Task(PacketReceiver & receiver_) : receiver(receiver_) {}
+        receive_timeout.setRelative(timeout);
+    }
 
-        PacketReceiver & receiver;
-
-        void run(AsyncCallback async_callback, SuspendCallback suspend_callback) override;
-    };
-
+private:
     /// When epoll file descriptor is ready, check if it's an expired timeout.
     /// Return false if receive timeout expired and socket is not ready, return true otherwise.
-    bool checkTimeout();
+    bool checkReceiveTimeout()
+    {
+        bool is_socket_ready = false;
+        bool is_receive_timeout_expired = false;
+
+        epoll_event events[2];
+        events[0].data.fd = events[1].data.fd = -1;
+        size_t ready_count = epoll.getManyReady(2, events, true);
+
+        for (size_t i = 0; i != ready_count; ++i)
+        {
+            if (events[i].data.fd == connection->getSocket()->impl()->sockfd())
+                is_socket_ready = true;
+            if (events[i].data.fd == receive_timeout.getDescriptor())
+                is_receive_timeout_expired = true;
+        }
+
+        if (is_receive_timeout_expired && !is_socket_ready)
+        {
+            receive_timeout.reset();
+            return false;
+        }
+
+        return true;
+    }
+
+    struct Routine
+    {
+        PacketReceiver & receiver;
+
+        struct ReadCallback
+        {
+            PacketReceiver & receiver;
+            Fiber & sink;
+
+            void operator()(int, Poco::Timespan timeout, const std::string &)
+            {
+                receiver.receive_timeout.setRelative(timeout);
+                receiver.is_read_in_process = true;
+                sink = std::move(sink).resume();
+                receiver.is_read_in_process = false;
+                receiver.receive_timeout.reset();
+            }
+        };
+
+        Fiber operator()(Fiber && sink)
+        {
+            try
+            {
+                while (true)
+                {
+                    {
+                        AsyncCallbackSetter async_setter(receiver.connection, ReadCallback{receiver, sink});
+                        receiver.packet = receiver.connection->receivePacket();
+                    }
+                    sink = std::move(sink).resume();
+                }
+
+            }
+            catch (const boost::context::detail::forced_unwind &)
+            {
+                /// This exception is thrown by fiber implementation in case if fiber is being deleted but hasn't exited
+                /// It should not be caught or it will segfault.
+                /// Other exceptions must be caught
+                throw;
+            }
+            catch (...)
+            {
+                receiver.exception = std::current_exception();
+            }
+
+            return std::move(sink);
+        }
+    };
 
     Connection * connection;
-    int socket_fd = -1;
     Packet packet;
 
-    /// We use timer descriptor for checking socket timeouts.
-    TimerDescriptor timeout_descriptor;
-    Poco::Timespan timeout;
-    bool is_timeout_expired = false;
+    Fiber fiber;
+    FiberStack fiber_stack;
+
+    /// We use timer descriptor for checking socket receive timeout.
+    TimerDescriptor receive_timeout;
 
     /// In read callback we add socket file descriptor and timer descriptor with receive timeout
     /// in epoll, so we can return epoll file descriptor outside for polling.

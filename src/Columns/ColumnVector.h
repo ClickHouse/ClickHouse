@@ -1,16 +1,15 @@
 #pragma once
 
 #include <cmath>
-#include <Columns/ColumnVectorHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Core/CompareHelper.h>
+#include <Columns/ColumnVectorHelper.h>
+#include <base/unaligned.h>
 #include <Core/Field.h>
+#include <Common/assert_cast.h>
+#include <Common/TargetSpecific.h>
 #include <Core/TypeId.h>
 #include <base/TypeName.h>
-#include <base/unaligned.h>
-#include <Common/TargetSpecific.h>
-#include <Common/assert_cast.h>
 
 #include "config.h"
 
@@ -25,6 +24,91 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
+
+
+/** Stuff for comparing numbers.
+  * Integer values are compared as usual.
+  * Floating-point numbers are compared this way that NaNs always end up at the end
+  *  (if you don't do this, the sort would not work at all).
+  */
+template <class T, class U = T>
+struct CompareHelper
+{
+    static constexpr bool less(T a, U b, int /*nan_direction_hint*/) { return a < b; }
+    static constexpr bool greater(T a, U b, int /*nan_direction_hint*/) { return a > b; }
+    static constexpr bool equals(T a, U b, int /*nan_direction_hint*/) { return a == b; }
+
+    /** Compares two numbers. Returns a number less than zero, equal to zero, or greater than zero if a < b, a == b, a > b, respectively.
+      * If one of the values is NaN, then
+      * - if nan_direction_hint == -1 - NaN are considered less than all numbers;
+      * - if nan_direction_hint == 1 - NaN are considered to be larger than all numbers;
+      * Essentially: nan_direction_hint == -1 says that the comparison is for sorting in descending order.
+      */
+    static constexpr int compare(T a, U b, int /*nan_direction_hint*/)
+    {
+        return a > b ? 1 : (a < b ? -1 : 0);
+    }
+};
+
+template <class T>
+struct FloatCompareHelper
+{
+    static constexpr bool less(T a, T b, int nan_direction_hint)
+    {
+        const bool isnan_a = std::isnan(a);
+        const bool isnan_b = std::isnan(b);
+
+        if (isnan_a && isnan_b)
+            return false;
+        if (isnan_a)
+            return nan_direction_hint < 0;
+        if (isnan_b)
+            return nan_direction_hint > 0;
+
+        return a < b;
+    }
+
+    static constexpr bool greater(T a, T b, int nan_direction_hint)
+    {
+        const bool isnan_a = std::isnan(a);
+        const bool isnan_b = std::isnan(b);
+
+        if (isnan_a && isnan_b)
+            return false;
+        if (isnan_a)
+            return nan_direction_hint > 0;
+        if (isnan_b)
+            return nan_direction_hint < 0;
+
+        return a > b;
+    }
+
+    static constexpr bool equals(T a, T b, int nan_direction_hint)
+    {
+        return compare(a, b, nan_direction_hint) == 0;
+    }
+
+    static constexpr int compare(T a, T b, int nan_direction_hint)
+    {
+        const bool isnan_a = std::isnan(a);
+        const bool isnan_b = std::isnan(b);
+
+        if (unlikely(isnan_a || isnan_b))
+        {
+            if (isnan_a && isnan_b)
+                return 0;
+
+            return isnan_a
+                ? nan_direction_hint
+                : -nan_direction_hint;
+        }
+
+        return (T(0) < (a - b)) - ((a - b) < T(0));
+    }
+};
+
+template <class U> struct CompareHelper<Float32, U> : public FloatCompareHelper<Float32> {};
+template <class U> struct CompareHelper<Float64, U> : public FloatCompareHelper<Float64> {};
 
 
 /** A template for columns that use a simple array to store.
@@ -70,17 +154,6 @@ public:
         data.push_back(assert_cast<const Self &>(src).getData()[n]);
     }
 
-    void insertManyFrom(const IColumn & src, size_t position, size_t length) override
-    {
-        ValueType v = assert_cast<const Self &>(src).getData()[position];
-        data.resize_fill(data.size() + length, v);
-    }
-
-    void insertMany(const Field & field, size_t length) override
-    {
-        data.resize_fill(data.size() + length, static_cast<T>(field.get<T>()));
-    }
-
     void insertData(const char * pos, size_t) override
     {
         data.emplace_back(unalignedLoad<T>(pos));
@@ -101,7 +174,7 @@ public:
         data.resize_assume_reserved(data.size() - n);
     }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
@@ -180,11 +253,6 @@ public:
     void reserve(size_t n) override
     {
         data.reserve(n);
-    }
-
-    void shrinkToFit() override
-    {
-        data.shrink_to_fit();
     }
 
     const char * getFamilyName() const override { return TypeName<T>.data(); }
@@ -300,7 +368,7 @@ public:
         return this->template getIndicesOfNonDefaultRowsImpl<Self>(indices, from, limit);
     }
 
-    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
+    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const override;
 
     ColumnPtr compress() const override;
 

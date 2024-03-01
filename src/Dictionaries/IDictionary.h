@@ -109,9 +109,6 @@ public:
 
     virtual size_t getQueryCount() const = 0;
 
-    /// The percentage of time a lookup successfully found an entry.
-    /// When there were no lookups, it returns zero (instead of NaN).
-    /// The value is calculated non atomically and can be slightly off in the presence of concurrent lookups.
     virtual double getFoundRate() const = 0;
 
     virtual double getHitRate() const = 0;
@@ -205,51 +202,6 @@ public:
             const auto & default_values_column = default_values_columns[i];
 
             result.emplace_back(getColumn(attribute_name, result_type, key_columns, key_types, default_values_column));
-        }
-
-        return result;
-    }
-
-    /**
-     * Analogous to getColumn, but for dictGetAll
-     */
-    virtual ColumnPtr getColumnAllValues(
-        const std::string & attribute_name [[maybe_unused]],
-        const DataTypePtr & result_type [[maybe_unused]],
-        const Columns & key_columns [[maybe_unused]],
-        const DataTypes & key_types [[maybe_unused]],
-        const ColumnPtr & default_values_column [[maybe_unused]],
-        size_t limit [[maybe_unused]]) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Method getColumnAllValues is not supported for {} dictionary.",
-                        getDictionaryID().getNameForLogs());
-    }
-
-    /**
-     * Analogous to getColumns, but for dictGetAll
-     */
-    virtual Columns getColumnsAllValues(
-        const Strings & attribute_names,
-        const DataTypes & result_types,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        const Columns & default_values_columns,
-        size_t limit) const
-    {
-        size_t attribute_names_size = attribute_names.size();
-
-        Columns result;
-        result.reserve(attribute_names_size);
-
-        for (size_t i = 0; i < attribute_names_size; ++i)
-        {
-            const auto & attribute_name = attribute_names[i];
-            const auto & result_type = result_types[i];
-            const auto & default_values_column = default_values_columns[i];
-
-            result.emplace_back(getColumnAllValues(
-                attribute_name, result_type, key_columns, key_types, default_values_column, limit));
         }
 
         return result;

@@ -31,7 +31,7 @@ namespace Authentication
 static const size_t SCRAMBLE_LENGTH = 20;
 
 /** Generate a random string using ASCII characters but avoid separator character,
-  * produce pseudo random numbers between with about 7 bit worth of entropy between 1-127.
+  * produce pseudo random numbers between with about 7 bit worth of entropty between 1-127.
   * https://github.com/mysql/mysql-server/blob/8.0/mysys/crypt_genhash_impl.cc#L427
   */
 static String generateScramble()
@@ -102,7 +102,7 @@ void Native41::authenticate(
 
 #if USE_SSL
 
-Sha256Password::Sha256Password(RSA & public_key_, RSA & private_key_, LoggerPtr log_)
+Sha256Password::Sha256Password(RSA & public_key_, RSA & private_key_, Poco::Logger * log_)
     : public_key(public_key_), private_key(private_key_), log(log_)
 {
     /** Native authentication sent 20 bytes + '\0' character = 21 bytes.
@@ -147,7 +147,10 @@ void Sha256Password::authenticate(
             throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to write public key to memory. Error: {}", getOpenSSLErrors());
         }
         char * pem_buf = nullptr;
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wold-style-cast"
         int64_t pem_size = BIO_get_mem_data(mem, &pem_buf);
+#    pragma GCC diagnostic pop
         String pem(pem_buf, pem_size);
 
         LOG_TRACE(log, "Key: {}", pem);

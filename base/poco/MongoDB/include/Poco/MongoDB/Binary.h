@@ -40,7 +40,7 @@ namespace MongoDB
     /// A Binary stores its data in a Poco::Buffer<unsigned char>.
     {
     public:
-        using Ptr = SharedPtr<Binary>;
+        typedef SharedPtr<Binary> Ptr;
 
         Binary();
         /// Creates an empty Binary with subtype 0.

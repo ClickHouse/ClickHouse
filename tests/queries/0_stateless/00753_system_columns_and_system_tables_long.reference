@@ -6,7 +6,7 @@
 │ name2 │                   1 │                 0 │                 0 │                  0 │
 │ name3 │                   0 │                 0 │                 0 │                  0 │
 └───────┴─────────────────────┴───────────────────┴───────────────────┴────────────────────┘
-3	231	1
+231	1
 ┌─name────────────────┬─partition_key─┬─sorting_key───┬─primary_key─┬─sampling_key─┐
 │ check_system_tables │ date          │ date, version │ date        │              │
 └─────────────────────┴───────────────┴───────────────┴─────────────┴──────────────┘
@@ -49,8 +49,5 @@ Check total_bytes/total_rows for Set
 2048	50
 2048	100
 Check total_bytes/total_rows for Join
-1	50
-1	100
-Check total_uncompressed_bytes/total_bytes/total_rows for Materialized views
-0	0	0
-1	1	1
+10240	50
+10240	100

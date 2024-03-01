@@ -10,7 +10,6 @@ node1 = cluster.add_instance(
     tag="19.16.9.37",
     stay_alive=True,
     with_installed_binary=True,
-    allow_analyzer=False,
 )
 node2 = cluster.add_instance(
     "node2",
@@ -19,10 +18,9 @@ node2 = cluster.add_instance(
     tag="19.16.9.37",
     stay_alive=True,
     with_installed_binary=True,
-    allow_analyzer=False,
 )
-node3 = cluster.add_instance("node3", with_zookeeper=False, allow_analyzer=False)
-node4 = cluster.add_instance("node4", with_zookeeper=False, allow_analyzer=False)
+node3 = cluster.add_instance("node3", with_zookeeper=False)
+node4 = cluster.add_instance("node4", with_zookeeper=False)
 
 
 @pytest.fixture(scope="module")
@@ -33,12 +31,6 @@ def start_cluster():
 
     finally:
         cluster.shutdown()
-
-
-@pytest.fixture(autouse=True)
-def cleanup():
-    yield
-    node1.restart_with_original_version(clear_data_dir=True)
 
 
 # We will test that serialization of internal state of "avg" function is compatible between different versions.
@@ -149,7 +141,7 @@ def test_backward_compatability_for_uniq_exact(start_cluster, uniq_keys):
         == f"{uniq_keys}\n"
     )
 
-    node1.restart_with_latest_version(fix_metadata=True)
+    node1.restart_with_latest_version()
 
     assert (
         node1.query(f"SELECT uniqExactMerge(x) FROM state_{uniq_keys}")
@@ -222,7 +214,7 @@ def test_backward_compatability_for_uniq_exact_variadic(start_cluster, uniq_keys
         == f"{uniq_keys}\n"
     )
 
-    node1.restart_with_latest_version(fix_metadata=True)
+    node1.restart_with_latest_version()
 
     assert (
         node1.query(f"SELECT uniqExactMerge(x) FROM state_{uniq_keys}")

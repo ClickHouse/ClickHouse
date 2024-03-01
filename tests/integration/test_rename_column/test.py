@@ -40,7 +40,7 @@ def started_cluster():
 
 def drop_table(nodes, table_name):
     for node in nodes:
-        node.query("DROP TABLE IF EXISTS {} SYNC".format(table_name))
+        node.query("DROP TABLE IF EXISTS {} NO DELAY".format(table_name))
 
 
 def create_table(
@@ -159,7 +159,7 @@ def insert(
                 )
             elif slow:
                 query.append(
-                    "INSERT INTO {table_name} ({col0}, {col1}) SELECT number + sleepEachRow(0.001) AS {col0}, number + 1 AS {col1} FROM numbers_mt({chunk}) SETTINGS function_sleep_max_microseconds_per_block = 0".format(
+                    "INSERT INTO {table_name} ({col0}, {col1}) SELECT number + sleepEachRow(0.001) AS {col0}, number + 1 AS {col1} FROM numbers_mt({chunk})".format(
                         table_name=table_name,
                         chunk=chunk,
                         col0=col_names[0],
@@ -198,7 +198,7 @@ def select(
             try:
                 if slow:
                     r = node.query(
-                        "SELECT count() FROM (SELECT num2, sleepEachRow(0.5) FROM {} WHERE {} % 1000 > 0) SETTINGS function_sleep_max_microseconds_per_block = 0".format(
+                        "SELECT count() FROM (SELECT num2, sleepEachRow(0.5) FROM {} WHERE {} % 1000 > 0)".format(
                             table_name, col_name
                         )
                     )
@@ -225,9 +225,7 @@ def select(
 def rename_column(
     node, table_name, name, new_name, iterations=1, ignore_exception=False
 ):
-    i = 0
-    while True:
-        i += 1
+    for i in range(iterations):
         try:
             node.query(
                 "ALTER TABLE {table_name} RENAME COLUMN {name} to {new_name}".format(
@@ -235,22 +233,14 @@ def rename_column(
                 )
             )
         except QueryRuntimeException as ex:
-            if "Coordination::Exception" in str(ex):
-                continue
-
             if not ignore_exception:
                 raise
-
-        if i >= iterations:
-            break
 
 
 def rename_column_on_cluster(
     node, table_name, name, new_name, iterations=1, ignore_exception=False
 ):
-    i = 0
-    while True:
-        i += 1
+    for i in range(iterations):
         try:
             node.query(
                 "ALTER TABLE {table_name} ON CLUSTER test_cluster RENAME COLUMN {name} to {new_name}".format(
@@ -258,20 +248,12 @@ def rename_column_on_cluster(
                 )
             )
         except QueryRuntimeException as ex:
-            if "Coordination::Exception" in str(ex):
-                continue
-
             if not ignore_exception:
                 raise
 
-        if i >= iterations:
-            break
-
 
 def alter_move(node, table_name, iterations=1, ignore_exception=False):
-    i = 0
-    while True:
-        i += 1
+    for i in range(iterations):
         move_part = random.randint(0, 99)
         move_volume = "external"
         try:
@@ -281,14 +263,8 @@ def alter_move(node, table_name, iterations=1, ignore_exception=False):
                 )
             )
         except QueryRuntimeException as ex:
-            if "Coordination::Exception" in str(ex):
-                continue
-
             if not ignore_exception:
                 raise
-
-        if i >= iterations:
-            break
 
 
 def test_rename_parallel_same_node(started_cluster):

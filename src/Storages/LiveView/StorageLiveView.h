@@ -75,13 +75,13 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
+    void checkTableCanBeDropped() const override;
 
     void drop() override;
 
     void startup() override;
 
-    void shutdown(bool is_drop) override;
+    void shutdown() override;
 
     Pipe read(
         const Names & column_names,
@@ -184,7 +184,7 @@ private:
 
     ContextMutablePtr live_view_context;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     bool is_periodically_refreshed = false;
     Seconds periodic_live_view_refresh;

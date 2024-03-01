@@ -7,21 +7,19 @@ node1 = cluster.add_instance(
     "node1",
     with_zookeeper=False,
     image="yandex/clickhouse-server",
-    tag="20.8.11.17",
+    tag="21.1",
     stay_alive=True,
     with_installed_binary=True,
-    allow_analyzer=False,
 )
 node2 = cluster.add_instance(
     "node2",
     with_zookeeper=False,
     image="yandex/clickhouse-server",
-    tag="20.8.11.17",
+    tag="21.1",
     stay_alive=True,
     with_installed_binary=True,
-    allow_analyzer=False,
 )
-node3 = cluster.add_instance("node3", with_zookeeper=False, allow_analyzer=False)
+node3 = cluster.add_instance("node3", with_zookeeper=False)
 
 
 @pytest.fixture(scope="module")
@@ -76,7 +74,7 @@ def test_backward_compatability(start_cluster):
             from remote('node{1,2,3}', default, t)
             group by a
             limit 1 offset 12345
-            settings optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 0
+            settings optimize_aggregation_in_order = 1
         """
         )
         == "30\n"

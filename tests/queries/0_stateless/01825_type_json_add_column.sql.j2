@@ -1,5 +1,4 @@
--- Tags: no-fasttest, disabled
--- Disabled, because ClickHouse server may crash. https://github.com/ClickHouse/ClickHouse/pull/56307
+-- Tags: no-fasttest
 
 {% for storage in ["MergeTree", "ReplicatedMergeTree('/clickhouse/tables/{database}/test_01825_add_column/', 'r1')"] -%}
 

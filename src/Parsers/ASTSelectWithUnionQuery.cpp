@@ -5,6 +5,7 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTSelectQuery.h>
 
+#include <iostream>
 
 namespace DB
 {
@@ -71,7 +72,8 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
             }
             else
             {
-                auto sub_query = std::make_shared<ASTSubquery>(*it);
+                auto sub_query = std::make_shared<ASTSubquery>();
+                sub_query->children.push_back(*it);
                 sub_query->formatImpl(settings, state, frame);
             }
         }

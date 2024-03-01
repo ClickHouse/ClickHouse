@@ -54,8 +54,6 @@ struct MergeTreeDataPartChecksums
 
     bool has(const String & file_name) const { return files.find(file_name) != files.end(); }
 
-    bool remove(const String & file_name) { return files.erase(file_name); }
-
     bool empty() const { return files.empty(); }
 
     /// Checks that the set of columns and their checksums are the same. If not, throws an exception.
@@ -90,8 +88,8 @@ struct MergeTreeDataPartChecksums
     static MergeTreeDataPartChecksums deserializeFrom(const String & s);
 
     UInt64 getTotalSizeOnDisk() const;
-    UInt64 getTotalSizeUncompressedOnDisk() const;
 };
+
 
 /// A kind of MergeTreeDataPartChecksums intended to be stored in ZooKeeper (to save its RAM)
 /// MinimalisticDataPartChecksums and MergeTreeDataPartChecksums have the same serialization format

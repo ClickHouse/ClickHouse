@@ -1,21 +1,16 @@
 #!/usr/bin/env python3
 import logging
-
-# isort: off
 from github import Github
-
-# isort: on
 
 from commit_status_helper import (
     CI_STATUS_NAME,
+    NotSet,
     get_commit,
     get_commit_filtered_statuses,
     post_commit_status,
-    update_mergeable_check,
 )
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import PENDING, SUCCESS
 
 
 def main():
@@ -24,8 +19,6 @@ def main():
     pr_info = PRInfo(need_orgs=True)
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
-    # Update the Mergeable Check at the final step
-    update_mergeable_check(commit, pr_info, CI_STATUS_NAME)
 
     statuses = [
         status
@@ -34,17 +27,15 @@ def main():
     ]
     if not statuses:
         return
-    # Take the latest status
-    status = statuses[-1]
-    if status.state == PENDING:
+    status = statuses[0]
+    if status.state == "pending":
         post_commit_status(
             commit,
-            SUCCESS,
-            status.target_url,
+            "success",
+            status.target_url or NotSet,
             "All checks finished",
             CI_STATUS_NAME,
             pr_info,
-            dump_to_file=True,
         )
 
 

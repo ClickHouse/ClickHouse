@@ -77,7 +77,7 @@ public:
     StringRef getDataAt(size_t n) const override;
     bool isDefaultAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
@@ -108,7 +108,6 @@ public:
     void updatePermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
                                     size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
     void reserve(size_t n) override;
-    void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
@@ -143,10 +142,6 @@ public:
     const ColumnPtr & getOffsetsPtr() const { return offsets; }
     ColumnPtr & getOffsetsPtr() { return offsets; }
 
-    /// Returns a copy of the data column's part corresponding to a specified range of rows.
-    /// For example, `getDataInRange(0, size())` is the same as `getDataPtr()->clone()`.
-    MutableColumnPtr getDataInRange(size_t start, size_t length) const;
-
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {
         return scatterImpl<ColumnArray>(num_columns, selector);
@@ -156,13 +151,13 @@ public:
 
     ColumnPtr compress() const override;
 
-    void forEachSubcolumn(MutableColumnCallback callback) override
+    void forEachSubcolumn(ColumnCallback callback) const override
     {
         callback(offsets);
         callback(data);
     }
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
     {
         callback(*offsets);
         offsets->forEachSubcolumnRecursively(callback);

@@ -20,14 +20,14 @@ class StorageSystemClusters final : public IStorageSystemOneBlock<StorageSystemC
 public:
     std::string getName() const override { return "SystemClusters"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
     using NameAndCluster = std::pair<String, std::shared_ptr<Cluster>>;
 
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
-    static void writeCluster(MutableColumns & res_columns, const NameAndCluster & name_and_cluster, const std::vector<UInt8> & is_active);
+    static void writeCluster(MutableColumns & res_columns, const NameAndCluster & name_and_cluster);
 };
 
 }

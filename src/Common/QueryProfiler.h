@@ -7,8 +7,6 @@
 
 #include "config.h"
 
-#include <Common/Logger.h>
-
 
 namespace Poco
 {
@@ -29,27 +27,6 @@ namespace DB
   * Destructor tries to unset timer and restore previous signal handler.
   * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCPU.
   */
-
-#ifndef __APPLE__
-class Timer
-{
-public:
-    Timer();
-    Timer(const Timer &) = delete;
-    Timer & operator = (const Timer &) = delete;
-    ~Timer();
-
-    void createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal);
-    void set(UInt32 period);
-    void stop();
-    void cleanup();
-
-private:
-    LoggerPtr log;
-    std::optional<timer_t> timer_id;
-};
-#endif
-
 template <typename ProfilerImpl>
 class QueryProfilerBase
 {
@@ -58,12 +35,13 @@ public:
     ~QueryProfilerBase();
 
 private:
-    void cleanup();
+    void tryCleanup();
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
-#ifndef __APPLE__
-    inline static thread_local Timer timer = Timer();
+#if USE_UNWIND
+    /// Timer id from timer_create(2)
+    std::optional<timer_t> timer_id;
 #endif
 
     /// Pause signal to interrupt threads to get traces

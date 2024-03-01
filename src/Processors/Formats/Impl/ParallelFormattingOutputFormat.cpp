@@ -8,6 +8,7 @@ namespace DB
     void ParallelFormattingOutputFormat::finalizeImpl()
     {
         need_flush = true;
+        IOutputFormat::finalized = true;
         /// Don't throw any background_exception here, because we want to finalize the execution.
         /// Exception will be checked after main thread is finished.
         addChunk(Chunk{}, ProcessingUnitType::FINALIZE, /*can_throw_exception*/ false);
@@ -23,33 +24,8 @@ namespace DB
             std::lock_guard lock(mutex);
 
             if (background_exception)
-            {
-                collector_finished.set();
-                rethrowBackgroundException();
-            }
+                std::rethrow_exception(background_exception);
         }
-
-        /// The code below is required to write valid output in case of exception during parallel parsing,
-        /// because we finish formatting and collecting threads in case of exception.
-        /// So, in case of exception after finalize we could still not output prefix/suffix or finalize underlying format.
-
-        if (collected_prefix && collected_suffix && collected_finalize)
-            return;
-
-        auto formatter = internal_formatter_creator(out);
-        formatter->setRowsReadBefore(rows_collected);
-        formatter->setException(exception_message);
-
-        if (!collected_prefix && (need_write_prefix || started_prefix))
-            formatter->writePrefix();
-
-        if (!collected_suffix && (need_write_suffix || started_suffix))
-            formatter->writeSuffix();
-
-        if (!collected_finalize)
-            formatter->finalizeImpl();
-
-        formatter->finalizeBuffers();
     }
 
     void ParallelFormattingOutputFormat::addChunk(Chunk chunk, ProcessingUnitType type, bool can_throw_exception)
@@ -57,7 +33,7 @@ namespace DB
         {
             std::lock_guard lock(mutex);
             if (background_exception && can_throw_exception)
-                rethrowBackgroundException();
+                std::rethrow_exception(background_exception);
         }
 
         const auto current_unit_number = writer_unit_number % processing_units.size();
@@ -86,10 +62,7 @@ namespace DB
 
         size_t first_row_num = rows_consumed;
         if (unit.type == ProcessingUnitType::PLAIN)
-        {
             rows_consumed += unit.chunk.getNumRows();
-            unit.rows_num = unit.chunk.getNumRows();
-        }
 
         scheduleFormatterThreadForUnitWithNumber(current_unit_number, first_row_num);
         ++writer_unit_number;
@@ -123,7 +96,7 @@ namespace DB
     }
 
 
-    void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupPtr & thread_group)
+    void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupStatusPtr & thread_group)
     {
         SCOPE_EXIT_SAFE(
             if (thread_group)
@@ -152,7 +125,7 @@ namespace DB
                 assert(unit.status == READY_TO_READ);
 
                 /// Use this copy to after notification to stop the execution.
-                auto copy_of_unit_type = unit.type;
+                auto copy_if_unit_type = unit.type;
 
                 /// Do main work here.
                 out.write(unit.segment.data(), unit.actual_memory_size);
@@ -161,7 +134,6 @@ namespace DB
                     IOutputFormat::flush();
 
                 ++collector_unit_number;
-                rows_collected += unit.rows_num;
 
                 {
                     /// Notify other threads.
@@ -169,19 +141,9 @@ namespace DB
                     unit.status = READY_TO_INSERT;
                     writer_condvar.notify_all();
                 }
-
-                if (copy_of_unit_type == ProcessingUnitType::START)
+                /// We can exit only after writing last piece of to out buffer.
+                if (copy_if_unit_type == ProcessingUnitType::FINALIZE)
                 {
-                    collected_prefix = true;
-                }
-                else if (copy_of_unit_type == ProcessingUnitType::PLAIN_FINISH)
-                {
-                    collected_suffix = true;
-                }
-                /// We can exit only after writing last piece of data to out buffer.
-                else if (copy_of_unit_type == ProcessingUnitType::FINALIZE)
-                {
-                    collected_finalize = true;
                     break;
                 }
             }
@@ -194,7 +156,8 @@ namespace DB
         }
     }
 
-    void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupPtr & thread_group)
+
+    void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupStatusPtr & thread_group)
     {
         SCOPE_EXIT_SAFE(
             if (thread_group)
@@ -221,7 +184,6 @@ namespace DB
 
             auto formatter = internal_formatter_creator(out_buffer);
             formatter->setRowsReadBefore(first_row_num);
-            formatter->setException(exception_message);
 
             switch (unit.type)
             {
@@ -262,8 +224,6 @@ namespace DB
 
             /// Flush all the data to handmade buffer.
             formatter->flush();
-            formatter->finalizeBuffers();
-            out_buffer.finalize();
             unit.actual_memory_size = out_buffer.getActualSize();
 
             {

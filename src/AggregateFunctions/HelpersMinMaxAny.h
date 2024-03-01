@@ -9,19 +9,20 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 
+
 namespace DB
 {
 struct Settings;
 
 /// min, max, any, anyLast, anyHeavy, etc...
-template <template <typename> class AggregateFunctionTemplate, template <typename, bool...> class Data>
-static IAggregateFunction *
-createAggregateFunctionSingleValue(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+template <template <typename> class AggregateFunctionTemplate, template <typename> class Data>
+static IAggregateFunction * createAggregateFunctionSingleValue(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
 
     const DataTypePtr & argument_type = argument_types[0];
+
     WhichDataType which(argument_type);
 #define DISPATCH(TYPE) \
     if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<Data<SingleValueDataFixed<TYPE>>>(argument_type); /// NOLINT
@@ -47,6 +48,7 @@ createAggregateFunctionSingleValue(const String & name, const DataTypes & argume
 
     return new AggregateFunctionTemplate<Data<SingleValueDataGeneric>>(argument_type);
 }
+
 
 /// argMin, argMax
 template <template <typename> class MinMaxData, typename ResData>
