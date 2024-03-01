@@ -71,7 +71,7 @@ StorageMaterializedView::StorageMaterializedView(
     ContextPtr local_context,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
-    LoadingStrictnessLevel mode,
+    bool attach_,
     const String & comment)
     : IStorage(table_id_), WithMutableContext(local_context->getGlobalContext())
 {
@@ -118,7 +118,7 @@ StorageMaterializedView::StorageMaterializedView(
     {
         target_table_id = query.to_table_id;
     }
-    else if (LoadingStrictnessLevel::ATTACH <= mode)
+    else if (attach_)
     {
         /// If there is an ATTACH request, then the internal table must already be created.
         target_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()), query.to_inner_uuid);
@@ -151,7 +151,7 @@ StorageMaterializedView::StorageMaterializedView(
             *this,
             getContext(),
             *query.refresh_strategy);
-        refresh_on_start = mode < LoadingStrictnessLevel::ATTACH && !query.is_create_empty;
+        refresh_on_start = !attach_ && !query.is_create_empty;
     }
 }
 
@@ -624,7 +624,7 @@ void registerStorageMaterializedView(StorageFactory & factory)
         /// Pass local_context here to convey setting for inner table
         return std::make_shared<StorageMaterializedView>(
             args.table_id, args.getLocalContext(), args.query,
-            args.columns, args.mode, args.comment);
+            args.columns, args.attach, args.comment);
     });
 }
 

@@ -18,7 +18,7 @@ on:  # yamllint disable-line rule:truthy
 ##########################################################################################
 jobs:
   RunConfig:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, style-checker]
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
@@ -104,7 +104,7 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Fast test
+      test_name: Fast tests
       runner_type: builder
       data: ${{ needs.RunConfig.outputs.data }}
       run_command: |
@@ -145,14 +145,6 @@ jobs:
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_release
-      checkout_depth: 0
-      data: ${{ needs.RunConfig.outputs.data }}
-  BuilderDebReleaseCoverage:
-    needs: [RunConfig, FastTest]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_build.yml
-    with:
-      build_name: package_release_coverage
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebAarch64:
@@ -281,26 +273,19 @@ jobs:
 ############################################################################################
 ##################################### Docker images  #######################################
 ############################################################################################
-  DockerServerImage:
+  DockerServerImages:
     needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Docker server image
+      test_name: Docker server and keeper images
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
+      checkout_depth: 0  # It MUST BE THE SAME for all dependencies and the job itself
       run_command: |
+        cd "$GITHUB_WORKSPACE/tests/ci"
         python3 docker_server.py --release-type head --no-push \
           --image-repo clickhouse/clickhouse-server --image-path docker/server --allow-build-reuse
-  DockerKeeperImage:
-    needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Docker keeper image
-      runner_type: style-checker
-      data: ${{ needs.RunConfig.outputs.data }}
-      run_command: |
         python3 docker_server.py --release-type head --no-push \
           --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper --allow-build-reuse
 ############################################################################################
@@ -317,7 +302,6 @@ jobs:
       - BuilderDebDebug
       - BuilderDebMsan
       - BuilderDebRelease
-      - BuilderDebReleaseCoverage
       - BuilderDebTsan
       - BuilderDebUBsan
     uses: ./.github/workflows/reusable_test.yml
@@ -391,12 +375,28 @@ jobs:
       test_name: Stateless tests (release)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestReleaseAnalyzerS3Replicated:
+  FunctionalStatelessTestReleaseDatabaseReplicated:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Stateless tests (release, analyzer, s3, DatabaseReplicated)
+      test_name: Stateless tests (release, DatabaseReplicated)
+      runner_type: func-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+  FunctionalStatelessTestReleaseAnalyzer:
+    needs: [RunConfig, BuilderDebRelease]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Stateless tests (release, analyzer)
+      runner_type: func-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+  FunctionalStatelessTestReleaseS3:
+    needs: [RunConfig, BuilderDebRelease]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Stateless tests (release, s3 storage)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestS3Debug:
@@ -476,9 +476,21 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Bugfix validation
+      test_name: tests bugfix validate check
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
+      additional_envs: |
+        KILL_TIMEOUT=3600
+      run_command: |
+        TEMP_PATH="${TEMP_PATH}/integration" \
+          python3 integration_test_check.py "Integration $CHECK_NAME" \
+            --validate-bugfix --post-commit-status=file || echo 'ignore exit code'
+
+        TEMP_PATH="${TEMP_PATH}/stateless" \
+          python3 functional_test_check.py "Stateless $CHECK_NAME" "$KILL_TIMEOUT" \
+            --validate-bugfix --post-commit-status=file || echo 'ignore exit code'
+
+        python3 bugfix_validate_check.py "${TEMP_PATH}/stateless/functional_commit_status.tsv" "${TEMP_PATH}/integration/integration_commit_status.tsv"
 ##############################################################################################
 ############################ FUNCTIONAl STATEFUL TESTS #######################################
 ##############################################################################################
@@ -734,6 +746,14 @@ jobs:
 #############################################################################################
 ############################# INTEGRATION TESTS #############################################
 #############################################################################################
+  IntegrationTestsAsan:
+    needs: [RunConfig, BuilderDebAsan]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Integration tests (asan)
+      runner_type: stress-tester
+      data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsAnalyzerAsan:
     needs: [RunConfig, BuilderDebAsan]
     if: ${{ !failure() && !cancelled() }}
@@ -750,14 +770,13 @@ jobs:
       test_name: Integration tests (tsan)
       runner_type: stress-tester
       data: ${{ needs.RunConfig.outputs.data }}
-  IntegrationTestsAarch64:
-    needs: [RunConfig, BuilderDebAarch64]
+  IntegrationTestsRelease:
+    needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Integration tests (aarch64)
-      # FIXME: there is no stress-tester for aarch64. func-tester-aarch64 is ok?
-      runner_type: func-tester-aarch64
+      test_name: Integration tests (release)
+      runner_type: stress-tester
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsFlakyCheck:
     needs: [RunConfig, BuilderDebAsan]
@@ -855,9 +874,10 @@ jobs:
       - BuilderSpecialReport
       - DocsCheck
       - FastTest
-      - TestsBugfixCheck
       - FunctionalStatelessTestDebug
       - FunctionalStatelessTestRelease
+      - FunctionalStatelessTestReleaseDatabaseReplicated
+      - FunctionalStatelessTestReleaseAnalyzer
       - FunctionalStatelessTestAarch64
       - FunctionalStatelessTestAsan
       - FunctionalStatelessTestTsan
@@ -870,9 +890,9 @@ jobs:
       - FunctionalStatefulTestTsan
       - FunctionalStatefulTestMsan
       - FunctionalStatefulTestUBsan
+      - FunctionalStatelessTestReleaseS3
       - FunctionalStatelessTestS3Debug
       - FunctionalStatelessTestS3Tsan
-      - FunctionalStatelessTestReleaseAnalyzerS3Replicated
       - FunctionalStatefulTestReleaseParallelReplicas
       - FunctionalStatefulTestAsanParallelReplicas
       - FunctionalStatefulTestTsanParallelReplicas
@@ -893,9 +913,10 @@ jobs:
       - ASTFuzzerTestTsan
       - ASTFuzzerTestMSan
       - ASTFuzzerTestUBSan
+      - IntegrationTestsAsan
       - IntegrationTestsAnalyzerAsan
       - IntegrationTestsTsan
-      - IntegrationTestsAarch64
+      - IntegrationTestsRelease
       - IntegrationTestsFlakyCheck
       - PerformanceComparisonX86
       - PerformanceComparisonAarch
@@ -964,7 +985,7 @@ jobs:
 ####################################### libFuzzer ###########################################
 #############################################################################################
   libFuzzer:
-    if: ${{ !failure() && !cancelled() }}
+    if: ${{ !failure() && !cancelled() && contains(github.event.pull_request.labels.*.name, 'libFuzzer') }}
     needs: [RunConfig, StyleCheck]
     uses: ./.github/workflows/libfuzzer.yml
     with:

@@ -1157,7 +1157,7 @@ StorageWindowView::StorageWindowView(
     ContextPtr context_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
-    LoadingStrictnessLevel mode)
+    bool attach_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , log(getLogger(fmt::format("StorageWindowView({}.{})", table_id_.database_name, table_id_.table_name)))
@@ -1203,7 +1203,7 @@ StorageWindowView::StorageWindowView(
         next_fire_signal = getWindowUpperBound(now());
 
     std::exchange(has_inner_table, true);
-    if (mode < LoadingStrictnessLevel::ATTACH)
+    if (!attach_)
     {
         auto inner_create_query = getInnerTableCreateQuery(inner_query, inner_table_id);
         auto create_context = Context::createCopy(context_);
@@ -1672,12 +1672,12 @@ void registerStorageWindowView(StorageFactory & factory)
 {
     factory.registerStorage("WindowView", [](const StorageFactory::Arguments & args)
     {
-        if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef().allow_experimental_window_view)
+        if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_window_view)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Experimental WINDOW VIEW feature "
                             "is not enabled (the setting 'allow_experimental_window_view')");
 
-        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.mode);
+        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.attach);
     });
 }
 

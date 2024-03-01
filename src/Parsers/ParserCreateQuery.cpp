@@ -684,7 +684,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->database = table_id->getDatabase();
         query->table = table_id->getTable();
         query->uuid = table_id->uuid;
-        query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
 
         if (query->database)
             query->children.push_back(query->database);
@@ -784,7 +783,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->database = table_id->getDatabase();
     query->table = table_id->getTable();
     query->uuid = table_id->uuid;
-    query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
     query->cluster = cluster_str;
 
     if (query->database)

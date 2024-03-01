@@ -144,13 +144,6 @@ BackupImpl::BackupImpl(
 
 BackupImpl::~BackupImpl()
 {
-    if ((open_mode == OpenMode::WRITE) && !is_internal_backup && !writing_finalized && !std::uncaught_exceptions() && !std::current_exception())
-    {
-        /// It is suspicious to destroy BackupImpl without finalization while writing a backup when there is no exception.
-        LOG_ERROR(log, "BackupImpl is not finalized when destructor is called. Stack trace: {}", StackTrace().toString());
-        chassert(false && "BackupImpl is not finalized when destructor is called.");
-    }
-
     try
     {
         close();
@@ -202,6 +195,10 @@ void BackupImpl::close()
 {
     std::lock_guard lock{mutex};
     closeArchive(/* finalize= */ false);
+
+    if (!is_internal_backup && writer && !writing_finalized)
+        removeAllFilesAfterFailure();
+
     writer.reset();
     reader.reset();
     coordination.reset();
@@ -942,12 +939,12 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     }
     else if (src_disk && from_immutable_file)
     {
-        LOG_INFO(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
+        LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
         writer->copyFileFromDisk(info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
     }
     else
     {
-        LOG_INFO(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
+        LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
         auto create_read_buffer = [entry, read_settings = writer->getReadSettings()] { return entry->getReadBuffer(read_settings); };
         writer->copyDataToFile(info.data_file_name, create_read_buffer, info.base_size, info.size - info.base_size);
     }
@@ -1008,18 +1005,14 @@ void BackupImpl::setCompressedSize()
 }
 
 
-void BackupImpl::tryRemoveAllFiles()
+void BackupImpl::removeAllFilesAfterFailure()
 {
-    if (open_mode != OpenMode::WRITE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for writing");
-
     if (is_internal_backup)
-        return;
+        return; /// Let the initiator remove unnecessary files.
 
     try
     {
-        LOG_INFO(log, "Removing all files of backup {}", backup_name_for_logging);
-        closeArchive(/* finalize= */ false);
+        LOG_INFO(log, "Removing all files of backup {} after failure", backup_name_for_logging);
 
         Strings files_to_remove;
         if (use_archive)

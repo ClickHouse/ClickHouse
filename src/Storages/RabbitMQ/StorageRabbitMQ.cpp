@@ -69,7 +69,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         ContextPtr context_,
         const ColumnsDescription & columns_,
         std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
-        LoadingStrictnessLevel mode)
+        bool is_attach)
         : IStorage(table_id_)
         , WithContext(context_->getGlobalContext())
         , rabbitmq_settings(std::move(rabbitmq_settings_))
@@ -170,13 +170,13 @@ StorageRabbitMQ::StorageRabbitMQ(
         connection = std::make_unique<RabbitMQConnection>(configuration, log);
         if (connection->connect())
             initRabbitMQ();
-        else if (mode <= LoadingStrictnessLevel::CREATE)
+        else if (!is_attach)
             throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "Cannot connect to {}", connection->connectionInfoForLog());
     }
     catch (...)
     {
         tryLogCurrentException(log);
-        if (mode <= LoadingStrictnessLevel::CREATE)
+        if (!is_attach)
             throw;
     }
 
@@ -1207,7 +1207,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         if (!rabbitmq_settings->rabbitmq_format.changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `rabbitmq_format` setting");
 
-        return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, std::move(rabbitmq_settings), args.mode);
+        return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, std::move(rabbitmq_settings), args.attach);
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });

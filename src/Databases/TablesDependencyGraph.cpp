@@ -699,22 +699,6 @@ std::vector<StorageID> TablesDependencyGraph::getTablesSortedByDependency() cons
 }
 
 
-std::vector<std::vector<StorageID>> TablesDependencyGraph::getTablesSplitByDependencyLevel() const
-{
-    std::vector<std::vector<StorageID>> tables_split_by_level;
-    auto sorted_nodes = getNodesSortedByLevel();
-    if (sorted_nodes.empty())
-        return tables_split_by_level;
-
-    tables_split_by_level.resize(sorted_nodes.back()->level + 1);
-    for (const auto * node : sorted_nodes)
-    {
-        tables_split_by_level[node->level].emplace_back(node->storage_id);
-    }
-    return tables_split_by_level;
-}
-
-
 void TablesDependencyGraph::log() const
 {
     if (nodes.empty())

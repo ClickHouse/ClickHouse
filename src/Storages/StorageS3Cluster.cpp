@@ -38,34 +38,25 @@ StorageS3Cluster::StorageS3Cluster(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const ContextPtr & context)
-    : IStorageCluster(cluster_name_, table_id_, getLogger("StorageS3Cluster (" + table_id_.table_name + ")"))
+    ContextPtr context_,
+    bool structure_argument_was_provided_)
+    : IStorageCluster(cluster_name_, table_id_, getLogger("StorageS3Cluster (" + table_id_.table_name + ")"), structure_argument_was_provided_)
     , s3_configuration{configuration_}
 {
-    context->getGlobalContext()->getRemoteHostFilter().checkURL(configuration_.url.uri);
-    context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(configuration_.headers_from_ast);
+    context_->getGlobalContext()->getRemoteHostFilter().checkURL(configuration_.url.uri);
+    context_->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(configuration_.headers_from_ast);
 
     StorageInMemoryMetadata storage_metadata;
-    updateConfigurationIfChanged(context);
+    updateConfigurationIfChanged(context_);
 
     if (columns_.empty())
     {
-        ColumnsDescription columns;
         /// `format_settings` is set to std::nullopt, because StorageS3Cluster is used only as table function
-        if (s3_configuration.format == "auto")
-            std::tie(columns, s3_configuration.format) = StorageS3::getTableStructureAndFormatFromData(s3_configuration, /*format_settings=*/std::nullopt, context);
-        else
-            columns = StorageS3::getTableStructureFromData(s3_configuration, /*format_settings=*/std::nullopt, context);
-
+        auto columns = StorageS3::getTableStructureFromDataImpl(s3_configuration, /*format_settings=*/std::nullopt, context_);
         storage_metadata.setColumns(columns);
     }
     else
-    {
-        if (s3_configuration.format == "auto")
-            s3_configuration.format = StorageS3::getTableStructureAndFormatFromData(s3_configuration, /*format_settings=*/std::nullopt, context).second;
-
         storage_metadata.setColumns(columns_);
-    }
 
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
@@ -73,17 +64,13 @@ StorageS3Cluster::StorageS3Cluster(
     virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
-void StorageS3Cluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const DB::StorageSnapshotPtr & storage_snapshot, const DB::ContextPtr & context)
+void StorageS3Cluster::addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context)
 {
     ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
     if (!expression_list)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function s3Cluster, got '{}'", queryToString(query));
 
-    TableFunctionS3Cluster::updateStructureAndFormatArgumentsIfNeeded(
-        expression_list->children,
-        storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
-        s3_configuration.format,
-        context);
+    TableFunctionS3Cluster::addColumnsStructureToArguments(expression_list->children, structure, context);
 }
 
 void StorageS3Cluster::updateConfigurationIfChanged(ContextPtr local_context)

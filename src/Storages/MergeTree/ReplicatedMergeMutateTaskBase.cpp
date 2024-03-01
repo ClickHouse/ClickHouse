@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeMutateTaskBase.h>
 
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Common/ProfileEventsScope.h>
 
@@ -111,14 +110,11 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
                 auto mutations_end_it = in_partition->second.upper_bound(result_data_version);
                 for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
                 {
-                    auto & src_part = log_entry->source_parts.at(0);
                     ReplicatedMergeTreeQueue::MutationStatus & status = *it->second;
-                    status.latest_failed_part = src_part;
+                    status.latest_failed_part = log_entry->source_parts.at(0);
                     status.latest_failed_part_info = source_part_info;
                     status.latest_fail_time = time(nullptr);
                     status.latest_fail_reason = getExceptionMessage(saved_exception, false);
-                    if (result_data_version == it->first)
-                        storage.mutation_backoff_policy.addPartMutationFailure(src_part, storage.getSettings()->max_postpone_time_for_failed_mutations_ms);
                 }
             }
         }
@@ -146,12 +142,6 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
         {
             storage.queue.removeProcessedEntry(storage.getZooKeeper(), selected_entry->log_entry);
             state = State::SUCCESS;
-
-            auto & log_entry = selected_entry->log_entry;
-            if (log_entry->type == ReplicatedMergeTreeLogEntryData::MUTATE_PART)
-            {
-                storage.mutation_backoff_policy.removePartFromFailed(log_entry->source_parts.at(0));
-            }
         }
         catch (...)
         {

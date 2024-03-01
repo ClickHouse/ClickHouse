@@ -1,7 +1,8 @@
 #pragma once
 #include <Coordination/KeeperFeatureFlags.h>
+#include <Disks/DiskSelector.h>
+#include <IO/WriteBufferFromString.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <memory>
@@ -11,19 +12,10 @@ namespace DB
 
 class KeeperDispatcher;
 
-struct CoordinationSettings;
-using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
-
-class DiskSelector;
-class IDisk;
-using DiskPtr = std::shared_ptr<IDisk>;
-
-class WriteBufferFromOwnString;
-
 class KeeperContext
 {
 public:
-    KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr coordination_settings_);
+    explicit KeeperContext(bool standalone_keeper_);
 
     enum class Phase : uint8_t
     {
@@ -76,24 +68,6 @@ public:
 
     void waitLocalLogsPreprocessedOrShutdown();
 
-    uint64_t lastCommittedIndex() const
-    {
-        return last_committed_log_idx.load(std::memory_order_relaxed);
-    }
-
-    void setLastCommitIndex(uint64_t commit_index)
-    {
-        last_committed_log_idx.store(commit_index, std::memory_order_relaxed);
-        last_committed_log_idx.notify_all();
-    }
-
-    void waitLastCommittedIndexUpdated(uint64_t current_last_committed_idx)
-    {
-        last_committed_log_idx.wait(current_last_committed_idx, std::memory_order_relaxed);
-    }
-
-    const CoordinationSettingsPtr & getCoordinationSettings() const;
-
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
@@ -115,7 +89,7 @@ private:
     std::atomic<bool> local_logs_preprocessed = false;
     std::atomic<bool> shutdown_called = false;
 
-    std::atomic<Phase> server_state{Phase::INIT};
+    Phase server_state{Phase::INIT};
 
     bool ignore_system_path_on_startup{false};
     bool digest_enabled{true};
@@ -139,10 +113,6 @@ private:
     KeeperDispatcher * dispatcher{nullptr};
 
     std::atomic<UInt64> memory_soft_limit = 0;
-
-    std::atomic<UInt64> last_committed_log_idx = 0;
-
-    CoordinationSettingsPtr coordination_settings;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;

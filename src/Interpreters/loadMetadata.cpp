@@ -234,7 +234,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
     }
 
-    auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag, /*secondary*/ false);
+    auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag);
     TablesLoader loader{context, std::move(loaded_databases), mode};
     auto load_tasks = loader.loadTablesAsync();
     auto startup_tasks = loader.startupTablesAsync();

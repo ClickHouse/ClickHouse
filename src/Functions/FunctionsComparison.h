@@ -643,12 +643,13 @@ class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(decimalCheckComparisonOverflow(context)); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context); }
 
-    explicit FunctionComparison(bool check_decimal_overflow_)
-        : check_decimal_overflow(check_decimal_overflow_) {}
+    explicit FunctionComparison(ContextPtr context_)
+        : context(context_), check_decimal_overflow(decimalCheckComparisonOverflow(context)) {}
 
 private:
+    ContextPtr context;
     bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>
@@ -1189,7 +1190,7 @@ public:
 
         if (left_tuple && right_tuple)
         {
-            auto func = FunctionToOverloadResolverAdaptor(std::make_shared<FunctionComparison<Op, Name>>(check_decimal_overflow));
+            auto func = FunctionToOverloadResolverAdaptor(FunctionComparison<Op, Name>::create(context));
 
             bool has_nullable = false;
             bool has_null = false;

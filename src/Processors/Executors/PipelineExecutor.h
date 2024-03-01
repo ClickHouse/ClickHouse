@@ -7,6 +7,7 @@
 #include <Common/ConcurrencyControl.h>
 
 #include <queue>
+#include <mutex>
 #include <memory>
 
 
@@ -67,8 +68,8 @@ private:
     ExecutorTasks tasks;
 
     /// Concurrency control related
-    SlotAllocationPtr cpu_slots;
-    AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeStep()
+    ConcurrencyControl::AllocationPtr slots;
+    ConcurrencyControl::SlotPtr single_thread_slot; // slot for single-thread mode to work using executeStep()
     std::unique_ptr<ThreadPool> pool;
     std::atomic_size_t threads = 0;
 

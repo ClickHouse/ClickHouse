@@ -4,7 +4,6 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
-#include <Common/FailPoint.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryCache.h>
@@ -103,13 +102,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int INCORRECT_DATA;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
-namespace FailPoints
-{
-    extern const char execute_query_calling_empty_set_result_func_on_exception[];
-}
 
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 {
@@ -709,7 +703,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     {
         if (settings.dialect == Dialect::kusto && !internal)
         {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Kusto dialect is disabled until these two bugs will be fixed: https://github.com/ClickHouse/ClickHouse/issues/59037 and https://github.com/ClickHouse/ClickHouse/issues/59036");
+            ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
+            /// TODO: parser should fail early when max_query_size limit is reached.
+            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
         else if (settings.dialect == Dialect::prql && !internal)
         {
@@ -721,27 +717,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
-
-#if 0
-            /// Verify that AST formatting is consistent:
-            /// If you format AST, parse it back, and format it again, you get the same string.
-
-            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true);
-
-            ASTPtr ast2 = parseQuery(parser,
-                formatted1.data(),
-                formatted1.data() + formatted1.size(),
-                "", max_query_size, settings.max_parser_depth);
-
-            chassert(ast2);
-
-            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true);
-
-            if (formatted1 != formatted2)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Inconsistent AST formatting: the query:\n{}\nWas parsed and formatted back as:\n{}",
-                    formatted1, formatted2);
-#endif
         }
 
         const char * query_end = end;
@@ -1385,7 +1360,7 @@ void executeQuery(
     BlockIO streams;
     OutputFormatPtr output_format;
 
-    auto update_format_on_exception_if_needed = [&]()
+    auto update_format_for_exception_if_needed = [&]()
     {
         if (!output_format)
         {
@@ -1398,20 +1373,8 @@ void executeQuery(
                     /// Force an update of the headers before we start writing
                     result_details.content_type = output_format->getContentType();
                     result_details.format = format_name;
-
-                    fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception, {
-                        // it will throw std::bad_function_call
-                        set_result_details = nullptr;
-                        set_result_details(result_details);
-                    });
-
-                    if (set_result_details)
-                    {
-                        /// reset set_result_details func to avoid calling in SCOPE_EXIT()
-                        auto set_result_details_copy = set_result_details;
-                        set_result_details = nullptr;
-                        set_result_details_copy(result_details);
-                    }
+                    set_result_details(result_details);
+                    set_result_details = nullptr;
                 }
             }
             catch (const DB::Exception & e)
@@ -1430,7 +1393,7 @@ void executeQuery(
     {
         if (handle_exception_in_output_format)
         {
-            update_format_on_exception_if_needed();
+            update_format_for_exception_if_needed();
             if (output_format)
                 handle_exception_in_output_format(*output_format);
         }
@@ -1531,17 +1494,13 @@ void executeQuery(
     }
     catch (...)
     {
-        /// first execute on exception callback, it includes updating query_log
-        /// otherwise closing record ('ExceptionWhileProcessing') can be not appended in query_log
-        /// due to possible exceptions in functions called below (passed as parameter here)
-        streams.onException();
-
         if (handle_exception_in_output_format)
         {
-            update_format_on_exception_if_needed();
+            update_format_for_exception_if_needed();
             if (output_format)
                 handle_exception_in_output_format(*output_format);
         }
+        streams.onException();
         throw;
     }
 

@@ -1,4 +1,3 @@
-#include <memory>
 #include <Server/HTTPHandlerFactory.h>
 
 #include <Server/HTTP/HTTPRequestHandler.h>
@@ -8,7 +7,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include "HTTPHandler.h"
-#include "Server/PrometheusMetricsWriter.h"
 #include "StaticRequestHandler.h"
 #include "ReplicasStatusHandler.h"
 #include "InterserverIOHTTPHandler.h"
@@ -115,10 +113,7 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::
     else if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
         return createInterserverHTTPHandlerFactory(server, name);
     else if (name == "PrometheusHandler-factory")
-    {
-        auto metrics_writer = std::make_shared<PrometheusMetricsWriter>(config, "prometheus", async_metrics);
-        return createPrometheusMainHandlerFactory(server, config, metrics_writer, name);
-    }
+        return createPrometheusMainHandlerFactory(server, config, async_metrics, name);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: Unknown HTTP handler factory name.");
 }
@@ -213,7 +208,7 @@ void addDefaultHandlersFactory(
     /// Otherwise it will be created separately, see createHandlerFactory(...).
     if (config.has("prometheus") && config.getInt("prometheus.port", 0) == 0)
     {
-        auto writer = std::make_shared<PrometheusMetricsWriter>(config, "prometheus", async_metrics);
+        PrometheusMetricsWriter writer(config, "prometheus", async_metrics);
         auto creator = [&server, writer] () -> std::unique_ptr<PrometheusRequestHandler>
         {
             return std::make_unique<PrometheusRequestHandler>(server, writer);

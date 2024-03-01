@@ -3,7 +3,7 @@
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 #include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
-
+#include <Parsers/Kusto/Utilities.h>
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <Poco/String.h>
@@ -240,7 +240,7 @@ bool ExtractAll::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ExtractJSON::convertImpl(String & out, IParser::Pos & pos)
+bool ExtractJson::convertImpl(String & out, IParser::Pos & pos)
 {
     String datatype = "String";
     ParserKeyword s_kql("typeof");
@@ -431,7 +431,7 @@ bool ParseCSV::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ParseJSON::convertImpl(String & out, IParser::Pos & pos)
+bool ParseJson::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -590,7 +590,7 @@ bool StrCatDelim::convertImpl(String & out, IParser::Pos & pos)
     int arg_count = 0;
     String args;
 
-    while (!pos->isEnd() && pos->type != TokenType::Semicolon && pos->type != TokenType::ClosingRoundBracket)
+    while (isValidKQLPos(pos) && pos->type != TokenType::Semicolon && pos->type != TokenType::ClosingRoundBracket)
     {
         ++pos;
         String arg = getConvertedArgument(fn_name, pos);

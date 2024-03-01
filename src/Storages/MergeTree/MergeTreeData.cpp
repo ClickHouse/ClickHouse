@@ -35,6 +35,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
+#include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
@@ -60,6 +61,7 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -73,6 +75,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/Statistics/Estimator.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -87,10 +90,13 @@
 
 #include <base/insertAtEnd.h>
 #include <base/interpolate.h>
+#include <base/defines.h>
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <chrono>
+#include <iomanip>
 #include <limits>
 #include <optional>
 #include <ranges>
@@ -190,7 +196,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_MUTATIONS;
     extern const int CANNOT_SCHEDULE_TASK;
     extern const int LIMIT_EXCEEDED;
-    extern const int CANNOT_FORGET_PARTITION;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -346,7 +351,7 @@ MergeTreeData::MergeTreeData(
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_,
     bool require_part_metadata_,
-    LoadingStrictnessLevel mode,
+    bool attach,
     BrokenPartCallback broken_part_callback_)
     : IStorage(table_id_)
     , WithMutableContext(context_->getGlobalContext())
@@ -367,12 +372,10 @@ MergeTreeData::MergeTreeData(
 
     const auto settings = getSettings();
 
-    bool sanity_checks = mode <= LoadingStrictnessLevel::CREATE;
-
-    allow_nullable_key = !sanity_checks || settings->allow_nullable_key;
+    allow_nullable_key = attach || settings->allow_nullable_key;
 
     /// Check sanity of MergeTreeSettings. Only when table is created.
-    if (sanity_checks)
+    if (!attach)
         settings->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount());
 
     if (!date_column_name.empty())
@@ -380,7 +383,7 @@ MergeTreeData::MergeTreeData(
         try
         {
             checkPartitionKeyAndInitMinMax(metadata_.partition_key);
-            setProperties(metadata_, metadata_, !sanity_checks);
+            setProperties(metadata_, metadata_, attach);
             if (minmax_idx_date_column_pos == -1)
                 throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Could not find Date column");
         }
@@ -396,7 +399,7 @@ MergeTreeData::MergeTreeData(
         is_custom_partitioned = true;
         checkPartitionKeyAndInitMinMax(metadata_.partition_key);
     }
-    setProperties(metadata_, metadata_, !sanity_checks);
+    setProperties(metadata_, metadata_, attach);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(metadata_);
@@ -404,11 +407,11 @@ MergeTreeData::MergeTreeData(
     if (metadata_.sampling_key.definition_ast != nullptr)
     {
         /// This is for backward compatibility.
-        checkSampleExpression(metadata_, !sanity_checks || settings->compatibility_allow_sampling_expression_not_in_primary_key,
-                              settings->check_sample_column_is_correct && sanity_checks);
+        checkSampleExpression(metadata_, attach || settings->compatibility_allow_sampling_expression_not_in_primary_key,
+                              settings->check_sample_column_is_correct && !attach);
     }
 
-    checkColumnFilenamesForCollision(metadata_.getColumns(), *settings, sanity_checks);
+    checkColumnFilenamesForCollision(metadata_.getColumns(), *settings, !attach);
     checkTTLExpressions(metadata_, metadata_);
 
     String reason;
@@ -4891,16 +4894,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                         throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DROP/DETACH PARTITION ALL currently");
                 }
                 else
-                {
-                    String partition_id = getPartitionIDFromQuery(command.partition, local_context);
-                    if (command.type == PartitionCommand::FORGET_PARTITION)
-                    {
-                        DataPartsLock lock = lockParts();
-                        auto parts_in_partition = getDataPartsPartitionRange(partition_id);
-                        if (!parts_in_partition.empty())
-                            throw Exception(ErrorCodes::CANNOT_FORGET_PARTITION, "Partition {} is not empty", partition_id);
-                    }
-                }
+                    getPartitionIDFromQuery(command.partition, local_context);
             }
         }
     }
@@ -5121,11 +5115,6 @@ void MergeTreeData::fetchPartition(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FETCH PARTITION is not supported by storage {}", getName());
 }
 
-void MergeTreeData::forgetPartition(const ASTPtr & /*partition*/, ContextPtr /*query_context*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FORGET PARTITION is not supported by storage {}", getName());
-}
-
 Pipe MergeTreeData::alterPartition(
     const StorageMetadataPtr & metadata_snapshot,
     const PartitionCommands & commands,
@@ -5160,10 +5149,6 @@ Pipe MergeTreeData::alterPartition(
 
             case PartitionCommand::DROP_DETACHED_PARTITION:
                 dropDetached(command.partition, command.part, query_context);
-                break;
-
-            case PartitionCommand::FORGET_PARTITION:
-                forgetPartition(command.partition, query_context);
                 break;
 
             case PartitionCommand::ATTACH_PARTITION:
@@ -5313,7 +5298,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
         if (hold_table_lock && !table_lock)
             table_lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
-        if (backup_settings.check_projection_parts)
+        if (backup_settings.check_parts)
             part->checkConsistencyWithProjections(/* require_part_metadata= */ true);
 
         BackupEntries backup_entries_from_part;
@@ -5325,8 +5310,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
             read_settings,
             make_temporary_hard_links,
             backup_entries_from_part,
-            &temp_dirs,
-            false, false);
+            &temp_dirs);
 
         auto projection_parts = part->getProjectionParts();
         for (const auto & [projection_name, projection_part] : projection_parts)
@@ -5339,9 +5323,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
                 read_settings,
                 make_temporary_hard_links,
                 backup_entries_from_part,
-                &temp_dirs,
-                projection_part->is_broken,
-                backup_settings.allow_backup_broken_projections);
+                &temp_dirs);
         }
 
         if (hold_storage_and_part_ptrs)
@@ -6845,7 +6827,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         {
             for (const auto & part : real_parts)
             {
-                const auto & primary_key_column = *part->getIndex()[0];
+                const auto & primary_key_column = *part->index[0];
                 auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(min_column, primary_key_column[0]);
             }
@@ -6856,7 +6838,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         {
             for (const auto & part : real_parts)
             {
-                const auto & primary_key_column = *part->getIndex()[0];
+                const auto & primary_key_column = *part->index[0];
                 auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(max_column, primary_key_column[primary_key_column.size() - 1]);
             }
@@ -7835,39 +7817,21 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
 
 bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, String & out_reason)
 {
-    auto remove_broken_parts_from_consideration = [](auto & parts)
-    {
-        std::set<String> broken_projection_parts;
-        for (const auto & [name, part] : parts)
-        {
-            if (part->is_broken)
-                broken_projection_parts.emplace(name);
-        }
-        for (const auto & name : broken_projection_parts)
-            parts.erase(name);
-    };
-
-    auto left_projection_parts = left->getProjectionParts();
-    auto right_projection_parts = right->getProjectionParts();
-
-    remove_broken_parts_from_consideration(left_projection_parts);
-    remove_broken_parts_from_consideration(right_projection_parts);
-
-    if (left_projection_parts.size() != right_projection_parts.size())
+    if (left->getProjectionParts().size() != right->getProjectionParts().size())
     {
         out_reason = fmt::format(
             "Parts have different number of projections: {} in part '{}' and {} in part '{}'",
-            left_projection_parts.size(),
+            left->getProjectionParts().size(),
             left->name,
-            right_projection_parts.size(),
+            right->getProjectionParts().size(),
             right->name
         );
         return false;
     }
 
-    for (const auto & [name, _] : left_projection_parts)
+    for (const auto & [name, _] : left->getProjectionParts())
     {
-        if (!right_projection_parts.contains(name))
+        if (!right->hasProjection(name))
         {
             out_reason = fmt::format(
                 "The part '{}' doesn't have projection '{}' while part '{}' does", right->name, name, left->name
@@ -7971,11 +7935,12 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
 
 AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(MergeTreeDataPartPtr part) const
 {
-    auto commands = getAlterMutationCommandsForPart(part);
+    auto commands_map = getAlterMutationCommandsForPart(part);
 
     auto result = std::make_shared<AlterConversions>();
-    for (const auto & command : commands | std::views::reverse)
-        result->addMutationCommand(command);
+    for (const auto & [_, commands] : commands_map)
+        for (const auto & command : commands)
+            result->addMutationCommand(command);
 
     return result;
 }

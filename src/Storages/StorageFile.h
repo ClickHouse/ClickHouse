@@ -84,7 +84,7 @@ public:
 
     static Names getVirtualColumnNames();
 
-    static Strings getPathsList(const String & table_path, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read);
+    static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
 
     /// Check if the format supports reading only some subset of columns.
     /// Is is useful because such formats could effectively skip unknown columns
@@ -112,19 +112,14 @@ public:
         }
     };
 
+    ColumnsDescription getTableStructureFromFileDescriptor(ContextPtr context);
+
     static ColumnsDescription getTableStructureFromFile(
         const String & format,
         const std::vector<String> & paths,
         const String & compression_method,
         const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context,
-        const std::optional<ArchiveInfo> & archive_info = std::nullopt);
-
-    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromFile(
-        const std::vector<String> & paths,
-        const String & compression_method,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context,
+        ContextPtr context,
         const std::optional<ArchiveInfo> & archive_info = std::nullopt);
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
@@ -135,7 +130,7 @@ public:
         const std::string & path_to_archive,
         const std::string & file_in_archive,
         const std::string & user_files_path,
-        const ContextPtr & context,
+        ContextPtr context,
         size_t & total_bytes_to_read);
 
     bool supportsTrivialCountOptimization() const override { return true; }
@@ -146,16 +141,6 @@ protected:
     friend class ReadFromFile;
 
 private:
-    std::pair<ColumnsDescription, String> getTableStructureAndFormatFromFileDescriptor(std::optional<String> format, const ContextPtr & context);
-
-    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromFileImpl(
-        std::optional<String> format,
-        const std::vector<String> & paths,
-        const String & compression_method,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context,
-        const std::optional<ArchiveInfo> & archive_info = std::nullopt);
-
     void setStorageMetadata(CommonArguments args);
 
     std::string format_name;
@@ -202,10 +187,10 @@ private:
     bool distributed_processing = false;
 };
 
-class StorageFileSource : public SourceWithKeyCondition, WithContext
+class StorageFileSource : public SourceWithKeyCondition
 {
 public:
-    class FilesIterator : WithContext
+    class FilesIterator
     {
     public:
         explicit FilesIterator(
@@ -213,7 +198,7 @@ public:
             std::optional<StorageFile::ArchiveInfo> archive_info_,
             const ActionsDAG::Node * predicate,
             const NamesAndTypesList & virtual_columns,
-            const ContextPtr & context_,
+            ContextPtr context_,
             bool distributed_processing_ = false);
 
         String next();
@@ -242,6 +227,8 @@ private:
         std::atomic<size_t> index = 0;
 
         bool distributed_processing;
+
+        ContextPtr context;
     };
 
     using FilesIteratorPtr = std::shared_ptr<FilesIterator>;
@@ -249,7 +236,7 @@ private:
     StorageFileSource(
         const ReadFromFormatInfo & info,
         std::shared_ptr<StorageFile> storage_,
-        const ContextPtr & context_,
+        ContextPtr context_,
         UInt64 max_block_size_,
         FilesIteratorPtr files_iterator_,
         std::unique_ptr<ReadBuffer> read_buf_,
@@ -299,6 +286,7 @@ private:
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
 
+    ContextPtr context;    /// TODO Untangle potential issues with context lifetime.
     UInt64 max_block_size;
 
     bool finished_generate = false;

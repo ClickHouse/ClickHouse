@@ -12,11 +12,7 @@ namespace DB
 struct S3QueueLogElement
 {
     time_t event_time{};
-
-    std::string database;
-    std::string table;
-    std::string uuid;
-
+    std::string table_uuid;
     std::string file_name;
     size_t rows_processed = 0;
 

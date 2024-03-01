@@ -18,7 +18,7 @@ public:
         ContextPtr local_context,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
-        LoadingStrictnessLevel mode,
+        bool attach_,
         const String & comment);
 
     std::string getName() const override { return "MaterializedView"; }

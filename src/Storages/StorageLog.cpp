@@ -569,7 +569,7 @@ StorageLog::StorageLog(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
-    LoadingStrictnessLevel mode,
+    bool attach,
     ContextMutablePtr context_)
     : IStorage(table_id_)
     , WithMutableContext(context_)
@@ -603,7 +603,7 @@ StorageLog::StorageLog(
             file_checker.setEmpty(marks_file_path);
     }
 
-    if (mode < LoadingStrictnessLevel::ATTACH)
+    if (!attach)
     {
         /// create directories if they do not exist
         disk->createDirectories(table_path);
@@ -1163,7 +1163,7 @@ void registerStorageLog(StorageFactory & factory)
             args.columns,
             args.constraints,
             args.comment,
-            args.mode,
+            args.attach,
             args.getContext());
     };
 

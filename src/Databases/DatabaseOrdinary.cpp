@@ -150,7 +150,7 @@ void DatabaseOrdinary::loadTableFromMetadata(
             name.database,
             getTableDataPath(query),
             local_context,
-            mode);
+            LoadingStrictnessLevel::FORCE_RESTORE <= mode);
 
         attachTable(local_context, table_name, table, getTableDataPath(query));
     }

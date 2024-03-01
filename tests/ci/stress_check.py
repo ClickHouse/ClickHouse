@@ -10,10 +10,11 @@ from typing import List, Tuple
 
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import CiLogsCredentials
-from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
+
+from docker_images_helper import DockerImage, pull_image, get_docker_image
+from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
 from pr_info import PRInfo
-from report import ERROR, JobReport, TestResult, TestResults, read_test_results
+from report import JobReport, TestResult, TestResults, read_test_results
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
@@ -88,7 +89,7 @@ def process_results(
         status = list(csv.reader(status_file, delimiter="\t"))
 
     if len(status) != 1 or len(status[0]) != 2:
-        return ERROR, "Invalid check_status.tsv", test_results, additional_files
+        return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     try:
@@ -98,7 +99,7 @@ def process_results(
             raise Exception("Empty results")
     except Exception as e:
         return (
-            ERROR,
+            "error",
             f"Cannot parse test_results.tsv ({e})",
             test_results,
             additional_files,
