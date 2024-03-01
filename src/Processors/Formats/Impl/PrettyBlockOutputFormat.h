@@ -58,6 +58,7 @@ protected:
     bool color;
 
 private:
+    bool readable_number_tip = false;
     bool mono_block;
     /// For mono_block == true only
     Chunk mono_chunk;

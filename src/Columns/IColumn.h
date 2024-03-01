@@ -627,7 +627,7 @@ struct IsMutableColumns;
 template <typename Arg, typename ... Args>
 struct IsMutableColumns<Arg, Args ...>
 {
-    static const bool value = std::is_assignable<MutableColumnPtr &&, Arg>::value && IsMutableColumns<Args ...>::value;
+    static const bool value = std::is_assignable_v<MutableColumnPtr &&, Arg> && IsMutableColumns<Args ...>::value;
 };
 
 template <>
