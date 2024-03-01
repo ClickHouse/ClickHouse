@@ -112,6 +112,7 @@ CDMA
 CESU
 CIDR
 CIDRToRange
+CKMAN
 CLOB
 CLion
 CMPLNT
@@ -840,6 +841,8 @@ Sematext
 SendExternalTables
 SendScalars
 ShareAlike
+SharedMergeTree
+Shortkeys
 Shortkeys
 SimHash
 Simhash
@@ -1237,6 +1240,7 @@ buildable
 builtins
 byteHammingDistance
 byteSize
+byteSlice
 byteSwap
 bytebase
 bytesToCutForIPv
@@ -1266,6 +1270,8 @@ centroid
 certificateFile
 cetera
 cfg
+cgroup
+cgroups
 chadmin
 changelog
 changelogs
@@ -1285,6 +1291,7 @@ cipherList
 ciphertext
 cityHash
 cityhash
+ckman
 clangd
 cli
 clickcache
@@ -1612,6 +1619,7 @@ greaterorequals
 greenspace
 groupArray
 groupArrayInsertAt
+groupArrayIntersect
 groupArrayLast
 groupArrayMovingAvg
 groupArrayMovingSum
@@ -1627,6 +1635,7 @@ groupBitmapXor
 groupUniqArray
 grouparray
 grouparrayinsertat
+grouparrayintersect
 grouparraylast
 grouparraymovingavg
 grouparraymovingsum
@@ -1691,6 +1700,7 @@ hudi
 hyperscan
 hypot
 hyvor
+iTerm
 iTerm
 icosahedron
 icudata
@@ -1889,6 +1899,7 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+mergeTreeIndex
 mergeable
 mergetree
 messageID
@@ -2416,6 +2427,7 @@ subranges
 subreddits
 subseconds
 subsequence
+substreams
 substring
 substringIndex
 substringIndexUTF
@@ -2530,6 +2542,7 @@ toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
 toSecond
+toMillisecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
@@ -2715,6 +2728,7 @@ wordShingleSimHashCaseInsensitive
 wordShingleSimHashCaseInsensitiveUTF
 wordShingleSimHashUTF
 wordshingleMinHash
+writability
 wrt
 xcode
 xeus

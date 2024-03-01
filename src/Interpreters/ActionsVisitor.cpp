@@ -1322,7 +1322,12 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     Data & data)
 {
-    DataTypePtr type = applyVisitor(FieldToDataType(), literal.value);
+    DataTypePtr type;
+    if (data.getContext()->getSettingsRef().allow_experimental_variant_type && data.getContext()->getSettingsRef().use_variant_as_common_type)
+        type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), literal.value);
+    else
+        type = applyVisitor(FieldToDataType(), literal.value);
+
     const auto value = convertFieldToType(literal.value, *type);
 
     // FIXME why do we have a second pass with a clean sample block over the same
