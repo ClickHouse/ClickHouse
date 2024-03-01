@@ -247,6 +247,9 @@ quit
     fuzzer_pid=$!
     echo "Fuzzer pid is $fuzzer_pid"
 
+    echo "Attaching gdb to the fuzzer itself"
+    gdb -batch -command script.gdb -p $fuzzer_pid &
+
     # Wait for the fuzzer to complete.
     # Note that the 'wait || ...' thing is required so that the script doesn't
     # exit because of 'set -e' when 'wait' returns nonzero code.
