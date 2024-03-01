@@ -444,7 +444,7 @@ class TemporaryLockForUUIDDirectory : private boost::noncopyable
     UUID uuid = UUIDHelpers::Nil;
 public:
     TemporaryLockForUUIDDirectory() = default;
-    TemporaryLockForUUIDDirectory(UUID uuid_);
+    explicit TemporaryLockForUUIDDirectory(UUID uuid_);
     ~TemporaryLockForUUIDDirectory();
 
     TemporaryLockForUUIDDirectory(TemporaryLockForUUIDDirectory && rhs) noexcept;

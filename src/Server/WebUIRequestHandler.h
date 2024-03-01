@@ -15,7 +15,7 @@ class PlayWebUIRequestHandler : public HTTPRequestHandler
 private:
     IServer & server;
 public:
-    PlayWebUIRequestHandler(IServer & server_);
+    explicit PlayWebUIRequestHandler(IServer & server_);
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };
 
@@ -24,7 +24,7 @@ class DashboardWebUIRequestHandler : public HTTPRequestHandler
 private:
     IServer & server;
 public:
-    DashboardWebUIRequestHandler(IServer & server_);
+    explicit DashboardWebUIRequestHandler(IServer & server_);
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };
 
@@ -33,7 +33,7 @@ class BinaryWebUIRequestHandler : public HTTPRequestHandler
 private:
     IServer & server;
 public:
-    BinaryWebUIRequestHandler(IServer & server_);
+    explicit BinaryWebUIRequestHandler(IServer & server_);
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };
 
@@ -42,7 +42,7 @@ class JavaScriptWebUIRequestHandler : public HTTPRequestHandler
 private:
     IServer & server;
 public:
-    JavaScriptWebUIRequestHandler(IServer & server_);
+    explicit JavaScriptWebUIRequestHandler(IServer & server_);
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };
 
