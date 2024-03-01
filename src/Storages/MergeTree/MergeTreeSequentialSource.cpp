@@ -210,16 +210,6 @@ static void fillBlockNumberColumns(
         {
             res_columns[i] = BlockNumberColumn::type->createColumnConst(num_rows, block_number)->convertToFullColumnIfConst();
         }
-        else if (it->name == BlockOffsetColumn::name)
-        {
-            auto column = BlockOffsetColumn::type->createColumn();
-            auto & block_offset_data = assert_cast<ColumnUInt64 &>(*column).getData();
-
-            block_offset_data.resize(num_rows);
-            std::iota(block_offset_data.begin(), block_offset_data.end(), block_offset);
-
-            res_columns[i] = std::move(column);
-        }
     }
 }
 
