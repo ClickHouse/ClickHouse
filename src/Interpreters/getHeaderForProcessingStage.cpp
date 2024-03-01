@@ -121,12 +121,7 @@ Block getHeaderForProcessingStage(
 
                     auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(left_table_expression);
                     const auto & query_context = query_info.planner_context->getQueryContext();
-
-                    NamesAndTypes columns;
-                    const auto & column_name_to_column = table_expression_data.getColumnNameToColumn();
-                    for (const auto & column_name : table_expression_data.getSelectedColumnsNames())
-                        columns.push_back(column_name_to_column.at(column_name));
-
+                    auto columns = table_expression_data.getColumns();
                     auto new_query_node = buildSubqueryToReadColumnsFromTableExpression(columns, left_table_expression, query_context);
                     query = new_query_node->toAST();
                 }

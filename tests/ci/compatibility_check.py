@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -122,11 +123,7 @@ def get_run_commands_distributions(
 
 def parse_args():
     parser = argparse.ArgumentParser("Check compatibility with old distributions")
-    parser.add_argument("--check-name", required=True)
-    parser.add_argument("--check-glibc", action="store_true")
-    parser.add_argument(
-        "--check-distributions", action="store_true"
-    )  # currently hardcoded to x86, don't enable for ARM
+    parser.add_argument("--check-name", required=False)
     return parser.parse_args()
 
 
@@ -134,6 +131,13 @@ def main():
     logging.basicConfig(level=logging.INFO)
 
     args = parse_args()
+    check_name = args.check_name or os.getenv("CHECK_NAME")
+    assert check_name
+    check_glibc = True
+    # currently hardcoded to x86, don't enable for ARM
+    check_distributions = (
+        "aarch64" not in check_name.lower() and "arm64" not in check_name.lower()
+    )
 
     stopwatch = Stopwatch()
 
@@ -150,7 +154,7 @@ def main():
             "clickhouse-common-static_" in url or "clickhouse-server_" in url
         )
 
-    download_builds_filter(args.check_name, reports_path, packages_path, url_filter)
+    download_builds_filter(check_name, reports_path, packages_path, url_filter)
 
     for package in packages_path.iterdir():
         if package.suffix == ".deb":
@@ -166,11 +170,11 @@ def main():
 
     run_commands = []
 
-    if args.check_glibc:
+    if check_glibc:
         check_glibc_commands = get_run_commands_glibc(packages_path, result_path)
         run_commands.extend(check_glibc_commands)
 
-    if args.check_distributions:
+    if check_distributions:
         centos_image = pull_image(get_docker_image(IMAGE_CENTOS))
         ubuntu_image = pull_image(get_docker_image(IMAGE_UBUNTU))
         check_distributions_commands = get_run_commands_distributions(
@@ -195,9 +199,9 @@ def main():
 
     # See https://sourceware.org/glibc/wiki/Glibc%20Timeline
     max_glibc_version = ""
-    if "amd64" in args.check_name:
+    if "amd64" in check_name:
         max_glibc_version = "2.4"
-    elif "aarch64" in args.check_name:
+    elif "aarch64" in check_name:
         max_glibc_version = "2.18"  # because of build with newer sysroot?
     else:
         raise Exception("Can't determine max glibc version")
@@ -205,8 +209,8 @@ def main():
     state, description, test_results, additional_logs = process_result(
         result_path,
         server_log_path,
-        args.check_glibc,
-        args.check_distributions,
+        check_glibc,
+        check_distributions,
         max_glibc_version,
     )
 
