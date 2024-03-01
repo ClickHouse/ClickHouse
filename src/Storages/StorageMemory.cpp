@@ -132,7 +132,7 @@ public:
             new_data->erase(new_data->begin());
         }
 
-        // finally - append new data to modified storage table and commit
+        // append new data to modified storage table and commit
         new_data->insert(new_data->end(), new_blocks.begin(), new_blocks.end());
 
         storage.data.set(std::move(new_data));
