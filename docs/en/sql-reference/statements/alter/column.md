@@ -272,9 +272,15 @@ ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_bloc
 
 ## MATERIALIZE COLUMN
 
-Materializes or updates a column with an expression for a default value (`DEFAULT` or `MATERIALIZED`).
-It is used if it is necessary to add or update a column with a complicated expression, because evaluating such an expression directly on `SELECT` executing turns out to be expensive.
+Materializes a column with a `DEFAULT` or `MATERIALIZED` value expression.
+This statement can be used to rewrite existing column data after a `DEFAULT` or `MATERIALIZED` expression has been added or updated (which only updates the metadata but does not change existing data).
 Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
+
+For columns with a new or updated `MATERIALIZED` value expression, all existing rows are rewritten.
+
+For columns with a new or updated `DEFAULT` value expression, the behavior changed in ClickHouse v24.2:
+- In ClickHouse < v24.2, all existing rows are changed to the new `DEFAULT` value expression.
+- In ClickHouse >= v24.2, only rows containing the previous default value are changed to the new `DEFAULT` value expression. Rows with non-default values are kept as is.
 
 Syntax:
 
