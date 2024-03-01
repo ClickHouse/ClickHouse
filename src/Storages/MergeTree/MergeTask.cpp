@@ -7,6 +7,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
+#include "Storages/MergeTreeVirtualColumns.h"
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
@@ -224,13 +225,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
 
-    if (supportsBlockNumberColumn(global_ctx) && !global_ctx->storage_columns.contains(BlockNumberColumn::name))
-    {
-        global_ctx->storage_columns.emplace_back(NameAndTypePair{BlockNumberColumn::name,BlockNumberColumn::type});
-        global_ctx->all_column_names.emplace_back(BlockNumberColumn::name);
-        global_ctx->gathering_columns.emplace_back(NameAndTypePair{BlockNumberColumn::name,BlockNumberColumn::type});
-        global_ctx->gathering_column_names.emplace_back(BlockNumberColumn::name);
-    }
+    if (enableBlockNumberColumn(global_ctx))
+        addGatheringColumn(global_ctx, BlockNumberColumn::name, BlockNumberColumn::type);
+
+    if (enableBlockOffsetColumn(global_ctx))
+        addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
 
     SerializationInfo::Settings info_settings =
     {
@@ -296,7 +295,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     switch (global_ctx->chosen_merge_algorithm)
     {
-        case MergeAlgorithm::Horizontal :
+        case MergeAlgorithm::Horizontal:
         {
             global_ctx->merging_columns = global_ctx->storage_columns;
             global_ctx->merging_column_names = global_ctx->all_column_names;
@@ -304,7 +303,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
             global_ctx->gathering_column_names.clear();
             break;
         }
-        case MergeAlgorithm::Vertical :
+        case MergeAlgorithm::Vertical:
         {
             ctx->rows_sources_uncompressed_write_buf = ctx->tmp_disk->createRawStream();
             ctx->rows_sources_write_buf = std::make_unique<CompressedWriteBuffer>(*ctx->rows_sources_uncompressed_write_buf);
@@ -400,6 +399,17 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     /// This is the end of preparation. Execution will be per block.
     return false;
+}
+
+void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type)
+{
+    if (global_ctx->storage_columns.contains(name))
+        return;
+
+    global_ctx->storage_columns.emplace_back(name, type);
+    global_ctx->all_column_names.emplace_back(name);
+    global_ctx->gathering_columns.emplace_back(name, type);
+    global_ctx->gathering_column_names.emplace_back(name);
 }
 
 

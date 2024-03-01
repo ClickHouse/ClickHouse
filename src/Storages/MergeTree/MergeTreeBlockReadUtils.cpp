@@ -278,7 +278,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         .withVirtuals()
         .withSubcolumns(with_subcolumns);
 
-    static const NameSet columns_to_read_at_first_step = {"_part_offset"};
+    static const NameSet columns_to_read_at_first_step = {"_part_offset", BlockOffsetColumn::name};
 
     NameSet columns_from_previous_steps;
     auto add_step = [&](const PrewhereExprStep & step)

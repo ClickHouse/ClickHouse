@@ -324,19 +324,26 @@ getColumnsForNewDataPart(
 
     if (!storage_columns_set.contains(RowExistsColumn::name))
     {
-        if (deleted_mask_updated || (part_columns.has(RowExistsColumn::name) && !has_delete_command))
-        {
-            storage_columns.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
-            storage_columns_set.insert(RowExistsColumn::name);
-        }
+
     }
 
-    if (!storage_columns_set.contains(BlockNumberColumn::name))
+    auto persistent_virtuals = source_part->storage.getVirtualsDescription()->get(VirtualsKind::Persistent);
+
+    for (const auto & [name, type] : persistent_virtuals)
     {
-        if (source_part->tryGetSerialization(BlockNumberColumn::name) != nullptr)
+        if (storage_columns_set.contains(name))
+            continue;
+
+        bool need_column = false;
+        if (name == RowExistsColumn::name)
+            need_column = deleted_mask_updated || (part_columns.has(name) && !has_delete_command);
+        else
+            need_column = part_columns.has(name);
+
+        if (need_column)
         {
-            storage_columns.push_back({BlockNumberColumn::name, BlockNumberColumn::type});
-            storage_columns_set.insert(BlockNumberColumn::name);
+            storage_columns.emplace_back(name, type);
+            storage_columns_set.insert(name);
         }
     }
 

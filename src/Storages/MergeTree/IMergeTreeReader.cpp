@@ -93,7 +93,7 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
                 it->name, it->type->getName(), virtual_column->type->getName());
         }
 
-        if (it->name == "_part_offset")
+        if (it->name == "_part_offset" || it->name == BlockOffsetColumn::name)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Virtual column {} must be filled by range reader", it->name);
 
         Field field;

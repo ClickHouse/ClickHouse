@@ -5,6 +5,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/TargetSpecific.h>
 #include <Common/logger_useful.h>
+#include "Storages/MergeTreeVirtualColumns.h"
 #include <Core/UUID.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -1148,12 +1149,28 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     if (!result.rows_per_granule.empty())
         result.adjustLastGranule();
 
-    if (read_sample_block.has("_part_offset"))
+    bool has_part_offset = read_sample_block.has("_part_offset");
+    bool has_block_offset = read_sample_block.has(BlockOffsetColumn::name);
+
+    if (has_part_offset || has_block_offset)
     {
-        size_t pos = read_sample_block.getPositionByName("_part_offset");
-        chassert(pos < result.columns.size());
-        chassert(result.columns[pos] == nullptr);
-        result.columns[pos] = fillPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
+        auto part_offset_column = fillPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
+
+        auto add_offset_column = [&](const auto & column_name)
+        {
+            size_t pos = read_sample_block.getPositionByName(column_name);
+            chassert(pos < result.columns.size());
+
+            /// Column may be persisted in part.
+            if (!result.columns[pos])
+                result.columns[pos] = part_offset_column;
+        };
+
+        if (has_part_offset)
+            add_offset_column("_part_offset");
+
+        if (has_block_offset)
+            add_offset_column(BlockOffsetColumn::name);
     }
 
     return result;

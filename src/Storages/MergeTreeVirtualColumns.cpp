@@ -26,6 +26,10 @@ const String BlockNumberColumn::name = "_block_number";
 const DataTypePtr BlockNumberColumn::type = std::make_shared<DataTypeUInt64>();
 const ASTPtr BlockNumberColumn::codec = getCompressionCodecDeltaLZ4();
 
+const String BlockOffsetColumn::name = "_block_offset";
+const DataTypePtr BlockOffsetColumn::type = std::make_shared<DataTypeUInt64>();
+const ASTPtr BlockOffsetColumn::codec = getCompressionCodecDeltaLZ4();
+
 Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part)
 {
     if (column_name == RowExistsColumn::name)
