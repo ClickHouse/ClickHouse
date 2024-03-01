@@ -507,6 +507,27 @@ def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
     return gen
 
 
+def supports_io_uring():
+    return not subprocess.call(
+        [
+            args.binary,
+            "-q",
+            "select * from file('/dev/null', 'LineAsString')",
+            "--storage_file_read_method",
+            "io_uring",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def get_local_filesystem_methods():
+    methods = ["read", "pread", "mmap", "pread_threadpool"]
+    if supports_io_uring():
+        methods.append("io_uring")
+    return methods
+
+
 class SettingsRandomizer:
     settings = {
         "max_insert_threads": lambda: 0
@@ -542,7 +563,7 @@ class SettingsRandomizer:
             0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
         "local_filesystem_read_method": lambda: random.choice(
-            ["read", "pread", "mmap", "pread_threadpool", "io_uring"]
+            get_local_filesystem_methods()
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
