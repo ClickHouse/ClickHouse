@@ -128,6 +128,15 @@ public:
         offsets.push_back(new_size);
     }
 
+    bool tryInsert(const Field & x) override
+    {
+        if (x.getType() != Field::Types::Which::String)
+            return false;
+
+        insert(x);
+        return true;
+    }
+
     void insertFrom(const IColumn & src_, size_t n) override
     {
         const ColumnString & src = assert_cast<const ColumnString &>(src_);
@@ -259,6 +268,7 @@ public:
     ColumnPtr compress() const override;
 
     void reserve(size_t n) override;
+    void shrinkToFit() override;
 
     void getExtremes(Field & min, Field & max) const override;
 

@@ -56,6 +56,7 @@ public:
     StringRef getDataAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
+    bool tryInsert(const Field & x) override;
     void insertDefault() override;
     void popBack(size_t n) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const override;
@@ -64,6 +65,7 @@ public:
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateWeakHash32(WeakHash32 & hash) const override;
     void updateHashFast(SipHash & hash) const override;
+    void insertFrom(const IColumn & src_, size_t n) override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     void expand(const Filter & mask, bool inverted) override;
@@ -83,6 +85,7 @@ public:
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const override;
     void reserve(size_t n) override;
+    void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;

@@ -96,6 +96,8 @@ public:
 
     void insert(const Field & x) override;
 
+    bool tryInsert(const Field & x) override;
+
     void insertFrom(const IColumn & src_, size_t index) override;
 
     void insertData(const char * pos, size_t length) override;
@@ -130,15 +132,21 @@ public:
     int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
     {
         const ColumnFixedString & rhs = assert_cast<const ColumnFixedString &>(rhs_);
+        chassert(this->n == rhs.n);
         return memcmpSmallAllowOverflow15(chars.data() + p1 * n, rhs.chars.data() + p2 * n, n);
     }
 
-    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                       int direction, int nan_direction_hint) const override
+    void compareColumn(
+        const IColumn & rhs_,
+        size_t rhs_row_num,
+        PaddedPODArray<UInt64> * row_indexes,
+        PaddedPODArray<Int8> & compare_results,
+        int direction,
+        int nan_direction_hint) const override
     {
-        return doCompareColumn<ColumnFixedString>(assert_cast<const ColumnFixedString &>(rhs), rhs_row_num, row_indexes,
-                                               compare_results, direction, nan_direction_hint);
+        const ColumnFixedString & rhs = assert_cast<const ColumnFixedString &>(rhs_);
+        chassert(this->n == rhs.n);
+        return doCompareColumn<ColumnFixedString>(rhs, rhs_row_num, row_indexes, compare_results, direction, nan_direction_hint);
     }
 
     bool hasEqualValues() const override
@@ -178,7 +186,12 @@ public:
 
     void reserve(size_t size) override
     {
-        chars.reserve(n * size);
+        chars.reserve_exact(n * size);
+    }
+
+    void shrinkToFit() override
+    {
+        chars.shrink_to_fit();
     }
 
     void resize(size_t size)

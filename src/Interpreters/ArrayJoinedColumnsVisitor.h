@@ -62,7 +62,7 @@ private:
     {
         auto [array_join_expression_list, _] = node.arrayJoinExpressionList();
         if (!array_join_expression_list)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no ARRAY JOIN");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No ARRAY JOIN");
 
         std::vector<ASTPtr *> out;
         out.reserve(array_join_expression_list->children.size());

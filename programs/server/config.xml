@@ -937,6 +937,11 @@
     </macros>
     -->
 
+    <!--
+    <default_replica_path>/clickhouse/tables/{database}/{table}</default_replica_path>
+    <default_replica_name>{replica}</default_replica_name>
+    -->
+
     <!-- Replica group name for database Replicated.
           The cluster created by Replicated database will consist of replicas in the same group.
           DDL queries will only wail for the replicas in the same group.
@@ -1387,11 +1392,25 @@
         <!-- <host_name>replica</host_name> -->
     </distributed_ddl>
 
-    <!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
+    <!-- Settings to fine-tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
     <!--
     <merge_tree>
         <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
     </merge_tree>
+    -->
+
+    <!-- Settings to fine-tune ReplicatedMergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
+    <!--
+    <replicated_merge_tree>
+        <max_replicated_fetches_network_bandwidth>1000000000</max_replicated_fetches_network_bandwidth>
+    </replicated_merge_tree>
+    -->
+
+    <!-- Settings to fine-tune Distributed tables. See documentation in source code, in DistributedSettings.h -->
+    <!--
+    <distributed>
+        <flush_on_detach>false</flush_on_detach>
+    </distributed>
     -->
 
     <!-- Protection from accidental DROP.
@@ -1561,6 +1580,15 @@
         <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
         <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
     </query_cache>
+
+    <backups>
+        <allowed_path>backups</allowed_path>
+
+        <!-- If the BACKUP command fails and this setting is true then the files
+             copied before the failure will be removed automatically.
+        -->
+        <remove_backup_files_after_failure>true</remove_backup_files_after_failure>
+    </backups>
 
     <!-- This allows to disable exposing addresses in stack traces for security reasons.
          Please be aware that it does not improve security much, but makes debugging much harder.

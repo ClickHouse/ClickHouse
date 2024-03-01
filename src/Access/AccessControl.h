@@ -118,7 +118,7 @@ public:
     scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
     scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
 
-    AuthResult authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
+    AuthResult authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const String & forwarded_address) const;
 
     /// Makes a backup of access entities.
     void restoreFromBackup(RestorerFromBackup & restorer) override;
@@ -164,7 +164,7 @@ public:
     int getBcryptWorkfactor() const;
 
     /// Enables logic that users without permissive row policies can still read rows using a SELECT query.
-    /// For example, if there two users A, B and a row policy is defined only for A, then
+    /// For example, if there are two users A, B and a row policy is defined only for A, then
     /// if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
     void setEnabledUsersWithoutRowPoliciesCanReadRows(bool enable) { users_without_row_policies_can_read_rows = enable; }
     bool isEnabledUsersWithoutRowPoliciesCanReadRows() const { return users_without_row_policies_can_read_rows; }
@@ -205,6 +205,11 @@ public:
         const Poco::Net::IPAddress & address,
         const String & forwarded_address,
         const String & custom_quota_key) const;
+
+    std::shared_ptr<const EnabledQuota> getAuthenticationQuota(
+        const String & user_name,
+        const Poco::Net::IPAddress & address,
+        const std::string & forwarded_address) const;
 
     std::vector<QuotaUsage> getAllQuotasUsage() const;
 

@@ -74,6 +74,7 @@ public:
     }
 
     void insert(const Field & x) override;
+    bool tryInsert(const Field & x) override;
     void insertDefault() override;
 
     void insertFrom(const IColumn & src, size_t n) override;
@@ -159,6 +160,7 @@ public:
     }
 
     void reserve(size_t n) override { idx.reserve(n); }
+    void shrinkToFit() override { idx.shrinkToFit(); }
 
     /// Don't count the dictionary size as it can be shared between different blocks.
     size_t byteSize() const override { return idx.getPositions()->byteSize(); }
@@ -295,6 +297,7 @@ public:
 
         void popBack(size_t n) { positions->popBack(n); }
         void reserve(size_t n) { positions->reserve(n); }
+        void shrinkToFit() { positions->shrinkToFit(); }
 
         UInt64 getMaxPositionForCurrentType() const;
 

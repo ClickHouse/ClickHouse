@@ -39,7 +39,7 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
     if (size > 0)
     {
         auto & new_col = assert_cast<ColumnFixedString &>(*new_col_holder);
-        new_col.chars.resize(size * n);
+        new_col.chars.resize_exact(size * n);
 
         size_t count = std::min(this->size(), size);
         memcpy(new_col.chars.data(), chars.data(), count * n * sizeof(chars[0]));
@@ -61,6 +61,17 @@ void ColumnFixedString::insert(const Field & x)
 {
     const String & s = x.get<const String &>();
     insertData(s.data(), s.size());
+}
+
+bool ColumnFixedString::tryInsert(const Field & x)
+{
+    if (x.getType() != Field::Types::Which::String)
+        return false;
+    const String & s = x.get<const String &>();
+    if (s.size() > n)
+        return false;
+    insertData(s.data(), s.size());
+    return true;
 }
 
 void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
@@ -203,6 +214,7 @@ void ColumnFixedString::updatePermutation(IColumn::PermutationSortDirection dire
 void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
+    chassert(this->n == src_concrete.n);
 
     if (start + length > src_concrete.size())
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound "
@@ -223,7 +235,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     auto res = ColumnFixedString::create(n);
 
     if (result_size_hint)
-        res->chars.reserve(result_size_hint > 0 ? result_size_hint * n : chars.size());
+        res->chars.reserve_exact(result_size_hint > 0 ? result_size_hint * n : chars.size());
 
     const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + col_size;

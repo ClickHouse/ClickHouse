@@ -179,7 +179,12 @@ public:
 
     void reserve(size_t n) override
     {
-        data.reserve(n);
+        data.reserve_exact(n);
+    }
+
+    void shrinkToFit() override
+    {
+        data.shrink_to_fit();
     }
 
     const char * getFamilyName() const override { return TypeName<T>.data(); }
@@ -235,6 +240,14 @@ public:
         data.push_back(static_cast<T>(x.get<T>()));
     }
 
+    bool tryInsert(const DB::Field & x) override
+    {
+        NearestFieldType<T> value;
+        if (!x.tryGet<NearestFieldType<T>>(value))
+            return false;
+        data.push_back(static_cast<T>(value));
+        return true;
+    }
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
@@ -295,7 +308,7 @@ public:
         return this->template getIndicesOfNonDefaultRowsImpl<Self>(indices, from, limit);
     }
 
-    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const override;
+    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
 
     ColumnPtr compress() const override;
 

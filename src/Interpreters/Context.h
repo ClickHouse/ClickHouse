@@ -113,6 +113,7 @@ class BlobStorageLog;
 class IAsynchronousReader;
 class IOUringReader;
 struct MergeTreeSettings;
+struct DistributedSettings;
 struct InitialAllRangesAnnouncement;
 struct ParallelReadRequest;
 struct ParallelReadResponse;
@@ -350,8 +351,11 @@ protected:
         std::set<std::string> projections{};
         std::set<std::string> views{};
     };
+    using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
-    QueryAccessInfo query_access_info;
+    /// In some situations, we want to be able to transfer the access info from children back to parents (e.g. definers context).
+    /// Therefore, query_access_info must be a pointer.
+    QueryAccessInfoPtr query_access_info;
 
     /// Record names of created objects of factories (for testing, etc)
     struct QueryFactoriesInfo
@@ -532,6 +536,7 @@ public:
     void setUserScriptsPath(const String & path);
 
     void addWarningMessage(const String & msg) const;
+    void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
 
     void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
     void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);
@@ -630,7 +635,7 @@ public:
     void setClientInterface(ClientInfo::Interface interface);
     void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
     void setClientConnectionId(uint32_t connection_id);
-    void setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer);
+    void setHTTPClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer);
     void setForwardedFor(const String & forwarded_for);
     void setQueryKind(ClientInfo::QueryKind query_kind);
     void setQueryKindInitial();
@@ -676,7 +681,9 @@ public:
     const Block * tryGetSpecialScalar(const String & name) const;
     void addSpecialScalar(const String & name, const Block & block);
 
-    const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
+    const QueryAccessInfo & getQueryAccessInfo() const { return *getQueryAccessInfoPtr(); }
+    const QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }
+    void setQueryAccessInfo(QueryAccessInfoPtr other) { query_access_info = other; }
 
     void addQueryAccessInfo(
         const String & quoted_database_name,
@@ -717,6 +724,8 @@ public:
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint = nullptr);
     /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
+
+    StoragePtr buildParametrizedViewStorage(const ASTPtr & table_expression, const String & database_name, const String & table_name);
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
@@ -805,7 +814,7 @@ public:
 
     /// I/O formats.
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
-                                  const std::optional<FormatSettings> & format_settings = std::nullopt, const std::optional<size_t> max_parsing_threads = std::nullopt) const;
+                                  const std::optional<FormatSettings> & format_settings = std::nullopt, std::optional<size_t> max_parsing_threads = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
@@ -931,8 +940,8 @@ public:
     void setClientProtocolVersion(UInt64 version);
 
 #if USE_NURAFT
-    std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
-    std::shared_ptr<KeeperDispatcher> & tryGetKeeperDispatcher() const;
+    std::shared_ptr<KeeperDispatcher> getKeeperDispatcher() const;
+    std::shared_ptr<KeeperDispatcher> tryGetKeeperDispatcher() const;
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
@@ -1073,6 +1082,7 @@ public:
 
     const MergeTreeSettings & getMergeTreeSettings() const;
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
+    const DistributedSettings & getDistributedSettings() const;
     const StorageS3Settings & getStorageS3Settings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)

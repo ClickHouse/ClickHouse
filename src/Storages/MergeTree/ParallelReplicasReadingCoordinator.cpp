@@ -1,28 +1,19 @@
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include <algorithm>
-#include <cmath>
-#include <cstddef>
 #include <iterator>
-#include <map>
-#include <mutex>
 #include <numeric>
 #include <set>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <vector>
 #include <consistent_hashing.h>
 
 #include <IO/Progress.h>
-#include <IO/WriteBufferFromString.h>
-#include <Storages/MergeTree/IntersectionsIndexes.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
-#include <base/defines.h>
-#include <base/types.h>
 #include <boost/algorithm/string/split.hpp>
 #include <fmt/core.h>
 #include <fmt/format.h>
@@ -31,7 +22,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
-#include <Common/thread_local_rng.h>
+
 
 using namespace DB;
 
@@ -97,11 +88,9 @@ extern const Event ParallelReplicasCollectingOwnedSegmentsMicroseconds;
 extern const Event ParallelReplicasReadAssignedMarks;
 extern const Event ParallelReplicasReadUnassignedMarks;
 extern const Event ParallelReplicasReadAssignedForStealingMarks;
-}
 
-namespace ProfileEvents
-{
-    extern const Event ParallelReplicasUsedCount;
+extern const Event ParallelReplicasUsedCount;
+extern const Event ParallelReplicasUnavailableCount;
 }
 
 namespace DB
@@ -1025,6 +1014,8 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 
 void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica_number)
 {
+    ProfileEvents::increment(ProfileEvents::ParallelReplicasUnavailableCount);
+
     std::lock_guard lock(mutex);
 
     if (!pimpl)
