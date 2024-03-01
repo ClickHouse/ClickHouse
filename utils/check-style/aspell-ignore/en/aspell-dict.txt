@@ -112,6 +112,7 @@ CDMA
 CESU
 CIDR
 CIDRToRange
+CKMAN
 CLOB
 CLion
 CMPLNT
@@ -1288,6 +1289,7 @@ cipherList
 ciphertext
 cityHash
 cityhash
+ckman
 clangd
 cli
 clickcache
@@ -1615,6 +1617,8 @@ greaterorequals
 greenspace
 groupArray
 groupArrayInsertAt
+grouparrayintersect
+groupArrayIntersect
 groupArrayLast
 groupArrayMovingAvg
 groupArrayMovingSum
@@ -1742,6 +1746,7 @@ isValidJSON
 isValidUTF
 isZeroOrNull
 iteratively
+iTerm
 jaccard
 jaccardIndex
 jaroSimilarity
@@ -1892,6 +1897,7 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+mergeTreeIndex
 mergeable
 mergetree
 messageID
@@ -2314,6 +2320,7 @@ shardNum
 sharded
 sharding
 shortcircuit
+Shortkeys
 shortkeys
 shoutout
 simdjson
@@ -2419,6 +2426,7 @@ subranges
 subreddits
 subseconds
 subsequence
+substreams
 substring
 substringIndex
 substringIndexUTF
@@ -2718,6 +2726,7 @@ wordShingleSimHashCaseInsensitive
 wordShingleSimHashCaseInsensitiveUTF
 wordShingleSimHashUTF
 wordshingleMinHash
+writability
 wrt
 xcode
 xeus

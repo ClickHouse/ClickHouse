@@ -975,7 +975,6 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-
         std::optional<DictionaryParallelLoaderType> parallel_loader;
         if constexpr (sharded)
             parallel_loader.emplace(*this);
@@ -988,6 +987,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
 
         size_t total_rows = 0;
         size_t total_blocks = 0;
+        String dictionary_name = getFullName();
 
         Block block;
         while (true)
@@ -1007,7 +1007,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
 
             if (parallel_loader)
             {
-                parallel_loader->addBlock(block);
+                parallel_loader->addBlock(std::move(block));
             }
             else
             {
@@ -1020,10 +1020,12 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
         if (parallel_loader)
             parallel_loader->finish();
 
-        LOG_DEBUG(getLogger("HashedArrayDictionary"),
-            "Finished {}reading {} blocks with {} rows from pipeline in {:.2f} sec and inserted into hashtable in {:.2f} sec",
+        LOG_DEBUG(log,
+            "Finished {}reading {} blocks with {} rows to dictionary {} from pipeline in {:.2f} sec and inserted into hashtable in {:.2f} sec",
             configuration.use_async_executor ? "asynchronous " : "",
-            total_blocks, total_rows, pull_time_microseconds / 1000000.0, process_time_microseconds / 1000000.0);
+            total_blocks, total_rows,
+            dictionary_name,
+            pull_time_microseconds / 1000000.0, process_time_microseconds / 1000000.0);
     }
     else
     {
@@ -1166,6 +1168,9 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,"{}: SHARDS parameter should be within [1, 128]", full_name);
 
         HashedArrayDictionaryStorageConfiguration configuration{require_nonempty, dict_lifetime, static_cast<size_t>(shards)};
+
+        if (source_ptr->hasUpdateField() && shards > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: SHARDS parameter does not supports for updatable source (UPDATE_FIELD)", full_name);
 
         ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
         const auto & settings = context->getSettingsRef();
