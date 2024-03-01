@@ -18,7 +18,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/FunctionSecretArgumentsFinder.h>
+#include <Parsers/FunctionSecretArgumentsFinderAST.h>
 #include <Core/QualifiedTableName.h>
 
 #include <boost/algorithm/string.hpp>
@@ -693,7 +693,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
         FunctionSecretArgumentsFinder::Result secret_arguments;
         if (!settings.show_secrets)
-            secret_arguments = FunctionSecretArgumentsFinder::find(*this);
+            secret_arguments = FunctionSecretArgumentsFinderAST(*this).getResult();
 
         for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
         {
@@ -757,7 +757,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
 bool ASTFunction::hasSecretParts() const
 {
-    return (FunctionSecretArgumentsFinder::find(*this).hasSecrets()) || childrenHaveSecretParts();
+    return (FunctionSecretArgumentsFinderAST(*this).getResult().hasSecrets()) || childrenHaveSecretParts();
 }
 
 String getFunctionName(const IAST * ast)

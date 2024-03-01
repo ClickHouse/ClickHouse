@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Analyzer/FunctionNode.h>
-#include <Parsers/ASTFunction.h>
+#include <vector>
 
 namespace DB
 {
@@ -24,9 +23,6 @@ public:
             return count != 0 || !nested_maps.empty();
         }
     };
-
-    static Result find(const ASTFunction & function);
-    static Result find(const FunctionNode & function);
 };
 
 }

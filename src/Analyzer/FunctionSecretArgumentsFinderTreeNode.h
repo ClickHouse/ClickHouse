@@ -7,6 +7,7 @@
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/ListNode.h>
 #include <Common/KnownObjectNames.h>
+#include <Core/QualifiedTableName.h>
 
 #include <boost/algorithm/string/predicate.hpp>
 
