@@ -214,34 +214,41 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
 
 AsynchronousInsertQueue::~AsynchronousInsertQueue()
 {
-    LOG_TRACE(log, "Shutting down the asynchronous insertion queue");
-    shutdown = true;
-
-    for (size_t i = 0; i < pool_size; ++i)
+    try
     {
-        auto & shard = queue_shards[i];
+        LOG_TRACE(log, "Shutting down the asynchronous insertion queue");
+        shutdown = true;
 
-        shard.are_tasks_available.notify_one();
-        assert(dump_by_first_update_threads[i].joinable());
-        dump_by_first_update_threads[i].join();
-
-        if (flush_on_shutdown)
+        for (size_t i = 0; i < pool_size; ++i)
         {
-            for (auto & [_, elem] : shard.queue)
-                scheduleDataProcessingJob(elem.key, std::move(elem.data), getContext(), i);
-        }
-        else
-        {
+            auto & shard = queue_shards[i];
 
-            for (auto & [_, elem] : shard.queue)
-                for (const auto & entry : elem.data->entries)
-                    entry->finish(std::make_exception_ptr(Exception(
-                        ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout exceeded)")));
+            shard.are_tasks_available.notify_one();
+            assert(dump_by_first_update_threads[i].joinable());
+            dump_by_first_update_threads[i].join();
+
+            if (flush_on_shutdown)
+            {
+                for (auto & [_, elem] : shard.queue)
+                    scheduleDataProcessingJob(elem.key, std::move(elem.data), getContext(), i);
+            }
+            else
+            {
+                for (auto & [_, elem] : shard.queue)
+                    for (const auto & entry : elem.data->entries)
+                        entry->finish(
+                            std::make_exception_ptr(Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout exceeded)")));
+            }
         }
+
+        pool.wait();
+        LOG_TRACE(log, "Asynchronous insertion queue finished");
     }
-
-    pool.wait();
-    LOG_TRACE(log, "Asynchronous insertion queue finished");
+    catch (...)
+    {
+        tryLogCurrentException(log);
+        pool.wait();
+    }
 }
 
 void AsynchronousInsertQueue::scheduleDataProcessingJob(
