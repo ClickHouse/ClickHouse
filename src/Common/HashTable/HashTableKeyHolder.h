@@ -1,8 +1,11 @@
 #pragma once
 
+#include <unordered_map>
 #include <base/StringRef.h>
 
 #include <Common/Arena.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/Exception.h>
 
 /**
   * In some aggregation scenarios, when adding a key to the hash table, we
@@ -132,4 +135,107 @@ inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedKeyHolder & holder)
     holder.key.data = nullptr;
     holder.key.size = 0;
 }
+namespace DB
+{
 
+/**
+  * AdaptiveKeysHolder could be a map key itself. It has a shared state reference. The state has two working
+  * modes.
+  * - keys are low cardinality mode and the two keys take the same state reference. We use the value_ids to
+  *   determine whether two keys ​are equal
+  * - keys are high cardinality mode or the two keys take different state references. We use the serialized_keys
+  *   to determine whether two keys are equal
+  * When run aggregation in multiple threads, multiple aggregate data variants are created. Eache aggregate data
+  * variant has its own state. The purpose of this is to avoid the contention of a shared state lock. So if the
+  * keys come from the same aggregate data variants, they will have the same state reference.
+  */
+struct AdaptiveKeysHolder
+{
+    struct State;
+    /// wrapper some fields into one struct.
+    struct StateRef
+    {
+        StateRef() = default;
+        StateRef(const StringRef & serialized_keys_, UInt64 value_id_, UInt64 hash_, State * state_)
+            : serialized_keys(serialized_keys_), value_id(value_id_), hash(hash_), state(state_)
+        {
+        }
+        StringRef serialized_keys;
+        UInt64 value_id = 0;
+        UInt64 hash = 0;
+        State * state = nullptr;
+    };
+    /// State is shared between all AdaptiveKeysHolder instances.
+    struct State
+    {
+        /// There are two modes.
+        /// - VALUE_ID. For low cardinality keys. We allocate unique value_ids for each grouping keys.
+        ///   This could avoid a lot of memory copying and is more efficient. This is mode is used
+        ///   at the first.
+        /// - HASH. It's like SerializedKeyHolder. After inserting some keys into the hash table, if
+        ///   we found that the hash table size is to large, we will switch to this mode.
+        enum Mode
+        {
+            VALUE_ID = 0,
+            HASH,
+        };
+        Mode hash_mode = VALUE_ID;
+        std::shared_ptr<Arena> pool;
+
+        /// Store the serialized keys for each id.
+        std::unordered_map<UInt64, StateRef> cached_values;
+    };
+
+    /// Be careful with all fields, their default value must be zero bits.
+    /// since hash table allocs cell buffer without calling cell constructor.
+    StringRef serialized_keys;
+    /// wrapper some fields into one struct and just pass the struct reference.
+    StateRef * state_ref = nullptr;
+    Arena * pool = nullptr;
+};
+}
+
+inline bool ALWAYS_INLINE operator==(const DB::AdaptiveKeysHolder &a, const DB::AdaptiveKeysHolder &b)
+{
+    /// a and b may come from different aggregate variants during the merging phase, in this case
+    /// we cannot use the value_ids to compare the keys.
+    if (b.state_ref && b.state_ref->state->hash_mode == DB::AdaptiveKeysHolder::State::VALUE_ID && a.state_ref
+        && a.state_ref->state == b.state_ref->state)
+    {
+        return a.state_ref->value_id == b.state_ref->value_id;
+    }
+    return a.serialized_keys == b.serialized_keys;
+}
+
+// It is the map key itself.
+inline DB::AdaptiveKeysHolder & ALWAYS_INLINE keyHolderGetKey(DB::AdaptiveKeysHolder & holder)
+{
+    return holder;
+}
+
+inline void ALWAYS_INLINE keyHolderPersistKey(DB::AdaptiveKeysHolder &)
+{
+}
+
+inline void ALWAYS_INLINE keyHolderDiscardKey(DB::AdaptiveKeysHolder & holder)
+{
+    if (holder.state_ref)
+    {
+        return;
+    }
+    [[maybe_unused]] void * new_head = holder.pool->rollback(holder.serialized_keys.size);
+    assert(new_head == holder.serialized_keys.data);
+    holder.serialized_keys.data = nullptr;
+    holder.serialized_keys.size = 0;
+}
+
+template<>
+struct DefaultHash<DB::AdaptiveKeysHolder>
+{
+    inline size_t operator()(const DB::AdaptiveKeysHolder & key) const
+    {
+        if (key.state_ref)
+            return key.state_ref->hash;
+        return ::DefaultHash<StringRef>()(key.serialized_keys);
+    }
+};

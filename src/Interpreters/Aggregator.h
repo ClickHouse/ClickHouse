@@ -7,6 +7,7 @@
 
 
 #include <base/StringRef.h>
+#include <Common/ColumnsHashing.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
@@ -14,7 +15,6 @@
 #include <Common/HashTable/TwoLevelStringHashMap.h>
 
 #include <Common/ThreadPool.h>
-#include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
 #include <Core/ColumnNumbers.h>
@@ -80,6 +80,7 @@ using AggregatedDataWithUInt64Key = HashMap<UInt64, AggregateDataPtr, HashCRC32<
 using AggregatedDataWithShortStringKey = StringHashMap<AggregateDataPtr>;
 
 using AggregatedDataWithStringKey = HashMapWithSavedHash<StringRef, AggregateDataPtr>;
+using AggregateDataWithAdaptiveKeys = HashMapWithSavedHash<AdaptiveKeysHolder, AggregateDataPtr>;
 
 using AggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
@@ -90,6 +91,7 @@ using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDat
 using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<AggregateDataPtr>;
 
 using AggregatedDataWithStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr>;
+using AggregateDataWithAdaptiveKeysTwoLevel = TwoLevelHashMapWithSavedHash<AdaptiveKeysHolder, AggregateDataPtr>;
 
 using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
@@ -183,6 +185,9 @@ using AggregatedDataWithNullableStringKeyTwoLevel = AggregationDataWithNullKeyTw
         TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr, DefaultHash<StringRef>,
         TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
 
+using ColumnsHashing::HashMethodThreadContext;
+using ColumnsHashing::HashMethodThreadContextPtr;
+
 /// For the case where there is one numeric key.
 /// FieldType is UInt8/16/32/64 for any type with corresponding bit width.
 template <typename FieldType, typename TData,
@@ -202,6 +207,11 @@ struct AggregationMethodOneNumber
     template <typename Other>
     explicit AggregationMethodOneNumber(const Other & other) : data(other.data)
     {
+    }
+
+    HashMethodThreadContextPtr createContext() const
+    {
+        return std::make_shared<HashMethodThreadContext>();
     }
 
     /// To use one `Method` in different threads, use different `State`.
@@ -268,6 +278,11 @@ struct AggregationMethodString
 
     explicit AggregationMethodString(size_t size_hint) : data(size_hint) { }
 
+    HashMethodThreadContextPtr createContext() const
+    {
+        return std::make_shared<HashMethodThreadContext>();
+    }
+
     template <bool use_cache>
     using StateImpl = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped, /*place_string_to_arena=*/ true, use_cache>;
 
@@ -303,6 +318,11 @@ struct AggregationMethodStringNoCache
     template <typename Other>
     explicit AggregationMethodStringNoCache(const Other & other) : data(other.data)
     {
+    }
+
+    HashMethodThreadContextPtr createContext() const
+    {
+        return std::make_shared<HashMethodThreadContext>();
     }
 
     template <bool use_cache>
@@ -351,6 +371,11 @@ struct AggregationMethodFixedString
     {
     }
 
+    HashMethodThreadContextPtr createContext() const
+    {
+        return std::make_shared<HashMethodThreadContext>();
+    }
+
     template <bool use_cache>
     using StateImpl = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped, /*place_string_to_arena=*/ true, use_cache>;
 
@@ -385,6 +410,11 @@ struct AggregationMethodFixedStringNoCache
     template <typename Other>
     explicit AggregationMethodFixedStringNoCache(const Other & other) : data(other.data)
     {
+    }
+
+    HashMethodThreadContextPtr createContext() const
+    {
+        return std::make_shared<HashMethodThreadContext>();
     }
 
     template <bool use_cache>
@@ -429,6 +459,11 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     template <typename Other>
     explicit AggregationMethodSingleLowCardinalityColumn(const Other & other) : Base(other) {}
+
+    HashMethodThreadContextPtr createContext() const
+    {
+        return std::make_shared<HashMethodThreadContext>();
+    }
 
     template <bool use_cache>
     using StateImpl = ColumnsHashing::HashMethodSingleLowCardinalityColumn<BaseStateImpl<use_cache>, Mapped, use_cache>;
@@ -476,6 +511,11 @@ struct AggregationMethodKeysFixed
     template <typename Other>
     explicit AggregationMethodKeysFixed(const Other & other) : data(other.data)
     {
+    }
+
+    HashMethodThreadContextPtr createContext() const
+    {
+        return std::make_shared<HashMethodThreadContext>();
     }
 
     template <bool use_cache>
@@ -579,6 +619,11 @@ struct AggregationMethodSerialized
     {
     }
 
+    HashMethodThreadContextPtr createContext() const
+    {
+        return std::make_shared<HashMethodThreadContext>();
+    }
+
     template <bool use_cache>
     using StateImpl = ColumnsHashing::HashMethodSerialized<typename Data::value_type, Mapped>;
 
@@ -598,6 +643,46 @@ struct AggregationMethodSerialized
     }
 };
 
+template<typename TData>
+struct AggregationMethodAdaptive
+{
+    using Data = TData;
+    using Key = typename Data::key_type;
+    using Mapped = typename Data::mapped_type;
+
+    Data data;
+    AggregationMethodAdaptive() = default;
+
+    explicit AggregationMethodAdaptive(size_t size_hint) : data(size_hint) { }
+
+    template <typename Other>
+    explicit AggregationMethodAdaptive(const Other & other) : data(other.data)
+    {
+    }
+
+    using State = ColumnsHashing::HashMethodKeysAdaptive<typename Data::value_type, Mapped>;
+    using StateNoCache = ColumnsHashing::HashMethodKeysAdaptive<typename Data::value_type, Mapped>;
+
+    HashMethodThreadContextPtr createContext() const
+    {
+        return State::createThreadContext();
+    }
+
+    static const bool low_cardinality_optimization = false;
+    static const bool one_key_nullable_optimization = false;
+
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+
+    static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    {
+        const auto & serialized_key = key.serialized_keys;
+        const auto * pos = serialized_key.data;
+        chassert(pos);
+        for (auto & column : key_columns)
+            pos = column->deserializeAndInsertFromArena(pos);
+    }
+
+};
 
 class Aggregator;
 
@@ -656,6 +741,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128>>                   keys128;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256>>                   keys256;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKey>>                serialized;
+    std::unique_ptr<AggregationMethodAdaptive<AggregateDataWithAdaptiveKeys>>                adaptive;
 
     std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>> key32_two_level;
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>> key64_two_level;
@@ -666,6 +752,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>>           keys128_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>>           keys256_two_level;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>>        serialized_two_level;
+    std::unique_ptr<AggregationMethodAdaptive<AggregateDataWithAdaptiveKeysTwoLevel>>        adaptive_two_level;
 
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyHash64>>   key64_hash64;
     std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKeyHash64>>              key_string_hash64;
@@ -724,6 +811,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys128,                    false) \
         M(keys256,                    false) \
         M(serialized,                 false) \
+        M(adaptive,                   false) \
         M(key32_two_level,            true) \
         M(key64_two_level,            true) \
         M(key_string_two_level,       true) \
@@ -733,6 +821,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys128_two_level,          true) \
         M(keys256_two_level,          true) \
         M(serialized_two_level,       true) \
+        M(adaptive_two_level,         true) \
         M(key64_hash64,               false) \
         M(key_string_hash64,          false) \
         M(key_fixed_string_hash64,    false) \
@@ -778,6 +867,8 @@ struct AggregatedDataVariants : private boost::noncopyable
     #undef M
     };
     Type type = Type::EMPTY;
+
+    HashMethodThreadContextPtr method_context;
 
     AggregatedDataVariants() : aggregates_pools(1, std::make_shared<Arena>()), aggregates_pool(aggregates_pools.back().get()) {}
     bool empty() const { return type == Type::EMPTY; }
@@ -863,6 +954,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys128)          \
         M(keys256)          \
         M(serialized)       \
+        M(adaptive)         \
         M(nullable_key32) \
         M(nullable_key64) \
         M(nullable_key_string) \
@@ -925,6 +1017,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys128_two_level)          \
         M(keys256_two_level)          \
         M(serialized_two_level)       \
+        M(adaptive_two_level)         \
         M(nullable_key32_two_level) \
         M(nullable_key64_two_level) \
         M(nullable_key_string_two_level) \
@@ -1066,6 +1159,7 @@ public:
         bool enable_prefetch;
 
         bool optimize_group_by_constant_keys;
+        bool enable_adaptive_aggregation_method;
 
         const double min_hit_rate_to_use_consecutive_keys_optimization;
 
@@ -1108,6 +1202,7 @@ public:
             bool enable_prefetch_,
             bool only_merge_, // true for projections
             bool optimize_group_by_constant_keys_,
+            bool enable_adaptive_aggregation_method_,
             double min_hit_rate_to_use_consecutive_keys_optimization_,
             const StatsCollectingParams & stats_collecting_params_)
             : keys(keys_)
@@ -1130,15 +1225,43 @@ public:
             , only_merge(only_merge_)
             , enable_prefetch(enable_prefetch_)
             , optimize_group_by_constant_keys(optimize_group_by_constant_keys_)
+            , enable_adaptive_aggregation_method(enable_adaptive_aggregation_method_)
             , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
             , stats_collecting_params(stats_collecting_params_)
         {
         }
 
         /// Only parameters that matter during merge.
-        Params(const Names & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_, size_t max_block_size_, double min_hit_rate_to_use_consecutive_keys_optimization_)
+        Params(
+            const Names & keys_,
+            const AggregateDescriptions & aggregates_,
+            bool overflow_row_,
+            size_t max_threads_,
+            size_t max_block_size_,
+            bool enable_adaptive_aggregation_method_,
+            double min_hit_rate_to_use_consecutive_keys_optimization_)
             : Params(
-                keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, max_block_size_, false, true, false, min_hit_rate_to_use_consecutive_keys_optimization_, {})
+                keys_,
+                aggregates_,
+                overflow_row_,
+                0,
+                OverflowMode::THROW,
+                0,
+                0,
+                0,
+                false,
+                nullptr,
+                max_threads_,
+                0,
+                false,
+                0,
+                max_block_size_,
+                false,
+                true,
+                false,
+                enable_adaptive_aggregation_method_,
+                min_hit_rate_to_use_consecutive_keys_optimization_,
+                {})
         {
         }
 
@@ -1306,6 +1429,9 @@ private:
 
     std::vector<bool> is_aggregate_function_compiled;
 
+    // Limit the max keys of adaptive aggregation. Avoid overflow the value id range.
+    static constexpr auto max_adaptive_aggregating_keys = 4;
+
     /** Try to compile aggregate functions.
       */
     void compileAggregateFunctionsIfNeeded();
@@ -1336,6 +1462,7 @@ private:
     /// Process one data block, aggregate the data into a hash table.
     template <typename Method>
     void executeImpl(
+        AggregatedDataVariants & result,
         Method & method,
         Arena * aggregates_pool,
         size_t row_begin,
@@ -1490,6 +1617,7 @@ private:
     void mergeStreamsImpl(
         Block block,
         Arena * aggregates_pool,
+        AggregatedDataVariants & result,
         Method & method,
         Table & data,
         AggregateDataPtr overflow_row,
@@ -1500,6 +1628,7 @@ private:
     template <typename Method, typename Table>
     void mergeStreamsImpl(
         Arena * aggregates_pool,
+        AggregatedDataVariants & result,
         Method & method,
         Table & data,
         AggregateDataPtr overflow_row,
@@ -1527,6 +1656,7 @@ private:
 
     template <typename Method>
     void convertBlockToTwoLevelImpl(
+        AggregatedDataVariants & result,
         Method & method,
         Arena * pool,
         ColumnRawPtrs & key_columns,

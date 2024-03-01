@@ -31,6 +31,16 @@ public:
 
 using HashMethodContextPtr = std::shared_ptr<HashMethodContext>;
 
+/// Only be used in one thread.
+class HashMethodThreadContext
+{
+public:
+    virtual ~HashMethodThreadContext() = default;
+};
+
+using HashMethodThreadContextPtr = std::shared_ptr<HashMethodThreadContext>;
+
+
 struct LastElementCacheStats
 {
     UInt64 hits = 0;

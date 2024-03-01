@@ -402,6 +402,7 @@ void AggregatedDataVariants::init(Type type_, std::optional<size_t> size_hint)
             (NAME) = constructWithReserveIfPossible<decltype(NAME)::element_type>(*size_hint); \
         else \
             (NAME) = std::make_unique<decltype(NAME)::element_type>(); \
+            method_context = (NAME)->createContext(); \
         break;
             APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
@@ -733,6 +734,8 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     types_removed_nullable.reserve(params.keys.size());
     bool has_nullable_key = false;
     bool has_low_cardinality = false;
+    bool is_all_number_or_string = true;
+    bool has_string = false;
 
     for (const auto & key : params.keys)
     {
@@ -748,6 +751,14 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         {
             has_nullable_key = true;
             type = removeNullable(type);
+        }
+
+        if (isStringOrFixedString(*type))
+            has_string = true;
+
+        if (!isColumnedAsNumber(*type) && !isStringOrFixedString(*type))
+        {
+            is_all_number_or_string = false;
         }
 
         types_removed_nullable.push_back(type);
@@ -833,7 +844,15 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         }
 
         /// Fallback case.
-        return AggregatedDataVariants::Type::serialized;
+        if (is_all_number_or_string && has_string && 1 < params.keys_size && params.keys_size <= max_adaptive_aggregating_keys
+            && params.enable_adaptive_aggregation_method)
+        {
+            return AggregatedDataVariants::Type::adaptive;
+        }
+        else
+        {
+            return AggregatedDataVariants::Type::serialized;
+        }
     }
 
     /// No key has been found to be nullable.
@@ -915,7 +934,15 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
             return AggregatedDataVariants::Type::key_string;
     }
 
-    return AggregatedDataVariants::Type::serialized;
+    if (is_all_number_or_string && 1 < params.keys_size && params.keys_size <= max_adaptive_aggregating_keys
+        && params.enable_adaptive_aggregation_method)
+    {
+        return AggregatedDataVariants::Type::adaptive;
+    }
+    else
+    {
+        return AggregatedDataVariants::Type::serialized;
+    }
 }
 
 template <bool skip_compiled_aggregate_functions>
@@ -1013,7 +1040,7 @@ void Aggregator::mergeOnBlockSmall(
     if (false) {} // NOLINT
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
-        mergeStreamsImpl(result.aggregates_pool, *result.NAME, result.NAME->data, \
+        mergeStreamsImpl(result.aggregates_pool, result, *result.NAME, result.NAME->data, \
                          result.without_key, \
                          result.consecutive_keys_cache_stats, \
                          /* no_more_keys= */ false, \
@@ -1040,7 +1067,7 @@ void Aggregator::executeImpl(
 {
     #define M(NAME, IS_TWO_LEVEL) \
         else if (result.type == AggregatedDataVariants::Type::NAME) \
-            executeImpl(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, \
+            executeImpl(result, *result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, \
                         result.consecutive_keys_cache_stats, no_more_keys, all_keys_are_const, overflow_row);
 
     if (false) {} // NOLINT
@@ -1050,6 +1077,7 @@ void Aggregator::executeImpl(
 
 template <typename Method>
 void NO_INLINE Aggregator::executeImpl(
+    AggregatedDataVariants & result,
     Method & method,
     Arena * aggregates_pool,
     size_t row_begin,
@@ -1067,13 +1095,13 @@ void NO_INLINE Aggregator::executeImpl(
 
     if (use_cache)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::State state(key_columns, key_sizes, aggregation_state_cache, result.method_context);
         executeImpl(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache, result.method_context);
         executeImpl(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
     }
 }
@@ -2984,6 +3012,7 @@ template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeStreamsImpl(
     Block block,
     Arena * aggregates_pool,
+    AggregatedDataVariants & result,
     Method & method,
     Table & data,
     AggregateDataPtr overflow_row,
@@ -2995,13 +3024,14 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     const ColumnRawPtrs & key_columns = params.makeRawKeyColumns(block);
 
     mergeStreamsImpl<Method, Table>(
-        aggregates_pool, method, data, overflow_row, consecutive_keys_cache_stats,
+        aggregates_pool, result, method, data, overflow_row, consecutive_keys_cache_stats,
         no_more_keys, 0, block.rows(), aggregate_columns_data, key_columns, arena_for_keys);
 }
 
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeStreamsImpl(
     Arena * aggregates_pool,
+    AggregatedDataVariants & result,
     Method & method [[maybe_unused]],
     Table & data,
     AggregateDataPtr overflow_row,
@@ -3019,7 +3049,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 
     if (use_cache)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::State state(key_columns, key_sizes, aggregation_state_cache, result.method_context);
 
         if (!no_more_keys)
             mergeStreamsImplCase<false>(aggregates_pool, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
@@ -3030,7 +3060,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     }
     else
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache, result.method_context);
 
         if (!no_more_keys)
             mergeStreamsImplCase<false>(aggregates_pool, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
@@ -3113,7 +3143,7 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
         mergeBlockWithoutKeyStreamsImpl(std::move(block), result);
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
-        mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, result.consecutive_keys_cache_stats, no_more_keys);
+        mergeStreamsImpl(std::move(block), result.aggregates_pool, result, *result.NAME, result.NAME->data, result.without_key, result.consecutive_keys_cache_stats, no_more_keys);
 
     APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
@@ -3220,7 +3250,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
                 auto consecutive_keys_cache_stats_copy = result.consecutive_keys_cache_stats;
             #define M(NAME) \
                 else if (result.type == AggregatedDataVariants::Type::NAME) \
-                    mergeStreamsImpl(std::move(block), aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, consecutive_keys_cache_stats_copy, false);
+                    mergeStreamsImpl(std::move(block), aggregates_pool, result, *result.NAME, result.NAME->data.impls[bucket], nullptr, consecutive_keys_cache_stats_copy, false);
 
                 if (false) {} // NOLINT
                     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -3275,7 +3305,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         #define M(NAME, IS_TWO_LEVEL) \
             else if (result.type == AggregatedDataVariants::Type::NAME) \
-                mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, result.consecutive_keys_cache_stats, no_more_keys);
+                mergeStreamsImpl(std::move(block), result.aggregates_pool, result, *result.NAME, result.NAME->data, result.without_key, result.consecutive_keys_cache_stats, no_more_keys);
 
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
@@ -3353,7 +3383,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
-        mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, nullptr, result.consecutive_keys_cache_stats, false, arena_for_keys.get());
+        mergeStreamsImpl(std::move(block), result.aggregates_pool, result, *result.NAME, result.NAME->data, nullptr, result.consecutive_keys_cache_stats, false, arena_for_keys.get());
 
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
@@ -3400,13 +3430,14 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
 template <typename Method>
 void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
+    AggregatedDataVariants & result,
     Method & method,
     Arena * pool,
     ColumnRawPtrs & key_columns,
     const Block & source,
     std::vector<Block> & destinations) const
 {
-    typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+    typename Method::State state(key_columns, key_sizes, aggregation_state_cache, result.method_context);
 
     size_t rows = source.rows();
     size_t columns = source.columns();
@@ -3502,7 +3533,7 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block) const
 
 #define M(NAME) \
     else if (data.type == AggregatedDataVariants::Type::NAME) \
-        convertBlockToTwoLevelImpl(*data.NAME, data.aggregates_pool, \
+        convertBlockToTwoLevelImpl(data, *data.NAME, data.aggregates_pool, \
             key_columns, block, splitted_blocks);
 
     if (false) {} // NOLINT

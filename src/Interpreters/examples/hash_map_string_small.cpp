@@ -75,7 +75,7 @@ inline bool operator==(SmallStringRef lhs, SmallStringRef rhs)
 namespace ZeroTraits
 {
     template <>
-    inline bool check<SmallStringRef>(SmallStringRef x) { return x.size == 0; }
+    inline bool check<SmallStringRef>(const SmallStringRef & x) { return x.size == 0; }
 
     template <>
     inline void set<SmallStringRef>(SmallStringRef & x) { x.size = 0; }
