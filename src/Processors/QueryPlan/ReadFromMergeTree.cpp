@@ -43,6 +43,7 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
 #include <algorithm>
 #include <iterator>
@@ -1420,6 +1421,18 @@ static void buildIndexes(
             }
         }
     }
+
+    // move minmax indices to first positions, so they will be applied first as cheapest ones
+    std::sort(begin(skip_indexes.useful_indices), end(skip_indexes.useful_indices), [](const auto & l, const auto & r)
+    {
+        if (typeid_cast<const MergeTreeIndexMinMax *>(l.index.get()))
+            return true; // left is min max
+
+        if (typeid_cast<const MergeTreeIndexMinMax *>(r.index.get()))
+            return false; // right is min max but left is not
+
+        return true;
+    });
 
     indexes->skip_indexes = std::move(skip_indexes);
 }
