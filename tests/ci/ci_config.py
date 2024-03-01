@@ -401,7 +401,7 @@ bugfix_validate_check = DigestConfig(
 # common test params
 docker_server_job_config = JobConfig(
     required_on_release_branch=True,
-    run_command="docker_server.py --release-type head --allow-build-reuse",
+    run_command='docker_server.py --check-name "$CHECK_NAME" --release-type head --allow-build-reuse',
     digest=DigestConfig(
         include_paths=[
             "tests/ci/docker_server.py",

@@ -6,7 +6,7 @@ import json
 import logging
 import sys
 import time
-from os import getenv, makedirs
+from os import makedirs
 from os import path as p
 from pathlib import Path
 from typing import Dict, List
@@ -15,7 +15,6 @@ from build_check import get_release_or_pr
 from build_download_helper import read_build_urls
 from docker_images_helper import DockerImageData, docker_login
 from env_helper import (
-    CI,
     GITHUB_RUN_URL,
     REPORT_PATH,
     S3_BUILDS_BUCKET,
@@ -52,7 +51,11 @@ def parse_args() -> argparse.Namespace:
         description="A program to build clickhouse-server image, both alpine and "
         "ubuntu versions",
     )
-
+    parser.add_argument(
+        "--check-name",
+        required=False,
+        default="",
+    )
     parser.add_argument(
         "--version",
         type=version_arg,
@@ -333,26 +336,26 @@ def main():
     args = parse_args()
 
     pr_info = PRInfo()
-    check_name = getenv("CHECK_NAME", "")
-    if CI:
-        assert check_name and not args.image_path and not args.image_repo
 
-    image_path = args.image_path
-    image_repo = args.image_repo
+    if args.check_name:
+        assert not args.image_path and not args.image_repo
+        if "server image" in args.check_name:
+            image_path = "docker/server"
+            image_repo = "clickhouse/clickhouse-server"
+        elif "keeper image" in args.check_name:
+            image_path = "docker/keeper"
+            image_repo = "clickhouse/clickhouse-keeper"
+        else:
+            assert False, "Invalid --check-name"
+    else:
+        assert args.image_path and args.image_repo
+        image_path = args.image_path
+        image_repo = args.image_repo
+
     push = args.push
     del args.image_path
     del args.image_repo
     del args.push
-
-    if check_name:
-        if "server image" in check_name.lower():
-            image_path = "docker/server"
-            image_repo = "clickhouse/clickhouse-server"
-        elif "keeper image" in check_name.lower():
-            image_path = "docker/keeper"
-            image_repo = "clickhouse/clickhouse-keeper"
-        else:
-            assert False, "Invalid CHECK_NAME"
 
     if pr_info.is_master():
         push = True
