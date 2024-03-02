@@ -25,5 +25,13 @@
             <database>postgres_database</database>
             <table>test_table</table>
         </postgres2>
+        <postgres11>
+            <user>postgres</user>
+            <password>mysecretpassword</password>
+            <host>postgres11</host>
+            <port>5432</port>
+            <database>postgres_database</database>
+            <table>test_table</table>
+        </postgres11>
     </named_collections>
 </clickhouse>

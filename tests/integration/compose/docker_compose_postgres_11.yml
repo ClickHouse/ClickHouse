@@ -1,11 +1,11 @@
 version: '2.3'
 services:
-    postgres1:
-        image: postgres:16
+    postgres11:
+        image: postgres:11
         command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=2", "-c", "logging_collector=on", "-c", "log_directory=/postgres/logs", "-c", "log_filename=postgresql.log", "-c", "log_statement=all", "-c", "max_connections=200"]
         restart: always
         expose:
-            - ${POSTGRES_PORT:-5432}
+            - ${POSTGRES_PORT:-15432}
         healthcheck:
             test: ["CMD-SHELL", "pg_isready -U postgres"]
             interval: 10s
@@ -14,7 +14,7 @@ services:
         networks:
             default:
                 aliases:
-                    - postgre-sql.local
+                    - postgre-sql-old.local
         environment:
             POSTGRES_HOST_AUTH_METHOD: "trust"
             POSTGRES_PASSWORD: mysecretpassword

@@ -169,9 +169,17 @@ bool isTableEmpty(T & tx, const String & postgres_table)
     return result[0][0].as<bool>();
 }
 
+template <typename T>
+int getVersion(T & tx)
+{
+    auto query = "SELECT current_setting('server_version_num')::int;";
+    pqxx::result result{tx.exec(query)};
+    return result[0][0].as<int>();
+}
+
 template<typename T>
 PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
-    T & tx, const String & postgres_table, const String & query, bool use_nulls, bool only_names_and_types)
+    T & tx, const String & postgres_table, const String & query, bool use_nulls, bool only_names_and_types, int version)
 {
     auto columns = NamesAndTypes();
     PostgreSQLTableStructure::Attributes attributes;
@@ -196,29 +204,60 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             }
             else
             {
-                std::tuple<std::string, std::string, std::string, uint16_t, std::string, std::string, std::string> row;
-                while (stream >> row)
+                /// For postgresql major version >= 12.
+                if (version >= 120000)
                 {
-                    const auto column_name = std::get<0>(row);
-                    const auto data_type = convertPostgreSQLDataType(
-                        std::get<1>(row), recheck_array,
-                        use_nulls && (std::get<2>(row) == /* not nullable */"f"),
-                        std::get<3>(row));
+                    std::tuple<std::string, std::string, std::string, uint16_t, std::string, std::string, std::string> row;
+                    while (stream >> row)
+                    {
+                        const auto column_name = std::get<0>(row);
+                        const auto data_type = convertPostgreSQLDataType(
+                            std::get<1>(row), recheck_array,
+                            use_nulls && (std::get<2>(row) == /* not nullable */"f"),
+                            std::get<3>(row));
 
-                    columns.push_back(NameAndTypePair(column_name, data_type));
-                    auto attgenerated = std::get<6>(row);
+                        columns.push_back(NameAndTypePair(column_name, data_type));
+                        auto attgenerated = std::get<6>(row);
 
-                    attributes.emplace(
-                        column_name,
-                        PostgreSQLTableStructure::PGAttribute{
-                            .atttypid = parse<int>(std::get<4>(row)),
-                            .atttypmod = parse<int>(std::get<5>(row)),
-                            .atthasdef = false,
-                            .attgenerated = attgenerated.empty() ? char{} : char(attgenerated[0]),
-                            .attr_def = {}
-                    });
+                        attributes.emplace(
+                            column_name,
+                            PostgreSQLTableStructure::PGAttribute{
+                                .atttypid = parse<int>(std::get<4>(row)),
+                                .atttypmod = parse<int>(std::get<5>(row)),
+                                .atthasdef = false,
+                                .attgenerated = attgenerated.empty() ? char{} : char(attgenerated[0]),
+                                .attr_def = {}
+                        });
 
-                    ++i;
+                        ++i;
+                    }
+                }
+                /// For postgresql major version < 12.
+                else
+                {
+                    std::tuple<std::string, std::string, std::string, uint16_t, std::string, std::string> row;
+                    while (stream >> row)
+                    {
+                        const auto column_name = std::get<0>(row);
+                        const auto data_type = convertPostgreSQLDataType(
+                            std::get<1>(row), recheck_array,
+                            use_nulls && (std::get<2>(row) == /* not nullable */"f"),
+                            std::get<3>(row));
+
+                        columns.push_back(NameAndTypePair(column_name, data_type));
+
+                        attributes.emplace(
+                            column_name,
+                            PostgreSQLTableStructure::PGAttribute{
+                                .atttypid = parse<int>(std::get<4>(row)),
+                                .atttypmod = parse<int>(std::get<5>(row)),
+                                .atthasdef = false,
+                                .attgenerated = char{},
+                                .attr_def = {}
+                            });
+
+                        ++i;
+                    }
                 }
             }
 
@@ -301,21 +340,46 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
         ? " AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')"
         : fmt::format(" AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = {})", quoteString(postgres_schema));
 
-    std::string query = fmt::format(
-           "SELECT attname AS name, " /// column name
-           "format_type(atttypid, atttypmod) AS type, " /// data type
-           "attnotnull AS not_null, " /// is nullable
-           "attndims AS dims, " /// array dimensions
-           "atttypid as type_id, "
-           "atttypmod as type_modifier, "
-           "attgenerated as generated " /// if column has GENERATED
-           "FROM pg_attribute "
-           "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) "
-           "AND NOT attisdropped AND attnum > 0 "
-           "ORDER BY attnum ASC", where);
+    int version = getVersion(tx);
+
+    std::string query;
+
+    /// For postgresql major version >= 12.
+    if (version >= 120000)
+    {
+        query = fmt::format(
+            "SELECT attname AS name, " /// column name
+            "format_type(atttypid, atttypmod) AS type, " /// data type
+            "attnotnull AS not_null, " /// is nullable
+            "attndims AS dims, " /// array dimensions
+            "atttypid as type_id, "
+            "atttypmod as type_modifier, "
+            "attgenerated as generated " /// if column has GENERATED
+            "FROM pg_attribute "
+            "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) "
+            "AND NOT attisdropped AND attnum > 0 "
+            "ORDER BY attnum ASC", where);
+    }
+    /// For postgresql major version < 12.
+    /// Generated columns is supported from postgresql 12 and above,
+    /// hence we are skipping them if postgresql major version < 12.
+    else
+    {
+        query = fmt::format(
+            "SELECT attname AS name, " /// column name
+            "format_type(atttypid, atttypmod) AS type, " /// data type
+            "attnotnull AS not_null, " /// is nullable
+            "attndims AS dims, " /// array dimensions
+            "atttypid as type_id, "
+            "atttypmod as type_modifier "
+            "FROM pg_attribute "
+            "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) "
+            "AND NOT attisdropped AND attnum > 0 "
+            "ORDER BY attnum ASC", where);
+    }
 
     auto postgres_table_with_schema = postgres_schema.empty() ? postgres_table : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
-    table.physical_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, false);
+    table.physical_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, false, version);
 
     if (!table.physical_columns)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table_with_schema);
@@ -363,7 +427,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
                 "AND a.attnum = ANY(i.indkey) "
                 "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) AND i.indisprimary", where);
 
-        table.primary_key_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
+        table.primary_key_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true, version);
     }
 
     if (with_replica_identity_index && !table.primary_key_columns)
@@ -391,7 +455,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             (postgres_schema.empty() ? quoteString("public") : quoteString(postgres_schema))
         );
 
-        table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
+        table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true, version);
     }
 
     return table;
