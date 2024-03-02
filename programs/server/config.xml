@@ -752,7 +752,7 @@
     <!-- Comma-separated list of prefixes for user-defined settings.
          The server will allow to set these settings, and retrieve them with the getSetting function.
          They are also logged in the query_log, similarly to other settings, but have no special effect.
-         The "SQL_" prefix is introduced for compatibility with MySQL - these settings are being set be Tableau.
+         The "SQL_" prefix is introduced for compatibility with MySQL - these settings are being set by Tableau.
     -->
     <custom_settings_prefixes>SQL_</custom_settings_prefixes>
 
