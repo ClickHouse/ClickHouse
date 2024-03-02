@@ -112,6 +112,7 @@ CDMA
 CESU
 CIDR
 CIDRToRange
+CKMAN
 CLOB
 CLion
 CMPLNT
@@ -772,7 +773,6 @@ ReferenceKeyed
 Refreshable
 RegexpTree
 RemoteRead
-SharedMergeTree
 ReplacingMergeTree
 ReplicasMaxAbsoluteDelay
 ReplicasMaxInsertsInQueue
@@ -841,6 +841,8 @@ Sematext
 SendExternalTables
 SendScalars
 ShareAlike
+SharedMergeTree
+Shortkeys
 Shortkeys
 SimHash
 Simhash
@@ -1238,6 +1240,7 @@ buildable
 builtins
 byteHammingDistance
 byteSize
+byteSlice
 byteSwap
 bytebase
 bytesToCutForIPv
@@ -1288,6 +1291,7 @@ cipherList
 ciphertext
 cityHash
 cityhash
+ckman
 clangd
 cli
 clickcache
@@ -1615,7 +1619,6 @@ greaterorequals
 greenspace
 groupArray
 groupArrayInsertAt
-grouparrayintersect
 groupArrayIntersect
 groupArrayLast
 groupArrayMovingAvg
@@ -1632,6 +1635,7 @@ groupBitmapXor
 groupUniqArray
 grouparray
 grouparrayinsertat
+grouparrayintersect
 grouparraylast
 grouparraymovingavg
 grouparraymovingsum
@@ -1697,6 +1701,7 @@ hyperscan
 hypot
 hyvor
 iTerm
+iTerm
 icosahedron
 icudata
 idempotency
@@ -1744,7 +1749,6 @@ isValidJSON
 isValidUTF
 isZeroOrNull
 iteratively
-iTerm
 jaccard
 jaccardIndex
 jaroSimilarity
@@ -2318,7 +2322,6 @@ shardNum
 sharded
 sharding
 shortcircuit
-Shortkeys
 shortkeys
 shoutout
 simdjson
