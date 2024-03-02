@@ -171,7 +171,7 @@ public:
     using ResultDataType = Switch<
         /// Result must be Integer
         Case<IsOperation<Operation>::int_div || IsOperation<Operation>::int_div_or_zero,
-            std::conditional_t<IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>, DataTypeFromFieldType<typename Op::ResultType>, InvalidType>>,
+            std::conditional_t<IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>, DataTypeFromFieldType<typename Op::ResultType>, InvalidType>>,
         /// Decimal cases
         Case<IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>, DecimalResultDataType>,
         Case<
