@@ -6,7 +6,7 @@
 
 namespace DB
 {
-    enum class ExternalLoaderStatus : Int8
+    enum class ExternalLoaderStatus : int8_t
     {
         NOT_LOADED, /// Object hasn't been tried to load. This is an initial state.
         LOADED, /// Object has been loaded successfully.

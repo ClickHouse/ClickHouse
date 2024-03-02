@@ -699,7 +699,10 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedModeImpl(
         {
             auto code = zk_client->tryMulti(requests, responses);
             if (code == Coordination::Error::ZOK)
+            {
+                LOG_TEST(log, "Moved file `{}` to processed", path);
                 return;
+            }
         }
 
         /// Failed to update max processed node, retry.

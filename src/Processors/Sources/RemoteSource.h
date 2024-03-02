@@ -4,7 +4,6 @@
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <QueryPipeline/Pipe.h>
 #include <Core/UUID.h>
-#include <atomic>
 
 namespace DB
 {
