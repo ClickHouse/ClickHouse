@@ -231,7 +231,7 @@ def main():
     run_changed_tests = flaky_check or validate_bugfix_check
     pr_info = PRInfo(need_changed_files=run_changed_tests)
     tests_to_run = []
-    if run_changed_tests:
+    if validate_bugfix_check:
         assert (
             args.report_to_file
         ), "JobReport file path must be provided with --validate-bugfix"
