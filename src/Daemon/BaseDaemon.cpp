@@ -200,6 +200,7 @@ extern "C" bool isPointerReadable(const void * ptr)
     {
         char res;
         memcpy(&res, ptr, 1);
+        __msan_unpoison(res, 1);
         __asm__ __volatile__("" :: "r"(res) : "memory");
         checking_pointer = false;
         return true;
