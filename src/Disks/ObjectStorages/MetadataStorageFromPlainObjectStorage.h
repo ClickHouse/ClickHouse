@@ -78,7 +78,7 @@ private:
 
     std::vector<MetadataOperationPtr> operations;
 public:
-    MetadataStorageFromPlainObjectStorageTransaction(const MetadataStorageFromPlainObjectStorage & metadata_storage_)
+    explicit MetadataStorageFromPlainObjectStorageTransaction(const MetadataStorageFromPlainObjectStorage & metadata_storage_)
         : metadata_storage(metadata_storage_)
     {}
 

@@ -1,8 +1,5 @@
 import argparse
 import concurrent.futures
-from copy import deepcopy
-from dataclasses import asdict, dataclass
-from enum import Enum
 import json
 import logging
 import os
@@ -11,17 +8,21 @@ import re
 import subprocess
 import sys
 import time
+from copy import deepcopy
+from dataclasses import asdict, dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Union
 
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
-from ci_config import CI_CONFIG, Build, Labels, JobNames
+from ci_config import CI_CONFIG, Build, JobNames, Labels
 from ci_utils import GHActions, is_hex, normalize_string
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
+    InsertException,
     get_instance_id,
     get_instance_type,
     prepare_tests_results_for_clickhouse,
@@ -644,7 +645,7 @@ class CiCache:
         if not jobs_with_params:
             return {}
         poll_interval_sec = 300
-        TIMEOUT = 3600
+        TIMEOUT = 3590
         MAX_ROUNDS_TO_WAIT = 6
         MAX_JOB_NUM_TO_WAIT = 3
         await_finished: Dict[str, List[int]] = {}
@@ -952,10 +953,18 @@ def _mark_success_action(
     # FIXME: find generic design for propagating and handling job status (e.g. stop using statuses in GH api)
     #   now job ca be build job w/o status data, any other job that exit with 0 with or w/o status data
     if CI_CONFIG.is_build_job(job):
-        # there is no status for build jobs
-        # create dummy success to mark it as done
+        # there is no CommitStatus for build jobs
+        # create dummy status relying on JobReport
         # FIXME: consider creating commit status for build jobs too, to treat everything the same way
-        CommitStatusData(SUCCESS, "dummy description", "dummy_url").dump_status()
+        job_report = JobReport.load() if JobReport.exist() else None
+        if job_report and job_report.status == SUCCESS:
+            CommitStatusData(
+                SUCCESS,
+                "dummy description",
+                "dummy_url",
+                pr_num=pr_info.number,
+                sha=pr_info.sha,
+            ).dump_status()
 
     job_status = None
     if CommitStatusData.exist():
@@ -1504,7 +1513,10 @@ def _upload_build_profile_data(
             profile_data_file.stat().st_size,
             query,
         )
-        ch_helper.insert_file(url, auth, query, profile_data_file)
+        try:
+            ch_helper.insert_file(url, auth, query, profile_data_file)
+        except InsertException:
+            logging.error("Failed to insert profile data for the build, continue")
 
         query = f"""INSERT INTO binary_sizes
             (
@@ -1530,7 +1542,10 @@ def _upload_build_profile_data(
             binary_sizes_file.stat().st_size,
             query,
         )
-        ch_helper.insert_file(url, auth, query, binary_sizes_file)
+        try:
+            ch_helper.insert_file(url, auth, query, binary_sizes_file)
+        except InsertException:
+            logging.error("Failed to insert binary_size_file for the build, continue")
 
 
 def _run_test(job_name: str, run_command: str) -> int:
@@ -1675,7 +1690,7 @@ def main() -> int:
         if not args.skip_jobs:
             ci_cache = CiCache(s3, jobs_data["digests"])
 
-            if pr_info.is_release_branch():
+            if pr_info.is_master():
                 # wait for pending jobs to be finished, await_jobs is a long blocking call
                 # wait pending jobs (for now only on release/master branches)
                 ready_jobs_batches_dict = ci_cache.await_jobs(
