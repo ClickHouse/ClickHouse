@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 
-import json
 import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import List
 
-from ci_config import CI_CONFIG
+from ci_config import CI_CONFIG, Build
 from env_helper import (
     GITHUB_JOB_URL,
     GITHUB_REPOSITORY,
@@ -46,77 +45,43 @@ def main():
     )
 
     build_check_name = sys.argv[1]
-    needs_data: Dict[str, Dict[str, Any]] = {}
-    required_builds = 0
-
-    # NEEDS_DATA is a next dict:
-    # {
-    #   "BuilderDebAarch64": {
-    #     "result": "skipped",
-    #     "outputs": {}
-    #   },
-    #   "BuilderDebAsan": {
-    #     "result": "success",
-    #     "outputs": {}
-    #   },
-    #   "BuilderDebDebug": {
-    #     "result": "skipped",
-    #     "outputs": {}
-    #   },
-    # }
-    if NEEDS_DATA:
-        needs_data = json.loads(NEEDS_DATA)
-    elif os.path.exists(NEEDS_DATA_PATH):
-        with open(NEEDS_DATA_PATH, "rb") as file_handler:
-            needs_data = json.load(file_handler)
-    else:
-        raise RuntimeError("NEEDS_DATA env var required")
-
-    # drop non build jobs if any
-    needs_data = {name: data for name, data in needs_data.items() if "Build" in name}
-
-    required_builds = len(needs_data)
-
-    if needs_data:
-        logging.info("The next builds are required: %s", ", ".join(needs_data))
 
     pr_info = PRInfo()
 
-    builds_for_check = CI_CONFIG.get_builds_for_report(build_check_name)
-    required_builds = required_builds or len(builds_for_check)
+    builds_for_check = CI_CONFIG.get_builds_for_report(
+        build_check_name,
+        release=pr_info.is_release(),
+        backport=pr_info.head_ref.startswith("backport"),
+    )
+    required_builds = len(builds_for_check)
+    missing_builds = 0
 
     # Collect reports from json artifacts
-    build_results = []
+    build_results = []  # type: List[BuildResult]
     for build_name in builds_for_check:
         build_result = BuildResult.load_any(
             build_name, pr_info.number, pr_info.head_ref
         )
         if not build_result:
-            logging.warning("Build results for %s are missing", build_name)
-            continue
-        assert (
-            pr_info.head_ref == build_result.head_ref or pr_info.number > 0
-        ), "BUG. if not a PR, report must be created on the same branch"
-        build_results.append(build_result)
-
-    # The code to collect missing reports for failed jobs
-    missing_job_names = [
-        name
-        for name, data in needs_data.items()
-        if not any(1 for br in build_results if br.job_name.startswith(name))
-        and data["result"] != "skipped"
-    ]
-    missing_builds = len(missing_job_names)
-    for job_name in reversed(missing_job_names):
-        build_result = BuildResult.missing_result("missing")
-        build_result.job_name = job_name
-        build_result.status = PENDING
-        logging.info(
-            "There is missing report for %s, created a dummy result %s",
-            job_name,
-            build_result,
-        )
-        build_results.insert(0, build_result)
+            if build_name == Build.FUZZERS:
+                logging.info("Build [%s] is missing - skip", Build.FUZZERS)
+                continue
+            logging.warning("Build results for %s is missing", build_name)
+            build_result = BuildResult.missing_result("missing")
+            build_result.job_name = build_name
+            build_result.status = PENDING
+            logging.info(
+                "There is missing report for %s, created a dummy result %s",
+                build_name,
+                build_result,
+            )
+            missing_builds += 1
+            build_results.insert(0, build_result)
+        else:
+            assert (
+                pr_info.head_ref == build_result.head_ref or pr_info.number > 0
+            ), "BUG. if not a PR, report must be created on the same branch"
+            build_results.append(build_result)
 
     # Calculate artifact groups like packages and binaries
     total_groups = sum(len(br.grouped_urls) for br in build_results)

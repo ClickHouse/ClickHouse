@@ -172,14 +172,8 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse build check
-      runner_type: style-checker
+      runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
-      additional_envs: |
-        NEEDS_DATA<<NDENV
-        ${{ toJSON(needs) }}
-        NDENV
-      run_command: |
-        python3 build_report_check.py "$CHECK_NAME"
   BuilderSpecialReport:
     # run report check for failed builds to indicate the CI error
     if: ${{ !cancelled() }}
@@ -190,14 +184,8 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse special build check
-      runner_type: style-checker
+      runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
-      additional_envs: |
-        NEEDS_DATA<<NDENV
-        ${{ toJSON(needs) }}
-        NDENV
-      run_command: |
-        python3 build_report_check.py "$CHECK_NAME"
 ############################################################################################
 #################################### INSTALL PACKAGES ######################################
 ############################################################################################
