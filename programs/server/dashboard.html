@@ -9,7 +9,8 @@
     <style>
         :root {
             --color: black;
-            --background: linear-gradient(to bottom, #00CCFF, #00D0D0);
+            --background-color-1: #00CCFF;
+            --background: linear-gradient(to bottom, var(--background-color-1), #00D0D0);
             --chart-background: white;
             --shadow-color: rgba(0, 0, 0, 0.25);
             --moving-shadow-color: rgba(0, 0, 0, 0.5);
@@ -33,7 +34,8 @@
 
         [data-theme="dark"] {
             --color: white;
-            --background: #151C2C;
+            --background-color-1: #151C2C;
+            --background: var(--background-color-1);
             --chart-background: #1b2834;
             --shadow-color: rgba(0, 0, 0, 0);
             --moving-shadow-color: rgba(255, 255, 255, 0.25);
@@ -119,6 +121,18 @@
             display: flex;
             flex-flow: column nowrap;
             justify-content: center;
+
+            position: sticky;
+            top: -1rem;
+            margin-top: -1rem;
+            margin-left: -1rem;
+            margin-right: -1rem;
+            border-top: 1rem solid var(--background-color-1);
+            border-left: 1rem solid var(--background-color-1);
+            border-right: 1rem solid var(--background-color-1);
+            box-sizing: content-box;
+            z-index: 1000;
+            background: var(--background-color-1);
         }
 
         .inputs.unconnected {
