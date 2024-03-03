@@ -22,7 +22,7 @@ private:
 class JSONColumnsWithMetadataSchemaReader : public ISchemaReader
 {
 public:
-    JSONColumnsWithMetadataSchemaReader(ReadBuffer & in_);
+    explicit JSONColumnsWithMetadataSchemaReader(ReadBuffer & in_);
 
     NamesAndTypesList readSchema() override;
 };
