@@ -2493,6 +2493,7 @@ theilsu
 themself
 threadpool
 throwIf
+timeDiff
 timeSlot
 timeSlots
 timeZone
