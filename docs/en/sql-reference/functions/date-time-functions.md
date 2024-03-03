@@ -2287,10 +2287,43 @@ Result:
 
 ## today {#today}
 
-Accepts zero arguments and returns the current date at one of the moments of query analysis.
-The same as ‘toDate(now())’.
+Returns the current date at moment of query analysis. It is the same as ‘toDate(now())’ and has aliases: `curdate`, `current_date`.
 
-Aliases: `curdate`, `current_date`.
+**Syntax**
+
+```sql
+today()
+```
+
+**Arguments**
+
+- None
+
+**Returned value**
+
+- Current date
+
+Type: [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT today() AS today, curdate() AS curdate, current_date() AS current_date FORMAT Pretty
+```
+
+**Result**:
+
+Running the query above on the 3rd of March 2024 would have returned the following response:
+
+```response
+┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
+┃      today ┃    curdate ┃ current_date ┃
+┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
+│ 2024-03-03 │ 2024-03-03 │   2024-03-03 │
+└────────────┴────────────┴──────────────┘
+```
 
 ## yesterday {#yesterday}
 
