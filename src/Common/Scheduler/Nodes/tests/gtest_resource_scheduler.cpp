@@ -140,10 +140,10 @@ TEST(SchedulerRoot, Cancel)
     auto b = r1.addQueue("/prio/B", "<priority>2</priority>");
     r1.registerResource();
 
+    std::barrier destruct_sync(2);
     std::barrier sync(2);
     std::thread consumer1([&]
     {
-        std::barrier destruct_sync(2);
         MyRequest request(1,[&]
         {
             sync.arrive_and_wait(); // (A)
