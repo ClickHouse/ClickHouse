@@ -4,18 +4,25 @@
             <disk0>
                 <path>/var/lib/clickhouse/disk0/</path>
             </disk0>
-            <disk1>
-                <path>/var/lib/clickhouse/disk1/</path>
-            </disk1>
         </disks>
         <policies>
             <default_policy>
                 <volumes>
-                    <default_volume>
+                    <volume0>
                         <disk>disk0</disk>
-                    </default_volume>
+                    </volume0>
                 </volumes>
             </default_policy>
         </policies>
     </storage_configuration>
+    <remote_servers>
+        <default>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </default>
+    </remote_servers>
 </clickhouse>
