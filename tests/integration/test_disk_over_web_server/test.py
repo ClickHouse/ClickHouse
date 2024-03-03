@@ -111,7 +111,7 @@ def test_usage(cluster, node_name):
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'web';
         """.format(
-                i, uuids[i], i, i
+                i, uuids[i]
             )
         )
 
