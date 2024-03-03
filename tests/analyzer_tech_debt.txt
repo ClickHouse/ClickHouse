@@ -13,7 +13,6 @@
 01952_optimize_distributed_group_by_sharding_key
 02174_cte_scalar_cache_mv
 02354_annoy
-02493_inconsistent_hex_and_binary_number
 # Check after constants refactoring
 02901_parallel_replicas_rollup
 # Flaky. Please don't delete them without fixing them:
