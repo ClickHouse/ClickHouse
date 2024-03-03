@@ -3034,6 +3034,40 @@ Result:
 │                                                 2023-03-16 18:00:00.000 │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+## timeDiff
+
+Returns the difference between two dates or dates with time values. The difference is calculated in units of seconds. It is same as `dateDiff` and was added only for MySQL support. `dateDiff` is preferred.
+
+**Syntax**
+
+```sql
+timeDiff(first_datetime, second_datetime)
+```
+
+*Arguments**
+
+- `first_datetime` — A DateTime/DateTime64 type const value or an expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
+- `second_datetime` — A DateTime/DateTime64 type const value or an expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
+
+**Returned value**
+
+The difference between two dates or dates with time values in seconds.
+
+**Example**
+
+Query:
+
+```sql
+timeDiff(toDateTime64('1927-01-01 00:00:00', 3), toDate32('1927-01-02'));
+```
+
+**Result**:
+
+```response
+┌─timeDiff(toDateTime64('1927-01-01 00:00:00', 3), toDate32('1927-01-02'))─┐
+│                                                                    86400 │
+└──────────────────────────────────────────────────────────────────────────┘
+```
 
 ## Related content
 
