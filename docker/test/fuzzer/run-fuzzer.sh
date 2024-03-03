@@ -86,7 +86,7 @@ function download
 
     chmod +x clickhouse
     # clickhouse may be compressed - run once to decompress
-    ./clickhouse ||:
+    ./clickhouse --query "SELECT 1" ||:
     ln -s ./clickhouse ./clickhouse-server
     ln -s ./clickhouse ./clickhouse-client
     ln -s ./clickhouse ./clickhouse-local
