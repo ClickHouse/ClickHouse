@@ -12,7 +12,8 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <unordered_map>
+
+#include <absl/container/flat_hash_map.h>
 
 
 namespace DB
@@ -257,7 +258,7 @@ private:
         size_t refcount = 0; /// Protected by the cache mutex
     };
 
-    using InsertTokenById = std::unordered_map<Key, std::shared_ptr<InsertToken>, HashFunction>;
+    using InsertTokenById = absl::flat_hash_map<Key, std::shared_ptr<InsertToken>, HashFunction>;
 
     /// This class is responsible for removing used insert tokens from the insert_tokens map.
     /// Among several concurrent threads the first successful one is responsible for removal. But if they all

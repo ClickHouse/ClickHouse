@@ -1,0 +1,8 @@
+SecondaryIndexCacheSize	0
+SecondaryIndexCacheSize	0
+0
+SecondaryIndexCacheSize	1	1
+1
+SecondaryIndexCacheSize	1	1
+select count() from a where v = 25;	0	10
+select count() from a where v = 30;	10	0

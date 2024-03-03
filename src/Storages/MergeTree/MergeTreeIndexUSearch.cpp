@@ -87,6 +87,12 @@ size_t USearchIndexWithSerialization<Metric>::getDimensions() const
 }
 
 template <unum::usearch::metric_kind_t Metric>
+size_t USearchIndexWithSerialization<Metric>::memoryUsageBytes() const
+{
+    return Base::memory_usage();
+}
+
+template <unum::usearch::metric_kind_t Metric>
 MergeTreeIndexGranuleUSearch<Metric>::MergeTreeIndexGranuleUSearch(
     const String & index_name_,
     const Block & index_sample_block_,
