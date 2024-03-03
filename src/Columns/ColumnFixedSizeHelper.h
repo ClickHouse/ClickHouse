@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/** Allows to access internal array of ColumnVector or ColumnFixedString without cast to concrete type.
+/** Allows to access internal array of fixed-size column without cast to concrete type.
   * We will inherit ColumnVector and ColumnFixedString from this class instead of IColumn.
   * Assumes data layout of ColumnVector, ColumnFixedString and PODArray.
   *
@@ -22,7 +22,7 @@ namespace DB
   * To allow functional tests to work under UBSan we have to separate some base class that will present the memory layout in explicit way,
   *  and we will do static_cast to this class.
   */
-class ColumnVectorHelper : public IColumn
+class ColumnFixedSizeHelper : public IColumn
 {
 public:
     template <size_t ELEMENT_SIZE>
