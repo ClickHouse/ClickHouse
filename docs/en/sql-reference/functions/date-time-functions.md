@@ -2315,8 +2315,10 @@ SELECT today();
 
 **Result**:
 
-```response
+Running the query above on the 3rd of March 2024 would have returned the following response:
 
+```response
+2024-03-03
 ```
 
 ## yesterday {#yesterday}
