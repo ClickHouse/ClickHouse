@@ -1209,7 +1209,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::DROP_DISK_METADATA_CACHE:
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+        case Type::DROP_DISTRIBUTED_CACHE:
+        case Type::STOP_VIRTUAL_PARTS_UPDATE:
+        case Type::START_VIRTUAL_PARTS_UPDATE:
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only available in ClickHouse Cloud, https://clickhouse.cloud/");
+        }
         case Type::RELOAD_DICTIONARY:
         case Type::RELOAD_DICTIONARIES:
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
