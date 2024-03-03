@@ -343,7 +343,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
             const auto sign = signed_dd < 0;
 
             // -1 shrinks dd down to fit into number of bits, and there can't be 0, so it is OK.
-            const auto abs_value = static_cast<UnsignedDeltaType>(std::abs(signed_dd) - 1);
+            const auto abs_value = (sign ? -static_cast<UnsignedDeltaType>(signed_dd) : static_cast<UnsignedDeltaType>(signed_dd)) - 1;
             const auto write_spec = getDeltaWriteSpec(signed_dd);
 
             writer.writeBits(write_spec.prefix_bits, write_spec.prefix);
