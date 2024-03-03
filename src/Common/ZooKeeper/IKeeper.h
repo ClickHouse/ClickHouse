@@ -477,7 +477,7 @@ private:
         incrementErrorMetrics(code);
     }
 
-    static void incrementErrorMetrics(const Error code_);
+    static void incrementErrorMetrics(Error code_);
 
 public:
     explicit Exception(const Error code_); /// NOLINT
