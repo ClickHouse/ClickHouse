@@ -36,19 +36,21 @@ None.
 
 Returns a number of type UInt32.
 
+### Implementation details
+
+Uses a linear congruential generator.
+
 ### Example
 
 ```sql
-SELECT rand()
+SELECT rand();
 ```
 
 ```response
 1569354847
 ```
 
-### Implementation details
-
-Uses a linear congruential generator.
+**Note:** The actual output will be a random number, not the specific number shown in the example.
 
 ## rand32
 
@@ -94,15 +96,13 @@ rand64()
 
 None.
 
-### Implementation details
-
-The `rand64` function uses a linear congruential generator, which means that while it appears random, it's not truly random and can be predictable if the initial state is known.
-
-For scenarios where true randomness is crucial, consider using alternative methods like system-level calls or integrating with external libraries.
-
 ### Output
 
 Returns a number of type UInt64, evenly distributed across the range of all possible UInt64 values.
+
+### Implementation details
+
+The `rand64` function uses a linear congruential generator, which means that while it appears random, it's not truly random and can be predictable if the initial state is known. For scenarios where true randomness is crucial, consider using alternative methods like system-level calls or integrating with external libraries.
 
 ### Example
 
@@ -160,15 +160,13 @@ randConstant([x]);
 
 - **[x] (Optional):** An optional expression that influences the generated random value. Even if provided, the resulting value will still be constant within the same query execution. Different queries using the same expression will likely generate different constant values.
 
-### Implementation details
-
-The actual output will be different for each query execution, even with the same optional expression.
-
-The optional parameter may not significantly change the generated value compared to using `randConstant` alone.
-
 ### Output
 
 Returns a column of type UInt32 containing the same random value in each row.
+
+### Implementation details
+
+The actual output will be different for each query execution, even with the same optional expression. The optional parameter may not significantly change the generated value compared to using `randConstant` alone.
 
 ### Examples
 
