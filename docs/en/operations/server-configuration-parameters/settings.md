@@ -199,6 +199,16 @@ Type: Bool
 
 Default: 0
 
+
+## dns_cache_max_entries
+
+Internal DNS cache max entries.
+
+Type: UInt64
+
+Default: 10000
+
+
 ## dns_cache_update_period
 
 Internal DNS cache update period in seconds.
@@ -2913,3 +2923,15 @@ If set to true, then alter operations will be surrounded by parentheses in forma
 Type: Bool
 
 Default: 0
+
+## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
+
+If true, ClickHouse doesn't write defaults for empty SQL security statement in CREATE VIEW queries. 
+
+:::note
+This setting is only necessary for the migration period and will become obsolete in 24.4
+:::
+
+Type: Bool
+
+Default: 1

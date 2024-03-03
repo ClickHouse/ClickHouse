@@ -56,43 +56,36 @@ def started_cluster():
 
 
 @pytest.mark.parametrize(
-    ("node, found_in_log"),
+    ("node"),
     [
-        (
-            node_with_backoff,
-            True,
-        ),
-        (
-            node_no_backoff,
-            False,
-        ),
+        (node_with_backoff),
     ],
 )
-def test_exponential_backoff_with_merge_tree(started_cluster, node, found_in_log):
+def test_exponential_backoff_with_merge_tree(started_cluster, node):
     prepare_cluster(False)
 
     # Executing incorrect mutation.
     node.query(
-        "ALTER TABLE test_mutations DELETE WHERE x IN (SELECT x  FROM notexist_table) SETTINGS allow_nondeterministic_mutations=1"
+        "ALTER TABLE test_mutations DELETE WHERE x IN (SELECT x FROM notexist_table) SETTINGS allow_nondeterministic_mutations=1"
     )
 
-    assert node.contains_in_log(POSPONE_MUTATION_LOG) == found_in_log
+    assert node.wait_for_log_line(POSPONE_MUTATION_LOG)
     node.rotate_logs()
 
     node.query("KILL MUTATION WHERE table='test_mutations'")
     # Check that after kill new parts mutations are postponing.
     node.query(
-        "ALTER TABLE test_mutations DELETE WHERE x IN (SELECT x  FROM notexist_table) SETTINGS allow_nondeterministic_mutations=1"
+        "ALTER TABLE test_mutations DELETE WHERE x IN (SELECT x FROM notexist_table) SETTINGS allow_nondeterministic_mutations=1"
     )
 
-    assert node.contains_in_log(POSPONE_MUTATION_LOG) == found_in_log
+    assert node.wait_for_log_line(POSPONE_MUTATION_LOG)
 
 
 def test_exponential_backoff_with_replicated_tree(started_cluster):
     prepare_cluster(True)
 
     node_with_backoff.query(
-        "ALTER TABLE test_mutations DELETE WHERE x IN (SELECT x  FROM notexist_table) SETTINGS allow_nondeterministic_mutations=1"
+        "ALTER TABLE test_mutations DELETE WHERE x IN (SELECT x FROM notexist_table) SETTINGS allow_nondeterministic_mutations=1"
     )
 
     assert node_with_backoff.wait_for_log_line(REPLICATED_POSPONE_MUTATION_LOG)
