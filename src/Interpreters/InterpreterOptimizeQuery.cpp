@@ -8,7 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-
+#include <Storages/StorageDistributed.h>
 #include <Interpreters/processColumnTransformers.h>
 
 #include <memory>
@@ -37,6 +37,23 @@ BlockIO InterpreterOptimizeQuery::execute()
 
     auto table_id = getContext()->resolveStorageID(ast);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    
+    // Rewrite optimizing to local table with on cluster when enable_ddl_optimize_rewrite is on
+    if (const StorageDistributed * distributed_table = table->as<const StorageDistributed>();
+        distributed_table && distributed_table->supportsOptimizeRewrite())
+    {
+        auto query_clone = query_ptr->clone();
+        auto * optimize_ast_ptr = query_clone->as<ASTOptimizeQuery>();
+        //change distributed table to remote table
+        optimize_ast_ptr->setDatabase(distributed_table->getRemoteDatabaseName());
+        optimize_ast_ptr->setTable(distributed_table->getRemoteTableName());
+        //add on cluster
+        optimize_ast_ptr->cluster = distributed_table->getCluster()->getName();
+        DDLQueryOnClusterParams params;
+        params.access_to_check = getRequiredAccess();
+        return executeDDLQueryOnCluster(query_clone, getContext(), params);
+    }
+
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
     auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());

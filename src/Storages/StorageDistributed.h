@@ -85,6 +85,10 @@ public:
     bool supportsPrewhere() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
+
+    bool supportsOptimizeRewrite() const { return distributed_settings.enable_ddl_optimize_rewrite; }
+    bool supportsAlterRewrite() const { return distributed_settings.enable_ddl_alter_rewrite; }
+
     StoragePolicyPtr getStoragePolicy() const override;
 
     /// Do not apply moving to PREWHERE optimization for distributed tables,

@@ -23,6 +23,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/StorageKeeperMap.h>
+#include <Storages/StorageDistributed.h>
 #include <Common/typeid_cast.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -117,6 +118,22 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (!table)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Could not find table: {}", table_id.table_name);
+
+    // Rewrite altering to local table with on cluster when enable_ddl_alter_rewrite is on
+    if (const StorageDistributed * distributed_table = table->as<const StorageDistributed>();
+        distributed_table && distributed_table->supportsAlterRewrite())
+    {
+        auto query_clone = query_ptr->clone();
+        auto * alter_ast_ptr = query_clone->as<ASTAlterQuery>();
+        //change distributed table to remote table
+        alter_ast_ptr->setDatabase(distributed_table->getRemoteDatabaseName());
+        alter_ast_ptr->setTable(distributed_table->getRemoteTableName());
+        //add on cluster
+        alter_ast_ptr->cluster = distributed_table->getCluster()->getName();
+        DDLQueryOnClusterParams params;
+        params.access_to_check = getRequiredAccess();
+        return executeDDLQueryOnCluster(query_clone, getContext(), params);
+    }
 
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
