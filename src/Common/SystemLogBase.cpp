@@ -260,4 +260,10 @@ void SystemLogBase<LogElement>::add(LogElement element)
 template <typename LogElement>
 void SystemLogBase<LogElement>::notifyFlush(bool force) { queue->notifyFlush(force); }
 
+#define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) template class SystemLogBase<ELEMENT>;
+SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE)
+
+#define INSTANTIATE_SYSTEM_LOG_QUEUE(ELEMENT) template class SystemLogQueue<ELEMENT>;
+SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_QUEUE)
+
 }

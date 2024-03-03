@@ -29,7 +29,6 @@
     M(TextLogElement) \
     M(S3QueueLogElement) \
     M(FilesystemCacheLogElement) \
-    M(DistributedCacheLogElement) \
     M(FilesystemReadPrefetchesLogElement) \
     M(AsynchronousInsertLogElement) \
     M(BackupLogElement) \
