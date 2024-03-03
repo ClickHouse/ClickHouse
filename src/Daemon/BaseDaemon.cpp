@@ -190,6 +190,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     errno = saved_errno;
 }
 
+#if !defined(SANITIZER)
 /// This function can be used from other translation units,
 /// For example, from libunwind while parsing debug info, which is unsafe.
 /// Note: we are checking only the first byte, which is ok for aligned words.
@@ -200,7 +201,6 @@ extern "C" bool isPointerReadable(const void * ptr)
     {
         char res;
         memcpy(&res, ptr, 1);
-        __msan_unpoison(res, 1);
         __asm__ __volatile__("" :: "r"(res) : "memory");
         checking_pointer = false;
         return true;
@@ -211,6 +211,7 @@ extern "C" bool isPointerReadable(const void * ptr)
         return false;
     }
 }
+#endif
 
 static bool getenvBool(const char * name)
 {
