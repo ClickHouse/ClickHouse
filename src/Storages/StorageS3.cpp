@@ -548,7 +548,15 @@ StorageS3Source::KeyWithInfoPtr StorageS3Source::ReadTaskIterator::next(size_t) 
     if (current_index >= buffer.size())
         return std::make_shared<KeyWithInfo>(callback());
 
-    return buffer[current_index];
+    while (current_index < buffer.size())
+    {
+        if (const auto & key_info = buffer[current_index]; key_info && !key_info->key.empty())
+            return buffer[current_index];
+
+        current_index = index.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    return nullptr;
 }
 
 size_t StorageS3Source::ReadTaskIterator::estimatedKeysCount()
