@@ -774,17 +774,6 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         }
     }
 
-    bool all_keys_are_numbers_or_strings = true;
-    for (size_t j = 0; j < params.keys_size; ++j)
-    {
-        if (!types_removed_nullable[j]->isValueRepresentedByNumber() && !isString(types_removed_nullable[j])
-            && !isFixedString(types_removed_nullable[j]))
-        {
-            all_keys_are_numbers_or_strings = false;
-            break;
-        }
-    }
-
     if (has_nullable_key)
     {
         /// Optimization for one key
@@ -843,11 +832,8 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
                 return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
         }
 
-        if (params.keys_size > 1 && all_keys_are_numbers_or_strings)
-            return AggregatedDataVariants::Type::nullable_prealloc_serialized;
-
         /// Fallback case.
-        return AggregatedDataVariants::Type::nullable_serialized;
+        return AggregatedDataVariants::Type::serialized;
     }
 
     /// No key has been found to be nullable.
@@ -928,9 +914,6 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         else
             return AggregatedDataVariants::Type::key_string;
     }
-
-    if (params.keys_size > 1 && all_keys_are_numbers_or_strings)
-        return AggregatedDataVariants::Type::prealloc_serialized;
 
     return AggregatedDataVariants::Type::serialized;
 }
@@ -3325,15 +3308,12 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     auto merge_method = method_chosen;
 
 #define APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M) \
-        M(key64)                          \
-        M(key_string)                     \
-        M(key_fixed_string)               \
-        M(keys128)                        \
-        M(keys256)                        \
-        M(serialized)                     \
-        M(nullable_serialized)            \
-        M(prealloc_serialized)            \
-        M(nullable_prealloc_serialized)   \
+        M(key64)            \
+        M(key_string)       \
+        M(key_fixed_string) \
+        M(keys128)          \
+        M(keys256)          \
+        M(serialized)       \
 
 #define M(NAME) \
     if (merge_method == AggregatedDataVariants::Type::NAME) \

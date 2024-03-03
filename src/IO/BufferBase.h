@@ -43,7 +43,7 @@ public:
         inline void resize(size_t size) { end_pos = begin_pos + size; }
         inline bool empty() const { return size() == 0; }
 
-        inline void swap(Buffer & other) noexcept
+        inline void swap(Buffer & other)
         {
             std::swap(begin_pos, other.begin_pos);
             std::swap(end_pos, other.end_pos);
@@ -82,7 +82,7 @@ public:
     /// How many bytes are available for read/write
     inline size_t available() const { return size_t(working_buffer.end() - pos); }
 
-    inline void swap(BufferBase & other) noexcept
+    inline void swap(BufferBase & other)
     {
         internal_buffer.swap(other.internal_buffer);
         working_buffer.swap(other.working_buffer);

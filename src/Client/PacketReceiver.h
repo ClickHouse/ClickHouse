@@ -52,7 +52,7 @@ private:
 
     struct Task : public AsyncTask
     {
-        explicit Task(PacketReceiver & receiver_) : receiver(receiver_) {}
+        Task(PacketReceiver & receiver_) : receiver(receiver_) {}
 
         PacketReceiver & receiver;
 

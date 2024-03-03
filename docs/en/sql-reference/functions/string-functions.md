@@ -558,7 +558,6 @@ substring(s, offset[, length])
 Alias:
 - `substr`
 - `mid`
-- `byteSlice`
 
 **Arguments**
 

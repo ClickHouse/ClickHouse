@@ -210,7 +210,7 @@ namespace MySQLReplication
     public:
         EventHeader header;
 
-        explicit EventBase(EventHeader && header_) : header(std::move(header_)) {}
+        EventBase(EventHeader && header_) : header(std::move(header_)) {}
 
         virtual ~EventBase() = default;
         virtual void dump(WriteBuffer & out) const = 0;
@@ -224,7 +224,7 @@ namespace MySQLReplication
     class FormatDescriptionEvent : public EventBase
     {
     public:
-        explicit FormatDescriptionEvent(EventHeader && header_)
+        FormatDescriptionEvent(EventHeader && header_)
             : EventBase(std::move(header_)), binlog_version(0), create_timestamp(0), event_header_length(0)
         {
         }
@@ -249,7 +249,7 @@ namespace MySQLReplication
         UInt64 position;
         String next_binlog;
 
-        explicit RotateEvent(EventHeader && header_) : EventBase(std::move(header_)), position(0) {}
+        RotateEvent(EventHeader && header_) : EventBase(std::move(header_)), position(0) {}
         void dump(WriteBuffer & out) const override;
 
     protected:
@@ -280,7 +280,7 @@ namespace MySQLReplication
         QueryType typ = QUERY_EVENT_DDL;
         bool transaction_complete = true;
 
-        explicit QueryEvent(EventHeader && header_)
+        QueryEvent(EventHeader && header_)
             : EventBase(std::move(header_)), thread_id(0), exec_time(0), schema_len(0), error_code(0), status_len(0)
         {
         }
@@ -295,7 +295,7 @@ namespace MySQLReplication
     class XIDEvent : public EventBase
     {
     public:
-        explicit XIDEvent(EventHeader && header_) : EventBase(std::move(header_)), xid(0) {}
+        XIDEvent(EventHeader && header_) : EventBase(std::move(header_)), xid(0) {}
 
     protected:
         UInt64 xid;
@@ -417,7 +417,7 @@ namespace MySQLReplication
         UInt64 table_id;
         UInt16 flags;
 
-        explicit RowsEventHeader(EventType type_) : type(type_), table_id(0), flags(0) {}
+        RowsEventHeader(EventType type_) : type(type_), table_id(0), flags(0) {}
         void parse(ReadBuffer & payload);
     };
 
@@ -482,7 +482,7 @@ namespace MySQLReplication
         UInt8 commit_flag;
         GTID gtid;
 
-        explicit GTIDEvent(EventHeader && header_) : EventBase(std::move(header_)), commit_flag(0) {}
+        GTIDEvent(EventHeader && header_) : EventBase(std::move(header_)), commit_flag(0) {}
         void dump(WriteBuffer & out) const override;
 
     protected:
@@ -492,7 +492,7 @@ namespace MySQLReplication
     class DryRunEvent : public EventBase
     {
     public:
-        explicit DryRunEvent(EventHeader && header_) : EventBase(std::move(header_)) {}
+        DryRunEvent(EventHeader && header_) : EventBase(std::move(header_)) {}
         void dump(WriteBuffer & out) const override;
 
     protected:

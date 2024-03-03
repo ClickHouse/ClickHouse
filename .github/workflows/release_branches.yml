@@ -165,6 +165,9 @@ jobs:
       test_name: Docker server image
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
+      run_command: |
+        python3 docker_server.py --release-type head --no-push \
+          --image-repo clickhouse/clickhouse-server --image-path docker/server --allow-build-reuse
   DockerKeeperImage:
     needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
@@ -173,6 +176,9 @@ jobs:
       test_name: Docker keeper image
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
+      run_command: |
+        python3 docker_server.py --release-type head --no-push \
+          --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper --allow-build-reuse
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################

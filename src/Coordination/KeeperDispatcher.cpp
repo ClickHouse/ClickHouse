@@ -13,8 +13,6 @@
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 
-#include <Disks/IDisk.h>
-
 #include <atomic>
 #include <future>
 #include <chrono>

@@ -1354,7 +1354,7 @@ protected:
             size_t max_postpone_time_ms;
             size_t max_postpone_power;
 
-            explicit PartMutationInfo(size_t max_postpone_time_ms_)
+            PartMutationInfo(size_t max_postpone_time_ms_)
                             : retry_count(0ull)
                             , latest_fail_time_us(static_cast<size_t>(Poco::Timestamp().epochMicroseconds()))
                             , max_postpone_time_ms(max_postpone_time_ms_)

@@ -399,16 +399,6 @@ bugfix_validate_check = DigestConfig(
     ],
 )
 # common test params
-docker_server_job_config = JobConfig(
-    required_on_release_branch=True,
-    run_command='docker_server.py --check-name "$CHECK_NAME" --release-type head --allow-build-reuse',
-    digest=DigestConfig(
-        include_paths=[
-            "tests/ci/docker_server.py",
-            "./docker/server",
-        ]
-    ),
-)
 compatibility_test_common_params = {
     "digest": compatibility_check_digest,
     "run_command": "compatibility_check.py",
@@ -859,8 +849,29 @@ CI_CONFIG = CIConfig(
         ),
     },
     other_jobs_configs={
-        JobNames.DOCKER_SERVER: TestConfig("", job_config=docker_server_job_config),
-        JobNames.DOCKER_KEEPER: TestConfig("", job_config=docker_server_job_config),
+        JobNames.DOCKER_SERVER: TestConfig(
+            "",
+            job_config=JobConfig(
+                required_on_release_branch=True,
+                digest=DigestConfig(
+                    include_paths=[
+                        "tests/ci/docker_server.py",
+                        "./docker/server",
+                    ]
+                ),
+            ),
+        ),
+        JobNames.DOCKER_KEEPER: TestConfig(
+            "",
+            job_config=JobConfig(
+                digest=DigestConfig(
+                    include_paths=[
+                        "tests/ci/docker_server.py",
+                        "./docker/keeper",
+                    ]
+                ),
+            ),
+        ),
         JobNames.DOCS_CHECK: TestConfig(
             "",
             job_config=JobConfig(

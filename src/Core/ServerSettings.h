@@ -81,7 +81,7 @@ namespace DB
     M(UInt64, mmap_cache_size, DEFAULT_MMAP_CACHE_MAX_SIZE, "A cache for mmapped files.", 0) \
     \
     M(Bool,   disable_internal_dns_cache, false, "Disable internal DNS caching at all.", 0) \
-    M(UInt64, dns_cache_max_entries, 10000, "Internal DNS cache max entries.", 0) \
+    M(UInt64, dns_cache_max_size, 1024, "Internal DNS cache max size in bytes.", 0) \
     M(Int32,  dns_cache_update_period, 15, "Internal DNS cache update period in seconds.", 0) \
     M(UInt32, dns_max_consecutive_failures, 10, "Max DNS resolve failures of a hostname before dropping the hostname from ClickHouse DNS cache.", 0) \
     \

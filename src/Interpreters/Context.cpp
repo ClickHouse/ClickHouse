@@ -724,7 +724,7 @@ struct ContextSharedPart : boost::noncopyable
     void addWarningMessage(const String & message) TSA_REQUIRES(mutex)
     {
         /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
-        LOG_WARNING(log, "{}", message);
+        log->warning(message);
         warnings.push_back(message);
     }
 
@@ -1175,29 +1175,6 @@ void Context::addWarningMessage(const String & msg) const
     bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(msg, suppress_re);
     if (!is_supressed)
         shared->addWarningMessage(msg);
-}
-
-void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_name) const
-{
-    std::lock_guard lock(shared->mutex);
-
-    /// We would like to report only about the first database with engine Ordinary
-    static std::atomic_bool is_called = false;
-    if (is_called.exchange(true))
-        return;
-
-    auto suppress_re = shared->getConfigRefWithLock(lock).getString("warning_supress_regexp", "");
-    /// We don't use getFlagsPath method, because it takes a shared lock.
-    auto convert_databases_flag = fs::path(shared->flags_path) / "convert_ordinary_to_atomic";
-    auto message = fmt::format("Server has databases (for example `{}`) with Ordinary engine, which was deprecated. "
-            "To convert this database to a new Atomic engine, please create a forcing flag {} and make sure that ClickHouse has write permission for it. "
-            "Example: sudo touch '{}' && sudo chmod 666 '{}'",
-            database_name,
-            convert_databases_flag.string(), convert_databases_flag.string(), convert_databases_flag.string());
-
-    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(message, suppress_re);
-    if (!is_supressed)
-        shared->addWarningMessage(message);
 }
 
 void Context::setConfig(const ConfigurationPtr & config)
@@ -4291,7 +4268,7 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
 }
 
-InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, std::optional<size_t> max_parsing_threads) const
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, const std::optional<size_t> max_parsing_threads) const
 {
     return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings, max_parsing_threads);
 }

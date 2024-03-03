@@ -152,7 +152,7 @@ private:
 
     struct ResponsesWithFutures
     {
-        ResponsesWithFutures(FutureResponses future_responses_) : future_responses(std::move(future_responses_)) /// NOLINT(google-explicit-constructor)
+        ResponsesWithFutures(FutureResponses future_responses_) : future_responses(std::move(future_responses_))
         {
             cached_responses.resize(future_responses.size());
         }

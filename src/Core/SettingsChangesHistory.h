@@ -19,7 +19,7 @@ namespace ErrorCodes
 class ClickHouseVersion
 {
 public:
-    ClickHouseVersion(const String & version) /// NOLINT(google-explicit-constructor)
+    ClickHouseVersion(const String & version)
     {
         Strings split;
         boost::split(split, version, [](char c){ return c == '.'; });
@@ -37,7 +37,7 @@ public:
         }
     }
 
-    ClickHouseVersion(const char * version) : ClickHouseVersion(String(version)) {} /// NOLINT(google-explicit-constructor)
+    ClickHouseVersion(const char * version) : ClickHouseVersion(String(version)) {}
 
     String toString() const
     {

@@ -51,11 +51,7 @@ def parse_args() -> argparse.Namespace:
         description="A program to build clickhouse-server image, both alpine and "
         "ubuntu versions",
     )
-    parser.add_argument(
-        "--check-name",
-        required=False,
-        default="",
-    )
+
     parser.add_argument(
         "--version",
         type=version_arg,
@@ -75,13 +71,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--image-path",
         type=str,
-        default="",
+        default="docker/server",
         help="a path to docker context directory",
     )
     parser.add_argument(
         "--image-repo",
         type=str,
-        default="",
+        default="clickhouse/clickhouse-server",
         help="image name on docker hub",
     )
     parser.add_argument(
@@ -96,7 +92,14 @@ def parse_args() -> argparse.Namespace:
         default=argparse.SUPPRESS,
         help="don't push reports to S3 and github",
     )
-    parser.add_argument("--push", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--push", default=True, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--no-push-images",
+        action="store_false",
+        dest="push",
+        default=argparse.SUPPRESS,
+        help="don't push images to docker hub",
+    )
     parser.add_argument("--os", default=["ubuntu", "alpine"], help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-ubuntu",
@@ -334,37 +337,13 @@ def main():
     makedirs(TEMP_PATH, exist_ok=True)
 
     args = parse_args()
-
-    pr_info = PRInfo()
-
-    if args.check_name:
-        assert not args.image_path and not args.image_repo
-        if "server image" in args.check_name:
-            image_path = "docker/server"
-            image_repo = "clickhouse/clickhouse-server"
-        elif "keeper image" in args.check_name:
-            image_path = "docker/keeper"
-            image_repo = "clickhouse/clickhouse-keeper"
-        else:
-            assert False, "Invalid --check-name"
-    else:
-        assert args.image_path and args.image_repo
-        image_path = args.image_path
-        image_repo = args.image_repo
-
-    push = args.push
-    del args.image_path
-    del args.image_repo
-    del args.push
-
-    if pr_info.is_master():
-        push = True
-
-    image = DockerImageData(image_path, image_repo, False)
+    image = DockerImageData(args.image_path, args.image_repo, False)
     args.release_type = auto_release_type(args.version, args.release_type)
     tags = gen_tags(args.version, args.release_type)
+    pr_info = None
     repo_urls = dict()
     direct_urls: Dict[str, List[str]] = dict()
+    pr_info = PRInfo()
     release_or_pr, _ = get_release_or_pr(pr_info, args.version)
 
     for arch, build_name in zip(ARCH, ("package_release", "package_aarch64")):
@@ -376,13 +355,13 @@ def main():
             repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
         if args.allow_build_reuse:
             # read s3 urls from pre-downloaded build reports
-            if "clickhouse-server" in image_repo:
+            if "clickhouse-server" in args.image_repo:
                 PACKAGES = [
                     "clickhouse-client",
                     "clickhouse-server",
                     "clickhouse-common-static",
                 ]
-            elif "clickhouse-keeper" in image_repo:
+            elif "clickhouse-keeper" in args.image_repo:
                 PACKAGES = ["clickhouse-keeper"]
             else:
                 assert False, "BUG"
@@ -396,7 +375,7 @@ def main():
                 if any(package in url for package in PACKAGES) and "-dbg" not in url
             ]
 
-    if push:
+    if args.push:
         docker_login()
 
     logging.info("Following tags will be created: %s", ", ".join(tags))
@@ -406,7 +385,7 @@ def main():
         for tag in tags:
             test_results.extend(
                 build_and_push_image(
-                    image, push, repo_urls, os, tag, args.version, direct_urls
+                    image, args.push, repo_urls, os, tag, args.version, direct_urls
                 )
             )
             if test_results[-1].status != "OK":

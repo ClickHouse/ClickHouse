@@ -1774,7 +1774,7 @@ try
     }
     else
     {
-        DNSResolver::instance().setCacheMaxEntries(server_settings.dns_cache_max_entries);
+        DNSResolver::instance().setCacheMaxSize(server_settings.dns_cache_max_size);
 
         /// Initialize a watcher periodically updating DNS cache
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(

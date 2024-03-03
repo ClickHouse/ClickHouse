@@ -37,7 +37,7 @@ struct StoragesInfo
 class StoragesInfoStreamBase
 {
 public:
-    explicit StoragesInfoStreamBase(ContextPtr context)
+    StoragesInfoStreamBase(ContextPtr context)
         : query_id(context->getCurrentQueryId()), settings(context->getSettingsRef()), next_row(0), rows(0)
     {}
 

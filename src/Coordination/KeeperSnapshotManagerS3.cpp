@@ -6,8 +6,6 @@
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 
-#include <Disks/IDisk.h>
-
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Credentials.h>
 #include <IO/WriteBufferFromS3.h>

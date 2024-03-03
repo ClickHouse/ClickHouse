@@ -4,7 +4,10 @@
 
 #if USE_AWS_S3
 
-#include <Client/Connection.h>
+#include <memory>
+#include <optional>
+
+#include "Client/Connection.h"
 #include <Interpreters/Cluster.h>
 #include <IO/S3Common.h>
 #include <Storages/IStorageCluster.h>
