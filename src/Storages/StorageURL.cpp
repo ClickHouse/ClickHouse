@@ -461,21 +461,23 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         try
         {
             auto res = std::make_unique<ReadWriteBufferFromHTTP>(
+                HTTPConnectionGroupType::STORAGE,
                 request_uri,
                 http_method,
-                callback,
+                proxy_config,
+                read_settings,
                 timeouts,
                 credentials,
-                settings.max_http_get_redirects,
-                settings.max_read_buffer_size,
-                read_settings,
-                headers,
                 &context_->getRemoteHostFilter(),
+                settings.max_read_buffer_size,
+                settings.max_http_get_redirects,
+                callback,
+                /*use_external_buffer*/ false,
+                skip_url_not_found_error,
+                headers,
                 delay_initialization,
-                /* use_external_buffer */ false,
-                /* skip_url_not_found_error */ skip_url_not_found_error,
-                /* file_info */ std::nullopt,
-                proxy_config);
+                /*file_info_*/ std::nullopt);
+
 
             if (context_->getSettingsRef().engine_url_skip_empty_files && res->eof() && option != std::prev(end))
             {
@@ -547,7 +549,7 @@ StorageURLSink::StorageURLSink(
     auto proxy_config = getProxyConfiguration(http_method);
 
     auto write_buffer = std::make_unique<WriteBufferFromHTTP>(
-        Poco::URI(uri), http_method, content_type, content_encoding, headers, timeouts, DBMS_DEFAULT_BUFFER_SIZE, proxy_config
+        HTTPConnectionGroupType::STORAGE, Poco::URI(uri), http_method, content_type, content_encoding, headers, timeouts, DBMS_DEFAULT_BUFFER_SIZE, proxy_config
     );
 
     const auto & settings = context->getSettingsRef();
@@ -1320,24 +1322,17 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
 
     auto proxy_config = getProxyConfiguration(uri.getScheme());
 
-    ReadWriteBufferFromHTTP buf(
-        uri,
-        Poco::Net::HTTPRequest::HTTP_GET,
-        {},
-        getHTTPTimeouts(context),
-        credentials,
-        settings.max_http_get_redirects,
-        settings.max_read_buffer_size,
-        context->getReadSettings(),
-        headers,
-        &context->getRemoteHostFilter(),
-        true,
-        false,
-        false,
-        std::nullopt,
-        proxy_config);
+    auto buf = BuilderRWBufferFromHTTP(uri)
+                   .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                   .withSettings(context->getReadSettings())
+                   .withTimeouts(getHTTPTimeouts(context))
+                   .withHostFilter(&context->getRemoteHostFilter())
+                   .withBufSize(settings.max_read_buffer_size)
+                   .withRedirects(settings.max_http_get_redirects)
+                   .withHeaders(headers)
+                   .create(credentials);
 
-    return buf.tryGetLastModificationTime();
+    return buf->tryGetLastModificationTime();
 }
 
 StorageURL::StorageURL(

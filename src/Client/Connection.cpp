@@ -153,6 +153,12 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 current_resolved_address = *it;
                 break;
             }
+            catch (DB::NetException &)
+            {
+                if (++it == addresses.end())
+                    throw;
+                continue;
+            }
             catch (Poco::Net::NetException &)
             {
                 if (++it == addresses.end())
@@ -198,6 +204,16 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
             server_name, server_version_major, server_version_minor, server_version_patch);
+    }
+    catch (DB::NetException & e)
+    {
+        disconnect();
+
+        /// Remove this possible stale entry from cache
+        DNSResolver::instance().removeHostFromCache(host);
+
+        /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
+        throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription());
     }
     catch (Poco::Net::NetException & e)
     {
