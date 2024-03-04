@@ -12,4 +12,4 @@ PRIMARY KEY k;
 
 INSERT INTO skip_table SELECT number, intDiv(number, 4096) FROM numbers(1000000);
 
-SELECT trim(explain) FROM ( EXPLAIN indexes = 1 SELECT * FROM skip_table WHERE v = 125) WHERE explain ilike '%Name%';
+SELECT trim(explain) FROM ( EXPLAIN indexes = 1 SELECT * FROM skip_table WHERE v = 125) WHERE explain like '%Name%';
