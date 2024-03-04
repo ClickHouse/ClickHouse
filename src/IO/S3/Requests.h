@@ -122,6 +122,7 @@ public:
 using CreateMultipartUploadRequest = ExtendedRequest<Model::CreateMultipartUploadRequest>;
 using AbortMultipartUploadRequest = ExtendedRequest<Model::AbortMultipartUploadRequest>;
 using UploadPartCopyRequest = ExtendedRequest<Model::UploadPartCopyRequest>;
+
 using PutObjectRequest = ExtendedRequest<Model::PutObjectRequest>;
 using DeleteObjectRequest = ExtendedRequest<Model::DeleteObjectRequest>;
 using DeleteObjectsRequest = ExtendedRequest<Model::DeleteObjectsRequest>;
