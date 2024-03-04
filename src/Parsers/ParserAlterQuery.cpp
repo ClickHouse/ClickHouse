@@ -64,9 +64,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserKeyword s_add("ADD");
     ParserKeyword s_drop("DROP");
-    ParserKeyword s_suspend("SUSPEND");
-    ParserKeyword s_resume("RESUME");
-    ParserKeyword s_refresh("REFRESH");
     ParserKeyword s_modify("MODIFY");
 
     ParserKeyword s_attach_partition("ATTACH PARTITION");
@@ -75,6 +72,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_detach_part("DETACH PART");
     ParserKeyword s_drop_partition("DROP PARTITION");
     ParserKeyword s_drop_part("DROP PART");
+    ParserKeyword s_forget_partition("FORGET PARTITION");
     ParserKeyword s_move_partition("MOVE PARTITION");
     ParserKeyword s_move_part("MOVE PART");
     ParserKeyword s_drop_detached_partition("DROP DETACHED PARTITION");
@@ -118,6 +116,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_remove_sample_by("REMOVE SAMPLE BY");
     ParserKeyword s_apply_deleted_mask("APPLY DELETED MASK");
 
+    ParserToken parser_opening_round_bracket(TokenType::OpeningRoundBracket);
+    ParserToken parser_closing_round_bracket(TokenType::ClosingRoundBracket);
+
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
     ParserStringAndSubstitution parser_string_and_substituion;
@@ -137,7 +138,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserList parser_reset_setting(
         std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma),
         /* allow_empty = */ false);
-    ParserNameList values_p;
     ParserSelectWithUnionQuery select_p;
     ParserSQLSecurity sql_security_p;
     ParserRefreshStrategy refresh_p;
@@ -162,22 +162,17 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr command_settings_changes;
     ASTPtr command_settings_resets;
     ASTPtr command_select;
-    ASTPtr command_values;
     ASTPtr command_rename_to;
     ASTPtr command_sql_security;
 
+    if (with_round_bracket)
+    {
+        if (!parser_opening_round_bracket.ignore(pos, expected))
+            return false;
+    }
+
     switch (alter_object)
     {
-        case ASTAlterQuery::AlterObjectType::LIVE_VIEW:
-        {
-            if (s_refresh.ignore(pos, expected))
-            {
-                command->type = ASTAlterCommand::LIVE_VIEW_REFRESH;
-            }
-            else
-                return false;
-            break;
-        }
         case ASTAlterQuery::AlterObjectType::DATABASE:
         {
             if (s_modify_setting.ignore(pos, expected))
@@ -256,6 +251,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 command->type = ASTAlterCommand::DROP_PARTITION;
                 command->part = true;
+            }
+            else if (s_forget_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command_partition, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::FORGET_PARTITION;
             }
             else if (s_drop_detached_partition.ignore(pos, expected))
             {
@@ -896,6 +898,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
     }
 
+    if (with_round_bracket)
+    {
+        if (!parser_closing_round_bracket.ignore(pos, expected))
+            return false;
+    }
+
     if (command_col_decl)
         command->col_decl = command->children.emplace_back(std::move(command_col_decl)).get();
     if (command_column)
@@ -934,8 +942,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->settings_resets = command->children.emplace_back(std::move(command_settings_resets)).get();
     if (command_select)
         command->select = command->children.emplace_back(std::move(command_select)).get();
-    if (command_values)
-        command->values = command->children.emplace_back(std::move(command_values)).get();
     if (command_sql_security)
         command->sql_security = command->children.emplace_back(std::move(command_sql_security)).get();
     if (command_rename_to)
@@ -951,7 +957,10 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     node = command_list;
 
     ParserToken s_comma(TokenType::Comma);
-    ParserAlterCommand p_command(alter_object);
+
+    const auto with_round_bracket = pos->type == TokenType::OpeningRoundBracket;
+
+    ParserAlterCommand p_command(with_round_bracket, alter_object);
 
     do
     {
@@ -973,7 +982,6 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ParserKeyword s_alter_table("ALTER TABLE");
     ParserKeyword s_alter_temporary_table("ALTER TEMPORARY TABLE");
-    ParserKeyword s_alter_live_view("ALTER LIVE VIEW");
     ParserKeyword s_alter_database("ALTER DATABASE");
 
     ASTAlterQuery::AlterObjectType alter_object_type;
@@ -981,10 +989,6 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (s_alter_table.ignore(pos, expected) || s_alter_temporary_table.ignore(pos, expected))
     {
         alter_object_type = ASTAlterQuery::AlterObjectType::TABLE;
-    }
-    else if (s_alter_live_view.ignore(pos, expected))
-    {
-        alter_object_type = ASTAlterQuery::AlterObjectType::LIVE_VIEW;
     }
     else if (s_alter_database.ignore(pos, expected))
     {

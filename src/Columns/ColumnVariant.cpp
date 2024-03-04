@@ -643,7 +643,7 @@ void ColumnVariant::popBack(size_t n)
     offsets->popBack(n);
 }
 
-StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
+StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     /// During any serialization/deserialization we should always use global discriminators.
     Discriminator global_discr = globalDiscriminatorAt(n);
@@ -780,7 +780,7 @@ ColumnPtr ColumnVariant::filter(const Filter & filt, ssize_t result_size_hint) c
     const size_t num_variants = variants.size();
     std::vector<Filter> nested_filters(num_variants);
     for (size_t i = 0; i != num_variants; ++i)
-        nested_filters[i].reserve(variants[i]->size());
+        nested_filters[i].reserve_exact(variants[i]->size());
 
     /// As we will iterate through local_discriminators anyway, we can count
     /// result size for each variant.
@@ -902,7 +902,7 @@ ColumnPtr ColumnVariant::indexImpl(const PaddedPODArray<Type> & indexes, size_t 
     if (limit == 0)
     {
         for (size_t i = 0; i != num_variants; ++i)
-            nested_perms[i].reserve(variants[i]->size());
+            nested_perms[i].reserve_exact(variants[i]->size());
     }
 
     for (size_t i = 0; i != new_local_discriminators_data.size(); ++i)
@@ -965,7 +965,7 @@ ColumnPtr ColumnVariant::replicate(const Offsets & replicate_offsets) const
         size_t old_size = offsets->size();
         if (new_size > old_size)
         {
-            new_offsets_data.reserve(new_size);
+            new_offsets_data.reserve_exact(new_size);
             for (size_t i = old_size; i < new_size; ++i)
                 new_offsets_data.push_back(i);
         }
@@ -981,7 +981,7 @@ ColumnPtr ColumnVariant::replicate(const Offsets & replicate_offsets) const
     /// local_discriminators column.
     std::vector<Offsets> nested_replicated_offsets(num_variants);
     for (size_t i = 0; i != num_variants; ++i)
-        nested_replicated_offsets[i].reserve(variants[i]->size());
+        nested_replicated_offsets[i].reserve_exact(variants[i]->size());
 
     const auto & local_discriminators_data = getLocalDiscriminators();
     for (size_t i = 0; i != local_discriminators_data.size(); ++i)
@@ -1055,7 +1055,7 @@ MutableColumns ColumnVariant::scatter(ColumnIndex num_columns, const Selector & 
     /// Create selector for each variant according to local_discriminators.
     std::vector<Selector> nested_selectors(num_variants);
     for (size_t i = 0; i != num_variants; ++i)
-        nested_selectors[i].reserve(variants[i]->size());
+        nested_selectors[i].reserve_exact(variants[i]->size());
 
     const auto & local_discriminators_data = getLocalDiscriminators();
     for (size_t i = 0; i != local_discriminators_data.size(); ++i)
@@ -1083,11 +1083,6 @@ MutableColumns ColumnVariant::scatter(ColumnIndex num_columns, const Selector & 
     }
 
     return result;
-}
-
-void ColumnVariant::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
 }
 
 bool ColumnVariant::hasEqualValues() const
@@ -1118,15 +1113,6 @@ int ColumnVariant::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_di
 
     /// If rows have the same discriminators, compare actual values from corresponding variants.
     return getVariantByGlobalDiscriminator(left_discr).compareAt(offsetAt(n), rhs_variant.offsetAt(m), rhs_variant.getVariantByGlobalDiscriminator(right_discr), nan_direction_hint);
-}
-
-void ColumnVariant::compareColumn(
-    const IColumn & rhs, size_t rhs_row_num,
-    PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-    int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnVariant>(assert_cast<const ColumnVariant &>(rhs), rhs_row_num, row_indexes,
-                                         compare_results, direction, nan_direction_hint);
 }
 
 struct ColumnVariant::ComparatorBase
@@ -1304,7 +1290,14 @@ UInt64 ColumnVariant::getNumberOfDefaultRows() const
 
 void ColumnVariant::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
 {
-    return getIndicesOfNonDefaultRowsImpl<ColumnVariant>(indices, from, limit);
+    size_t to = limit && from + limit < size() ? from + limit : size();
+    indices.reserve(indices.size() + to - from);
+
+    for (size_t i = from; i < to; ++i)
+    {
+        if (!isDefaultAt(i))
+            indices.push_back(i);
+    }
 }
 
 void ColumnVariant::finalize()
@@ -1376,7 +1369,7 @@ void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null
         else
         {
             ColumnVector<UInt8>::Container filter;
-            filter.reserve(null_map.size());
+            filter.reserve_exact(null_map.size());
             for (size_t i = 0; i != local_discriminators_data.size(); ++i)
             {
                if (null_map[i])

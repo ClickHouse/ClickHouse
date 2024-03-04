@@ -80,6 +80,8 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
 
+#include <boost/algorithm/string.hpp>
+
 namespace ProfileEvents
 {
     extern const Event ScalarSubqueriesGlobalCacheHit;
@@ -120,6 +122,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int SYNTAX_ERROR;
+    extern const int UNEXPECTED_EXPRESSION;
     extern const int INVALID_IDENTIFIER;
 }
 
@@ -1214,7 +1217,7 @@ private:
 
     static void expandGroupByAll(QueryNode & query_tree_node_typed);
 
-    void expandOrderByAll(QueryNode & query_tree_node_typed);
+    void expandOrderByAll(QueryNode & query_tree_node_typed, const Settings & settings);
 
     static std::string
     rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
@@ -2366,9 +2369,9 @@ void QueryAnalyzer::expandGroupByAll(QueryNode & query_tree_node_typed)
     query_tree_node_typed.setIsGroupByAll(false);
 }
 
-void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed)
+void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Settings & settings)
 {
-    if (!query_tree_node_typed.isOrderByAll())
+    if (!settings.enable_order_by_all || !query_tree_node_typed.isOrderByAll())
         return;
 
     auto * all_node = query_tree_node_typed.getOrderBy().getNodes()[0]->as<SortNode>();
@@ -2381,6 +2384,13 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed)
 
     for (auto & node : projection_nodes)
     {
+        /// Detect and reject ambiguous statements:
+        /// E.g. for a table with columns "all", "a", "b":
+        /// - SELECT all, a, b ORDER BY all;        -- should we sort by all columns in SELECT or by column "all"?
+        /// - SELECT a, b AS all ORDER BY all;      -- like before but "all" as alias
+        /// - SELECT func(...) AS all ORDER BY all; -- like before but "all" as function
+        /// - SELECT a, b ORDER BY all;             -- tricky in other way: does the user want to sort by columns in SELECT clause or by not SELECTed column "all"?
+
         auto resolved_expression_it = resolved_expressions.find(node);
         if (resolved_expression_it != resolved_expressions.end())
         {
@@ -2389,6 +2399,9 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Expression nodes list expected 1 projection names. Actual {}",
                                 projection_names.size());
+            if (boost::iequals(projection_names[0], "all"))
+                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
+                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
         }
 
         auto sort_node = std::make_shared<SortNode>(node, all_node->getSortDirection(), all_node->getNullsSortDirection());
@@ -5118,6 +5131,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         true /*allow_lambda_expression*/,
         allow_table_expressions /*allow_table_expression*/);
 
+    if (function_node_ptr->toAST()->hasSecretParts())
+    {
+        for (auto & argument : arguments_projection_names)
+        {
+            SipHash hash;
+            hash.update(argument);
+            argument = getHexUIntLowercase(hash.get128());
+        }
+    }
     auto & function_node = *function_node_ptr;
 
     /// Replace right IN function argument if it is table or table function with subquery that read ordinary columns
@@ -7555,7 +7577,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         if (settings.enable_positional_arguments)
             replaceNodesWithPositionalArguments(query_node_typed.getOrderByNode(), query_node_typed.getProjection().getNodes(), scope);
 
-        expandOrderByAll(query_node_typed);
+        expandOrderByAll(query_node_typed, settings);
         resolveSortNodeList(query_node_typed.getOrderByNode(), scope);
     }
 

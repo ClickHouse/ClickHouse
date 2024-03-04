@@ -367,7 +367,7 @@ StorageKeeperMap::StorageKeeperMap(
     zk_metadata_path = metadata_path_fs;
     zk_tables_path = metadata_path_fs / "tables";
 
-    auto table_unique_id = toString(table_id.uuid) + toString(ServerUUID::get());
+    table_unique_id = toString(table_id.uuid) + toString(ServerUUID::get());
     zk_table_path = fs::path(zk_tables_path) / table_unique_id;
 
     zk_dropped_path = metadata_path_fs / "dropped";
@@ -753,14 +753,12 @@ private:
 
 void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
 {
-    auto table_id = toString(getStorageID().uuid);
-
     auto coordination = backup_entries_collector.getBackupCoordination();
-    coordination->addKeeperMapTable(zk_root_path, table_id, data_path_in_backup);
+    coordination->addKeeperMapTable(zk_root_path, table_unique_id, data_path_in_backup);
 
     /// This task will be executed after all tables have registered their root zk path and the coordination is ready to
     /// assign each path to a single table only.
-    auto post_collecting_task = [my_table_id = std::move(table_id), coordination, &backup_entries_collector, my_data_path_in_backup = data_path_in_backup, this]
+    auto post_collecting_task = [coordination, &backup_entries_collector, my_data_path_in_backup = data_path_in_backup, this]
     {
         auto path_with_data = coordination->getKeeperMapDataPath(zk_root_path);
         if (path_with_data != my_data_path_in_backup)
@@ -798,8 +796,7 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
     if (!backup->hasFiles(data_path_in_backup))
         return;
 
-    auto table_id = toString(getStorageID().uuid);
-    if (!restorer.getRestoreCoordination()->acquireInsertingDataForKeeperMap(zk_root_path, table_id))
+    if (!restorer.getRestoreCoordination()->acquireInsertingDataForKeeperMap(zk_root_path, table_unique_id))
     {
         /// Other table is already restoring the data for this Keeper path.
         /// Tables defined on the same path share data

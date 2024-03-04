@@ -2019,7 +2019,7 @@ struct NameToDecimal256 { static constexpr auto name = "toDecimal256"; };
     struct NameToInterval ## INTERVAL_KIND \
     { \
         static constexpr auto name = "toInterval" #INTERVAL_KIND; \
-        static constexpr auto kind = IntervalKind::INTERVAL_KIND; \
+        static constexpr auto kind = IntervalKind::Kind::INTERVAL_KIND; \
     };
 
 DEFINE_NAME_TO_INTERVAL(Nanosecond)
@@ -2560,7 +2560,7 @@ public:
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false));
             else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: It is a bug.");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "MaterializedMySQL is a bug.");
             else if constexpr (to_decimal)
             {
                 UInt64 scale = extractToDecimalScale(arguments[1]);
@@ -3448,7 +3448,7 @@ arguments, result_type, input_rows_count); \
     }
 
 #define GENERATE_INTERVAL_CASE(INTERVAL_KIND) \
-            case IntervalKind::INTERVAL_KIND: \
+            case IntervalKind::Kind::INTERVAL_KIND: \
                 return createFunctionAdaptor(FunctionConvert<DataTypeInterval, NameToInterval##INTERVAL_KIND, PositiveMonotonicity>::create(), from_type);
 
     static WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind)
