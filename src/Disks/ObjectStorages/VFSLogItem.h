@@ -25,7 +25,7 @@ struct VFSMergeResult
 struct VFSLogItem : VFSLogItemStorage
 {
     static VFSLogItem parse(std::string_view str);
-    Strings serialize() const; // ZooKeeper imposes a 1MB limit for node
+    Strings serialize() const; // ZooKeeper imposes a 1MB limit for node hence StringS
     void add(const StoredObject & obj);
     void remove(const StoredObject & obj);
     void merge(VFSLogItem && other);

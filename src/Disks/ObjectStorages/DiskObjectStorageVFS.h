@@ -1,11 +1,9 @@
 #pragma once
-
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/VFSGarbageCollector.h>
-#include <Disks/ObjectStorages/VFSSettings.h>
-#include <Disks/ObjectStorages/VFSSnapshotObjectStorage.h>
 #include <Common/MultiVersion.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+#include "DiskObjectStorage.h"
+#include "VFSGarbageCollector.h"
+#include "VFSSettings.h"
 
 namespace DB
 {
@@ -50,16 +48,14 @@ private:
     const ObjectStorageType object_storage_type;
     const VFSNodes nodes;
     MultiVersion<VFSSettings> settings;
-    VFSSnapshotStoragePtr snapshot_storage;
 
-    bool tryAddGroup(VFSTransactionGroup * group);
+    bool tryAddGroup(VFSTransactionGroup * group) const;
     VFSTransactionGroup * getGroup() const;
-    void removeGroup();
+    void removeGroup() const;
 
     ZooKeeperWithFaultInjection::Ptr zookeeper() const;
     DiskTransactionPtr createObjectStorageTransaction() final;
     DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk) final;
     StoredObject getMetadataObject(std::string_view remote) const;
-    String makeSnapshotStoragePrefix() const;
 };
 }

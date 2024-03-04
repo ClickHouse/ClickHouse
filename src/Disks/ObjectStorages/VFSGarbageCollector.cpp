@@ -1,12 +1,11 @@
 #include "VFSGarbageCollector.h"
-
-#include <Disks/ObjectStorages/DiskObjectStorageVFS.h>
 #include <IO/S3Common.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperLock.h>
-
+#include "DiskObjectStorageVFS.h"
+#include "VFSSnapshotIO.h"
 
 namespace ProfileEvents
 {
@@ -17,11 +16,14 @@ extern const Event VFSGcTotalMicroseconds; // TODO myrrc switch to seconds?
 extern const Event VFSGcCumulativeLogItemsRead;
 }
 
+using ms = std::chrono::milliseconds;
+
 namespace DB
 {
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int INVALID_STATE;
 }
 
 namespace FailPoints
@@ -29,13 +31,12 @@ namespace FailPoints
 extern const char vfs_gc_optimistic_lock_delay[];
 }
 
-
 VFSGarbageCollector::VFSGarbageCollector(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool)
-    : storage(storage_), snapshot_storage(storage_.snapshot_storage), log(getLogger(fmt::format("VFSGC({})", storage_.getName())))
+    : storage(storage_), log(getLogger(fmt::format("VFSGC({})", storage_.getName())))
 {
     LOG_INFO(log, "GC started");
 
-    createLockNodes(storage.zookeeper());
+    createLockNodes(*storage.zookeeper());
     *static_cast<BackgroundSchedulePoolTaskHolder *>(this) = pool.createTask(
         log->name(),
         [this]
@@ -54,53 +55,51 @@ VFSGarbageCollector::VFSGarbageCollector(DiskObjectStorageVFS & storage_, Backgr
     (*this)->activateAndSchedule();
 }
 
-void VFSGarbageCollector::createLockNodes(FaultyKeeper zookeeper) const
+void VFSGarbageCollector::createLockNodes(FaultyKeeper & zookeeper) const
 {
-    zookeeper->createAncestors(storage.nodes.gc_lock);
-    zookeeper->createIfNotExists(storage.nodes.gc_lock, "");
+    zookeeper.createAncestors(storage.nodes.gc_lock);
+    zookeeper.createIfNotExists(storage.nodes.gc_lock, "");
 }
 
 VFSGarbageCollector::LockNode VFSGarbageCollector::getOptimisticLock() const
 {
     auto zookeeper = storage.zookeeper();
-    const String & gc_lock_path = storage.nodes.gc_lock;
-
+    const String & lock = storage.nodes.gc_lock;
     Coordination::Stat stat;
     String value;
+    Coordination::Error code;
+    using enum Coordination::Error;
 
-    try
+    if (zookeeper->tryGet(lock, value, &stat, nullptr, &code); code == ZOK)
+        return {.snapshot = value, .version = stat.version};
+    else if (code == ZNONODE)
     {
-        value = zookeeper->get(gc_lock_path, &stat);
+        createLockNodes(*zookeeper);
+        return {.snapshot = zookeeper->get(lock, &stat), .version = stat.version};
     }
-    catch (const Coordination::Exception & e)
-    {
-        if (e.code == Coordination::Error::ZNONODE)
-        {
-            createLockNodes(zookeeper);
-            value = zookeeper->get(gc_lock_path, &stat);
-        }
-        else
-            throw;
-    }
-
-    return VFSGarbageCollector::LockNode{.snapshot = value, .version = stat.version};
+    else
+        throw Coordination::Exception(code);
 }
 
-bool VFSGarbageCollector::releaseOptimisticLock(const VFSGarbageCollector::LockNode & lock_node, Coordination::Requests & ops) const
+bool VFSGarbageCollector::releaseOptimisticLock(const VFSGarbageCollector::LockNode & lock_node, Coordination::Requests && ops) const
 {
+    fiu_do_on(FailPoints::vfs_gc_optimistic_lock_delay, {
+        ms sleep_time(settings->gc_sleep_ms);
+        LOG_DEBUG(log, "Failpoint vfs_gc_optimistic_lock_delay sleeping {} ms", settings->gc_sleep_ms);
+        std::this_thread::sleep_for(sleep_time);
+    });
+
     auto zookeeper = storage.zookeeper();
-    ops.insert(ops.begin(), zkutil::makeSetRequest(storage.nodes.gc_lock, lock_node.snapshot, lock_node.version));
-    try
-    {
-        zookeeper->multi(ops);
-    }
-    catch (const Coordination::Exception & e)
-    {
-        if (e.code == Coordination::Error::ZBADVERSION)
-            return false;
-        throw;
-    }
-    return true;
+    ops.emplace_back(zkutil::makeSetRequest(storage.nodes.gc_lock, lock_node.snapshot, lock_node.version));
+
+    Coordination::Responses res;
+    using enum Coordination::Error;
+    if (const auto code = zookeeper->tryMulti(ops, res); code == ZOK)
+        return true;
+    else if (code == ZBADVERSION)
+        return false;
+    else
+        throw Coordination::Exception(code);
 }
 
 String VFSGarbageCollector::generateSnapshotName() const
@@ -108,30 +107,31 @@ String VFSGarbageCollector::generateSnapshotName() const
     return fmt::format("snapshot_{}", UUIDHelpers::generateV4());
 }
 
-void VFSGarbageCollector::cleanSnapshots(const String & current_snapshot, const Strings & all_snapshots) const
+void VFSGarbageCollector::cleanSnapshots(const Strings & names) const
 {
-    Strings obsolete_snapshots;
-    std::ranges::remove_copy(all_snapshots, std::back_inserter(obsolete_snapshots), current_snapshot);
-
-    if (!obsolete_snapshots.empty())
-        snapshot_storage->removeSnapshots(obsolete_snapshots);
+    StoredObjects objects;
+    objects.reserve(names.size());
+    for (const auto & name : names)
+        objects.emplace_back(makeSnapshotStoredObject(name, prefix));
+    if (!objects.empty())
+        storage.object_storage->removeObjectsIfExist(objects);
 }
 
 void VFSGarbageCollector::run() const
 {
     Stopwatch stop_watch;
 
-    // Acquire pessimistic lock here as an optimization
-    // to reduce the probability of clashes between replicas, but not rely on it
-    // TODO: templatize ZooKeeperLock to support ZooKeeperWithFaultInjection
+    // Acquire pessimistic lock here as an optimization to reduce the probability of clashes
+    // between replicas, but do not rely on it
+    // TODO alexfvk: templatize ZooKeeperLock to support ZooKeeperWithFaultInjection
     zkutil::ZooKeeperLock lock(storage.zookeeper()->getKeeper(), storage.nodes.gc_lock, "lock");
     if (!lock.tryLock())
     {
-        LOG_DEBUG(log, "Skipped run due to pessimistic lock is already acquired");
+        LOG_DEBUG(log, "Skipped run due to pessimistic lock already acquired");
         return;
     }
 
-    auto lock_node = getOptimisticLock();
+    LockNode lock_node = getOptimisticLock();
     LOG_DEBUG(log, "GC acquired optimistic lock");
 
     bool successful_run = false, skip_run = false;
@@ -169,37 +169,25 @@ void VFSGarbageCollector::run() const
 
     if (lock_node.snapshot.empty())
     {
-        if (start == 0)
-        {
-            LOG_DEBUG(log, "Write initial empty snapshot");
-            lock_node.snapshot = generateSnapshotName();
-            auto initial_snapshot = snapshot_storage->writeSnapshot(lock_node.snapshot);
-            initial_snapshot->finalize();
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Snapshot is absent but start log pointer is {}. Full migration is needed", start);
+        if (start > 0)
+            throw Exception(ErrorCodes::INVALID_STATE, "Snapshot is absent but start log pointer is {}. Full migration is needed", start);
+
+        LOG_DEBUG(log, "Write initial empty snapshot");
+        lock_node.snapshot = generateSnapshotName();
+        auto initial_snapshot = snapshot_storage.write(lock_node.snapshot);
+        initial_snapshot->finalize();
     }
     LOG_DEBUG(log, "Processing range [{};{}]", start, end);
 
-    // Write new snapshot to the storage
-    String old_snapshot_name = lock_node.snapshot;
-    String new_snapshot_name = generateSnapshotName();
+    const String old_snapshot_name = lock_node.snapshot;
+    const String new_snapshot_name = generateSnapshotName();
     updateSnapshotWithLogEntries(start, end, old_snapshot_name, new_snapshot_name);
     lock_node.snapshot = new_snapshot_name;
 
-    // Collect all snapshots name to clean after successful lock releasing
-    auto all_snapshots = snapshot_storage->listSnapshots();
-
-    // Failpoint for testing purpose
-    fiu_do_on(FailPoints::vfs_gc_optimistic_lock_delay, {
-        std::chrono::milliseconds sleep_time(settings->gc_sleep_ms);
-        LOG_DEBUG(log, "Failpoint vfs_gc_optimistic_lock_delay sleeping {} ms", settings->gc_sleep_ms);
-        std::this_thread::sleep_for(sleep_time);
-    });
+    auto all_snapshots = snapshot_storage.list();
 
     LOG_DEBUG(log, "Removing log range [{};{}]", start, end);
-    auto requests = makeRemoveBatchRequests(start, end);
-    if (!releaseOptimisticLock(lock_node, requests))
+    if (!releaseOptimisticLock(lock_node, makeRemoveBatchRequests(start, end)))
     {
         LOG_DEBUG(log, "Skip GC transaction because optimistic lock node was already updated");
         return;
@@ -233,7 +221,6 @@ bool VFSGarbageCollector::skipRun(size_t batch_size, Logpointer start, Logpointe
     Coordination::Stat stat;
     storage.zookeeper()->exists(getNode(start), &stat);
 
-    using ms = std::chrono::milliseconds;
     using clock = std::chrono::system_clock;
     const size_t delta = std::chrono::duration_cast<ms>(clock::now().time_since_epoch()).count() - stat.mtime;
 
@@ -244,20 +231,19 @@ bool VFSGarbageCollector::skipRun(size_t batch_size, Logpointer start, Logpointe
 }
 
 void VFSGarbageCollector::updateSnapshotWithLogEntries(
-    Logpointer start, Logpointer end, const String & old_snapshot_name, const String & new_snapshot_name) const
+    Logpointer start, Logpointer end, std::string_view old_snapshot_name, std::string_view new_snapshot_name) const
 {
     LOG_DEBUG(log, "updateSnapshotWithLogEntries start: {}  end: {}", start, end);
-    IObjectStorage & object_storage = *storage.object_storage;
-    VFSSnapshotReadStreamPtr old_snapshot_stream;
 
-    old_snapshot_stream = snapshot_storage->readSnapshot(old_snapshot_name);
-    auto new_snapshot_stream = snapshot_storage->writeSnapshot(new_snapshot_name);
-    auto [obsolete, invalid] = getBatch(start, end).mergeWithSnapshot(*old_snapshot_stream, *new_snapshot_stream, &*log);
+    IObjectStorage & object_storage = *storage.getObjectStorage();
+    VFSSnapshotReadStream old_snapshot_stream{object_storage, old_snapshot_name};
+    VFSSnapshotWriteStream new_snapshot_stream{object_storage, new_snapshot_name, settings->snapshot_lz4_compression_level};
+    auto [obsolete, invalid] = getBatch(start, end).mergeWithSnapshot(old_snapshot_stream, new_snapshot_stream, &*log);
 
     ProfileEvents::increment(ProfileEvents::VFSGcCumulativeLogItemsRead, end - start);
 
-    new_snapshot_stream->finalize();
-    object_storage.removeObjectsIfExist(obsolete);
+    new_snapshot_stream.finalize();
+    storage.object_storage->removeObjectsIfExist(obsolete);
 
     if (!invalid.empty()) // TODO myrrc remove after testing
     {
@@ -288,7 +274,7 @@ VFSLogItem VFSGarbageCollector::getBatch(Logpointer start, Logpointer end) const
 
 Coordination::Requests VFSGarbageCollector::makeRemoveBatchRequests(Logpointer start, Logpointer end) const
 {
-    const size_t log_batch_length = end - start + 1; // Including the last item
+    const size_t log_batch_length = end - start + 1; // +1 for removing GC lock node
     Coordination::Requests requests(log_batch_length);
 
     for (size_t i = 0; i < log_batch_length; ++i)

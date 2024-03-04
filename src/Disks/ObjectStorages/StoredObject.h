@@ -13,7 +13,7 @@ struct StoredObject
     String local_path; /// or equivalent "metadata_path"
     uint64_t bytes_size = 0;
 
-    explicit StoredObject(const String & remote_path_ = "", const String & local_path_ = "", uint64_t bytes_size_ = 0)
+    explicit StoredObject(std::string_view remote_path_ = "", std::string_view local_path_ = "", uint64_t bytes_size_ = 0)
         : remote_path(remote_path_), local_path(local_path_), bytes_size(bytes_size_)
     {
     }

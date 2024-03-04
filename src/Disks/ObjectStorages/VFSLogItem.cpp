@@ -1,10 +1,8 @@
 #include "VFSLogItem.h"
-
-#include <Disks/ObjectStorages/VFSSnapshotStorage.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <Common/logger_useful.h>
+#include "Common/logger_useful.h"
+#include "IO/ReadBufferFromMemory.h"
+#include "IO/ReadHelpers.h"
+#include "VFSSnapshotIO.h"
 
 using ItemPair = DB::VFSLogItemStorage::value_type;
 template <>
@@ -81,12 +79,11 @@ VFSLogItem::mergeWithSnapshot(IVFSSnapshotReadStream & snapshot, IVFSSnapshotWri
     VFSMergeResult out;
     auto batch_it = begin();
 
-    auto read_left = [&]()
+    auto read_left = [&]
     {
         auto entry = snapshot.next();
-        if (!entry)
-            return entry;
-        LOG_TRACE(log, "Old snapshot entry: {} {}", entry->remote_path, entry->link_count);
+        if (entry)
+            LOG_TRACE(log, "Old snapshot entry: {} {}", entry->remote_path, entry->link_count);
         return entry;
     };
     auto left = read_left();

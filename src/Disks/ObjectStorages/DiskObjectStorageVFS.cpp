@@ -1,10 +1,9 @@
 #include "DiskObjectStorageVFS.h"
-
-#include <Disks/ObjectStorages/DiskObjectStorageVFSTransaction.h>
-#include <Disks/ObjectStorages/VFSGarbageCollector.h>
-#include <Disks/ObjectStorages/VFSMigration.h>
 #include <IO/S3Common.h>
 #include <Interpreters/Context.h>
+#include "DiskObjectStorageVFSTransaction.h"
+#include "VFSGarbageCollector.h"
+#include "VFSMigration.h"
 #if USE_AZURE_BLOB_STORAGE
 #    include <azure/storage/common/storage_exception.hpp>
 #endif
@@ -34,19 +33,9 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS supports 's3' or 'azure_blob_storage' disk type");
     if (send_metadata)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS doesn't support send_metadata");
+
     zookeeper()->createAncestors(nodes.log_item);
-    snapshot_storage = std::make_unique<VFSSnapshotObjectStorage>(object_storage, makeSnapshotStoragePrefix(), *settings.get());
-
     log = getLogger(fmt::format("DiskVFS({})", name));
-}
-
-String DiskObjectStorageVFS::makeSnapshotStoragePrefix() const
-{
-    String res = fmt::format("vfs/{}/snapshots/", name);
-    // Azure blob storage does not work correctly with slashes in names
-    if (object_storage_type == ObjectStorageType::Azure)
-        std::ranges::replace(res, '/', '_');
-    return object_key_prefix + res;
 }
 
 DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
@@ -120,10 +109,10 @@ String DiskObjectStorageVFS::getStructure() const
 // We want to have transaction group only for the thread it was created in to allow
 // multiple concurrent tasks involving one disk (e.g. downloading part and merge).
 constexpr size_t MAX_CONCURRENT_DISKS = 32;
-static thread_local std::pair<DiskObjectStorageVFS *, VFSTransactionGroup *> disks_transactions[MAX_CONCURRENT_DISKS]
+static thread_local std::pair<DiskObjectStorageVFS const *, VFSTransactionGroup *> disks_transactions[MAX_CONCURRENT_DISKS]
     = {{nullptr, nullptr}};
 
-bool DiskObjectStorageVFS::tryAddGroup(VFSTransactionGroup * group)
+bool DiskObjectStorageVFS::tryAddGroup(VFSTransactionGroup * group) const
 {
     for (auto & pair : disks_transactions)
         if (pair.first == this)
@@ -142,7 +131,7 @@ bool DiskObjectStorageVFS::tryAddGroup(VFSTransactionGroup * group)
     return false;
 }
 
-void DiskObjectStorageVFS::removeGroup()
+void DiskObjectStorageVFS::removeGroup() const
 {
     for (auto & pair : disks_transactions)
         if (pair.first == this)
@@ -231,7 +220,6 @@ ZooKeeperWithFaultInjectionPtr DiskObjectStorageVFS::zookeeper() const
     return ZooKeeperWithFaultInjection::createInstance(
         settings_ref->keeper_fault_injection_probability,
         settings_ref->keeper_fault_injection_seed,
-        // TODO myrrc what if global context instance is nullptr due to shutdown?
         Context::getGlobalContextInstance()->getZooKeeper(),
         "DiskObjectStorageVFS",
         log);
