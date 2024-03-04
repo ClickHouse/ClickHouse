@@ -117,7 +117,17 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         if (auto [message, success] = checkAuthentication(request); success)
         {
             processQuery(request, response, used_output);
-            used_output.out->finalize();
+
+            try
+            {
+                used_output.out->finalize();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to finalize response write buffer");
+                return;
+            }
+
             LOG_DEBUG(log, "Done processing query");
         }
         else
