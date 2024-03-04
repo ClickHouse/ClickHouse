@@ -264,6 +264,8 @@ class BuildConfig:
         def process(field_name: str, field: Union[bool, str]) -> str:
             if isinstance(field, bool):
                 field = str(field).lower()
+            elif not isinstance(field, str):
+                field = ""
             if export:
                 return f"export BUILD_{field_name.upper()}={repr(field)}"
             return f"BUILD_{field_name.upper()}={field}"
