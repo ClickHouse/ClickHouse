@@ -20,7 +20,6 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
-#include <Interpreters/QueryLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
@@ -36,7 +35,6 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/BackupLog.h>
-#include <IO/S3/BlobStorageLogWriter.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -44,7 +42,6 @@
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/Common/AllowedClientHosts.h>
-#include <Databases/IDatabase.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Storages/StorageDistributed.h>
@@ -362,18 +359,22 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
             getContext()->clearQueryCache();
             break;
-#if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
+#if USE_EMBEDDED_COMPILER
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
             if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
                 cache->clear();
             break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for JIT compilation");
 #endif
-#if USE_AWS_S3
         case Type::DROP_S3_CLIENT_CACHE:
+#if USE_AWS_S3
             getContext()->checkAccess(AccessType::SYSTEM_DROP_S3_CLIENT_CACHE);
             S3::ClientCacheRegistry::instance().clearCacheForAll();
             break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AWS S3");
 #endif
 
         case Type::DROP_FILESYSTEM_CACHE:
@@ -768,6 +769,12 @@ BlockIO InterpreterSystemQuery::execute()
             flushJemallocProfile("/tmp/jemalloc_clickhouse");
             break;
         }
+#else
+        case Type::JEMALLOC_PURGE:
+        case Type::JEMALLOC_ENABLE_PROFILE:
+        case Type::JEMALLOC_DISABLE_PROFILE:
+        case Type::JEMALLOC_FLUSH_PROFILE:
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without JEMalloc");
 #endif
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of SYSTEM query");
@@ -839,7 +846,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
         system_context->getGlobalContext(),
         columns,
         constraints,
-        false);
+        LoadingStrictnessLevel::ATTACH);
 
     database->attachTable(system_context, replica.table_name, table, data_path);
 
@@ -1081,7 +1088,9 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
     {
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
         auto sync_timeout = getContext()->getSettingsRef().receive_timeout.totalMilliseconds();
-        if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.sync_replica_mode, query.src_replicas))
+
+        std::unordered_set<std::string> replicas(query.src_replicas.begin(), query.src_replicas.end());
+        if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.sync_replica_mode, replicas))
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out.", table_id.getNameForLogs());
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \
@@ -1186,9 +1195,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_MARK_CACHE:
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CACHE:
-#if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
-#endif
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
@@ -1196,9 +1203,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_SCHEMA_CACHE:
         case Type::DROP_FORMAT_SCHEMA_CACHE:
-#if USE_AWS_S3
         case Type::DROP_S3_CLIENT_CACHE:
-#endif
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;
@@ -1414,7 +1419,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_LISTEN);
             break;
         }
-#if USE_JEMALLOC
         case Type::JEMALLOC_PURGE:
         case Type::JEMALLOC_ENABLE_PROFILE:
         case Type::JEMALLOC_DISABLE_PROFILE:
@@ -1423,7 +1427,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_JEMALLOC);
             break;
         }
-#endif
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
         case Type::ENABLE_FAILPOINT:

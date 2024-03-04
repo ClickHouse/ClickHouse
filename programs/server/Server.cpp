@@ -24,6 +24,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
+#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ConcurrencyControl.h>
 #include <Common/Macros.h>
@@ -622,6 +623,8 @@ try
 
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
+
+    ASTAlterCommand::setFormatAlterCommandsWithParentheses(server_settings.format_alter_operations_with_parentheses);
 
     StackTrace::setShowAddresses(server_settings.show_addresses_in_stack_traces);
 
@@ -1280,6 +1283,18 @@ try
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
 
+    std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;
+    try
+    {
+        UInt64 wait_time = server_settings.cgroups_memory_usage_observer_wait_time;
+        if (wait_time != 0)
+            cgroups_memory_usage_observer.emplace(std::chrono::seconds(wait_time));
+    }
+    catch (Exception &)
+    {
+        tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
+    }
+
     const std::string cert_path = config().getString("openSSL.server.certificateFile", "");
     const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
 
@@ -1292,7 +1307,7 @@ try
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
-        config().getString("path", ""),
+        config().getString("path", DBMS_DEFAULT_PATH),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
         [&](ConfigurationPtr config, bool initial_loading)
@@ -1332,6 +1347,15 @@ try
             total_memory_tracker.setHardLimit(max_server_memory_usage);
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+
+            if (cgroups_memory_usage_observer)
+            {
+                double hard_limit_ratio = new_server_settings.cgroup_memory_watcher_hard_limit_ratio;
+                double soft_limit_ratio = new_server_settings.cgroup_memory_watcher_soft_limit_ratio;
+                cgroups_memory_usage_observer->setLimits(
+                    static_cast<uint64_t>(max_server_memory_usage * hard_limit_ratio),
+                    static_cast<uint64_t>(max_server_memory_usage * soft_limit_ratio));
+            }
 
             size_t merges_mutations_memory_usage_soft_limit = new_server_settings.merges_mutations_memory_usage_soft_limit;
 
@@ -1391,7 +1415,7 @@ try
             global_context->setMaxDatabaseNumToWarn(new_server_settings.max_database_num_to_warn);
             global_context->setMaxPartNumToWarn(new_server_settings.max_part_num_to_warn);
 
-            ConcurrencyControl::SlotCount concurrent_threads_soft_limit = ConcurrencyControl::Unlimited;
+            SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
             if (new_server_settings.concurrent_threads_soft_limit_num > 0 && new_server_settings.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)
                 concurrent_threads_soft_limit = new_server_settings.concurrent_threads_soft_limit_num;
             if (new_server_settings.concurrent_threads_soft_limit_ratio_to_cores > 0)
@@ -1750,6 +1774,8 @@ try
     }
     else
     {
+        DNSResolver::instance().setCacheMaxSize(server_settings.dns_cache_max_size);
+
         /// Initialize a watcher periodically updating DNS cache
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(
             global_context, server_settings.dns_cache_update_period, server_settings.dns_max_consecutive_failures);

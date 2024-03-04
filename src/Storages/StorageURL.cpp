@@ -5,7 +5,7 @@
 #include <Storages/VirtualColumnUtils.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -989,9 +989,13 @@ class ReadFromURL : public SourceStepWithFilter
 public:
     std::string getName() const override { return "ReadFromURL"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters() override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     ReadFromURL(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
         Block sample_block,
         std::shared_ptr<IStorageURLBase> storage_,
         std::vector<String> * uri_options_,
@@ -999,17 +1003,15 @@ public:
         const bool need_only_count_,
         std::vector<std::pair<std::string, std::string>> read_uri_params_,
         std::function<void(std::ostream &)> read_post_data_callback_,
-        ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , uri_options(uri_options_)
         , info(std::move(info_))
         , need_only_count(need_only_count_)
         , read_uri_params(std::move(read_uri_params_))
         , read_post_data_callback(std::move(read_post_data_callback_))
-        , context(std::move(context_))
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
         , max_num_streams(num_streams_)
@@ -1025,8 +1027,6 @@ private:
     std::vector<std::pair<std::string, std::string>> read_uri_params;
     std::function<void(std::ostream &)> read_post_data_callback;
 
-    ContextPtr context;
-
     size_t max_block_size;
     size_t num_streams;
     const size_t max_num_streams;
@@ -1038,9 +1038,9 @@ private:
     void createIterator(const ActionsDAG::Node * predicate);
 };
 
-void ReadFromURL::applyFilters()
+void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -1075,6 +1075,10 @@ void IStorageURLBase::read(
     auto this_ptr = std::static_pointer_cast<IStorageURLBase>(shared_from_this());
 
     auto reading = std::make_unique<ReadFromURL>(
+        column_names,
+        query_info,
+        storage_snapshot,
+        local_context,
         read_from_format_info.source_header,
         std::move(this_ptr),
         nullptr,
@@ -1082,7 +1086,6 @@ void IStorageURLBase::read(
         need_only_count,
         std::move(params),
         std::move(read_post_data_callback),
-        local_context,
         max_block_size,
         num_streams);
 
@@ -1193,7 +1196,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
             is_url_with_globs,
             need_only_count);
 
-        source->setKeyCondition(filter_nodes.nodes, context);
+        source->setKeyCondition(filter_actions_dag, context);
         pipes.emplace_back(std::move(source));
     }
 
@@ -1243,6 +1246,10 @@ void StorageURLWithFailover::read(
     auto this_ptr = std::static_pointer_cast<StorageURL>(shared_from_this());
 
     auto reading = std::make_unique<ReadFromURL>(
+        column_names,
+        query_info,
+        storage_snapshot,
+        local_context,
         read_from_format_info.source_header,
         std::move(this_ptr),
         &uri_options,
@@ -1250,7 +1257,6 @@ void StorageURLWithFailover::read(
         need_only_count,
         std::move(params),
         std::move(read_post_data_callback),
-        local_context,
         max_block_size,
         num_streams);
 
