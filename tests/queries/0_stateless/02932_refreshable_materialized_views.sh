@@ -61,7 +61,7 @@ $CLICKHOUSE_CLIENT -nq "
 # Switch to fake clock, change refresh schedule, change query.
 $CLICKHOUSE_CLIENT -nq "
     system test view a set fake time '2050-01-01 00:00:01';"
-while [ "`$CLICKHOUSE_CLIENT -nq "select status, last_refresh_time, next_refresh_time from refreshes -- $LINENO" | xargs`" != 'Scheduled 2050-01-01 00:00:01 2050-01-01 00:00:02' ]
+while [ "`$CLICKHOUSE_CLIENT -nq "select status, last_refresh_time, next_refresh_time from refreshes -- $LINENO" | xargs`" != 'Scheduled 2050-01-01 00:00:01 2050-01-01 00:00:03' ]
 do
     sleep 0.1
 done
