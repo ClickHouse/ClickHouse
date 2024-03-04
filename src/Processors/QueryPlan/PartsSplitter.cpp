@@ -34,6 +34,12 @@ std::string toString(const Values & value)
     return fmt::format("({})", fmt::join(value, ", "));
 }
 
+/** We rely that FieldVisitorAccurateLess will have strict weak ordering for any Field values including
+  * NaN, Null and containers (Array, Tuple, Map) that contain NaN or Null. But right now it does not properly
+  * support NaN and Nulls inside containers, because it uses Field operator< or accurate::lessOp for comparison
+  * that compares Nulls and NaNs differently than FieldVisitorAccurateLess.
+  * TODO: Update Field operator< to compare NaNs and Nulls the same way as FieldVisitorAccurateLess.
+  */
 bool isSafePrimaryDataKeyType(const IDataType & data_type)
 {
     auto type_id = data_type.getTypeId();
@@ -316,12 +322,12 @@ struct PartRangeIndex
 
     bool operator==(const PartRangeIndex & other) const
     {
-        return part_index == other.part_index && range.begin == other.range.begin && range.end == other.range.end;
+        return std::tie(part_index, range.begin, range.end) == std::tie(other.part_index, other.range.begin, other.range.end);
     }
 
     bool operator<(const PartRangeIndex & other) const
     {
-        return part_index < other.part_index && range.begin < other.range.begin && range.end < other.range.end;
+        return std::tie(part_index, range.begin, range.end) < std::tie(other.part_index, other.range.begin, other.range.end);
     }
 
     size_t part_index;
