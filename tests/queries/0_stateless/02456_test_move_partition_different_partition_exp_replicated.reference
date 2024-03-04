@@ -1,5 +1,4 @@
 -- { echoOn }
-SET send_logs_level='error';
 -- Should be allowed
 DROP TABLE IF EXISTS source SYNC;
 DROP TABLE IF EXISTS destination SYNC;

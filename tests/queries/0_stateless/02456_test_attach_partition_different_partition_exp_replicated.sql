@@ -61,3 +61,4 @@ ALTER TABLE destination ATTACH PARTITION '20100302' from source;
 SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+SET send_logs_level='warning';

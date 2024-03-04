@@ -1,4 +1,5 @@
 -- { echoOn }
+SET send_logs_level='error';
 -- Should be allowed since destination partition expr is monotonically increasing and compatible
 DROP TABLE IF EXISTS source;
 DROP TABLE IF EXISTS destination;
@@ -340,3 +341,4 @@ SELECT * FROM source ORDER BY A;
 SELECT * FROM destination ORDER BY A;
 SELECT partition_id FROM system.parts where table='source' AND database = currentDatabase() AND active = 1;
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+SET send_logs_level='warning';
