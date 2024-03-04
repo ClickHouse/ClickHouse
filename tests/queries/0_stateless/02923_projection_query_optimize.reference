@@ -18,7 +18,7 @@ FROM test_a
 PREWHERE dst = \'-42\'
 WHERE (dst = \'-42\') AND indexHint(src IN (
     SELECT src
-    FROM test_a
+    FROM projection_optimization_test.test_a
     WHERE dst = \'-42\'
 ))
 SELECT
@@ -39,11 +39,15 @@ SELECT
     other_cols
 FROM test_b
 PREWHERE (c1 = \'43\') AND (c2 = \'44\') AND (c3 = \'45\') AND (dst = \'-42\')
-WHERE ((c1 = \'43\') AND (c2 = \'44\') AND (c3 = \'45\') AND (dst = \'-42\')) AND indexHint(src IN (
+WHERE ((c1 = \'43\') AND (c2 = \'44\') AND (c3 = \'45\') AND (dst = \'-42\')) AND (indexHint(src IN (
     SELECT src
-    FROM test_b
+    FROM projection_optimization_test.test_b
     WHERE c1 = \'43\'
-))
+)) AND indexHint(src IN (
+    SELECT src
+    FROM projection_optimization_test.test_b
+    WHERE dst = \'-42\'
+)))
 SELECT
     c1 AS id,
     c2 AS id2
@@ -51,6 +55,56 @@ FROM test_b
 PREWHERE (lower(id) = \'43\') AND (id2 = \'44\')
 WHERE ((lower(id) = \'43\') AND (id2 = \'44\')) AND indexHint(src IN (
     SELECT src
-    FROM test_b
+    FROM projection_optimization_test.test_b
     WHERE lower(c1 AS id) = \'43\'
 ))
+SELECT src2
+FROM test_c
+PREWHERE src2 = \'44\'
+WHERE (src2 = \'44\') AND ((src = \'44\') OR (indexHint((src, src2) IN (
+    SELECT
+        src,
+        src2
+    FROM projection_optimization_test.test_c
+    WHERE dst = \'-42\'
+)) AND (dst = \'-42\')))
+WITH (\'-41\', \'-42\', \'-43\') AS dst_list
+SELECT src
+FROM test_c
+WHERE (indexHint((src, src2) IN (
+    SELECT
+        src,
+        src2
+    FROM projection_optimization_test.test_c
+    WHERE dst IN ((\'-41\', \'-42\', \'-43\') AS dst_list)
+)) AND (dst IN dst_list)) OR (src = \'20\')
+20
+41
+42
+43
+SELECT src
+FROM test_c
+PREWHERE c3 = \'42\'
+WHERE (c3 = \'42\') AND (indexHint((src, src2) IN (
+    SELECT
+        src,
+        src2
+    FROM projection_optimization_test.test_c
+    WHERE c3 = \'42\'
+)) AND ((indexHint((src, src2) IN (
+    SELECT
+        src,
+        src2
+    FROM projection_optimization_test.test_c
+    WHERE c1 = \'39\'
+)) AND (c1 = \'39\')) OR (indexHint((src, src2) IN (
+    SELECT
+        src,
+        src2
+    FROM projection_optimization_test.test_c
+    WHERE c2 = \'41\'
+)) AND (c2 = \'41\'))))
+40
+21
+40
+21

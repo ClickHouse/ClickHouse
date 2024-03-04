@@ -84,7 +84,8 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
 
     auto block_with_constants = KeyCondition::getBlockWithConstants(select_query_info.query->clone(),
         select_query_info.syntax_analyzer_result,
-        context);
+        context,
+        select_query_info.is_projection_optimized);
 
     WhereOptimizerContext where_optimizer_context;
     where_optimizer_context.context = context;

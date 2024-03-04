@@ -164,10 +164,10 @@ private:
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
-    ASTPtr pkOptimization(const ProjectionsDescription & projections, const ASTPtr & where_ast, const Names & primary_keys, const String & main_table, bool & optimized) const;
-    ASTPtr create_proj_optimized_ast(const ASTPtr & ast, const Names & primary_keys, const String & main_table) const;
+    ASTPtr pkOptimization(const ProjectionsDescription & projections, const ASTPtr & where_ast, const Names & primary_keys) const;
+    ASTPtr create_proj_optimized_ast(const ASTPtr & ast, const Names & primary_keys) const;
 
-    void analyze_where_ast(const ASTPtr & ast, const ASTPtr & func, NameSet & proj_pks, NameSet & optimized_where_keys, const Names & primary_keys, const String & main_table, bool & optimized) const;
+    ASTPtr analyze_where_ast(const ASTPtr & ast, NameSet & proj_pks, const Names & primary_keys) const;
     void addPrewhereAliasActions();
     void applyFiltersToPrewhereInAnalysis(ExpressionAnalysisResult & analysis) const;
     bool shouldMoveToPrewhere() const;
@@ -203,7 +203,6 @@ private:
     std::optional<UInt64> getTrivialCount(UInt64 max_parallel_replicas);
     /// Check if we can limit block size to read based on LIMIT clause
     UInt64 maxBlockSizeByLimit() const;
-    String getTableName(const ASTPtr & tables_in_select_query) const;
     String getIdentifier(ASTPtr & argument) const;
 
     enum class Modificator

@@ -220,6 +220,7 @@ struct SelectQueryInfo
     bool settings_limit_offset_done = false;
     bool is_internal = false;
     bool parallel_replicas_disabled = false;
+    bool is_projection_optimized = false;
     bool is_parameterized_view = false;
     bool optimize_trivial_count = false;
 

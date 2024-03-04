@@ -109,6 +109,11 @@ public:
     {
     }
 
+    ExpressionAnalyzer(const ASTPtr & query_, const TreeRewriterResultPtr & syntax_analyzer_result_, ContextPtr context_, bool is_projection_optimized_)
+    : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, false, {}, false, is_projection_optimized_)
+    {
+    }
+
     ~ExpressionAnalyzer();
 
     void appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types);

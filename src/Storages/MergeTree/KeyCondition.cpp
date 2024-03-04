@@ -699,7 +699,7 @@ ActionsDAGPtr KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawCon
   * For index to work when something like "WHERE Date = toDate(now())" is written.
   */
 Block KeyCondition::getBlockWithConstants(
-    const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, ContextPtr context)
+    const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, ContextPtr context, bool is_projection_optimized)
 {
     Block result
     {
@@ -708,7 +708,7 @@ Block KeyCondition::getBlockWithConstants(
 
     if (syntax_analyzer_result)
     {
-        auto actions = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActionsDAG();
+        auto actions = ExpressionAnalyzer(query, syntax_analyzer_result, context, is_projection_optimized).getConstActionsDAG();
         for (const auto & action_node : actions->getOutputs())
         {
             if (action_node->column)
