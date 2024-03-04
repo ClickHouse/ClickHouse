@@ -58,8 +58,8 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     function_arguments_nodes.push_back(std::make_shared<ColumnNode>(column, ctx.column_source));
     function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
 
-    auto function_name = positive ? "equals" : "notEquals";
-    resolveOrdinaryFunctionNodeByName(function_node, function_name, std::move(ctx.context));
+    const auto * function_name = positive ? "equals" : "notEquals";
+    resolveOrdinaryFunctionNodeByName(function_node, function_name, ctx.context);
 }
 
 String getSubcolumnNameForElement(const Field & value, const DataTypeTuple & data_type_tuple)
@@ -246,22 +246,9 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorFirstPass>;
     using Base::Base;
 
-    struct Data
-    {
-        bool has_final = false;
-        std::unordered_set<Identifier> all_key_columns;
-        std::unordered_map<Identifier, UInt64> indentifiers_count;
-        std::unordered_map<Identifier, UInt64> optimized_identifiers_count;
-    };
-
-    Data getData() const { return data; }
-
     void enterImpl(const QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_functions_to_subcolumns)
-            return;
-
-        if (data.has_final)
             return;
 
         if (auto * table_node = node->as<TableNode>())
@@ -284,18 +271,45 @@ public:
         }
     }
 
+    std::unordered_set<Identifier> getIdentifiersToOptimize() const
+    {
+        /// Do not optimize if full column is requested in other context.
+        /// It doesn't make sense because it doesn't reduce amount of read data
+        /// and optimized functions are not computation heavy. But introducing
+        /// new identifier complicates query analysis and may break it.
+        ///
+        /// E.g. query:
+        ///     SELECT n FROM table GROUP BY n HAVING isNotNull(n)
+        /// may be optimized to incorrect query:
+        ///     SELECT n FROM table GROUP BY n HAVING not(n.null)
+        /// Will produce: `n.null` is not under aggregate function and not in GROUP BY keys)
+        ///
+        /// Do not optimize index columns (primary, min-max, secondary),
+        /// because otherwise analysis of indexes may be broken.
+        /// TODO: handle subcolumns in index analysis.
+
+        std::unordered_set<Identifier> identifiers_to_optimize;
+        for (const auto & [identifier, count] : optimized_identifiers_count)
+        {
+            if (all_key_columns.contains(identifier))
+                continue;
+
+            auto it = identifiers_count.find(identifier);
+            if (it != identifiers_count.end() && it->second == count)
+                identifiers_to_optimize.insert(identifier);
+        }
+
+        return identifiers_to_optimize;
+    }
+
 private:
-    Data data;
+    std::unordered_set<Identifier> all_key_columns;
+    std::unordered_map<Identifier, UInt64> identifiers_count;
+    std::unordered_map<Identifier, UInt64> optimized_identifiers_count;
     NameSet processed_tables;
 
     void enterImpl(const TableNode & table_node)
     {
-        if (table_node.hasTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
-        {
-            data.has_final = true;
-            return;
-        }
-
         auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
         if (processed_tables.emplace(table_name).second)
             return;
@@ -305,7 +319,7 @@ private:
             for (const auto & column_name : key_columns)
             {
                 Identifier identifier({table_name, column_name});
-                data.all_key_columns.insert(identifier);
+                all_key_columns.insert(identifier);
             }
         };
 
@@ -337,18 +351,23 @@ private:
         auto table_name = table_node->getStorage()->getStorageID().getFullTableName();
         Identifier qualified_name({table_name, column_node.getColumnName()});
 
-        ++data.indentifiers_count[qualified_name];
+        ++identifiers_count[qualified_name];
     }
 
     void enterImpl(const FunctionNode & function_node, const ColumnNode & first_argument_column_node, const TableNode & table_node)
     {
+        /// For queries with FINAL converting function to subcolumn may alter
+        /// special merging algorithms and produce wrong result of query.
+        if (table_node.hasTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
+            return;
+
         auto column = first_argument_column_node.getColumn();
         auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
 
         Identifier qualified_name({table_name, column.name});
 
         if (node_transformers.contains({column.type->getTypeId(), function_node.getFunctionName()}))
-            ++data.optimized_identifiers_count[qualified_name];
+            ++optimized_identifiers_count[qualified_name];
     }
 };
 
@@ -398,32 +417,7 @@ void FunctionToSubcolumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPt
 {
     FunctionToSubcolumnsVisitorFirstPass first_visitor(context);
     first_visitor.visit(query_tree_node);
-    auto data = first_visitor.getData();
-
-    /// For queries with FINAL converting function to subcolumn may alter
-    /// special merging algorithms and produce wrong result of query.
-    if (data.has_final)
-        return;
-
-    /// Do not optimize if full column is requested in other context.
-    /// It doesn't make sense because it doesn't reduce amount of read data
-    /// and optimized functions are not computation heavy. But introducing
-    /// new identifier complicates query analysis and may break it.
-    ///
-    /// E.g. query:
-    ///     SELECT n FROM table GROUP BY n HAVING isNotNull(n)
-    /// may be optimized to incorrect query:
-    ///     SELECT n FROM table GROUP BY n HAVING not(n.null)
-    /// Will produce: `n.null` is not under aggregate function and not in GROUP BY keys)
-    ///
-    /// Do not optimize index columns (primary, min-max, secondary),
-    /// because otherwise analysis of indexes may be broken.
-    /// TODO: handle subcolumns in index analysis.
-
-    std::unordered_set<Identifier> identifiers_to_optimize;
-    for (const auto & [identifier, count] : data.optimized_identifiers_count)
-        if (!data.all_key_columns.contains(identifier) && data.indentifiers_count[identifier] == count)
-            identifiers_to_optimize.insert(identifier);
+    auto identifiers_to_optimize = first_visitor.getIdentifiersToOptimize();
 
     if (identifiers_to_optimize.empty())
         return;

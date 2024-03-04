@@ -88,7 +88,7 @@ private:
     static inline void resolveAsAggregateFunctionWithIf(FunctionNode & function_node)
     {
         auto result_type = function_node.getResultType();
-        auto suffix = result_type->isNullable() ? "OrNullIf" : "If";
+        const auto * suffix = result_type->isNullable() ? "OrNullIf" : "If";
         resolveAggregateFunctionNodeByName(function_node, function_node.getFunctionName() + suffix);
     }
 };
