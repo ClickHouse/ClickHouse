@@ -587,7 +587,11 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
     else if (query_node.isGroupByWithCube())
     {
         auto cube_step = std::make_unique<CubeStep>(
-            query_plan.getCurrentDataStream(), std::move(aggregator_params), true /*final*/, settings.group_by_use_nulls);
+            query_plan.getCurrentDataStream(),
+            std::move(aggregator_params),
+            true /*final*/,
+            settings.group_by_use_nulls,
+            settings.parallelize_execution_after_rollup_or_cube);
         query_plan.addStep(std::move(cube_step));
     }
 }

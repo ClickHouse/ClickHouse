@@ -1,0 +1,4 @@
+<test>
+    <query>select count() from (select * from numbers_mt(1e6) group by number with cube) group by number format Null</query>
+    <query>select count() from (select * from numbers_mt(2e6) group by number with cube) group by number format Null</query>
+</test>
