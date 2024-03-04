@@ -168,9 +168,9 @@ bool SerializationEnum<Type>::tryDeserializeTextJSON(IColumn & column, ReadBuffe
 }
 
 template <typename Type>
-void SerializationEnum<Type>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationEnum<Type>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeCSVString(ref_enum_values.getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+    writeCSVString(ref_enum_values.getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr, settings.csv.allow_string_quote);
 }
 
 template <typename Type>
