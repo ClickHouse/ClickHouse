@@ -75,7 +75,7 @@ struct FileChunkAddress
     /// E.g. "s3:<bucket>/<path>"
     std::string path;
     /// Optional string with ETag, or file modification time, or anything else.
-    std::string file_version;
+    std::string file_version{};
     size_t offset = 0;
 
     PageCacheKey hash() const;

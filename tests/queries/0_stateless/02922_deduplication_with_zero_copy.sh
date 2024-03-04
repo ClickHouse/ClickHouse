@@ -75,7 +75,7 @@ function loop()
 {
   set -e
 
-  table_shared_id=$($CLICKHOUSE_KEEPER_CLIENT -q "get /test/02922/${CLICKHOUSE_DATABASE}/table/table_shared_id")
+  table_shared_id="$1"
 
   while :
   do
@@ -107,9 +107,10 @@ export -f insert_duplicates
 export -f get_shared_locks
 export -f loop
 
+table_shared_id=$($CLICKHOUSE_KEEPER_CLIENT -q "get /test/02922/${CLICKHOUSE_DATABASE}/table/table_shared_id")
 
 exit_code=0
-timeout 60 bash -c loop || exit_code="${?}"
+timeout 40 bash -c loop "${table_shared_id}" || exit_code="${?}"
 
 if [[ "${exit_code}" -ne "124" ]]
 then
@@ -118,7 +119,23 @@ then
   exit 1
 fi
 
-$CLICKHOUSE_CLIENT -nm -q "
-drop table r1;
-drop table r2;
-"
+function list_keeper_nodes() {
+  table_shared_id=$1
+
+  echo "zero_copy:"
+  $CLICKHOUSE_KEEPER_CLIENT -q "ls /clickhouse/zero_copy/zero_copy_s3" | grep -o "${table_shared_id}" | \
+    sed "s/${table_shared_id}/<table_shared_id>/g" || :
+  $CLICKHOUSE_KEEPER_CLIENT -q "ls /clickhouse/zero_copy/zero_copy_s3/${table_shared_id}" 2>/dev/null || :
+
+  echo "tables:"
+  $CLICKHOUSE_KEEPER_CLIENT -q "ls /test/02922/${CLICKHOUSE_DATABASE}" | grep -o "table" || :
+  $CLICKHOUSE_KEEPER_CLIENT -q "ls /test/02922/${CLICKHOUSE_DATABASE}/table" 2>/dev/null || :
+}
+
+list_keeper_nodes "${table_shared_id}"
+
+$CLICKHOUSE_CLIENT -nm -q "drop table r1;" &
+$CLICKHOUSE_CLIENT -nm -q "drop table r2;" &
+wait
+
+list_keeper_nodes "${table_shared_id}"
