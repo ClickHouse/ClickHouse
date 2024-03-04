@@ -8,8 +8,9 @@ CREATE TABLE skip_table
     INDEX v_mm v TYPE minmax GRANULARITY 2
 )
 ENGINE = MergeTree
-PRIMARY KEY k;
+PRIMARY KEY k
+SETTINGS index_granularity = 8192;
 
-INSERT INTO skip_table SELECT number, intDiv(number, 4096) FROM numbers(1000000);
+INSERT INTO skip_table SELECT number, intDiv(number, 4096) FROM numbers(100000);
 
 SELECT trim(explain) FROM ( EXPLAIN indexes = 1 SELECT * FROM skip_table WHERE v = 125) WHERE explain like '%Name%';
