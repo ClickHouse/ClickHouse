@@ -268,10 +268,10 @@ SerializationPtr IDataType::getSerialization(const NameAndTypePair & column)
 }
 
 #define FOR_TYPES_OF_TYPE(M) \
-  M(TypeIndex) \
-  M(const IDataType &) \
-  M(const DataTypePtr &) \
-  M(WhichDataType)
+    M(TypeIndex) \
+    M(const IDataType &) \
+    M(const DataTypePtr &) \
+    M(WhichDataType)
 
 #define DISPATCH(TYPE) \
 bool isUInt8(TYPE data_type) { return WhichDataType(data_type).isUInt8(); } \

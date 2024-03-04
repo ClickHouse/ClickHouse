@@ -425,10 +425,10 @@ struct WhichDataType
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
 
 #define FOR_TYPES_OF_TYPE(M) \
-  M(TypeIndex) \
-  M(const IDataType &) \
-  M(const DataTypePtr &) \
-  M(WhichDataType)
+    M(TypeIndex) \
+    M(const IDataType &) \
+    M(const DataTypePtr &) \
+    M(WhichDataType)
 
 #define DISPATCH(TYPE) \
 bool isUInt8(TYPE data_type); \

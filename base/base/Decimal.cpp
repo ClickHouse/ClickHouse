@@ -42,6 +42,7 @@ template <typename T> template <typename U> const Decimal<T> & Decimal<T>::opera
     template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator %= (const Decimal<TYPE_U> & x);
 #define INVOKE(X) FOR_EACH_UNDERLYING_DECIMAL_TYPE_PASS(DISPATCH, X)
 FOR_EACH_UNDERLYING_DECIMAL_TYPE(INVOKE);
+#undef INVOKE
 #undef DISPATCH
 
 #define DISPATCH(TYPE) template struct Decimal<TYPE>;

@@ -17,16 +17,16 @@ template <class> struct Decimal;
 class DateTime64;
 
 #define FOR_EACH_UNDERLYING_DECIMAL_TYPE(M) \
-  M(Int32) \
-  M(Int64) \
-  M(Int128) \
-  M(Int256)
+    M(Int32) \
+    M(Int64) \
+    M(Int128) \
+    M(Int256)
 
 #define FOR_EACH_UNDERLYING_DECIMAL_TYPE_PASS(M, X) \
-  M(Int32,  X) \
-  M(Int64,  X) \
-  M(Int128, X) \
-  M(Int256, X)
+    M(Int32,  X) \
+    M(Int64,  X) \
+    M(Int128, X) \
+    M(Int256, X)
 
 using Decimal32 = Decimal<Int32>;
 using Decimal64 = Decimal<Int64>;
@@ -98,6 +98,7 @@ FOR_EACH_UNDERLYING_DECIMAL_TYPE(DISPATCH)
     extern template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator %= (const Decimal<TYPE_U> & x);
 #define INVOKE(X) FOR_EACH_UNDERLYING_DECIMAL_TYPE_PASS(DISPATCH, X)
 FOR_EACH_UNDERLYING_DECIMAL_TYPE(INVOKE);
+#undef INVOKE
 #undef DISPATCH
 
 template <typename T> bool operator< (const Decimal<T> & x, const Decimal<T> & y);
