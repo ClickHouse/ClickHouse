@@ -84,10 +84,20 @@ using ListObjectsV2Request = ExtendedRequest<Model::ListObjectsV2Request>;
 using ListObjectsRequest = ExtendedRequest<Model::ListObjectsRequest>;
 using GetObjectRequest = ExtendedRequest<Model::GetObjectRequest>;
 
+class UploadPartRequest : public ExtendedRequest<Model::UploadPartRequest>
+{
+public:
+    void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;
+};
+
+class CompleteMultipartUploadRequest : public ExtendedRequest<Model::CompleteMultipartUploadRequest>
+{
+public:
+    void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;
+};
+
 using CreateMultipartUploadRequest = ExtendedRequest<Model::CreateMultipartUploadRequest>;
-using CompleteMultipartUploadRequest = ExtendedRequest<Model::CompleteMultipartUploadRequest>;
 using AbortMultipartUploadRequest = ExtendedRequest<Model::AbortMultipartUploadRequest>;
-using UploadPartRequest = ExtendedRequest<Model::UploadPartRequest>;
 using UploadPartCopyRequest = ExtendedRequest<Model::UploadPartCopyRequest>;
 
 using PutObjectRequest = ExtendedRequest<Model::PutObjectRequest>;
