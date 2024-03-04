@@ -1,14 +1,9 @@
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionInfo.h>
 #include <Common/PODArray.h>
-#include <base/unaligned.h>
 #include <Compression/CompressionFactory.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-#include <base/hex.h>
 
 
 namespace DB
