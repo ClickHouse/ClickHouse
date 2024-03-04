@@ -386,7 +386,7 @@ if [ -f core.zst ]; then
     CORE_LINK='<a href="core.zst">core.zst</a>'
 fi
 
-rg --text -F '<Fatal>' server.log > fatal.log ||:
+sed -n '/<Fatal>/,/^$/p' s.log | rg "(^[^202])|<Fatal>" server.log > fatal.log ||:
 FATAL_LINK=''
 if [ -s fatal.log ]; then
     FATAL_LINK='<a href="fatal.log">fatal.log</a>'
