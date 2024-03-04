@@ -7,9 +7,7 @@ import sys
 from pathlib import Path
 
 from build_download_helper import get_build_name_for_check, read_build_urls
-from clickhouse_helper import (
-    CiLogsCredentials,
-)
+from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPORT_PATH, TEMP_PATH
 from pr_info import PRInfo
@@ -116,6 +114,7 @@ def main():
         "report.html": workspace_path / "report.html",
         "core.zst": workspace_path / "core.zst",
         "dmesg.log": workspace_path / "dmesg.log",
+        "fatal.log": workspace_path / "fatal.log",
     }
 
     compressed_server_log_path = workspace_path / "server.log.zst"

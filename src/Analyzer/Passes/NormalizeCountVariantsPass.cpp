@@ -8,6 +8,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Utils.h>
 #include <Interpreters/Context.h>
+#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
@@ -31,6 +32,11 @@ public:
             return;
 
         if (function_node->getArguments().getNodes().size() != 1)
+            return;
+
+        /// forbid the optimization if return value of sum() and count() differs:
+        /// count() returns only UInt64 type, while sum() could return Nullable().
+        if (!function_node->getResultType()->equals(DataTypeUInt64()))
             return;
 
         auto & first_argument = function_node->getArguments().getNodes()[0];
@@ -57,7 +63,7 @@ public:
 
 }
 
-void NormalizeCountVariantsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void NormalizeCountVariantsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     NormalizeCountVariantsVisitor visitor(context);
     visitor.visit(query_tree_node);

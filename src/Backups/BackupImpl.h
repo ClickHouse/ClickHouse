@@ -81,8 +81,9 @@ public:
     size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
     size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
     void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
-    void finalizeWriting() override;
     bool supportsWritingInMultipleThreads() const override { return !use_archive; }
+    void finalizeWriting() override;
+    void tryRemoveAllFiles() override;
 
 private:
     void open();
@@ -106,8 +107,6 @@ private:
     void createLockFile();
     bool checkLockFile(bool throw_if_failed) const;
     void removeLockFile();
-
-    void removeAllFilesAfterFailure();
 
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();

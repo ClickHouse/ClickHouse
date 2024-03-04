@@ -3,6 +3,7 @@
 #include <IO/WriteSettings.h>
 #include <Core/Block.h>
 #include <base/types.h>
+#include <base/defines.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Storages/LightweightDeleteDescription.h>
@@ -75,6 +76,7 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
+    using Index = Columns;
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
@@ -212,10 +214,6 @@ public:
 
     const MergeTreeData & storage;
 
-private:
-    String mutable_name;
-    mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
-
 public:
     const String & name;    // const ref to private mutable_name
     MergeTreePartInfo info;
@@ -261,12 +259,6 @@ public:
     /// Frozen by ALTER TABLE ... FREEZE ... It is used for information purposes in system.parts table.
     mutable std::atomic<bool> is_frozen {false};
 
-    /// If it is a projection part, it can be broken sometimes.
-    mutable std::atomic<bool> is_broken {false};
-    mutable std::string exception;
-    mutable int exception_code = 0;
-    mutable std::mutex broken_reason_mutex;
-
     /// Indicates that the part was marked Outdated by PartCheckThread because the part was not committed to ZooKeeper
     mutable bool is_unexpected_local_part = false;
 
@@ -309,12 +301,6 @@ public:
     /// Throws an exception if state of the part is not in affordable_states
     void assertState(const std::initializer_list<MergeTreeDataPartState> & affordable_states) const;
 
-    /// Primary key (correspond to primary.idx file).
-    /// Always loaded in RAM. Contains each index_granularity-th value of primary key tuple.
-    /// Note that marks (also correspond to primary key) is not always in RAM, but cached. See MarkCache.h.
-    using Index = Columns;
-    Index index;
-
     MergeTreePartition partition;
 
     /// Amount of rows between marks
@@ -342,7 +328,6 @@ public:
         }
 
         void load(const MergeTreeData & data, const PartMetadataManagerPtr & manager);
-        Block getBlock(const MergeTreeData & data) const;
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
@@ -369,6 +354,9 @@ public:
 
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
     int32_t metadata_version;
+
+    const Index & getIndex() const;
+    void setIndex(Columns index_);
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
@@ -430,16 +418,9 @@ public:
 
     void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
 
-    void markProjectionPartAsBroken(const String & projection_name, const String & message, int code) const;
-
     bool hasProjection(const String & projection_name) const { return projection_parts.contains(projection_name); }
 
-    bool hasBrokenProjection(const String & projection_name) const;
-
-    /// Return true, if all projections were loaded successfully and none was marked as broken.
-    void loadProjections(bool require_columns_checksums, bool check_consistency, bool & has_broken_projection, bool if_not_loaded = false);
-
-    void setBrokenReason(const String & message, int code) const;
+    void loadProjections(bool require_columns_checksums, bool check_consistency, bool if_not_loaded = false);
 
     /// Return set of metadata file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
@@ -568,6 +549,12 @@ public:
     mutable std::atomic<time_t> last_removal_attempt_time = 0;
 
 protected:
+    /// Primary key (correspond to primary.idx file).
+    /// Lazily loaded in RAM. Contains each index_granularity-th value of primary key tuple.
+    /// Note that marks (also correspond to primary key) are not always in RAM, but cached. See MarkCache.h.
+    mutable std::mutex index_mutex;
+    mutable Index index TSA_GUARDED_BY(index_mutex);
+    mutable bool index_loaded TSA_GUARDED_BY(index_mutex) = false;
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;
@@ -593,7 +580,7 @@ protected:
     const IMergeTreeDataPart * parent_part;
     String parent_part_name;
 
-    mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
+    std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
     mutable PartMetadataManagerPtr metadata_manager;
 
@@ -624,6 +611,9 @@ protected:
     void initializeIndexGranularityInfo();
 
 private:
+    String mutable_name;
+    mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
+
     /// In compact parts order of columns is necessary
     NameToNumber column_name_to_position;
 
@@ -661,8 +651,8 @@ private:
 
     virtual void appendFilesOfIndexGranularity(Strings & files) const;
 
-    /// Loads index file.
-    void loadIndex();
+    /// Loads the index file.
+    void loadIndex() const TSA_REQUIRES(index_mutex);
 
     void appendFilesOfIndex(Strings & files) const;
 

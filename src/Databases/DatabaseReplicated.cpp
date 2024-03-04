@@ -1094,12 +1094,12 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     tables_dependencies.checkNoCyclicDependencies();
 
     auto allow_concurrent_table_creation = getContext()->getServerSettings().max_database_replicated_create_table_thread_pool_size > 1;
-    auto tables_to_create_by_level = tables_dependencies.getTablesSortedByDependencyWithLevels();
+    auto tables_to_create_by_level = tables_dependencies.getTablesSplitByDependencyLevel();
 
     auto create_tables_runner = threadPoolCallbackRunner<void>(getDatabaseReplicatedCreateTablesThreadPool().get(), "CreateTables");
     std::vector<std::future<void>> create_table_futures;
 
-    for (const auto & [_, tables_to_create] : tables_to_create_by_level)
+    for (const auto & tables_to_create : tables_to_create_by_level)
     {
         for (const auto & table_id : tables_to_create)
         {

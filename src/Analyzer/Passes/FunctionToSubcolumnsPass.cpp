@@ -394,7 +394,7 @@ public:
 
 }
 
-void FunctionToSubcolumnsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void FunctionToSubcolumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     FunctionToSubcolumnsVisitorFirstPass first_visitor(context);
     first_visitor.visit(query_tree_node);

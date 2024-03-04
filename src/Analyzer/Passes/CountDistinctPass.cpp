@@ -86,7 +86,7 @@ public:
 
 }
 
-void CountDistinctPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void CountDistinctPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     CountDistinctVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

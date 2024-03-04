@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Columns/IColumnImpl.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -18,10 +17,10 @@ namespace DB
  *  values contains also one default value at 0 position to make
  *  implementation of execution of functions and sorting more convenient.
  */
-class ColumnSparse final : public COWHelper<IColumn, ColumnSparse>
+class ColumnSparse final : public COWHelper<IColumnHelper<ColumnSparse>, ColumnSparse>
 {
 private:
-    friend class COWHelper<IColumn, ColumnSparse>;
+    friend class COWHelper<IColumnHelper<ColumnSparse>, ColumnSparse>;
 
     explicit ColumnSparse(MutableColumnPtr && values_);
     ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offsets_, size_t size_);
@@ -31,7 +30,7 @@ public:
     static constexpr auto DEFAULT_ROWS_SEARCH_SAMPLE_RATIO = 0.1;
     static constexpr auto DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION = 0.95;
 
-    using Base = COWHelper<IColumn, ColumnSparse>;
+    using Base = COWHelper<IColumnHelper<ColumnSparse>, ColumnSparse>;
     static Ptr create(const ColumnPtr & values_, const ColumnPtr & offsets_, size_t size_)
     {
         return Base::create(values_->assumeMutable(), offsets_->assumeMutable(), size_);
@@ -78,11 +77,13 @@ public:
 
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char *) const override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     void insert(const Field & x) override;
+    bool tryInsert(const Field & x) override;
     void insertFrom(const IColumn & src, size_t n) override;
     void insertDefault() override;
     void insertManyDefaults(size_t length) override;
@@ -133,10 +134,6 @@ public:
     void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
     UInt64 getNumberOfDefaultRows() const override;
-
-    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
-
-    void gather(ColumnGathererStream & gatherer_stream) override;
 
     ColumnPtr compress() const override;
 

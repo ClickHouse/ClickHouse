@@ -112,10 +112,12 @@ def get_build_name_for_check(check_name: str) -> str:
 
 def read_build_urls(build_name: str, reports_path: Union[Path, str]) -> List[str]:
     for root, _, files in os.walk(reports_path):
-        for f in files:
-            if build_name in f:
-                logging.info("Found build report json %s", f)
-                with open(os.path.join(root, f), "r", encoding="utf-8") as file_handler:
+        for file in files:
+            if file.endswith(f"_{build_name}.json"):
+                logging.info("Found build report json %s", file)
+                with open(
+                    os.path.join(root, file), "r", encoding="utf-8"
+                ) as file_handler:
                     build_report = json.load(file_handler)
                     return build_report["build_urls"]  # type: ignore
     return []

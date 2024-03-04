@@ -111,7 +111,7 @@ public:
         ContextPtr context_,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
-        bool attach_);
+        LoadingStrictnessLevel mode);
 
     String getName() const override { return "WindowView"; }
 
