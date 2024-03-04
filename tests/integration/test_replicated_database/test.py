@@ -508,12 +508,9 @@ def test_alters_from_different_replicas(started_cluster):
     dummy_node.stop_clickhouse(kill=True)
 
     settings = {"distributed_ddl_task_timeout": 5}
-    assert (
-        "is not finished on 1 of 3 hosts"
-        in competing_node.query_and_get_error(
-            "ALTER TABLE alters_from_different_replicas.concurrent_test ADD COLUMN Added0 UInt32;",
-            settings=settings,
-        )
+    assert "is not finished on 1 of 3 hosts" in competing_node.query_and_get_error(
+        "ALTER TABLE alters_from_different_replicas.concurrent_test ADD COLUMN Added0 UInt32;",
+        settings=settings,
     )
     settings = {
         "distributed_ddl_task_timeout": 5,
