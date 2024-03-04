@@ -30,6 +30,7 @@ public:
         DROP_QUERY_CACHE,
         DROP_COMPILED_EXPRESSION_CACHE,
         DROP_FILESYSTEM_CACHE,
+        DROP_DISTRIBUTED_CACHE,
         DROP_DISK_METADATA_CACHE,
         DROP_SCHEMA_CACHE,
         DROP_FORMAT_SCHEMA_CACHE,
@@ -98,6 +99,8 @@ public:
         STOP_VIEWS,
         CANCEL_VIEW,
         TEST_VIEW,
+        STOP_VIRTUAL_PARTS_UPDATE,
+        START_VIRTUAL_PARTS_UPDATE,
         END
     };
 
@@ -126,6 +129,8 @@ public:
     UInt64 seconds{};
 
     String filesystem_cache_name;
+    String distributed_cache_servive_id;
+
     std::string key_to_drop;
     std::optional<size_t> offset_to_drop;
 
