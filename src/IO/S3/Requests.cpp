@@ -55,14 +55,14 @@ Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() 
 void CompleteMultipartUploadRequest::SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue)
 {
     // S3's CompleteMultipartUpload doesn't support metadata headers so we skip adding them
-    if(!headerName.starts_with("x-amz-meta-"))
+    if (!headerName.starts_with("x-amz-meta-"))
         Model::CompleteMultipartUploadRequest::SetAdditionalCustomHeaderValue(headerName, headerValue);
 }
 
 void UploadPartRequest::SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue)
 {
     // S3's UploadPart doesn't support metadata headers so we skip adding them
-    if(!headerName.starts_with("x-amz-meta-"))
+    if (!headerName.starts_with("x-amz-meta-"))
         Model::UploadPartRequest::SetAdditionalCustomHeaderValue(headerName, headerValue);
 }
 
