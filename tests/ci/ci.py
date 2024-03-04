@@ -645,7 +645,7 @@ class CiCache:
         if not jobs_with_params:
             return {}
         poll_interval_sec = 300
-        TIMEOUT = 3600
+        TIMEOUT = 3590
         MAX_ROUNDS_TO_WAIT = 6
         MAX_JOB_NUM_TO_WAIT = 3
         await_finished: Dict[str, List[int]] = {}
@@ -1690,7 +1690,7 @@ def main() -> int:
         if not args.skip_jobs:
             ci_cache = CiCache(s3, jobs_data["digests"])
 
-            if pr_info.is_release_branch():
+            if pr_info.is_master():
                 # wait for pending jobs to be finished, await_jobs is a long blocking call
                 # wait pending jobs (for now only on release/master branches)
                 ready_jobs_batches_dict = ci_cache.await_jobs(

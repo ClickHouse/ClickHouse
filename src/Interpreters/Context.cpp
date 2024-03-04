@@ -17,6 +17,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/PageCache.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -294,6 +295,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
+    mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
     ProcessList process_list;                                   /// Executing queries at the moment.
     SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
@@ -724,7 +726,7 @@ struct ContextSharedPart : boost::noncopyable
     void addWarningMessage(const String & message) TSA_REQUIRES(mutex)
     {
         /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
-        log->warning(message);
+        LOG_WARNING(log, "{}", message);
         warnings.push_back(message);
     }
 
@@ -1177,6 +1179,29 @@ void Context::addWarningMessage(const String & msg) const
         shared->addWarningMessage(msg);
 }
 
+void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_name) const
+{
+    std::lock_guard lock(shared->mutex);
+
+    /// We would like to report only about the first database with engine Ordinary
+    static std::atomic_bool is_called = false;
+    if (is_called.exchange(true))
+        return;
+
+    auto suppress_re = shared->getConfigRefWithLock(lock).getString("warning_supress_regexp", "");
+    /// We don't use getFlagsPath method, because it takes a shared lock.
+    auto convert_databases_flag = fs::path(shared->flags_path) / "convert_ordinary_to_atomic";
+    auto message = fmt::format("Server has databases (for example `{}`) with Ordinary engine, which was deprecated. "
+            "To convert this database to a new Atomic engine, please create a forcing flag {} and make sure that ClickHouse has write permission for it. "
+            "Example: sudo touch '{}' && sudo chmod 666 '{}'",
+            database_name,
+            convert_databases_flag.string(), convert_databases_flag.string(), convert_databases_flag.string());
+
+    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(message, suppress_re);
+    if (!is_supressed)
+        shared->addWarningMessage(message);
+}
+
 void Context::setConfig(const ConfigurationPtr & config)
 {
     shared->setConfig(config);
@@ -1228,7 +1253,7 @@ void Context::setUser(const UUID & user_id_, const std::optional<const std::vect
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
     /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
-    /// so Context::getLock() must be unlocked while we're doing this.
+    /// so Context::getLocalLock() and Context::getGlobalLock() must be unlocked while we're doing this.
 
     auto & access_control = getAccessControl();
     auto user = access_control.read<User>(user_id_);
@@ -1358,7 +1383,7 @@ void Context::checkAccess(const AccessRightsElements & elements) const { return 
 
 std::shared_ptr<const ContextAccess> Context::getAccess() const
 {
-    /// A helper function to collect parameters for calculating access rights, called with Context::getLock() acquired.
+    /// A helper function to collect parameters for calculating access rights, called with Context::getLocalSharedLock() acquired.
     auto get_params = [this]()
     {
         /// If setUserID() was never called then this must be the global context with the full access.
@@ -1385,7 +1410,8 @@ std::shared_ptr<const ContextAccess> Context::getAccess() const
     }
 
     /// Calculate new access rights according to the collected parameters.
-    /// NOTE: AccessControl::getContextAccess() may require some IO work, so Context::getLock() must be unlocked while we're doing this.
+    /// NOTE: AccessControl::getContextAccess() may require some IO work, so Context::getLocalLock()
+    ///       and Context::getGlobalLock() must be unlocked while we're doing this.
     auto res = getAccessControl().getContextAccess(*params);
 
     {
@@ -2712,6 +2738,33 @@ void Context::clearUncompressedCache() const
 
     if (shared->uncompressed_cache)
         shared->uncompressed_cache->clear();
+}
+
+void Context::setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes_total, bool use_madv_free, bool use_huge_pages)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->page_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Page cache has been already created.");
+
+    shared->page_cache = std::make_shared<PageCache>(bytes_per_chunk, bytes_per_mmap, bytes_total, use_madv_free, use_huge_pages);
+}
+
+PageCachePtr Context::getPageCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->page_cache;
+}
+
+void Context::dropPageCache() const
+{
+    PageCachePtr cache;
+    {
+        SharedLockGuard lock(shared->mutex);
+        cache = shared->page_cache;
+    }
+    if (cache)
+        cache->dropCache();
 }
 
 void Context::setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
@@ -5129,6 +5182,11 @@ ReadSettings Context::getReadSettings() const
 
     res.filesystem_cache_max_download_size = settings.filesystem_cache_max_download_size;
     res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
+
+    res.page_cache = getPageCache();
+    res.use_page_cache_for_disks_without_file_cache = settings.use_page_cache_for_disks_without_file_cache;
+    res.read_from_page_cache_if_exists_otherwise_bypass_cache = settings.read_from_page_cache_if_exists_otherwise_bypass_cache;
+    res.page_cache_inject_eviction = settings.page_cache_inject_eviction;
 
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
 
