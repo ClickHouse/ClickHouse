@@ -15,7 +15,7 @@ namespace DB
 class JSONColumnsReader : public JSONColumnsReaderBase
 {
 public:
-    JSONColumnsReader(ReadBuffer & in_);
+    explicit JSONColumnsReader(ReadBuffer & in_);
 
     void readChunkStart() override;
     std::optional<String> readColumnStart() override;

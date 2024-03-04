@@ -15,7 +15,6 @@
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
 #include <Coordination/KeeperDispatcher.h>
@@ -382,8 +381,8 @@ struct ContextSharedPart : boost::noncopyable
     /// The global pool of HTTP sessions for background fetches.
     PooledSessionFactoryPtr fetches_session_factory TSA_GUARDED_BY(background_executors_mutex);
 
-    RemoteHostFilter remote_host_filter TSA_GUARDED_BY(mutex);                    /// Allowed URL from config.xml
-    HTTPHeaderFilter http_header_filter TSA_GUARDED_BY(mutex);                    /// Forbidden HTTP headers from config.xml
+    RemoteHostFilter remote_host_filter;                    /// Allowed URL from config.xml
+    HTTPHeaderFilter http_header_filter;                    /// Forbidden HTTP headers from config.xml
 
     /// No lock required for trace_collector modified only during initialization
     std::optional<TraceCollector> trace_collector;          /// Thread collecting traces from threads executing queries
@@ -725,7 +724,7 @@ struct ContextSharedPart : boost::noncopyable
     void addWarningMessage(const String & message) TSA_REQUIRES(mutex)
     {
         /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
-        log->warning(message);
+        LOG_WARNING(log, "{}", message);
         warnings.push_back(message);
     }
 
@@ -797,6 +796,7 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
 {
     auto res = std::shared_ptr<Context>(new Context);
     res->shared = shared_part;
+    res->query_access_info = std::make_shared<QueryAccessInfo>();
     return res;
 }
 
@@ -816,7 +816,9 @@ SharedContextHolder Context::createShared()
 ContextMutablePtr Context::createCopy(const ContextPtr & other)
 {
     SharedLockGuard lock(other->mutex);
-    return std::shared_ptr<Context>(new Context(*other));
+    auto new_context = std::shared_ptr<Context>(new Context(*other));
+    new_context->query_access_info = std::make_shared<QueryAccessInfo>(*other->query_access_info);
+    return new_context;
 }
 
 ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
@@ -1175,6 +1177,29 @@ void Context::addWarningMessage(const String & msg) const
         shared->addWarningMessage(msg);
 }
 
+void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_name) const
+{
+    std::lock_guard lock(shared->mutex);
+
+    /// We would like to report only about the first database with engine Ordinary
+    static std::atomic_bool is_called = false;
+    if (is_called.exchange(true))
+        return;
+
+    auto suppress_re = shared->getConfigRefWithLock(lock).getString("warning_supress_regexp", "");
+    /// We don't use getFlagsPath method, because it takes a shared lock.
+    auto convert_databases_flag = fs::path(shared->flags_path) / "convert_ordinary_to_atomic";
+    auto message = fmt::format("Server has databases (for example `{}`) with Ordinary engine, which was deprecated. "
+            "To convert this database to a new Atomic engine, please create a forcing flag {} and make sure that ClickHouse has write permission for it. "
+            "Example: sudo touch '{}' && sudo chmod 666 '{}'",
+            database_name,
+            convert_databases_flag.string(), convert_databases_flag.string(), convert_databases_flag.string());
+
+    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(message, suppress_re);
+    if (!is_supressed)
+        shared->addWarningMessage(message);
+}
+
 void Context::setConfig(const ConfigurationPtr & config)
 {
     shared->setConfig(config);
@@ -1317,6 +1342,23 @@ std::shared_ptr<const EnabledRolesInfo> Context::getRolesInfo() const
     return getAccess()->getRolesInfo();
 }
 
+namespace
+{
+ALWAYS_INLINE inline void
+contextSanityCheckWithLock(const Context & context, const Settings & settings, const std::lock_guard<ContextSharedMutex> &)
+{
+    const auto type = context.getApplicationType();
+    if (type == Context::ApplicationType::LOCAL || type == Context::ApplicationType::SERVER)
+        doSettingsSanityCheck(settings);
+}
+
+ALWAYS_INLINE inline void contextSanityCheck(const Context & context, const Settings & settings)
+{
+    const auto type = context.getApplicationType();
+    if (type == Context::ApplicationType::LOCAL || type == Context::ApplicationType::SERVER)
+        doSettingsSanityCheck(settings);
+}
+}
 
 template <typename... Args>
 void Context::checkAccessImpl(const Args &... args) const
@@ -1426,6 +1468,7 @@ void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_i
         checkSettingsConstraintsWithLock(profiles_info.settings, SettingSource::PROFILE);
     applySettingsChangesWithLock(profiles_info.settings, lock);
     settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
+    contextSanityCheckWithLock(*this, settings, lock);
 }
 
 void Context::setCurrentProfile(const String & profile_name, bool check_constraints)
@@ -1610,12 +1653,12 @@ void Context::addQueryAccessInfo(
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
 
-    std::lock_guard lock(query_access_info.mutex);
-    query_access_info.databases.emplace(quoted_database_name);
-    query_access_info.tables.emplace(full_quoted_table_name);
+    std::lock_guard lock(query_access_info->mutex);
+    query_access_info->databases.emplace(quoted_database_name);
+    query_access_info->tables.emplace(full_quoted_table_name);
 
     for (const auto & column_name : column_names)
-        query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
+        query_access_info->columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
 }
 
 void Context::addQueryAccessInfo(const Names & partition_names)
@@ -1623,9 +1666,9 @@ void Context::addQueryAccessInfo(const Names & partition_names)
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
 
-    std::lock_guard<std::mutex> lock(query_access_info.mutex);
+    std::lock_guard<std::mutex> lock(query_access_info->mutex);
     for (const auto & partition_name : partition_names)
-        query_access_info.partitions.emplace(partition_name);
+        query_access_info->partitions.emplace(partition_name);
 }
 
 void Context::addViewAccessInfo(const String & view_name)
@@ -1633,8 +1676,8 @@ void Context::addViewAccessInfo(const String & view_name)
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
 
-    std::lock_guard<std::mutex> lock(query_access_info.mutex);
-    query_access_info.views.emplace(view_name);
+    std::lock_guard<std::mutex> lock(query_access_info->mutex);
+    query_access_info->views.emplace(view_name);
 }
 
 void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name)
@@ -1645,8 +1688,8 @@ void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_proje
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
 
-    std::lock_guard<std::mutex> lock(query_access_info.mutex);
-    query_access_info.projections.emplace(fmt::format(
+    std::lock_guard<std::mutex> lock(query_access_info->mutex);
+    query_access_info->projections.emplace(fmt::format(
         "{}.{}", qualified_projection_name.storage_id.getFullTableName(), backQuoteIfNeed(qualified_projection_name.projection_name)));
 }
 
@@ -1994,6 +2037,7 @@ void Context::setSettings(const Settings & settings_)
     std::lock_guard lock(mutex);
     settings = settings_;
     need_recalculate_access = true;
+    contextSanityCheck(*this, settings);
 }
 
 void Context::setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock)
@@ -2006,6 +2050,7 @@ void Context::setSettingWithLock(std::string_view name, const String & value, co
     settings.set(name, value);
     if (ContextAccessParams::dependsOnSettingName(name))
         need_recalculate_access = true;
+    contextSanityCheckWithLock(*this, settings, lock);
 }
 
 void Context::setSettingWithLock(std::string_view name, const Field & value, const std::lock_guard<ContextSharedMutex> & lock)
@@ -2025,6 +2070,7 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
     try
     {
         setSettingWithLock(change.name, change.value, lock);
+        contextSanityCheckWithLock(*this, settings, lock);
     }
     catch (Exception & e)
     {
@@ -2052,6 +2098,7 @@ void Context::setSetting(std::string_view name, const Field & value)
 {
     std::lock_guard lock(mutex);
     setSettingWithLock(name, value, lock);
+    contextSanityCheckWithLock(*this, settings, lock);
 }
 
 void Context::applySettingChange(const SettingChange & change)
@@ -2079,26 +2126,36 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 void Context::checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source) const
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, profile_elements, source);
+    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
+        doSettingsSanityCheck(settings);
 }
 
 void Context::checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source) const
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, change, source);
+    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
+        doSettingsSanityCheck(settings);
 }
 
 void Context::checkSettingsConstraintsWithLock(const SettingsChanges & changes, SettingSource source) const
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
+    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
+        doSettingsSanityCheck(settings);
 }
 
 void Context::checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
+    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
+        doSettingsSanityCheck(settings);
 }
 
 void Context::clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clamp(settings, changes, source);
+    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
+        doSettingsSanityCheck(settings);
 }
 
 void Context::checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
@@ -2122,6 +2179,7 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingS
 {
     SharedLockGuard lock(mutex);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
+    doSettingsSanityCheck(settings);
 }
 
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source) const
@@ -2297,7 +2355,8 @@ void Context::setMacros(std::unique_ptr<Macros> && macros)
 ContextMutablePtr Context::getQueryContext() const
 {
     auto ptr = query_context.lock();
-    if (!ptr) throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "There is no query or query context has expired");
+    if (!ptr)
+        throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "There is no query or query context has expired");
     return ptr;
 }
 
@@ -3303,7 +3362,7 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
 }
 
 #if USE_NURAFT
-std::shared_ptr<KeeperDispatcher> & Context::getKeeperDispatcher() const
+std::shared_ptr<KeeperDispatcher> Context::getKeeperDispatcher() const
 {
     std::lock_guard lock(shared->keeper_dispatcher_mutex);
     if (!shared->keeper_dispatcher)
@@ -3312,7 +3371,7 @@ std::shared_ptr<KeeperDispatcher> & Context::getKeeperDispatcher() const
     return shared->keeper_dispatcher;
 }
 
-std::shared_ptr<KeeperDispatcher> & Context::tryGetKeeperDispatcher() const
+std::shared_ptr<KeeperDispatcher> Context::tryGetKeeperDispatcher() const
 {
     std::lock_guard lock(shared->keeper_dispatcher_mutex);
     return shared->keeper_dispatcher;
@@ -3489,25 +3548,21 @@ String Context::getInterserverScheme() const
 
 void Context::setRemoteHostFilter(const Poco::Util::AbstractConfiguration & config)
 {
-    std::lock_guard lock(shared->mutex);
     shared->remote_host_filter.setValuesFromConfig(config);
 }
 
 const RemoteHostFilter & Context::getRemoteHostFilter() const
 {
-    SharedLockGuard lock(shared->mutex);
     return shared->remote_host_filter;
 }
 
 void Context::setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config)
 {
-    std::lock_guard lock(shared->mutex);
     shared->http_header_filter.setValuesFromConfig(config);
 }
 
 const HTTPHeaderFilter & Context::getHTTPHeaderFilter() const
 {
-    SharedLockGuard lock(shared->mutex);
     return shared->http_header_filter;
 }
 
@@ -4236,7 +4291,7 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
 }
 
-InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, const std::optional<size_t> max_parsing_threads) const
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, std::optional<size_t> max_parsing_threads) const
 {
     return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings, max_parsing_threads);
 }
@@ -4337,6 +4392,7 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     setCurrentProfile(shared->system_profile_name);
 
     applySettingsQuirks(settings, getLogger("SettingsQuirks"));
+    doSettingsSanityCheck(settings);
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
     buffer_context = Context::createCopy(shared_from_this());
