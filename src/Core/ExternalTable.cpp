@@ -70,61 +70,36 @@ void BaseExternalTable::clear()
 
 void BaseExternalTable::parseStructureFromStructureField(const std::string & argument)
 {
-    /// First try to parse table structure with `ParserNameTypePairList`, this allows user to declare Enum types in the structure
     ParserNameTypePairList parser;
     const auto * pos = argument.data();
     String error;
-    ASTPtr columns_list_raw = tryParseQuery(parser, pos, pos+argument.size(), error, false, "", false, 0, 0);
-    bool parse_structure_with_parser = false;
-    if ((parse_structure_with_parser = columns_list_raw != nullptr))
+    ASTPtr columns_list_raw = tryParseQuery(parser, pos, pos + argument.size(), error, false, "", false, 0, 0);
+
+    if (!columns_list_raw)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing table structure: {}", error);
+
+    for (auto & child : columns_list_raw->children)
     {
-        for (auto & child : columns_list_raw->children)
-        {
-            auto * column = child->as<ASTNameTypePair>();
-            if (column)
-                structure.emplace_back(column->name, column->type->getColumnNameWithoutAlias());
-            else
-            {
-                structure.clear();
-                parse_structure_with_parser = false;
-                break;
-            }
-        }
-    }
-
-    if (!parse_structure_with_parser)
-    {
-        std::vector<std::string> vals;
-        splitInto<' ', ','>(vals, argument, true);
-
-        if (vals.size() % 2 != 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Odd number of attributes in section structure: {}", vals.size());
-
-        for (size_t i = 0; i < vals.size(); i += 2)
-            structure.emplace_back(vals[i], vals[i + 1]);
+        auto * column = child->as<ASTNameTypePair>();
+        if (column)
+            structure.emplace_back(column->name, column->type->getColumnNameWithoutAlias());
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing table structure: expected column definition, got {}", child->formatForErrorMessage());
     }
 }
 
 void BaseExternalTable::parseStructureFromTypesField(const std::string & argument)
 {
-    /// First try to parse table structure with `ParserTypeList`, this allows user to declare Enum types in the structure
     ParserTypeList parser;
     const auto * pos = argument.data();
     String error;
     ASTPtr type_list_raw = tryParseQuery(parser, pos, pos+argument.size(), error, false, "", false, 0, 0);
-    if (type_list_raw != nullptr)
-    {
-        for (size_t i = 0; i < type_list_raw->children.size(); ++i)
-            structure.emplace_back("_" + toString(i + 1), type_list_raw->children[i]->getColumnNameWithoutAlias());
-    }
-    else
-    {
-        std::vector<std::string> vals;
-        splitInto<' ', ','>(vals, argument, true);
 
-        for (size_t i = 0; i < vals.size(); ++i)
-            structure.emplace_back("_" + toString(i + 1), vals[i]);
-    }
+    if (!type_list_raw)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing table structure: {}", error);
+
+    for (size_t i = 0; i < type_list_raw->children.size(); ++i)
+        structure.emplace_back("_" + toString(i + 1), type_list_raw->children[i]->getColumnNameWithoutAlias());
 }
 
 void BaseExternalTable::initSampleBlock()
